@@ -2,7 +2,11 @@
 
 mod protocol;
 
-pub use protocol::{Command, CommandEnvelope, EngineToUi, Hello, ShellKind, UiToEngine};
+pub use protocol::{
+    BufferId, BufferKind, BufferProjection, Command, CommandEnvelope, EngineToUi, Hello,
+    LocalSendId, MessageAuthorship, MessageDelivery, MessageId, MessageProjection,
+    NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
+};
 
 /// The product engine owned by a platform host.
 pub struct Engine {
@@ -52,6 +56,9 @@ impl Engine {
                 },
                 EngineToUi::CommandResult { id: envelope.id },
             ],
+            Command::Connect { .. } | Command::Disconnect { .. } | Command::SendMessage { .. } => {
+                vec![EngineToUi::CommandResult { id: envelope.id }]
+            }
         }
     }
 }

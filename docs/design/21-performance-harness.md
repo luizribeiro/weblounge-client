@@ -115,6 +115,12 @@ The milestone-2 worker boundary measured 719,127 bytes from rustc, 239,018 bytes
 shipping artifact plus 10% headroom, rounded up to the next hundred bytes. This gate covers the
 artifact the browser executes; the gzip figure remains reported for transfer-size tracking.
 
+The generated milestone-2 engine projection contract measures 790,548 bytes from rustc, 303,970
+bytes after `wasm-bindgen`, 145,937 bytes after `wasm-opt -Oz`, and 61,018 bytes with gzip level 9.
+The checked uncompressed budget is therefore 160,600 bytes, the measured shipping artifact plus
+10% headroom rounded up to the next hundred bytes. The increase is the typed network, buffer, and
+timeline serialization surface required before the live client can emit those projections.
+
 Timing scenarios run after one warm-up and produce enough samples for p95. A run with fixture
 errors, missing marks, or an environment mismatch is invalid, never zero. Absolute budgets apply;
 baseline comparison additionally flags regressions above 10% and a metric-specific noise floor.

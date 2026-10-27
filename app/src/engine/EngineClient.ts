@@ -1,10 +1,13 @@
 import type {
+  BufferProjection,
   CommandEnvelope,
   CommandResult,
   EngineClientMessage,
   EngineToUi,
   Hello,
   IncompatibleBuild,
+  MessageProjection,
+  NetworkProjection,
   ResyncReason,
   UiToEngine,
   Unsubscribe,
@@ -267,6 +270,78 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (typeof value.id === "string")
         return { type: "command_result", id: value.id };
       break;
+    case "network_state_changed": {
+      const network = decodeNetwork(value.network);
+      if (network !== undefined) return { type: messageType, network };
+      break;
+    }
+    case "buffers_changed": {
+      const buffers = decodeArray(value.buffers, decodeBuffer);
+      if (typeof value.network_id === "number" && buffers !== undefined) {
+        return {
+          type: messageType,
+          network_id: value.network_id,
+          buffers,
+        };
+      }
+      break;
+    }
+    case "buffer_added": {
+      const buffer = decodeBuffer(value.buffer);
+      if (buffer !== undefined) return { type: messageType, buffer };
+      break;
+    }
+    case "messages_appended": {
+      const messages = decodeArray(value.messages, decodeMessage);
+      if (typeof value.buffer_id === "number" && messages !== undefined) {
+        return { type: messageType, buffer_id: value.buffer_id, messages };
+      }
+      break;
+    }
+    case "message_confirmed": {
+      const message = decodeMessage(value.message);
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.local_send_id === "number" &&
+        message !== undefined
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          local_send_id: value.local_send_id,
+          message,
+        };
+      }
+      break;
+    }
+    case "message_failed":
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.local_send_id === "number" &&
+        typeof value.message_key === "string"
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          local_send_id: value.local_send_id,
+          message_key: value.message_key,
+        };
+      }
+      break;
+    case "unread_changed":
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.unread === "number" &&
+        typeof value.mentions === "number"
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          unread: value.unread,
+          mentions: value.mentions,
+        };
+      }
+      break;
     default:
       return assertNever(messageType);
   }
@@ -280,7 +355,115 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "incompatible_build" ||
     value === "diagnostic" ||
     value === "notice" ||
-    value === "command_result"
+    value === "command_result" ||
+    value === "network_state_changed" ||
+    value === "buffers_changed" ||
+    value === "buffer_added" ||
+    value === "messages_appended" ||
+    value === "message_confirmed" ||
+    value === "message_failed" ||
+    value === "unread_changed"
+  );
+}
+
+function decodeNetwork(value: unknown): NetworkProjection | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.label !== "string" ||
+    typeof value.nickname !== "string" ||
+    !isOneOf(value.state, ["connecting", "online", "reconnecting", "stopped"])
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    label: value.label,
+    nickname: value.nickname,
+    state: value.state,
+  };
+}
+
+function decodeBuffer(value: unknown): BufferProjection | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.network_id !== "number" ||
+    !isOneOf(value.kind, ["server", "channel", "direct"]) ||
+    typeof value.title !== "string" ||
+    typeof value.unread !== "number" ||
+    typeof value.mentions !== "number"
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    network_id: value.network_id,
+    kind: value.kind,
+    title: value.title,
+    unread: value.unread,
+    mentions: value.mentions,
+  };
+}
+
+function decodeMessage(value: unknown): MessageProjection | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    typeof value.author !== "string" ||
+    typeof value.text !== "string" ||
+    !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
+    !isOneOf(value.delivery, ["received", "optimistic", "confirmed"]) ||
+    !(
+      value.local_send_id === null || typeof value.local_send_id === "number"
+    ) ||
+    !isStringArray(value.server_ids) ||
+    !(
+      value.server_time_ms === null || typeof value.server_time_ms === "number"
+    ) ||
+    typeof value.received_at_ms !== "number"
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    author: value.author,
+    text: value.text,
+    authorship: value.authorship,
+    delivery: value.delivery,
+    local_send_id: value.local_send_id,
+    server_ids: value.server_ids,
+    server_time_ms: value.server_time_ms,
+    received_at_ms: value.received_at_ms,
+  };
+}
+
+function decodeArray<T>(
+  value: unknown,
+  decode: (item: unknown) => T | undefined,
+): T[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const decoded: T[] = [];
+  for (const item of value) {
+    const result = decode(item);
+    if (result === undefined) return undefined;
+    decoded.push(result);
+  }
+  return decoded;
+}
+
+function isOneOf<const T extends string>(
+  value: unknown,
+  choices: readonly T[],
+): value is T {
+  return (
+    typeof value === "string" && choices.some((choice) => choice === value)
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
   );
 }
 

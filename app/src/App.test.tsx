@@ -52,6 +52,9 @@ class FakeEngineClient implements EngineClient {
   async start(): Promise<void> {}
 
   async send(command: Parameters<EngineClient["send"]>[0]) {
+    if (command.command.type !== "diagnostic") {
+      throw new Error("test client only supports diagnostic commands");
+    }
     this.#listener?.({
       type: "diagnostic",
       command_id: command.id,

@@ -1,9 +1,20 @@
+import type { BufferProjection } from "./generated/BufferProjection";
 import type { CommandEnvelope } from "./generated/CommandEnvelope";
 import type { EngineToUi } from "./generated/EngineToUi";
 import type { Hello } from "./generated/Hello";
+import type { MessageProjection } from "./generated/MessageProjection";
+import type { NetworkProjection } from "./generated/NetworkProjection";
 import type { UiToEngine } from "./generated/UiToEngine";
 
-export type { CommandEnvelope, EngineToUi, Hello, UiToEngine };
+export type {
+  BufferProjection,
+  CommandEnvelope,
+  EngineToUi,
+  Hello,
+  MessageProjection,
+  NetworkProjection,
+  UiToEngine,
+};
 
 export type CommandResult = Extract<EngineToUi, { type: "command_result" }>;
 export type IncompatibleBuild = Extract<

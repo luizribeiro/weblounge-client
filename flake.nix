@@ -38,7 +38,7 @@
           targets = [ "wasm32-unknown-unknown" ];
         };
         wasmBindgenCliVersion = "0.2.129";
-        engineWasmBudgetBytes = 136800;
+        engineWasmBudgetBytes = 160600;
         wasmBindgenCliSource = pkgs.fetchCrate {
           pname = "wasm-bindgen-cli";
           version = wasmBindgenCliVersion;
