@@ -113,10 +113,11 @@ The command registry maps to layout operations with these exact IDs:
 
 | Command IDs | Layout operation |
 |---|---|
+| `pane.mode` | none; subsystem 14 opens the transient pane-command scope |
 | `pane.focus`, `pane.show-buffer` | `focus`, `show` |
 | `pane.open-buffer-right`, `pane.split-right`, `pane.split-down` | `split`, degrading to `show` at six leaves |
-| `pane.focus-left/right/up/down` | `paneInDirection` then `focus` |
-| `pane.move-left/right/up/down` | `paneInDirection` then `move` |
+| `pane.focus-left`, `pane.focus-right`, `pane.focus-up`, `pane.focus-down` | `paneInDirection` then `focus` |
+| `pane.move-left`, `pane.move-right`, `pane.move-up`, `pane.move-down` | `paneInDirection` then `move` |
 | `pane.grow`, `pane.shrink` | `nearestDivider` then `setRatio` |
 | `pane.toggle-zoom`, `pane.close` | `toggleZoom`, `close` |
 | `separator.decrease`, `separator.increase` | focused split then `setRatio` |
