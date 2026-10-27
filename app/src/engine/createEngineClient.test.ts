@@ -33,8 +33,14 @@ it("uses and owns a dedicated Worker when SharedWorker is unavailable", async ()
   const openDedicated = vi.fn(() => worker);
 
   const client = createEngineClient({ openDedicated });
+  const listener = vi.fn();
+  client.subscribe(listener);
   await client.close();
 
   expect(openDedicated).toHaveBeenCalledOnce();
   expect(worker.terminate).toHaveBeenCalledOnce();
+  expect(listener).toHaveBeenCalledWith({
+    type: "notice",
+    message_key: "engine.dedicated_worker_fallback",
+  });
 });

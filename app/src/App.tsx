@@ -11,12 +11,18 @@ interface AppProps {
 
 export function App(props: AppProps) {
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
+  const [engineNotice, setEngineNotice] = createSignal<string>();
 
   onMount(() => {
     const client = props.engineClient ?? createEngineClient();
     const unsubscribe = client.subscribe((message) => {
       if (message.type === "diagnostic") {
         setEngineStatus(`Engine ready: ${message.message}`);
+      }
+      if (message.type === "notice") {
+        setEngineNotice(
+          "This browser uses one connection per tab because SharedWorker is unavailable.",
+        );
       }
     });
 
@@ -31,6 +37,7 @@ export function App(props: AppProps) {
     <main>
       <h1>weblounge</h1>
       <p role="status">{engineStatus()}</p>
+      {engineNotice() !== undefined && <p role="note">{engineNotice()}</p>}
     </main>
   );
 }

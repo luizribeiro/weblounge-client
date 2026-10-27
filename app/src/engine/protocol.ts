@@ -38,6 +38,11 @@ export interface DiagnosticEvent {
   message: string;
 }
 
+export interface Notice {
+  type: "notice";
+  message_key: "engine.dedicated_worker_fallback";
+}
+
 export interface CommandResult {
   type: "command_result";
   id: CommandId;
@@ -52,6 +57,7 @@ export type EngineToUi =
   | Ready
   | IncompatibleBuild
   | DiagnosticEvent
+  | Notice
   | CommandResult
   | FatalError;
 

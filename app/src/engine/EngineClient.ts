@@ -62,6 +62,7 @@ export class WorkerEngineClient implements EngineClient {
   readonly #listeners = new Set<(message: EngineToUi) => void>();
   readonly #commands = new Map<string, CommandWaiter>();
   readonly #renderQueue: EngineToUi[] = [];
+  readonly #initialMessages: EngineToUi[];
   #startWaiter: StartWaiter | undefined;
   #framePending = false;
   #closed = false;
@@ -70,9 +71,11 @@ export class WorkerEngineClient implements EngineClient {
     connection: EngineConnection,
     scheduleFrame: FrameScheduler = (callback) =>
       requestAnimationFrame(callback),
+    initialMessages: readonly EngineToUi[] = [],
   ) {
     this.#connection = connection;
     this.#scheduleFrame = scheduleFrame;
+    this.#initialMessages = [...initialMessages];
     connection.port.addEventListener("message", this.#onMessage);
     connection.port.start?.();
   }
@@ -109,6 +112,9 @@ export class WorkerEngineClient implements EngineClient {
 
   subscribe(listener: (message: EngineToUi) => void): Unsubscribe {
     this.#listeners.add(listener);
+    for (const message of this.#initialMessages.splice(0)) {
+      this.#publish(message);
+    }
     return () => this.#listeners.delete(listener);
   }
 
@@ -212,6 +218,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           command_id: value.command_id,
           message: value.message,
         };
+      }
+      break;
+    case "notice":
+      if (value.message_key === "engine.dedicated_worker_fallback") {
+        return { type: "notice", message_key: value.message_key };
       }
       break;
     case "command_result":

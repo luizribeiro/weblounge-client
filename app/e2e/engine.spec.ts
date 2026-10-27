@@ -6,6 +6,7 @@ test("handshakes through the SharedWorker", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("status")).toHaveText(ready);
+  await expect(page.getByRole("note")).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => typeof SharedWorker))
     .toBe("function");
@@ -21,6 +22,7 @@ test("handshakes through the dedicated Worker fallback", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("status")).toHaveText(ready);
+  await expect(page.getByRole("note")).toContainText("one connection per tab");
   await expect
     .poll(() => page.evaluate(() => typeof SharedWorker))
     .toBe("undefined");

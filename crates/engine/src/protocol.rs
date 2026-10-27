@@ -76,6 +76,11 @@ pub enum EngineToUi {
         /// Diagnostic text.
         message: String,
     },
+    /// Stable user-facing notice emitted by an engine adapter.
+    Notice {
+        /// Localization key interpreted by the UI shell.
+        message_key: String,
+    },
     /// Successful command acknowledgement.
     CommandResult {
         /// Completed command identifier.

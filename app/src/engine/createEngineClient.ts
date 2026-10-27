@@ -31,7 +31,7 @@ export function createEngineClient(
   const worker = constructors.openDedicated(
     new URL("./engine.dedicated-worker.ts", import.meta.url),
   );
-  return new WorkerEngineClient(dedicatedConnection(worker));
+  return dedicatedEngineClient(worker);
 }
 
 function createBrowserEngineClient(): WorkerEngineClient {
@@ -47,7 +47,18 @@ function createBrowserEngineClient(): WorkerEngineClient {
     new URL("./engine.dedicated-worker.ts", import.meta.url),
     { name: "weblounge-engine", type: "module" },
   ) as unknown as DedicatedWorkerHandle;
-  return new WorkerEngineClient(dedicatedConnection(worker));
+  return dedicatedEngineClient(worker);
+}
+
+function dedicatedEngineClient(
+  worker: DedicatedWorkerHandle,
+): WorkerEngineClient {
+  return new WorkerEngineClient(dedicatedConnection(worker), undefined, [
+    {
+      type: "notice",
+      message_key: "engine.dedicated_worker_fallback",
+    },
+  ]);
 }
 
 function sharedConnection(worker: SharedWorkerHandle): EngineConnection {
