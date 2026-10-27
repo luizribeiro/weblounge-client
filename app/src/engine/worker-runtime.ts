@@ -13,14 +13,20 @@ interface WasmEngine {
 
 interface WasmModule {
   default: (module: string) => Promise<unknown>;
-  WasmEngine: new (buildId: string, instanceId: string) => WasmEngine;
+  WasmEngine: new (
+    buildId: string,
+    instanceId: string,
+    onEvent: (encoded: string) => void,
+  ) => WasmEngine;
 }
 
 const wasmModuleUrl = "/engine.js";
 const wasmBinaryUrl = "/engine_bg.wasm";
+const ports = new Set<WorkerHostPort>();
 const engine = loadEngine();
 
 export function attachEnginePort(port: WorkerHostPort): void {
+  ports.add(port);
   let pending = Promise.resolve();
   port.addEventListener("message", (event) => {
     pending = pending.then(() => handleMessage(port, event.data));
@@ -48,7 +54,16 @@ async function loadEngine(): Promise<WasmEngine> {
   const imported: unknown = await import(/* @vite-ignore */ wasmModuleUrl);
   if (!isWasmModule(imported)) throw new Error("invalid wasm module");
   await imported.default(wasmBinaryUrl);
-  return new imported.WasmEngine(__BUILD_ID__, crypto.randomUUID());
+  return new imported.WasmEngine(
+    __BUILD_ID__,
+    crypto.randomUUID(),
+    broadcastEngineEvent,
+  );
+}
+
+function broadcastEngineEvent(encoded: string): void {
+  const event: unknown = JSON.parse(encoded);
+  for (const port of ports) port.postMessage(event);
 }
 
 function isWasmModule(value: unknown): value is WasmModule {

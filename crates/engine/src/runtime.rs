@@ -1,0 +1,710 @@
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use tokio::sync::mpsc;
+
+use crate::{
+    Command, CommandEnvelope, EngineToUi, NetworkConnectionState, NetworkId,
+    direct_target::DirectTarget,
+    state::{NetworkModel, PendingSend, SendTarget},
+};
+
+const DEFAULT_WINDOW_LIMIT: usize = 500;
+
+struct RunningNetwork {
+    instance: u64,
+    client: papo::Client,
+    model: NetworkModel,
+}
+
+struct RuntimeState {
+    next_network_id: u64,
+    next_instance: u64,
+    network: Option<RunningNetwork>,
+}
+
+/// Owns live papo clients independently of any attached UI tab.
+pub(crate) struct Runtime {
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+}
+
+impl Runtime {
+    pub(crate) fn new(outbound: mpsc::UnboundedSender<EngineToUi>) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 1,
+                next_instance: 1,
+                network: None,
+            })),
+            outbound,
+        }
+    }
+
+    pub(crate) fn command(&self, envelope: CommandEnvelope) -> Vec<EngineToUi> {
+        match envelope.command {
+            Command::Diagnostic { message } => vec![
+                EngineToUi::Diagnostic {
+                    command_id: envelope.id.clone(),
+                    message,
+                },
+                EngineToUi::CommandResult { id: envelope.id },
+            ],
+            Command::Connect {
+                label,
+                endpoint,
+                nickname,
+                sasl,
+                autojoin,
+                allow_insecure,
+            } => self.connect(
+                envelope.id,
+                ConnectConfig {
+                    label,
+                    endpoint,
+                    nickname,
+                    account: sasl.account,
+                    password: sasl.password,
+                    autojoin,
+                    allow_insecure,
+                },
+            ),
+            Command::Disconnect { network_id, reason } => {
+                self.disconnect(envelope.id, network_id, reason)
+            }
+            Command::SendMessage { buffer_id, text } => {
+                self.send_message(envelope.id, buffer_id, text)
+            }
+        }
+    }
+
+    fn connect(&self, command_id: String, config: ConnectConfig) -> Vec<EngineToUi> {
+        if !valid_endpoint(&config.endpoint, config.allow_insecure) {
+            return vec![EngineToUi::Notice {
+                message_key: "engine.invalid_endpoint".into(),
+            }];
+        }
+
+        let mut state = lock(&self.state);
+        let id = NetworkId(state.next_network_id);
+        state.next_network_id += 1;
+        let instance = state.next_instance;
+        state.next_instance += 1;
+        let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
+            .sasl(papo::Sasl::plain(config.account, config.password))
+            .allow_insecure_auth(config.allow_insecure)
+            .history_on_reconnect(true);
+        if !config.autojoin.is_empty() {
+            builder = builder.autojoin(config.autojoin);
+        }
+        let (client, events, driver) = builder.build();
+        let model = NetworkModel::new(id, config.label, config.nickname, DEFAULT_WINDOW_LIMIT);
+        let output = vec![
+            model.network_event(),
+            model.buffers_event(),
+            EngineToUi::CommandResult { id: command_id },
+        ];
+        state.network = Some(RunningNetwork {
+            instance,
+            client: client.clone(),
+            model,
+        });
+        drop(state);
+
+        spawn_task(async move {
+            let _ = driver.await;
+        });
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            drain_events(state, outbound, client, events, instance).await;
+        });
+        output
+    }
+
+    fn disconnect(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        reason: Option<String>,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(mut running) = state.network.take() else {
+            return vec![EngineToUi::Notice {
+                message_key: "engine.network_not_found".into(),
+            }];
+        };
+        if running.model.id() != network_id {
+            state.network = Some(running);
+            return vec![EngineToUi::Notice {
+                message_key: "engine.network_not_found".into(),
+            }];
+        }
+        let event = running
+            .model
+            .set_connection(NetworkConnectionState::Stopped, None);
+        let client = running.client;
+        drop(state);
+        spawn_task(async move {
+            let _ = client.quit(reason.unwrap_or_default()).await;
+        });
+        vec![event, EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn send_message(
+        &self,
+        command_id: String,
+        buffer_id: crate::BufferId,
+        text: String,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return vec![EngineToUi::Notice {
+                message_key: "engine.network_not_found".into(),
+            }];
+        };
+        let Some((pending, output)) = running.model.begin_send(buffer_id, text) else {
+            return vec![EngineToUi::Notice {
+                message_key: "engine.buffer_not_sendable".into(),
+            }];
+        };
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let result = send(&client, &pending).await;
+            let event = {
+                let mut state = lock(&state);
+                let Some(running) = state
+                    .network
+                    .as_mut()
+                    .filter(|running| running.instance == instance)
+                else {
+                    return;
+                };
+                match result {
+                    Ok(sent) => running.model.confirm_send(&pending, &sent),
+                    Err(_) => Some(NetworkModel::fail_send(&pending)),
+                }
+            };
+            if let Some(event) = event {
+                let _ = outbound.send(event);
+            }
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
+        output
+    }
+}
+
+struct ConnectConfig {
+    label: String,
+    endpoint: String,
+    nickname: String,
+    account: String,
+    password: String,
+    autojoin: Vec<String>,
+    allow_insecure: bool,
+}
+
+async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent, papo::Error> {
+    match pending.target.clone() {
+        SendTarget::Channel(channel) => client.privmsg(channel, pending.text.clone()).await,
+        SendTarget::Direct(nick) => {
+            DirectTarget::new(nick)
+                .send(client, pending.text.clone())
+                .await
+        }
+    }
+}
+
+async fn drain_events(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    mut events: papo::Events,
+    instance: u64,
+) {
+    while let Some(event) = events.next().await {
+        let history_targets = process_event(&state, &outbound, &client, instance, event);
+        for target in history_targets {
+            let state = Arc::clone(&state);
+            let outbound = outbound.clone();
+            let client = client.clone();
+            spawn_task(async move {
+                let page = match target {
+                    SendTarget::Channel(channel) => client.history(channel).latest().await,
+                    SendTarget::Direct(nick) => client.history(nick).latest().await,
+                };
+                if let Ok(page) = page {
+                    process_history(&state, &outbound, &client, instance, page);
+                }
+            });
+        }
+    }
+}
+
+fn process_event(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    event: papo::Event,
+) -> Vec<SendTarget> {
+    if let papo::Event::History(page) = event {
+        process_history(state, outbound, client, instance, page);
+        return Vec::new();
+    }
+    let snapshot = client.state();
+    let mut state = lock(state);
+    let Some(running) = state
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    else {
+        return Vec::new();
+    };
+    let mut output = Vec::new();
+    let history_targets = match event {
+        papo::Event::Connecting(_) => {
+            output.push(
+                running
+                    .model
+                    .set_connection(NetworkConnectionState::Connecting, None),
+            );
+            Vec::new()
+        }
+        papo::Event::Connected(connected) => {
+            output.push(running.model.set_connection(
+                NetworkConnectionState::Online,
+                Some(connected.nick.to_string()),
+            ));
+            output.extend(running.model.sync_channels(&snapshot));
+            Vec::new()
+        }
+        papo::Event::Lagged(_) => {
+            running.model.rebuild_name_keys(&snapshot);
+            output.extend(running.model.sync_channels(&snapshot));
+            output.push(running.model.buffers_event());
+            running.model.history_targets()
+        }
+        papo::Event::CasemappingChanged(_) => {
+            running.model.rebuild_name_keys(&snapshot);
+            output.push(running.model.buffers_event());
+            Vec::new()
+        }
+        papo::Event::ChannelRenamed(renamed) => {
+            if let Some(event) = running.model.rename_channel(&renamed.old, renamed.new) {
+                output.push(event);
+            }
+            Vec::new()
+        }
+        papo::Event::NickChanged(changed) => {
+            if let Some(event) = running
+                .model
+                .rename_direct(changed.actor.nick(), changed.new)
+            {
+                output.push(event);
+            }
+            Vec::new()
+        }
+        papo::Event::Message(message) => {
+            output.extend(running.model.receive(&message, false, &snapshot));
+            Vec::new()
+        }
+        papo::Event::Joined(_) | papo::Event::ChannelSynced(_) => {
+            output.extend(running.model.sync_channels(&snapshot));
+            Vec::new()
+        }
+        papo::Event::Disconnected(disconnected) => {
+            let connection = if disconnected.is_reconnecting() {
+                NetworkConnectionState::Reconnecting
+            } else {
+                NetworkConnectionState::Stopped
+            };
+            output.push(running.model.set_connection(connection, None));
+            Vec::new()
+        }
+        _ => Vec::new(),
+    };
+    drop(state);
+    for event in output {
+        let _ = outbound.send(event);
+    }
+    history_targets
+}
+
+fn process_history(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    page: papo::HistoryPage,
+) {
+    let snapshot = client.state();
+    let mut state = lock(state);
+    let Some(running) = state
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    else {
+        return;
+    };
+    let mut output = Vec::new();
+    for item in page.items {
+        if let papo::Event::Message(message) = item {
+            output.extend(running.model.receive(&message, true, &snapshot));
+        }
+    }
+    drop(state);
+    for event in output {
+        let _ = outbound.send(event);
+    }
+}
+
+fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
+    endpoint.starts_with("wss://") || (allow_insecure && endpoint.starts_with("ws://"))
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn spawn_task(future: impl std::future::Future<Output = ()> + 'static) {
+    wasm_bindgen_futures::spawn_local(future);
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
+    tokio::spawn(future);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use papo_testing::wire;
+    use tokio::sync::mpsc;
+
+    use super::{RunningNetwork, RuntimeState, lock, process_event};
+    use crate::{
+        BufferKind, EngineToUi, NetworkId,
+        state::{NetworkModel, SendTarget},
+    };
+
+    async fn next_matching(
+        events: &mut papo::Events,
+        predicate: impl Fn(&papo::Event) -> bool,
+    ) -> papo::Event {
+        loop {
+            let event = events.next().await.expect("papo event stream remains open");
+            if predicate(&event) {
+                return event;
+            }
+        }
+    }
+
+    fn harness(
+        client: papo::Client,
+    ) -> (
+        Arc<Mutex<RuntimeState>>,
+        mpsc::UnboundedSender<EngineToUi>,
+        mpsc::UnboundedReceiver<EngineToUi>,
+    ) {
+        let model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let state = Arc::new(Mutex::new(RuntimeState {
+            next_network_id: 2,
+            next_instance: 2,
+            network: Some(RunningNetwork {
+                instance: 1,
+                client,
+                model,
+            }),
+        }));
+        let (outbound, receiver) = mpsc::unbounded_channel();
+        (state, outbound, receiver)
+    }
+
+    fn collect(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>) -> Vec<EngineToUi> {
+        let mut output = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            output.push(event);
+        }
+        output
+    }
+
+    #[tokio::test]
+    async fn connected_and_reconnected_refresh_network_state_from_wire() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, connected);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::NetworkStateChanged { network }
+                if network.state == crate::NetworkConnectionState::Online
+        )));
+
+        wire.close().await;
+        let disconnected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Disconnected(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, disconnected);
+        client.reconnect().await.expect("manual reconnect starts");
+        wire.register(&[]).await;
+        let connected = next_matching(
+            &mut events,
+            |event| matches!(event, papo::Event::Connected(connected) if connected.reconnected),
+        )
+        .await;
+        process_event(&state, &outbound, &client, 1, connected);
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::NetworkStateChanged { network }
+                if network.state == crate::NetworkConnectionState::Online
+        )));
+    }
+
+    #[tokio::test]
+    async fn casemapping_channel_and_nick_changes_rebuild_stable_buffers() {
+        let caps = ["draft/channel-rename", "message-tags"];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+
+        wire.server(":weblounge!u@host JOIN #Room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        process_event(&state, &outbound, &client, 1, joined);
+        let channel_id = collect(&mut receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferAdded { buffer } if buffer.kind == BufferKind::Channel => {
+                    Some(buffer.id)
+                }
+                _ => None,
+            })
+            .expect("join adds a channel buffer");
+
+        wire.server(":oper!o@host RENAME #Room #Archive :Archived")
+            .await;
+        let renamed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelRenamed(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, renamed);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer| buffer.id == channel_id && buffer.title == "#Archive")
+        )));
+
+        wire.server(":alice!a@host PRIVMSG weblounge :hello").await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        let direct_id = collect(&mut receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferAdded { buffer } if buffer.kind == BufferKind::Direct => {
+                    Some(buffer.id)
+                }
+                _ => None,
+            })
+            .expect("private line adds a direct buffer");
+        wire.server(":alice!a@host NICK alicia").await;
+        let changed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::NickChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, changed);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer| buffer.id == direct_id && buffer.title == "alicia")
+        )));
+
+        wire.server(":offline.test 005 weblounge CASEMAPPING=ascii CHANTYPES=# :are supported")
+            .await;
+        let changed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::CasemappingChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, changed);
+        assert!(
+            collect(&mut receiver)
+                .iter()
+                .any(|event| matches!(event, EngineToUi::BuffersChanged { .. }))
+        );
+    }
+
+    #[tokio::test]
+    async fn lagged_resyncs_and_returns_open_history_targets() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").event_capacity(1));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        let snapshot = client.state();
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("running network")
+            .model
+            .sync_channels(&snapshot);
+
+        for index in 0..4 {
+            wire.server(format!(
+                ":alice!a@host PRIVMSG #room :queued message {index}"
+            ))
+            .await;
+        }
+        let lagged =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Lagged(_))).await;
+        let targets = process_event(&state, &outbound, &client, 1, lagged);
+
+        assert!(matches!(targets.as_slice(), [SendTarget::Channel(channel)] if channel == "#room"));
+    }
+
+    #[tokio::test]
+    async fn no_echo_send_confirms_without_server_metadata() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = model
+            .history_targets()
+            .into_iter()
+            .find_map(|target| match target {
+                SendTarget::Channel(channel) if channel == "#room" => Some(channel),
+                _ => None,
+            })
+            .expect("joined channel is projected");
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(channel))
+            .expect("projected channel has a stable id");
+        let (pending, _) = model
+            .begin_send(buffer_id, "hello".into())
+            .expect("channel is sendable");
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move {
+            super::send(&sender, &pending)
+                .await
+                .map(|sent| (pending, sent))
+        });
+        assert_eq!(wire.next_sent().await, "PRIVMSG #room hello");
+        let (pending, metadata) = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+        let event = model
+            .confirm_send(&pending, &metadata)
+            .expect("optimistic row exists");
+
+        assert!(matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
+                if message.server_ids.is_empty() && message.server_time_ms.is_none()
+        ));
+    }
+
+    #[tokio::test]
+    async fn labelled_split_send_preserves_every_msgid_without_an_echo_row() {
+        let caps = ["echo-message", "labeled-response", "message-tags"];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = model
+            .history_targets()
+            .into_iter()
+            .find_map(|target| match target {
+                SendTarget::Channel(channel) if channel == "#room" => Some(channel),
+                _ => None,
+            })
+            .expect("joined channel is projected");
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(channel))
+            .expect("projected channel has a stable id");
+        let text = "a".repeat(600);
+        let (pending, _) = model
+            .begin_send(buffer_id, text)
+            .expect("channel is sendable");
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move {
+            super::send(&sender, &pending)
+                .await
+                .map(|sent| (pending, sent))
+        });
+        assert!(
+            wire.next_sent()
+                .await
+                .starts_with("@label=0 PRIVMSG #room ")
+        );
+        assert!(
+            wire.next_sent()
+                .await
+                .starts_with("@label=0-1 PRIVMSG #room ")
+        );
+        wire.server("@label=0;msgid=first :weblounge!u@host PRIVMSG #room :first part")
+            .await;
+        wire.server("@label=0-1;msgid=second :weblounge!u@host PRIVMSG #room :second part")
+            .await;
+        let (pending, metadata) = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+        let event = model
+            .confirm_send(&pending, &metadata)
+            .expect("optimistic row exists");
+
+        assert!(matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
+                if message.server_ids == ["first", "second"]
+        ));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), events.next())
+                .await
+                .is_err(),
+            "correlated own echoes must be consumed into Sent"
+        );
+    }
+}

@@ -1,6 +1,12 @@
 //! Platform-neutral weblounge engine composition.
 
+mod direct_target;
+mod name_key;
 mod protocol;
+mod runtime;
+mod state;
+
+use tokio::sync::mpsc;
 
 pub use protocol::{
     BufferId, BufferKind, BufferProjection, Command, CommandEnvelope, EngineToUi, Hello,
@@ -12,15 +18,35 @@ pub use protocol::{
 pub struct Engine {
     build_id: String,
     instance_id: String,
+    runtime: runtime::Runtime,
 }
 
 impl Engine {
     /// Creates an engine for one application build and host lifetime.
     #[must_use]
     pub fn new(build_id: impl Into<String>, instance_id: impl Into<String>) -> Self {
+        let (outbound, _events) = mpsc::unbounded_channel();
+        Self::with_sender(build_id, instance_id, outbound)
+    }
+
+    /// Creates an engine and a receiver for asynchronous protocol events.
+    pub fn with_events(
+        build_id: impl Into<String>,
+        instance_id: impl Into<String>,
+    ) -> (Self, mpsc::UnboundedReceiver<EngineToUi>) {
+        let (outbound, events) = mpsc::unbounded_channel();
+        (Self::with_sender(build_id, instance_id, outbound), events)
+    }
+
+    fn with_sender(
+        build_id: impl Into<String>,
+        instance_id: impl Into<String>,
+        outbound: mpsc::UnboundedSender<EngineToUi>,
+    ) -> Self {
         Self {
             build_id: build_id.into(),
             instance_id: instance_id.into(),
+            runtime: runtime::Runtime::new(outbound),
         }
     }
 
@@ -29,7 +55,7 @@ impl Engine {
     pub fn handle(&self, message: UiToEngine) -> Vec<EngineToUi> {
         match message {
             UiToEngine::Hello(hello) => self.hello(hello),
-            UiToEngine::Command(envelope) => Self::command(envelope),
+            UiToEngine::Command(envelope) => self.runtime.command(envelope),
         }
     }
 
@@ -44,21 +70,6 @@ impl Engine {
                 engine: self.build_id.clone(),
                 ui: hello.build_id,
             }]
-        }
-    }
-
-    fn command(envelope: CommandEnvelope) -> Vec<EngineToUi> {
-        match envelope.command {
-            Command::Diagnostic { message } => vec![
-                EngineToUi::Diagnostic {
-                    command_id: envelope.id.clone(),
-                    message,
-                },
-                EngineToUi::CommandResult { id: envelope.id },
-            ],
-            Command::Connect { .. } | Command::Disconnect { .. } | Command::SendMessage { .. } => {
-                vec![EngineToUi::CommandResult { id: envelope.id }]
-            }
         }
     }
 }

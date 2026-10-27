@@ -1122,14 +1122,17 @@ dependencies = [
  "serde_json",
  "tokio",
  "ts-rs",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
 name = "weblounge-engine-wasm"
 version = "0.1.0"
 dependencies = [
+ "js-sys",
  "serde_json",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "weblounge-engine",
 ]
 

@@ -1,5 +1,6 @@
 //! WebAssembly boundary for the worker-owned weblounge engine.
 
+use js_sys::Function;
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 use weblounge_engine::{Engine, UiToEngine};
 
@@ -12,8 +13,16 @@ impl WasmEngine {
     /// Creates one engine for the lifetime of its worker.
     #[must_use]
     #[wasm_bindgen(constructor)]
-    pub fn new(build_id: String, instance_id: String) -> Self {
-        Self(Engine::new(build_id, instance_id))
+    pub fn new(build_id: String, instance_id: String, on_event: Function) -> Self {
+        let (engine, mut events) = Engine::with_events(build_id, instance_id);
+        wasm_bindgen_futures::spawn_local(async move {
+            while let Some(event) = events.recv().await {
+                if let Ok(encoded) = serde_json::to_string(&event) {
+                    let _ = on_event.call1(&JsValue::NULL, &JsValue::from_str(&encoded));
+                }
+            }
+        });
+        Self(engine)
     }
 
     /// Handles one JSON envelope and returns an ordered JSON event array.
