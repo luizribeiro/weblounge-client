@@ -9,7 +9,7 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Milestone 2 tasks
 
-Each task is one fresh codex session, reviewed before the next starts.
+Each task is one fresh codex session, reviewed before the next starts. The orchestrating session pushes `main` to https://github.com/luizribeiro/weblounge-client after each reviewed task; codex sessions never push.
 
 1. [x] Flake, Rust workspace (papo pinned by git rev), SolidJS app skeleton, `nix flake check`, GitHub Actions.
 2. [ ] wasm engine in a SharedWorker (dedicated Worker fallback) talking to the UI through `EngineClient`; local Ergo for dev.
