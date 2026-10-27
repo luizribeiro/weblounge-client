@@ -12,7 +12,7 @@ mod tests {
     #[tokio::test]
     async fn client_builder_registers_with_papo() {
         let (_client, mut events, mut wire) =
-            wire(super::client_builder("ircs://offline.test", "weblounge"));
+            wire(super::client_builder("irc://offline.test", "weblounge"));
 
         wire.register(&[]).await;
 
