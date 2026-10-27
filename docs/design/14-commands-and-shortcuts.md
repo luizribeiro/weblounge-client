@@ -151,7 +151,7 @@ and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-disco
 | `buffer.previous` / `buffer.next` | `⌥Up` / `⌥Down` | `Alt+Up` / `Alt+Down` | same; never in text | both |
 | `buffer.previous-unread` / `buffer.next-unread` | `⌥⇧Up` / `⌥⇧Down` | `Alt+Shift+Up` / `Alt+Shift+Down` | same; never in text | both |
 | `buffer.jump-important` | `⌥A` | `Alt+A` | same; physical `KeyA`, never in text | irssi / ours |
-| `buffer.jump-1` … `buffer.jump-9` | `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | `Alt+1…9`; Firefox/Linux: `Ctrl+Alt+1…9` | ours |
+| `buffer.jump-1` … `buffer.jump-9` | `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | macOS/Windows: `Alt+1…9`; Linux: `Ctrl+Alt+1…9` | ours |
 | `buffer.mark-read` | `Esc` in message list | `Esc` in message list | same, via `navigation.escape` | both |
 | `buffer.mark-all-read` | `⇧Esc` | `Shift+Esc` | `Mod+Alt+A` | Slack / ours web fallback |
 | `buffer.load-older` | `⌥PgUp` | `Alt+PgUp` | same, including from the composer | ours |
@@ -159,7 +159,7 @@ and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-disco
 | `pane.focus` / `pane.show-buffer` | focus pane / `Return` on selected buffer | focus pane / `Enter` | same | ours |
 | `pane.open-buffer-right` | `⌘Return` | `Ctrl+Enter` | selected sidebar/switcher row; same | Slack |
 | `pane.split-right` / `pane.split-down` | `⌘\` / `⇧⌘\` | `Ctrl+\` / `Ctrl+Shift+\` | pane mode `\` / `-` | ours |
-| `pane.focus-left/right/up/down` | `⇧⌘Left/Right/Up/Down` | `Ctrl+Shift+Left/Right/Up/Down` | pane mode arrows | ours |
+| `pane.focus-left/right/up/down` | `⌃⌘Left/Right/Up/Down` (works in the composer) | `Ctrl+Shift+Left/Right/Up/Down` outside text inputs only; in text, pane mode arrows | pane mode arrows | ours |
 | `pane.move-left/right/up/down` | `⌥⇧⌘A/D/W/S` | `Ctrl+Alt+Shift+A/D/W/S` | pane mode `Shift+arrows` | ours |
 | `pane.grow` / `pane.shrink` | `⌥⌘P`, then `]` / `[` | `Ctrl+Alt+P`, then `]` / `[` | pane mode `]` / `[`; focused separators also use arrows | ours |
 | `pane.toggle-zoom` | `⇧⌘Return`; pane mode `Z` | `Ctrl+Shift+Enter`; pane mode `Z` | same | ours |
@@ -222,7 +222,9 @@ moving DOM focus and shows a small nonmodal tokenized overlay beside the focused
 | `1` … `9` | focus pane by stable visual order; unavailable numbers do nothing |
 | `Esc` | exit without an action |
 
-The mode is one-shot: a successful action exits it. It also exits after 1,500ms, on blur, when
+The mode is one-shot for focus, move, split, close and zoom: a successful action exits it. Resize
+(`[` / `]`) is repeatable, like tmux's repeat keys: it keeps the mode active and restarts the
+timeout, so a pane can be resized step by step. The mode also exits after 1,500ms without a key, on blur, when
 focus leaves the desktop workspace, on composition start, or on an unmatched key. Escape and
 matched keys are consumed; an unmatched key exits without being consumed, so a printable key still
 reaches the composer. The overlay and a polite live region announce “Pane mode” plus the key groups;
@@ -247,12 +249,12 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 | native `Mod+[`/`]`, `Alt+Left/Right`; web `Mod+Alt+[`/`]` | Safari and other browsers own the native history chords, and Chrome macOS owns `⌥⌘Left/Right` for tabs. Brackets avoid both published sets. `Ctrl+Alt` may be AltGr, so the AltGraph guard wins. **Verify (manual/Playwright):** browser delivery and GNOME/KDE custom defaults. |
 | native `Mod+Shift+K`; web macOS `Mod+Shift+K`; web Linux/Windows `Ctrl+Alt+K` | Firefox owns `Ctrl+Shift+K` on Linux/Windows and `⌥⌘K` on macOS for Web Console. The platform split avoids both; `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** Safari and Linux AltGr layouts. |
 | `Alt+Up/Down`, `Alt+Shift+Up/Down`, `Alt+A` | These overlap macOS text movement, Windows/NVDA reading, menu mnemonics, and Option-produced characters. They use `event.code` where required and never run in text. **Verify (manual/Playwright):** NVDA focus mode and installed webviews. |
-| native `Mod+1…9`; web `Alt+1…9` | Chrome, Firefox, and Safari own `Mod+digits`. Firefox/Linux also owns `Alt+digits`, so that host gets `Ctrl+Alt+digits`; AltGraph is never captured. Windows menu access and macOS Option characters were checked. **Verify (manual/Playwright):** all digit rows on each browser/OS. |
+| native `Mod+1…9`; web `Alt+1…9` | Chrome, Firefox, and Safari own `Mod+digits`. On Linux both Firefox and Chrome own `Alt+digits`, so Linux gets `Ctrl+Alt+digits`; AltGraph is never captured. Windows menu access and macOS Option characters were checked. **Verify (manual/Playwright):** all digit rows on each browser/OS. |
 | native `Shift+Esc`; web `Mod+Alt+A` | Chrome/Firefox may own Shift+Escape for Task Manager, so it is Tauri-only. The web chord avoids Chrome's `Ctrl+Shift+A` tab search and keeps `Alt+A` available for important unread. **Verify (manual/Playwright):** VoiceOver and Linux AltGr behavior. |
 | `Alt+PgUp` | Browsers use `Ctrl+PgUp/PgDn` for tabs; no major OS/browser default was found for Alt+PageUp. Screen readers may interpret paging in browse mode. **Verify (manual/Playwright):** NVDA and VoiceOver from the composer. |
 | `Mod+Alt+P` pane prefix | Avoids browser print (`Mod+P`), Firefox private browsing (`Ctrl+Shift+P`), macOS workspace/tab keys, GNOME workspace arrows, and VoiceOver's Control+Option modifier. Firefox uses it only inside its PDF viewer for presentation mode, not on an app page. `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** KDE/GNOME custom global shortcuts and Safari. |
 | native `Mod+\`, `Mod+Shift+\`; pane-mode `\`/`-` | Safari uses Shift+Command+backslash for tab overview, so native split chords are Tauri-only. Plain symbols are captured only after the explicit prefix and match produced characters. **Verify (manual/Playwright):** ISO/AZERTY layouts. |
-| native pane focus `Mod+Shift+arrows` | macOS/Windows use these for text selection, so they never run in text. Unlike `Mod+Alt+arrows`, they avoid Chrome macOS tab switching, GNOME/Ubuntu workspaces, Intel display rotation, Windows Magnifier, and VoiceOver. **Verify (manual):** KDE custom bindings. |
+| native pane focus `⌃⌘arrows` (macOS), `Ctrl+Shift+arrows` (Linux/Windows) | `⌃⌘arrows` has no default text-editing binding, so it works from the composer; **verify (manual):** Mission Control/Spaces customisations and third-party window managers (Rectangle, Magnet) that commonly claim `⌃⌘`/`⌃⌥⌘` arrows. `Ctrl+Shift+arrows` selects text on Linux/Windows, so it never runs in text; pane mode covers that case. Unlike `Mod+Alt+arrows`, they avoid Chrome macOS tab switching, GNOME/Ubuntu workspaces, Intel display rotation, Windows Magnifier, and VoiceOver. **Verify (manual):** KDE custom bindings. |
 | native pane move `Mod+Alt+Shift+A/D/W/S` | Letter directions avoid GNOME's shifted workspace arrows and graphics-driver rotation arrows. macOS Dock/Hide commands without Shift were checked; AltGraph is never captured. **Verify (manual):** localized desktop-environment shortcuts. |
 | pane-mode arrows, shifted arrows, letters, digits, brackets | These conflict with editing and screen-reader browse keys only inside the explicitly entered, visible mode; unmatched input passes through. **Verify (manual/Playwright):** VoiceOver Quick Nav and NVDA browse/focus modes. |
 | `Mod+Shift+Enter` | No major browser, desktop, or screen-reader reservation was found. **Verify (manual/Playwright):** Safari, VoiceOver, GNOME, and KDE. |
@@ -366,10 +368,11 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
 - Keep overrides device-local data with no milestone-1 UI.
 - Give every frequent action a direct binding in every applicable shell; controls and switcher rows
   are supplemental routes.
-- Use `Mod+Alt+P` for a one-shot, 1,500ms pane mode in web and Tauri; use it as the cross-shell
+- Use `Mod+Alt+P` for a 1,500ms pane mode in web and Tauri (one-shot, except repeatable resize); use it as the cross-shell
   resize binding and as the web fallback for host-owned pane chords.
-- Use `Alt+1…9` for web buffer slots, except `Ctrl+Alt+1…9` on Firefox/Linux.
-- Use `Mod+Shift+arrows` for native pane focus and shifted `W/A/S/D` chords for native pane moves,
+- Use `Alt+1…9` for web buffer slots on macOS/Windows and `Ctrl+Alt+1…9` on Linux.
+- Use `⌃⌘arrows` (macOS) and `Ctrl+Shift+arrows` outside text (Linux/Windows; pane mode in text) for native pane focus,
+  because `Mod+Shift+arrows` selects text in the composer; and shifted `W/A/S/D` chords for native pane moves,
   avoiding browser tab and desktop workspace arrow bindings.
 - Luiz, 2026-10-27: optimize defaults for people coming from Slack and Discord; keep terminal/Vim
   sequences and single-letter message actions in an optional later preset only.
