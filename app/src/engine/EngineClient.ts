@@ -68,7 +68,8 @@ export class WorkerEngineClient implements EngineClient {
 
   constructor(
     connection: EngineConnection,
-    scheduleFrame: FrameScheduler = requestAnimationFrame,
+    scheduleFrame: FrameScheduler = (callback) =>
+      requestAnimationFrame(callback),
   ) {
     this.#connection = connection;
     this.#scheduleFrame = scheduleFrame;

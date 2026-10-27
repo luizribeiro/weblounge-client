@@ -129,7 +129,7 @@
           version = "0.1.0";
           src = appSource;
           fetcherVersion = 5;
-          hash = "sha256-n2+0pJ05Daa+SckKEg+IrfNW/EFMdujNDc85IzrkIPM=";
+          hash = "sha256-PoFTXdWNS24vSnzR3912vtXtkf0TAkef8YD+WKhU3g0=";
         };
         appCheck =
           name: command:
@@ -169,6 +169,27 @@
           installPhase = ''
             cp -r app/dist $out
           '';
+        };
+        e2e = pkgs.stdenvNoCC.mkDerivation {
+          pname = "weblounge-e2e";
+          version = "0.1.0";
+          src = appSource;
+          inherit pnpmDeps;
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.pnpmConfigHook
+          ];
+          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          WEBLOUNGE_APP_DIR = "${app}";
+          WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          buildPhase = ''
+            runHook preBuild
+            pnpm --filter @weblounge/app e2e
+            runHook postBuild
+          '';
+          installPhase = "touch $out";
         };
         cargoHook = name: command: {
           enable = true;
@@ -271,6 +292,7 @@
           );
           wasm = engineWasm;
           app-build = app;
+          inherit e2e;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
           vitest = appCheck "vitest" "${pkgs.pnpm}/bin/pnpm test";
