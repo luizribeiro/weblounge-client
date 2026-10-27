@@ -70,7 +70,7 @@ memlab. `wasm-bindgen-cli` is pinned to papo's `wasm-bindgen` version, currently
 revision `7d5e4bf`.
 
 The initial dev shell contains only tools needed for the web vertical slice. Tauri libraries,
-Android SDK/NDK, and extra `rust-src` components wait for the packaging milestone. CI initially
+the Android SDK/NDK, and `rust-src` wait for the packaging milestone. CI initially
 gates x86_64-linux with Chromium; platform packaging checks arrive with their shells.
 
 Rust uses edition 2024, strict clippy/rustfmt, `thiserror`, and no `unwrap` outside tests. The
@@ -89,7 +89,7 @@ Only dependencies justified by the current designs are selected now.
 | `thiserror` | Typed error boundaries. |
 | `tracing` | Local diagnostics and performance spans. |
 | `tokio` | Papo already uses it on native and wasm; native engine task coordination also uses it. |
-| `tokio-util` | Native cancellation tokens where structured task shutdown needs them. |
+| `tokio-util` | Cancellation tokens for structured connection-task shutdown. |
 | `wasm-bindgen`, `wasm-bindgen-futures`, `web-sys` | Narrow worker bridge and browser APIs; versions remain compatible with papo. |
 | `solid-js` | Fine-grained DOM reactivity. |
 | `@tanstack/solid-virtual` | Bounded message/member DOM. |
