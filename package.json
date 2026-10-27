@@ -1,0 +1,10 @@
+{
+  "name": "weblounge-client",
+  "private": true,
+  "packageManager": "pnpm@12.9.0",
+  "scripts": {
+    "check": "biome check . && pnpm typecheck && pnpm test",
+    "typecheck": "pnpm --filter @weblounge/app typecheck",
+    "test": "pnpm --filter @weblounge/app test"
+  }
+}

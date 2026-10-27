@@ -69,7 +69,10 @@
             };
             check-toml.enable = true;
             actionlint.enable = true;
-            yamllint.enable = true;
+            yamllint = {
+              enable = true;
+              excludes = [ "^pnpm-lock\\.yaml$" ];
+            };
           };
         };
       in
