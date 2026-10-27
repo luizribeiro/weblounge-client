@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = ["crates/engine", "crates/engine-wasm"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/luizribeiro/weblounge-client"
+
+[workspace.dependencies]
+papo = { git = "https://github.com/luizribeiro/papo", rev = "7d5e4bf2da42f1863753e1311ee817db9e08aa2f", features = ["precis", "websocket"] }
+papo-testing = { git = "https://github.com/luizribeiro/papo", rev = "7d5e4bf2da42f1863753e1311ee817db9e08aa2f" }
+thiserror = "2.0.21"
+tokio = { version = "1.53.3", features = ["macros", "rt"] }
+wasm-bindgen = "=0.2.129"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"

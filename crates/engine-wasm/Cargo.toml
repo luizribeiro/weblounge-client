@@ -1,0 +1,17 @@
+[package]
+name = "weblounge-engine-wasm"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen.workspace = true
+weblounge-engine = { path = "../engine" }
+
+[lints]
+workspace = true

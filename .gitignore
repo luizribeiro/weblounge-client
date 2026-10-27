@@ -1,0 +1,5 @@
+/.direnv/
+/.pre-commit-config.yaml
+/target/
+/app/dist/
+/app/node_modules/
