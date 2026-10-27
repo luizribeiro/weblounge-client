@@ -1,23 +1,17 @@
 # 03 — Transport and connection lifecycle
 
-Status: proposed for milestone 1 review.
+Status: revised for milestone 1 review.
 
 ## Problem
 
-Each configured network needs an independent connection that behaves consistently in a browser
-worker, Tauri desktop, and Tauri mobile. The browser can open only WebSockets; native builds can
-also open TCP/TLS. Connections must expose useful onboarding progress, preserve cached state while
-offline, reconnect without battery-hungry polling, and stop cleanly when mobile operating systems
-suspend the app.
+Each configured network needs an independent papo connection. Browsers may open WebSockets only;
+native shells later may also open TCP/TLS. Papo owns transport I/O, TLS, STS, IRC framing, CAP,
+SASL, registration, keepalive, rate limiting, reconnect, and typed failure classification.
 
-Papo already owns IRC framing, transport I/O, TLS, STS, CAP negotiation, SASL, registration,
-keepalive, rate limiting, reconnection, and typed failure classification. The engine composes those
-APIs and must not implement parallel protocol machinery.
+Milestone 1 needs one WebSocket vertical slice while retaining an honest endpoint boundary for
+later native shells.
 
-## Platform endpoint types
-
-Persisted configuration can describe every endpoint, but a platform connection factory accepts
-only endpoint types it can actually open.
+## Endpoint configuration
 
 ```rust
 pub struct NetworkConnectionConfig {
@@ -25,296 +19,177 @@ pub struct NetworkConnectionConfig {
     pub identity: IdentityConfig,
     pub authentication: AuthenticationConfig,
     pub autojoin: Vec<ChannelNameConfig>,
-    pub reconnect: ReconnectPolicy,
 }
 
 pub enum EndpointDescriptor {
-    Tcp(TcpEndpointDescriptor),
-    WebSocket(WebSocketEndpointDescriptor),
+    TcpTls { host: Host, port: NonZeroU16 },
+    WebSocket { url: WebSocketUrl },
 }
 
-pub struct TcpEndpointDescriptor {
-    pub host: Host,
-    pub port: NonZeroU16,
-    pub security: TcpSecurity,
-}
-
-pub enum TcpSecurity { Tls, StartPlaintextWithSts }
-
-pub struct WebSocketEndpointDescriptor {
-    pub url: WebSocketUrl,
-}
-
-pub struct WebPlatform;
-pub struct NativePlatform;
-
-pub trait Platform {
-    type Endpoint: ConnectableEndpoint;
-    fn compatible(descriptor: &EndpointDescriptor) -> Option<Self::Endpoint>;
-}
-
-pub enum WebEndpoint {
-    SecureWebSocket(WebSocketUrl),
-}
-
-pub enum NativeEndpoint {
-    Tls(TcpEndpoint),
-    PlaintextWithSts(TcpEndpoint),
-    WebSocket(WebSocketUrl),
+pub enum EndpointPolicy {
+    Production,
+    LocalTest,
 }
 ```
 
-`WebPlatform::Endpoint` has no TCP variant, so browser connection code cannot construct a TCP
-attempt. Generic web onboarding also creates only `WebEndpoint`; it may display incompatible
-persisted TCP descriptors as unavailable. Production credentials require `wss://` or native TLS.
-Plain `ws://` exists only for explicit local development fixtures and is never produced by normal
-onboarding.
+A small cfg-selected conversion function turns a descriptor into `papo::Endpoint`. The wasm
+function rejects TCP; the native function accepts TLS TCP and WebSocket. This needs no generic
+`Platform` trait or `PhantomData`.
 
-Native endpoint conversion uses `papo::Endpoint::{tls, plaintext}` for TCP or parses a full
-`ws://`/`wss://` URL (including paths). Native `papo` enables its `websocket` Cargo feature and one
-rustls provider. Browser `wasm32-unknown-unknown` uses papo's browser WebSocket backend without the
-native websocket feature; its TLS policy belongs to the browser.
+Production onboarding constructs only TLS TCP or `wss://`. `ws://` is accepted solely under the
+explicit local-test policy so browser Playwright can reach a loopback fixture. Papo currently
+exposes `Endpoint::tls/plaintext` on browser targets despite documenting TCP as absent there;
+weblounge still prevents construction at its boundary and files that mismatch as a papo bug.
 
-The endpoint list is ordered by user/preset preference. Compatibility filtering is deterministic
-and never silently changes security. Attempting later compatible endpoints after a connection
-failure depends on the papo gap listed below.
+Endpoint order is persisted, but milestone 1 connects to the first compatible endpoint. Papo's
+builder accepts one endpoint, so ordered failover remains the explicit papo question below rather
+than a second retry controller in weblounge.
 
 ## Identity and authentication
 
 ```rust
-pub struct IdentityConfig {
-    pub nick: NonEmptyString,
-    pub alternate_nicks: Vec<NonEmptyString>,
-    pub username: Option<NonEmptyString>,
-    pub realname: Option<NonEmptyString>,
-}
-
 pub enum AuthenticationConfig {
     None,
     Sasl { account: NonEmptyString, secret: SecretRef, policy: SaslPolicy },
     ServerPassword { secret: SecretRef },
     HostedHandover { token: SecretRef },
 }
-
-pub enum SaslPolicy {
-    Plain,
-    ScramThenPlain,
-    OAuthBearer,
-    External { identity: Option<String> },
-}
 ```
 
-Secrets are resolved immediately before building papo and are never stored in engine snapshots,
-logs, IPC errors, or persisted network records. Configuration maps to public APIs:
+Secrets resolve immediately before client construction and enter papo as `papo::Secret`. They do
+not enter snapshots, logs, IPC errors, or persisted network records. Configuration maps to public
+builder methods such as `sasl`, `password`, `autojoin`, `metadata_subscriptions`, `reconnect`, and
+`connect_timeout`. The app never sends CAP, AUTHENTICATE, PASS, NICK, or USER itself.
 
-- `Client::builder(endpoint, nick)`, `.alt_nicks`, `.username`, and `.realname`;
-- `.sasl(Sasl::plain(...))` for weblounge username/password;
-- `Sasl::any`, `oauth_bearer`, or `external` only when explicitly configured;
-- `.password(Secret)` for bouncer/server passwords;
-- `.autojoin` / `.autojoin_with_key`, `.who_on_join`, `.metadata_subscriptions`;
-- `.reconnect(papo::Reconnect)` and `.connect_timeout`.
+Milestone 1 uses weblounge username/password over SASL and secure WebSocket. Plaintext plus STS is
+not exposed in the first release.
 
-The app does not send `CAP`, `AUTHENTICATE`, `PASS`, `NICK`, or `USER`. Papo refuses credentials
-on insecure transports unless `allow_insecure_auth(true)` is explicitly selected; production code
-never selects it. Papo requests its stable known capabilities by default. Optional known features
-use `Builder::enable(Feature)`, never `request_caps`; the latter is reserved for genuinely unknown
-vendor capabilities after Luiz approves them.
-
-## Connection owner
+## Connection owner and identities
 
 ```rust
-pub struct ConnectionSupervisor<P: Platform> {
-    platform: PhantomData<P>,
-    networks: HashMap<NetworkId, NetworkTask>,
-}
-
-pub enum NetworkTask {
-    Stopped(StoppedConnection),
-    Running(RunningConnection),
-    Suspending(SuspendingConnection),
-}
-
 pub struct RunningConnection {
-    pub generation: ConnectionGeneration,
+    pub instance: ClientInstanceId,
+    pub epoch: ConnectionEpoch,
     pub client: papo::Client,
     pub cancel: CancellationToken,
 }
 
-pub trait ConnectionFactory<P: Platform> {
-    async fn build(
-        &self,
-        endpoint: P::Endpoint,
-        config: ResolvedConnectionConfig,
-    ) -> Result<(papo::Client, papo::Events, papo::Driver), ConnectionSetupError>;
+pub enum ConnectionState {
+    Stopped { reason: OfflineReason },
+    Connecting { attempt: u32, phase: ConnectPhase },
+    Online { since: Timestamp, actions: NetworkActions },
+    Reconnecting { retry_at: Timestamp },
+    Suspended { since: Timestamp },
 }
 ```
 
-`ConnectionFactory` is an application seam around constructing public papo objects, not a byte
-transport abstraction. Production always uses papo's transport. Tests may supply scripted papo
-clients through `papo-testing`; no fake IRC parser is introduced.
+These are deliberately two identities:
 
-The supervisor uses `Builder::build()` rather than `connect()` so it can poll `Events` during the
-first attempt and show `Event::Connecting`. It starts the `Driver` before awaiting any client
-action, then drains `Events` continuously. A task owns one driver and event consumer. The cloneable
-`Client` is used only by engine command handlers for that network.
+- `ClientInstanceId` increments only when the engine builds a new papo client. It fences events
+  from a cancelled task after disconnect, endpoint change, or mobile resume.
+- `ConnectionEpoch` increments on every `Event::Connected`, including
+  `Connected.reconnected == true`. Capability/action projections use this epoch.
 
-Every event is tagged with the local `NetworkId` and `ConnectionGeneration` before reduction.
-Events from a cancelled older generation cannot mutate current state. `Event::Lagged` triggers
-state-snapshot recovery; it is never ignored.
+Normal papo reconnect keeps one client instance but begins a new epoch. This resolves the earlier
+conflict between build generations and reconnect generations. Subsystem 01 uses this exact
+connection-state union.
 
-## Lifecycle state machine
+Validated configuration is passed to `papo::Client::builder(...).build()`. `build()` is synchronous
+and returns `(Client, Events, Driver)` without a `Result`; validation errors occur before it. The
+engine starts polling the driver and drains events continuously before awaiting client actions, so
+the first `Connecting` events are observable.
+
+## Lifecycle
 
 ```text
-Stopped ── connect ──> Starting ── Connected ──> Online
-   ^                       │           │             │
-   │                       └─ failed ──┴─ disconnected
-   │                                      │
-   │                         retry scheduled by papo
-   │                                      │
-   ├── user disconnect <── Reconnecting <─┘
-   │
-   └── suspended <── Suspending <── mobile background
-                         │
-                         └── foreground rebuilds connection, then syncs
+Stopped → Connecting → Online → Reconnecting → Online
+   ↑          │           │           │
+   └──────── failure/user disconnect ─┘
+              Online → Suspended → Connecting
 ```
 
-Papo's `Reconnect::exponential()` is the default: jittered exponential delay from one second,
-capped at five minutes, with a minimum 60-second refusal delay. The engine reflects
-`Disconnected.reconnect_in` and `ConnectErrorKind`; it does not maintain a second timer or retry
-counter. User “Reconnect now” calls `Client::reconnect()`, which deliberately skips backoff.
-Permanent/authentication failures remain stopped until configuration changes or the user retries.
+Papo's exponential reconnect policy owns delay, jitter, and attempt count. The engine reflects
+`Connecting`, `Connected`, and `Disconnected.reconnect_in`; it does not run another retry timer.
+“Reconnect now” calls `Client::reconnect()`. Authentication/permanent failures remain stopped until
+the user or configuration changes.
 
-On `Connected`, the engine reads a fresh `Client::state()` snapshot before publishing online state.
-`ChannelSynced` marks each autojoin usable. Cached buffers remain readable during every transition;
-the composer queues user sends while offline and submits them only after the engine's later
-offline-queue policy permits it.
+On every `Connected`, the engine increments the connection epoch and reads `Client::state()` before
+publishing `Online`. `ChannelSynced` marks autojoins ready. On `Event::Lagged`, it re-reads papo
+state and schedules history repair where supported.
 
-On deliberate disconnect, command intake for that network closes, `Client::quit(reason)` is
-awaited with a short shutdown deadline, events drain through `Disconnected`, and then handles are
-dropped. Abrupt platform shutdown may drop the handles; papo attempts a bare `QUIT` when possible.
+Papo disconnects with `DisconnectCause::SlowConsumer` when both event queues fill. The event loop
+therefore performs no slow storage/UI work; it hands typed changes to bounded engine work. If a
+slow-consumer disconnect still occurs, the engine surfaces it in diagnostics, enters papo's normal
+reconnect path, and rebuilds projections from the fresh snapshot after `Connected`.
+
+Deliberate disconnect stops command intake, awaits `Client::quit()` within a bounded shutdown, and
+drops the task. Mobile backgrounding uses the same bounded quit/drop path; foreground creates a
+new client instance and history later repairs the gap. Hidden browser tabs and minimized desktop
+windows remain connected.
 
 ## Onboarding progress
 
-Papo progress maps without inventing protocol milestones:
+Papo events map directly to the checklist:
 
-| Papo event/state | Checklist item |
+| Papo state | Checklist item |
 |---|---|
-| `Connecting { phase: Transport }` | Reach host |
-| `Connecting { phase: Tls }` or secure browser WebSocket open | TLS / WebSocket |
-| `Connecting { phase: Capabilities }` | Negotiate features |
-| `Connecting { phase: Authenticating }` | Sign in |
-| `Connecting { phase: WaitingForWelcome }` | Finish registration |
-| `Connected` plus required initial sync | Sync |
+| `Connecting::Transport` | Reach host |
+| `Connecting::Tls` or WebSocket open | TLS / WebSocket |
+| `Connecting::Capabilities` | Negotiate features |
+| `Connecting::Authenticating` | Sign in |
+| `Connecting::WaitingForWelcome` | Finish registration |
+| `Connected` plus initial sync | Sync |
 
-The checklist represents skipped phases explicitly (for example no SASL) and displays stable
-`ConnectErrorKind` categories. The supported-feature list comes from `State::features()` and the
-product capability projection, not CAP string parsing.
+Skipped phases remain explicit. Supported features come from `Client::state()` and subsystem 17,
+not CAP string parsing.
 
-## Multi-network and soju import
+## Multi-network, bouncers, and workers
 
-Ordinary networks have independent supervisor tasks, so one failure cannot stall another. The
-global engine serializes only small cross-network projection commits.
+Networks have independent tasks; one failure cannot stall another. The wasm engine lives in a
+SharedWorker and owns all clients for the origin. Dedicated-worker fallback owns only its tab and
+reports that mode through diagnostics.
 
-Soju import uses papo's unstable typed API:
-
-1. Create a control `Client` with `Sasl::...device(device_id)` and
-   `enable(Feature::Bouncer)`.
-2. Call `control.bouncer().networks()` to obtain complete `BouncerNetwork` values.
-3. Persist the bouncer's opaque network ID as connection metadata and create one local network
-   record for each selected upstream.
-4. Build each bound client with `control.bouncer().network(&id)`, which copies endpoint,
-   credentials, TLS settings, reconnect policy, and enabled features.
-5. Consume `Event::BouncerNetworkChanged` only on the control connection and reconcile by opaque
-   ID. Names are labels and need not be unique.
-
-The control connection is not shown as a chat network. Its lifecycle is owned by a `BouncerGroup`;
-bound networks remain separate application networks. Import is transactional: no local network is
-published until its required identifiers and credential reference exist.
-
-## Browser worker ownership
-
-The wasm engine runs in one SharedWorker per origin and owns every papo client. Tabs attach through
-ports and never open IRC connections themselves. If SharedWorker is unavailable, one dedicated
-Worker owns the current tab's connections. The adapter reports this mode so diagnostics can
-explain duplicate connections across tabs.
-
-No connection runs on the main UI thread. Page visibility suppresses UI patches but does not stop
-the SharedWorker. The engine relies on papo/server keepalive; it adds no polling interval.
-
-## Mobile suspend and resume
-
-```rust
-pub enum AppLifecycle {
-    Foreground,
-    Backgrounding { deadline: Instant },
-    Suspended,
-}
-```
-
-On iOS and Android backgrounding, the supervisor stops accepting new network actions, flushes
-storage, attempts a bounded graceful quit, and drops drivers. It does not start a background or
-foreground service to keep IRC alive. Push is the only closed-app delivery path.
-
-On foreground resume, cached state renders before reconnection. The supervisor creates fresh papo
-clients and, after registration, the history subsystem uses `recent_conversations`, `history`, and
-read markers to repair gaps. A generation boundary prevents late pre-suspend events from being
-applied. Desktop minimize and hidden browser tabs do not disconnect; they only suppress rendering.
-
-## CAP and SASL ownership
-
-Papo is authoritative for capability aliases, dependency checks, tag denial, SASL mechanism
-selection, authentication timeouts, and capability changes. The engine observes:
-
-- `Connected.caps`, `State::{caps, supports, features}`;
-- `CapsChanged` and `FeaturesChanged` after registration;
-- typed `Unsupported { feature, reason }` failures;
-- `ConnectErrorKind::{Sasl, SaslUnavailable, CapabilityUnavailable}`.
-
-The engine never infers a product feature from a CAP token. The capability subsystem maps papo
-`Feature` values and per-object prerequisites into UI-safe feature witnesses.
+Soju import later uses papo's typed bouncer API rather than parsing vendor messages. It waits for
+the shipping decision about papo `unstable` recorded in the design index. WebSocket-to-TCP gateways
+are outside this subsystem and remain the brief's product/privacy question.
 
 ## Boundaries
 
-This subsystem owns platform-compatible endpoint construction, one connection task per network,
-application lifecycle integration, papo builder configuration, progress reporting, and task
-cancellation. It must not parse IRC, perform CAP/SASL, create its own socket/TLS/WebSocket stack,
-derive capability gates, fetch history, store credentials, or decide navigation.
+This subsystem owns descriptor conversion, client/task lifecycle, builder configuration, progress,
+connection identities, cancellation, and app suspend/resume. It does not parse IRC, negotiate
+CAP/SASL, implement a socket stack, derive feature actions, fetch history, or store credentials.
 
 ## Testing
 
-- Compile checks build the engine for native and `wasm32-unknown-unknown`; compile-fail tests prove
-  `WebPlatform` call sites cannot pass a TCP endpoint.
-- Builder mapping unit tests cover every auth and endpoint variant without exposing secrets.
-- `papo-testing::wire` tests progress, disconnect, lag recovery, shutdown, and generation fencing.
-- Browser tests run papo's dedicated- and SharedWorker suites against a real WebSocket fixture.
-- Native integration runs the same connection scenarios over TCP/TLS and WebSocket.
-- Live conformance uses papo's Ergo, persistent Ergo, soju+Ergo, InspIRCd, Solanum, and UnrealIRCd
-  profiles; soju tests cover import, duplicate names, bound clients, and notifications.
-- Mobile lifecycle tests simulate background deadlines, assert all drivers end, then verify resume
-  gap-fill without a blank UI.
+- Pure mapping tests cover endpoint/auth configuration and assert secret-safe failures.
+- Native/WASI transcript tests may use `papo_testing::wire()` for progress, reconnect, lag, slow
+  consumer, shutdown, and instance/epoch fencing; it is a scripted server, not browser wasm.
+- Browser tests use `ws://127.0.0.1` from the real-server CLI under `LocalTest`; production-policy
+  tests reject it.
+- Live Ergo tests use the CLI contract from subsystem 21. If papo does not export it, this repo's
+  flake supplies the same contract with nixpkgs `ergochat`; later soju tests use the same fallback.
+- Mobile lifecycle tests simulate the bounded background deadline and fresh-instance resume.
 
 ## Out of scope
 
-Credential-store implementation, history algorithms, push transport, hosted concierge handover,
-network settings UI, WebSocket-to-TCP gateways, proxy settings, and certificate management UI are
-separate designs.
+Credential storage, history algorithms, push, hosted handover implementation, proxies,
+certificate-management UI, and gateway deployment are separate designs.
+
+## Later
+
+- Add native TCP/TLS conversion with the Tauri desktop milestone.
+- Add soju import and Web Push after the `unstable` shipping decision.
+- Introduce a platform abstraction only if more than cfg-selected endpoint construction is needed.
+
+## Decisions
+
+- Treat browser `Endpoint::tls/plaintext` availability as a papo documentation/API bug to file.
+- Use `Client::reconnect()` for reconnect-now; bounded quit/drop/rebuild for mobile suspend.
+- Expose only TLS TCP and secure WebSocket in production onboarding.
+- Use `ws://` only for explicit loopback test fixtures.
 
 ## Questions for Luiz / papo gaps
 
-1. Papo's public builder accepts one endpoint and its reconnect policy retries that endpoint. The
-   brief requires ordered endpoints (for example native TCP/TLS then WebSocket) and failover. Should
-   ordered endpoint failover be added to papo? The client will not implement a parallel retry
-   controller around papo without that decision.
-2. Papo's docs say browser TCP endpoint constructors are absent, but `Endpoint::tls/plaintext`
-   currently compile for browser targets and fail as unavailable when connected. Is compile-time
-   removal planned? Weblounge will still make TCP unconstructable in its web platform layer.
-3. Papo's soju bouncer and Web Push APIs require the `unstable` feature. Is enabling unstable in a
-   shipping client acceptable, or should those APIs stabilize first?
-4. Does papo need an explicit pause/resume API for mobile, or is bounded `quit`, drop, rebuild, and
-   history repair the intended lifecycle?
-5. The hosted concierge token-to-papo authentication mapping is unspecified. Which public papo
-   authentication API should receive the existing gamja OAuth handover?
-6. Should users be allowed to configure plaintext IRC plus STS in production, or should the first
-   client release expose only TLS TCP and secure WebSocket?
-7. Should weblounge run the optional WebSocket↔TCP gateway? It would see plaintext and is not part
-   of this design without an explicit privacy decision.
+1. Should ordered endpoint failover be added to papo? It is not required for milestone 1.
+2. How does the hosted concierge login hand its token to papo—most likely through
+   `Sasl::oauth_bearer`?
