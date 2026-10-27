@@ -91,13 +91,15 @@
                 --target wasm32-unknown-unknown --locked
             '';
             installPhaseCommand = ''
-              mkdir -p $out/bindgen
+              mkdir -p $out/bindgen $out/dist
               raw=target/wasm32-unknown-unknown/release/weblounge_engine_wasm.wasm
               cp "$raw" $out/engine.raw.wasm
               wasm-bindgen --target web --out-dir $out/bindgen \
                 --out-name engine "$raw"
               wasm-opt -Oz $out/bindgen/engine_bg.wasm -o $out/engine.wasm
               cp $out/bindgen/engine.js $out/engine.js
+              cp $out/engine.js $out/dist/engine.js
+              cp $out/engine.wasm $out/dist/engine_bg.wasm
 
               raw_size=$(stat -c %s $out/engine.raw.wasm)
               bindgen_size=$(stat -c %s $out/bindgen/engine_bg.wasm)
@@ -127,7 +129,7 @@
           version = "0.1.0";
           src = appSource;
           fetcherVersion = 5;
-          hash = "sha256-/AWmjXDI1IJKixkf+SBiULtGlcUCwhqgeKswcO5XPS4=";
+          hash = "sha256-n2+0pJ05Daa+SckKEg+IrfNW/EFMdujNDc85IzrkIPM=";
         };
         appCheck =
           name: command:
