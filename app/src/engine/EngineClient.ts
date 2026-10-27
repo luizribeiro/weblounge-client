@@ -49,6 +49,13 @@ interface CommandWaiter {
   reject: (reason: Error) => void;
 }
 
+export class IncompatibleBuildError extends Error {
+  constructor(readonly mismatch: IncompatibleBuild) {
+    super(`engine build ${mismatch.engine} does not match UI ${mismatch.ui}`);
+    this.name = "IncompatibleBuildError";
+  }
+}
+
 export class WorkerEngineClient implements EngineClient {
   readonly #connection: EngineConnection;
   readonly #scheduleFrame: FrameScheduler;
@@ -154,11 +161,7 @@ export class WorkerEngineClient implements EngineClient {
   }
 
   #rejectIncompatibleBuild(message: IncompatibleBuild): void {
-    this.#startWaiter?.reject(
-      new Error(
-        `engine build ${message.engine} does not match UI ${message.ui}`,
-      ),
-    );
+    this.#startWaiter?.reject(new IncompatibleBuildError(message));
     this.#startWaiter = undefined;
   }
 

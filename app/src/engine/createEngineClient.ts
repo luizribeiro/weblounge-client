@@ -18,8 +18,10 @@ export interface WorkerConstructors {
 }
 
 export function createEngineClient(
-  constructors: WorkerConstructors = browserWorkerConstructors(),
+  constructors?: WorkerConstructors,
 ): WorkerEngineClient {
+  if (constructors === undefined) return createBrowserEngineClient();
+
   const sharedUrl = new URL("./engine.shared-worker.ts", import.meta.url);
   if (constructors.openShared !== undefined) {
     const worker = constructors.openShared(sharedUrl);
@@ -32,24 +34,20 @@ export function createEngineClient(
   return new WorkerEngineClient(dedicatedConnection(worker));
 }
 
-function browserWorkerConstructors(): WorkerConstructors {
-  const dedicated: WorkerConstructors = {
-    openDedicated: (url) =>
-      new Worker(url, {
-        name: "weblounge-engine",
-        type: "module",
-      }) as unknown as DedicatedWorkerHandle,
-  };
-  if (typeof SharedWorker === "undefined") return dedicated;
+function createBrowserEngineClient(): WorkerEngineClient {
+  if (typeof SharedWorker !== "undefined") {
+    const worker = new SharedWorker(
+      new URL("./engine.shared-worker.ts", import.meta.url),
+      { name: "weblounge-engine", type: "module" },
+    ) as unknown as SharedWorkerHandle;
+    return new WorkerEngineClient(sharedConnection(worker));
+  }
 
-  return {
-    ...dedicated,
-    openShared: (url) =>
-      new SharedWorker(url, {
-        name: "weblounge-engine",
-        type: "module",
-      }) as unknown as SharedWorkerHandle,
-  };
+  const worker = new Worker(
+    new URL("./engine.dedicated-worker.ts", import.meta.url),
+    { name: "weblounge-engine", type: "module" },
+  ) as unknown as DedicatedWorkerHandle;
+  return new WorkerEngineClient(dedicatedConnection(worker));
 }
 
 function sharedConnection(worker: SharedWorkerHandle): EngineConnection {

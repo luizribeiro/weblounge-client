@@ -150,6 +150,26 @@
             '';
             installPhase = "touch $out";
           };
+        app = pkgs.stdenvNoCC.mkDerivation {
+          pname = "weblounge-app";
+          version = "0.1.0";
+          src = appSource;
+          inherit pnpmDeps;
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.pnpmConfigHook
+          ];
+          WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          buildPhase = ''
+            runHook preBuild
+            pnpm --filter @weblounge/app build
+            runHook postBuild
+          '';
+          installPhase = ''
+            cp -r app/dist $out
+          '';
+        };
         cargoHook = name: command: {
           enable = true;
           entry = "${
@@ -250,12 +270,16 @@
             }
           );
           wasm = engineWasm;
+          app-build = app;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
           vitest = appCheck "vitest" "${pkgs.pnpm}/bin/pnpm test";
         };
         formatter = pkgs.nixfmt-tree;
-        packages.engine-wasm = engineWasm;
+        packages = {
+          inherit app;
+          engine-wasm = engineWasm;
+        };
         devShells.default = pkgs.mkShell {
           packages = [
             rustToolchain
