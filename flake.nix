@@ -299,6 +299,40 @@
           hooks = offlineHooks;
         };
         localErgo = import ./nix/ergo.nix { inherit pkgs; };
+        ergoIntegration = craneLib.mkCargoDerivation (
+          cargoArgs
+          // {
+            pname = "weblounge-ergo-integration";
+            inherit cargoArtifacts;
+            doInstallCargoArtifacts = false;
+            nativeBuildInputs = [ localErgo ];
+            buildPhaseCargoCommand = ''
+              weblounge-ergo >ergo.log 2>&1 &
+              ergo_pid=$!
+              trap 'kill "$ergo_pid" 2>/dev/null || true; wait "$ergo_pid" 2>/dev/null || true' EXIT
+              ready=false
+              for _ in $(seq 1 200); do
+                if grep --quiet 'local Ergo is ready' ergo.log; then
+                  ready=true
+                  break
+                fi
+                if ! kill -0 "$ergo_pid" 2>/dev/null; then
+                  cat ergo.log >&2
+                  exit 1
+                fi
+                sleep 0.05
+              done
+              if [[ "$ready" != true ]]; then
+                cat ergo.log >&2
+                exit 1
+              fi
+              WEBLOUNGE_ERGO_URL=ws://127.0.0.1:8067 \
+                cargo test --locked --package weblounge-engine \
+                  --test ergo -- --nocapture
+            '';
+            installPhaseCommand = "touch $out";
+          }
+        );
       in
       {
         checks = {
@@ -318,6 +352,7 @@
               cargoTestExtraArgs = "--workspace";
             }
           );
+          ergo-integration = ergoIntegration;
           protocol-types = protocolTypes;
           wasm = engineWasm;
           app-build = app;
