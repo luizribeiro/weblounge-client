@@ -54,9 +54,13 @@
           };
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-        cargoSource = pkgs.lib.cleanSourceWith {
-          src = ./.;
-          filter = craneLib.filterCargoSources;
+        cargoSource = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./Cargo.lock
+            ./Cargo.toml
+            ./crates
+          ];
         };
         cargoArgs = {
           src = cargoSource;
@@ -70,22 +74,16 @@
           };
         };
         cargoArtifacts = craneLib.buildDepsOnly cargoArgs;
-        appSource = pkgs.lib.cleanSourceWith {
-          src = ./.;
-          filter =
-            path: type:
-            let
-              relative = pkgs.lib.removePrefix "${toString ./.}/" (toString path);
-            in
-            type == "directory"
-            || pkgs.lib.hasPrefix "app/" relative
-            || builtins.elem relative [
-              ".gitignore"
-              "biome.json"
-              "package.json"
-              "pnpm-lock.yaml"
-              "pnpm-workspace.yaml"
-            ];
+        appSource = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./.gitignore
+            ./app
+            ./biome.json
+            ./package.json
+            ./pnpm-lock.yaml
+            ./pnpm-workspace.yaml
+          ];
         };
         pnpmDeps = pkgs.fetchPnpmDeps {
           pname = "weblounge-app";
