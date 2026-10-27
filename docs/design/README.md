@@ -18,7 +18,7 @@ reproducible toolchain. The brief, its addenda, and the prototype remain authori
 | 8. Theming and tokens | [08-theming-and-tokens.md](08-theming-and-tokens.md) | One data file per theme generates CSS variables and picker previews. |
 | 9. Density and layout | [09-density-and-layout.md](09-density-and-layout.md) | TypeScript density data and a validated six-leaf pane tree drive the two shells. |
 | 10. Navigation | [10-navigation.md](10-navigation.md) | Desktop uses focused tiling; mobile uses independent tab stacks. |
-| 14. Commands and shortcuts | `14-commands-and-shortcuts.md` (next design task) | One registry will own every action and binding; milestone 1 requires this design before implementation. |
+| 14. Commands and shortcuts | [14-commands-and-shortcuts.md](14-commands-and-shortcuts.md) | One typed registry resolves capability-aware actions and platform/shell-safe bindings. |
 | 17. Capability model | [17-capability-model.md](17-capability-model.md) | Typed papo features become per-buffer and per-message action projections. |
 | 21. Performance harness | [21-performance-harness.md](21-performance-harness.md) | A real-server CLI, app marks, CDP metrics, and measured budgets gate regressions. |
 
