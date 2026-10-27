@@ -72,6 +72,7 @@ focus outcomes are entirely the pane reducer's deterministic rules.
 
 | User operation | Command ID |
 |---|---|
+| Enter the transient pane-command mode | `pane.mode` |
 | Focus pane after focus/pointer entry | `pane.focus` |
 | Show selected buffer | `pane.show-buffer` |
 | Open buffer beside focused pane | `pane.open-buffer-right` |
@@ -100,9 +101,9 @@ Global navigation uses the same registry IDs everywhere:
 | Mark the current buffer or all buffers read | `buffer.mark-read`, `buffer.mark-all-read` |
 | Request the preceding history page | `buffer.load-older` |
 
-Subsystem 14 assigns bindings and exposes the same commands through the switcher, help, menus, and
-slash-command views. Availability comes from the focused buffer's subsystem-17 actions and current
-layout, not ad hoc capability checks in navigation.
+Subsystem 14 assigns bindings, owns the `pane.mode` scope, and exposes the same commands through
+the switcher, help, menus, and slash-command views. Availability comes from the focused buffer's
+subsystem-17 actions and current layout, not ad hoc capability checks in navigation.
 
 ## Drag, drop, and accessible placement
 
