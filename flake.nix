@@ -271,6 +271,7 @@
           src = ./.;
           hooks = offlineHooks;
         };
+        localErgo = import ./nix/ergo.nix { inherit pkgs; };
       in
       {
         checks = {
@@ -301,6 +302,10 @@
         packages = {
           inherit app;
           engine-wasm = engineWasm;
+        };
+        apps.ergo = {
+          type = "app";
+          program = pkgs.lib.getExe localErgo;
         };
         devShells.default = pkgs.mkShell {
           packages = [

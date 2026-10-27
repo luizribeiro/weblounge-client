@@ -11,11 +11,21 @@ nix develop
 pnpm install --frozen-lockfile
 ```
 
-Start the web application:
+Build the worker wasm, then start the web application:
 
 ```sh
+nix build .#engine-wasm
 pnpm --filter @weblounge/app dev
 ```
+
+In another terminal, start a throwaway local Ergo with loopback-only IRC and WebSocket listeners:
+
+```sh
+nix run .#ergo
+```
+
+The launcher prints the listener URLs and SASL test credentials. History is enabled; its account
+database and all on-disk state live in a temporary directory that is removed when the server exits.
 
 Run the complete project check suite:
 
