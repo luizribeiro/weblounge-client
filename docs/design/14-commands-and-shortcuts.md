@@ -7,7 +7,9 @@ Status: proposed for milestone 1 review.
 Every app action needs one typed identity and one availability rule. Keyboard shortcuts, the
 switcher, help, buttons, tooltips, Tauri menus, slash commands, and later context menus are views
 of that registry; none may invent an action ID, label, or binding. Defaults must work in both a
-browser and Tauri without corrupting text entry or assuming a US keyboard.
+browser and Tauri without corrupting text entry or assuming a US keyboard. Their primary audience
+is people arriving from Slack or Discord; familiarity with terminal IRC clients or Vim is not
+assumed.
 
 This subsystem routes UI intent. Engine commands remain the Rust-owned protocol in subsystem 02,
 and capability evidence remains the action projections in subsystem 17.
@@ -104,7 +106,7 @@ lists retain their active item; keyboard focus always has a tokenized `:focus-vi
   `key === "Process"`. Completion and send let the composer's composition handlers finish first.
 - `event.key` is the default. Printable letters are Unicode-case-folded; punctuation uses the
   produced character, so AZERTY and Dvorak users press the character shown, not a US position.
-- `event.code` is used only by bindings marked `code`: native buffer slots, `Alt+A`, and every
+- `event.code` is used only by bindings marked `code`: native buffer slots and every
   macOS Option-plus-printable default (letter, digit, or punctuation), because Option can turn the
   intended key into `å`, `¡`, or another character. Arrows and named keys still use `event.key`.
 - Never treat `Ctrl+Alt` as a shortcut when `getModifierState("AltGraph")` is true. This preserves
@@ -112,7 +114,7 @@ lists retain their active item; keyboard focus always has a tokenized `:focus-vi
 - `input: "never"` excludes `input`, `textarea`, `select`, contenteditable, ARIA textbox, and the
   composer. `nonText` admits modified app commands but excludes plain keys and OS/readline editing
   chords. `emptyComposer` additionally requires no text, selection, completion, or composition.
-- Plain `?`, `G`, `J/K`, `R`, `E`, and Delete run only in their explicit non-text/mode scopes.
+- Contextual arrows, Enter, Delete, and Escape run only in the widget or mode that owns them.
   macOS readline chords (`Ctrl+A/E/K/N/P`) and word movement (`Alt+Left/Right`) are never captured
   in text. `Ctrl+N/P` is an extra only inside the switcher/list widget.
 - Repeats are allowed only for list/message motion, page scrolling, and pane resizing. Destructive,
@@ -122,58 +124,77 @@ lists retain their active item; keyboard focus always has a tokenized `:focus-vi
 
 ## Default keymap
 
-The macOS and Linux/Windows columns are Tauri desktop defaults. “same” means the web build uses
-that binding too; an explicit web value replaces a native shortcut the browser owns. Contextual
-keys work in every shell. `G then n` is a sequence outside text fields.
+Slack's current desktop/web list and Discord's current shortcut and keyboard-navigation guides are
+the research sources. “Both” means their binding agrees; “ours” means neither product has a safe
+equivalent. The macOS and Linux/Windows columns are Tauri defaults. Web uses “same” only where the
+browser delivers the chord; otherwise the listed scoped key or focusable control is the fallback.
+An action-menu route means focus a message, press Enter or the platform Menu key, then choose the
+action. It is a contextual keyboard route, not a hidden sequence.
 
-| Command ID — action | macOS | Linux / Windows | Web fallback or context |
-|---|---|---|---|
-| `switcher.open` — Jump to | `⌘K` | `Ctrl+K` | same |
-| `shortcuts.open` — shortcut help | `?`, `⌘/` | `?`, `Ctrl+/` | same |
-| `settings.open` — settings | `⌘,` | `Ctrl+,` | `⌥⌘,` / `Ctrl+Alt+,` |
-| `navigation.escape` — close/cancel/focus composer | `Esc` | `Esc` | scope cascade above |
-| `navigation.back` / `navigation.forward` | `⌘[` / `⌘]` | `Alt+Left` / `Alt+Right` | `G then [` / `G then ]` |
-| `search.open` — search current surface | `⌘F` | `Ctrl+F` | same; app search replaces find-in-page |
-| `buffer.open` — join channel/start DM | `⇧⌘K` | `Ctrl+Shift+K` | same |
-| `buffer.previous` / `buffer.next` | `⌥Up` / `⌥Down` | `Alt+Up` / `Alt+Down` | same; never in text |
-| `buffer.previous-unread` / `buffer.next-unread` | `⌥⇧Up` / `⌥⇧Down` | `Alt+Shift+Up` / `Alt+Shift+Down` | same; never in text |
-| `buffer.jump-important` | `⌥A` (`KeyA`) | `Alt+A` | same; never in text |
-| `buffer.jump-1` … `buffer.jump-9` | `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | `G then 1` … `G then 9` |
-| `buffer.mark-read` | `Esc` in message list | `Esc` in message list | via `navigation.escape` |
-| `buffer.mark-all-read` | `⇧Esc` | `Shift+Esc` | `⇧⌘A` / `Ctrl+Shift+A` |
-| `buffer.load-older` | `⌥PgUp` | `Alt+PgUp` | same; also at history boundary |
-| `pane.focus` — focus entered pane | focus/press pane | focus/press pane | pointer or Tab, no global chord |
-| `pane.show-buffer` — show selected here | `Return` | `Enter` | sidebar/switcher selected scope |
-| `pane.open-buffer-right` — open selected beside | `⌘Return` | `Ctrl+Enter` | sidebar/switcher; same |
-| `pane.split-right` / `pane.split-down` | `⌘\` / `⇧⌘\` | `Ctrl+\` / `Ctrl+Shift+\` | `S then R` / `S then D` |
-| `pane.focus-left`, `pane.focus-right`, `pane.focus-up`, `pane.focus-down` | `⌥⌘` + arrow | `Ctrl+Alt` + arrow | same; see accessibility conflicts |
-| `pane.move-left`, `pane.move-right`, `pane.move-up`, `pane.move-down` | `⌥⇧⌘` + arrow | `Ctrl+Alt+Shift` + arrow | same |
-| `pane.grow` / `pane.shrink` | `⌥⌘G` / `⌥⌘S` | `Ctrl+Alt+G` / `Ctrl+Alt+S` | same |
-| `pane.toggle-zoom` | `⇧⌘Return` | `Ctrl+Shift+Enter` | same |
-| `pane.close` | `⌘W` | `Ctrl+W` | `⌥⌘W` / `Ctrl+Alt+W` |
-| `sidebar.toggle` | `⌘B` | `Ctrl+B` | `⌥⌘B` / `Ctrl+Alt+B` |
-| `members.toggle` | `⇧⌘M` | `Ctrl+Shift+M` | same |
-| `message.page-up` / `message.page-down` | `PgUp` / `PgDn` | `PgUp` / `PgDn` | same, including composer |
-| `message.jump-new` / `message.jump-bottom` | `⌥N` / `⌥End` | `Alt+N` / `Alt+End` | same; never in text |
-| `message.select-last` | `Up` in empty composer | `Up` in empty composer | same |
-| `message.previous` / `message.next` | `Up` / `Down`, `K` / `J` | `Up` / `Down`, `K` / `J` | message-navigation mode |
-| `message.reply` | `R` | `R` | selected message; requires reply action |
-| `message.react` | `E` | `E` | selected message; requires reaction action |
-| `message.copy` | `⌘C` | `Ctrl+C` | selected message; DOM selection wins first |
-| `message.redact` | `Delete` | `Delete` | selected message; confirmation + redact action |
-| `composer.send` / `composer.newline` | `Return` / `⇧Return` | `Enter` / `Shift+Enter` | composer only |
-| `composer.complete-next` / `composer.complete-previous` | `Tab` / `⇧Tab` | `Tab` / `Shift+Tab` | completion open; otherwise focus moves |
-| `composer.history-previous` / `composer.history-next` | `⌘Up` / `⌘Down` | `Ctrl+Up` / `Ctrl+Down` | composer only |
-| `list.previous` / `list.next` | `Up` / `Down`; `Ctrl+P/N` | `Up` / `Down` | roving list/switcher only |
-| `list.open` / `list.open-beside` | `Return` / `⌘Return` | `Enter` / `Ctrl+Enter` | scoped aliases of pane show/open |
-| `separator.decrease` / `separator.increase` | arrow; `⇧` = 10× | arrow; `Shift` = 10× | focused separator, ARIA orientation |
-| `mobile.tab-chats`, `mobile.tab-activity`, `mobile.tab-settings` | `⌘1/2/3` | `Ctrl+1/2/3` | Tauri mobile hardware keyboard only |
-| `network.connect` / `network.disconnect` | `Return` | `Enter` | focused settings control or switcher |
-| `network.open-server` | `Return` | `Enter` | focused network row or switcher |
-| `network.add` / `network.remove` / `channel.part` | `Return` | `Enter` | focused control or switcher; destructive confirmation |
-| `network.import-bouncer` / `push.configure` | `Return` | `Enter` | focused control/switcher when projected by 17 |
-| `message.retry` | `Return` | `Enter` | focused failed-message control or switcher |
-| `activity.mark-all-read` | `⇧Esc` | `Shift+Esc` | `⇧⌘A` / `Ctrl+Shift+A`; Activity scope |
+Research references: [Slack keyboard shortcuts](https://slack.com/help/articles/201374536-slack-keyboard-shortcuts),
+[Slack keyboard navigation](https://slack.com/help/articles/115003340723-Navigate-Slack-with-your-keyboard),
+[Discord shortcut guide](https://support.discord.com/hc/en-us/articles/31232432266647-Discord-Commands-Shortcuts-and-Navigation-Guide),
+[Discord Quick Switcher](https://support.discord.com/hc/en-us/articles/115000070311-Quick-Switcher),
+and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-discord-using-only-your-keyboard).
+
+| Command ID — action | macOS | Linux / Windows | Web fallback or context | Source |
+|---|---|---|---|---|
+| `switcher.open` — Jump to / browse channels and DMs | `⌘K` | `Ctrl+K` | same | both |
+| `shortcuts.open` — shortcut help | `⌘/` | `Ctrl+/` | same | both |
+| `settings.open` — settings | `⌘,` | `Ctrl+,` | `Enter` on Settings control/switcher row | both |
+| `navigation.escape` — close/cancel/focus composer | `Esc` | `Esc` | scope cascade above | both |
+| `navigation.back` / `navigation.forward` | `⌘[` / `⌘]` | `Alt+Left` / `Alt+Right` | `Enter` on Back/Forward control or switcher row | Slack |
+| `search.open` — search current surface | `⌘F` | `Ctrl+F` | same; intentionally replaces find-in-page | both |
+| `buffer.open` — join channel/start DM | `Enter` on Add control/switcher row | same | same | Slack/Discord route |
+| `buffer.previous` / `buffer.next` | `⌥Up` / `⌥Down` | `Alt+Up` / `Alt+Down` | same; never in text | both |
+| `buffer.previous-unread` / `buffer.next-unread` | `⌥⇧Up` / `⌥⇧Down` | `Alt+Shift+Up` / `Alt+Shift+Down` | same; never in text | both |
+| `buffer.jump-important` | `Enter` on switcher row | same | same | ours |
+| `buffer.jump-1` … `buffer.jump-9` | `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | `Enter` on switcher row | ours, native only |
+| `buffer.mark-read` | `Esc` in message list | `Esc` in message list | same, via `navigation.escape` | both |
+| `buffer.mark-all-read` | `⇧Esc` | `Shift+Esc` | `Enter` on Mark-all-read control/switcher row | both, native only |
+| `buffer.load-older` | `Enter` on history-boundary control | same | same | ours |
+| `pane.focus` / `pane.show-buffer` | focus pane / `Return` on selected buffer | focus pane / `Enter` | same | ours |
+| `pane.open-buffer-right` | `⌘Return` | `Ctrl+Enter` | selected sidebar/switcher row; same | Slack |
+| `pane.split-right` / `pane.split-down` | `⌘\` / `⇧⌘\` | `Ctrl+\` / `Ctrl+Shift+\` | `Enter` on pane-header control/switcher row | ours, native only |
+| `pane.focus-left`, `pane.focus-right`, `pane.focus-up`, `pane.focus-down` | `Enter` on pane control/switcher row | same | same | ours |
+| `pane.move-left`, `pane.move-right`, `pane.move-up`, `pane.move-down` | arrows + `Enter` in Place dialog/switcher | same | same | ours |
+| `pane.grow` / `pane.shrink` | focused separator arrows | same | same | ours |
+| `pane.toggle-zoom` | `⇧⌘Return` | `Ctrl+Shift+Enter` | same | ours |
+| `pane.close` | `⌘W` | `Ctrl+W` | `Enter` on pane-header Close/switcher row | ours, native only |
+| `sidebar.toggle` | `Enter` on sidebar control/switcher row | same | same | ours |
+| `members.toggle` | `⌘.` | `Ctrl+.` | same | Slack right sidebar |
+| `message.page-up` / `message.page-down` | `PgUp` / `PgDn` | `PgUp` / `PgDn` | same, including empty composer | both |
+| `message.jump-new` / `message.jump-bottom` | `⇧PgUp` / `End` | `Shift+PgUp` / `End` | message-list scope; same | Discord / Slack |
+| `message.select-last` | `Up` in empty composer | `Up` in empty composer | selects latest own message; see below | both expectation, ours behavior |
+| `message.previous` / `message.next` | `Up` / `Down` | `Up` / `Down` | message-navigation mode | both |
+| `message.actions.open` | `Return` or Menu | `Enter` or Menu | selected-message scope | Slack/Discord route |
+| `message.reply` / `message.react` | Message Actions | same | same; capability-gated | both route |
+| `message.copy` | `⌘C` | `Ctrl+C` | selected message; DOM selection wins first | Discord |
+| `message.redact` | `Delete` | `Delete` | selected own message; confirmation required | Slack |
+| `message.retry` | `Return` | `Enter` | focused failed-message control | ours |
+| `composer.send` / `composer.newline` | `Return` / `⇧Return` | `Enter` / `Shift+Enter` | composer only | both |
+| `composer.complete-next` / `composer.complete-previous` | `Tab` / `⇧Tab` | `Tab` / `Shift+Tab` | completion open; otherwise focus moves | both convention |
+| `composer.history-previous` / `composer.history-next` | `⌘Up` / `⌘Down` | `Ctrl+Up` / `Ctrl+Down` | nonempty composer only | Discord |
+| `composer.upload` — attach file (later) | `Enter` on Attach control | same | same | Slack/Discord route |
+| `list.previous`, `list.next`, `list.open`, `list.open-beside` | arrows, `Return` / `⌘Return` | arrows, `Enter` / `Ctrl+Enter` | focused list scope | Slack/Discord route / Slack |
+| `separator.decrease` / `separator.increase` | arrow; `⇧` = 10× | arrow; `Shift` = 10× | focused separator | ARIA / ours |
+| `mobile.tab-chats`, `mobile.tab-activity`, `mobile.tab-settings` | `⌘1/2/3` | `Ctrl+1/2/3` | Tauri mobile hardware keyboard only | ours |
+| `network.connect`, `network.disconnect`, `network.open-server`, `network.add`, `network.remove`, `channel.part` | `Return` | `Enter` | focused control or switcher | ours |
+| `network.import-bouncer` / `push.configure` | `Return` | `Enter` | focused control/switcher when projected by 17 | ours |
+| `activity.mark-all-read` | `⇧Esc` | `Shift+Esc` | `Enter` on Mark-all-read control/switcher row | both, native only |
+
+Slack defaults Up in an empty composer to edit the last sent message, and Discord documents edit
+last message there as well. IRC has no interoperable edit operation. Weblounge therefore makes
+`message.select-last` select the newest visible message authored by the current account and enter
+message navigation; the user can reply, copy, or redact it when those actions exist. It does not
+copy the old body into the composer, because sending that text would create a duplicate message
+that only resembles an edit. If no own message is visible, Up has no effect.
+
+The research cross-check also found Slack's desktop-only `Mod+O` and Discord's `Mod+Shift+U` for
+upload. Both conflict with browser/OS behavior, and uploads are later work, so `composer.upload`
+uses the accessible Attach control until that subsystem chooses a safe capability-gated binding.
+Slack uses `Mod+Shift+K` to browse DMs on macOS and Discord folds DMs into `Mod+K`; Weblounge uses
+the shared `switcher.open` behavior and does not bind `Ctrl+Shift+K`, which is Firefox Web Console.
 
 Slash-command entries share IDs where semantics match (`/join` → `buffer.open`) and otherwise use
 their engine parser descriptor. They are shown in the switcher but do not receive global chords.
@@ -188,18 +209,20 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 
 | Defaults | Known conflict and disposition |
 |---|---|
-| `Mod+K`, `Mod+,`, `Mod+/`, `Mod+F`, `Mod+B` | Browsers use some for omnibox, settings/help, find, or bookmarks; preventable page handling varies. Search intentionally replaces find. Settings and Sidebar use safer web `Mod+Alt` fallbacks; verify `Mod+K` and `Mod+/` delivery in Playwright/manual. |
-| native `Mod+1…9` | Chrome, Firefox, and Safari select browser tabs. Never registered on web; `G then digit` has no host chord. macOS `Shift+Command+3/4` screenshots are therefore also avoided. |
-| native `Mod+[` / `Mod+]` | Safari history; Linux/Windows `Alt+Left/Right` browser/OS history. Web uses sequences. Settings/mobile Back uses its scoped command rather than stealing text navigation. |
-| native `Mod+W` | Closes a browser tab/window and is intentionally Tauri-only. Web `Mod+Alt+W` is not listed by major browsers; **verify KDE/global custom shortcuts manually**. |
-| `Alt+Up/Down`, `Alt+Shift+Up/Down`, `Alt+A/N/End/PgUp` | macOS text paragraph movement and Windows/NVDA sentence movement matter in editable/read modes, so all are suppressed in text. Firefox Linux owns `Alt+1…9`, not these. GNOME may expose mnemonic menus on Alt; **verify installed-app webviews manually**. |
-| `Mod+Alt+arrows` and shifted move variants | VoiceOver's default modifier is Control+Option and Windows Magnifier pans with Ctrl+Alt+arrows; these users may not receive pane chords. Every pane command remains in switcher and focused controls/placement dialog. Test VoiceOver/NVDA; do not override assistive technology. KDE uses Meta+Alt+arrows, not this default, but is configurable. |
-| `Mod+Alt+G/S` | No listed browser or desktop default was found, but VoiceOver uses Control+Option and global shortcuts are configurable. Divider arrows and switcher commands remain the accessible fallback. **Verify with VoiceOver and KDE custom shortcuts.** |
-| `Mod+\`, `Mod+Shift+\`, `Mod+Shift+M/K/Enter` | Safari uses Shift+Command+backslash for tab overview, and Firefox/Chrome may use some shifted chords in developer UI. Web split commands therefore use `S then R/D`; test the remaining chords. |
-| `PgUp/PgDn`, arrows, Tab, Enter, Escape, Delete | Native editing, browser scrolling, and NVDA browse mode use these. They run only in an owning widget/mode; real controls keep native semantics. NVDA browse mode may consume single letters/arrows, so keyboard-only E2E includes focus mode and all actions remain exposed as buttons. |
-| `?`, `G`, `J/K`, `R`, `E` | VoiceOver Quick Nav and NVDA browse-mode single-letter navigation can consume them. They never fire in text and are convenience bindings only; `Mod+/`, lists, buttons, and switcher are the non-single-key routes. |
+| `Mod+K`, `Mod+/`, `Mod+F` | Browsers assign omnibox/quick-find/find behavior, but Slack and Discord web use the first two. Search intentionally replaces find. **Verify** delivery in every browser; controls and switcher rows remain available. |
+| native `Mod+,` | Browser preferences may win, so it is not a web default. Settings remains a focusable control and switcher row. |
+| native `Mod+1…9` | Chrome, Firefox, and Safari select browser tabs. Never registered on web; the switcher is the web route. |
+| native `Mod+[` / `Mod+]`, `Alt+Left/Right` | Safari and other browsers own history navigation. These are Tauri-only; web exposes Back/Forward controls and switcher commands. |
+| native `Mod+W` | Closes a browser tab/window and is intentionally Tauri-only. The web fallback is the pane-header Close control or switcher. |
+| `Alt+Up/Down`, `Alt+Shift+Up/Down` | macOS paragraph movement and Windows/NVDA reading commands matter in editable/read modes, so these are suppressed in text. GNOME may expose menu mnemonics on Alt; **verify** installed-app webviews. |
+| `Mod+Alt+arrows`, shifted variants | Not defaults: GNOME/Ubuntu commonly use them for workspaces, Windows Intel drivers may use them for display rotation, Windows Magnifier may pan, and Control+Option is VoiceOver's modifier. Pane controls, switcher commands, and the Place dialog replace them. |
+| `Ctrl+Shift+A`, `Ctrl+Shift+M`, `Ctrl+Shift+K` | Not defaults: Chrome/Firefox reserve or use these for tab search/add-ons, profile/responsive mode, and Firefox Web Console respectively. Mark-all-read, members, and DM/browse use the routes above. |
+| native `Mod+\`, `Mod+Shift+\` | Safari uses Shift+Command+backslash for tab overview. Split chords are Tauri-only; web pane-header controls and switcher commands are the fallback. |
+| `Mod+Shift+Enter` | No major browser or desktop reservation was found. It remains **verify** on Safari, VoiceOver, GNOME, and KDE before release. |
+| `Mod+.` | Slack establishes this for the right sidebar and no major browser reservation was found. macOS Command-period is also a conventional Cancel command, so member-panel delivery remains **verify** in Safari/webviews. |
+| `Shift+PgUp`, `End`, `PgUp/PgDn`, arrows, Tab, Enter, Escape, Delete | Browser scrolling, native editing, and screen-reader browse modes use these. They run only in the owning widget/mode; real controls retain native semantics. **Verify** NVDA browse/focus behavior. |
 | `Ctrl+P/N` | macOS readline previous/next and browser print/new-window conventions. Registered only inside the open list widget; never in composer or ordinary inputs. Arrow alternatives are primary. |
-| `Shift+Escape` | Chrome Task Manager is `Shift+Esc` on Windows/Linux and may be host-reserved. It is Tauri-only; web uses `Mod+Shift+A`. **Verify whether each Tauri webview delivers it.** |
+| `Shift+Escape` | Chrome and Firefox use it for Task Manager on Windows/Linux and may reserve it. It is Tauri-only; web uses the focusable Mark-all-read control or switcher. **Verify** each Tauri webview. |
 
 Defaults do not use `Mod+T/N/Q`, `Ctrl+Tab`, `Ctrl+Shift+T/N`, `Alt+F4`, or system Meta/Super
 shortcuts. User overrides may request them in Tauri but validation rejects them for web.
@@ -209,14 +232,14 @@ shortcuts. User overrides may request them in Tauri but validation rejects them 
 `shortcuts.open` opens a modal generated from available registry entries. It groups Global,
 Navigation, Panes, Messages, Composer, Lists, and Settings; search matches localized title,
 command ID, and rendered chord. Results update while typing, use a roving list, and close through
-`navigation.escape`, restoring the invoker. `?`, `Mod+/`, a “Keyboard shortcuts” switcher row, and
+`navigation.escape`, restoring the invoker. `Mod+/`, a “Keyboard shortcuts” switcher row, and
 the Settings link all dispatch the same command.
 
 The formatter uses the current platform and active shell. macOS modifier glyphs always render in
 Apple HIG order `⌃⌥⇧⌘` (correcting the addendum's `⌘⌥⇧⌃` example), omits `+`, and localizes key
-names. Other platforms render `Ctrl+Alt+Shift+K`. Sequences read “G then 3”. `aria-keyshortcuts`
-uses WAI-ARIA tokens such as `Control+K`, never glyphs; two-step sequences are described in the
-accessible name because ARIA has no sequence syntax.
+names. Other platforms render `Ctrl+Alt+Shift+K`. `aria-keyshortcuts` uses WAI-ARIA tokens such as
+`Control+K`, never glyphs. Optional-preset sequences are described in the accessible name because
+ARIA has no sequence syntax.
 
 Command rows in the switcher, button tooltips, help, and menus ask the same resolver for the first
 active binding. No component contains shortcut prose. Tooltips append the visual label; controls
@@ -267,7 +290,7 @@ There is no editing UI in this milestone.
   and slot fixtures prove deliberate `event.code` matching without leaking to AltGr.
 - Registry tests project each 17 action and each 09 layout query, then remove it and prove the
   shortcut, switcher row, menu, help row, tooltip, and ARIA value disappear together.
-- Playwright drives only the keyboard to switch buffers, use `G then digit`, mark read, open/help
+- Playwright drives only the keyboard to switch buffers through the switcher, mark read, open/help
   search/close overlays, select/reply/react/copy a message, split/focus/move/resize/zoom/close panes,
   operate separators, and navigate settings in Chromium, Firefox, and WebKit.
 - Manual release checks cover Safari native interception, Chrome/Firefox on three desktop OSes,
@@ -289,16 +312,20 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
 - Build the rebinding/conflict UI on the existing override data.
 - Add context-menu projections and native mobile shortcut bridges with their subsystem designs.
 - Revisit any default that manual assistive-technology testing proves unreliable.
+- Offer an optional “terminal/Vim” preset containing the old `G then …` and `S then …` sequences
+  plus single-letter message actions. They are never defaults or the only route to an action.
 
 ## Decisions
 
 - Use typed availability to produce handler arguments rather than checking capabilities in views.
 - Use `event.key` by default and explicit `event.code` only for slot and macOS Option-printable
   bindings.
-- Use short sequences for browser-owned slot, history, and split chords.
-- Keep single-letter message shortcuts as optional conveniences, never the only route.
 - Render macOS modifiers in `⌃⌥⇧⌘` order.
 - Keep overrides device-local data with no milestone-1 UI.
+- Luiz, 2026-10-27: optimize defaults for people coming from Slack and Discord; keep terminal/Vim
+  sequences and single-letter message actions in an optional later preset only.
+- Luiz, 2026-10-27: Up in an empty composer selects the latest visible own message for navigation;
+  it does not simulate an IRC message edit.
 
 ## Questions for Luiz
 
