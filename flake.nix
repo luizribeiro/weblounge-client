@@ -204,9 +204,11 @@
             pkgs.nodejs
             pkgs.pnpm
             pkgs.pnpmConfigHook
+            pkgs.fontconfig
           ];
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
           WEBLOUNGE_APP_DIR = "${app}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           buildPhase = ''

@@ -2,6 +2,13 @@ import { createSignal, onCleanup, onMount } from "solid-js";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import { IncompatibleBuildError } from "./engine/EngineClient";
+import type {
+  BufferProjection,
+  EngineClientMessage,
+  MessageProjection,
+  NetworkProjection,
+} from "./engine/protocol";
+import { DebugView } from "./features/debug/DebugView";
 
 const reloadMarker = "weblounge-build-reload";
 
@@ -12,10 +19,17 @@ interface AppProps {
 export function App(props: AppProps) {
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
+  const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
+  const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
+  const [messages, setMessages] = createSignal<
+    ReadonlyMap<number, readonly MessageProjection[]>
+  >(new Map());
+  let client: EngineClient | undefined;
 
   onMount(() => {
-    const client = props.engineClient ?? createEngineClient();
-    const unsubscribe = client.subscribe((message) => {
+    const mountedClient = props.engineClient ?? createEngineClient();
+    client = mountedClient;
+    const unsubscribe = mountedClient.subscribe((message) => {
       if (message.type === "diagnostic") {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
@@ -24,18 +38,19 @@ export function App(props: AppProps) {
           "This browser uses one connection per tab because SharedWorker is unavailable.",
         );
       }
+      applyDebugEvent(message, setNetworks, setBuffers, setMessages);
     });
     const updateVisibility = () => {
-      client.setVisibility(document.hidden ? "hidden" : "visible");
+      mountedClient.setVisibility(document.hidden ? "hidden" : "visible");
     };
     document.addEventListener("visibilitychange", updateVisibility);
     updateVisibility();
 
-    void startEngine(client, setEngineStatus);
+    void startEngine(mountedClient, setEngineStatus);
     onCleanup(() => {
       document.removeEventListener("visibilitychange", updateVisibility);
       unsubscribe();
-      void client.close();
+      void mountedClient.close();
     });
   });
 
@@ -44,6 +59,18 @@ export function App(props: AppProps) {
       <h1>weblounge</h1>
       <p role="status">{engineStatus()}</p>
       {engineNotice() !== undefined && <p role="note">{engineNotice()}</p>}
+      <DebugView
+        networks={networks()}
+        buffers={buffers()}
+        messages={messages()}
+        onSend={(bufferId, text) => {
+          if (client === undefined) return;
+          void client.send({
+            id: crypto.randomUUID(),
+            command: { type: "send_message", buffer_id: bufferId, text },
+          });
+        }}
+      />
     </main>
   );
 }
@@ -67,6 +94,23 @@ async function startEngine(
         message: "wasm worker round trip complete",
       },
     });
+    if (__DEBUG_IRC_CONFIG__ !== null) {
+      await client.send({
+        id: crypto.randomUUID(),
+        command: {
+          type: "connect",
+          label: "Local Ergo",
+          endpoint: __DEBUG_IRC_CONFIG__.endpoint,
+          nickname: __DEBUG_IRC_CONFIG__.nickname,
+          sasl: {
+            account: __DEBUG_IRC_CONFIG__.account,
+            password: __DEBUG_IRC_CONFIG__.password,
+          },
+          autojoin: [__DEBUG_IRC_CONFIG__.channel],
+          allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
+        },
+      });
+    }
   } catch (error: unknown) {
     if (error instanceof IncompatibleBuildError) {
       recoverFromBuildMismatch(setStatus);
@@ -74,6 +118,66 @@ async function startEngine(
     }
     setStatus("Engine failed to start");
   }
+}
+
+function applyDebugEvent(
+  message: EngineClientMessage,
+  setNetworks: (
+    update: (current: NetworkProjection[]) => NetworkProjection[],
+  ) => void,
+  setBuffers: (
+    update: (current: BufferProjection[]) => BufferProjection[],
+  ) => void,
+  setMessages: (
+    update: (
+      current: ReadonlyMap<number, readonly MessageProjection[]>,
+    ) => ReadonlyMap<number, readonly MessageProjection[]>,
+  ) => void,
+): void {
+  if (message.type === "network_state_changed") {
+    setNetworks((current) => upsert(current, message.network));
+  } else if (message.type === "buffers_changed") {
+    setBuffers((current) => [
+      ...current.filter((buffer) => buffer.network_id !== message.network_id),
+      ...message.buffers,
+    ]);
+  } else if (message.type === "buffer_added") {
+    setBuffers((current) => upsert(current, message.buffer));
+  } else if (message.type === "unread_changed") {
+    setBuffers((current) =>
+      current.map((buffer) =>
+        buffer.id === message.buffer_id
+          ? { ...buffer, unread: message.unread, mentions: message.mentions }
+          : buffer,
+      ),
+    );
+  } else if (message.type === "messages_appended") {
+    setMessages((current) => {
+      const next = new Map(current);
+      next.set(message.buffer_id, [
+        ...(current.get(message.buffer_id) ?? []),
+        ...message.messages,
+      ]);
+      return next;
+    });
+  } else if (message.type === "message_confirmed") {
+    setMessages((current) => {
+      const next = new Map(current);
+      next.set(
+        message.buffer_id,
+        (current.get(message.buffer_id) ?? []).map((item) =>
+          item.local_send_id === message.local_send_id ? message.message : item,
+        ),
+      );
+      return next;
+    });
+  }
+}
+
+function upsert<T extends { id: number }>(current: T[], value: T): T[] {
+  const existing = current.findIndex((item) => item.id === value.id);
+  if (existing === -1) return [...current, value];
+  return current.map((item, index) => (index === existing ? value : item));
 }
 
 export function recoverFromBuildMismatch(

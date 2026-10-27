@@ -26,6 +26,52 @@ it("reports document visibility to the engine", () => {
   expect(client.visibility).toEqual(["visible", "hidden"]);
 });
 
+it("lists projected networks, buffers, and messages", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Local Ergo",
+      nickname: "weblounge",
+      state: "online",
+    },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      unread: 1,
+      mentions: 0,
+    },
+  });
+  client.emit({
+    type: "messages_appended",
+    buffer_id: 2,
+    messages: [
+      {
+        id: 1,
+        author: "alice",
+        text: "hello",
+        authorship: "other",
+        delivery: "received",
+        local_send_id: null,
+        server_ids: ["msg-1"],
+        server_time_ms: null,
+        received_at_ms: 1,
+      },
+    ],
+  });
+
+  expect(await screen.findByText(/Local Ergo: weblounge/)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /#room/ })).toBeInTheDocument();
+  expect(screen.getByText(/<alice> hello/)).toBeInTheDocument();
+});
+
 it("reloads only once for the same stale build", () => {
   const setStatus = vi.fn();
   const reload = vi.fn();
@@ -52,15 +98,18 @@ class FakeEngineClient implements EngineClient {
   async start(): Promise<void> {}
 
   async send(command: Parameters<EngineClient["send"]>[0]) {
-    if (command.command.type !== "diagnostic") {
-      throw new Error("test client only supports diagnostic commands");
+    if (command.command.type === "diagnostic") {
+      this.emit({
+        type: "diagnostic",
+        command_id: command.id,
+        message: command.command.message,
+      });
     }
-    this.#listener?.({
-      type: "diagnostic",
-      command_id: command.id,
-      message: command.command.message,
-    });
     return { type: "command_result" as const, id: command.id };
+  }
+
+  emit(message: EngineClientMessage): void {
+    this.#listener?.(message);
   }
 
   requestSnapshot(): void {}

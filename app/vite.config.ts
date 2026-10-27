@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       __BUILD_ID__: JSON.stringify(buildId(wasmPath)),
+      __DEBUG_IRC_CONFIG__: JSON.stringify(debugIrcConfig()),
     },
     plugins: [solid()],
     publicDir: wasmDirectory,
@@ -27,6 +28,19 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+function debugIrcConfig() {
+  const endpoint = process.env.WEBLOUNGE_IRC_ENDPOINT;
+  if (endpoint === undefined) return null;
+  return {
+    endpoint,
+    nickname: process.env.WEBLOUNGE_IRC_NICKNAME ?? "weblounge",
+    account: process.env.WEBLOUNGE_IRC_ACCOUNT ?? "weblounge",
+    password: process.env.WEBLOUNGE_IRC_PASSWORD ?? "weblounge-test",
+    channel: process.env.WEBLOUNGE_IRC_CHANNEL ?? "#weblounge-test",
+    allowInsecure: endpoint.startsWith("ws://127.0.0.1"),
+  };
+}
 
 function buildId(wasmPath: string): string {
   const hash = createHash("sha256");
