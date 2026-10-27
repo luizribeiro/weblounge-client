@@ -109,6 +109,22 @@ second finds the nearest divider whose movement grows/shrinks the focused pane a
 split ID plus ratio sign. Subsystem 14 commands consume these queries; shortcut chords are not
 defined here.
 
+The command registry maps to layout operations with these exact IDs:
+
+| Command IDs | Layout operation |
+|---|---|
+| `pane.focus`, `pane.show-buffer` | `focus`, `show` |
+| `pane.open-buffer-right`, `pane.split-right`, `pane.split-down` | `split`, degrading to `show` at six leaves |
+| `pane.focus-left/right/up/down` | `paneInDirection` then `focus` |
+| `pane.move-left/right/up/down` | `paneInDirection` then `move` |
+| `pane.grow`, `pane.shrink` | `nearestDivider` then `setRatio` |
+| `pane.toggle-zoom`, `pane.close` | `toggleZoom`, `close` |
+| `separator.decrease`, `separator.increase` | focused split then `setRatio` |
+
+Directional suffixes are four distinct closed `CommandId` members, not runtime-built strings.
+Subsystem 14 owns their bindings and availability; this subsystem remains the only reducer and
+geometry implementation.
+
 ## Frame and responsive presentation
 
 One pane has the prototype's 48px main header. Multi-pane mode has 38px pane headers plus the 38px
