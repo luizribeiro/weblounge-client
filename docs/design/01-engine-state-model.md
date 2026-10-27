@@ -173,10 +173,11 @@ pane layout, persistence engines, history scheduling, Activity ranking, or notif
   `Sent.msgids`, read counts, and bounded eviction without `papo-testing`.
 - Property tests generate event/history interleavings and assert referential integrity and stable
   ordering.
-- Native/WASI transcript tests may use `papo_testing::wire()` as a scripted server around a real
-  papo client; these test builds necessarily enable papo `unstable`.
-- Browser and live tests use the real-server CLI contract from subsystem 21, with Ergo in milestone
-  1.
+- Native transcript tests use `papo_testing::wire()` around a real papo client and a scripted
+  in-memory pipe; these test builds necessarily enable papo `unstable`. Unpublished `papo` and
+  `papo-testing` are pinned to the same git revision.
+- Browser and live tests use subsystem 21's small local nixpkgs Ergo fixture; there is no packaged
+  papo test-server dependency.
 - Serialization fixtures protect durable and Engine/UI representations.
 
 ## Out of scope
@@ -195,3 +196,5 @@ and channel browsing are later designs.
 - Identify DMs by account first, then by a typed nick-change chain, and otherwise keep identities separate.
 - Keep unknown `Event::Other` records in a bounded diagnostics window.
 - Derive message-window sizes from the performance harness.
+- Luiz, 2026-10-27: use pure domain tests plus native `papo_testing::wire()` transcripts, with the
+  repository's local Ergo reserved for real-server browser and smoke coverage.
