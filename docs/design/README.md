@@ -131,7 +131,8 @@ smoke. Generated protocol/theme output must be reproducible.
 
 ## Later
 
-- Add service interfaces and generic test doubles only when their subsystem designs require them.
+- Reconsider a generic `Engine<S, C, P, N>` only after the storage, push, and notification service
+  designs establish real abstraction needs.
 - Add Tauri, mobile toolchains, signing, and platform packaging in milestones 7–8.
 - Expand real-server compatibility coverage after the Ergo vertical slice.
 
