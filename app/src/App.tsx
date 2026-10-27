@@ -76,12 +76,16 @@ async function startEngine(
   }
 }
 
-function recoverFromBuildMismatch(setStatus: (status: string) => void): void {
-  if (sessionStorage.getItem(reloadMarker) === __BUILD_ID__) {
+export function recoverFromBuildMismatch(
+  setStatus: (status: string) => void,
+  storage: Pick<Storage, "getItem" | "setItem"> = sessionStorage,
+  reload: () => void = () => location.reload(),
+): void {
+  if (storage.getItem(reloadMarker) === __BUILD_ID__) {
     setStatus("Engine update failed; reload site data to recover");
     return;
   }
 
-  sessionStorage.setItem(reloadMarker, __BUILD_ID__);
-  location.reload();
+  storage.setItem(reloadMarker, __BUILD_ID__);
+  reload();
 }
