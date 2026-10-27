@@ -11,7 +11,7 @@ The single place a fresh session reads to know where the project stands. Update 
 
 Each task is one fresh codex session, reviewed before the next starts.
 
-1. [ ] Flake, Rust workspace (papo pinned by git rev), SolidJS app skeleton, `nix flake check`, GitHub Actions.
+1. [x] Flake, Rust workspace (papo pinned by git rev), SolidJS app skeleton, `nix flake check`, GitHub Actions.
 2. [ ] wasm engine in a SharedWorker (dedicated Worker fallback) talking to the UI through `EngineClient`; local Ergo for dev.
 3. [ ] Engine connects through papo; network and buffer state; protocol types generated with ts-rs.
 4. [ ] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
