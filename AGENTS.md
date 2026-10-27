@@ -3,6 +3,8 @@
 A modern IRCv3 client (web/PWA, Tauri desktop, Tauri iOS/Android) built on papo.
 
 ## Read first
+- `docs/PLAN.md`: where the project stands and what's next. Update it when you finish a task.
+- `docs/design/`: the signed-off design docs; follow them. If implementation shows a design is wrong, stop and say so instead of silently diverging.
 - `docs/reference/brief.md`: the build brief. It is the spec.
 - `docs/reference/split-view.md`: the desktop split-view requirement (an addendum to the brief's §5.2).
 - `docs/reference/prototype/*.dc.html`: the interactive prototype's source. It is the source of truth for **layout, look and behaviour**, but it was built with throwaway tech: **never port its code**, only its behaviour, tokens and structure.
