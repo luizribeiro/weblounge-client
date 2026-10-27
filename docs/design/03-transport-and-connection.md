@@ -65,17 +65,42 @@ pub enum AuthenticationConfig {
     None,
     Sasl { account: NonEmptyString, secret: SecretRef, policy: SaslPolicy },
     ServerPassword { secret: SecretRef },
-    HostedHandover { token: SecretRef },
+    HostedOAuth { token: SecretRef },
 }
 ```
 
 Secrets resolve immediately before client construction and enter papo as `papo::Secret`. They do
-not enter snapshots, logs, IPC errors, or persisted network records. Configuration maps to public
-builder methods such as `sasl`, `password`, `autojoin`, `metadata_subscriptions`, `reconnect`, and
-`connect_timeout`. The app never sends CAP, AUTHENTICATE, PASS, NICK, or USER itself.
+not enter snapshots, logs, IPC errors, or persisted network records. A hosted token crosses the
+main-thread/worker boundary only in a dedicated one-shot secret envelope; the adapter removes its
+source value after acknowledgement and the worker immediately stores it behind `SecretRef`.
+Configuration maps to public builder methods such as `sasl`, `password`, `autojoin`,
+`metadata_subscriptions`, `reconnect`, and `connect_timeout`. The app never sends CAP,
+AUTHENTICATE, PASS, NICK, or USER itself.
 
 Milestone 1 uses weblounge username/password over SASL and secure WebSocket. Plaintext plus STS is
 not exposed in the first release.
+
+### Hosted concierge handover
+
+Hosted mode copies the deployed gamja flow, not a concierge session-cookie shortcut. Deploy-time
+configuration supplies concierge's issuer URL, public client ID `gamja`, the exact webchat root as
+redirect URI, the preconfigured WebSocket endpoint, and `#lounge`; no hostname sniffing or
+onboarding chooses these values.
+
+On first load, the bootstrap fetches concierge's RFC 8414 metadata, generates random OAuth `state`
+and a PKCE verifier, keeps both in `sessionStorage`, and redirects to the authorization endpoint
+with an S256 challenge. Concierge uses its existing member session (or asks the member to sign in),
+then returns a one-minute authorization code and the state to the exact root redirect URI. The
+client rejects a state mismatch, removes the pending verifier, and posts the code, verifier,
+redirect URI, and `client_id=gamja` to the token endpoint without a client secret. Redirect URIs
+never include the page fragment.
+
+Concierge returns a bearer access token whose lifetime matches the approving member session. The
+bootstrap passes it once into the worker secret store; connection construction maps
+`HostedOAuth` to `papo::Client::builder(...).sasl(papo::Sasl::oauth_bearer(token))`. Ergo receives
+SASL OAUTHBEARER and introspects the token against concierge over its private loopback endpoint;
+the returned `username` is the IRC account. Reconnects reuse the token until expiry. An expired or
+revoked token clears the secret and restarts authorization instead of falling back to password.
 
 ## Connection owner and identities
 
@@ -178,17 +203,20 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
 ## Testing
 
 - Pure mapping tests cover endpoint/auth configuration and assert secret-safe failures.
-- Native/WASI transcript tests may use `papo_testing::wire()` for progress, reconnect, lag, slow
-  consumer, shutdown, and instance/epoch fencing; it is a scripted server, not browser wasm.
-- Browser tests use `ws://127.0.0.1` from the real-server CLI under `LocalTest`; production-policy
-  tests reject it.
-- Live Ergo tests use the CLI contract from subsystem 21. If papo does not export it, this repo's
-  flake supplies the same contract with nixpkgs `ergochat`; later soju tests use the same fallback.
+- Native transcript tests use `papo_testing::wire()` for progress, reconnect, lag, slow consumer,
+  shutdown, SASL OAUTHBEARER mapping, and instance/epoch fencing; it is a scripted in-memory pipe,
+  not browser wasm. `papo` and `papo-testing` are pinned to the same git revision.
+- Browser tests use the repository flake's local Ergo at a plaintext `ws://127.0.0.1` listener
+  under `LocalTest`; production-policy tests reject it.
+- The same minimal Ergo fixture supplies manual verification and a small automated connection
+  smoke test; there is no packaged papo test-server dependency.
+- OAuth state, PKCE, callback, one-shot secret transfer, expiry, and redaction have pure or mocked
+  HTTP tests. The existing weblounge VM remains the manual end-to-end concierge/Ergo check.
 - Mobile lifecycle tests simulate the bounded background deadline and fresh-instance resume.
 
 ## Out of scope
 
-Credential storage, history algorithms, push, hosted handover implementation, proxies,
+Credential storage, history algorithms, push, hosted deployment wiring, proxies,
 certificate-management UI, and gateway deployment are separate designs.
 
 ## Later
@@ -207,9 +235,11 @@ certificate-management UI, and gateway deployment are separate designs.
 - Use `Client::reconnect()` for reconnect-now; bounded quit/drop/rebuild for mobile suspend.
 - Expose only TLS TCP and secure WebSocket in production onboarding.
 - Use `ws://` only for explicit loopback test fixtures.
+- Luiz, 2026-10-27: hosted auth uses concierge's authorization-code flow with state and PKCE, then
+  maps the bearer token to papo's `Sasl::oauth_bearer`; Ergo introspects it against concierge.
+- Luiz, 2026-10-27: use native `papo_testing::wire()` and the repository's small local Ergo
+  fixture; do not depend on a packaged papo test server.
 
 ## Questions for Luiz / papo gaps
 
 1. Should ordered endpoint failover be added to papo? It is not required for milestone 1.
-2. How does the hosted concierge login hand its token to papo—most likely through
-   `Sasl::oauth_bearer`?
