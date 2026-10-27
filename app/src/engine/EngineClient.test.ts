@@ -4,7 +4,7 @@ import {
   type EnginePort,
   WorkerEngineClient,
 } from "./EngineClient";
-import type { EngineToUi, UiToEngine } from "./protocol";
+import type { UiToEngine } from "./protocol";
 
 class FakePort implements EnginePort {
   readonly sent: UiToEngine[] = [];
@@ -25,7 +25,7 @@ class FakePort implements EnginePort {
     this.#listener = undefined;
   }
 
-  emit(message: EngineToUi): void {
+  emit(message: unknown): void {
     this.#listener?.(new MessageEvent("message", { data: message }));
   }
 }
@@ -106,6 +106,14 @@ describe("WorkerEngineClient", () => {
     port.emit({ type: "incompatible_build", engine: "current", ui: "stale" });
 
     await expect(started).rejects.toThrow("does not match");
+  });
+
+  it("rejects an unknown engine message", () => {
+    const { port } = fixture();
+
+    expect(() => port.emit({ type: "future_variant" })).toThrow(
+      "invalid engine message",
+    );
   });
 
   it("closes only its worker connection", async () => {

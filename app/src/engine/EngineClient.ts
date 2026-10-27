@@ -199,11 +199,16 @@ function decodeWorkerHostError(
 }
 
 function decodeEngineMessage(value: unknown): EngineToUi {
-  if (!isRecord(value) || typeof value.type !== "string") {
+  if (
+    !isRecord(value) ||
+    typeof value.type !== "string" ||
+    !isEngineMessageType(value.type)
+  ) {
     throw new Error("invalid engine message");
   }
 
-  switch (value.type) {
+  const messageType = value.type;
+  switch (messageType) {
     case "ready":
       if (
         typeof value.engine_instance === "string" &&
@@ -247,10 +252,24 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         return { type: "command_result", id: value.id };
       break;
     default:
-      break;
+      return assertNever(messageType);
   }
 
   throw new Error("invalid engine message");
+}
+
+function isEngineMessageType(value: string): value is EngineToUi["type"] {
+  return (
+    value === "ready" ||
+    value === "incompatible_build" ||
+    value === "diagnostic" ||
+    value === "notice" ||
+    value === "command_result"
+  );
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unhandled engine message type: ${String(value)}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
