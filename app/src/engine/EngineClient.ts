@@ -142,7 +142,7 @@ export class WorkerEngineClient implements EngineClient {
       const waiter = this.#commands.get(message.id);
       this.#commands.delete(message.id);
       waiter?.resolve(message);
-      this.#publish(message);
+      this.#enqueueForFrame(message);
       return;
     }
     if (message.type === "ready") {
@@ -156,11 +156,15 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
+    this.#enqueueForFrame(message);
+  };
+
+  #enqueueForFrame(message: EngineToUi): void {
     this.#renderQueue.push(message);
     if (this.#framePending) return;
     this.#framePending = true;
     this.#scheduleFrame(() => this.#flushRenderQueue());
-  };
+  }
 
   #flushRenderQueue(): void {
     this.#framePending = false;

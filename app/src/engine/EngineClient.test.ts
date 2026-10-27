@@ -68,7 +68,7 @@ describe("WorkerEngineClient", () => {
     await expect(started).resolves.toBeUndefined();
   });
 
-  it("resolves a command result and batches diagnostic events by frame", async () => {
+  it("resolves a command while preserving subscriber emission order", async () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
@@ -88,10 +88,14 @@ describe("WorkerEngineClient", () => {
       type: "command_result",
       id: "command-1",
     });
-    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalled();
     expect(frames).toHaveLength(1);
     frames[0]?.(0);
     expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls.map(([message]) => message.type)).toEqual([
+      "diagnostic",
+      "command_result",
+    ]);
   });
 
   it("rejects a stale UI build", async () => {

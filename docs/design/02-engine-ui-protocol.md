@@ -124,8 +124,9 @@ for a fresh atomic snapshot. Milestone-1 snapshots are single envelopes.
 ## Batching and flow control
 
 Projection changes coalesce for at most one visible UI frame. Repeated upserts collapse by ID,
-add/remove pairs with no visible result disappear, and timeline order is retained. Command results
-and fatal errors bypass the frame delay.
+add/remove pairs with no visible result disappear, and timeline order is retained. Command promises
+resolve immediately, but subscriber notifications stay in engine emission order and join the frame
+batch when an earlier projection is queued. Fatal errors bypass the frame delay.
 
 Hidden clients stop receiving render patches. The engine retains a bounded journal and sends one
 catch-up batch or snapshot on visibility. A client whose outbound queue exceeds 256 batches is
