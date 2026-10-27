@@ -79,9 +79,7 @@ impl Runtime {
 
     fn connect(&self, command_id: String, config: ConnectConfig) -> Vec<EngineToUi> {
         if !valid_endpoint(&config.endpoint, config.allow_insecure) {
-            return vec![EngineToUi::Notice {
-                message_key: "engine.invalid_endpoint".into(),
-            }];
+            return rejected_command(command_id, "engine.invalid_endpoint");
         }
 
         let mut state = lock(&self.state);
@@ -129,15 +127,11 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(mut running) = state.network.take() else {
-            return vec![EngineToUi::Notice {
-                message_key: "engine.network_not_found".into(),
-            }];
+            return rejected_command(command_id, "engine.network_not_found");
         };
         if running.model.id() != network_id {
             state.network = Some(running);
-            return vec![EngineToUi::Notice {
-                message_key: "engine.network_not_found".into(),
-            }];
+            return rejected_command(command_id, "engine.network_not_found");
         }
         let event = running
             .model
@@ -158,14 +152,10 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return vec![EngineToUi::Notice {
-                message_key: "engine.network_not_found".into(),
-            }];
+            return rejected_command(command_id, "engine.network_not_found");
         };
         let Some((pending, output)) = running.model.begin_send(buffer_id, text) else {
-            return vec![EngineToUi::Notice {
-                message_key: "engine.buffer_not_sendable".into(),
-            }];
+            return rejected_command(command_id, "engine.buffer_not_sendable");
         };
         let client = running.client.clone();
         let instance = running.instance;
@@ -367,6 +357,15 @@ fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
     endpoint.starts_with("wss://") || (allow_insecure && endpoint.starts_with("ws://"))
 }
 
+fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
+    vec![
+        EngineToUi::Notice {
+            message_key: message_key.into(),
+        },
+        EngineToUi::CommandResult { id: command_id },
+    ]
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -390,11 +389,50 @@ mod tests {
     use papo_testing::wire;
     use tokio::sync::mpsc;
 
-    use super::{RunningNetwork, RuntimeState, lock, process_event};
+    use super::{RunningNetwork, Runtime, RuntimeState, lock, process_event};
     use crate::{
-        BufferKind, EngineToUi, NetworkId,
+        BufferId, BufferKind, Command, CommandEnvelope, EngineToUi, NetworkId, SaslCredentials,
         state::{NetworkModel, SendTarget},
     };
+
+    #[test]
+    fn rejected_commands_emit_a_notice_and_terminal_result() {
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+        let commands = [
+            Command::Connect {
+                label: "Test".into(),
+                endpoint: "ws://insecure.test".into(),
+                nickname: "weblounge".into(),
+                sasl: SaslCredentials {
+                    account: "weblounge".into(),
+                    password: "secret".into(),
+                },
+                autojoin: Vec::new(),
+                allow_insecure: false,
+            },
+            Command::Disconnect {
+                network_id: NetworkId(1),
+                reason: None,
+            },
+            Command::SendMessage {
+                buffer_id: BufferId(1),
+                text: "hello".into(),
+            },
+        ];
+
+        for (index, command) in commands.into_iter().enumerate() {
+            let id = format!("rejected-{index}");
+            let output = runtime.command(CommandEnvelope {
+                id: id.clone(),
+                command,
+            });
+            assert!(matches!(output.as_slice(), [
+                EngineToUi::Notice { .. },
+                EngineToUi::CommandResult { id: result_id },
+            ] if result_id == &id));
+        }
+    }
 
     async fn next_matching(
         events: &mut papo::Events,
