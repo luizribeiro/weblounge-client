@@ -27,9 +27,12 @@ pub enum EngineToUi {
     Patch(PatchBatch),
     CommandResult(CommandResult),
     IncompatibleBuild { engine: BuildId, ui: BuildId },
-    Fatal(FatalError),
 }
 ```
+
+Worker loading and serialization failures are host conditions, not engine events. The web adapter
+adds a separate `WorkerHostError` union member at its boundary; Rust does not generate a fake
+`Fatal` engine variant for a failure that the engine cannot emit.
 
 The UI and engine carry the same content-derived build ID. A mismatch means a stale SharedWorker
 or cached UI: the web shell reloads assets once, then presents recovery UI if the mismatch remains.
@@ -66,6 +69,12 @@ pub enum Command {
 }
 ```
 
+The milestone-2 vertical slice implements `Connect` with a WebSocket endpoint and one-shot SASL
+PLAIN credentials, `Disconnect`, and plain `SendMessage`. The web host removes its source
+credential value after constructing the command, the worker passes it directly into papo, and no
+credential enters engine projections, notices, or logs. A dedicated secret reference/envelope
+replaces this temporary onboarding boundary when persisted network configuration lands.
+
 `SubmitInput` is the engine-owned slash-command parser/validator path required by the brief;
 ordinary chat input may be normalized into `SendMessage`. `CompleteInput` returns engine-derived
 nick, channel, and command candidates without moving parsing into the UI. `OpenDirect` backs the
@@ -74,6 +83,11 @@ mobile/desktop `+` action. `MarkAllRead` uses the engine's current eligible buff
 Newtypes such as `ChatBufferId`, `PageSize`, and `NonEmptyString` are validated during decode.
 Command results acknowledge success/failure, while state changes remain authoritative only through
 snapshots and patches.
+
+Before the normalized snapshot/patch store lands, the vertical slice emits the same domain changes
+as named generated events: `NetworkStateChanged`, `BuffersChanged`, `BufferAdded`,
+`MessagesAppended`, `MessageConfirmed`, `MessageFailed`, and `UnreadChanged`. These are a narrow
+transport representation of the signed-off projection model, not a second state model.
 
 ## Snapshot and patches
 
@@ -145,7 +159,7 @@ export interface EngineClient {
   send(command: CommandEnvelope): Promise<CommandResult>;
   requestSnapshot(reason: ResyncReason): void;
   setVisibility(state: VisibilityState): void;
-  subscribe(listener: (message: EngineToUi) => void): Unsubscribe;
+  subscribe(listener: (message: EngineToUi | WorkerHostError) => void): Unsubscribe;
   close(): Promise<void>;
 }
 ```
@@ -156,8 +170,9 @@ fallback is independent; diagnostics plus a one-time notice explains possible du
 connections across tabs.
 
 Errors remain typed: invalid input, unsupported action, offline, permission denied, server refusal,
-timeout ambiguity, and internal incidents. Raw credentials and potentially secret server lines do
-not cross IPC. UI localization maps stable message keys to prose.
+timeout ambiguity, and internal incidents. Outside the milestone-2 one-shot connection command,
+raw credentials and potentially secret server lines do not cross IPC. UI localization maps stable
+message keys to prose.
 
 ## Boundaries
 

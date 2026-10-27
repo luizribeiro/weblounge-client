@@ -13,7 +13,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 
 1. [x] Flake, Rust workspace (papo pinned by git rev), SolidJS app skeleton, `nix flake check`, GitHub Actions.
 2. [x] wasm engine in a SharedWorker (dedicated Worker fallback) talking to the UI through `EngineClient`; local Ergo for dev.
-3. [ ] Engine connects through papo; network and buffer state; protocol types generated with ts-rs.
+3. [x] Engine connects through papo; network and buffer state; protocol types generated with ts-rs.
 3a. [ ] Design doc `15-selection-and-native-feel.md` (brief §2): selectable surfaces, copy-as-IRC-text, the context-menu hook, motion tokens, base CSS defaults and primitives (`selectable`, `Line`), and a Playwright native-feel audit (chrome not selectable, no I-beam or browser context menu on chrome, selection doesn't spill, no layout shift on font load) plus idle/hidden-tab waste checks. Task 4 and later UI tasks must pass the audit in CI.
 4. [ ] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
 5. [ ] Message list (virtualised, one-line layout).
