@@ -6,32 +6,28 @@ Status: revised for milestone 1 review.
 
 Milestone 1 needs repeatable evidence for four product moments: launch, buffer switch, composer
 input, and a message burst. The harness must run a real build against a real Ergo server and emit
-machine-readable results without depending on papo's private dev-shell environment.
+machine-readable results without depending on papo's private dev-shell environment or a packaged
+test-server product.
 
 Broader server matrices, soak tests, and native-shell performance wait until the corresponding
 features exist.
 
-## Real-server CLI contract
+## Local Ergo fixture
 
-The harness starts fixtures through one process interface:
+This repository's flake provides the only milestone-1 real-server fixture. Following
+`~/weblounge/lib/test-ergo.nix`, it runs nixpkgs `ergochat` with a generated minimal configuration:
+loopback only, a plaintext `ws://127.0.0.1` listener, one fixture account, and only the capabilities
+needed by the four scenarios. The runner owns its temporary directory, selects the loopback port,
+waits for readiness, passes the URL and account through test environment, and terminates Ergo on
+exit. This is fixture wiring inside the harness, not a public CLI contract or reusable server
+package.
 
-1. launch a profile-specific CLI;
-2. read one JSON line containing IRC, `ws`, and `wss` URLs plus fixture accounts and CA metadata;
-3. optionally request a `FaultProxy` endpoint for disconnect scenarios;
-4. keep stdin open for the fixture lifetime; closing stdin tears down every child process and
-   temporary file.
-
-The preferred provider is a supported exported `papo-test-server` package and CLI from papo's
-flake. That export is proposed but does not exist as an application-facing contract at papo
-revision `7d5e4bf`; approval is an explicit dependency below.
-
-If it is not approved, this repository's flake runs nixpkgs `ergochat` and `soju` and wraps them in
-the same JSON/stdin contract. Tests consume only the contract, so switching provider does not
-change scenarios. The weblounge NixOS `test-ergo` helper remains the hosted-mode fixture.
-
-`papo_testing::wire()` is not this interface: it is a scripted in-memory server for native/WASI
-tests, does not run in browser wasm, and enables papo `unstable`. Browser/E2E tests use the real
-server CLI.
+The fixture serves manual real-server verification and, where cheap, a small automated smoke test
+in addition to performance runs. There is no milestone-1 soju matrix, TLS PKI, fault proxy, or
+packaged papo test server. Native engine transcript tests instead use `papo_testing::wire()`: a
+real papo client over a scripted in-memory pipe. That helper is native-only and is not used by the
+browser or performance harness; unpublished `papo` and `papo-testing` stay pinned to the same git
+revision.
 
 ## Harness pieces
 
@@ -43,7 +39,7 @@ tests/performance/        scenario runner and budget evaluator
 tests/performance/data/   scenario manifests and reviewed baselines
 ```
 
-The traffic driver connects ordinary papo clients to the CLI URLs. It seeds deterministic
+The traffic driver connects ordinary papo clients to the local Ergo URL. It seeds deterministic
 accounts/channels, obeys server rate limits, and emits JSON Lines for readiness, barriers,
 progress, and failure. Timed work begins only after seed state is confirmed. It never implements
 IRC or uses raw protocol sends to bypass papo.
@@ -130,7 +126,7 @@ gates.
 
 ## CI and developer feedback
 
-PR CI starts one Ergo fixture through the CLI contract and runs the four scenarios in Chromium.
+PR CI starts the flake's one local Ergo fixture and runs the four scenarios in Chromium.
 Functional e2e journeys may share the fixture but have independent assertions. Nightly repeats the
 same set under stress until later scenarios are designed.
 
@@ -174,10 +170,12 @@ not part of milestone 1.
 - Start JS/CSS budgets at 250KiB/60KiB gzip and derive the wasm budget from measurement.
 - Adopt 220MiB web-attributable and 350MiB desktop RSS as later soak starting budgets.
 - Use `divan` for engine benchmarks.
+- Luiz, 2026-10-27: run milestone-1 performance scenarios against this repository's small local
+  nixpkgs Ergo fixture; do not depend on a packaged papo test server.
+- Luiz, 2026-10-27: reserve `papo_testing::wire()` for native scripted engine tests, with `papo`
+  and unpublished `papo-testing` pinned to the same git revision.
 
 ## Questions for Luiz / papo gaps
 
 1. Which CI runner class can be pinned for gating measurements, and may later soak jobs reserve it
    for 30–60 minutes?
-2. Should papo export the proposed supported `papo-test-server` package/CLI contract, including
-   JSON endpoints/accounts, stdin-close teardown, and optional `FaultProxy`?
