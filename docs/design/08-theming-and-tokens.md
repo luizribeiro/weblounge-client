@@ -1,305 +1,154 @@
 # 08 — Theming and tokens
 
-Status: proposed for milestone 1 review.
+Status: revised for milestone 1 review.
 
 ## Problem
 
-Five visually distinct themes must drive every rendered value without component-specific colours
-or theme branches. A theme swap should update CSS variables without rebuilding the Solid component
-tree. The same data must be usable by a future native UI, settings preview cards, onboarding, and
-visual tests.
+Themes must drive every rendered colour, font, radius, and effect without component branches. A
+theme swap changes CSS variables without rebuilding the Solid tree. Adding a theme must require
+one theme file, not a manifest edit or Rust code change.
 
-Themes describe appearance; they do not contain layout density, user settings, feature flags, or
-component markup. Density is subsystem 09.
+Density is subsystem 09. Themes contain no layout settings, capability flags, or component markup.
 
-## Theme files and schema
+## Theme files
 
-Each theme is one checked JSON file under `app/themes/<id>.json`. JSON is chosen because Rust,
-TypeScript, build tools, and potential native UIs can consume it without executing code. A build
-step validates every file against a closed Rust schema and generates:
+Each theme is one checked JSON file at `app/themes/<id>.json`:
 
-- a typed TypeScript registry;
-- a Rust registry for non-web consumers;
-- one CSS custom-property block per theme;
-- a deterministic preview palette.
-
-Generation fails for missing, unknown, invalid, or duplicate fields. Components never import raw
-JSON.
-
-```rust
-#[serde(deny_unknown_fields)]
-pub struct ThemeDefinition {
-    pub id: ThemeId,
-    pub label_key: MessageKey,
-    pub description_key: MessageKey,
-    pub appearance: ThemeAppearance,
-    pub colors: ColorTokens,
-    pub typography: TypographyTokens,
-    pub shape: ShapeTokens,
-    pub effects: EffectTokens,
-    pub nick_palette: NonEmptyVec<CssColor>,
-}
-
-pub enum ThemeId { Lounge, LoungeNight, Modern, Terminal, Retro }
-pub enum ThemeAppearance { Light, Dark }
-
-pub struct ColorTokens {
-    pub background: CssColor,
-    pub surface: CssColor,
-    pub panel: CssColor,
-    pub panel_foreground: CssColor,
-    pub panel_muted: CssColor,
-    pub panel_border: CssColor,
-    pub panel_alternate: CssColor,
-    pub foreground: CssColor,
-    pub muted: CssColor,
-    pub border: CssColor,
-    pub accent: CssColor,
-    pub accent_foreground: CssColor,
-    pub selection: CssColor,
-    pub selection_foreground: CssColor,
-    pub mention_background: CssColor,
-    pub unread: CssColor,
-    pub input_background: CssColor,
-    pub chip: CssColor,
-    pub code_background: CssColor,
-    pub online: CssColor,
-    pub self_nick: CssColor,
-    pub error: CssColor,
-}
-
-pub struct TypographyTokens {
-    pub ui_family: FontStack,
-    pub title_family: FontStack,
-    pub message_family: FontStack,
-    pub monospace_family: FontStack,
-    pub section_label: SectionLabelStyle,
-    pub base_px: BaseFontPx,
-}
-
-pub struct ShapeTokens {
-    pub control_radius: CssLength,
-    pub avatar_radius: CssLength,
-    pub composer_radius: CssLength,
-    pub overlay_radius: CssLength,
-    pub pill_radius: CssLength,
-}
-
-pub struct EffectTokens {
-    pub overlay_shadow: CssShadow,
-    pub network_icon_ring: CssShadow,
-    pub overlay_backdrop: CssColor,
+```ts
+export interface ThemeDefinition {
+  readonly id: ThemeId;
+  readonly name: string;
+  readonly order: number;
+  readonly appearance: "light" | "dark";
+  readonly colors: ColorTokens;
+  readonly typography: TypographyTokens;
+  readonly shape: ShapeTokens;
+  readonly effects: EffectTokens;
+  readonly nickPalette: readonly [CssColor, ...CssColor[]];
+  readonly onboarding?: OnboardingTokens;
 }
 ```
 
-`CssColor`, `CssLength`, and `CssShadow` are validated value types with intentionally small
-grammars. Colours accept hex, `rgb[a]`, and `oklch`; lengths used here accept nonnegative `px`,
-`rem`, or `%`; shadows reject URLs and declarations. This prevents theme data from becoming an
-arbitrary CSS injection surface.
+A build-time TypeScript validator rejects missing, unknown, duplicate, or invalid values and emits
+the typed UI registry and CSS custom-property blocks. It discovers files from the directory;
+`order` makes picker order deterministic. Names live in the file, so there is no separate theme
+manifest or message-key registration. A future native UI may consume the same JSON directly, but
+milestone 1 has no Rust theme registry.
 
-The prototype appendix supplies the initial values. Existing names map as follows:
-`bg → background`, `fg → foreground`, `panelAlt → panel_alternate`, `sel → selection`,
-`mentionBg → mention_background`, `inputBg → input_background`, `codeBg → code_background`, and
-`iconRing → network_icon_ring`. Generated output retains no second alias set.
+The schema covers the appendix token set plus an explicit `focusRing` semantic colour. Initial
+`focusRing` values use each theme's accent. The accepted milestone-1 colour grammar is the appendix
+formats (hex and `rgb[a]` where needed); arbitrary CSS and `oklch` are not accepted.
 
-## Theme selection
+`OnboardingTokens` is present on Lounge and Lounge Night and uses the onboarding appendix values
+exactly, including the distinct dark `header: #0f1613`. It is not derived from the Lounge Night
+chat palette and is not a sixth theme.
 
-```rust
-pub enum ThemePreference {
-    System { light: ThemeId, dark: ThemeId },
-    Fixed(ThemeId),
-}
+## CSS contract
 
-impl Default for ThemePreference {
-    fn default() -> Self {
-        Self::System { light: ThemeId::Lounge, dark: ThemeId::LoungeNight }
-    }
-}
-```
-
-Only opposite-appearance themes may populate `System`; validation rejects Lounge/Lounge, for
-example. A fixed theme never changes with the OS. The resolved theme is a UI projection of the
-preference plus `matchMedia('(prefers-color-scheme: dark)')`.
-
-The root element receives `data-theme="lounge"` and `color-scheme: light` (or dark). System changes
-replace that attribute synchronously. The media-query listener is installed once by the app shell
-and removed on teardown. It does not write settings when the OS changes.
-
-The onboarding palette is a named surface mapping derived from Lounge/Lounge Night tokens, not a
-sixth hard-coded theme. Its `paper`, `ink`, `line`, `panel`, `soft`, `accent`, `signal`, and header
-roles are declared in a small `OnboardingThemeRoles` mapping validated against the same token
-registry.
-
-## CSS variable mapping
-
-Generated CSS uses a stable prefix and semantic names:
+Generated CSS uses stable semantic variables such as:
 
 ```css
 :root[data-theme="lounge"] {
   --wl-color-bg: /* generated */;
-  --wl-color-surface: /* generated */;
   --wl-color-fg: /* generated */;
-  --wl-color-muted: /* generated */;
-  --wl-color-border: /* generated */;
   --wl-color-accent: /* generated */;
+  --wl-color-focus-ring: /* generated */;
   --wl-font-ui: /* generated */;
-  --wl-font-mono: /* generated */;
   --wl-radius-control: /* generated */;
-  --wl-shadow-overlay: /* generated */;
 }
 ```
 
-The comments above stand for generated values; production component CSS may not contain raw
-colour literals. Biome plus a custom style check rejects hex/rgb/hsl/oklch literals outside theme
-files and generated CSS. It also rejects unprefixed custom properties in component modules.
+CSS Modules are the only component styling mechanism. Components may consume theme and density
+variables, but may not contain raw colours, select a theme ID, or import source JSON. A style check
+rejects those violations. Missing semantic roles are added to every theme file in one reviewed
+change.
 
-CSS Modules are the only component styling mechanism. A component may use semantic variables,
-layout primitives, and density variables; it may not branch on `data-theme`, import a theme, or
-invent a component colour. If a semantic role is genuinely missing, add it to the schema and all
-five files in one reviewed theme change.
+The root carries `data-theme` and matching `color-scheme`. Theme changes mutate variables only;
+message rows do not subscribe to individual values.
 
-Theme changes mutate variables only. Solid state stores `ThemePreference` and the resolved ID for
-settings/ARIA; message rows do not subscribe to individual theme values.
+## Selection and system appearance
+
+First run follows the OS: Lounge in light mode and Lounge Night in dark mode. A manual theme choice
+becomes fixed. A visible “Match system” picker option is deferred as the brief specifies.
+
+One `matchMedia('(prefers-color-scheme: dark)')` listener resolves the initial implicit preference,
+updates the root synchronously, and is removed on teardown. OS changes do not rewrite a fixed user
+choice.
 
 ## Nick colours
 
 ```rust
-pub struct NickColorIndex(u8);
-
-pub fn nick_color_index(network_salt: NetworkColorSalt, identity: &NickIdentity) -> NickColorIndex;
-
-pub enum NickIdentity<'a> {
-    Account(&'a str),
-    Nick { casemapped: &'a str },
-}
+pub fn nick_color_index(name_rules: NameRules<'_>, nick: &str) -> NickColorIndex;
 ```
 
-The engine computes a stable palette index, preferring account identity and otherwise using
-papo's server casemapping result. It never emits a colour. The UI maps the index modulo the active
-theme's nonempty palette. The user's own nick always uses `--wl-color-self-nick`. Mentions of other
-nicks use the same index as their message author/member-list appearance.
+The engine hashes the server-casemapped nick, not account identity. Mentions in message text carry
+only a nick, so this rule guarantees that the same visible nick receives the same palette index in
+messages, mention spans, and member rows. The UI maps that index modulo the active nonempty palette;
+the user's own nick uses `selfNick`.
 
-Changing theme preserves indexes, so colours change palette consistently without state churn.
-Changing account identity may change the stable colour; a mere typed nick rename without an
-account retains the engine's identity key where continuity is known.
+Theme changes preserve indexes. A nick change may change the colour because the visible identity
+changed; no account-only colour can be reproduced for a plain-text mention.
 
-## Theme registry and preview cards
+## Picker previews and fonts
 
-```ts
-export interface ThemeRegistryEntry {
-  readonly id: ThemeId;
-  readonly labelKey: MessageKey;
-  readonly descriptionKey: MessageKey;
-  readonly appearance: "light" | "dark";
-  readonly preview: ThemePreviewTokens;
-}
+The generated registry exposes a small preview token subset from each file. Settings renders DOM
+preview cards from those tokens, not screenshots or nested apps. The decorative mini-layout is
+`aria-hidden`; the control uses the theme's `name` as its label.
 
-export interface ThemePreviewTokens {
-  readonly background: CssColor;
-  readonly panel: CssColor;
-  readonly foreground: CssColor;
-  readonly muted: CssColor;
-  readonly accent: CssColor;
-  readonly selection: CssColor;
-  readonly border: CssColor;
-  readonly radius: CssLength;
-  readonly fontFamily: FontStack;
-}
-```
-
-Settings enumerates the generated registry; there is no hand-maintained theme list. Preview cards
-are small DOM compositions styled through inline custom properties from `preview`, not screenshots
-and not a live nested app. The card has an accessible text label; its decorative mini-layout is
-`aria-hidden`.
-
-Adding a theme means adding one valid JSON file and any licensed font assets. Registry order is an
-explicit generated manifest order, so filesystem ordering cannot change settings unexpectedly.
-
-## Fonts and layout stability
-
-Fonts are self-hosted, subset to the required scripts, fingerprinted, and preloaded only for the
-resolved initial theme. Every stack ends in metric-compatible system fallbacks. `@font-face` uses
-`font-display: swap`; ascent, descent, line-gap, and size adjustments are generated where font
-metrics require them. Containers reserve dimensions from density tokens, so a font swap cannot
-move pane chrome or the unread marker.
-
-Lounge uses Inter plus the system monospace stack; Modern uses Geist/Geist Mono; Terminal uses IBM
-Plex Mono throughout; Retro uses Work Sans, Fraunces, and Courier Prime as specified by the brief.
-Font licences and source versions are recorded beside the assets before shipping.
-
-Browser zoom and Dynamic Type scale from the theme base through `rem`. The numeric base is not
-copied into fixed component pixel sizes. Mobile's `base + 1px` is a shell-level typography scale
-token derived from the active theme, not a separate theme.
+Fonts follow the brief: Inter, the system monospace stack, Geist/Geist Mono, IBM Plex Mono, Work
+Sans, Fraunces, and Courier Prime. The named bundled font families use SIL OFL licensing and may be
+redistributed. Assets are self-hosted, fingerprinted, subset where appropriate, and use metric
+adjustments plus `font-display: swap` to avoid layout shift. Mobile's base `+1px` is a shell
+typography variable, not another theme.
 
 ## Network icons and brand assets
 
-```ts
-export type NetworkIcon =
-  | { readonly kind: "remote"; readonly url: HttpsUrl; readonly backing: IconBacking }
-  | { readonly kind: "letter"; readonly letter: string; readonly colorIndex: number }
-  | { readonly kind: "brand"; readonly asset: BrandAsset };
+Remote `draft/ICON` images are content. They render unchanged with the theme's `iconRing`; failures
+fall back to a themed letter tile. The first themed milestone always uses the light backing-plate
+token where needed rather than inspecting image alpha.
 
-export type IconBacking = "none" | "lightPlate" | "unknown";
-```
+Remote SVG stays an image resource and is never injected into the DOM. Fetch limits and caching
+belong to a later image-security design. App brand assets come from the paths named in
+`AGENTS.md` and may use approved light/dark variants.
 
-Remote `draft/ICON` images are content, not theme data. They render unchanged with the theme's
-`network_icon_ring`; dark themes therefore retain the subtle inner ring from the prototype.
-Downloaded images are decoded off the main interaction path and inspected once for meaningful
-alpha. Transparent images get a neutral light backing plate token. The decision and cache key are
-stored with the image cache, not recalculated on render. Failure becomes a themed letter tile.
+## Accessibility
 
-Remote SVG is displayed as an image resource, never injected into the DOM. URL, content-type,
-size, pixel dimensions, and redirect limits belong to the later image/cache security design.
-
-The app chair, favicon, illustration, and wordmark originate from `~/weblounge/web/images/` and
-are copied as versioned project assets during implementation. They may have approved light/dark
-variants or use `currentColor`; components must not recolour arbitrary remote network icons.
-
-## Accessibility and contrast
-
-Every theme is checked for WCAG contrast on actual semantic pairs: foreground/background,
-foreground/surface, panel foreground/panel, muted text on its surfaces, selection foreground,
-accent controls, error text, unread lines, and focus rings. Nick palettes are checked on normal,
-mention, selection, and panel backgrounds. A palette colour that cannot meet text contrast is
-restricted to decorative identity and paired with non-colour identification.
-
-High-contrast media preferences map to a small generated override layer using existing semantic
-roles; components still do not branch. Focus visibility, online status, mentions, and errors never
-rely on colour alone.
+Validation checks the actual foreground/background, panel, selection, accent-control, error,
+unread, and focus-ring pairs. Nick colours are checked on message and panel surfaces; identity is
+never conveyed by colour alone. Keyboard focus always uses the explicit focus-ring token.
 
 ## Boundaries
 
-This subsystem owns the closed theme schema, source files, validation/generation, registry, CSS
-variable mapping, theme resolution, preview tokens, font declarations, and icon presentation
-policy. It must not own density, pane geometry, component markup, network fetching, settings
-persistence, IRC capability detection, or engine nick hashing beyond consuming an index.
+This subsystem owns the theme-file schema, build validation, generated registry/CSS, system
+resolution, previews, font declarations, nick palette mapping, and icon presentation tokens. It
+does not own density, component markup, image fetching, settings persistence, or capabilities.
 
 ## Testing
 
-- Schema tests accept all five source themes and reject missing/extra/unsafe values and empty nick
-  palettes.
-- Generated files must be reproducible and clean in CI.
-- A style lint scans component CSS for raw colours, theme selectors, and unknown variables.
-- Component tests switch all themes without remounting and verify system preference listener
-  cleanup.
-- Playwright screenshots cover every theme × density × shell at standard and high contrast, with
-  deterministic font loading.
-- Automated contrast tests evaluate every declared semantic pair and nick palette context.
-- Icon tests cover opaque, transparent, dark, failed, oversized, and malicious SVG resources.
-- Performance tests assert a theme swap causes no message-row reconciliation storm or layout shift.
+- Schema tests accept all five appendix themes and reject missing/extra/unsafe values, duplicate
+  IDs/orders, and empty nick palettes.
+- Generated registry/CSS output must be reproducible.
+- Style lint rejects raw component colours, theme selectors, and unknown custom properties.
+- Component tests switch themes without remounting and verify system-listener cleanup.
+- Visual tests cover the implemented theme × density × shell matrix with deterministic fonts.
+- Contrast tests include focus rings and nick palette contexts.
+- Performance tests assert theme switching causes no message-row reconciliation or layout shift.
 
 ## Out of scope
 
-A theme editor, downloadable third-party themes, user-authored CSS, per-network themes, animated
-themes, and native UI rendering are not planned for milestone 1.
+Theme editors, downloadable themes, user CSS, per-network themes, and native rendering are not
+part of milestone 1.
 
-## Questions for Luiz
+## Later
 
-1. Should “System” be a visible sixth picker choice (proposed), or only the implicit first-run
-   default with any manual choice becoming fixed?
-2. Confirm the repository may redistribute Inter, Geist, IBM Plex Mono, Work Sans, Fraunces, and
-   Courier Prime; otherwise approve system fallbacks for affected themes.
-3. Should the onboarding palette track Lounge/Lounge Night exactly, or preserve the slightly
-   different current website palette in a dedicated validated role file?
-4. Is remote network-icon alpha inspection worth shipping in the first themed milestone, or may
-   the first slice always use the backing plate until the cache design lands?
+- Add a visible “Match system” setting with the full appearance settings milestone.
+- Consider a Rust registry only when a native UI exists.
+- Consider `oklch`, high-contrast override layers, and remote-icon alpha inspection after the
+  initial theme system is measured and shipped.
+
+## Decisions
+
+- Keep system matching as the implicit first-run default; a visible option is a follow-up.
+- Redistribute the brief's bundled fonts under their SIL OFL licences.
+- Use the onboarding appendix values exactly as written.
+- Defer remote-icon alpha inspection and use the backing-plate treatment initially.
