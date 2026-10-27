@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>weblounge — split view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..600&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+input::placeholder{color:inherit;opacity:.6}
+@keyframes wl-swap-a{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes wl-swap-b{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.wl-anim{animation:none !important}}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 600px; display: flex; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: {{t.ui}}; font-size: 14px; user-select: none">
+
+<aside aria-label="Channels" style="flex: 0 0 248px; width: 248px; min-height: 0; display: flex; flex-direction: column; background: {{t.panel}}; color: {{t.panelFg}}; border-right: 1px solid {{t.panelBorder}}">
+<div style="display: flex; align-items: center; gap: 10px; padding: 14px 12px 12px 14px">
+<span aria-hidden="true" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 7px; background: #1d2825; color: #f3f1e9; box-shadow: {{t.iconRing}}">
+<svg width="24" height="24" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 6.8 L13.53 6.41 L13.48 6.09 L13.42 5.96 L13.26 5.76 L13.01 5.64 L12.69 5.59 L12.5 5.6 L9.6 5.9 L9.4 3.6 L9.33 3.2 L9.2 2.88 L9.11 2.74 L8.88 2.53 L8.58 2.38 L8.21 2.31 L8 2.3 L3.09 2.5 L2.9 2.54 L2.76 2.62 L2.62 2.81 L2.59 2.99 L2.6 3.2 L3.8 10.6 L3.88 10.88 L3.97 11.03 L4.09 11.14 L4.23 11.21 L4.5 11.25 L6.4 11.25 L6.4 8.44 L6.35 8.2 L6.19 7.79 L6.09 7.64 L5.84 7.42 L5.5 7.28 L5.29 7.24 L4.78 7.25 L4.46 7.3 L4.3 7.29 L4.16 7.22 L4.06 7.11 L4 6.96 L4.01 6.8 L4.08 6.66 L4.19 6.56 L4.34 6.5 L4.68 6.45 L5.07 6.43 L5.67 6.49 L6.02 6.61 L6.23 6.72 L6.48 6.9 L6.73 7.17 L7.01 7.66 L7.12 8 L13.2 8 L13.31 8.02Z M7.2 11.25 L12.32 11.23 L12.58 11.14 L12.71 11.03 L12.81 10.88 L12.9 10.6 L13.18 8.8 L7.2 8.8Z"></path><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M4.6 11.25 L4.2 13.4 M6.8 11.25 L6.6 13.4 M12.1 11.25 L12.5 13.4"></path></svg>
+</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">weblounge</span>
+<span style="font-size: 11px; color: {{t.panelMuted}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{paneSummary}}</span>
+</div>
+</div>
+<nav aria-label="Networks and channels" style="flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 12px; display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 1px">
+<div style="padding: 6px 10px 4px; font-family: {{sec.t.mono}}; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: {{sec.t.panelMuted}}; white-space: nowrap">{{sec.name}}</div>
+<sc-for list="{{sec.items}}" as="ch" hint-placeholder-count="4">
+<button type="button" draggable="true" onDragStart="{{ch.dragStart}}" onDragEnd="{{ch.dragEnd}}" onClick="{{ch.open}}" aria-current="{{ch.current}}" title="{{ch.tip}}" style="display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 3px 10px; border: 0; border-radius: 3px; background: {{ch.bg}}; color: {{ch.fg}}; font-weight: {{ch.weight}}; text-align: left; font-size: 13px; cursor: grab">
+<span aria-hidden="true" style="width: 14px; flex: 0 0 14px; text-align: center; color: {{ch.prefixColor}}; font-family: {{ch.t.mono}}">{{ch.glyph}}</span>
+<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ch.label}}</span>
+<sc-if value="{{ch.inPane}}" hint-placeholder-val="{{ false }}"><span role="img" aria-label="open in a pane" style="width: 10px; height: 8px; flex: 0 0 10px; box-sizing: border-box; border: 1.5px solid {{ch.paneColor}}; border-radius: 2px"></span></sc-if>
+<sc-if value="{{ch.hasUnread}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 500; color: {{ch.t.panelMuted}}; font-family: {{ch.t.mono}}">{{ch.unread}}</span></sc-if>
+<sc-if value="{{ch.hasMention}}" hint-placeholder-val="{{ false }}"><span style="min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: {{ch.t.accent}}; color: {{ch.t.accentFg}}">{{ch.mention}}</span></sc-if>
+</button>
+</sc-for>
+</div>
+</sc-for>
+</nav>
+<div style="padding: 10px 14px 14px; border-top: 1px solid {{t.panelBorder}}; font-size: 12px; line-height: 1.45; color: {{t.panelMuted}}">
+<span style="display: block; font-weight: 600; color: {{t.panelFg}}">Split view</span>
+Drag a channel onto a pane’s edge to split it, or onto its middle to replace it. ⌥-click opens a channel beside the focused pane. Drag a pane by its header to move it.
+</div>
+</aside>
+
+<main aria-label="Conversations" style="flex: 1; min-width: 0; position: relative; background: {{t.panelBorder}}">
+
+<sc-for list="{{panes}}" as="p" hint-placeholder-count="3">
+<section aria-label="{{p.title}}" onDragOver="{{p.dragOver}}" onDrop="{{p.drop}}" onPointerDown="{{p.focus}}" style="position: absolute; left: {{p.left}}; top: {{p.top}}; width: {{p.width}}; height: {{p.height}}; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: {{p.t.surface}}; border-top: 2px solid {{p.focusColor}}">
+<header draggable="true" onDragStart="{{p.dragStart}}" onDragEnd="{{p.dragEnd}}" onDoubleClick="{{p.toggleZoom}}" style="flex: 0 0 38px; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 12px; border-bottom: 1px solid {{p.t.border}}; background: {{p.headerBg}}; cursor: grab">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; color: {{p.t.fg}}">{{p.title}}</h2>
+<span style="flex: 1; min-width: 0; font-size: 12px; color: {{p.t.muted}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.topic}}</span>
+<sc-if value="{{p.hasBuf}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{p.showMembers}}" aria-label="{{p.membersLabel}}" title="{{p.membersLabel}}" aria-pressed="{{p.membersPressed}}" style="height: 28px; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 0; border-radius: 3px; background: {{p.membersBg}}; color: {{p.membersFg}}; font-size: 12px; font-weight: 500; white-space: nowrap"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1"></path><circle cx="9.5" cy="8" r="3.5"></circle><path d="M21 19v-1a4 4 0 0 0-3-3.87"></path><path d="M16 4.13a4 4 0 0 1 0 7.75"></path></svg>{{p.memberCount}}</button></sc-if>
+<button type="button" onClick="{{p.splitRight}}" aria-label="Split right" title="Split right" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: {{p.t.muted}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M12 4v16"></path></svg></button>
+<button type="button" onClick="{{p.splitDown}}" aria-label="Split down" title="Split down" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: {{p.t.muted}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 12h18"></path></svg></button>
+<button type="button" onClick="{{p.toggleZoom}}" aria-label="{{p.zoomLabel}}" title="{{p.zoomLabel}}" aria-pressed="{{p.zoomed}}" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 3px; background: {{p.zoomBg}}; color: {{p.t.muted}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg></button>
+<button type="button" onClick="{{p.close}}" aria-label="Close pane" title="Close pane" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: {{p.t.muted}}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+</header>
+
+<sc-if value="{{p.isEmpty}}" hint-placeholder-val="{{ false }}">
+<div style="flex: 1; display: grid; place-items: center; padding: 24px; text-align: center; color: {{p.t.muted}}; font-size: 13px">Drop a channel here, or pick one from the sidebar.</div>
+</sc-if>
+
+<sc-if value="{{p.hasBuf}}" hint-placeholder-val="{{ true }}">
+<div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 6px 0; user-select: text">
+<div style="margin-top: auto; display: flex; flex-direction: column">
+<sc-for list="{{p.items}}" as="m" hint-placeholder-count="8">
+<sc-if value="{{m.isDay}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px 4px; font-family: {{m.t.mono}}; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: {{m.t.muted}}; user-select: none">
+<span style="flex: 1; height: 1px; background: {{m.t.border}}"></span><span>{{m.text}}</span><span style="flex: 1; height: 1px; background: {{m.t.border}}"></span>
+</div>
+</sc-if>
+<sc-if value="{{m.isEvent}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 2px 14px 2px {{m.indent}}; font-size: 12px; color: {{m.t.muted}}; font-family: {{m.t.mono}}">{{m.text}}</div>
+</sc-if>
+<sc-if value="{{m.isUnread}}" hint-placeholder-val="{{ false }}">
+<div role="separator" aria-label="New messages" style="display: flex; align-items: center; gap: 8px; padding: 6px 14px; user-select: none"><span style="flex: 1; height: 1px; background: {{m.t.unread}}"></span><span style="font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.t.unread}}">New</span></div>
+</sc-if>
+<sc-if value="{{m.isAction}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 2px 14px 2px {{m.indent}}; font-style: italic; font-size: 13.5px; line-height: 1.5"><span style="margin-right: 5px; color: {{m.t.muted}}">*</span><span style="margin-right: 5px; font-weight: 600; color: {{m.nickColor}}">{{m.nick}}</span>{{m.text}}</div>
+</sc-if>
+<sc-if value="{{m.isMsg}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; gap: 10px; padding: 2px 14px; font-size: 13.5px; line-height: 1.5; background: {{m.rowBg}}">
+<span style="flex: 0 0 40px; font-family: {{m.t.mono}}; font-size: 11.5px; line-height: 20px; color: {{m.t.muted}}">{{m.time}}</span>
+<span style="flex: 0 0 76px; text-align: right; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: {{m.t.muted}}; font-weight: 500">{{m.prefix}}</span><span style="color: {{m.nickColor}}">{{m.nick}}</span></span>
+<span style="flex: 1; min-width: 0; overflow-wrap: anywhere; color: {{m.t.fg}}"><sc-if value="{{m.isBot}}" hint-placeholder-val="{{ false }}"><span style="display: inline-block; margin-right: 6px; padding: 0 4px; border: 1px solid {{m.t.border}}; border-radius: 3px; font-family: {{m.t.mono}}; font-size: 9.5px; font-weight: 600; line-height: 15px; letter-spacing: 0.06em; vertical-align: 1px; color: {{m.t.muted}}">BOT</span></sc-if><sc-for list="{{m.segs}}" as="sg" hint-placeholder-count="1"><span style="color: {{sg.color}}; font-weight: {{sg.weight}}">{{sg.text}}</span></sc-for></span>
+</div>
+</sc-if>
+</sc-for>
+</div>
+</div>
+<div style="flex: 0 0 auto; padding: 6px 10px 10px">
+<label for="{{p.inputId}}" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap">Message {{p.title}}</label>
+<input id="{{p.inputId}}" type="text" placeholder="{{p.placeholder}}" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0 10px; border: 1px solid {{p.t.border}}; border-radius: 6px; background: {{p.t.inputBg}}; color: {{p.t.fg}}; font-family: {{p.t.ui}}; font-size: 13.5px">
+</div>
+</sc-if>
+
+<sc-if value="{{p.showZone}}" hint-placeholder-val="{{ false }}">
+<div aria-hidden="true" style="position: absolute; left: {{p.zoneLeft}}; top: {{p.zoneTop}}; width: {{p.zoneWidth}}; height: {{p.zoneHeight}}; box-sizing: border-box; border: 2px solid {{p.t.accent}}; border-radius: 4px; background: {{p.zoneFill}}; pointer-events: none; display: grid; place-items: center">
+<span style="padding: 4px 10px; border-radius: 3px; background: {{p.t.accent}}; color: {{p.t.accentFg}}; font-size: 12px; font-weight: 600; white-space: nowrap">{{p.zoneLabel}}</span>
+</div>
+</sc-if>
+</section>
+</sc-for>
+
+<sc-for list="{{dividers}}" as="d" hint-placeholder-count="2">
+<div role="separator" aria-orientation="{{d.orientation}}" aria-label="Resize panes" onPointerDown="{{d.down}}" onPointerMove="{{d.move}}" onPointerUp="{{d.up}}" onDoubleClick="{{d.reset}}" style="position: absolute; z-index: 5; left: {{d.left}}; top: {{d.top}}; width: {{d.width}}; height: {{d.height}}; cursor: {{d.cursor}}; touch-action: none; display: grid; place-items: center">
+<span aria-hidden="true" style="width: {{d.lineW}}; height: {{d.lineH}}; background: {{d.lineColor}}"></span>
+</div>
+</sc-for>
+
+</main>
+
+<sc-if value="{{showMembers}}" hint-placeholder-val="{{ true }}">
+<aside aria-label="{{membersAria}}" style="flex: 0 0 232px; width: 232px; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid {{t.border}}; background: {{t.panelAlt}}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 6px; height: 40px; box-sizing: border-box; padding: 0 4px 0 14px; border-bottom: 1px solid {{t.border}}">
+<span style="font-weight: 600; font-size: 14px; white-space: nowrap">Members</span>
+<span style="flex: 1; min-width: 0; font-size: 12px; color: {{t.muted}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{membersTotal}}</span>
+<button type="button" onClick="{{closeMembers}}" aria-label="Hide members" title="Hide members" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: {{t.muted}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+</div>
+<div class="wl-anim" style="flex: 1; min-height: 0; display: flex; flex-direction: column; animation: {{membersAnim}}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 8px; margin: 10px 10px 4px; padding: 6px 10px; border-radius: 4px; background: {{t.chip}}; font-size: 12px; color: {{t.muted}}">
+<span aria-hidden="true" style="width: 8px; height: 8px; flex: 0 0 8px; border-radius: 2px; background: {{t.accent}}"></span>
+<span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Following <strong style="font-weight: 600; color: {{t.fg}}">{{membersFor}}</strong></span>
+</div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding: 8px 8px 14px; display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{memberGroups}}" as="g" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 1px">
+<div style="padding: 0 8px 4px; font-family: {{g.t.mono}}; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: {{g.t.muted}}; white-space: nowrap">{{g.label}}</div>
+<sc-for list="{{g.list}}" as="u" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 6px; min-height: 26px; padding: 1px 8px">
+<span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"><span style="display: inline-block; min-width: 10px; color: {{u.t.muted}}; font-family: {{u.t.mono}}">{{u.prefix}}</span><span style="color: {{u.color}}">{{u.nick}}</span></span>
+<sc-if value="{{u.isBot}}" hint-placeholder-val="{{ false }}"><span style="padding: 0 4px; border: 1px solid {{u.t.border}}; border-radius: 3px; font-family: {{u.t.mono}}; font-size: 9.5px; font-weight: 600; line-height: 15px; letter-spacing: 0.06em; color: {{u.t.muted}}">BOT</span></sc-if>
+<sc-if value="{{u.isYou}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; color: {{u.t.muted}}">you</span></sc-if>
+</div>
+</sc-for>
+<sc-if value="{{g.hasMore}}" hint-placeholder-val="{{ false }}"><div style="padding: 2px 8px 0 24px; font-size: 12px; color: {{g.t.muted}}">and {{g.more}} more…</div></sc-if>
+</div>
+</sc-for>
+</div>
+</div>
+</aside>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+/* Two of the app's themes, following the system light/dark setting. */
+const SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const MONO = "ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace";
+const THEMES = {
+  lounge: {
+    bg: '#f3f1e9', panel: '#eaede3', panelFg: '#1d2825', panelMuted: '#5c655d', panelBorder: '#d5d8ce', panelAlt: '#faf9f4',
+    surface: '#f3f1e9', fg: '#1d2825', muted: '#5c655d', border: '#d5d8ce', accent: '#4e6244', accentFg: '#f3f1e9',
+    sel: '#bdd9a7', selFg: '#1d2825', mentionBg: '#e3ebd6', unread: '#9a3b2e', inputBg: '#faf9f4', zoneFill: 'rgba(78, 98, 68, 0.14)',
+    ui: SANS, mono: MONO, selfNick: '#4e6244', iconRing: 'none',
+    nicks: ['#2f6b5e', '#8a5a12', '#3f5f8a', '#9a3b2e', '#6a4f86', '#7a4a62']
+  },
+  loungeNight: {
+    bg: '#18221e', panel: '#131b18', panelFg: '#edefe5', panelMuted: '#a9b3a8', panelBorder: '#2a352e', panelAlt: '#1b2621',
+    surface: '#18221e', fg: '#edefe5', muted: '#a9b3a8', border: '#39463b', accent: '#bdd9a7', accentFg: '#18221e',
+    sel: '#2c3a2f', selFg: '#edefe5', mentionBg: '#25321f', unread: '#eba293', inputBg: '#202c24', zoneFill: 'rgba(189, 217, 167, 0.12)',
+    ui: SANS, mono: MONO, selfNick: '#bdd9a7', iconRing: 'inset 0 0 0 1px rgba(237, 239, 229, 0.16)',
+    nicks: ['#8fd3c1', '#e8c07a', '#9cb8e8', '#eba293', '#c6aee8', '#d9d48a']
+  }
+};
+function prefersDark() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { return false; }
+}
+
+const NICK_ORDER = ['ana', 'bruno', 'cyd', 'mel', 'rafa', 'tomo', 'kit', 'deko', 'concierge'];
+const MODES = { luiz: '@', mel: '@', bruno: '+', concierge: '+' };
+const BOTS = { concierge: true };
+const MENTION_RE = new RegExp('\\b(' + NICK_ORDER.concat(['luiz']).join('|') + ')\\b', 'g');
+function segments(text, colorOf) {
+  const src = String(text || '');
+  const out = [];
+  let last = 0;
+  src.replace(MENTION_RE, (match, n, idx) => {
+    if (idx > last) out.push({ text: src.slice(last, idx), color: 'inherit', weight: 'inherit' });
+    out.push({ text: match, color: colorOf(n), weight: '600' });
+    last = idx + match.length;
+    return match;
+  });
+  if (last < src.length) out.push({ text: src.slice(last), color: 'inherit', weight: 'inherit' });
+  return out;
+}
+
+const BUFFERS = {
+  lobby: { title: '#lobby', glyph: '#', topic: 'welcome to weblounge · be kind, ship things', unread: 4 },
+  papo: { title: '#papo', glyph: '#', topic: 'papo — a modern IRCv3 client library for Rust' },
+  chap: { title: '#chap', glyph: '#', topic: 'agents, sandboxes and plugins', unread: 12 },
+  nix: { title: '#nix', glyph: '#', topic: 'flakes, modules and the occasional rebuild' },
+  halloy: { title: '#halloy', glyph: '#', topic: 'Halloy · an IRC client written in Rust', unread: 2 },
+  nixos: { title: '#nixos', glyph: '#', topic: 'NixOS discussion · be excellent to each other', unread: 31 },
+  mel: { title: 'mel', glyph: '@', topic: 'direct message · online', mention: 1 },
+  ana: { title: 'ana', glyph: '@', topic: 'direct message · online' }
+};
+const SECTIONS = [
+  { name: 'weblounge', items: ['lobby', 'papo', 'chap', 'nix'] },
+  { name: 'libera.chat', items: ['halloy', 'nixos'] },
+  { name: 'Direct', items: ['mel', 'ana'] }
+];
+const MSGS = {
+  papo: [
+    { k: 'day', text: 'Today' },
+    { k: 'event', text: '→ mel, rafa and cyd joined' },
+    { k: 'msg', nick: 'ana', time: '21:58', text: "anyone tried ergo's webpush yet?" },
+    { k: 'msg', nick: 'luiz', time: '22:01', text: 'yeah, 2.15 ships it behind webpush.enabled' },
+    { k: 'msg', nick: 'bruno', time: '22:04', text: 'so the relay never sees plaintext? love it' },
+    { k: 'msg', nick: 'cyd', time: '22:07', text: 'the websocket transport builds on wasm32 now' },
+    { k: 'action', nick: 'tomo', text: 'is grabbing coffee, back in 10' },
+    { k: 'unread' },
+    { k: 'msg', nick: 'mel', time: '22:12', mention: true, text: 'luiz: pushed the chathistory pagination branch, mind taking a look?' },
+    { k: 'msg', nick: 'rafa', time: '22:14', text: 'split view is so good for watching two channels' }
+  ],
+  lobby: [
+    { k: 'day', text: 'Today' },
+    { k: 'msg', nick: 'concierge', time: '21:35', text: 'mel joined weblounge with an invite from luiz. say hi!' },
+    { k: 'msg', nick: 'tomo', time: '21:36', text: 'welcome mel!' },
+    { k: 'msg', nick: 'mel', time: '21:38', text: 'thanks! found my way in through the invite tree' },
+    { k: 'event', text: '→ kit joined' },
+    { k: 'unread' },
+    { k: 'msg', nick: 'cyd', time: '21:52', text: 'anyone up for a call friday?' }
+  ],
+  mel: [
+    { k: 'day', text: 'Today' },
+    { k: 'msg', nick: 'mel', time: '22:11', text: 'hey! pushed the pagination branch' },
+    { k: 'msg', nick: 'mel', time: '22:11', text: 'msgid cursors both directions, tests green' },
+    { k: 'msg', nick: 'luiz', time: '22:15', text: 'nice, looking now' }
+  ],
+  chap: [
+    { k: 'day', text: 'Today' },
+    { k: 'msg', nick: 'cyd', time: '21:20', text: 'luiz: grants are per-domain now, want to review the WIT?' },
+    { k: 'msg', nick: 'cyd', time: '21:31', text: 'plugin grants landed on main' }
+  ]
+};
+const DEFAULT_MSGS = [
+  { k: 'day', text: 'Today' },
+  { k: 'msg', nick: 'kit', time: '20:05', text: 'quiet one tonight' },
+  { k: 'msg', nick: 'tomo', time: '20:12', text: 'most folks are over in #papo' }
+];
+
+/* Member lists per buffer; the shared panel shows the focused pane's. */
+const WL_MEMBERS = [
+  { name: 'Operators', list: ['luiz', 'mel'] },
+  { name: 'Voiced', list: ['bruno'] },
+  { name: 'Online', list: ['ana', 'cyd', 'rafa'] },
+  { name: 'Away', list: ['tomo', 'kit'], away: true },
+  { name: 'Bots', list: ['concierge'] }
+];
+const LIBERA_MEMBERS = [
+  { name: 'Operators', list: ['kit'], total: 3 },
+  { name: 'Online', list: ['ana', 'cyd', 'tomo', 'luiz', 'rafa', 'deko'], total: 1284 },
+  { name: 'Away', list: ['bruno'], total: 402, away: true }
+];
+const MEMBERS = {
+  lobby: WL_MEMBERS, papo: WL_MEMBERS, chap: WL_MEMBERS, nix: WL_MEMBERS,
+  halloy: LIBERA_MEMBERS.map((g) => Object.assign({}, g, { total: Math.ceil((g.total || g.list.length) / 9) })),
+  nixos: LIBERA_MEMBERS,
+  mel: [{ name: 'In this conversation', list: ['luiz', 'mel'] }],
+  ana: [{ name: 'In this conversation', list: ['luiz', 'ana'] }]
+};
+const memberTotal = (groups) => groups.reduce((n, g) => n + (g.total || g.list.length), 0);
+const fmt = (n) => n.toLocaleString('en-US');
+
+/* The layout is a binary tree: leaves show one buffer, splits divide space in a direction. */
+let NEXT_ID = 100;
+const nid = () => 'n' + (NEXT_ID++);
+const leaf = (buf, id) => ({ kind: 'leaf', id: id || nid(), buf });
+const split = (dir, a, b, ratio, id) => ({ kind: 'split', id: id || nid(), dir, a, b, ratio: ratio == null ? 0.5 : ratio });
+const INITIAL = split('row', leaf('papo', 'L1'), split('col', leaf('lobby', 'L2'), leaf('mel', 'L3'), 0.55, 'S2'), 0.56, 'S1');
+const MAX_PANES = 6;
+
+function replaceNode(t, id, f) {
+  if (t.id === id) return f(t);
+  if (t.kind === 'split') {
+    const a = replaceNode(t.a, id, f);
+    const b = replaceNode(t.b, id, f);
+    if (a !== t.a || b !== t.b) return Object.assign({}, t, { a, b });
+  }
+  return t;
+}
+function removeLeaf(t, id) {
+  if (t.kind === 'leaf') return t.id === id ? null : t;
+  const a = removeLeaf(t.a, id);
+  const b = removeLeaf(t.b, id);
+  if (!a) return b;
+  if (!b) return a;
+  return a === t.a && b === t.b ? t : Object.assign({}, t, { a, b });
+}
+function leaves(t, out) {
+  out = out || [];
+  if (t.kind === 'leaf') out.push(t);
+  else { leaves(t.a, out); leaves(t.b, out); }
+  return out;
+}
+function findLeaf(t, id) {
+  return leaves(t).find((l) => l.id === id) || null;
+}
+function splitLeaf(t, targetId, zone, newLeaf) {
+  const dir = zone === 'left' || zone === 'right' ? 'row' : 'col';
+  const before = zone === 'left' || zone === 'top';
+  return replaceNode(t, targetId, (n) => before ? split(dir, newLeaf, n) : split(dir, n, newLeaf));
+}
+function layout(t, box, out) {
+  if (t.kind === 'leaf') {
+    out.leaves.push(Object.assign({ node: t }, box));
+    return out;
+  }
+  const r = t.ratio;
+  if (t.dir === 'row') {
+    layout(t.a, { x: box.x, y: box.y, w: box.w * r, h: box.h }, out);
+    layout(t.b, { x: box.x + box.w * r, y: box.y, w: box.w * (1 - r), h: box.h }, out);
+    out.dividers.push({ node: t, box, at: box.x + box.w * r });
+  } else {
+    layout(t.a, { x: box.x, y: box.y, w: box.w, h: box.h * r }, out);
+    layout(t.b, { x: box.x, y: box.y + box.h * r, w: box.w, h: box.h * (1 - r) }, out);
+    out.dividers.push({ node: t, box, at: box.y + box.h * r });
+  }
+  return out;
+}
+const pct = (v) => (v * 100).toFixed(4) + '%';
+function zoneOf(e) {
+  const r = e.currentTarget.getBoundingClientRect();
+  const fx = (e.clientX - r.left) / r.width;
+  const fy = (e.clientY - r.top) / r.height;
+  const edge = Math.min(fx, 1 - fx, fy, 1 - fy);
+  if (edge > 0.25) return 'center';
+  if (edge === fx) return 'left';
+  if (edge === 1 - fx) return 'right';
+  if (edge === fy) return 'top';
+  return 'bottom';
+}
+const ZONES = {
+  center: { l: 0, t: 0, w: 1, h: 1, label: 'Show here' },
+  left: { l: 0, t: 0, w: 0.5, h: 1, label: 'Split left' },
+  right: { l: 0.5, t: 0, w: 0.5, h: 1, label: 'Split right' },
+  top: { l: 0, t: 0, w: 1, h: 0.5, label: 'Split up' },
+  bottom: { l: 0, t: 0.5, w: 1, h: 0.5, label: 'Split down' }
+};
+
+class Component extends DCLogic {
+  apply(tree, extra) {
+    this.setState(Object.assign({ tree, hover: null, drag: null }, extra || {}));
+  }
+  renderVals() {
+    const s = this.state || {};
+    const t = THEMES[prefersDark() ? 'loungeNight' : 'lounge'];
+    const tree = s.tree || INITIAL;
+    const all = leaves(tree);
+    const focus = findLeaf(tree, s.focus) ? s.focus : all[0].id;
+    const zoom = s.zoom && findLeaf(tree, s.zoom) ? s.zoom : null;
+    const drag = s.drag || null;
+    const hover = s.hover || null;
+    const nickColor = (n) => n === 'luiz' ? t.selfNick : t.nicks[Math.max(0, NICK_ORDER.indexOf(n)) % t.nicks.length];
+    const canSplit = all.length < MAX_PANES;
+    const showMembers = s.members !== false;
+
+    /* Actions */
+    const openIn = (leafId, buf) => this.apply(replaceNode(tree, leafId, (n) => Object.assign({}, n, { buf })), { focus: leafId });
+    const splitWith = (leafId, zone, buf) => {
+      if (!canSplit) return openIn(leafId, buf);
+      const fresh = leaf(buf);
+      this.apply(splitLeaf(tree, leafId, zone, fresh), { focus: fresh.id, zoom: null });
+    };
+    const closeLeaf = (leafId) => {
+      const next = removeLeaf(tree, leafId) || leaf(null);
+      this.apply(next, { zoom: null });
+    };
+    const moveLeaf = (srcId, targetId, zone) => {
+      if (srcId === targetId) return this.setState({ hover: null, drag: null });
+      const src = findLeaf(tree, srcId);
+      if (!src) return;
+      if (zone === 'center') {
+        const target = findLeaf(tree, targetId);
+        let next = replaceNode(tree, targetId, (n) => Object.assign({}, n, { buf: src.buf }));
+        next = replaceNode(next, srcId, (n) => Object.assign({}, n, { buf: target.buf }));
+        return this.apply(next, { focus: targetId });
+      }
+      const without = removeLeaf(tree, srcId);
+      const moved = leaf(src.buf, src.id);
+      this.apply(splitLeaf(without, targetId, zone, moved), { focus: src.id, zoom: null });
+    };
+
+    /* Sidebar */
+    const openBufs = {};
+    all.forEach((l) => { if (l.buf) openBufs[l.buf] = true; });
+    const focusedBuf = (findLeaf(tree, focus) || {}).buf;
+    const sections = SECTIONS.map((sec) => ({
+      t, name: sec.name,
+      items: sec.items.map((id) => {
+        const b = BUFFERS[id];
+        const isFocused = id === focusedBuf;
+        const hasMention = !!b.mention && !openBufs[id];
+        return {
+          t, label: b.title.replace(/^#/, ''), glyph: b.glyph,
+          tip: 'Click to show in the focused pane · ⌥-click to open beside it · drag to place',
+          current: isFocused ? 'page' : 'false',
+          bg: isFocused ? t.sel : 'transparent', fg: isFocused ? t.selFg : t.panelFg,
+          weight: isFocused || b.unread || b.mention ? '600' : '400',
+          prefixColor: isFocused ? t.selFg : t.panelMuted,
+          inPane: !!openBufs[id], paneColor: isFocused ? t.selFg : t.panelMuted,
+          hasUnread: !!b.unread && !openBufs[id] && !hasMention, unread: b.unread,
+          hasMention, mention: b.mention,
+          open: (e) => (e && (e.altKey || e.metaKey)) ? splitWith(focus, 'right', id) : openIn(focus, id),
+          dragStart: (e) => {
+            try { e.dataTransfer.setData('text/plain', b.title); e.dataTransfer.effectAllowed = 'copyMove'; } catch (err) {}
+            this.setState({ drag: { kind: 'buf', buf: id } });
+          },
+          dragEnd: () => this.setState({ drag: null, hover: null })
+        };
+      })
+    }));
+
+    /* Panes */
+    const out = layout(tree, { x: 0, y: 0, w: 1, h: 1 }, { leaves: [], dividers: [] });
+    const shown = zoom ? [{ node: findLeaf(tree, zoom), x: 0, y: 0, w: 1, h: 1 }] : out.leaves;
+    const panes = shown.map((r) => {
+      const n = r.node;
+      const b = n.buf ? BUFFERS[n.buf] : null;
+      const isFocused = n.id === focus;
+      const hz = hover && hover.leaf === n.id ? ZONES[hover.zone] : null;
+      const raw = n.buf ? (MSGS[n.buf] || DEFAULT_MSGS) : [];
+      return {
+        t, id: n.id, inputId: 'composer-' + n.id,
+        title: b ? b.title : 'Empty pane', topic: b ? b.topic : '',
+        placeholder: b ? 'Message ' + b.title : '',
+        isEmpty: !b, hasBuf: !!b,
+        memberCount: b ? fmt(memberTotal(MEMBERS[n.buf] || [])) : '',
+        membersLabel: b ? 'Show members of ' + b.title : '',
+        membersPressed: showMembers && isFocused ? 'true' : 'false',
+        membersBg: showMembers && isFocused ? t.sel : 'transparent',
+        membersFg: showMembers && isFocused ? t.selFg : t.muted,
+        showMembers: () => this.setState({ focus: n.id, members: true }),
+        left: pct(r.x), top: pct(r.y),
+        width: 'calc(' + pct(r.w) + ' - ' + (r.x + r.w < 0.999 ? 1 : 0) + 'px)',
+        height: 'calc(' + pct(r.h) + ' - ' + (r.y + r.h < 0.999 ? 1 : 0) + 'px)',
+        focusColor: isFocused && all.length > 1 ? t.accent : 'transparent',
+        headerBg: isFocused ? t.surface : t.panelAlt,
+        zoomed: zoom === n.id ? 'true' : 'false',
+        zoomLabel: zoom === n.id ? 'Restore layout' : 'Maximize pane',
+        zoomBg: zoom === n.id ? t.sel : 'transparent',
+        showZone: !!hz, zoneLeft: hz ? pct(hz.l) : '0', zoneTop: hz ? pct(hz.t) : '0',
+        zoneWidth: hz ? pct(hz.w) : '0', zoneHeight: hz ? pct(hz.h) : '0',
+        zoneLabel: hz ? (hz === ZONES.center && drag && drag.kind === 'pane' ? 'Swap' : hz.label) : '', zoneFill: t.zoneFill,
+        items: raw.map((m) => ({
+          t, text: m.text, isDay: m.k === 'day', isEvent: m.k === 'event', isUnread: m.k === 'unread',
+          isAction: m.k === 'action', isMsg: m.k === 'msg', indent: '140px',
+          nick: m.nick || '', prefix: MODES[m.nick] || '', time: m.time || '',
+          nickColor: m.nick ? nickColor(m.nick) : t.fg, isBot: !!BOTS[m.nick],
+          rowBg: m.mention ? t.mentionBg : 'transparent',
+          segs: segments(m.text, nickColor)
+        })),
+        focus: () => { if (focus !== n.id) this.setState({ focus: n.id }); },
+        splitRight: () => splitWith(n.id, 'right', n.buf),
+        splitDown: () => splitWith(n.id, 'bottom', n.buf),
+        close: () => closeLeaf(n.id),
+        toggleZoom: () => this.setState({ zoom: zoom === n.id ? null : n.id, focus: n.id }),
+        dragStart: (e) => {
+          try { e.dataTransfer.setData('text/plain', b ? b.title : ''); e.dataTransfer.effectAllowed = 'move'; } catch (err) {}
+          this.setState({ drag: { kind: 'pane', leaf: n.id } });
+        },
+        dragEnd: () => this.setState({ drag: null, hover: null }),
+        dragOver: (e) => {
+          if (!drag) return;
+          e.preventDefault();
+          const zone = zoom ? 'center' : zoneOf(e);
+          const effectiveZone = drag.kind === 'pane' && drag.leaf === n.id ? null : (canSplit || zone === 'center' ? zone : 'center');
+          if (!hover || hover.leaf !== n.id || hover.zone !== effectiveZone) {
+            this.setState({ hover: effectiveZone ? { leaf: n.id, zone: effectiveZone } : null });
+          }
+        },
+        drop: (e) => {
+          if (!drag) return;
+          e.preventDefault();
+          const zone = hover && hover.leaf === n.id ? hover.zone : null;
+          if (!zone) return this.setState({ drag: null, hover: null });
+          if (drag.kind === 'buf') {
+            if (zone === 'center') openIn(n.id, drag.buf);
+            else splitWith(n.id, zone, drag.buf);
+          } else {
+            moveLeaf(drag.leaf, n.id, zone);
+          }
+        }
+      };
+    });
+
+    /* Dividers */
+    const HIT = 7;
+    const dividers = zoom ? [] : out.dividers.map((d) => {
+      const row = d.node.dir === 'row';
+      const box = d.box;
+      const setRatio = (ratio) => this.setState({ tree: replaceNode(tree, d.node.id, (n) => Object.assign({}, n, { ratio })) });
+      return {
+        orientation: row ? 'vertical' : 'horizontal',
+        cursor: row ? 'col-resize' : 'row-resize',
+        left: row ? 'calc(' + pct(d.at) + ' - ' + Math.ceil(HIT / 2) + 'px)' : pct(box.x),
+        top: row ? pct(box.y) : 'calc(' + pct(d.at) + ' - ' + Math.ceil(HIT / 2) + 'px)',
+        width: row ? HIT + 'px' : pct(box.w),
+        height: row ? pct(box.h) : HIT + 'px',
+        lineW: row ? '1px' : '100%', lineH: row ? '100%' : '1px',
+        lineColor: this.resizing === d.node.id ? t.accent : 'transparent',
+        down: (e) => {
+          const rect = e.currentTarget.parentElement.getBoundingClientRect();
+          this.resizing = d.node.id;
+          this.resizeCtx = { rect, box, row };
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+          this.forceUpdate();
+        },
+        move: (e) => {
+          if (this.resizing !== d.node.id) return;
+          const c = this.resizeCtx;
+          const f = c.row ? ((e.clientX - c.rect.left) / c.rect.width - c.box.x) / c.box.w
+                          : ((e.clientY - c.rect.top) / c.rect.height - c.box.y) / c.box.h;
+          setRatio(Math.max(0.15, Math.min(0.85, f)));
+        },
+        up: () => {
+          this.resizing = null;
+          this.forceUpdate();
+        },
+        reset: () => setRatio(0.5)
+      };
+    });
+
+    const count = all.filter((l) => l.buf).length;
+    const fb = focusedBuf ? BUFFERS[focusedBuf] : null;
+    const groups = focusedBuf ? (MEMBERS[focusedBuf] || []) : [];
+    if (this.lastPanelBuf !== focusedBuf) {
+      this.panelFlip = !this.panelFlip;
+      this.lastPanelBuf = focusedBuf;
+    }
+    const memberGroups = groups.map((g) => {
+      const total = g.total || g.list.length;
+      return {
+        t, label: g.name + ' — ' + fmt(total), hasMore: total > g.list.length, more: fmt(total - g.list.length),
+        list: g.list.map((nk) => ({
+          t, nick: nk, prefix: MODES[nk] && g.name !== 'In this conversation' ? MODES[nk] : '',
+          isBot: !!BOTS[nk], isYou: nk === 'luiz',
+          color: g.away ? t.muted : nickColor(nk)
+        }))
+      };
+    });
+    return {
+      t, sections, panes, dividers,
+      showMembers: showMembers && !!fb, memberGroups,
+      membersFor: fb ? fb.title : '', membersAria: fb ? 'Members of ' + fb.title : 'Members',
+      membersTotal: fb ? fmt(memberTotal(groups)) : '',
+      membersAnim: (this.panelFlip ? 'wl-swap-a' : 'wl-swap-b') + ' 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both',
+      closeMembers: () => this.setState({ members: false }),
+      paneSummary: (zoom ? '1 of ' + all.length + ' panes (maximized)' : all.length + (all.length === 1 ? ' pane' : ' panes')) + ' · ' + count + ' open'
+    };
+  }
+}
+</script>
+</body>
+</html>

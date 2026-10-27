@@ -1,0 +1,27 @@
+# weblounge-client: agent guide
+
+A modern IRCv3 client (web/PWA, Tauri desktop, Tauri iOS/Android) built on papo.
+
+## Read first
+- `docs/reference/brief.md`: the build brief. It is the spec.
+- `docs/reference/split-view.md`: the desktop split-view requirement (an addendum to the brief's §5.2).
+- `docs/reference/prototype/*.dc.html`: the interactive prototype's source. It is the source of truth for **layout, look and behaviour**, but it was built with throwaway tech: **never port its code**, only its behaviour, tokens and structure.
+- papo (the IRCv3 library we build on): `~/papo` (local checkout) / https://github.com/luizribeiro/papo. Read its API before designing anything that touches protocol. Never re-implement what papo does; if something is missing, write it down as a question for Luiz.
+- Brand assets: `~/weblounge/web/styles/tokens.css`, `~/weblounge/web/images/{favicon,chair,wordmark}.svg`.
+
+## Process
+- Design first: every subsystem in brief §7 gets a short doc in `docs/design/` (problem, types, boundaries, out of scope, testing) **before** implementation. Large work waits for Luiz's review of its design.
+- Build vertically: one thin end-to-end slice before widening.
+- Make invalid states unrepresentable; one source of truth per concern; DRY.
+
+## Code standards
+See brief §7 "Code standards" and "Testing". In short: TS strict, no `any`, exhaustive unions; Rust clippy + rustfmt, `thiserror`, no `unwrap` outside tests; Biome; small files and functions; one component per file; feature-sliced folders; tokens only, no raw colours.
+
+Comments explain *why* (a current constraint), never *what*. Prefer extracting a well-named function to writing a comment.
+
+## Commits
+- One commit = one idea. If the message needs "and", split it.
+- Commit after each small unit (a function with its tests, a single doc, a single fix). Aim for < ~5 files and < ~100 changed lines per commit (design docs may be longer, but one doc per commit).
+- Tests go in the **same** commit as the code they test.
+- All tests and linters pass before every commit.
+- Never push, never rewrite history.

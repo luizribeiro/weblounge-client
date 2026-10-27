@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>weblounge — desktop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime&amp;family=Fraunces:opsz,wght@9..144,600&amp;family=Geist+Mono:wght@400;500&amp;family=Geist:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Inter:opsz,wght@14..32,300..600&amp;family=Work+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+input::placeholder{color:inherit;opacity:.6}
+a{color:inherit}a:hover{opacity:.8}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 640px; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; background: {{t.bg}}; color: {{t.fg}}; font-family: {{t.ui}}; font-size: {{fs}}">
+<div style="flex: 1; min-height: 0; display: flex; position: relative">
+
+<sc-if value="{{showSidebar}}" hint-placeholder-val="{{ true }}">
+<aside aria-label="Channels" style="flex: 0 0 256px; width: 256px; min-height: 0; display: flex; flex-direction: column; background: {{t.panel}}; color: {{t.panelFg}}; border-right: 1px solid {{t.panelBorder}}">
+<div style="display: flex; align-items: center; gap: 10px; padding: 14px 12px 10px 14px">
+<span aria-hidden="true" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: {{t.iconRadius}}; background: #1d2825; color: #f3f1e9; box-shadow: {{t.iconRing}}">
+<svg width="24" height="24" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 6.8 L13.53 6.41 L13.48 6.09 L13.42 5.96 L13.26 5.76 L13.01 5.64 L12.69 5.59 L12.5 5.6 L9.6 5.9 L9.4 3.6 L9.33 3.2 L9.2 2.88 L9.11 2.74 L8.88 2.53 L8.58 2.38 L8.21 2.31 L8 2.3 L3.09 2.5 L2.9 2.54 L2.76 2.62 L2.62 2.81 L2.59 2.99 L2.6 3.2 L3.8 10.6 L3.88 10.88 L3.97 11.03 L4.09 11.14 L4.23 11.21 L4.5 11.25 L6.4 11.25 L6.4 8.44 L6.35 8.2 L6.19 7.79 L6.09 7.64 L5.84 7.42 L5.5 7.28 L5.29 7.24 L4.78 7.25 L4.46 7.3 L4.3 7.29 L4.16 7.22 L4.06 7.11 L4 6.96 L4.01 6.8 L4.08 6.66 L4.19 6.56 L4.34 6.5 L4.68 6.45 L5.07 6.43 L5.67 6.49 L6.02 6.61 L6.23 6.72 L6.48 6.9 L6.73 7.17 L7.01 7.66 L7.12 8 L13.2 8 L13.31 8.02Z M7.2 11.25 L12.32 11.23 L12.58 11.14 L12.71 11.03 L12.81 10.88 L12.9 10.6 L13.18 8.8 L7.2 8.8Z"></path><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M4.6 11.25 L4.2 13.4 M6.8 11.25 L6.6 13.4 M12.1 11.25 L12.5 13.4"></path></svg>
+</span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-family: {{t.title}}; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">weblounge</span>
+<span style="font-size: 11px; color: {{t.panelMuted}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">2 networks · connected</span>
+</div>
+<button type="button" onClick="{{openPalette}}" aria-label="Join a channel or start a direct message" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border: 0; background: transparent; color: {{t.panelFg}}; border-radius: {{t.radius}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+</button>
+</div>
+<div style="padding: 0 10px 10px">
+<button type="button" onClick="{{openPalette}}" style="width: 100%; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid {{t.panelBorder}}; background: {{t.jumpBg}}; color: {{t.panelMuted}}; border-radius: {{t.radius}}; text-align: left; font-size: 12px">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+<span style="flex: 1; white-space: nowrap">Jump to…</span>
+<kbd style="font-family: {{t.mono}}; font-size: 11px">⌘K</kbd>
+</button>
+</div>
+<nav aria-label="Networks and channels" style="flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 12px; display: flex; flex-direction: column; gap: {{sd.secGap}}">
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 1px">
+<sc-if value="{{sec.isServerable}}" hint-placeholder-val="{{ true }}">
+<button type="button" onClick="{{sec.open}}" aria-current="{{sec.current}}" aria-label="{{sec.ariaLabel}}" style="display: flex; align-items: center; gap: 7px; width: 100%; min-height: 28px; padding: 4px 10px; border: 0; border-radius: {{sec.t.radius}}; background: {{sec.bg}}; color: {{sec.fg}}; text-align: left; font-family: {{sec.t.secFont}}; font-size: {{sec.t.secSize}}; text-transform: {{sec.t.secCase}}; letter-spacing: {{sec.t.secTrack}}">
+<sc-if value="{{sec.isChair}}" hint-placeholder-val="{{ true }}">
+<span aria-hidden="true" style="width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; border-radius: 3px; background: #1d2825; color: #f3f1e9; box-shadow: {{sec.t.iconRing}}"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 6.8 L13.53 6.41 L13.48 6.09 L13.42 5.96 L13.26 5.76 L13.01 5.64 L12.69 5.59 L12.5 5.6 L9.6 5.9 L9.4 3.6 L9.33 3.2 L9.2 2.88 L9.11 2.74 L8.88 2.53 L8.58 2.38 L8.21 2.31 L8 2.3 L3.09 2.5 L2.9 2.54 L2.76 2.62 L2.62 2.81 L2.59 2.99 L2.6 3.2 L3.8 10.6 L3.88 10.88 L3.97 11.03 L4.09 11.14 L4.23 11.21 L4.5 11.25 L6.4 11.25 L6.4 8.44 L6.35 8.2 L6.19 7.79 L6.09 7.64 L5.84 7.42 L5.5 7.28 L5.29 7.24 L4.78 7.25 L4.46 7.3 L4.3 7.29 L4.16 7.22 L4.06 7.11 L4 6.96 L4.01 6.8 L4.08 6.66 L4.19 6.56 L4.34 6.5 L4.68 6.45 L5.07 6.43 L5.67 6.49 L6.02 6.61 L6.23 6.72 L6.48 6.9 L6.73 7.17 L7.01 7.66 L7.12 8 L13.2 8 L13.31 8.02Z M7.2 11.25 L12.32 11.23 L12.58 11.14 L12.71 11.03 L12.81 10.88 L12.9 10.6 L13.18 8.8 L7.2 8.8Z"></path><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M4.6 11.25 L4.2 13.4 M6.8 11.25 L6.6 13.4 M12.1 11.25 L12.5 13.4"></path></svg></span>
+</sc-if>
+<sc-if value="{{sec.isLetter}}" hint-placeholder-val="{{ false }}">
+<span aria-hidden="true" style="width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; border-radius: 3px; background: {{sec.t.chip}}; color: {{sec.t.panelFg}}; font-family: {{sec.t.ui}}; font-size: 10px; font-weight: 600; text-transform: none; letter-spacing: 0">{{sec.letter}}</span>
+</sc-if>
+<span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{sec.name}}</span>
+<span aria-hidden="true" style="width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: {{sec.dotColor}}"></span>
+</button>
+</sc-if>
+<sc-if value="{{sec.notServerable}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 4px 10px; font-family: {{sec.t.secFont}}; font-size: {{sec.t.secSize}}; text-transform: {{sec.t.secCase}}; letter-spacing: {{sec.t.secTrack}}; color: {{sec.t.panelMuted}}; white-space: nowrap">{{sec.name}}</div>
+</sc-if>
+<sc-for list="{{sec.items}}" as="ch" hint-placeholder-count="4">
+<button type="button" onClick="{{ch.open}}" aria-current="{{ch.current}}" style="display: flex; align-items: center; gap: 8px; width: 100%; min-height: {{ch.d.row}}; padding: {{ch.d.pad}}; border: 0; border-radius: {{ch.t.radius}}; background: {{ch.bg}}; color: {{ch.fg}}; font-weight: {{ch.weight}}; text-align: left; font-size: {{ch.d.font}}">
+<sc-if value="{{ch.isChan}}" hint-placeholder-val="{{ true }}"><span aria-hidden="true" style="width: 14px; flex: 0 0 14px; text-align: center; color: {{ch.prefixColor}}; font-family: {{ch.t.mono}}">#</span></sc-if>
+<sc-if value="{{ch.isDm}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 14px; height: 14px; flex: 0 0 14px; display: grid; place-items: center"><span style="width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; background: {{ch.dotFill}}; border: 1.5px solid {{ch.dotRing}}"></span></span></sc-if>
+<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ch.label}}</span>
+<sc-if value="{{ch.hasMention}}" hint-placeholder-val="{{ false }}"><span style="min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: {{ch.t.accent}}; color: {{ch.t.accentFg}}">{{ch.mention}}</span></sc-if>
+<sc-if value="{{ch.hasUnreadOnly}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; font-weight: 500; color: {{ch.t.panelMuted}}; font-family: {{ch.t.mono}}">{{ch.unread}}</span></sc-if>
+</button>
+</sc-for>
+</div>
+</sc-for>
+<a href="OnboardingDesktop.dc.html" style="display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; min-height: {{sd.row}}; padding: {{sd.pad}}; border-radius: {{t.radius}}; color: {{t.panelMuted}}; text-decoration: none; font-size: {{sd.font}}; white-space: nowrap">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 14px"><path d="M12 5v14M5 12h14"></path></svg>
+Add network
+</a>
+</nav>
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-top: 1px solid {{t.panelBorder}}">
+<sc-if value="{{avatars}}" hint-placeholder-val="{{ true }}">
+<span aria-hidden="true" style="width: 30px; height: 30px; flex: 0 0 30px; border-radius: {{t.avatarRadius}}; display: grid; place-items: center; background: {{t.selfNick}}; color: {{t.avatarFg}}; font-weight: 600; font-size: 13px">L</span>
+</sc-if>
+<sc-if value="{{noAvatars}}" hint-placeholder-val="{{ false }}">
+<span aria-hidden="true" style="width: 8px; height: 8px; flex: 0 0 8px; margin: 0 4px; border-radius: 50%; background: {{t.online}}"></span>
+</sc-if>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">luiz</span>
+<span style="font-size: 11px; color: {{t.panelMuted}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">online</span>
+</div>
+<button type="button" onClick="{{openSettings}}" aria-label="Settings" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border: 0; background: transparent; color: {{t.panelMuted}}; border-radius: {{t.radius}}">
+<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+</button>
+</div>
+</aside>
+</sc-if>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column; background: {{t.surface}}">
+<header style="display: flex; align-items: center; gap: 10px; height: 52px; flex: 0 0 52px; padding: 0 12px; border-bottom: 1px solid {{t.border}}">
+<button type="button" onClick="{{toggleSidebar}}" aria-label="Toggle channel list" aria-pressed="{{sidebarPressed}}" style="width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border: 0; border-radius: {{t.radius}}; background: transparent; color: {{t.muted}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg>
+</button>
+<h1 style="margin: 0; font-family: {{t.title}}; font-size: 16px; font-weight: 600; white-space: nowrap; color: {{t.fg}}">{{title}}</h1>
+<span aria-hidden="true" style="width: 1px; height: 18px; flex: 0 0 1px; background: {{t.border}}"></span>
+<p style="margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: {{t.muted}}; font-size: 13px">{{topic}}</p>
+<button type="button" aria-label="Search messages" style="width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border: 0; border-radius: {{t.radius}}; background: transparent; color: {{t.muted}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+</button>
+<button type="button" onClick="{{openPalette}}" aria-label="Open quick switcher" style="height: 34px; flex: 0 0 auto; display: flex; align-items: center; padding: 0 10px; border: 1px solid {{t.border}}; border-radius: {{t.radius}}; background: transparent; color: {{t.muted}}; font-family: {{t.mono}}; font-size: 12px; white-space: nowrap">⌘K</button>
+<button type="button" onClick="{{toggleMembers}}" aria-label="Toggle member list" aria-pressed="{{membersPressed}}" style="width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border: 0; border-radius: {{t.radius}}; background: {{membersBtnBg}}; color: {{t.muted}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1"></path><circle cx="9.5" cy="8" r="3.5"></circle><path d="M21 19v-1a4 4 0 0 0-3-3.87"></path><path d="M16 4.13a4 4 0 0 1 0 7.75"></path></svg>
+</button>
+</header>
+
+<div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 8px 0">
+<div style="margin-top: auto; width: 100%; max-width: {{colMax}}; margin-left: auto; margin-right: auto; display: flex; flex-direction: column">
+<sc-for list="{{items}}" as="m" hint-placeholder-count="10">
+<sc-if value="{{m.isDay}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 12px; padding: 14px 20px 6px; font-family: {{m.t.secFont}}; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.t.muted}}">
+<span style="flex: 1; height: 1px; background: {{m.t.border}}"></span>
+<span style="white-space: nowrap">{{m.text}}</span>
+<span style="flex: 1; height: 1px; background: {{m.t.border}}"></span>
+</div>
+</sc-if>
+<sc-if value="{{m.isEvent}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 3px 20px 3px {{m.eventIndent}}; font-size: 12px; color: {{m.t.muted}}; font-family: {{m.t.mono}}">{{m.text}}</div>
+</sc-if>
+<sc-if value="{{m.isAction}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 4px 20px 4px {{m.eventIndent}}; font-style: italic; line-height: {{m.lh}}; color: {{m.t.fg}}; font-family: {{m.t.msgFont}}; font-size: {{m.fs}}"><span style="margin-right: 5px; color: {{m.t.muted}}">*</span><span style="margin-right: 5px; font-weight: 600; color: {{m.nickColor}}">{{m.nick}}</span>{{m.text}}</div>
+</sc-if>
+<sc-if value="{{m.isLog}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; gap: 12px; padding: {{m.logPad}}; font-family: {{m.t.mono}}; font-size: 12.5px; line-height: 1.6">
+<span style="flex: 0 0 44px; color: {{m.t.muted}}">{{m.time}}</span>
+<span style="flex: 0 0 84px; text-align: right; font-weight: 600; color: {{m.srcColor}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.src}}</span>
+<span style="flex: 1; min-width: 0; color: {{m.textColor}}; overflow-wrap: anywhere">{{m.text}}</span>
+</div>
+</sc-if>
+<sc-if value="{{m.isUnread}}" hint-placeholder-val="{{ false }}">
+<div role="separator" aria-label="New messages" style="display: flex; align-items: center; gap: 8px; padding: 8px 20px">
+<span style="flex: 1; height: 1px; background: {{m.t.unread}}"></span>
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{m.t.unread}}">New</span>
+</div>
+</sc-if>
+<sc-if value="{{m.isMsg}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; gap: 12px; padding: {{m.pad}}; background: {{m.rowBg}}; font-family: {{m.t.msgFont}}; font-size: {{m.fs}}">
+<sc-if value="{{m.lineMode}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; gap: 12px; flex: 0 0 auto">
+<span style="width: 44px; font-family: {{m.t.mono}}; font-size: 12px; line-height: {{m.lineH}}; color: {{m.t.muted}}">{{m.time}}</span>
+<span style="width: 84px; text-align: right; font-weight: 600; line-height: {{m.lineH}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"><span style="color: {{m.t.muted}}; font-weight: 500">{{m.prefix}}</span><span style="color: {{m.nickColor}}">{{m.nick}}</span></span>
+</div>
+</sc-if>
+<sc-if value="{{m.showAvatar}}" hint-placeholder-val="{{ true }}">
+<div aria-hidden="true" style="width: {{m.avPx}}; height: {{m.avPx}}; flex: 0 0 {{m.avPx}}; margin-top: 2px; border-radius: {{m.t.avatarRadius}}; display: grid; place-items: center; background: {{m.nickColor}}; color: {{m.t.avatarFg}}; font-family: {{m.t.ui}}; font-weight: 600; font-size: {{m.avFont}}">{{m.initial}}</div>
+</sc-if>
+<sc-if value="{{m.showSpacer}}" hint-placeholder-val="{{ false }}">
+<div style="width: {{m.avPx}}; flex: 0 0 {{m.avPx}}"></div>
+</sc-if>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<sc-if value="{{m.showHeader}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap">
+<span style="font-weight: 600"><span style="color: {{m.t.muted}}; font-weight: 500">{{m.prefix}}</span><span style="color: {{m.nickColor}}">{{m.nick}}</span></span>
+<sc-if value="{{m.botHeader}}" hint-placeholder-val="{{ false }}"><span style="align-self: center; padding: 0 4px; border: 1px solid {{m.t.border}}; border-radius: 3px; font-family: {{m.t.mono}}; font-size: 9.5px; font-weight: 600; line-height: 15px; letter-spacing: 0.06em; color: {{m.t.muted}}">BOT</span></sc-if>
+<span style="font-size: 11px; color: {{m.t.muted}}; font-family: {{m.t.mono}}">{{m.time}}</span>
+</div>
+</sc-if>
+<sc-if value="{{m.hasReply}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: {{m.t.muted}}; min-width: 0">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 14px"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 6 6v3"></path></svg>
+<span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"><sc-for list="{{m.replySegs}}" as="sg" hint-placeholder-count="1"><span style="color: {{sg.color}}; font-weight: {{sg.weight}}">{{sg.text}}</span></sc-for></span>
+</div>
+</sc-if>
+<div style="line-height: {{m.lh}}; color: {{m.t.fg}}; overflow-wrap: anywhere"><sc-if value="{{m.botInline}}" hint-placeholder-val="{{ false }}"><span style="display: inline-block; margin-right: 8px; padding: 0 4px; border: 1px solid {{m.t.border}}; border-radius: 3px; font-family: {{m.t.mono}}; font-size: 9.5px; font-weight: 600; line-height: 15px; letter-spacing: 0.06em; vertical-align: 1px; color: {{m.t.muted}}">BOT</span></sc-if><sc-for list="{{m.segs}}" as="sg" hint-placeholder-count="1"><span style="color: {{sg.color}}; font-weight: {{sg.weight}}">{{sg.text}}</span></sc-for></div>
+<sc-if value="{{m.hasCode}}" hint-placeholder-val="{{ false }}">
+<code style="display: block; align-self: flex-start; max-width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: {{m.t.radius}}; background: {{m.t.codeBg}}; border: 1px solid {{m.t.border}}; font-family: {{m.t.mono}}; font-size: 12.5px; color: {{m.t.fg}}; overflow-wrap: anywhere">{{m.code}}</code>
+</sc-if>
+<sc-if value="{{m.hasLink}}" hint-placeholder-val="{{ false }}">
+<div style="align-self: flex-start; max-width: 460px; display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border: 1px solid {{m.t.border}}; border-radius: {{m.t.composerRadius}}; background: {{m.t.chip}}">
+<span style="font-size: 11px; color: {{m.t.muted}}; font-family: {{m.t.mono}}">{{m.linkHost}}</span>
+<span style="font-weight: 600; color: {{m.t.fg}}">{{m.linkTitle}}</span>
+</div>
+</sc-if>
+<sc-if value="{{m.hasReacts}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px">
+<sc-for list="{{m.reacts}}" as="r" hint-placeholder-count="1">
+<button type="button" aria-pressed="{{r.pressed}}" style="display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: {{r.radius}}; border: 1px solid {{r.border}}; background: {{r.bg}}; color: {{r.fg}}; font-size: 12px; white-space: nowrap">
+<span>{{r.label}}</span>
+<span style="font-weight: 600">{{r.n}}</span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+</sc-for>
+</div>
+</div>
+
+<div style="padding: 0 20px 16px">
+<div style="width: 100%; max-width: {{colMax}}; margin: 0 auto">
+<div style="height: 24px; display: flex; align-items: center; font-size: 12px; color: {{t.muted}}; white-space: nowrap">
+<sc-if value="{{showTyping}}" hint-placeholder-val="{{ true }}">
+<span style="display: flex; gap: 5px"><span style="font-weight: 600; color: {{typingColor}}">ana</span><span>is typing…</span></span>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; padding: 6px; border: 1px solid {{t.border}}; border-radius: {{t.composerRadius}}; background: {{t.inputBg}}">
+<button type="button" aria-label="Attach a file" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border: 0; border-radius: {{t.radius}}; background: transparent; color: {{t.muted}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path></svg>
+</button>
+<label for="composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap">Message</label>
+<input id="composer" type="text" placeholder="{{composerPlaceholder}}" style="flex: 1; min-width: 0; height: 32px; border: 0; background: transparent; color: {{t.fg}}; font-family: {{composerFont}}; font-size: {{fs}}">
+<button type="button" aria-label="Send message" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border: 0; border-radius: {{t.radius}}; background: {{t.accent}}; color: {{t.accentFg}}">
+<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
+</button>
+</div>
+</div>
+</div>
+</main>
+
+<sc-if value="{{showMembersPanel}}" hint-placeholder-val="{{ true }}">
+<aside aria-label="Members" style="flex: 0 0 232px; width: 232px; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid {{t.border}}; background: {{t.panelAlt}}">
+<div style="height: 52px; flex: 0 0 52px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 16px; border-bottom: 1px solid {{t.border}}; white-space: nowrap">
+<span style="font-family: {{t.title}}; font-weight: 600; font-size: 14px; color: {{t.fg}}">Members</span>
+<span style="color: {{t.muted}}; font-size: 13px">{{memberCount}}</span>
+</div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding: 12px 8px; display: flex; flex-direction: column; gap: {{sd.secGap}}">
+<sc-for list="{{memberGroups}}" as="g" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 1px">
+<div style="padding: 0 8px 4px; font-family: {{g.t.secFont}}; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: {{g.t.muted}}; white-space: nowrap">{{g.label}}</div>
+<sc-for list="{{g.list}}" as="u" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 8px; min-height: {{u.d.memberRow}}; padding: 2px 8px">
+<sc-if value="{{u.showAvatar}}" hint-placeholder-val="{{ true }}">
+<span aria-hidden="true" style="width: {{u.d.memberAv}}; height: {{u.d.memberAv}}; flex: 0 0 {{u.d.memberAv}}; border-radius: {{u.t.avatarRadius}}; display: grid; place-items: center; background: {{u.color}}; color: {{u.t.avatarFg}}; opacity: {{u.opacity}}; font-size: 11px; font-weight: 600">{{u.initial}}</span>
+</sc-if>
+<span style="flex: 1; min-width: 0; font-size: {{u.d.font}}; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"><span style="display: inline-block; min-width: {{u.prefixW}}; color: {{u.t.muted}}; font-family: {{u.t.mono}}">{{u.prefix}}</span><span style="color: {{u.nameColor}}">{{u.nick}}</span></span>
+<sc-if value="{{u.isBot}}" hint-placeholder-val="{{ false }}"><span style="flex: 0 0 auto; padding: 0 4px; border: 1px solid {{u.t.border}}; border-radius: 3px; font-family: {{u.t.mono}}; font-size: 9.5px; font-weight: 600; line-height: 15px; letter-spacing: 0.06em; color: {{u.t.muted}}">BOT</span></sc-if>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</aside>
+</sc-if>
+
+<sc-if value="{{palette}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; z-index: 10; display: flex; justify-content: center; align-items: flex-start; padding-top: 88px; background: {{t.overlay}}">
+<button type="button" aria-label="Close quick switcher" onClick="{{closeOverlays}}" style="position: absolute; inset: 0; border: 0; background: transparent; cursor: default"></button>
+<div role="dialog" aria-label="Quick switcher" style="position: relative; width: 560px; max-width: calc(100% - 32px); overflow: hidden; background: {{t.surface}}; color: {{t.fg}}; border: 1px solid {{t.border}}; border-radius: {{t.paletteRadius}}; box-shadow: {{t.shadow}}">
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid {{t.border}}; color: {{t.muted}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+<label for="jump" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap">Jump to</label>
+<input id="jump" type="text" placeholder="Jump to a channel, person or command" style="flex: 1; min-width: 0; height: 28px; border: 0; background: transparent; color: {{t.fg}}; font-family: {{t.ui}}; font-size: 15px">
+<kbd style="font-family: {{t.mono}}; font-size: 11px">esc</kbd>
+</div>
+<div style="padding: 6px; display: flex; flex-direction: column; gap: 1px">
+<sc-for list="{{paletteItems}}" as="p" hint-placeholder-count="6">
+<button type="button" onClick="{{p.pick}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 6px 10px; border: 0; border-radius: {{p.t.radius}}; background: {{p.bg}}; color: {{p.fg}}; text-align: left; font-size: 14px">
+<span aria-hidden="true" style="width: 18px; flex: 0 0 18px; text-align: center; font-family: {{p.t.mono}}; color: {{p.t.muted}}">{{p.glyph}}</span>
+<span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.label}}</span>
+<span style="font-size: 12px; color: {{p.t.muted}}; white-space: nowrap">{{p.hint}}</span>
+</button>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{settingsOpen}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding: 40px 16px; box-sizing: border-box; background: {{t.overlay}}">
+<button type="button" aria-label="Close settings" onClick="{{closeOverlays}}" style="position: absolute; inset: 0; border: 0; background: transparent; cursor: default"></button>
+<div role="dialog" aria-modal="true" aria-labelledby="settings-title" style="position: relative; width: 820px; max-width: 100%; height: 660px; max-height: 100%; display: flex; flex-direction: column; overflow: hidden; background: {{t.surface}}; color: {{t.fg}}; border: 1px solid {{t.border}}; border-radius: {{t.paletteRadius}}; box-shadow: {{t.shadow}}">
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 22px; border-bottom: 1px solid {{t.border}}">
+<h2 id="settings-title" style="margin: 0; flex: 1; font-family: {{t.title}}; font-size: 18px; font-weight: 600">Settings</h2>
+<button type="button" onClick="{{closeOverlays}}" aria-label="Close settings" style="width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: {{t.radius}}; background: transparent; color: {{t.muted}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+</button>
+</div>
+<div style="flex: 1; min-height: 0; display: flex">
+<nav aria-label="Settings sections" style="flex: 0 0 188px; display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; box-sizing: border-box; border-right: 1px solid {{t.border}}; background: {{t.panelAlt}}">
+<sc-for list="{{settingsTabs}}" as="st" hint-placeholder-count="3">
+<button type="button" onClick="{{st.pick}}" aria-current="{{st.current}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: {{st.t.radius}}; background: {{st.bg}}; color: {{st.fg}}; font-size: 14px; font-weight: {{st.weight}}; text-align: left; white-space: nowrap">
+<sc-if value="{{st.isAppearance}}" hint-placeholder-val="{{ true }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 17px"><circle cx="12" cy="12" r="9"></circle><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"></path></svg></sc-if>
+<sc-if value="{{st.isNetworks}}" hint-placeholder-val="{{ false }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 17px"><rect x="3" y="4" width="18" height="7" rx="1.5"></rect><rect x="3" y="13" width="18" height="7" rx="1.5"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></sc-if>
+<sc-if value="{{st.isNotifications}}" hint-placeholder-val="{{ false }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 17px"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"></path></svg></sc-if>
+<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis">{{st.label}}</span>
+</button>
+</sc-for>
+</nav>
+<div style="flex: 1; min-width: 0; overflow-y: auto; padding: 4px 24px 24px">
+
+<sc-if value="{{paneAppearance}}" hint-placeholder-val="{{ true }}">
+<section aria-labelledby="set-theme" style="padding-bottom: 8px">
+<h3 id="set-theme" style="margin: 18px 0 12px; font-family: {{t.secFont}}; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: {{t.muted}}">Theme</h3>
+<div role="group" aria-label="Theme" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px">
+<sc-for list="{{themeCards}}" as="c" hint-placeholder-count="5">
+<button type="button" onClick="{{c.pick}}" aria-pressed="{{c.on}}" style="display: flex; flex-direction: column; gap: 8px; padding: 6px 6px 10px; border: 2px solid {{c.ring}}; border-radius: {{c.cardRadius}}; background: transparent; text-align: left; color: {{c.labelColor}}">
+<span aria-hidden="true" style="display: flex; height: 66px; overflow: hidden; border-radius: {{c.p.radius}}; border: 1px solid {{c.p.border}}">
+<span style="width: 34%; display: flex; flex-direction: column; gap: 5px; padding: 8px 6px; box-sizing: border-box; background: {{c.p.panel}}">
+<span style="width: 12px; height: 12px; border-radius: 3px; background: {{c.p.netBg}}"></span>
+<span style="height: 4px; width: 80%; border-radius: 2px; background: {{c.p.panelMuted}}; opacity: 0.6"></span>
+<span style="height: 6px; width: 90%; border-radius: 2px; background: {{c.p.sel}}"></span>
+<span style="height: 4px; width: 60%; border-radius: 2px; background: {{c.p.panelMuted}}; opacity: 0.6"></span>
+</span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 7px; box-sizing: border-box; background: {{c.p.surface}}">
+<span style="display: flex; gap: 4px; align-items: center"><span style="width: 8px; height: 8px; border-radius: {{c.p.avatarRadius}}; background: {{c.n0}}"></span><span style="height: 4px; width: 50%; border-radius: 2px; background: {{c.p.fg}}; opacity: 0.75"></span></span>
+<span style="display: flex; gap: 4px; align-items: center"><span style="width: 8px; height: 8px; border-radius: {{c.p.avatarRadius}}; background: {{c.n1}}"></span><span style="height: 4px; width: 70%; border-radius: 2px; background: {{c.p.fg}}; opacity: 0.75"></span></span>
+<span style="margin-top: auto; display: flex; gap: 4px; align-items: center; height: 10px; padding: 0 2px 0 4px; border: 1px solid {{c.p.border}}; border-radius: 2px; background: {{c.p.inputBg}}"><span style="flex: 1"></span><span style="width: 6px; height: 6px; border-radius: 1px; background: {{c.p.accent}}"></span></span>
+</span>
+</span>
+<span style="display: flex; flex-direction: column; gap: 1px; padding: 0 4px; min-width: 0">
+<span style="font-family: {{c.p.ui}}; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.label}}</span>
+<span style="font-size: 11px; color: {{c.descColor}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.desc}}</span>
+</span>
+</button>
+</sc-for>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{paneNetworks}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; gap: 12px; margin: 18px 0 2px">
+<h3 style="margin: 0; flex: 1; font-family: {{t.secFont}}; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: {{t.muted}}">Networks</h3>
+<a href="OnboardingDesktop.dc.html" style="display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 1px solid {{t.border}}; border-radius: {{t.radius}}; color: {{t.fg}}; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add network</a>
+</div>
+<sc-for list="{{networkCards}}" as="nc" hint-placeholder-count="2">
+<div style="margin-top: 14px; border: 1px solid {{nc.t.border}}; border-radius: {{nc.t.composerRadius}}; overflow: hidden">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; background: {{nc.t.panelAlt}}; border-bottom: 1px solid {{nc.t.border}}">
+<sc-if value="{{nc.isChair}}" hint-placeholder-val="{{ true }}">
+<span aria-hidden="true" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: {{nc.t.iconRadius}}; background: #1d2825; color: #f3f1e9; box-shadow: {{nc.t.iconRing}}"><svg width="24" height="24" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 6.8 L13.53 6.41 L13.48 6.09 L13.42 5.96 L13.26 5.76 L13.01 5.64 L12.69 5.59 L12.5 5.6 L9.6 5.9 L9.4 3.6 L9.33 3.2 L9.2 2.88 L9.11 2.74 L8.88 2.53 L8.58 2.38 L8.21 2.31 L8 2.3 L3.09 2.5 L2.9 2.54 L2.76 2.62 L2.62 2.81 L2.59 2.99 L2.6 3.2 L3.8 10.6 L3.88 10.88 L3.97 11.03 L4.09 11.14 L4.23 11.21 L4.5 11.25 L6.4 11.25 L6.4 8.44 L6.35 8.2 L6.19 7.79 L6.09 7.64 L5.84 7.42 L5.5 7.28 L5.29 7.24 L4.78 7.25 L4.46 7.3 L4.3 7.29 L4.16 7.22 L4.06 7.11 L4 6.96 L4.01 6.8 L4.08 6.66 L4.19 6.56 L4.34 6.5 L4.68 6.45 L5.07 6.43 L5.67 6.49 L6.02 6.61 L6.23 6.72 L6.48 6.9 L6.73 7.17 L7.01 7.66 L7.12 8 L13.2 8 L13.31 8.02Z M7.2 11.25 L12.32 11.23 L12.58 11.14 L12.71 11.03 L12.81 10.88 L12.9 10.6 L13.18 8.8 L7.2 8.8Z"></path><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M4.6 11.25 L4.2 13.4 M6.8 11.25 L6.6 13.4 M12.1 11.25 L12.5 13.4"></path></svg></span>
+</sc-if>
+<sc-if value="{{nc.isLetter}}" hint-placeholder-val="{{ false }}">
+<span aria-hidden="true" style="width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: {{nc.t.iconRadius}}; background: {{nc.t.chip}}; color: {{nc.t.fg}}; font-size: 14px; font-weight: 600">{{nc.letter}}</span>
+</sc-if>
+<div style="flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{nc.name}}</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: {{nc.t.muted}}; white-space: nowrap"><span aria-hidden="true" style="width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: {{nc.statusColor}}"></span>{{nc.statusText}}</span>
+</div>
+<div style="display: flex; gap: 8px; flex: 0 0 auto">
+<button type="button" onClick="{{nc.openServer}}" style="min-height: 32px; padding: 0 12px; border: 1px solid {{nc.t.border}}; border-radius: {{nc.t.radius}}; background: {{nc.t.surface}}; color: {{nc.t.fg}}; font-size: 13px; font-weight: 500; white-space: nowrap">Server messages</button>
+<button type="button" onClick="{{nc.toggle}}" style="min-height: 32px; padding: 0 12px; border: 1px solid {{nc.t.border}}; border-radius: {{nc.t.radius}}; background: {{nc.t.surface}}; color: {{nc.toggleColor}}; font-size: 13px; font-weight: 600; white-space: nowrap">{{nc.toggleLabel}}</button>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; padding: 4px 14px">
+<sc-for list="{{nc.fields}}" as="f" hint-placeholder-count="5">
+<div style="display: flex; gap: 16px; padding: 8px 0; border-bottom: 1px solid {{f.t.border}}; font-size: 13.5px">
+<span style="flex: 0 0 120px; color: {{f.t.muted}}">{{f.k}}</span>
+<span style="flex: 1; min-width: 0; color: {{f.t.fg}}; font-family: {{f.font}}; overflow-wrap: anywhere">{{f.v}}</span>
+</div>
+</sc-for>
+<div style="display: flex; align-items: center; gap: 16px; padding: 10px 0 8px">
+<span style="flex: 1; font-size: 13.5px; color: {{nc.t.fg}}">Connect automatically</span>
+<button type="button" role="switch" aria-checked="{{nc.auto.checked}}" aria-label="Connect to {{nc.name}} automatically" onClick="{{nc.auto.flip}}" style="width: 46px; height: 28px; flex: 0 0 46px; display: flex; align-items: center; justify-content: {{nc.auto.justify}}; padding: 3px; box-sizing: border-box; border: 0; border-radius: {{nc.auto.trackRadius}}; background: {{nc.auto.trackBg}}">
+<span aria-hidden="true" style="width: 22px; height: 22px; border-radius: {{nc.auto.knobRadius}}; background: {{nc.auto.knobBg}}; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25)"></span>
+</button>
+</div>
+</div>
+</div>
+</sc-for>
+</sc-if>
+
+<sc-for list="{{paneSections}}" as="ss" hint-placeholder-count="2">
+<section style="padding-top: 4px">
+<h3 style="margin: 18px 0 4px; font-family: {{ss.t.secFont}}; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: {{ss.t.muted}}">{{ss.title}}</h3>
+<sc-for list="{{ss.rows}}" as="r" hint-placeholder-count="3">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 13px 0; border-bottom: 1px solid {{r.t.border}}">
+<div style="flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: 500; font-size: 14px; color: {{r.t.fg}}">{{r.label}}</span>
+<span style="font-size: 12.5px; line-height: 1.4; color: {{r.t.muted}}">{{r.desc}}</span>
+</div>
+<sc-if value="{{r.isSeg}}" hint-placeholder-val="{{ true }}">
+<div role="group" aria-label="{{r.label}}" style="display: flex; flex: 0 0 auto; gap: 2px; padding: 3px; border-radius: {{r.t.radius}}; background: {{r.t.chip}}">
+<sc-for list="{{r.opts}}" as="o" hint-placeholder-count="3">
+<button type="button" onClick="{{o.pick}}" aria-pressed="{{o.on}}" style="min-height: 32px; padding: 0 12px; border: 1px solid {{o.border}}; border-radius: {{o.radius}}; background: {{o.bg}}; color: {{o.fg}}; font-size: 13px; font-weight: {{o.weight}}; white-space: nowrap">{{o.label}}</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{r.isToggle}}" hint-placeholder-val="{{ false }}">
+<button type="button" role="switch" aria-checked="{{r.checked}}" aria-label="{{r.label}}" onClick="{{r.flip}}" style="width: 46px; height: 28px; flex: 0 0 46px; display: flex; align-items: center; justify-content: {{r.justify}}; padding: 3px; box-sizing: border-box; border: 0; border-radius: {{r.trackRadius}}; background: {{r.trackBg}}">
+<span aria-hidden="true" style="width: 22px; height: 22px; border-radius: {{r.knobRadius}}; background: {{r.knobBg}}; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25)"></span>
+</button>
+</sc-if>
+<sc-if value="{{r.isWords}}" hint-placeholder-val="{{ false }}">
+<div style="flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px">
+<sc-for list="{{r.words}}" as="w" hint-placeholder-count="2">
+<span style="display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 2px 0 10px; border: 1px solid {{w.t.border}}; border-radius: {{w.t.pill}}; background: {{w.t.chip}}; font-size: 13px; font-family: {{w.t.mono}}; color: {{w.t.fg}}">{{w.text}}<button type="button" onClick="{{w.remove}}" aria-label="{{w.removeLabel}}" style="width: 26px; height: 26px; display: grid; place-items: center; border: 0; background: transparent; color: {{w.t.muted}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></span>
+</sc-for>
+<label for="hl-input" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap">Add a highlight word</label>
+<input id="hl-input" type="text" placeholder="Add a word, press Enter" onKeyDown="{{r.onKey}}" style="flex: 1 1 160px; min-width: 120px; height: 30px; box-sizing: border-box; padding: 0 10px; border: 1px dashed {{r.t.border}}; border-radius: {{r.t.pill}}; background: transparent; color: {{r.t.fg}}; font-family: {{r.t.mono}}; font-size: 13px">
+</div>
+</sc-if>
+</div>
+</sc-for>
+</section>
+</sc-for>
+
+</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+/* Themes are plain token sets: add one here and it shows up in Settings. */
+const SANS_INTER = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const MONO_SYS = "ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace";
+const THEMES = {
+  lounge: {
+    iconRing: 'none',
+    label: 'Lounge', desc: 'weblounge.org, by day',
+    bg: '#f3f1e9', panel: '#eaede3', panelFg: '#1d2825', panelMuted: '#5c655d', panelBorder: '#d5d8ce', panelAlt: '#faf9f4',
+    surface: '#f3f1e9', fg: '#1d2825', muted: '#5c655d', border: '#d5d8ce', accent: '#4e6244', accentFg: '#f3f1e9',
+    sel: '#bdd9a7', selFg: '#1d2825', mentionBg: '#e3ebd6', unread: '#9a3b2e', inputBg: '#faf9f4', jumpBg: '#faf9f4',
+    chip: '#e3e6dc', codeBg: '#eaede3', overlay: 'rgba(29, 40, 37, 0.35)', shadow: '0 20px 60px rgba(29, 40, 37, 0.18)',
+    radius: '3px', avatarRadius: '6px', composerRadius: '6px', paletteRadius: '6px', pill: '3px', iconRadius: '7px',
+    ui: SANS_INTER, mono: MONO_SYS, title: SANS_INTER, msgFont: SANS_INTER, base: 14,
+    secFont: MONO_SYS, secSize: '11px', secCase: 'uppercase', secTrack: '0.12em',
+    online: '#4e6244', avatarFg: '#f3f1e9', selfNick: '#4e6244', error: '#9a3b2e', netBg: '#1d2825', netFg: '#f3f1e9',
+    nicks: ['#2f6b5e', '#8a5a12', '#3f5f8a', '#9a3b2e', '#6a4f86', '#7a4a62']
+  },
+  loungeNight: {
+    iconRing: 'inset 0 0 0 1px rgba(237, 239, 229, 0.16)',
+    label: 'Lounge Night', desc: 'weblounge.org, after dark',
+    bg: '#18221e', panel: '#131b18', panelFg: '#edefe5', panelMuted: '#a9b3a8', panelBorder: '#2a352e', panelAlt: '#1b2621',
+    surface: '#18221e', fg: '#edefe5', muted: '#a9b3a8', border: '#39463b', accent: '#bdd9a7', accentFg: '#18221e',
+    sel: '#2c3a2f', selFg: '#edefe5', mentionBg: '#25321f', unread: '#eba293', inputBg: '#202c24', jumpBg: '#1b2621',
+    chip: '#253227', codeBg: '#131b18', overlay: 'rgba(0, 0, 0, 0.5)', shadow: '0 20px 60px rgba(0, 0, 0, 0.45)',
+    radius: '3px', avatarRadius: '6px', composerRadius: '6px', paletteRadius: '6px', pill: '3px', iconRadius: '7px',
+    ui: SANS_INTER, mono: MONO_SYS, title: SANS_INTER, msgFont: SANS_INTER, base: 14,
+    secFont: MONO_SYS, secSize: '11px', secCase: 'uppercase', secTrack: '0.12em',
+    online: '#bdd9a7', avatarFg: '#18221e', selfNick: '#bdd9a7', error: '#eba293', netBg: '#edefe5', netFg: '#18221e',
+    nicks: ['#8fd3c1', '#e8c07a', '#9cb8e8', '#eba293', '#c6aee8', '#d9d48a']
+  },
+  modern: {
+    iconRing: 'none',
+    label: 'Modern', desc: 'Clean and bright',
+    bg: '#ffffff', panel: '#f4f4f6', panelFg: '#1c1c1e', panelMuted: '#64646c', panelBorder: '#e4e4e9', panelAlt: '#fafafb',
+    surface: '#ffffff', fg: '#1c1c1e', muted: '#64646c', border: '#e4e4e9', accent: '#2f5bea', accentFg: '#ffffff',
+    sel: '#e3e9fd', selFg: '#1a3bb0', mentionBg: '#fff5dc', unread: '#c2410c', inputBg: '#ffffff', jumpBg: '#ffffff',
+    chip: '#f0f0f3', codeBg: '#f6f6f8', overlay: 'rgba(20, 20, 28, 0.32)', shadow: '0 24px 64px rgba(20, 20, 40, 0.18)',
+    radius: '8px', avatarRadius: '50%', composerRadius: '12px', paletteRadius: '14px', pill: '12px', iconRadius: '9px',
+    ui: "'Geist', system-ui, sans-serif", mono: "'Geist Mono', ui-monospace, monospace",
+    title: "'Geist', system-ui, sans-serif", msgFont: "'Geist', system-ui, sans-serif", base: 14,
+    secFont: "'Geist', system-ui, sans-serif", secSize: '11px', secCase: 'uppercase', secTrack: '0.06em',
+    online: '#2f9e44', avatarFg: '#ffffff', selfNick: '#2f5bea', error: '#c0264b', netBg: '#2f5bea', netFg: '#ffffff',
+    nicks: ['#0b7a75', '#b5520a', '#a3367c', '#c0264b', '#7048c8', '#4d7c0f']
+  },
+  terminal: {
+    iconRing: 'inset 0 0 0 1px rgba(255, 255, 255, 0.14)',
+    label: 'Terminal', desc: 'Monospace, dense, dark',
+    bg: '#101112', panel: '#0b0c0d', panelFg: '#c9c5ba', panelMuted: '#8a867d', panelBorder: '#1d1f21', panelAlt: '#0f1011',
+    surface: '#121314', fg: '#d9d5ca', muted: '#8a867d', border: '#26282a', accent: '#e6b450', accentFg: '#121314',
+    sel: '#22252a', selFg: '#f4efe2', mentionBg: '#262113', unread: '#e6b450', inputBg: '#0e0f10', jumpBg: '#121314',
+    chip: '#1a1c1e', codeBg: '#0b0c0d', overlay: 'rgba(0, 0, 0, 0.6)', shadow: 'none',
+    radius: '2px', avatarRadius: '2px', composerRadius: '2px', paletteRadius: '2px', pill: '2px', iconRadius: '2px',
+    ui: "'IBM Plex Mono', ui-monospace, monospace", mono: "'IBM Plex Mono', ui-monospace, monospace",
+    title: "'IBM Plex Mono', ui-monospace, monospace", msgFont: "'IBM Plex Mono', ui-monospace, monospace", base: 13,
+    secFont: "'IBM Plex Mono', ui-monospace, monospace", secSize: '12px', secCase: 'none', secTrack: '0',
+    online: '#7cc47a', avatarFg: '#121314', selfNick: '#e6b450', error: '#f28779', netBg: '#e6b450', netFg: '#121314',
+    nicks: ['#7fd1b9', '#e08fbf', '#9ab8f2', '#f28779', '#c3a6ff', '#b8cc52']
+  },
+  retro: {
+    iconRing: 'inset 0 0 0 1px rgba(255, 255, 255, 0.12)',
+    label: 'Retro', desc: 'Wood, cream and serifs',
+    bg: '#f6efe1', panel: '#2e2119', panelFg: '#f1e6d0', panelMuted: '#b8a58a', panelBorder: '#4a3527', panelAlt: '#efe5d2',
+    surface: '#f6efe1', fg: '#2b1f17', muted: '#6e5a45', border: '#d9c8aa', accent: '#b5471d', accentFg: '#fff8ee',
+    sel: '#4a3527', selFg: '#fff3dc', mentionBg: '#f1dcb9', unread: '#b5471d', inputBg: '#fffaf0', jumpBg: '#3a2b21',
+    chip: '#efe3cc', codeBg: '#efe3cc', overlay: 'rgba(46, 33, 25, 0.45)', shadow: '6px 6px 0 #2e2119',
+    radius: '4px', avatarRadius: '4px', composerRadius: '4px', paletteRadius: '4px', pill: '4px', iconRadius: '4px',
+    ui: "'Work Sans', system-ui, sans-serif", mono: "'Courier Prime', ui-monospace, monospace",
+    title: "'Fraunces', Georgia, serif", msgFont: "'Work Sans', system-ui, sans-serif", base: 14,
+    secFont: "'Fraunces', Georgia, serif", secSize: '15px', secCase: 'none', secTrack: '0',
+    online: '#9bc26b', avatarFg: '#fff8ee', selfNick: '#b5471d', error: '#9a2b45', netBg: '#b5471d', netFg: '#fff8ee',
+    nicks: ['#2f6b5e', '#7a5d0f', '#3c5a9a', '#9a2b45', '#6d4a8c', '#5d6b16']
+  }
+};
+function prefersDark() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { return false; }
+}
+const THEME_KEYS = ['lounge', 'loungeNight', 'modern', 'terminal', 'retro'];
+
+/* Density presets, one for the conversation and one for the sidebars. */
+const MSG_DENSITY = {
+  compact: { label: 'Compact', avatar: 26, avFont: '12px', groupTop: '5px', contTop: '0px', linePad: '1px', lh: '1.4', delta: -1 },
+  cozy: { label: 'Cozy', avatar: 36, avFont: '15px', groupTop: '10px', contTop: '2px', linePad: '3px', lh: '1.5', delta: 0 },
+  comfortable: { label: 'Comfortable', avatar: 40, avFont: '16px', groupTop: '15px', contTop: '4px', linePad: '5px', lh: '1.6', delta: 1 }
+};
+const SIDE_DENSITY = {
+  compact: { label: 'Compact', row: '26px', pad: '2px 10px', font: '12.5px', secGap: '8px', memberRow: '24px', memberAv: '18px' },
+  cozy: { label: 'Cozy', row: '32px', pad: '5px 10px', font: '13px', secGap: '14px', memberRow: '32px', memberAv: '24px' },
+  comfortable: { label: 'Comfortable', row: '38px', pad: '8px 10px', font: '14px', secGap: '20px', memberRow: '38px', memberAv: '28px' }
+};
+const DENSITY_KEYS = ['compact', 'cozy', 'comfortable'];
+
+const NICK_ORDER = ['ana', 'bruno', 'cyd', 'mel', 'rafa', 'tomo', 'kit', 'deko', 'concierge'];
+const MODES = { luiz: '@', mel: '@', bruno: '+', concierge: '+' };
+/* Users with the IRCv3 bot mode (+B, or the `bot` message tag). */
+const BOTS = { concierge: true };
+const MENTION_RE = new RegExp('\\b(' + NICK_ORDER.concat(['luiz']).join('|') + ')\\b', 'g');
+
+function segments(text, colorOf) {
+  const src = String(text || '');
+  const out = [];
+  let last = 0;
+  src.replace(MENTION_RE, (match, n, idx) => {
+    if (idx > last) out.push({ text: src.slice(last, idx), color: 'inherit', weight: 'inherit' });
+    out.push({ text: match, color: colorOf(n), weight: '600' });
+    last = idx + match.length;
+    return match;
+  });
+  if (last < src.length) out.push({ text: src.slice(last), color: 'inherit', weight: 'inherit' });
+  return out;
+}
+
+const SECTIONS = [
+  { name: 'weblounge', server: 'weblounge', icon: 'chair', items: [
+    { id: 'lobby', label: 'lobby', kind: 'chan', unread: 4 },
+    { id: 'papo', label: 'papo', kind: 'chan' },
+    { id: 'chap', label: 'chap', kind: 'chan', unread: 12 },
+    { id: 'nix', label: 'nix', kind: 'chan' },
+    { id: 'astro', label: 'astro', kind: 'chan', muted: true }
+  ] },
+  { name: 'libera.chat', server: 'libera', icon: 'letter', letter: 'L', items: [
+    { id: 'halloy', label: 'halloy', kind: 'chan', unread: 2 },
+    { id: 'nixos', label: 'nixos', kind: 'chan', unread: 31 }
+  ] },
+  { name: 'Direct', items: [
+    { id: 'mel', label: 'mel', kind: 'dm', mention: 1, presence: 'online' },
+    { id: 'ana', label: 'ana', kind: 'dm', presence: 'online' },
+    { id: 'bruno', label: 'bruno', kind: 'dm', presence: 'away' }
+  ] }
+];
+
+const SERVERS = {
+  weblounge: {
+    name: 'weblounge', topic: 'irc.weblounge.org · Ergo · connected since 19:02',
+    log: [
+      { k: 'day', text: 'Today' },
+      { k: 'log', kind: 'info', time: '19:02', src: '*', text: 'Connecting to wss://irc.weblounge.org …' },
+      { k: 'log', kind: 'info', time: '19:02', src: 'CAP', text: 'message-tags server-time echo-message batch chathistory away-notify account-tag draft/read-marker draft/webpush' },
+      { k: 'log', kind: 'num', time: '19:02', src: 'SASL', text: 'Authenticated as luiz' },
+      { k: 'log', kind: 'num', time: '19:02', src: '001', text: 'Welcome to weblounge, luiz' },
+      { k: 'log', kind: 'num', time: '19:02', src: '005', text: 'NETWORK=weblounge CHANTYPES=# PREFIX=(ov)@+ CHATHISTORY=1000' },
+      { k: 'log', kind: 'motd', time: '19:02', src: 'MOTD', text: 'pull up a chair. invites go through concierge: /msg concierge help' },
+      { k: 'log', kind: 'motd', time: '19:02', src: 'MOTD', text: 'be kind, ship things.' },
+      { k: 'log', kind: 'notice', time: '21:14', src: 'concierge', text: 'mel accepted your invite.' },
+      { k: 'log', kind: 'num', time: '22:20', src: 'WHOIS', text: 'mel · mel@weblounge/user/mel · account mel · on @#papo #lobby #chap' },
+      { k: 'log', kind: 'error', time: '22:31', src: 'FAIL', text: 'CHATHISTORY INVALID_TARGET #old-stuff · no such channel' }
+    ]
+  },
+  libera: {
+    name: 'libera.chat', topic: 'irc.libera.chat · Solanum · connected since 19:02',
+    log: [
+      { k: 'day', text: 'Today' },
+      { k: 'log', kind: 'info', time: '19:02', src: '*', text: 'Connecting to irc.libera.chat:6697 (TLS, desktop app only) …' },
+      { k: 'log', kind: 'notice', time: '19:02', src: '*', text: '*** Checking Ident' },
+      { k: 'log', kind: 'num', time: '19:02', src: 'SASL', text: 'Authenticated as luiz' },
+      { k: 'log', kind: 'num', time: '19:02', src: '001', text: 'Welcome to the Libera.Chat Internet Relay Chat Network luiz' },
+      { k: 'log', kind: 'motd', time: '19:02', src: 'MOTD', text: '[Libera.Chat message of the day]' },
+      { k: 'log', kind: 'info', time: '20:41', src: '*', text: 'Netsplit · 14 users quit, all rejoined by 20:43' }
+    ]
+  }
+};
+
+/* Connection details per network. `icon` comes from the draft/ICON ISUPPORT token when a server sends one. */
+const NETWORKS = [
+  { id: 'weblounge', name: 'weblounge', icon: 'chair', software: 'Ergo 2.19', fields: [
+    ['Server', 'irc.weblounge.org:443', true],
+    ['Connection', 'WebSocket over TLS (wss://)'],
+    ['Nickname', 'luiz', true],
+    ['Account', 'luiz · SASL PLAIN'],
+    ['Push', 'On for this device'],
+    ['Features', 'chathistory, read-marker, webpush, reply, react, bot']
+  ] },
+  { id: 'libera', name: 'libera.chat', icon: 'letter', letter: 'L', software: 'Solanum', fields: [
+    ['Server', 'irc.libera.chat:6697', true],
+    ['Connection', 'TLS (desktop app only)'],
+    ['Nickname', 'luiz', true],
+    ['Account', 'luiz · SASL PLAIN'],
+    ['Push', 'Not supported by this network'],
+    ['Features', 'server-time, away-notify, account-tag']
+  ] }
+];
+
+const TOPICS = {
+  papo: 'papo — a modern IRCv3 client library for Rust · design talk welcome',
+  lobby: 'welcome to weblounge · be kind, ship things',
+  chap: 'agents, sandboxes and plugins',
+  nix: 'flakes, modules and the occasional rebuild',
+  astro: 'clear skies only',
+  halloy: 'Halloy · an IRC client written in Rust',
+  nixos: 'NixOS discussion · be excellent to each other',
+  mel: 'online', ana: 'online', bruno: 'away'
+};
+
+const MSGS = {
+  papo: [
+    { k: 'day', text: 'Today' },
+    { k: 'event', text: '→ mel, rafa and cyd joined' },
+    { k: 'msg', nick: 'ana', time: '21:58', text: "anyone tried ergo's webpush yet?" },
+    { k: 'msg', nick: 'ana', time: '21:58', text: 'thinking about it for the mobile build' },
+    { k: 'msg', nick: 'luiz', time: '22:01', text: 'yeah, 2.15 ships it behind webpush.enabled. still marked experimental' },
+    { k: 'msg', nick: 'luiz', time: '22:01', text: 'plan: a tiny relay forwards the ciphertext to APNs, and the notification extension decrypts on-device' },
+    { k: 'msg', nick: 'bruno', time: '22:04', reply: 'luiz: plan: a tiny relay forwards the ciphertext to APNs…', text: 'so the relay never sees plaintext? love it', reacts: [{ label: '+1', n: 3, mine: true }] },
+    { k: 'msg', nick: 'cyd', time: '22:07', text: 'the websocket transport builds on wasm32 now:', code: 'cargo add papo --features websocket' },
+    { k: 'action', nick: 'tomo', text: 'is grabbing coffee, back in 10' },
+    { k: 'unread' },
+    { k: 'msg', nick: 'mel', time: '22:12', mention: true, text: 'luiz: pushed the chathistory pagination branch, mind taking a look?', link: { host: 'git.weblounge.org', title: 'chathistory: paginate BEFORE/AFTER with msgid cursors' } },
+    { k: 'msg', nick: 'rafa', time: '22:14', text: 'the prototype UI feels instant btw. ana, did you try it on your phone?', reacts: [{ label: 'lgtm', n: 2 }, { label: '+1', n: 1 }] },
+    { k: 'event', text: '← deko left (Ping timeout)' }
+  ],
+  lobby: [
+    { k: 'day', text: 'Today' },
+    { k: 'msg', nick: 'concierge', time: '21:35', text: 'mel joined weblounge with an invite from luiz. say hi!' },
+    { k: 'msg', nick: 'tomo', time: '21:36', text: 'welcome mel!' },
+    { k: 'msg', nick: 'mel', time: '21:38', text: 'thanks! found my way in through the invite tree' },
+    { k: 'event', text: '→ kit joined' },
+    { k: 'msg', nick: 'ana', time: '21:40', text: 'the invite bot is so nice' },
+    { k: 'unread' },
+    { k: 'msg', nick: 'cyd', time: '21:52', text: 'anyone up for a call friday?' }
+  ],
+  mel: [
+    { k: 'day', text: 'Today' },
+    { k: 'msg', nick: 'mel', time: '22:11', text: 'hey! pushed the pagination branch' },
+    { k: 'msg', nick: 'mel', time: '22:11', text: 'msgid cursors both directions, tests green' },
+    { k: 'msg', nick: 'luiz', time: '22:15', text: 'nice, looking now' }
+  ]
+};
+const DEFAULT_MSGS = [
+  { k: 'day', text: 'Today' },
+  { k: 'msg', nick: 'kit', time: '20:05', text: 'quiet one tonight' },
+  { k: 'msg', nick: 'tomo', time: '20:12', text: 'most folks are over in #papo' }
+];
+
+const MEMBERS = [
+  { name: 'Operators', list: ['luiz', 'mel'] },
+  { name: 'Voiced', list: ['bruno'] },
+  { name: 'Online', list: ['ana', 'cyd', 'rafa'] },
+  { name: 'Away', list: ['tomo', 'kit'], away: true },
+  { name: 'Bots', list: ['concierge'] }
+];
+
+class Component extends DCLogic {
+  renderVals() {
+    const s = this.state || {};
+    /* Default follows the system: Lounge by day, Lounge Night in dark mode. */
+    const theme = THEMES[s.theme] ? s.theme : (prefersDark() ? 'loungeNight' : 'lounge');
+    /* Defaults: one-line messages, cozy conversation, compact sidebars. */
+    const style = s.style || 'line';
+    const msgKey = MSG_DENSITY[s.msgDensity] ? s.msgDensity : 'cozy';
+    const sideKey = SIDE_DENSITY[s.sideDensity] ? s.sideDensity : 'compact';
+    const avatars = s.avatars !== false;
+    const modes = s.modes !== false;
+    const events = s.events !== false;
+    const showSidebar = s.sidebar !== false;
+    const showMembers = s.members !== false;
+    const active = s.active || 'papo';
+    const off = s.off || {};
+    const palette = s.overlay === 'palette';
+    const settingsOpen = s.overlay === 'settings';
+    const t = THEMES[theme];
+    const md = MSG_DENSITY[msgKey];
+    const sd = SIDE_DENSITY[sideKey];
+    const lineMode = style === 'line';
+    const fs = (t.base + md.delta) + 'px';
+    const nickColor = (n) => n === 'luiz' ? t.selfNick : t.nicks[Math.max(0, NICK_ORDER.indexOf(n)) % t.nicks.length];
+    const prefixOf = (n) => modes ? (MODES[n] || '') : '';
+    const go = (id) => () => this.setState({ active: id, overlay: null });
+    const set = (patch) => () => this.setState(patch);
+
+    const isServer = active.indexOf('server:') === 0;
+    const server = isServer ? SERVERS[active.slice(7)] : null;
+    const showMembersPanel = showMembers && !isServer;
+    const chromeless = !showSidebar && !showMembersPanel;
+
+    let activeItem = { id: 'papo', label: 'papo', kind: 'chan' };
+    const sections = SECTIONS.map((sec) => {
+      const serverId = sec.server ? 'server:' + sec.server : null;
+      const secActive = !!serverId && serverId === active;
+      return {
+        name: sec.name, t, letter: sec.letter || '',
+        dotColor: sec.server && off[sec.server] ? t.panelBorder : t.online,
+        isServerable: !!serverId, notServerable: !serverId,
+        isChair: sec.icon === 'chair', isLetter: sec.icon === 'letter',
+        ariaLabel: sec.name + ' server messages',
+        current: secActive ? 'page' : 'false',
+        bg: secActive ? t.sel : 'transparent',
+        fg: secActive ? t.selFg : t.panelMuted,
+        open: serverId ? go(serverId) : null,
+        items: sec.items.map((it) => {
+          const isActive = it.id === active;
+          if (isActive) activeItem = it;
+          const hasMention = !!it.mention && !isActive;
+          const hasUnreadOnly = !hasMention && !!it.unread && !isActive;
+          return {
+            label: it.label, unread: it.unread, mention: it.mention, t, d: sd,
+            isChan: it.kind === 'chan', isDm: it.kind === 'dm',
+            current: isActive ? 'page' : 'false',
+            bg: isActive ? t.sel : 'transparent',
+            fg: isActive ? t.selFg : (it.muted ? t.panelMuted : t.panelFg),
+            weight: (isActive || it.unread || it.mention) && !it.muted ? '600' : '400',
+            prefixColor: isActive ? t.selFg : t.panelMuted,
+            dotFill: it.presence === 'online' ? t.online : 'transparent',
+            dotRing: it.presence === 'online' ? t.online : t.panelMuted,
+            hasMention, hasUnreadOnly, open: go(it.id)
+          };
+        })
+      };
+    });
+
+    const isDm = !isServer && activeItem.kind === 'dm';
+    const title = isServer ? server.name : (isDm ? activeItem.label : '#' + activeItem.label);
+    const raw = (isServer ? server.log : (MSGS[active] || DEFAULT_MSGS)).filter((m) => events || m.k !== 'event');
+    const avPx = md.avatar + 'px';
+    const eventIndent = lineMode ? '172px' : (avatars ? (20 + md.avatar + 12) + 'px' : '20px');
+    let prev = null;
+    const items = raw.map((m) => {
+      const isMsg = m.k === 'msg';
+      const o = {
+        t, text: m.text, fs, lh: md.lh,
+        isDay: m.k === 'day', isEvent: m.k === 'event', isUnread: m.k === 'unread',
+        isAction: m.k === 'action', isLog: m.k === 'log', isMsg, eventIndent,
+        logPad: md.linePad + ' 20px'
+      };
+      if (m.k === 'action') {
+        o.nick = m.nick;
+        o.nickColor = nickColor(m.nick);
+      }
+      if (m.k === 'log') {
+        Object.assign(o, {
+          time: m.time, src: m.src,
+          srcColor: m.kind === 'error' ? t.error : (m.kind === 'notice' ? t.nicks[4] : (m.kind === 'num' ? t.selfNick : t.muted)),
+          textColor: m.kind === 'info' ? t.muted : (m.kind === 'error' ? t.error : t.fg)
+        });
+      }
+      if (isMsg) {
+        const cont = !!(prev && prev.k === 'msg' && prev.nick === m.nick && prev.time === m.time && !m.reply);
+        Object.assign(o, {
+          nick: m.nick, prefix: prefixOf(m.nick), time: m.time, lineMode,
+          botHeader: !!BOTS[m.nick] && !lineMode && !cont, botInline: !!BOTS[m.nick] && lineMode,
+          lineH: Math.round((t.base + md.delta) * parseFloat(md.lh)) + 'px',
+          showAvatar: !lineMode && !cont && avatars,
+          showSpacer: !lineMode && cont && avatars,
+          showHeader: !lineMode && !cont,
+          avPx, avFont: md.avFont,
+          nickColor: nickColor(m.nick), initial: m.nick[0].toUpperCase(),
+          pad: lineMode ? md.linePad + ' 20px' : (cont ? md.contTop + ' 20px' : md.groupTop + ' 20px 2px'),
+          rowBg: m.mention ? t.mentionBg : 'transparent',
+          segs: segments(m.text, nickColor),
+          hasReply: !!m.reply, replySegs: segments(m.reply, nickColor),
+          hasCode: !!m.code, code: m.code || '',
+          hasLink: !!m.link, linkHost: m.link ? m.link.host : '', linkTitle: m.link ? m.link.title : '',
+          hasReacts: !!(m.reacts && m.reacts.length),
+          reacts: (m.reacts || []).map((r) => ({
+            label: r.label, n: r.n, pressed: r.mine ? 'true' : 'false', radius: t.pill,
+            bg: r.mine ? t.sel : t.chip, border: r.mine ? t.accent : t.border, fg: r.mine ? t.selFg : t.fg
+          }))
+        });
+      }
+      prev = m;
+      return o;
+    });
+
+    let memberCount = 0;
+    const memberGroups = MEMBERS.map((g) => {
+      memberCount += g.list.length;
+      return {
+        t, label: g.name + ' — ' + g.list.length,
+        list: g.list.map((n) => ({
+          t, d: sd, nick: n, prefix: prefixOf(n), prefixW: modes ? '10px' : '0px', isBot: !!BOTS[n],
+          initial: n[0].toUpperCase(), showAvatar: avatars,
+          color: nickColor(n), opacity: g.away ? '0.45' : '1',
+          nameColor: g.away ? t.muted : nickColor(n)
+        }))
+      };
+    });
+
+    const paletteRaw = [
+      { glyph: '#', label: 'chap', hint: 'weblounge · 12 new', pick: go('chap') },
+      { glyph: '#', label: 'lobby', hint: 'weblounge · 4 new', pick: go('lobby') },
+      { glyph: '@', label: 'mel', hint: 'direct message', pick: go('mel') },
+      { glyph: '#', label: 'halloy', hint: 'libera.chat', pick: go('halloy') },
+      { glyph: '›', label: 'weblounge server messages', hint: 'network', pick: go('server:weblounge') },
+      { glyph: '›', label: 'Open settings', hint: 'action', pick: set({ overlay: 'settings' }) },
+      { glyph: '›', label: 'Network settings', hint: 'action', pick: set({ overlay: 'settings', settingsTab: 'networks' }) },
+      { glyph: '›', label: showMembers ? 'Hide member list' : 'Show member list', hint: 'action', pick: set({ members: !showMembers, overlay: null }) },
+      { glyph: '/', label: 'join', hint: 'command', pick: set({ overlay: null }) }
+    ];
+    const paletteItems = paletteRaw.map((p, i) => ({ ...p, t, bg: i === 0 ? t.sel : 'transparent', fg: i === 0 ? t.selFg : t.fg }));
+
+    /* Settings */
+    const settingsTab = s.settingsTab || 'appearance';
+    const settingsTabs = [['appearance', 'Appearance'], ['networks', 'Networks'], ['notifications', 'Notifications']].map(([k, label]) => {
+      const on = k === settingsTab;
+      return {
+        t, label, isAppearance: k === 'appearance', isNetworks: k === 'networks', isNotifications: k === 'notifications',
+        current: on ? 'page' : 'false', bg: on ? t.sel : 'transparent', fg: on ? t.selFg : t.fg, weight: on ? '600' : '500',
+        pick: set({ settingsTab: k })
+      };
+    });
+    const themeCards = THEME_KEYS.map((k) => {
+      const p = THEMES[k];
+      const on = k === theme;
+      return {
+        p, label: p.label, desc: p.desc, n0: p.nicks[0], n1: p.nicks[1],
+        on: on ? 'true' : 'false', ring: on ? t.accent : t.border,
+        cardRadius: t.composerRadius, labelColor: t.fg, descColor: t.muted,
+        pick: set({ theme: k })
+      };
+    });
+    const seg = (label, desc, key, cur, opts) => ({
+      t, label, desc, isSeg: true, isToggle: false, isWords: false,
+      opts: opts.map(([v, l]) => {
+        const on = v === cur;
+        return {
+          label: l, on: on ? 'true' : 'false', radius: t.radius,
+          bg: on ? t.surface : 'transparent', fg: on ? t.fg : t.muted,
+          border: on ? t.border : 'transparent', weight: on ? '600' : '500',
+          pick: set({ [key]: v })
+        };
+      })
+    });
+    const roundSwitch = t.radius === '2px' ? '2px' : '14px';
+    const switchVals = (on, flip) => ({
+      checked: on ? 'true' : 'false', justify: on ? 'flex-end' : 'flex-start',
+      trackBg: on ? t.accent : t.border, knobBg: on ? t.accentFg : t.surface,
+      trackRadius: roundSwitch, knobRadius: roundSwitch === '2px' ? '1px' : '11px', flip
+    });
+    const toggle = (label, desc, key, on) => Object.assign(
+      { t, label, desc, isSeg: false, isToggle: true, isWords: false },
+      switchVals(on, set({ [key]: !on }))
+    );
+    const densityOpts = DENSITY_KEYS.map((k) => [k, MSG_DENSITY[k].label]);
+
+    const pushOn = s.push !== false;
+    const notifyLevel = s.notifyLevel || 'mentions';
+    const botNotify = !!s.botNotify;
+    const words = s.words || ['papo', 'weblounge'];
+    const wordsRow = {
+      t, label: 'Highlight words', desc: 'Besides your nick, messages containing these count as mentions.',
+      isSeg: false, isToggle: false, isWords: true,
+      words: words.map((w) => ({
+        t, text: w, removeLabel: 'Remove ' + w,
+        remove: () => this.setState({ words: words.filter((x) => x !== w) })
+      })),
+      onKey: (e) => {
+        if (e.key !== 'Enter') return;
+        const v = String(e.target.value || '').trim();
+        if (v && words.indexOf(v) < 0) this.setState({ words: words.concat([v]) });
+        e.target.value = '';
+      }
+    };
+
+    const appearanceSections = [
+      { t, title: 'Conversation', rows: [
+        seg('Message layout', 'One line per message like a classic client, or grouped under a name.', 'style', style, [['line', 'One-line'], ['grouped', 'Grouped']]),
+        seg('Message density', 'Spacing, text size and avatar size in the conversation.', 'msgDensity', msgKey, densityOpts),
+        toggle('Avatars', 'Turn off for networks that don’t provide them.', 'avatars', avatars),
+        toggle('Mode symbols', 'Show @ for operators and + for voiced users before their nicks.', 'modes', modes),
+        toggle('Joins, parts and quits', 'Show membership changes in channels.', 'events', events)
+      ] },
+      { t, title: 'Sidebars', rows: [
+        seg('Sidebar density', 'Row height in the channel list and member list.', 'sideDensity', sideKey, densityOpts)
+      ] }
+    ];
+    const notificationSections = [
+      { t, title: 'This device', rows: [
+        toggle('Push notifications', 'Get notified while weblounge is closed, on networks that support push.', 'push', pushOn),
+        seg('Notify me about', 'Applies to every network. Muted channels never notify.', 'notifyLevel', notifyLevel, [['all', 'Everything'], ['mentions', 'Mentions & DMs'], ['none', 'Nothing']])
+      ] },
+      { t, title: 'Highlights', rows: [
+        wordsRow,
+        toggle('Mentions from bots', 'Let bots like concierge notify you when they mention you.', 'botNotify', botNotify)
+      ] }
+    ];
+
+    const networkCards = NETWORKS.map((n) => {
+      const isOff = !!off[n.id];
+      const autoOn = !(s.noAuto || {})[n.id];
+      return {
+        t, name: n.name, isChair: n.icon === 'chair', isLetter: n.icon !== 'chair', letter: n.letter || '',
+        statusText: isOff ? 'Disconnected' : 'Connected · ' + n.software,
+        statusColor: isOff ? t.muted : t.online,
+        toggleLabel: isOff ? 'Connect' : 'Disconnect',
+        toggleColor: isOff ? t.fg : t.error,
+        toggle: () => this.setState({ off: Object.assign({}, off, { [n.id]: !isOff }) }),
+        openServer: go('server:' + n.id),
+        fields: n.fields.map(([k, v, mono]) => ({ t, k, v, font: mono ? t.mono : t.ui })),
+        auto: switchVals(autoOn, () => this.setState({ noAuto: Object.assign({}, s.noAuto || {}, { [n.id]: autoOn }) }))
+      };
+    });
+    const paneSections = settingsTab === 'appearance' ? appearanceSections : (settingsTab === 'notifications' ? notificationSections : []);
+
+    return {
+      t, sd, fs, sections, items, memberGroups, paletteItems, settingsTabs, themeCards, paneSections, networkCards,
+      paneAppearance: settingsTab === 'appearance', paneNetworks: settingsTab === 'networks',
+      memberCount: String(memberCount), avatars, noAvatars: !avatars,
+      showSidebar, showMembersPanel, palette, settingsOpen, title,
+      topic: isServer ? server.topic : (TOPICS[active] || ''),
+      colMax: chromeless ? '880px' : '100%',
+      composerPlaceholder: isServer ? 'Send a command, e.g. /whois mel' : 'Message ' + title,
+      composerFont: isServer ? t.mono : t.msgFont,
+      showTyping: active === 'papo',
+      typingColor: nickColor('ana'),
+      sidebarPressed: showSidebar ? 'true' : 'false',
+      membersPressed: showMembers ? 'true' : 'false',
+      membersBtnBg: showMembersPanel ? t.chip : 'transparent',
+      toggleSidebar: set({ sidebar: !showSidebar }),
+      toggleMembers: set({ members: !showMembers }),
+      openPalette: set({ overlay: 'palette' }),
+      openSettings: set({ overlay: 'settings' }),
+      closeOverlays: set({ overlay: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

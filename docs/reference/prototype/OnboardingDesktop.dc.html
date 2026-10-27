@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>weblounge — onboarding (desktop)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..600&amp;display=swap">
+<style>
+body{margin:0}
+button{cursor:pointer}
+a{color:inherit}
+input::placeholder{color:#7d857c}
+@keyframes wl-spin{to{transform:rotate(360deg)}}
+@keyframes wl-slide{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes wl-slide-out{from{transform:translateX(0)}to{transform:translateX(100%)}}
+@keyframes wl-under-in{from{transform:translateX(0)}to{transform:translateX(-28%)}}
+@keyframes wl-under-out{from{transform:translateX(-28%)}to{transform:translateX(0)}}
+@keyframes wl-fade-in-r{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
+@keyframes wl-fade-in-l{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:translateX(0)}}
+@keyframes wl-fade-out{from{opacity:1}to{opacity:0}}
+@keyframes wl-msg-a{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes wl-msg-b{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.wl-spin{animation:wl-spin 0.8s linear infinite}
+@media (prefers-reduced-motion: reduce){.wl-anim{animation:none !important}.wl-spin{animation-duration:2.4s}}
+@media (max-width: 760px){.wl-aside{display:none !important}}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 600px; display: flex; overflow: hidden; background: {{C.paper}}; color: {{C.ink}}; font-family: {{C.sans}}">
+<aside class="wl-aside" aria-label="About weblounge" style="flex: 0 0 44%; max-width: 620px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px; padding: 40px 48px; overflow: hidden; background: {{C.hero}}; color: {{C.heroFg}}">
+<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px">
+<svg width="30" height="30" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 6.8 L13.53 6.41 L13.48 6.09 L13.42 5.96 L13.26 5.76 L13.01 5.64 L12.69 5.59 L12.5 5.6 L9.6 5.9 L9.4 3.6 L9.33 3.2 L9.2 2.88 L9.11 2.74 L8.88 2.53 L8.58 2.38 L8.21 2.31 L8 2.3 L3.09 2.5 L2.9 2.54 L2.76 2.62 L2.62 2.81 L2.59 2.99 L2.6 3.2 L3.8 10.6 L3.88 10.88 L3.97 11.03 L4.09 11.14 L4.23 11.21 L4.5 11.25 L6.4 11.25 L6.4 8.44 L6.35 8.2 L6.19 7.79 L6.09 7.64 L5.84 7.42 L5.5 7.28 L5.29 7.24 L4.78 7.25 L4.46 7.3 L4.3 7.29 L4.16 7.22 L4.06 7.11 L4 6.96 L4.01 6.8 L4.08 6.66 L4.19 6.56 L4.34 6.5 L4.68 6.45 L5.07 6.43 L5.67 6.49 L6.02 6.61 L6.23 6.72 L6.48 6.9 L6.73 7.17 L7.01 7.66 L7.12 8 L13.2 8 L13.31 8.02Z M7.2 11.25 L12.32 11.23 L12.58 11.14 L12.71 11.03 L12.81 10.88 L12.9 10.6 L13.18 8.8 L7.2 8.8Z"></path><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M4.6 11.25 L4.2 13.4 M6.8 11.25 L6.6 13.4 M12.1 11.25 L12.5 13.4"></path></svg>
+<span style="font-size: 26px; font-weight: 300; letter-spacing: -0.04em">weblounge</span>
+</div>
+<div style="flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; color: {{C.signal}}">
+<svg viewBox="-21.5 -28 675 653" role="img" aria-label="A lounge chair drawn as a network of nodes and connections" style="display: block; width: 100%; max-width: 440px; height: 100%; max-height: 440px">
+<g transform="translate(16 4)">
+<g fill="none" stroke="currentColor" stroke-opacity="0.5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+<path d="M21,23 C50,8 110,42 159,41"></path>
+<path d="M159,41 Q234,33 283,26"></path>
+<path d="M283,26 Q313,32 324,114"></path>
+<path d="M324,114 Q320,185 340,215"></path>
+<path d="M340,215 Q354,236 376,245"></path>
+<path d="M376,245 Q430,232 491,219"></path>
+<path d="M491,219 Q518,209 535,214"></path>
+<path d="M535,214 Q562,211 564,241"></path>
+<path d="M564,241 Q555,309 536,375"></path>
+<path d="M536,375 Q526,418 499,428"></path>
+<path d="M56,236 Q88,218 112,217"></path>
+<path d="M112,217 Q141,206 167,225"></path>
+<path d="M167,225 Q189,239 198,279"></path>
+<path d="M85,372 Q90,401 110,416"></path>
+<path d="M222,308 Q349,286 468,318"></path>
+<path d="M501,386 Q498,408 499,428"></path>
+<path d="M21,23 L27,117"></path>
+<path d="M27,117 L56,236"></path>
+<path d="M56,236 L85,372"></path>
+<path d="M110,416 L82,525"></path>
+<path d="M82,525 L117,461"></path>
+<path d="M117,461 L139,425"></path>
+<path d="M110,416 L127,421"></path>
+<path d="M127,421 L139,425"></path>
+<path d="M139,425 L211,439"></path>
+<path d="M211,439 L250,438"></path>
+<path d="M250,438 L499,428"></path>
+<path d="M499,428 L522,541"></path>
+<path d="M522,541 L500,497"></path>
+<path d="M500,497 L474,449"></path>
+<path d="M474,449 L462,430"></path>
+<path d="M462,430 L499,428"></path>
+<path d="M499,428 L474,449"></path>
+<path d="M211,439 L206,565"></path>
+<path d="M206,565 L226,509"></path>
+<path d="M226,509 L250,438"></path>
+<path d="M211,439 L224,397"></path>
+<path d="M224,397 L220,347"></path>
+<path d="M220,347 L222,308"></path>
+<path d="M222,308 L198,279"></path>
+<path d="M21,23 L84,85"></path>
+<path d="M84,85 L159,41"></path>
+<path d="M159,41 L266,84"></path>
+<path d="M266,84 L283,26"></path>
+<path d="M27,117 L84,85"></path>
+<path d="M84,85 L191,139"></path>
+<path d="M191,139 L159,41"></path>
+<path d="M191,139 L266,84"></path>
+<path d="M266,84 L324,114"></path>
+<path d="M324,114 L292,176"></path>
+<path d="M292,176 L266,84"></path>
+<path d="M292,176 L191,139"></path>
+<path d="M78,174 L191,139"></path>
+<path d="M78,174 L84,85"></path>
+<path d="M78,174 L27,117"></path>
+<path d="M56,236 L78,174"></path>
+<path d="M78,174 L167,225"></path>
+<path d="M292,176 L226,247"></path>
+<path d="M191,139 L226,247"></path>
+<path d="M191,139 L167,225"></path>
+<path d="M167,225 L226,247"></path>
+<path d="M226,247 L326,284"></path>
+<path d="M292,176 L326,284"></path>
+<path d="M326,284 L376,245"></path>
+<path d="M373,285 L326,284"></path>
+<path d="M326,284 L222,308"></path>
+<path d="M222,308 L226,247"></path>
+<path d="M167,225 L141,255"></path>
+<path d="M141,255 L112,217"></path>
+<path d="M112,217 L90,282"></path>
+<path d="M90,282 L141,255"></path>
+<path d="M90,282 L165,370"></path>
+<path d="M141,255 L165,370"></path>
+<path d="M198,279 L165,370"></path>
+<path d="M56,236 L90,282"></path>
+<path d="M85,372 L165,370"></path>
+<path d="M165,370 L211,439"></path>
+<path d="M165,370 L127,421"></path>
+<path d="M165,370 L139,425"></path>
+<path d="M564,241 L521,282"></path>
+<path d="M521,282 L535,214"></path>
+<path d="M491,219 L461,253"></path>
+<path d="M461,253 L376,245"></path>
+<path d="M376,245 L373,285"></path>
+<path d="M373,285 L461,253"></path>
+<path d="M461,253 L468,318"></path>
+<path d="M468,318 L505,338"></path>
+<path d="M505,338 L521,282"></path>
+<path d="M521,282 L536,375"></path>
+<path d="M505,338 L501,386"></path>
+<path d="M222,308 L308,341"></path>
+<path d="M308,341 L430,335"></path>
+<path d="M430,335 L505,338"></path>
+<path d="M220,347 L308,341"></path>
+<path d="M308,341 L253,410"></path>
+<path d="M308,341 L401,404"></path>
+<path d="M430,335 L401,404"></path>
+<path d="M401,404 L501,386"></path>
+<path d="M253,410 L401,404"></path>
+<path d="M224,397 L253,410"></path>
+<path d="M253,410 L211,439"></path>
+<path d="M401,404 L499,428"></path>
+</g>
+<g fill="currentColor">
+<circle cx="21" cy="23" r="9.68"></circle>
+<circle cx="159" cy="41" r="7.04"></circle>
+<circle cx="283" cy="26" r="7.04"></circle>
+<circle cx="84" cy="85" r="10.56"></circle>
+<circle cx="266" cy="84" r="7.04"></circle>
+<circle cx="27" cy="117" r="7.04"></circle>
+<circle cx="191" cy="139" r="8.8"></circle>
+<circle cx="324" cy="114" r="7.04"></circle>
+<circle cx="78" cy="174" r="7.04"></circle>
+<circle cx="292" cy="176" r="7.92"></circle>
+<circle cx="56" cy="236" r="8.8"></circle>
+<circle cx="112" cy="217" r="6.16"></circle>
+<circle cx="167" cy="225" r="6.16"></circle>
+<circle cx="141" cy="255" r="7.04"></circle>
+<circle cx="226" cy="247" r="7.04"></circle>
+<circle cx="340" cy="215" r="6.16"></circle>
+<circle cx="376" cy="245" r="6.16"></circle>
+<circle cx="491" cy="219" r="4.84"></circle>
+<circle cx="535" cy="214" r="6.16"></circle>
+<circle cx="564" cy="241" r="6.16"></circle>
+<circle cx="461" cy="253" r="6.16"></circle>
+<circle cx="521" cy="282" r="7.04"></circle>
+<circle cx="373" cy="285" r="6.16"></circle>
+<circle cx="326" cy="284" r="7.04"></circle>
+<circle cx="90" cy="282" r="7.04"></circle>
+<circle cx="198" cy="279" r="6.16"></circle>
+<circle cx="222" cy="308" r="4.84"></circle>
+<circle cx="468" cy="318" r="4.84"></circle>
+<circle cx="505" cy="338" r="6.6"></circle>
+<circle cx="536" cy="375" r="7.04"></circle>
+<circle cx="430" cy="335" r="6.16"></circle>
+<circle cx="308" cy="341" r="7.04"></circle>
+<circle cx="220" cy="347" r="4.84"></circle>
+<circle cx="165" cy="370" r="7.92"></circle>
+<circle cx="85" cy="372" r="7.92"></circle>
+<circle cx="224" cy="397" r="4.4"></circle>
+<circle cx="253" cy="410" r="7.04"></circle>
+<circle cx="401" cy="404" r="7.04"></circle>
+<circle cx="501" cy="386" r="4.84"></circle>
+<circle cx="499" cy="428" r="8.8"></circle>
+<circle cx="211" cy="439" r="8.8"></circle>
+<circle cx="110" cy="416" r="4.84"></circle>
+<circle cx="127" cy="421" r="5.28"></circle>
+<circle cx="139" cy="425" r="3.52"></circle>
+<circle cx="250" cy="438" r="4.84"></circle>
+<circle cx="462" cy="430" r="4.4"></circle>
+<circle cx="474" cy="449" r="5.72"></circle>
+<circle cx="500" cy="497" r="4.4"></circle>
+<circle cx="522" cy="541" r="6.16"></circle>
+<circle cx="226" cy="509" r="5.72"></circle>
+<circle cx="206" cy="565" r="6.16"></circle>
+<circle cx="117" cy="461" r="5.28"></circle>
+<circle cx="82" cy="525" r="6.16"></circle>
+</g>
+</g>
+</svg>
+</div>
+<div style="flex: 0 0 auto; width: 100%; max-width: 460px; align-self: center; display: flex; flex-direction: column; gap: 14px">
+<p style="margin: 0; font-size: 16px; line-height: 1.5; color: #d9ddd2">A modern IRC client for weblounge and any IRCv3 network.</p>
+<div aria-hidden="true" style="display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid #39463b; border-radius: 6px; background: #253227; font-family: {{C.mono}}; font-size: 12.5px; line-height: 1.6; color: #edefe5">
+<sc-for list="{{previewLines}}" as="pl" hint-placeholder-count="4">
+<div class="wl-anim" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: {{pl.anim}}"><span style="margin-right: 8px; color: #a9b3a8">{{pl.time}}</span><span style="margin-right: 8px; font-weight: 600"><span style="color: #a9b3a8">{{pl.mode}}</span><span style="color: {{pl.color}}">{{pl.nick}}</span></span><sc-if value="{{pl.isBot}}" hint-placeholder-val="{{ false }}"><span style="display: inline-block; margin-right: 8px; padding: 0 4px; border: 1px solid #4a584d; border-radius: 3px; font-size: 9.5px; font-weight: 600; line-height: 15px; letter-spacing: 0.06em; vertical-align: 1px; color: #a9b3a8">BOT</span></sc-if>{{pl.text}}</div>
+</sc-for>
+<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #a9b3a8; font-style: italic"><span style="font-style: normal; font-weight: 600; color: {{typingColor}}">{{typingNick}}</span> is typing…</div>
+</div>
+</div>
+</aside>
+<main style="flex: 1 1 auto; min-width: 0; height: 100%; position: relative; overflow: hidden">
+<sc-if value="{{showWelcome}}" hint-placeholder-val="{{ true }}">
+<div class="wl-anim" style="position: absolute; inset: 0; overflow-y: auto; background: {{C.paper}}; z-index: {{zWelcome}}; box-shadow: {{shadowWelcome}}; animation: {{animWelcome}}">
+<div style="min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; max-width: 488px; margin: 0 auto; padding: 48px 24px">
+<div style="display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p style="margin: 0; font-family: {{C.mono}}; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: {{C.muted}}">Welcome</p>
+<h1 style="margin: 0; font-size: 44px; font-weight: 300; line-height: 1.05; letter-spacing: -0.04em; color: {{C.ink}}">Pull up a chair.</h1>
+<p style="margin: 0; font-size: 16px; line-height: 1.55; color: {{C.muted}}">Join the weblounge network, or connect to any IRC network you already use.</p>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<button type="button" onClick="{{goWeblounge}}" style="display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; border: 1px solid {{C.line}}; border-radius: 6px; background: {{C.panel}}; text-align: left; color: {{C.ink}}; font-family: {{C.sans}}">
+<span aria-hidden="true" style="width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border-radius: 8px; background: #1d2825; color: #f3f1e9; box-shadow: {{C.iconRing}}"><svg width="32" height="32" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.5 6.8 L13.53 6.41 L13.48 6.09 L13.42 5.96 L13.26 5.76 L13.01 5.64 L12.69 5.59 L12.5 5.6 L9.6 5.9 L9.4 3.6 L9.33 3.2 L9.2 2.88 L9.11 2.74 L8.88 2.53 L8.58 2.38 L8.21 2.31 L8 2.3 L3.09 2.5 L2.9 2.54 L2.76 2.62 L2.62 2.81 L2.59 2.99 L2.6 3.2 L3.8 10.6 L3.88 10.88 L3.97 11.03 L4.09 11.14 L4.23 11.21 L4.5 11.25 L6.4 11.25 L6.4 8.44 L6.35 8.2 L6.19 7.79 L6.09 7.64 L5.84 7.42 L5.5 7.28 L5.29 7.24 L4.78 7.25 L4.46 7.3 L4.3 7.29 L4.16 7.22 L4.06 7.11 L4 6.96 L4.01 6.8 L4.08 6.66 L4.19 6.56 L4.34 6.5 L4.68 6.45 L5.07 6.43 L5.67 6.49 L6.02 6.61 L6.23 6.72 L6.48 6.9 L6.73 7.17 L7.01 7.66 L7.12 8 L13.2 8 L13.31 8.02Z M7.2 11.25 L12.32 11.23 L12.58 11.14 L12.71 11.03 L12.81 10.88 L12.9 10.6 L13.18 8.8 L7.2 8.8Z"></path><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M4.6 11.25 L4.2 13.4 M6.8 11.25 L6.6 13.4 M12.1 11.25 L12.5 13.4"></path></svg></span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+<span style="font-size: 16px; font-weight: 600">Join weblounge</span>
+<span style="font-size: 13.5px; line-height: 1.45; color: {{C.muted}}">Invite-only network for friends and family. Sign in with your weblounge account.</span>
+</span>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 18px; color: {{C.muted}}"><path d="m9 18 6-6-6-6"></path></svg>
+</button>
+<button type="button" onClick="{{goCustom}}" style="display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; border: 1px solid {{C.line}}; border-radius: 6px; background: {{C.panel}}; text-align: left; color: {{C.ink}}; font-family: {{C.sans}}">
+<span aria-hidden="true" style="width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border-radius: 8px; background: {{C.chip}}; color: {{C.ink}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"></rect><rect x="3" y="13" width="18" height="7" rx="1.5"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+<span style="font-size: 16px; font-weight: 600">Connect to another network</span>
+<span style="font-size: 13.5px; line-height: 1.45; color: {{C.muted}}">Any IRCv3 server or bouncer: Ergo, soju, Libera.Chat and others.</span>
+</span>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: 0 0 18px; color: {{C.muted}}"><path d="m9 18 6-6-6-6"></path></svg>
+</button>
+</div>
+<p style="margin: 0; font-size: 13px; color: {{C.muted}}">You can add more networks later in Settings.</p>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{showWeblounge}}" hint-placeholder-val="{{ false }}">
+<div class="wl-anim" style="position: absolute; inset: 0; overflow-y: auto; background: {{C.paper}}; z-index: {{zWeblounge}}; box-shadow: {{shadowWeblounge}}; animation: {{animWeblounge}}">
+<div style="min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; max-width: 488px; margin: 0 auto; padding: 48px 24px">
+<div style="display: flex; flex-direction: column; gap: 20px">
+<button type="button" onClick="{{goWelcome}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 8px 0 0; border: 0; background: transparent; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 14px; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>Back</button>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p style="margin: 0; font-family: {{C.mono}}; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: {{C.muted}}">weblounge</p>
+<h1 style="margin: 0; font-size: 44px; font-weight: 300; line-height: 1.05; letter-spacing: -0.04em; color: {{C.ink}}">Sign in</h1>
+</div>
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="wl-user" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Username</label>
+<input id="wl-user" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="your nick" style="height: 46px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="wl-pass" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Password</label>
+<input id="wl-pass" type="password" autocomplete="current-password" style="height: 46px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+</div>
+<button type="button" onClick="{{connectWeblounge}}" style="min-height: 48px; border: 0; border-radius: 3px; background: {{C.ink}}; color: {{C.paper}}; font-family: {{C.sans}}; font-size: 15px; font-weight: 500">Sign in</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 6px; background: {{C.soft}}">
+<span style="font-size: 14px; font-weight: 600; color: {{C.ink}}">No account yet?</span>
+<span style="font-size: 13.5px; line-height: 1.5; color: {{C.muted}}">weblounge is invite-only. Ask a member for an invite link and open it to create your account, then come back here.</span>
+</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{showCustom}}" hint-placeholder-val="{{ false }}">
+<div class="wl-anim" style="position: absolute; inset: 0; overflow-y: auto; background: {{C.paper}}; z-index: {{zCustom}}; box-shadow: {{shadowCustom}}; animation: {{animCustom}}">
+<div style="min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; max-width: 488px; margin: 0 auto; padding: 48px 24px">
+<div style="display: flex; flex-direction: column; gap: 20px">
+<button type="button" onClick="{{goWelcome}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 8px 0 0; border: 0; background: transparent; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 14px; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>Back</button>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p style="margin: 0; font-family: {{C.mono}}; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: {{C.muted}}">Another network</p>
+<h1 style="margin: 0; font-size: 44px; font-weight: 300; line-height: 1.05; letter-spacing: -0.04em; color: {{C.ink}}">Connect to a network</h1>
+</div>
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; gap: 10px">
+<div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+<label for="cs-host" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Server</label>
+<input id="cs-host" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="irc.example.org" style="height: 46px; width: 100%; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.mono}}; font-size: 15px">
+</div>
+<div style="flex: 0 0 92px; display: flex; flex-direction: column; gap: 6px">
+<label for="cs-port" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Port</label>
+<input id="cs-port" type="text" inputmode="numeric" placeholder="{{portDefault}}" style="height: 46px; width: 100%; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.mono}}; font-size: 15px">
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span id="cs-transport-label" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Connection</span>
+<div role="group" aria-labelledby="cs-transport-label" style="display: flex; gap: 2px; padding: 3px; border-radius: 3px; background: {{C.chip}}">
+<sc-for list="{{transportOpts}}" as="o" hint-placeholder-count="2">
+<button type="button" onClick="{{o.pick}}" aria-pressed="{{o.on}}" style="flex: 1; min-height: 38px; border: 1px solid {{o.border}}; border-radius: 3px; background: {{o.bg}}; color: {{o.fg}}; font-size: 14px; font-weight: {{o.weight}}; white-space: nowrap">{{o.label}}</button>
+</sc-for>
+</div>
+<span style="font-size: 12.5px; line-height: 1.45; color: {{C.muted}}">In a browser only WebSocket (wss://) servers can be reached. The desktop and phone apps can use either.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-nick" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Nickname</label>
+<input id="cs-nick" type="text" autocapitalize="off" spellcheck="false" placeholder="luiz" style="height: 46px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span id="cs-auth-label" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Sign in with</span>
+<div role="group" aria-labelledby="cs-auth-label" style="display: flex; gap: 2px; padding: 3px; border-radius: 3px; background: {{C.chip}}">
+<sc-for list="{{authOpts}}" as="o" hint-placeholder-count="3">
+<button type="button" onClick="{{o.pick}}" aria-pressed="{{o.on}}" style="flex: 1; min-width: 0; min-height: 38px; padding: 0 4px; border: 1px solid {{o.border}}; border-radius: 3px; background: {{o.bg}}; color: {{o.fg}}; font-size: 13.5px; font-weight: {{o.weight}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{o.label}}</button>
+</sc-for>
+</div>
+</div>
+<sc-if value="{{authSasl}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-account" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Account</label>
+<input id="cs-account" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" style="height: 46px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-pass" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Password</label>
+<input id="cs-pass" type="password" autocomplete="current-password" style="height: 46px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+</div>
+</div>
+</sc-if>
+<sc-if value="{{authPass}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-srvpass" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Server password</label>
+<input id="cs-srvpass" type="password" style="height: 46px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+<span style="font-size: 12.5px; line-height: 1.45; color: {{C.muted}}">Some bouncers use this instead of an account.</span>
+</div>
+</sc-if>
+<button type="button" onClick="{{toggleAdvanced}}" aria-expanded="{{advancedExpanded}}" aria-controls="cs-advanced" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0; border: 0; background: transparent; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 14px; font-weight: 500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>{{advancedLabel}}</button>
+<sc-if value="{{advanced}}" hint-placeholder-val="{{ false }}">
+<div id="cs-advanced" style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 1px solid {{C.line}}; border-radius: 6px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-real" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Real name</label>
+<input id="cs-real" type="text" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 16px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-username" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Username (ident)</label>
+<input id="cs-username" type="text" autocapitalize="off" spellcheck="false" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.mono}}; font-size: 15px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="cs-chans" style="font-size: 13px; font-weight: 500; color: {{C.ink}}">Channels to join</label>
+<input id="cs-chans" type="text" autocapitalize="off" spellcheck="false" placeholder="#channel, #another" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{C.line}}; border-radius: 3px; background: {{C.panel}}; color: {{C.ink}}; font-family: {{C.mono}}; font-size: 15px">
+</div>
+</div>
+</sc-if>
+<button type="button" onClick="{{connectCustom}}" style="min-height: 48px; border: 0; border-radius: 3px; background: {{C.ink}}; color: {{C.paper}}; font-family: {{C.sans}}; font-size: 15px; font-weight: 500">Connect</button>
+<p style="margin: 0; font-size: 13px; line-height: 1.5; color: {{C.muted}}">Using a bouncer like soju? weblounge adds the networks it manages for you.</p>
+</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{showConnecting}}" hint-placeholder-val="{{ false }}">
+<div class="wl-anim" style="position: absolute; inset: 0; overflow-y: auto; background: {{C.paper}}; z-index: {{zConnecting}}; box-shadow: {{shadowConnecting}}; animation: {{animConnecting}}">
+<div style="min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; max-width: 488px; margin: 0 auto; padding: 48px 24px">
+<div style="display: flex; flex-direction: column; gap: 22px">
+<sc-if value="{{notDone}}" hint-placeholder-val="{{ true }}">
+<button type="button" onClick="{{cancelConnect}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 8px 0 0; border: 0; background: transparent; color: {{C.ink}}; font-family: {{C.sans}}; font-size: 14px; font-weight: 500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>Cancel</button>
+</sc-if>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p style="margin: 0; font-family: {{C.mono}}; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: {{C.muted}}">{{targetName}}</p>
+<sc-if value="{{notDone}}" hint-placeholder-val="{{ true }}">
+<h1 style="margin: 0; font-size: 44px; font-weight: 300; line-height: 1.05; letter-spacing: -0.04em; color: {{C.ink}}">Connecting…</h1>
+</sc-if>
+<sc-if value="{{done}}" hint-placeholder-val="{{ false }}">
+<h1 style="margin: 0; font-size: 44px; font-weight: 300; line-height: 1.05; letter-spacing: -0.04em; color: {{C.ink}}">You’re in.</h1>
+</sc-if>
+</div>
+<ol aria-live="polite" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{checks}}" as="ck" hint-placeholder-count="5">
+<li style="display: flex; align-items: center; gap: 12px; min-height: 26px; font-size: 15px; color: {{ck.color}}; font-weight: {{ck.weight}}">
+<sc-if value="{{ck.isDone}}" hint-placeholder-val="{{ false }}"><span role="img" aria-label="done" style="width: 22px; height: 22px; flex: 0 0 22px; display: grid; place-items: center; border-radius: 50%; background: {{ck.C.accent}}; color: {{ck.C.paper}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10"></path></svg></span></sc-if>
+<sc-if value="{{ck.isActive}}" hint-placeholder-val="{{ true }}"><span role="img" aria-label="in progress" class="wl-spin" style="width: 22px; height: 22px; flex: 0 0 22px; box-sizing: border-box; border-radius: 50%; border: 2.5px solid {{ck.C.line}}; border-top-color: {{ck.C.accent}}"></span></sc-if>
+<sc-if value="{{ck.isPending}}" hint-placeholder-val="{{ false }}"><span role="img" aria-label="waiting" style="width: 22px; height: 22px; flex: 0 0 22px; box-sizing: border-box; border-radius: 50%; border: 1.5px dashed {{ck.C.line}}"></span></sc-if>
+<span style="min-width: 0">{{ck.label}}</span>
+</li>
+</sc-for>
+</ol>
+<sc-if value="{{showFeatures}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 13px; font-weight: 500; color: {{C.muted}}">This network supports</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<sc-for list="{{features}}" as="ft" hint-placeholder-count="5">
+<span style="display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid {{ft.C.line}}; border-radius: 3px; background: {{ft.C.soft}}; font-family: {{ft.C.mono}}; font-size: 12.5px; color: {{ft.C.ink}}; white-space: nowrap"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: {{ft.C.accent}}"><path d="M5 12.5 10 17l9-10"></path></svg>{{ft.label}}</span>
+</sc-for>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{done}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<p style="margin: 0; padding: 14px 16px; border-radius: 6px; background: {{C.tint}}; font-size: 14.5px; line-height: 1.5; color: {{C.ink}}">{{summary}}</p>
+<a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; min-height: 48px; border-radius: 3px; background: {{C.ink}}; color: {{C.paper}}; font-family: {{C.sans}}; font-size: 15px; font-weight: 500; text-decoration: none">Open weblounge</a>
+</div>
+</sc-if>
+</div>
+</div>
+</div>
+</sc-if>
+</main>
+<div role="group" aria-label="Preview appearance" style="position: absolute; z-index: 50; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 6px; background: rgba(15, 22, 19, 0.9); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); font-family: {{C.sans}}">
+<span style="padding: 0 6px 0 8px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #a9b3a8">Preview</span>
+<sc-for list="{{modeOpts}}" as="mo" hint-placeholder-count="3">
+<button type="button" onClick="{{mo.pick}}" aria-pressed="{{mo.on}}" style="min-height: 28px; padding: 0 10px; border: 0; border-radius: 4px; background: {{mo.bg}}; color: {{mo.fg}}; font-size: 12px; font-weight: 500; white-space: nowrap">{{mo.label}}</button>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+const PLATFORM = 'desktop';
+/* weblounge's palettes, from weblounge.org's tokens.css (light and prefers-color-scheme: dark). */
+const FONTS = {
+  sans: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  mono: "ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace"
+};
+const PALETTES = {
+  light: Object.assign({
+    paper: '#f3f1e9', ink: '#1d2825', muted: '#5c655d', line: '#d5d8ce', panel: '#faf9f4',
+    soft: '#eaede3', chip: '#e3e6dc', accent: '#4e6244', signal: '#bdd9a7', tint: '#e3ebd6', danger: '#9a3b2e',
+    hero: '#1d2825', heroFg: '#f3f1e9', iconRing: 'none'
+  }, FONTS),
+  dark: Object.assign({
+    paper: '#18221e', ink: '#edefe5', muted: '#a9b3a8', line: '#39463b', panel: '#202c24',
+    soft: '#202c24', chip: '#131b18', accent: '#bdd9a7', signal: '#bdd9a7', tint: '#25321f', danger: '#eba293',
+    hero: '#0f1613', heroFg: '#edefe5', iconRing: 'inset 0 0 0 1px rgba(237, 239, 229, 0.16)'
+  }, FONTS)
+};
+function prefersDark() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { return false; }
+}
+
+/* What the connection screen walks through for each path. */
+const TARGETS = {
+  weblounge: {
+    name: 'weblounge',
+    steps: ['Reaching irc.weblounge.org', 'Secure WebSocket connection', 'Negotiating features', 'Signing in as luiz', 'Syncing channels and history'],
+    features: ['chathistory', 'read markers', 'replies', 'reactions', 'push', 'typing', 'bot mode'],
+    summary: '5 channels and 3 direct messages, with recent history.'
+  },
+  custom: {
+    name: 'chat.example.net',
+    steps: ['Reaching chat.example.net:6697', 'TLS connection', 'Negotiating features', 'Signing in as luiz', 'Found a soju bouncer with 3 networks'],
+    features: ['chathistory', 'read markers', 'push', 'bouncer networks', 'away-notify'],
+    summary: 'Your bouncer manages libera.chat, OFTC and hackint. All three were added.'
+  }
+};
+const FEATURE_STEP = 2;
+/* The looping chat preview on the welcome screen. */
+const PREVIEW = [
+  { nick: 'ana', text: 'anyone tried the new client?' },
+  { nick: 'mel', mode: '@', text: 'pull up a chair, it’s cozy in here' },
+  { nick: 'bruno', mode: '+', text: 'push notifications work now' },
+  { nick: 'cyd', text: 'do read markers sync across devices?' },
+  { nick: 'mel', mode: '@', text: 'yep, read it on the laptop and the phone catches up' },
+  { nick: 'rafa', text: 'one-line mode feels very irssi' },
+  { nick: 'ana', text: 'it talks to my soju bouncer too' },
+  { nick: 'concierge', mode: '+', bot: true, text: 'tomo joined with an invite from ana' },
+  { nick: 'tomo', text: 'hi all! nice place' }
+];
+const PREVIEW_COLORS = { ana: '#8fd3c1', mel: '#d9d48a', bruno: '#9cb8e8', cyd: '#eba293', rafa: '#c6aee8', tomo: '#e8c07a', concierge: '#a9b3a8' };
+const PREVIEW_ROWS = 4;
+const STEPS = ['welcome', 'weblounge', 'custom', 'connecting'];
+const LAYER_KEYS = { welcome: 'Welcome', weblounge: 'Weblounge', custom: 'Custom', connecting: 'Connecting' };
+const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+/* Phone: screens push and pop like a navigation stack. Desktop: a short slide-and-fade. */
+const MOTION = PLATFORM === 'mobile' ? {
+  inFwd: 'wl-slide 280ms ' + EASE + ' both', outFwd: 'wl-under-in 280ms ' + EASE + ' forwards',
+  inBack: 'wl-under-out 280ms ' + EASE + ' both', outBack: 'wl-slide-out 280ms ' + EASE + ' forwards',
+  shadow: '-10px 0 28px rgba(29, 40, 37, 0.14)'
+} : {
+  inFwd: 'wl-fade-in-r 260ms ' + EASE + ' both', outFwd: 'wl-fade-out 140ms ease-in forwards',
+  inBack: 'wl-fade-in-l 260ms ' + EASE + ' both', outBack: 'wl-fade-out 140ms ease-in forwards',
+  shadow: 'none'
+};
+
+class Component extends DCLogic {
+  componentDidMount() {
+    this.previewTimer = setInterval(() => this.setState({ tick: ((this.state && this.state.tick) || 0) + 1 }), 1900);
+  }
+  componentWillUnmount() {
+    clearInterval(this.previewTimer);
+    clearInterval(this.timer);
+    clearTimeout(this.navTimer);
+  }
+  navigate(step, dir, extra) {
+    clearInterval(this.timer);
+    clearTimeout(this.navTimer);
+    const prev = (this.state && this.state.step) || 'welcome';
+    this.setState(Object.assign({ step, prev, dir, moving: true }, extra || {}));
+    this.navTimer = setTimeout(() => this.setState({ moving: false, prev: null }), 300);
+  }
+  start(target) {
+    this.navigate('connecting', 'fwd', { target, progress: 0 });
+    this.timer = setInterval(() => {
+      const p = (this.state && this.state.progress) || 0;
+      if (p >= TARGETS[target].steps.length) {
+        clearInterval(this.timer);
+        return;
+      }
+      this.setState({ progress: p + 1 });
+    }, 560);
+  }
+  renderVals() {
+    const s = this.state || {};
+    const mode = s.mode || 'system';
+    const C = PALETTES[mode === 'dark' || (mode === 'system' && prefersDark()) ? 'dark' : 'light'];
+    const modeOpts = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([k, label]) => ({
+      label, on: k === mode ? 'true' : 'false',
+      bg: k === mode ? '#edefe5' : 'transparent', fg: k === mode ? '#18221e' : '#d9ddd2',
+      pick: () => this.setState({ mode: k })
+    }));
+    const step = s.step || 'welcome';
+    const auth = s.auth || 'sasl';
+    const transport = s.transport || 'tls';
+    const advanced = !!s.advanced;
+    const target = s.target || 'weblounge';
+    const T = TARGETS[target];
+    const progress = s.progress || 0;
+    const done = step === 'connecting' && progress >= T.steps.length;
+    const tick = s.tick || 0;
+    const previewLines = [];
+    for (let i = 0; i < PREVIEW_ROWS; i++) {
+      const m = PREVIEW[(tick + i) % PREVIEW.length];
+      const total = 21 * 60 + 58 + tick + i;
+      const time = String(Math.floor(total / 60) % 24).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+      const newest = i === PREVIEW_ROWS - 1 && tick > 0;
+      previewLines.push({
+        time, mode: m.mode || '', nick: m.nick, text: m.text, isBot: !!m.bot,
+        color: PREVIEW_COLORS[m.nick] || '#edefe5',
+        anim: newest ? (tick % 2 ? 'wl-msg-a' : 'wl-msg-b') + ' 420ms ' + EASE + ' both' : 'none'
+      });
+    }
+    const typingNext = PREVIEW[(tick + PREVIEW_ROWS) % PREVIEW.length];
+    const nav = (next, dir, extra) => () => this.navigate(next, dir, extra);
+    const moving = !!s.moving && !!s.prev && s.prev !== step;
+    const fwd = s.dir !== 'back';
+    const layers = {};
+    STEPS.forEach((k) => {
+      const K = LAYER_KEYS[k];
+      const isIn = k === step;
+      const isOut = moving && k === s.prev;
+      const onTop = fwd ? isIn : isOut;
+      layers['show' + K] = isIn || isOut;
+      layers['anim' + K] = !moving ? 'none' : (isIn ? (fwd ? MOTION.inFwd : MOTION.inBack) : (fwd ? MOTION.outFwd : MOTION.outBack));
+      layers['z' + K] = onTop ? 2 : 1;
+      layers['shadow' + K] = moving && onTop ? MOTION.shadow : 'none';
+    });
+    const segOpt = (key, cur) => ([v, label]) => {
+      const on = v === cur;
+      return {
+        label, on: on ? 'true' : 'false',
+        bg: on ? C.panel : 'transparent', fg: on ? C.ink : C.muted,
+        border: on ? C.line : 'transparent', weight: on ? '600' : '500',
+        pick: () => this.setState({ [key]: v })
+      };
+    };
+    const checks = T.steps.map((label, i) => {
+      const state = i < progress ? 'done' : (i === progress && !done ? 'active' : 'pending');
+      return {
+        label, C,
+        isDone: state === 'done', isActive: state === 'active', isPending: state === 'pending',
+        color: state === 'pending' ? C.muted : C.ink, weight: state === 'active' ? '600' : '400'
+      };
+    });
+    return Object.assign(layers, {
+      C, modeOpts, previewLines, typingNick: typingNext.nick, typingColor: PREVIEW_COLORS[typingNext.nick] || '#edefe5',
+      isWelcome: step === 'welcome', isWeblounge: step === 'weblounge', isCustom: step === 'custom', isConnecting: step === 'connecting',
+      done, notDone: !done, targetName: T.name, checks, summary: T.summary,
+      showFeatures: progress > FEATURE_STEP,
+      features: T.features.map((f) => ({ label: f, C })),
+      transportOpts: [['tls', 'TLS'], ['ws', 'WebSocket']].map(segOpt('transport', transport)),
+      authOpts: [['sasl', 'SASL account'], ['pass', 'Server password'], ['none', 'None']].map(segOpt('auth', auth)),
+      authSasl: auth === 'sasl', authPass: auth === 'pass',
+      portDefault: transport === 'tls' ? '6697' : '443',
+      advanced, advancedExpanded: advanced ? 'true' : 'false',
+      advancedLabel: advanced ? 'Hide advanced options' : 'Advanced options',
+      toggleAdvanced: () => this.setState({ advanced: !advanced }),
+      goWeblounge: nav('weblounge', 'fwd'),
+      goCustom: nav('custom', 'fwd'),
+      goWelcome: nav('welcome', 'back', { progress: 0 }),
+      connectWeblounge: () => this.start('weblounge'),
+      connectCustom: () => this.start('custom'),
+      cancelConnect: nav(target === 'custom' ? 'custom' : 'weblounge', 'back', { progress: 0 })
+    });
+  }
+}
+</script>
+</body>
+</html>
