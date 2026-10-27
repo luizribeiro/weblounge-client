@@ -1,134 +1,68 @@
 # 21 — Performance and end-to-end harness
 
-Status: proposed for milestone 1 review.
+Status: revised for milestone 1 review.
 
 ## Problem
 
-Performance is a product contract: cached state appears immediately, input paints within a frame,
-long histories scroll smoothly, bursts do not block the main thread, and an all-day session reaches
-a memory plateau. There is no device lab, so repeatable local-server scenarios, explicit app marks,
-machine-readable metrics, and CI budgets must catch regressions early.
+Milestone 1 needs repeatable evidence for four product moments: launch, buffer switch, composer
+input, and a message burst. The harness must run a real build against a real Ergo server and emit
+machine-readable results without depending on papo's private dev-shell environment.
 
-The harness tests real builds and real IRC servers. It does not replace unit/component correctness
-tests, and it does not turn unstable microbenchmarks into arbitrary merge blockers.
+Broader server matrices, soak tests, and native-shell performance wait until the corresponding
+features exist.
 
-## Architecture
+## Real-server CLI contract
+
+The harness starts fixtures through one process interface:
+
+1. launch a profile-specific CLI;
+2. read one JSON line containing IRC, `ws`, and `wss` URLs plus fixture accounts and CA metadata;
+3. optionally request a `FaultProxy` endpoint for disconnect scenarios;
+4. keep stdin open for the fixture lifetime; closing stdin tears down every child process and
+   temporary file.
+
+The preferred provider is a supported exported `papo-test-server` package and CLI from papo's
+flake. That export is proposed but does not exist as an application-facing contract at papo
+revision `7d5e4bf`; approval is an explicit dependency below.
+
+If it is not approved, this repository's flake runs nixpkgs `ergochat` and `soju` and wraps them in
+the same JSON/stdin contract. Tests consume only the contract, so switching provider does not
+change scenarios. The weblounge NixOS `test-ergo` helper remains the hosted-mode fixture.
+
+`papo_testing::wire()` is not this interface: it is a scripted in-memory server for native/WASI
+tests, does not run in browser wasm, and enables papo `unstable`. Browser/E2E tests use the real
+server CLI.
+
+## Harness pieces
 
 ```text
-papo-test-server profiles ── traffic driver (papo clients)
-             │                         │
-             └──────── IRC ────────────┤
-                                       ▼
-                              instrumented app build
-                                       │
-                   Playwright + CDP / Tauri driver
-                                       │
-                      JSON metrics + artifacts
-                                       │
-                         budget evaluator → CI
+crates/perf-driver/       scripted traffic using public papo clients
+app/src/performance/      bounded marks, observers, and dev overlay
+tests/e2e/                functional Playwright journeys
+tests/performance/        scenario runner and budget evaluator
+tests/performance/data/   scenario manifests and reviewed baselines
 ```
 
-The repository will contain these bounded packages when implementation begins:
+The traffic driver connects ordinary papo clients to the CLI URLs. It seeds deterministic
+accounts/channels, obeys server rate limits, and emits JSON Lines for readiness, barriers,
+progress, and failure. Timed work begins only after seed state is confirmed. It never implements
+IRC or uses raw protocol sends to bypass papo.
 
-```text
-crates/perf-driver/       scripted bot traffic built on public papo APIs
-app/src/performance/      marks, observers, queue counters, dev overlay
-tests/e2e/                functional Playwright journeys for both shells
-tests/performance/        scenario runner, CDP sampler, budget evaluator
-tests/performance/data/   versioned scenario manifests and baselines
-```
+## Milestone-1 scenarios
 
-The driver uses `papo-test-server`'s managed profiles and the same Nix services as papo's
-conformance suite: Ergo default, persistent Ergo, soju+Ergo, InspIRCd, Solanum, and UnrealIRCd.
-The weblounge NixOS VM fixture is added for concierge, hosted mode, and push scenarios. `papo` and
-`papo-testing` remain the only IRC client/protocol implementation in the harness.
+All performance gates use Ergo. Each scenario includes functional assertions before accepting
+metrics.
 
-`FaultProxy` may interrupt a real server connection for disconnect/timing faults. A fake server is
-allowed only for malformed-wire input or timing that no managed server/proxy can produce, and each
-use needs a written justification in its scenario manifest.
+1. **Launch:** cold origin, warm cached origin, and warm cache while Ergo is unavailable; cached
+   content must never yield a blank screen.
+2. **Buffer switch:** move among cached channel, DM, and server buffers.
+3. **Input:** type and send through the composer, including optimistic display and echo
+   confirmation.
+4. **Burst:** receive 2,000 deterministic messages while the UI remains interactive.
 
-## Scenario definition
-
-```ts
-export interface PerformanceScenario {
-  readonly id: ScenarioId;
-  readonly profile: ServerProfile;
-  readonly seed: SeedPlan;
-  readonly viewport: ViewportProfile;
-  readonly throttle: ThrottleProfile;
-  readonly steps: readonly ScenarioStep[];
-  readonly metrics: readonly MetricId[];
-  readonly budget: BudgetSetId;
-}
-
-export type ScenarioStep =
-  | { readonly kind: "launch"; readonly cache: "cold" | "warm" }
-  | { readonly kind: "openBuffer"; readonly buffer: FixtureBuffer }
-  | { readonly kind: "type"; readonly text: string; readonly cadenceMs: number }
-  | { readonly kind: "scroll"; readonly direction: "older" | "newer"; readonly pixels: number }
-  | { readonly kind: "traffic"; readonly script: TrafficScriptId }
-  | { readonly kind: "disconnect"; readonly durationMs: number }
-  | { readonly kind: "setVisibility"; readonly value: "visible" | "hidden" }
-  | { readonly kind: "openRoute"; readonly route: FixtureRoute }
-  | { readonly kind: "waitForPlateau"; readonly sampleCount: number };
-
-export interface ScenarioResult {
-  readonly schemaVersion: 1;
-  readonly appRevision: string;
-  readonly environment: EnvironmentFingerprint;
-  readonly samples: readonly MetricSample[];
-  readonly verdicts: readonly BudgetVerdict[];
-  readonly artifacts: readonly ArtifactRef[];
-}
-```
-
-Manifests contain deterministic account/channel names derived from a run seed. The driver reports
-ready only after seed history and memberships are confirmed. Timed measurement begins after that
-barrier, so server startup and fixture provisioning do not contaminate interaction metrics.
-
-Required scenarios are:
-
-1. cold launch with an empty origin and warm launch with a populated local cache;
-2. cached launch while the network is unavailable (“never a blank screen”);
-3. switch among cached channel, DM, and server buffers;
-4. type and send, including optimistic echo confirmation and offline queueing;
-5. scroll bidirectionally through 10,000 messages and load history above the anchor;
-6. receive a 2,000-event burst, reactions, joins/parts, and a netsplit-like disconnect;
-7. reconnect/resume and history gap-fill through persistent Ergo and soju;
-8. open/close mobile pushed screens, member drawer, switcher, and settings;
-9. desktop one/six-pane layouts, resize, maximize, and theme/density swap;
-10. idle 60 seconds, hidden-tab traffic, and long-session soak.
-
-Every scenario runs at desktop 1440×900 and mobile 402×874 where meaningful. Functional assertions
-run before metrics are accepted; a fast but incorrect run is a failed test, not a performance pass.
-
-## Traffic driver
-
-```rust
-pub enum TrafficScript {
-    Steady { messages_per_second: NonZeroU16, duration: Duration },
-    Burst { messages: NonZeroU16, senders: NonZeroU8 },
-    SeedHistory { buffers: NonZeroU8, messages_each: NonZeroU32 },
-    Reactions { messages: NonZeroU16, reactions_each: NonZeroU8 },
-    MembershipChurn { users: NonZeroU16, rounds: NonZeroU8 },
-    Disconnect { down_for: Duration },
-}
-
-pub struct DriverBarrier {
-    pub script_id: ScriptRunId,
-    pub expected_events: u64,
-    pub completed_at: Timestamp,
-}
-```
-
-Bot peers are ordinary papo clients with server-advertised rate behavior. Managed performance
-profiles explicitly configure suitable local rate limits; the harness does not use `send_raw` to
-bypass papo. History is seeded before browser measurement. Burst completion is correlated through
-unique message IDs/text and the app's applied engine revision, not a fixed sleep.
-
-The driver emits JSON Lines for start, barrier, progress, and failure so agents and CI can inspect
-it without parsing prose. Secrets and message bodies outside deterministic fixture content are
-never logged.
+The meaningful scenarios run at desktop 1440×900 and mobile 402×874 with Chromium. Pull requests
+run this Ergo set only. Server compatibility suites and soju-specific behavior are functional tests
+outside the milestone-1 performance gate.
 
 ## App instrumentation
 
@@ -142,184 +76,108 @@ export type AppMark =
   | "wl.input.received"
   | "wl.input.painted"
   | "wl.burst.received"
-  | "wl.burst.applied"
-  | "wl.history.requested"
-  | "wl.history.anchored";
-
-export interface PerformanceSnapshot {
-  readonly measures: readonly AppMeasure[];
-  readonly eventTiming: readonly EventTimingSample[];
-  readonly longTasks: readonly BlockingSample[];
-  readonly longAnimationFrames: readonly BlockingSample[];
-  readonly layoutShifts: readonly LayoutShiftSample[];
-  readonly engineQueueDepth: number;
-  readonly patchQueueDepth: number;
-  readonly renderedMessageRows: number;
-}
+  | "wl.burst.applied";
 ```
 
-The app uses `performance.mark/measure` with unique interaction IDs. “Painted” marks occur from a
-double-`requestAnimationFrame` helper after the state mutation, used only while measuring an active
-interaction. There is no permanent animation loop.
+Marks carry unique interaction IDs. A measurement-only double-`requestAnimationFrame` helper marks
+the first painted frame after state mutation; no permanent animation loop is introduced.
 
-One `PerformanceObserver` records Event Timing, Long Animation Frames where available, Long Tasks
-as fallback, and layout shifts without recent input. It writes to a bounded ring buffer exposed
-through a test-only global API in instrumented builds. Production builds retain only cheap marks
-needed by the optional dev overlay; no remote telemetry is sent.
+A bounded `PerformanceObserver` buffer records Event Timing, Long Animation Frames where
+available, Long Tasks fallback, and layout shifts. Instrumented builds expose a test-only JSON
+snapshot containing measures, blocking samples, engine/patch queue depth, rendered rows, and heap
+figures. No telemetry is sent.
 
-Rust emits `tracing` spans for event receive, reduction, storage flush, projection, and history
-merge. Native debug/perf builds can export `tracing-chrome`; wasm exposes aggregate queue depth and
-durations through the engine protocol. Clocks are correlated by a startup handshake, never by
-assuming Rust and browser monotonic epochs match.
+Rust `tracing` spans cover event receipt, reduction, projection, and encode. Wasm reports aggregate
+queue depth/durations through the engine protocol. Clock correlation uses an explicit handshake.
 
-## Browser and process metrics
+## Browser metrics and budgets
 
-Playwright drives behavior. A CDP session applies CPU throttling (4× primary, 6× stress), network
-latency/throughput, touch emulation, and Page Visibility. `Performance.getMetrics` supplies JS heap,
-DOM nodes, layout/style counts, and task duration before/after each step.
+Playwright drives the app. CDP applies 4× CPU throttling, gathers `Performance.getMetrics`, and
+captures JS heap, DOM count, layout/style counts, and task duration. Frame sampling exists only
+during the measured interaction.
 
-Frame timing comes from Long Animation Frames plus a bounded `requestAnimationFrame` sampler that
-runs only during scripted scroll/transition intervals. CLS comes from `PerformanceObserver`.
-Memlab runs dedicated open-buffer → navigate-away → return leak journeys outside the timing run.
-
-Process RSS is sampled for desktop Tauri by PID after quiescence. Browser “tab memory” is reported
-as JS heap + wasm linear memory + attributed DOM/image estimates because browser-process RSS is not
-stable enough for a tab budget. Native engine allocation hot paths use `dhat` in dedicated tests.
-
-## Initial absolute budgets
-
-These are proposal values, measured at 4× CPU on the pinned Linux CI runner unless noted. A budget
-change is a reviewed product change, not an automatic baseline update.
+Initial gates on the pinned CI runner are:
 
 | Metric | Budget |
 |---|---:|
-| Warm launch → cached content painted | p95 ≤ 1,000ms |
-| Offline warm launch → cached content painted | p95 ≤ 1,000ms |
+| Warm/offline-warm launch → cached content painted | p95 ≤ 1,000ms |
 | Cached buffer switch → painted | p95 ≤ 100ms |
 | Composer key event → paint | p95 ≤ 16.7ms; max ≤ 50ms |
-| Scripted scroll/transition frame time | p95 ≤ 16.7ms |
-| Main-thread task during 2,000-event burst | max ≤ 50ms |
-| Burst received → fully applied | p95 ≤ 2,000ms, UI remains interactive |
+| Main-thread task during burst | max ≤ 50ms |
+| Burst received → applied | p95 ≤ 2,000ms |
 | Cumulative layout shift per journey | ≤ 0.01 |
-| Virtualized message rows after 10k scroll | ≤ 220 |
-| Total DOM nodes in chat journey | ≤ 3,000 |
-| Initial JS (gzip) | ≤ 250KiB |
-| Initial CSS (gzip) | ≤ 60KiB |
-| Engine wasm (gzip) | ≤ 1.5MiB |
+| Initial JS gzip | ≤ 250KiB |
+| Initial CSS gzip | ≤ 60KiB |
 
-One-frame input/scroll budgets at 4× are deliberately strict targets from the brief. The harness
-reports 4× and 6× distributions even if early implementation misses; Luiz must approve any relaxed
-gate rather than the harness silently normalizing poor performance.
+The engine-wasm gzip budget is not guessed. The first optimized vertical-slice build records its
+actual size and major contributors (`wasm-opt` + `twiggy`); the reviewed result plus explicit
+headroom becomes the baseline before new dependencies land.
 
-## Idle, hidden, and memory budgets
+Timing scenarios run after one warm-up and produce enough samples for p95. A run with fixture
+errors, missing marks, or an environment mismatch is invalid, never zero. Absolute budgets apply;
+baseline comparison additionally flags regressions above 10% and a metric-specific noise floor.
+Baseline updates require a reviewed environment fingerprint and explanation.
 
-```ts
-export interface PlateauBudget {
-  readonly warmupMinutes: number;
-  readonly comparisonWindows: number;
-  readonly maxGrowthPercent: number;
-  readonly absoluteBytes: number;
-}
-```
+## Bundles and Rust benchmarks
 
-- Idle 60s: main-thread task time attributable to the app ≤100ms, no recurring rAF/timer, and at
-  most five app wake-ups excluding actual server/network events.
-- Hidden with traffic: zero style recalculations, layouts, and paints attributable to incoming
-  messages; one coalesced catch-up occurs after visibility.
-- Web soak (20 buffers, 50k events): JS heap ≤96MiB, wasm linear memory ≤128MiB, and combined
-  attributable tab memory ≤220MiB.
-- Desktop soak: total Tauri app RSS ≤350MiB after quiescence.
-- Plateau: median of the final three five-minute windows grows ≤5% from the preceding three;
-  retained DOM nodes do not trend upward.
+`size-limit` gates JS/CSS and reports dependency provenance. `wasm-opt` produces the checked release
+artifact; `twiggy` explains growth. Rare routes remain separate chunks.
 
-Absolute memory values are starting gates and must be checked on Luiz's Mac/phone before release.
-Wasm memory is measured separately because it can grow but not shrink. A run fails on either the
-absolute cap or sustained growth, catching both oversized steady state and leaks.
+Rust uses `divan` for deterministic engine hot paths needed by the four scenarios, initially event
+reduction, action projection, and encoding a 2,000-entry patch. `dhat` may assert stable peak
+allocations. Microbenchmarks guide changes; only stable measurements on the pinned runner become
+gates.
 
-Manual release checks use macOS Activity Monitor Energy, `top -stats pid,command,cpu,power`, and
-Xcode's energy gauge/xctrace on Luiz's iPhone. The iOS Simulator is correctness-only, never a speed
-baseline.
+## CI and developer feedback
 
-## Statistical policy and baselines
+PR CI starts one Ergo fixture through the CLI contract and runs the four scenarios in Chromium.
+Functional e2e journeys may share the fixture but have independent assertions. Nightly repeats the
+same set under stress until later scenarios are designed.
 
-Timing scenarios run five times after one unrecorded warm-up. Budgets use the median run's p95 and
-the worst safety metric (longest task, CLS). A run with fixture errors, missing marks, browser
-background throttling, or environment mismatch is invalid and retried once, never counted as zero.
-
-CI also compares against a versioned baseline from the same runner. It fails when both conditions
-hold: regression exceeds 10% and exceeds a metric-specific noise floor (10ms interactions, 2MiB
-memory, 5KiB bundles). Absolute budgets always apply. Baseline updates require a command that writes
-the environment fingerprint and a reviewed diff explaining each movement.
-
-PR CI runs a smoke set against persistent Ergo in one desktop and one mobile viewport. Nightly CI
-runs 4×/6×, leaks, soak, and the six-server matrix. Release CI adds hosted-mode VM tests and Tauri
-desktop; mobile simulator journeys run where automation is reliable.
-
-## Bundle and engine benchmarks
-
-`size-limit` enforces JS/CSS chunks and reports why a dependency entered the bundle. `twiggy` and
-`wasm-opt` report wasm size; the checked artifact is the release wasm after optimization. Rare
-routes (settings and onboarding) have separate lazy-chunk budgets and may not enter the initial
-chunk.
-
-Rust uses `divan` for deterministic hot-path benchmarks: applying live events, merging an
-out-of-order history page, capability projection, member snapshot replacement, and encoding a
-2,000-entry patch. `dhat` asserts peak allocations for the same fixtures. These guide changes but
-only stable allocation/time thresholds on pinned CI become gates.
-
-## Lighthouse and native shells
-
-Lighthouse CI covers installable PWA correctness and mobile load metrics with a JSON budget, but it
-does not replace app interaction marks. Web vitals aimed at document sites are secondary to cached
-content, buffer switch, input latency, and long-session behavior.
-
-The same semantic scenario IDs run against Tauri where automation permits. A native adapter maps
-launch, route, and lifecycle controls; result JSON keeps platform in its fingerprint. Desktop and
-web baselines are separate. iOS/Android correctness tests assert suspend/resume, push-to-cache, and
-safe areas; performance release sign-off uses real devices.
-
-## Dev performance overlay
-
-The dev-only overlay shows last buffer-switch/input duration, recent p95 frame time, long-task
-count, engine/patch queue depths, rendered rows, JS heap where available, and wasm memory. It updates
-only when open and on incoming samples—no idle polling or permanent rAF. It can export the bounded
-snapshot as JSON for an agent or bug report.
+The dev-only overlay displays the latest switch/input duration, recent blocking events, queue
+depths, rendered rows, and available memory figures. It updates only when open and when samples
+arrive, with no idle polling, and exports its bounded snapshot as JSON.
 
 ## Boundaries
 
-This subsystem owns fixtures/orchestration, traffic scripts, app marks/observers, metric collection,
-budgets, baselines, regression evaluation, and the dev overlay. It must not implement IRC, add
-production telemetry, parse private user traffic, dictate feature architecture, or use synthetic
-servers when real fixtures suffice.
+This subsystem owns fixture orchestration, traffic scripts, marks/observers, metric collection,
+budgets, baselines, regression evaluation, and the dev overlay. It does not implement IRC, ship
+telemetry, parse private traffic, or treat a scripted in-memory server as live-server coverage.
 
 ## Testing the harness
 
-- Unit tests validate manifest decoding, metric aggregation, percentile math, budget/noise rules,
-  baseline fingerprints, and redaction.
-- A tiny self-test app deliberately creates a long task, CLS, timer, DOM leak, and bundle excess;
-  every detector must fail it.
-- Driver tests assert deterministic barriers and cleanup of accounts, clients, and server
-  processes after failure.
-- Golden JSON results keep schema consumers stable and agent-readable.
-- CI periodically runs a known-good and deliberately regressed build to detect broken gates.
+- Unit tests cover manifest decoding, percentile/budget math, fingerprints, and redaction.
+- A tiny self-test app deliberately creates a long task, layout shift, and bundle excess; each
+  detector must fail it.
+- Driver tests assert deterministic readiness/barriers and teardown after success or failure.
+- Golden result JSON keeps schema consumers stable.
+- CI periodically runs a deliberate regression to prove the gate remains active.
 
 ## Out of scope
 
-Public telemetry, production analytics, a cloud device lab, continuous third-party server load,
-and automated App Store energy acceptance are not planned.
+Public telemetry, a cloud device lab, continuous third-party load, and native-device automation are
+not part of milestone 1.
+
+## Later
+
+- Add scroll/history, reconnect, navigation, six-pane, idle, hidden-tab, and long-session soak
+  scenarios when those subsystems exist.
+- Expand to soju and other server profiles for compatibility, not a cross-product performance
+  matrix.
+- Apply the adopted starting memory targets of 220MiB attributable web memory and 350MiB desktop
+  RSS when soak/native harnesses land.
+- Add Tauri and real-device release measurements with their packaging milestones.
+
+## Decisions
+
+- Use Ergo only in pull-request performance gates.
+- Start JS/CSS budgets at 250KiB/60KiB gzip and derive the wasm budget from measurement.
+- Adopt 220MiB web-attributable and 350MiB desktop RSS as later soak starting budgets.
+- Use `divan` for engine benchmarks.
 
 ## Questions for Luiz / papo gaps
 
-1. Which CI runner class can be pinned for gating measurements, and may nightly soak jobs reserve
-   it for roughly 30–60 minutes?
-2. Approve the initial 220MiB web-attributable and 350MiB desktop RSS budgets; real-device data may
-   tighten them.
-3. Approve the proposed bundle budgets (250KiB JS, 60KiB CSS, 1.5MiB gzip wasm) before dependency
-   selection makes them accidental.
-4. Should pull requests run only persistent Ergo (proposed) while the full six-profile performance
-   matrix is nightly, or must soju also gate every change?
-5. Papo's conformance crates provide the server fixtures, but their application-facing stability
-   is limited. Should weblounge consume `papo-test-server` by pinned revision, or should papo expose
-   a supported reusable harness package/API?
-6. Confirm whether `divan` is preferred over Criterion for engine benchmarks; this design chooses
-   `divan` for faster CLI-friendly runs.
+1. Which CI runner class can be pinned for gating measurements, and may later soak jobs reserve it
+   for 30–60 minutes?
+2. Should papo export the proposed supported `papo-test-server` package/CLI contract, including
+   JSON endpoints/accounts, stdin-close teardown, and optional `FaultProxy`?
