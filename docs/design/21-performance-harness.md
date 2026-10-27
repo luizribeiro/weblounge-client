@@ -109,6 +109,12 @@ The engine-wasm gzip budget is not guessed. The first optimized vertical-slice b
 actual size and major contributors (`wasm-opt` + `twiggy`); the reviewed result plus explicit
 headroom becomes the baseline before new dependencies land.
 
+The milestone-2 worker boundary measured 718,990 bytes from rustc, 238,896 bytes after
+`wasm-bindgen --target web`, and 124,178 bytes after `wasm-opt -Oz`; the optimized artifact is
+54,231 bytes with gzip level 9. The checked uncompressed wasm budget is 136,600 bytes: the measured
+shipping artifact plus 10% headroom, rounded up to the next hundred bytes. This gate covers the
+artifact the browser executes; the gzip figure remains reported for transfer-size tracking.
+
 Timing scenarios run after one warm-up and produce enough samples for p95. A run with fixture
 errors, missing marks, or an environment mismatch is invalid, never zero. Absolute budgets apply;
 baseline comparison additionally flags regressions above 10% and a metric-specific noise floor.
