@@ -67,6 +67,7 @@ export class WorkerEngineClient implements EngineClient {
   readonly #initialMessages: EngineClientMessage[];
   #startWaiter: StartWaiter | undefined;
   #framePending = false;
+  #visibility: VisibilityState = "visible";
   #closed = false;
 
   constructor(
@@ -110,7 +111,12 @@ export class WorkerEngineClient implements EngineClient {
 
   requestSnapshot(_reason: ResyncReason): void {}
 
-  setVisibility(_state: VisibilityState): void {}
+  setVisibility(state: VisibilityState): void {
+    this.#visibility = state;
+    if (state === "visible" && this.#renderQueue.length > 0) {
+      this.#scheduleRenderFrame();
+    }
+  }
 
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe {
     this.#listeners.add(listener);
@@ -161,6 +167,11 @@ export class WorkerEngineClient implements EngineClient {
 
   #enqueueForFrame(message: EngineToUi): void {
     this.#renderQueue.push(message);
+    if (this.#visibility === "hidden") return;
+    this.#scheduleRenderFrame();
+  }
+
+  #scheduleRenderFrame(): void {
     if (this.#framePending) return;
     this.#framePending = true;
     this.#scheduleFrame(() => this.#flushRenderQueue());
@@ -168,6 +179,7 @@ export class WorkerEngineClient implements EngineClient {
 
   #flushRenderQueue(): void {
     this.#framePending = false;
+    if (this.#visibility === "hidden") return;
     const messages = this.#renderQueue.splice(0);
     for (const message of messages) this.#publish(message);
   }

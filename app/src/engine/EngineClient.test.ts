@@ -120,6 +120,26 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("applies one catch-up frame after becoming visible", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    client.setVisibility("hidden");
+
+    port.emit({ type: "notice", message_key: "first" });
+    port.emit({ type: "notice", message_key: "second" });
+
+    expect(frames).toHaveLength(0);
+    expect(listener).not.toHaveBeenCalled();
+
+    client.setVisibility("visible");
+    expect(frames).toHaveLength(1);
+    frames[0]?.(0);
+    expect(listener.mock.calls.map(([message]) => message.message_key)).toEqual(
+      ["first", "second"],
+    );
+  });
+
   it("closes only its worker connection", async () => {
     const { client, close } = fixture();
 

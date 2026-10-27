@@ -25,9 +25,15 @@ export function App(props: AppProps) {
         );
       }
     });
+    const updateVisibility = () => {
+      client.setVisibility(document.hidden ? "hidden" : "visible");
+    };
+    document.addEventListener("visibilitychange", updateVisibility);
+    updateVisibility();
 
     void startEngine(client, setEngineStatus);
     onCleanup(() => {
+      document.removeEventListener("visibilitychange", updateVisibility);
       unsubscribe();
       void client.close();
     });

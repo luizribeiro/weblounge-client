@@ -1,5 +1,5 @@
 import { render, screen } from "@solidjs/testing-library";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { EngineClient } from "./engine/EngineClient";
 import type { EngineClientMessage } from "./engine/protocol";
@@ -15,7 +15,19 @@ it("reports the wasm worker round trip", async () => {
   );
 });
 
+it("reports document visibility to the engine", () => {
+  const client = new FakeEngineClient();
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  render(() => <App engineClient={client} />);
+
+  hidden.mockReturnValue(true);
+  document.dispatchEvent(new Event("visibilitychange"));
+
+  expect(client.visibility).toEqual(["visible", "hidden"]);
+});
+
 class FakeEngineClient implements EngineClient {
+  readonly visibility: Parameters<EngineClient["setVisibility"]>[0][] = [];
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
   async start(): Promise<void> {}
@@ -31,7 +43,9 @@ class FakeEngineClient implements EngineClient {
 
   requestSnapshot(): void {}
 
-  setVisibility(): void {}
+  setVisibility(state: Parameters<EngineClient["setVisibility"]>[0]): void {
+    this.visibility.push(state);
+  }
 
   subscribe(listener: (message: EngineClientMessage) => void) {
     this.#listener = listener;
