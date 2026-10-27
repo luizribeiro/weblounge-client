@@ -130,7 +130,7 @@ keys work in every shell. `G then n` is a sequence outside text fields.
 |---|---|---|---|
 | `switcher.open` — Jump to | `⌘K` | `Ctrl+K` | same |
 | `shortcuts.open` — shortcut help | `?`, `⌘/` | `?`, `Ctrl+/` | same |
-| `settings.open` — settings | `⌘,` | `Ctrl+,` | same; verify Safari/Firefox interception |
+| `settings.open` — settings | `⌘,` | `Ctrl+,` | `⌥⌘,` / `Ctrl+Alt+,` |
 | `navigation.escape` — close/cancel/focus composer | `Esc` | `Esc` | scope cascade above |
 | `navigation.back` / `navigation.forward` | `⌘[` / `⌘]` | `Alt+Left` / `Alt+Right` | `G then [` / `G then ]` |
 | `search.open` — search current surface | `⌘F` | `Ctrl+F` | same; app search replaces find-in-page |
@@ -140,15 +140,15 @@ keys work in every shell. `G then n` is a sequence outside text fields.
 | `buffer.jump-important` | `⌥A` (`KeyA`) | `Alt+A` | same; never in text |
 | `buffer.jump-1` … `buffer.jump-9` | `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | `G then 1` … `G then 9` |
 | `buffer.mark-read` | `Esc` in message list | `Esc` in message list | via `navigation.escape` |
-| `buffer.mark-all-read` | `⇧Esc` | `Shift+Esc` | same |
+| `buffer.mark-all-read` | `⇧Esc` | `Shift+Esc` | `⇧⌘A` / `Ctrl+Shift+A` |
 | `buffer.load-older` | `⌥PgUp` | `Alt+PgUp` | same; also at history boundary |
 | `pane.focus` — focus entered pane | focus/press pane | focus/press pane | pointer or Tab, no global chord |
 | `pane.show-buffer` — show selected here | `Return` | `Enter` | sidebar/switcher selected scope |
 | `pane.open-buffer-right` — open selected beside | `⌘Return` | `Ctrl+Enter` | sidebar/switcher; same |
-| `pane.split-right` / `pane.split-down` | `⌘\` / `⇧⌘\` | `Ctrl+\` / `Ctrl+Shift+\` | same |
-| `pane.focus-left/right/up/down` | `⌥⌘` + arrow | `Ctrl+Alt` + arrow | same; see accessibility conflicts |
-| `pane.move-left/right/up/down` | `⌥⇧⌘` + arrow | `Ctrl+Alt+Shift` + arrow | same |
-| `pane.grow` / `pane.shrink` | `⌥⌘=` / `⌥⌘-` | `Ctrl+Alt+=` / `Ctrl+Alt+-` | same |
+| `pane.split-right` / `pane.split-down` | `⌘\` / `⇧⌘\` | `Ctrl+\` / `Ctrl+Shift+\` | `S then R` / `S then D` |
+| `pane.focus-left`, `pane.focus-right`, `pane.focus-up`, `pane.focus-down` | `⌥⌘` + arrow | `Ctrl+Alt` + arrow | same; see accessibility conflicts |
+| `pane.move-left`, `pane.move-right`, `pane.move-up`, `pane.move-down` | `⌥⇧⌘` + arrow | `Ctrl+Alt+Shift` + arrow | same |
+| `pane.grow` / `pane.shrink` | `⌥⌘G` / `⌥⌘S` | `Ctrl+Alt+G` / `Ctrl+Alt+S` | same |
 | `pane.toggle-zoom` | `⇧⌘Return` | `Ctrl+Shift+Enter` | same |
 | `pane.close` | `⌘W` | `Ctrl+W` | `⌥⌘W` / `Ctrl+Alt+W` |
 | `sidebar.toggle` | `⌘B` | `Ctrl+B` | `⌥⌘B` / `Ctrl+Alt+B` |
@@ -167,13 +167,13 @@ keys work in every shell. `G then n` is a sequence outside text fields.
 | `list.previous` / `list.next` | `Up` / `Down`; `Ctrl+P/N` | `Up` / `Down` | roving list/switcher only |
 | `list.open` / `list.open-beside` | `Return` / `⌘Return` | `Enter` / `Ctrl+Enter` | scoped aliases of pane show/open |
 | `separator.decrease` / `separator.increase` | arrow; `⇧` = 10× | arrow; `Shift` = 10× | focused separator, ARIA orientation |
-| `mobile.tab-chats/activity/settings` | `⌘1/2/3` | `Ctrl+1/2/3` | Tauri mobile hardware keyboard only |
+| `mobile.tab-chats`, `mobile.tab-activity`, `mobile.tab-settings` | `⌘1/2/3` | `Ctrl+1/2/3` | Tauri mobile hardware keyboard only |
 | `network.connect` / `network.disconnect` | `Return` | `Enter` | focused settings control or switcher |
 | `network.open-server` | `Return` | `Enter` | focused network row or switcher |
 | `network.add` / `network.remove` / `channel.part` | `Return` | `Enter` | focused control or switcher; destructive confirmation |
 | `network.import-bouncer` / `push.configure` | `Return` | `Enter` | focused control/switcher when projected by 17 |
 | `message.retry` | `Return` | `Enter` | focused failed-message control or switcher |
-| `activity.mark-all-read` | `⇧Esc` | `Shift+Esc` | Activity scope; same engine action |
+| `activity.mark-all-read` | `⇧Esc` | `Shift+Esc` | `⇧⌘A` / `Ctrl+Shift+A`; Activity scope |
 
 Slash-command entries share IDs where semantics match (`/join` → `buffer.open`) and otherwise use
 their engine parser descriptor. They are shown in the switcher but do not receive global chords.
@@ -188,18 +188,18 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 
 | Defaults | Known conflict and disposition |
 |---|---|
-| `Mod+K`, `Mod+,`, `Mod+/`, `Mod+F`, `Mod+B` | Browsers use some for omnibox, settings/help, find, or bookmarks; preventable page handling varies. Search intentionally replaces find. Sidebar gets the safer web `Mod+Alt+B`; settings remains **verify in Playwright/manual** on Safari/Firefox. |
+| `Mod+K`, `Mod+,`, `Mod+/`, `Mod+F`, `Mod+B` | Browsers use some for omnibox, settings/help, find, or bookmarks; preventable page handling varies. Search intentionally replaces find. Settings and Sidebar use safer web `Mod+Alt` fallbacks; verify `Mod+K` and `Mod+/` delivery in Playwright/manual. |
 | native `Mod+1…9` | Chrome, Firefox, and Safari select browser tabs. Never registered on web; `G then digit` has no host chord. macOS `Shift+Command+3/4` screenshots are therefore also avoided. |
 | native `Mod+[` / `Mod+]` | Safari history; Linux/Windows `Alt+Left/Right` browser/OS history. Web uses sequences. Settings/mobile Back uses its scoped command rather than stealing text navigation. |
 | native `Mod+W` | Closes a browser tab/window and is intentionally Tauri-only. Web `Mod+Alt+W` is not listed by major browsers; **verify KDE/global custom shortcuts manually**. |
 | `Alt+Up/Down`, `Alt+Shift+Up/Down`, `Alt+A/N/End/PgUp` | macOS text paragraph movement and Windows/NVDA sentence movement matter in editable/read modes, so all are suppressed in text. Firefox Linux owns `Alt+1…9`, not these. GNOME may expose mnemonic menus on Alt; **verify installed-app webviews manually**. |
 | `Mod+Alt+arrows` and shifted move variants | VoiceOver's default modifier is Control+Option and Windows Magnifier pans with Ctrl+Alt+arrows; these users may not receive pane chords. Every pane command remains in switcher and focused controls/placement dialog. Test VoiceOver/NVDA; do not override assistive technology. KDE uses Meta+Alt+arrows, not this default, but is configurable. |
-| `Mod+Alt+=/-` | macOS uses Option+Command+=/- for accessibility zoom and Windows Magnifier uses Ctrl+Alt+minus in some modes. Divider arrows and switcher commands are the accessible fallback. **Verify while magnification is enabled.** |
-| `Mod+\`, `Mod+Shift+\`, `Mod+Shift+M/K/Enter` | Safari uses Shift+Command+backslash for tab overview, and Firefox/Chrome may use some shifted chords in developer UI. Test browser delivery; user overrides can disable a loser. Split commands remain in pane controls/switcher. |
+| `Mod+Alt+G/S` | No listed browser or desktop default was found, but VoiceOver uses Control+Option and global shortcuts are configurable. Divider arrows and switcher commands remain the accessible fallback. **Verify with VoiceOver and KDE custom shortcuts.** |
+| `Mod+\`, `Mod+Shift+\`, `Mod+Shift+M/K/Enter` | Safari uses Shift+Command+backslash for tab overview, and Firefox/Chrome may use some shifted chords in developer UI. Web split commands therefore use `S then R/D`; test the remaining chords. |
 | `PgUp/PgDn`, arrows, Tab, Enter, Escape, Delete | Native editing, browser scrolling, and NVDA browse mode use these. They run only in an owning widget/mode; real controls keep native semantics. NVDA browse mode may consume single letters/arrows, so keyboard-only E2E includes focus mode and all actions remain exposed as buttons. |
 | `?`, `G`, `J/K`, `R`, `E` | VoiceOver Quick Nav and NVDA browse-mode single-letter navigation can consume them. They never fire in text and are convenience bindings only; `Mod+/`, lists, buttons, and switcher are the non-single-key routes. |
 | `Ctrl+P/N` | macOS readline previous/next and browser print/new-window conventions. Registered only inside the open list widget; never in composer or ordinary inputs. Arrow alternatives are primary. |
-| `Shift+Escape` | Chrome Task Manager is `Shift+Esc` on Windows/Linux and may be host-reserved. Mark-all-read remains in switcher and Activity control; **verify whether Chromium/Tauri delivers it** before shipping. |
+| `Shift+Escape` | Chrome Task Manager is `Shift+Esc` on Windows/Linux and may be host-reserved. It is Tauri-only; web uses `Mod+Shift+A`. **Verify whether each Tauri webview delivers it.** |
 
 Defaults do not use `Mod+T/N/Q`, `Ctrl+Tab`, `Ctrl+Shift+T/N`, `Alt+F4`, or system Meta/Super
 shortcuts. User overrides may request them in Tauri but validation rejects them for web.
@@ -295,7 +295,7 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
 - Use typed availability to produce handler arguments rather than checking capabilities in views.
 - Use `event.key` by default and explicit `event.code` only for slot and macOS Option-printable
   bindings.
-- Use `G then 1…9` for web buffer slots and sequences for web history navigation.
+- Use short sequences for browser-owned slot, history, and split chords.
 - Keep single-letter message shortcuts as optional conveniences, never the only route.
 - Render macOS modifiers in `⌃⌥⇧⌘` order.
 - Keep overrides device-local data with no milestone-1 UI.
