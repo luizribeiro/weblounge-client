@@ -20,11 +20,12 @@ reproducible toolchain. The brief, its addenda, and the prototype remain authori
 | 10. Navigation | [10-navigation.md](10-navigation.md) | Desktop uses focused tiling; mobile uses independent tab stacks. |
 | 14. Commands and shortcuts | [14-commands-and-shortcuts.md](14-commands-and-shortcuts.md) | One typed registry resolves capability-aware actions and platform/shell-safe bindings. |
 | 17. Capability model | [17-capability-model.md](17-capability-model.md) | Typed papo features become per-buffer and per-message action projections. |
-| 21. Performance harness | [21-performance-harness.md](21-performance-harness.md) | A real-server CLI, app marks, CDP metrics, and measured budgets gate regressions. |
+| 21. Performance harness | [21-performance-harness.md](21-performance-harness.md) | One local Ergo fixture, app marks, CDP metrics, and measured budgets gate regressions. |
 
 Later designs retain the brief's two-digit numbering. Storage (04), history (05), Activity (06),
 push (07), rendering (11), virtualization (12), composer (13), selection (15), settings (16),
-onboarding (18), packaging (19), and hosted mode (20) remain undesigned.
+onboarding (18), packaging (19), and hosted mode (20) remain undesigned. Subsystem 03 nevertheless
+settles hosted mode's existing concierge OAuth-to-SASL handover so later design does not reopen it.
 
 ## Repository and dependency boundaries
 
@@ -85,6 +86,7 @@ Only dependencies justified by the current designs are selected now.
 | Dependency | Scope and reason |
 |---|---|
 | `papo` | All IRC/IRCv3 parsing, state, typed actions, CAP/SASL, history, and transports. Use default `tls-ring` natively, `websocket` where needed, and `precis` because Ergo compares nicks with PRECIS by default. |
+| `papo-testing` | Native-only scripted protocol tests through `papo_testing::wire()`; test dependency only. It and `papo` use the same exact git revision because neither crate is published. |
 | `serde`, `serde_json` | Rust-owned JSON IPC and durable data shapes. |
 | `thiserror` | Typed error boundaries. |
 | `tracing` | Local diagnostics and performance spans. |
@@ -106,19 +108,16 @@ milestone 7.
 ## Testing infrastructure
 
 Pure domain tests do not depend on `papo-testing`. Where an exact protocol transcript is useful,
-`papo_testing::wire()` runs a real papo `Client` over an in-memory scripted server on native/WASI;
-it is not a browser-wasm fixture and it always enables papo's `unstable` feature.
+`papo_testing::wire()` runs a real papo `Client` over a scripted in-memory pipe in native tests; it
+is not a browser-wasm fixture. Cargo pins unpublished `papo` and `papo-testing` git dependencies to
+the same full revision, and `papo-testing` enables papo's `unstable` feature in test builds.
 
-Browser and live integration tests start real servers through the proposed exported
-`papo-test-server` package/CLI. The required supported interface is one JSON line containing IRC,
-`ws`, and `wss` URLs plus fixture accounts; closing stdin tears the fixture down, and an optional
-`FaultProxy` enables connection faults. Exporting that package and CLI is an explicit pending papo
-dependency, not assumed to exist at revision `7d5e4bf`.
-
-If Luiz does not approve that export, this repository's flake runs nixpkgs `ergochat` and `soju`
-and provides the same JSON/stdin lifecycle contract. The weblounge VM `test-ergo` remains the
-hosted-mode fixture. Pull requests use Ergo; broader server coverage belongs to later capability
-and compatibility work.
+There is no packaged papo test server. This repository's flake provides one small local Ergo
+fixture from nixpkgs `ergochat`, following `~/weblounge/lib/test-ergo.nix`: a generated minimal
+configuration, a plaintext `ws://127.0.0.1` listener, and one fixture account. It serves manual
+real-server verification, browser journeys, and a cheap automated smoke test. The milestone-1
+performance scenarios run against this same Ergo. Broader server coverage waits for later
+capability and compatibility work.
 
 ## Boundaries and testing
 
@@ -143,6 +142,10 @@ smoke. Generated protocol/theme output must be reproducible.
 - Use papo's default `tls-ring` provider.
 - Keep the future push relay in this repository, built and deployed independently.
 - Gate initial CI on x86_64-linux with Chromium.
+- Luiz, 2026-10-27: use native `papo_testing::wire()` plus pure domain tests; do not depend on a
+  packaged papo test server, and pin unpublished `papo` and `papo-testing` to the same git revision.
+- Luiz, 2026-10-27: provide a small local nixpkgs Ergo fixture in this repository for manual,
+  smoke, browser, and milestone-1 performance checks.
 
 ## Questions for Luiz
 
