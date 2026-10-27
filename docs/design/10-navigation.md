@@ -72,6 +72,7 @@ focus outcomes are entirely the pane reducer's deterministic rules.
 
 | User operation | Command ID |
 |---|---|
+| Focus pane after focus/pointer entry | `pane.focus` |
 | Show selected buffer | `pane.show-buffer` |
 | Open buffer beside focused pane | `pane.open-buffer-right` |
 | Split focused pane | `pane.split-right`, `pane.split-down` |
@@ -80,8 +81,24 @@ focus outcomes are entirely the pane reducer's deterministic rules.
 | Toggle focused-pane zoom | `pane.toggle-zoom` |
 | Close focused pane | `pane.close` |
 | Grow or shrink at nearest divider | `pane.grow`, `pane.shrink` |
+| Adjust a focused divider | `separator.decrease`, `separator.increase` |
+| Toggle sidebar | `sidebar.toggle` |
 | Toggle shared member panel | `members.toggle` |
 | Join channel or start DM | `buffer.open` |
+| Show a network's server buffer | `network.open-server` |
+
+Global navigation uses the same registry IDs everywhere:
+
+| User operation | Command ID |
+|---|---|
+| Open switcher, shortcut help, search, or settings | `switcher.open`, `shortcuts.open`, `search.open`, `settings.open` |
+| Dismiss/cancel/focus composer | `navigation.escape` |
+| Traverse buffer-view history | `navigation.back`, `navigation.forward` |
+| Move through buffers | `buffer.previous`, `buffer.next` |
+| Move through unread buffers | `buffer.previous-unread`, `buffer.next-unread` |
+| Jump by unread priority or sidebar slot | `buffer.jump-important`, `buffer.jump-1` … `buffer.jump-9` |
+| Mark the current buffer or all buffers read | `buffer.mark-read`, `buffer.mark-all-read` |
+| Request the preceding history page | `buffer.load-older` |
 
 Subsystem 14 assigns bindings and exposes the same commands through the switcher, help, menus, and
 slash-command views. Availability comes from the focused buffer's subsystem-17 actions and current
@@ -156,6 +173,11 @@ on Activity's stack, so Back restores its exact state. Settings permits root →
 Back processing dismisses the top overlay, then pops a screen, then yields to the platform. Android
 back, header controls, browser history, and the swipe gesture dispatch the same action. Browser
 history stores opaque route IDs rather than state snapshots.
+
+Hardware-keyboard and accessible controls dispatch `mobile.tab-chats`, `mobile.tab-activity`, and
+`mobile.tab-settings`. Mobile Back dispatches `navigation.back`; overlay dismissal still uses
+`navigation.escape`. Activity's control dispatches `activity.mark-all-read`. Subsystem 14 owns
+their bindings and resolves the shared command IDs against the mobile scope.
 
 Forward push is 280ms and pop is 230ms using the brief's transform/opacity motion. Reduced motion
 commits immediately. Swipe-back begins at the logical leading edge and yields to selection or a
