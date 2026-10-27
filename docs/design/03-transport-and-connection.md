@@ -179,7 +179,8 @@ certificate-management UI, and gateway deployment are separate designs.
 
 - Add native TCP/TLS conversion with the Tauri desktop milestone.
 - Add soju import and Web Push after the `unstable` shipping decision.
-- Introduce a platform abstraction only if more than cfg-selected endpoint construction is needed.
+- Reconsider a generic `Platform` trait and `PhantomData` only if cfg-selected endpoint
+  construction later proves insufficient.
 
 ## Decisions
 
