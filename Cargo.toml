@@ -10,9 +10,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/luizribeiro/weblounge-client"
 
 [workspace.dependencies]
-papo = { git = "https://github.com/luizribeiro/papo", rev = "7d5e4bf2da42f1863753e1311ee817db9e08aa2f", features = ["precis", "websocket"] }
+papo = { git = "https://github.com/luizribeiro/papo", rev = "7d5e4bf2da42f1863753e1311ee817db9e08aa2f", features = ["precis"] }
 papo-testing = { git = "https://github.com/luizribeiro/papo", rev = "7d5e4bf2da42f1863753e1311ee817db9e08aa2f" }
-thiserror = "2.0.21"
 tokio = { version = "1.53.3", features = ["macros", "rt"] }
 wasm-bindgen = "=0.2.129"
 

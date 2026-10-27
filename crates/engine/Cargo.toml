@@ -6,9 +6,11 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dependencies]
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 papo.workspace = true
-thiserror.workspace = true
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+papo = { workspace = true, features = ["websocket"] }
 
 [dev-dependencies]
 papo-testing.workspace = true

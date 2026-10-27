@@ -1044,7 +1044,6 @@ version = "0.1.0"
 dependencies = [
  "papo",
  "papo-testing",
- "thiserror",
  "tokio",
 ]
 
