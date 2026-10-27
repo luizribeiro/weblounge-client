@@ -74,6 +74,38 @@
           };
         };
         cargoArtifacts = craneLib.buildDepsOnly cargoArgs;
+        engineWasm = craneLib.mkCargoDerivation (
+          cargoArgs
+          // {
+            pname = "weblounge-engine-wasm";
+            cargoArtifacts = null;
+            doInstallCargoArtifacts = false;
+            nativeBuildInputs = [
+              pkgs.binaryen
+              pkgs.gzip
+              wasmBindgenCli
+            ];
+            buildPhaseCargoCommand = ''
+              cargo build --release --package weblounge-engine-wasm \
+                --target wasm32-unknown-unknown --locked
+            '';
+            installPhaseCommand = ''
+              mkdir -p $out/bindgen
+              raw=target/wasm32-unknown-unknown/release/weblounge_engine_wasm.wasm
+              cp "$raw" $out/engine.raw.wasm
+              wasm-bindgen --target web --out-dir $out/bindgen \
+                --out-name engine "$raw"
+              wasm-opt -Oz $out/bindgen/engine_bg.wasm -o $out/engine.wasm
+              cp $out/bindgen/engine.js $out/engine.js
+
+              raw_size=$(stat -c %s $out/engine.raw.wasm)
+              bindgen_size=$(stat -c %s $out/bindgen/engine_bg.wasm)
+              optimized_size=$(stat -c %s $out/engine.wasm)
+              gzip_size=$(gzip -9 -c $out/engine.wasm | wc -c)
+              echo "engine wasm bytes: raw=$raw_size bindgen=$bindgen_size optimized=$optimized_size gzip=$gzip_size"
+            '';
+          }
+        );
         appSource = pkgs.lib.fileset.toSource {
           root = ./.;
           fileset = pkgs.lib.fileset.unions [
@@ -210,21 +242,13 @@
               cargoTestExtraArgs = "--workspace";
             }
           );
-          wasm = craneLib.mkCargoDerivation (
-            cargoArgs
-            // {
-              pname = "weblounge-client-wasm-check";
-              cargoArtifacts = null;
-              doInstallCargoArtifacts = false;
-              buildPhaseCargoCommand = "cargo check --workspace --target wasm32-unknown-unknown --locked";
-              installPhaseCommand = "touch $out";
-            }
-          );
+          wasm = engineWasm;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
           vitest = appCheck "vitest" "${pkgs.pnpm}/bin/pnpm test";
         };
         formatter = pkgs.nixfmt-tree;
+        packages.engine-wasm = engineWasm;
         devShells.default = pkgs.mkShell {
           packages = [
             rustToolchain
