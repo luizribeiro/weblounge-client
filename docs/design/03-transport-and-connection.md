@@ -26,20 +26,33 @@ pub enum EndpointDescriptor {
     WebSocket { url: WebSocketUrl },
 }
 
+pub struct BrowserEndpoint {
+    pub url: WebSocketUrl,
+}
+
+pub enum NativeEndpoint {
+    TcpTls { host: Host, port: NonZeroU16 },
+    WebSocket { url: WebSocketUrl },
+}
+
 pub enum EndpointPolicy {
     Production,
     LocalTest,
 }
 ```
 
-A small cfg-selected conversion function turns a descriptor into `papo::Endpoint`. The wasm
-function rejects TCP; the native function accepts TLS TCP and WebSocket. This needs no generic
-`Platform` trait or `PhantomData`.
+A validated platform boundary converts stored descriptors into `BrowserEndpoint` or
+`NativeEndpoint` before engine construction. The web engine accepts only `BrowserEndpoint`, so it
+cannot construct TCP; the native engine accepts TLS TCP and WebSocket. Small cfg-selected
+conversion functions then turn those types into `papo::Endpoint`. This needs no generic `Platform`
+trait or `PhantomData`.
 
 Production onboarding constructs only TLS TCP or `wss://`. `ws://` is accepted solely under the
-explicit local-test policy so browser Playwright can reach a loopback fixture. Papo currently
-exposes `Endpoint::tls/plaintext` on browser targets despite documenting TCP as absent there;
-weblounge still prevents construction at its boundary and files that mismatch as a papo bug.
+explicit local-test policy so browser Playwright can reach a loopback fixture. Papo decision CB-4
+keeps `Endpoint::tls` and `Endpoint::plaintext` available on every target; where their transport is
+unavailable, connection fails at connect time. Weblounge therefore does not use constructor
+availability as a platform check: its browser-only endpoint type enforces that web cannot construct
+TCP.
 
 Endpoint order is persisted, but milestone 1 connects to the first compatible endpoint. Papo's
 builder accepts one endpoint, so ordered failover remains the explicit papo question below rather
@@ -95,9 +108,11 @@ conflict between build generations and reconnect generations. Subsystem 01 uses 
 connection-state union.
 
 Validated configuration is passed to `papo::Client::builder(...).build()`. `build()` is synchronous
-and returns `(Client, Events, Driver)` without a `Result`; validation errors occur before it. The
-engine starts polling the driver and drains events continuously before awaiting client actions, so
-the first `Connecting` events are observable.
+and returns `(Client, Events, Driver)` without a `Result`; validation errors occur before it. Until
+papo removes its connect-time `SlowConsumer` disconnect, the engine starts polling the driver and
+drains `Events` from the moment `build()` returns, including while connect is in progress. It never
+waits for `connect()` or another client action before starting the drain, so the first `Connecting`
+events are observable and cannot fill the queue.
 
 ## Lifecycle
 
@@ -117,10 +132,11 @@ On every `Connected`, the engine increments the connection epoch and reads `Clie
 publishing `Online`. `ChannelSynced` marks autojoins ready. On `Event::Lagged`, it re-reads papo
 state and schedules history repair where supported.
 
-Papo disconnects with `DisconnectCause::SlowConsumer` when both event queues fill. The event loop
-therefore performs no slow storage/UI work; it hands typed changes to bounded engine work. If a
-slow-consumer disconnect still occurs, the engine surfaces it in diagnostics, enters papo's normal
-reconnect path, and rebuilds projections from the fresh snapshot after `Connected`.
+Papo disconnects with `DisconnectCause::SlowConsumer` when both event queues fill, including during
+connect at the current revision. The event loop therefore starts immediately and performs no slow
+storage/UI work; it hands typed changes to bounded engine work. If a slow-consumer disconnect still
+occurs, the engine surfaces it in diagnostics, enters papo's normal reconnect path, and rebuilds
+projections from the fresh snapshot after `Connected`.
 
 Deliberate disconnect stops command intake, awaits `Client::quit()` within a bounded shutdown, and
 drops the task. Mobile backgrounding uses the same bounded quit/drop path; foreground creates a
@@ -184,7 +200,10 @@ certificate-management UI, and gateway deployment are separate designs.
 
 ## Decisions
 
-- Treat browser `Endpoint::tls/plaintext` availability as a papo documentation/API bug to file.
+- Follow papo decision CB-4: endpoint constructors are target-independent; Weblounge's validated
+  browser endpoint type excludes TCP.
+- Drain papo `Events` immediately from `build()`, including during connect, until connect-time
+  slow-consumer disconnects are removed upstream.
 - Use `Client::reconnect()` for reconnect-now; bounded quit/drop/rebuild for mobile suspend.
 - Expose only TLS TCP and secure WebSocket in production onboarding.
 - Use `ws://` only for explicit loopback test fixtures.
