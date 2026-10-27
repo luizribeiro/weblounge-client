@@ -125,8 +125,9 @@ platform services, render UI, choose shortcut chords, or persist capability supp
 - Component contracts verify unavailable controls and registry commands are absent.
 - Race tests change support between projection and command handling and assert safe papo-backed
   rejection.
-- Native/WASI transcript tests may use the scripted `papo_testing::wire()` client; live Ergo tests
-  use subsystem 21's real-server CLI.
+- Native transcript tests use a real papo client over `papo_testing::wire()`'s scripted in-memory
+  pipe; unpublished `papo` and `papo-testing` are pinned to the same git revision. Live tests use
+  subsystem 21's small local nixpkgs Ergo fixture, not a packaged papo test server.
 - Snapshot fixtures protect public product-action and diagnostic names.
 
 ## Out of scope
@@ -145,6 +146,8 @@ belong to other subsystems.
 - Keep `draft/ICON` as a documented raw ISUPPORT exception until papo exposes a typed value.
 - Use the metadata key `avatar` for user avatars.
 - Retain a clearly labelled stale last-known feature list in offline diagnostics.
+- Luiz, 2026-10-27: use native `papo_testing::wire()` for scripted capability transcripts and the
+  repository's local Ergo only for small real-server coverage.
 
 ## Questions for Luiz
 
