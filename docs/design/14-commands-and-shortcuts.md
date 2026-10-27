@@ -147,7 +147,7 @@ and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-disco
 | `navigation.escape` — close/cancel/focus composer | `Esc` | `Esc` | scope cascade above | both |
 | `navigation.back` / `navigation.forward` | `⌘[` / `⌘]` | `Alt+Left` / `Alt+Right` | `Mod+Alt+[` / `Mod+Alt+]` | Slack / ours web fallback |
 | `search.open` — search current surface | `⌘F` | `Ctrl+F` | same; intentionally replaces find-in-page | both |
-| `buffer.open` — join channel/start DM | `⇧⌘K` | `Ctrl+Shift+K` | `Mod+Alt+K` | Slack / ours web fallback |
+| `buffer.open` — join channel/start DM | `⇧⌘K` | `Ctrl+Shift+K` | macOS: `⇧⌘K`; Linux/Windows: `Ctrl+Alt+K` | Slack / ours web fallback |
 | `buffer.previous` / `buffer.next` | `⌥Up` / `⌥Down` | `Alt+Up` / `Alt+Down` | same; never in text | both |
 | `buffer.previous-unread` / `buffer.next-unread` | `⌥⇧Up` / `⌥⇧Down` | `Alt+Shift+Up` / `Alt+Shift+Down` | same; never in text | both |
 | `buffer.jump-important` | `⌥A` | `Alt+A` | same; physical `KeyA`, never in text | irssi / ours |
@@ -197,7 +197,8 @@ The research cross-check also found Slack's desktop-only `Mod+O` and Discord's `
 upload. Both conflict with browser/OS behavior, and uploads are later work, so `composer.upload`
 uses the accessible Attach control until that subsystem chooses a safe capability-gated binding.
 Slack uses `Mod+Shift+K` to browse DMs on macOS and Discord folds DMs into `Mod+K`; Weblounge keeps
-the Slack-shaped native chord and uses `Mod+Alt+K` on web because Firefox owns `Ctrl+Shift+K`.
+the Slack-shaped chord on macOS. Web on Linux/Windows uses `Ctrl+Alt+K` because Firefox owns
+`Ctrl+Shift+K`; Firefox macOS instead owns `⌥⌘K`, so the Slack chord remains safe there.
 
 Slash-command entries share IDs where semantics match (`/join` → `buffer.open`) and otherwise use
 their engine parser descriptor. They are shown in the switcher but do not receive global chords.
@@ -244,12 +245,12 @@ still change them, so the compatibility matrix is an executable fixture, not a p
 | `Mod+K`, `Mod+/`, `Mod+F` | Browsers assign omnibox/quick-find/find behavior, but Slack and Discord web establish the first two; search intentionally replaces find. **Verify (manual/Playwright):** Chrome, Firefox, Safari delivery. |
 | native `Mod+,`; web `Mod+Shift+,` | Browsers may own the conventional preferences chord. No major browser, macOS, Windows, GNOME/KDE, VoiceOver, or NVDA default was found for the shifted web chord. **Verify (manual/Playwright)** its punctuation matching on non-US layouts. |
 | native `Mod+[`/`]`, `Alt+Left/Right`; web `Mod+Alt+[`/`]` | Safari and other browsers own the native history chords, and Chrome macOS owns `⌥⌘Left/Right` for tabs. Brackets avoid both published sets. `Ctrl+Alt` may be AltGr, so the AltGraph guard wins. **Verify (manual/Playwright):** browser delivery and GNOME/KDE custom defaults. |
-| native `Mod+Shift+K`; web `Mod+Alt+K` | Firefox owns `Ctrl+Shift+K` for Web Console. No major host default was found for the web replacement; VoiceOver uses Control+Option, not Command+Option. **Verify (manual/Playwright):** Safari and Linux AltGr layouts. |
+| native `Mod+Shift+K`; web macOS `Mod+Shift+K`; web Linux/Windows `Ctrl+Alt+K` | Firefox owns `Ctrl+Shift+K` on Linux/Windows and `⌥⌘K` on macOS for Web Console. The platform split avoids both; `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** Safari and Linux AltGr layouts. |
 | `Alt+Up/Down`, `Alt+Shift+Up/Down`, `Alt+A` | These overlap macOS text movement, Windows/NVDA reading, menu mnemonics, and Option-produced characters. They use `event.code` where required and never run in text. **Verify (manual/Playwright):** NVDA focus mode and installed webviews. |
 | native `Mod+1…9`; web `Alt+1…9` | Chrome, Firefox, and Safari own `Mod+digits`. Firefox/Linux also owns `Alt+digits`, so that host gets `Ctrl+Alt+digits`; AltGraph is never captured. Windows menu access and macOS Option characters were checked. **Verify (manual/Playwright):** all digit rows on each browser/OS. |
 | native `Shift+Esc`; web `Mod+Alt+A` | Chrome/Firefox may own Shift+Escape for Task Manager, so it is Tauri-only. The web chord avoids Chrome's `Ctrl+Shift+A` tab search and keeps `Alt+A` available for important unread. **Verify (manual/Playwright):** VoiceOver and Linux AltGr behavior. |
 | `Alt+PgUp` | Browsers use `Ctrl+PgUp/PgDn` for tabs; no major OS/browser default was found for Alt+PageUp. Screen readers may interpret paging in browse mode. **Verify (manual/Playwright):** NVDA and VoiceOver from the composer. |
-| `Mod+Alt+P` pane prefix | Avoids browser print (`Mod+P`), Firefox private browsing (`Ctrl+Shift+P`), macOS workspace/tab keys, GNOME workspace arrows, and VoiceOver's Control+Option modifier. `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** KDE/GNOME custom global shortcuts and Safari. |
+| `Mod+Alt+P` pane prefix | Avoids browser print (`Mod+P`), Firefox private browsing (`Ctrl+Shift+P`), macOS workspace/tab keys, GNOME workspace arrows, and VoiceOver's Control+Option modifier. Firefox uses it only inside its PDF viewer for presentation mode, not on an app page. `Ctrl+Alt` remains subject to the AltGraph guard. **Verify (manual/Playwright):** KDE/GNOME custom global shortcuts and Safari. |
 | native `Mod+\`, `Mod+Shift+\`; pane-mode `\`/`-` | Safari uses Shift+Command+backslash for tab overview, so native split chords are Tauri-only. Plain symbols are captured only after the explicit prefix and match produced characters. **Verify (manual/Playwright):** ISO/AZERTY layouts. |
 | native pane focus `Mod+Shift+arrows` | macOS/Windows use these for text selection, so they never run in text. Unlike `Mod+Alt+arrows`, they avoid Chrome macOS tab switching, GNOME/Ubuntu workspaces, Intel display rotation, Windows Magnifier, and VoiceOver. **Verify (manual):** KDE custom bindings. |
 | native pane move `Mod+Alt+Shift+A/D/W/S` | Letter directions avoid GNOME's shifted workspace arrows and graphics-driver rotation arrows. macOS Dock/Hide commands without Shift were checked; AltGraph is never captured. **Verify (manual):** localized desktop-environment shortcuts. |
