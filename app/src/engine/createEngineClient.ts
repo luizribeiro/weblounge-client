@@ -39,14 +39,14 @@ function createBrowserEngineClient(): WorkerEngineClient {
     const worker = new SharedWorker(
       new URL("./engine.shared-worker.ts", import.meta.url),
       { name: "weblounge-engine", type: "module" },
-    ) as unknown as SharedWorkerHandle;
+    );
     return new WorkerEngineClient(sharedConnection(worker));
   }
 
   const worker = new Worker(
     new URL("./engine.dedicated-worker.ts", import.meta.url),
     { name: "weblounge-engine", type: "module" },
-  ) as unknown as DedicatedWorkerHandle;
+  );
   return dedicatedEngineClient(worker);
 }
 

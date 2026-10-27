@@ -1,3 +1,4 @@
-import { attachEnginePort, type WorkerHostPort } from "./worker-runtime";
+import { workerHostPort } from "./worker-globals";
+import { attachEnginePort } from "./worker-runtime";
 
-attachEnginePort(globalThis as unknown as WorkerHostPort);
+attachEnginePort(workerHostPort(globalThis));

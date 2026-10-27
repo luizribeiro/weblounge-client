@@ -52,10 +52,13 @@ async function loadEngine(): Promise<WasmEngine> {
 }
 
 function isWasmModule(value: unknown): value is WasmModule {
-  if (typeof value !== "object" || value === null) return false;
-  const module = value as Record<string, unknown>;
+  if (!isRecord(value)) return false;
   return (
-    typeof module.default === "function" &&
-    typeof module.WasmEngine === "function"
+    typeof value.default === "function" &&
+    typeof value.WasmEngine === "function"
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

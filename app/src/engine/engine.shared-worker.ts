@@ -1,14 +1,7 @@
+import { sharedWorkerScope } from "./worker-globals";
 import { attachEnginePort } from "./worker-runtime";
 
-interface SharedWorkerConnectEvent extends Event {
-  readonly ports: readonly MessagePort[];
-}
-
-interface SharedWorkerScope {
-  onconnect: ((event: SharedWorkerConnectEvent) => void) | null;
-}
-
-const scope = globalThis as unknown as SharedWorkerScope;
+const scope = sharedWorkerScope(globalThis);
 
 scope.onconnect = (event) => {
   const port = event.ports[0];
