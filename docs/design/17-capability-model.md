@@ -1,304 +1,152 @@
 # 17 — Capability model
 
-Status: proposed for milestone 1 review.
+Status: revised for milestone 1 review.
 
 ## Problem
 
-IRC networks differ substantially. Controls must exist only when their operation is supported, and
-support can change after connection through `CAP NEW/DEL`, ISUPPORT, tag-denial policy, or a new
-connection generation. Scattered capability strings and UI `if` statements would drift from
-papo's negotiation and allow broken actions.
+IRC support varies by network and can change after registration. Controls and commands must be
+available only when their operation is currently valid, without scattering CAP strings or feature
+checks through UI components.
 
-The engine therefore converts papo's typed feature model into product-level availability and
-concrete action witnesses. The UI renders available actions, not guesses from capability names.
-Capability state is per network and per connection generation.
+Papo is the capability source of truth. The engine reads its typed state and projects concrete
+network, buffer, and message actions. The UI renders supplied actions and never infers support.
 
-## Source of truth: papo
+## Papo inputs
 
-The engine reads only public papo APIs:
+The projector reads public APIs only:
 
-- `State::supports(Feature)` and `State::features()` for current optional behavior;
-- `State::caps()` for diagnostics and capability values that have no product feature;
-- `State::isupport()` for server tokens such as `draft/ICON` and bot mode;
-- `Event::Connected`, `CapsChanged`, `FeaturesChanged`, `CasemappingChanged`, and `Disconnected`;
-- typed `Unsupported { feature, reason }` errors as final command validation.
+- `State::supports(Feature)` and `State::features()` for optional behavior;
+- `State::caps()` and `State::isupport()` for diagnostics and documented tokens without typed
+  product APIs;
+- `Connected`, `CapsChanged`, `FeaturesChanged`, `CasemappingChanged`, and `Disconnected` events;
+- papo's typed `Unsupported { feature, reason }` as final command validation.
 
-Papo owns aliases (`draft/*` versus final names), dependencies, `CLIENTTAGDENY`, capability
-negotiation, and the distinction among `NotOffered`, `DisabledByClient`, `TagDenied`, and
-`LimitZero`. Weblounge never parses `CAP LS` or re-derives those rules.
+Papo owns aliases, dependencies, tag denial, CAP changes, and unsupported reasons. Weblounge never
+parses CAP negotiation. At revision `7d5e4bf`, read markers and metadata are stable; `unstable`
+gates bouncer, persistence, Web Push, and relay APIs.
 
-Papo `Feature` values used by the product include `MessageTags`, `ServerTime`, `Batches`,
-`EventPlayback`, `EchoMessages`, `Replies`, `Reactions`, `Typing`, `Redaction`, `Multiline`,
-`History`, `ReadMarkers`, `Metadata`, `Monitor`, `BotMode`, `AccountCreation`, `ChannelRename`,
-`LabeledResponse`, `Sasl`, presence/account tracking features, and—behind papo's unstable
-feature—`Bouncer`, `Persistence`, `WebPush`, and `Relay`.
-
-## Product feature types
+## Product actions
 
 ```rust
-pub struct CapabilitySnapshot {
-    pub network_id: NetworkId,
-    pub generation: ConnectionGeneration,
-    pub negotiation: NegotiationState,
-    pub features: BTreeMap<ProductFeature, FeatureAvailability>,
-    pub diagnostics: CapabilityDiagnostics,
+pub struct NetworkActions {
+    pub epoch: ConnectionEpoch,
+    pub open_server_buffer: OpenServerBufferAction,
+    pub import_bouncer: Option<ImportBouncerAction>,
+    pub configure_push: Option<ConfigurePushAction>,
 }
 
-pub enum NegotiationState {
-    Unknown,
-    Negotiating,
-    Current,
-    Stale { disconnected_at: Timestamp },
+pub struct BufferActions {
+    pub send: Option<SendAction>,
+    pub mark_read: MarkReadAction,
+    pub load_older: Option<LoadHistoryAction>,
+    pub members: Option<OpenMembersAction>,
+    pub complete_input: Option<CompleteInputAction>,
 }
 
-pub enum ProductFeature {
-    Backfill,
-    ReadSync,
-    Replies,
-    Reactions,
-    Typing,
-    Multiline,
-    Redaction,
-    MetadataAvatars,
-    NetworkIcon,
-    Push,
-    BouncerImport,
-    AccountCreation,
-    ChannelRename,
-    Presence,
-    BotIdentity,
+pub enum MarkReadAction {
+    ServerSynced(MarkServerReadAction),
+    LocalOnly(MarkLocalReadAction),
 }
 
-pub enum FeatureAvailability {
-    Available { evidence: FeatureEvidence },
-    Unavailable { reason: UnavailableReason },
-}
-
-pub enum UnavailableReason {
-    NotNegotiated,
-    Disconnected,
-    ServerDidNotOffer,
-    DisabledByClient,
-    TagDenied,
-    ServerLimitZero,
-    MissingObjectData(ObjectRequirement),
-    PlatformUnavailable(PlatformRequirement),
-}
-
-pub enum FeatureEvidence {
-    PapoFeature { feature: PapoFeatureName },
-    All(Vec<FeatureEvidence>),
-    Any(Vec<FeatureEvidence>),
-    Isupport { token: IsupportToken },
-    MessageField { field: MessageField },
-    Platform { service: PlatformService },
+pub struct MessageActions {
+    pub reply: Option<ReplyAction>,
+    pub react: Option<ReactionAction>,
+    pub redact: Option<RedactAction>,
 }
 ```
 
-`PapoFeatureName` is weblounge's exhaustive serializable mirror of the subset it consumes, not a
-second capability implementation. The conversion takes `papo::Feature` and has an explicit
-wildcard because `Feature` is non-exhaustive; unknown future values are included only in
-diagnostics until deliberately mapped.
+Action values contain the typed IDs and command template required to invoke the operation. They are
+not permissions: the engine re-reads current papo state immediately before every call, and papo is
+the final validator if support changes concurrently.
 
-Availability from a prior generation becomes `Disconnected`, not `Available`. Rendered historical
-content remains rich—stored replies and reactions still display—but no online-only action witness
-is issued while disconnected. This prevents stale support from enabling a command.
+Feature components accept these actions as props. A reaction button cannot be constructed without
+a `ReactionAction`; it is absent rather than disabled. The command registry receives the focused
+buffer's `BufferActions`, so switcher/menu/shortcut availability matches visible controls.
 
-## Derivation table
+## Projection rules
 
-| Product feature | Required current evidence | Additional object/platform constraint |
+| Product action/summary | Current papo support | Object/platform condition |
 |---|---|---|
-| Backfill | `Feature::History` | Buffer has a history conversation target |
-| Read sync | `Feature::ReadMarkers` | Entry has valid server time |
-| Replies | `Feature::Replies` | Target message has `msgid` |
-| Reactions | `Feature::Reactions` | Target has `msgid`; reaction is valid tag data |
-| Typing | `Feature::Typing` | Chat buffer has send target |
-| Multiline | `Feature::Multiline` | Outgoing text actually needs multiline semantics |
-| Redaction | `Feature::Redaction` | Target has `msgid`; policy permits requesting it |
-| Metadata avatars | `Feature::Metadata` | Advertised avatar key has a valid HTTPS value |
-| Network icon | `draft/ICON` ISUPPORT value | Valid HTTPS image URL |
-| Push | `Feature::WebPush` | Platform has registrar; user entitlement permits it |
+| Load history | `Feature::History` | Buffer has a history conversation target |
+| Server-synced mark read | `Feature::ReadMarkers` | Target event has server time |
+| Reply | `Feature::Replies` | Target has a selected server msgid |
+| React/unreact | `Feature::Reactions` | Target has a server msgid and valid tag data |
+| Typing | `Feature::Typing` | Chat buffer has a send target |
+| Multiline send | `Feature::Multiline` | Outgoing input needs multiline semantics |
+| Redact | `Feature::Redaction` | Target has a server msgid; product policy allows request |
+| Metadata avatar | `Feature::Metadata` | `avatar` value is valid HTTPS content |
+| Network icon | `draft/ICON` ISUPPORT | Value is valid HTTPS content |
+| Push settings | `Feature::WebPush` | Registrar/configuration/entitlement are ready |
 | Bouncer import | `Feature::Bouncer` | Connection is an unbound control connection |
-| Account creation | `Feature::AccountCreation` | Onboarding mode allows server registration |
-| Channel rename | `Feature::ChannelRename` | Subject is a joined channel |
-| Presence | any supported typed presence source | DM has a tracked peer identity |
-| Bot identity | typed `UserSource::is_bot` / bot tag / bot mode | Actor fact is known |
+| Presence | Typed presence source | DM peer identity is tracked |
+| Bot presentation | Typed bot fact | Actor fact is known |
 
-Rendering received metadata is not gated by current capability state: if a stored event has a
-reply parent or bot fact, the UI renders it even after disconnect or CAP removal. Capability gates
-control discovery and actions, not whether true historical data is visible.
+If read markers are unavailable, `mark_read` is explicitly `LocalOnly`; the engine-state model
+therefore needs no duplicate `Unsupported` marker state. Platform and entitlement readiness are
+ordinary inputs to action projection, not claimed as IRC capabilities.
 
-`EchoMessages`, `ServerTime`, `MessageTags`, `Batches`, and `LabeledResponse` are diagnostics and
-engine-behavior inputs. They are not exposed as independent settings merely because the server
-advertises them.
+Received facts remain renderable after disconnect or feature removal. Stored replies, reactions,
+and bot identities do not disappear merely because the corresponding action is no longer
+available.
 
-## Capability witnesses
+## Updates and connection epochs
 
-Within Rust, action constructors require unforgeable current-generation witnesses:
+Subsystem 03 increments `ConnectionEpoch` on every `Connected`, including an internal papo
+reconnect. The projector reads the fresh `Client::state()` and replaces all network/buffer/message
+actions atomically. `FeaturesChanged` or relevant ISUPPORT changes trigger the same replacement;
+`CapsChanged` updates diagnostics and then typed features are re-read.
 
-```rust
-pub struct CapabilityWitness<F> {
-    network_id: NetworkId,
-    generation: ConnectionGeneration,
-    marker: PhantomData<F>,
-}
+On disconnect, online-only actions are removed in one patch. The last supported-feature summary
+may remain in diagnostics labelled as stale, but it cannot enable a command. Actions belong to the
+current epoch and are never persisted as durable truth.
 
-pub struct ReplyFeature;
-pub struct ReactionFeature;
-pub struct ReadMarkerFeature;
-
-pub struct ReplyTarget {
-    pub buffer_id: ChatBufferId,
-    pub message: MessageKeyWithId,
-    capability: CapabilityWitness<ReplyFeature>,
-}
-
-pub fn reply_target(
-    state: &EngineState,
-    buffer: ChatBufferId,
-    message: EventId,
-) -> Result<ReplyTarget, CapabilityError>;
-
-pub async fn send_reply(
-    target: ReplyTarget,
-    text: NonEmptyString,
-) -> Result<SendReceipt, CommandError>;
-```
-
-Witness fields are private and cannot survive serialization or connection replacement. Command
-handling recreates a witness from current state immediately before calling papo, so a UI command
-queued across `CAP DEL` is rejected safely. Papo remains the final validator and can return typed
-`Unsupported` if state changes between check and action.
-
-The UI receives concrete action descriptors:
-
-```ts
-export type MessageActions = {
-  readonly reply?: ReplyAction;
-  readonly react?: ReactionAction;
-  readonly redact?: RedactAction;
-};
-
-export interface ReplyAction {
-  readonly kind: "reply";
-  readonly command: ReplyCommandTemplate;
-}
-
-export interface ReactionAction {
-  readonly kind: "react";
-  readonly command: ReactionCommandTemplate;
-}
-
-export interface MessageRowProps {
-  readonly message: MessageProjection;
-  readonly actions: MessageActions;
-}
-```
-
-Feature components do not import `CapabilitySnapshot`. `MessageRow` maps only supplied actions;
-there is no “disabled reaction” control. Settings receives `NetworkSettingsActions`; onboarding
-receives `ConnectionFeatureSummary`. The projection layer is the only UI module allowed to turn
-capabilities into actions.
-
-TypeScript command templates contain typed IDs and a capability epoch but are not permissions.
-They improve component APIs; the engine always revalidates them.
-
-## Capability epochs and updates
-
-```rust
-pub struct CapabilityEpoch {
-    pub network: NetworkId,
-    pub generation: ConnectionGeneration,
-    pub revision: u64,
-}
-
-pub enum CapabilityChange {
-    Replaced(CapabilitySnapshot),
-    Invalidated { network_id: NetworkId, old: CapabilityEpoch },
-}
-```
-
-`Connected` begins a new generation and publishes one complete snapshot after reading
-`Client::state()`. `FeaturesChanged` or relevant ISUPPORT changes increment its revision and
-replace the product projection atomically. `CapsChanged` alone updates diagnostics, then the engine
-re-reads typed features rather than interpreting cap names. `Disconnected` invalidates every
-witness at once and retains a stale diagnostic snapshot.
-
-The UI patch replaces one network's capability projection and all affected action projections in
-the same atomic batch. A control cannot remain visible for a frame after its prerequisite vanished.
+No parallel capability state machine is kept outside the connection's `Online` projection.
 
 ## Onboarding and diagnostics
 
-```rust
-pub struct ConnectionFeatureSummary {
-    pub supported: Vec<FeatureSummaryItem>,
-    pub unavailable: Vec<FeatureSummaryItem>,
-}
+Onboarding receives stable product labels such as history, read sync, replies, reactions, and
+push. It does not display raw CAP names as product features.
 
-pub struct CapabilityDiagnostics {
-    pub enabled_caps: Vec<CapabilityDiagnostic>,
-    pub product_features: Vec<ProductFeatureDiagnostic>,
-    pub isupport_icon: Option<String>,
-}
-```
-
-The onboarding “This network supports” list is generated from stable product labels (history, read
-sync, replies, reactions, push, and so on), not raw cap tokens. Diagnostics may show sanitized raw
-cap names/values in the server buffer, because that is useful for debugging; capability values
-known to contain secrets are redacted before storage or IPC.
-
-Unavailable reasons are useful in onboarding/network settings when the user needs an explanation,
-such as “Push requires a server or bouncer with webpush.” In normal chat chrome, unavailable
-features are absent rather than disabled with a tooltip.
-
-## Platform and entitlement composition
-
-Some product features require both IRC support and a platform service. Product availability uses
-an `All` evidence node; it does not pretend APNs/FCM registration is an IRC capability. For
-example, native push requires current `Feature::WebPush`, a native push registrar, relay
-configuration, and entitlement. Web PWA push requires browser Push API/service-worker readiness
-instead of the relay entitlement.
-
-Platform state is supplied through typed service availability. The capability reducer remains
-pure and has no access to `window`, Tauri plugins, StoreKit, or Play Billing.
+Diagnostics may include sanitized CAP names/values and the documented raw `draft/ICON` ISUPPORT
+exception. Values that may contain secrets are redacted before storage or IPC. Offline diagnostics
+clearly label the last-known list with its connection epoch.
 
 ## Boundaries
 
-This subsystem owns mapping typed papo features plus object/platform facts into product
-availability, capability epochs, Rust witnesses, UI action projections, and human-readable feature
-summaries. It must not negotiate CAP, inspect raw IRC lines, implement platform services, render
-components, decide entitlements, or persist server capability state as permanently true.
+This subsystem owns the pure projection from current typed papo state plus object/platform facts
+to concrete actions and summaries. It does not negotiate CAP, parse raw IRC lines, implement
+platform services, render UI, choose shortcut chords, or persist capability support as true.
 
 ## Testing
 
-- Table-driven tests cover every derivation row and every papo `UnsupportedReason`.
-- Compile-fail tests prove action APIs cannot be called without the correct witness or with a
-  witness for another feature/network.
-- Reducer tests cover connect, disconnect, reconnect generation, `CAP NEW/DEL`, ISUPPORT change,
-  tag denial, and atomic action removal.
-- Component contract tests verify unavailable action properties are absent, not disabled controls.
-- Live tests run the feature matrix against all papo conformance server profiles and compare the
-  onboarding summary with callable typed APIs.
-- Race tests remove a capability between UI projection and command handling; the command is safely
-  rejected and no raw request is sent.
-- Snapshot golden tests prevent accidental renaming of protocol-facing product features and error
-  reasons.
+- Table tests cover every projection row and relevant papo unsupported reason.
+- Reducer/projection tests cover connect, internal reconnect epochs, disconnect, feature/ISUPPORT
+  changes, tag denial, and atomic action removal.
+- Component contracts verify unavailable controls and registry commands are absent.
+- Race tests change support between projection and command handling and assert safe papo-backed
+  rejection.
+- Native/WASI transcript tests may use the scripted `papo_testing::wire()` client; live Ergo tests
+  use subsystem 21's real-server CLI.
+- Snapshot fixtures protect public product-action and diagnostic names.
 
 ## Out of scope
 
-Feature implementation, push registration, metadata/avatar fetching, payments, user overrides of
-server capabilities, and UI layout are separate subsystems.
+Push registration, metadata fetching, payments, feature implementation, and capability override UI
+belong to other subsystems.
 
-## Questions for Luiz / papo gaps
+## Later
 
-1. `draft/ICON` is available through generic ISUPPORT access but has no typed papo feature/value
-   API. Should papo expose a validated network-icon URL, or should the engine continue treating it
-   as a documented raw ISUPPORT exception?
-2. Bouncer and Web Push product features require papo's unstable feature. Confirm whether the
-   milestone may ship against those APIs or must wait for stabilization.
-3. Which metadata key/value convention should define avatars across Ergo/soju? Papo exposes typed
-   metadata but the product convention is not specified.
-4. What exact server-side rule does weblounge use for mention matching in push payloads? The engine
-   Activity/highlight capability must use the same rule; no independent approximation should ship.
-5. Should a stale last-known feature list remain visible in network diagnostics while offline
-   (proposed), clearly labelled as from the previous connection?
+- Consider private capability witness types, evidence trees, and compile-fail tests only if simple
+  action projections prove insufficient.
+- Add bouncer and Web Push actions after the design-index `unstable` decision.
+
+## Decisions
+
+- Keep `draft/ICON` as a documented raw ISUPPORT exception until papo exposes a typed value.
+- Use the metadata key `avatar` for user avatars.
+- Retain a clearly labelled stale last-known feature list in offline diagnostics.
+
+## Questions for Luiz
+
+1. What exact mention-matching rule does the weblounge server use for push payloads? Activity and
+   local highlighting must use the same rule.
