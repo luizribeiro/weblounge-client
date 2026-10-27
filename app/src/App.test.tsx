@@ -2,7 +2,7 @@ import { render, screen } from "@solidjs/testing-library";
 import { expect, it } from "vitest";
 import { App } from "./App";
 import type { EngineClient } from "./engine/EngineClient";
-import type { EngineToUi } from "./engine/protocol";
+import type { EngineClientMessage } from "./engine/protocol";
 
 it("reports the wasm worker round trip", async () => {
   render(() => <App engineClient={new FakeEngineClient()} />);
@@ -16,7 +16,7 @@ it("reports the wasm worker round trip", async () => {
 });
 
 class FakeEngineClient implements EngineClient {
-  #listener: ((message: EngineToUi) => void) | undefined;
+  #listener: ((message: EngineClientMessage) => void) | undefined;
 
   async start(): Promise<void> {}
 
@@ -33,7 +33,7 @@ class FakeEngineClient implements EngineClient {
 
   setVisibility(): void {}
 
-  subscribe(listener: (message: EngineToUi) => void) {
+  subscribe(listener: (message: EngineClientMessage) => void) {
     this.#listener = listener;
     return () => {
       this.#listener = undefined;

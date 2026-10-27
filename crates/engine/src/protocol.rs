@@ -1,20 +1,22 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Initial UI identity and revision state.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct Hello {
     /// Content-derived application build identifier.
     pub build_id: String,
     /// Identity of this UI client.
     pub client_id: String,
     /// Last revision observed by the UI, when any.
+    #[ts(type = "number | null")]
     pub last_revision: Option<u64>,
     /// UI shell initiating the connection.
     pub shell: ShellKind,
 }
 
 /// UI shell variants supported by the engine protocol.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ShellKind {
     /// Browser shell.
@@ -22,7 +24,7 @@ pub enum ShellKind {
 }
 
 /// One command with its correlation identifier.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct CommandEnvelope {
     /// Command correlation identifier.
     pub id: String,
@@ -31,7 +33,7 @@ pub struct CommandEnvelope {
 }
 
 /// Commands implemented by the current vertical slice.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Command {
     /// Round-trip diagnostic proving the worker boundary.
@@ -42,7 +44,7 @@ pub enum Command {
 }
 
 /// Messages accepted from a UI client.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum UiToEngine {
     /// Begin or resume a UI subscription.
@@ -52,7 +54,7 @@ pub enum UiToEngine {
 }
 
 /// Events emitted to a UI client.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EngineToUi {
     /// The worker engine accepted the UI build.
@@ -60,6 +62,7 @@ pub enum EngineToUi {
         /// Identity stable for the worker engine lifetime.
         engine_instance: String,
         /// Current engine projection revision.
+        #[ts(type = "number")]
         revision: u64,
     },
     /// UI and worker assets were built from different content.

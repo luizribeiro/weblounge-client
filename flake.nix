@@ -75,6 +75,31 @@
           };
         };
         cargoArtifacts = craneLib.buildDepsOnly cargoArgs;
+        protocolSource = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./Cargo.lock
+            ./Cargo.toml
+            ./crates
+            ./app/src/engine/generated
+          ];
+        };
+        protocolTypes = craneLib.mkCargoDerivation (
+          cargoArgs
+          // {
+            pname = "weblounge-protocol-types";
+            src = protocolSource;
+            inherit cargoArtifacts;
+            doInstallCargoArtifacts = false;
+            buildPhaseCargoCommand = ''
+              cargo run --release --locked --package weblounge-engine \
+                --example export_protocol -- "$TMPDIR/generated"
+              diff --recursive --unified \
+                app/src/engine/generated "$TMPDIR/generated"
+            '';
+            installPhaseCommand = "touch $out";
+          }
+        );
         engineWasm = craneLib.mkCargoDerivation (
           cargoArgs
           // {
@@ -291,6 +316,7 @@
               cargoTestExtraArgs = "--workspace";
             }
           );
+          protocol-types = protocolTypes;
           wasm = engineWasm;
           app-build = app;
           inherit e2e;

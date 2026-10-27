@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["app/**", "*.json"]
+    "includes": ["app/**", "!app/src/engine/generated", "*.json"]
   },
   "formatter": {
     "enabled": true,

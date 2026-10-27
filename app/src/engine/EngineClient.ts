@@ -1,6 +1,7 @@
 import type {
   CommandEnvelope,
   CommandResult,
+  EngineClientMessage,
   EngineToUi,
   Hello,
   IncompatibleBuild,
@@ -8,6 +9,7 @@ import type {
   UiToEngine,
   Unsubscribe,
   VisibilityState,
+  WorkerHostError,
 } from "./protocol";
 
 export interface EngineClient {
@@ -15,7 +17,7 @@ export interface EngineClient {
   send(command: CommandEnvelope): Promise<CommandResult>;
   requestSnapshot(reason: ResyncReason): void;
   setVisibility(state: VisibilityState): void;
-  subscribe(listener: (message: EngineToUi) => void): Unsubscribe;
+  subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe;
   close(): Promise<void>;
 }
 
@@ -59,10 +61,10 @@ export class IncompatibleBuildError extends Error {
 export class WorkerEngineClient implements EngineClient {
   readonly #connection: EngineConnection;
   readonly #scheduleFrame: FrameScheduler;
-  readonly #listeners = new Set<(message: EngineToUi) => void>();
+  readonly #listeners = new Set<(message: EngineClientMessage) => void>();
   readonly #commands = new Map<string, CommandWaiter>();
   readonly #renderQueue: EngineToUi[] = [];
-  readonly #initialMessages: EngineToUi[];
+  readonly #initialMessages: EngineClientMessage[];
   #startWaiter: StartWaiter | undefined;
   #framePending = false;
   #closed = false;
@@ -71,7 +73,7 @@ export class WorkerEngineClient implements EngineClient {
     connection: EngineConnection,
     scheduleFrame: FrameScheduler = (callback) =>
       requestAnimationFrame(callback),
-    initialMessages: readonly EngineToUi[] = [],
+    initialMessages: readonly EngineClientMessage[] = [],
   ) {
     this.#connection = connection;
     this.#scheduleFrame = scheduleFrame;
@@ -110,7 +112,7 @@ export class WorkerEngineClient implements EngineClient {
 
   setVisibility(_state: VisibilityState): void {}
 
-  subscribe(listener: (message: EngineToUi) => void): Unsubscribe {
+  subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe {
     this.#listeners.add(listener);
     for (const message of this.#initialMessages.splice(0)) {
       this.#publish(message);
@@ -131,7 +133,11 @@ export class WorkerEngineClient implements EngineClient {
   }
 
   readonly #onMessage = (event: MessageEvent<unknown>): void => {
-    const message = decodeEngineMessage(event.data);
+    const message = decodeWorkerMessage(event.data);
+    if (message.type === "fatal") {
+      this.#publish(message);
+      return;
+    }
     if (message.type === "command_result") {
       const waiter = this.#commands.get(message.id);
       this.#commands.delete(message.id);
@@ -150,11 +156,6 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
-    if (message.type === "fatal") {
-      this.#publish(message);
-      return;
-    }
-
     this.#renderQueue.push(message);
     if (this.#framePending) return;
     this.#framePending = true;
@@ -172,13 +173,29 @@ export class WorkerEngineClient implements EngineClient {
     this.#startWaiter = undefined;
   }
 
-  #publish(message: EngineToUi): void {
+  #publish(message: EngineClientMessage): void {
     for (const listener of this.#listeners) listener(message);
   }
 
   #assertOpen(): void {
     if (this.#closed) throw new Error("engine client is closed");
   }
+}
+
+function decodeWorkerMessage(value: unknown): EngineClientMessage {
+  if (isRecord(value) && value.type === "fatal") {
+    return decodeWorkerHostError(value);
+  }
+  return decodeEngineMessage(value);
+}
+
+function decodeWorkerHostError(
+  value: Record<string, unknown>,
+): WorkerHostError {
+  if (typeof value.message_key === "string") {
+    return { type: "fatal", message_key: value.message_key };
+  }
+  throw new Error("invalid worker host error");
 }
 
 function decodeEngineMessage(value: unknown): EngineToUi {
@@ -221,18 +238,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     case "notice":
-      if (value.message_key === "engine.dedicated_worker_fallback") {
+      if (typeof value.message_key === "string") {
         return { type: "notice", message_key: value.message_key };
       }
       break;
     case "command_result":
       if (typeof value.id === "string")
         return { type: "command_result", id: value.id };
-      break;
-    case "fatal":
-      if (typeof value.message_key === "string") {
-        return { type: "fatal", message_key: value.message_key };
-      }
       break;
     default:
       break;
