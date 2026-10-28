@@ -167,6 +167,8 @@ describe("WorkerEngineClient", () => {
       author: "weblounge",
       text: "hello",
       authorship: "own" as const,
+      nick_color_index: 0,
+      mentioned: false,
       delivery: "optimistic" as const,
       local_send_id: 1,
       server_ids: [],

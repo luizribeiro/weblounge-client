@@ -157,7 +157,11 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let Some((pending, output)) = running.model.begin_send(buffer_id, text) else {
+        let Some((pending, output)) =
+            running
+                .model
+                .begin_send(buffer_id, text, &running.client.state())
+        else {
             return rejected_command(command_id, "engine.buffer_not_sendable");
         };
         let client = running.client.clone();
@@ -880,7 +884,7 @@ mod tests {
             .buffer_id_for_target(&SendTarget::Channel(channel))
             .expect("projected channel has a stable id");
         let (pending, _) = model
-            .begin_send(buffer_id, "hello".into())
+            .begin_send(buffer_id, "hello".into(), &client.state())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -931,7 +935,7 @@ mod tests {
             .expect("projected channel has a stable id");
         let text = "a".repeat(600);
         let (pending, _) = model
-            .begin_send(buffer_id, text)
+            .begin_send(buffer_id, text, &client.state())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {

@@ -284,6 +284,7 @@ impl NetworkModel {
         &mut self,
         buffer_id: BufferId,
         text: String,
+        state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
         let buffer = self.buffers.get(&buffer_id)?;
         let key = buffer.key.clone()?;
@@ -295,6 +296,8 @@ impl NetworkModel {
             author: self.network.nickname.clone(),
             text: text.clone(),
             authorship: MessageAuthorship::Own,
+            nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
+            mentioned: false,
             delivery: MessageDelivery::Optimistic,
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
@@ -421,11 +424,14 @@ impl NetworkModel {
         );
         let mentioned = incoming.authorship != MessageAuthorship::Own
             && mentions_own_nick(&incoming.text, state);
+        let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
         let message = MessageProjection {
             id: self.allocate_message_id(),
             author: incoming.author,
             text: incoming.text,
             authorship: incoming.authorship,
+            nick_color_index,
+            mentioned,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.into_iter().collect(),
@@ -601,6 +607,15 @@ fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
         .any(|word| state.name_rules().nick(word) == *state.nick())
 }
 
+fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u32 {
+    casemapping
+        .fold(nick)
+        .bytes()
+        .fold(2_166_136_261, |hash, byte| {
+            (hash ^ u32::from(byte)).wrapping_mul(16_777_619)
+        })
+}
+
 fn order_key(record: &TimelineRecord) -> (i64, i64, u64) {
     (
         record
@@ -623,7 +638,9 @@ fn time_millis(time: SystemTime) -> i64 {
 mod tests {
     use papo_testing::StateBuilder;
 
-    use super::{Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, time_millis};
+    use super::{
+        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, nick_color_index, time_millis,
+    };
     use crate::{MessageAuthorship, NetworkId};
 
     fn incoming(
@@ -788,7 +805,7 @@ mod tests {
         let key = NameKey::Channel(state.name_rules().channel("#room"));
         let buffer = model.add_buffer(key, crate::BufferKind::Channel, None);
         let (pending, _) = model
-            .begin_send(buffer.id, "will fail".into())
+            .begin_send(buffer.id, "will fail".into(), &state)
             .expect("channel is sendable");
 
         model.fail_send(&pending, "engine.send_failed");
@@ -805,7 +822,7 @@ mod tests {
         let before = time_millis(papo::time::now());
 
         let (_, events) = model
-            .begin_send(buffer.id, "timestamped".into())
+            .begin_send(buffer.id, "timestamped".into(), &state)
             .expect("channel is sendable");
         let after = time_millis(papo::time::now());
         let crate::EngineToUi::MessagesAppended { messages, .. } = &events[0] else {
@@ -814,6 +831,18 @@ mod tests {
 
         assert!(messages[0].received_at_ms >= before);
         assert!(messages[0].received_at_ms <= after);
+    }
+
+    #[test]
+    fn nick_palette_index_follows_server_casemapping() {
+        assert_eq!(
+            nick_color_index(papo::Casemapping::Rfc1459, "Alice["),
+            nick_color_index(papo::Casemapping::Rfc1459, "ALICE{")
+        );
+        assert_ne!(
+            nick_color_index(papo::Casemapping::Ascii, "Alice["),
+            nick_color_index(papo::Casemapping::Ascii, "ALICE{")
+        );
     }
 
     #[test]

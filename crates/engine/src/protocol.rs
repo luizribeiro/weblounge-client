@@ -119,6 +119,11 @@ pub struct MessageProjection {
     pub text: String,
     /// Authorship relative to this client.
     pub authorship: MessageAuthorship,
+    /// Stable palette index derived with the network's IRC name rules.
+    #[ts(type = "number")]
+    pub nick_color_index: u32,
+    /// Whether this row mentions the current nickname.
+    pub mentioned: bool,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.

@@ -25,6 +25,14 @@ text: string,
  */
 authorship: MessageAuthorship,
 /**
+ * Stable palette index derived with the network's IRC name rules.
+ */
+nick_color_index: number,
+/**
+ * Whether this row mentions the current nickname.
+ */
+mentioned: boolean,
+/**
  * Current delivery state.
  */
 delivery: MessageDelivery,
