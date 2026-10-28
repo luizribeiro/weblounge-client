@@ -103,9 +103,11 @@ it("shows a confirmation received without this tab's optimistic row", async () =
     },
   });
 
-  expect(
-    await screen.findByText(/from another tab \[confirmed\]/),
-  ).toBeVisible();
+  const confirmed = await screen.findByText(/from another tab/);
+  expect(confirmed.closest("[data-message-row]")).toHaveAttribute(
+    "data-delivery",
+    "confirmed",
+  );
 });
 
 it("shows an optimistic message as failed when sending fails", async () => {
@@ -146,7 +148,11 @@ it("shows an optimistic message as failed when sending fails", async () => {
     message_key: "engine.send_failed",
   });
 
-  expect(await screen.findByText(/will fail \[failed\]/)).toBeVisible();
+  const failed = await screen.findByText(/will fail/);
+  expect(failed.closest("[data-message-row]")).toHaveAttribute(
+    "data-delivery",
+    "failed",
+  );
 });
 
 it("reloads only once for the same stale build", () => {

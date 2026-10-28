@@ -4,6 +4,10 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import type { CopyRow } from "../../ui/copy-rows";
+import { copySelectedRows } from "../../ui/copy-selection";
+import { Line } from "../../ui/Line";
+import { Selectable } from "../../ui/Selectable";
 
 interface DebugViewProps {
   networks: readonly NetworkProjection[];
@@ -31,7 +35,9 @@ export function DebugView(props: DebugViewProps) {
         <For each={props.networks}>
           {(network) => (
             <li>
-              {network.label}: {network.nickname} ({network.state})
+              <Line>
+                {network.label}: {network.nickname} ({network.state})
+              </Line>
             </li>
           )}
         </For>
@@ -41,17 +47,33 @@ export function DebugView(props: DebugViewProps) {
         {(buffer) => (
           <section>
             <h3>
-              {buffer.title} ({buffer.kind}, {buffer.unread} unread,{" "}
-              {buffer.mentions} mentions)
+              <Line>
+                {buffer.title} ({buffer.kind}, {buffer.unread} unread,{" "}
+                {buffer.mentions} mentions)
+              </Line>
             </h3>
-            <ol>
+            <ol
+              data-message-list="true"
+              onCopy={(event) =>
+                copySelectedRows(
+                  event,
+                  event.currentTarget,
+                  toCopyRows(props.messages.get(buffer.id) ?? []),
+                )
+              }
+            >
               <For each={props.messages.get(buffer.id) ?? []}>
-                {(message) => (
+                {(message, index) => (
                   <li
+                    data-copy-row-index={index()}
                     data-delivery={message.delivery}
+                    data-message-row="true"
                     data-message-text={message.text}
                   >
-                    &lt;{message.author}&gt; {message.text} [{message.delivery}]
+                    <Selectable surfaceId={`message-${message.id}`}>
+                      &lt;{message.author}&gt; {message.text}
+                    </Selectable>{" "}
+                    <span data-message-chrome="true">[{message.delivery}]</span>
                   </li>
                 )}
               </For>
@@ -78,4 +100,13 @@ export function DebugView(props: DebugViewProps) {
       </form>
     </section>
   );
+}
+
+function toCopyRows(messages: readonly MessageProjection[]): CopyRow[] {
+  return messages.map((message) => ({
+    kind: "message",
+    time: new Date(message.server_time_ms ?? message.received_at_ms),
+    author: message.author,
+    text: message.text,
+  }));
 }

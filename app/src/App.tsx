@@ -10,6 +10,10 @@ import type {
   NetworkProjection,
 } from "./engine/protocol";
 import { DebugView } from "./features/debug/DebugView";
+import {
+  contextMenuRegistry,
+  installContextMenuHandler,
+} from "./ui/context-menu";
 
 const reloadMarker = "weblounge-build-reload";
 
@@ -26,8 +30,17 @@ export function App(props: AppProps) {
     ReadonlyMap<number, readonly MessageProjection[]>
   >(new Map());
   let client: EngineClient | undefined;
+  let appRoot: HTMLElement | undefined;
 
   onMount(() => {
+    const removeContextMenuHandler = installContextMenuHandler(document);
+    const unregisterContextSurface =
+      appRoot === undefined
+        ? () => {}
+        : contextMenuRegistry.register(appRoot, {
+            id: "app-root",
+            kind: "chrome",
+          });
     const mountedClient = props.engineClient ?? createEngineClient();
     client = mountedClient;
     const unsubscribe = mountedClient.subscribe((message) => {
@@ -53,6 +66,8 @@ export function App(props: AppProps) {
     );
     void startEngine(mountedClient, setEngineStatus, debugPassword);
     onCleanup(() => {
+      unregisterContextSurface();
+      removeContextMenuHandler();
       document.removeEventListener("visibilitychange", updateVisibility);
       unsubscribe();
       void mountedClient.close();
@@ -60,7 +75,12 @@ export function App(props: AppProps) {
   });
 
   return (
-    <main>
+    <main
+      data-app-root="true"
+      ref={(element) => {
+        appRoot = element;
+      }}
+    >
       <h1>weblounge</h1>
       <p role="status">{engineStatus()}</p>
       {engineNotice() !== undefined && <p role="note">{engineNotice()}</p>}

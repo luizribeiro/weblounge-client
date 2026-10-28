@@ -1,0 +1,106 @@
+:root {
+  --wl-motion-push-in: 280ms;
+  --wl-motion-push-out: 230ms;
+  --wl-motion-members: 220ms;
+  --wl-motion-fade: 200ms;
+  --wl-motion-preview-fade: 420ms;
+  --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  block-size: 100%;
+  inline-size: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-app-root] {
+  block-size: 100%;
+  cursor: default;
+  overflow: auto;
+  overscroll-behavior: none;
+  user-select: none;
+}
+
+[data-app-root] * {
+  cursor: inherit;
+  user-select: none;
+}
+
+[data-selectable="true"],
+[data-selectable="true"] * {
+  -webkit-touch-callout: default;
+  cursor: text;
+  user-select: text;
+}
+
+input:not([type]),
+input:is(
+  [type="email"],
+  [type="number"],
+  [type="password"],
+  [type="search"],
+  [type="tel"],
+  [type="text"],
+  [type="url"]
+),
+textarea,
+[contenteditable]:not([contenteditable="false"]) {
+  -webkit-touch-callout: default;
+  cursor: text;
+  user-select: text;
+}
+
+[data-app-root] a,
+[data-app-root] img {
+  -webkit-user-drag: none;
+}
+
+button,
+input,
+select,
+textarea,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  /* TODO(task 4): remove the fallback when generated focus-ring tokens land. */
+  outline: 2px solid var(--wl-color-focus-ring, currentColor);
+  outline-offset: 2px;
+}
+
+@media (hover: none), (pointer: coarse), (max-width: 759px) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --wl-motion-push-in: 0ms;
+    --wl-motion-push-out: 0ms;
+    --wl-motion-members: 0ms;
+    --wl-motion-fade: 0ms;
+    --wl-motion-preview-fade: 0ms;
+  }
+}
