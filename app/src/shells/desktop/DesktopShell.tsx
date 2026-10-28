@@ -13,11 +13,15 @@ import {
 } from "../../commands/command-registry";
 import type {
   BufferProjection,
+  MembershipProjection,
   MessageProjection,
   NetworkProjection,
 } from "../../engine/protocol";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
-import { MessageList } from "../../features/conversation/MessageList";
+import {
+  MessageList,
+  type MessageListController,
+} from "../../features/conversation/MessageList";
 import { SimpleComposer } from "../../features/conversation/SimpleComposer";
 import {
   Sidebar,
@@ -30,6 +34,7 @@ interface DesktopShellProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
+  readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onSend: (bufferId: number, text: string) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
@@ -43,6 +48,7 @@ export function DesktopShell(props: DesktopShellProps) {
     document.visibilityState === "visible" && document.hasFocus(),
   );
   let listController: SidebarListController | undefined;
+  let messageListController: MessageListController | undefined;
   let navigationCommitted = false;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
@@ -78,6 +84,7 @@ export function DesktopShell(props: DesktopShellProps) {
       "list.open": () => listController?.open(),
       "list.previous": () => listController?.previous(),
       "members.toggle": () => {},
+      "message.jump-bottom": () => messageListController?.jumpBottom(),
       "network.add": () => {},
       "network.open-server": (command) =>
         showBuffer(command.targetBufferId, true),
@@ -182,8 +189,16 @@ export function DesktopShell(props: DesktopShellProps) {
             />
             <div class={styles.conversationBody}>
               <MessageList
+                bufferId={activeBuffer()?.id}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
+                memberships={
+                  props.memberships.get(activeBuffer()?.id ?? -1) ?? []
+                }
                 onLiveEdgeChange={setAtLiveEdge}
+                readThrough={activeBuffer()?.read_through}
+                registerController={(controller) => {
+                  messageListController = controller;
+                }}
               />
               <SimpleComposer
                 bufferTitle={activeBuffer()?.title ?? ""}

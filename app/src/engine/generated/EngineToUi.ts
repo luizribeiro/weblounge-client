@@ -2,6 +2,7 @@
 import type { BufferId } from "./BufferId";
 import type { BufferProjection } from "./BufferProjection";
 import type { LocalSendId } from "./LocalSendId";
+import type { MembershipProjection } from "./MembershipProjection";
 import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
@@ -82,7 +83,15 @@ buffer_id: BufferId,
 /**
  * Older rows in established timeline order.
  */
-messages: Array<MessageProjection>, } | { "type": "message_confirmed",
+messages: Array<MessageProjection>, } | { "type": "membership_changed",
+/**
+ * Destination channel buffer.
+ */
+buffer_id: BufferId,
+/**
+ * Complete current projection for the run.
+ */
+membership: MembershipProjection, } | { "type": "message_confirmed",
 /**
  * Destination buffer.
  */

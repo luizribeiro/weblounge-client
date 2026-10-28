@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::{
-    BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MessageAuthorship,
-    MessageDelivery, MessageId, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, direct_target::DirectTarget, name_key::NameKey,
+    BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
+    MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
+    direct_target::DirectTarget, name_key::NameKey,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,6 +47,8 @@ struct BufferState {
     projection: BufferProjection,
     key: Option<NameKey>,
     timeline: Vec<TimelineRecord>,
+    memberships: Vec<MembershipProjection>,
+    last_membership: Option<MessageId>,
     direct_account: Option<papo::AccountName>,
     read_at_ms: Option<i64>,
     history_requested: bool,
@@ -125,6 +128,8 @@ impl NetworkModel {
             },
             key: None,
             timeline: Vec::new(),
+            memberships: Vec::new(),
+            last_membership: None,
             direct_account: None,
             read_at_ms: None,
             history_requested: true,
@@ -285,6 +290,14 @@ impl NetworkModel {
         } else {
             TimelineOrigin::Live
         };
+        let mode_symbol = match &message.conversation {
+            papo::Conversation::Channel(channel) => state
+                .channel(channel)
+                .and_then(|channel| channel.member(message.actor.nick()))
+                .and_then(|member| member.prefixes().first())
+                .map(|prefix| prefix.symbol()),
+            _ => None,
+        };
         let incoming = Incoming {
             direct_account: match &conversation {
                 NameKey::Direct(_) => message.actor.account().name().cloned(),
@@ -293,6 +306,12 @@ impl NetworkModel {
             conversation,
             author: message.actor.nick().to_string(),
             text: message.text.clone(),
+            kind: match message.kind {
+                papo::MessageKind::Action => MessageKind::Action,
+                _ => MessageKind::Text,
+            },
+            bot: message.actor.is_bot() == Some(true),
+            mode_symbol,
             authorship: map_authorship(message.authorship),
             msgid: message.msgid.as_ref().map(ToString::to_string),
             server_time_ms: message.server_time.map(time_millis),
@@ -317,6 +336,9 @@ impl NetworkModel {
             id: self.allocate_message_id(),
             author: self.network.nickname.clone(),
             text: text.clone(),
+            kind: MessageKind::Text,
+            bot: false,
+            mode_symbol: None,
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
             mentioned: false,
@@ -341,6 +363,52 @@ impl NetworkModel {
                 messages: vec![message],
             }],
         ))
+    }
+
+    pub(crate) fn receive_membership(
+        &mut self,
+        channel: &papo::ChannelName,
+        kind: MembershipKind,
+        nick: String,
+        server_time_ms: Option<i64>,
+        received_at_ms: i64,
+    ) -> Option<EngineToUi> {
+        let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let previous = self.buffers.get(&buffer_id)?.last_membership;
+        if let Some(previous) = previous {
+            let buffer = self.buffers.get_mut(&buffer_id)?;
+            if let Some(run) = buffer
+                .memberships
+                .iter_mut()
+                .find(|run| run.id == previous && run.kind == kind)
+            {
+                if !run.nicks.contains(&nick) {
+                    run.nicks.push(nick);
+                }
+                run.server_time_ms = server_time_ms.or(run.server_time_ms);
+                run.received_at_ms = received_at_ms;
+                return Some(EngineToUi::MembershipChanged {
+                    buffer_id,
+                    membership: run.clone(),
+                });
+            }
+        }
+        let membership = MembershipProjection {
+            id: self.allocate_message_id(),
+            kind,
+            nicks: vec![nick],
+            server_time_ms,
+            received_at_ms,
+        };
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        buffer.last_membership = Some(membership.id);
+        buffer.memberships.push(membership.clone());
+        let excess = buffer.memberships.len().saturating_sub(self.window_limit);
+        buffer.memberships.drain(..excess);
+        Some(EngineToUi::MembershipChanged {
+            buffer_id,
+            membership,
+        })
     }
 
     pub(crate) fn confirm_send(
@@ -554,6 +622,9 @@ impl NetworkModel {
             id: self.allocate_message_id(),
             author: incoming.author,
             text: incoming.text,
+            kind: incoming.kind,
+            bot: incoming.bot,
+            mode_symbol: incoming.mode_symbol,
             authorship: incoming.authorship,
             nick_color_index,
             mentioned,
@@ -635,6 +706,8 @@ impl NetworkModel {
                 projection: projection.clone(),
                 key: Some(key.clone()),
                 timeline: Vec::new(),
+                memberships: Vec::new(),
+                last_membership: None,
                 direct_account,
                 read_at_ms: None,
                 history_requested: false,
@@ -670,6 +743,7 @@ impl NetworkModel {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return Err(StateError::MissingBuffer(buffer_id));
         };
+        buffer.last_membership = None;
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
         let excess = buffer.timeline.len().saturating_sub(self.window_limit);
@@ -770,6 +844,9 @@ struct Incoming {
     direct_account: Option<papo::AccountName>,
     author: String,
     text: String,
+    kind: MessageKind,
+    bot: bool,
+    mode_symbol: Option<char>,
     authorship: MessageAuthorship,
     msgid: Option<String>,
     server_time_ms: Option<i64>,
@@ -811,7 +888,7 @@ fn order_key(record: &TimelineRecord) -> (i64, i64, u64) {
     )
 }
 
-fn time_millis(time: SystemTime) -> i64 {
+pub(crate) fn time_millis(time: SystemTime) -> i64 {
     match time.duration_since(UNIX_EPOCH) {
         Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
         Err(error) => -i64::try_from(error.duration().as_millis()).unwrap_or(i64::MAX),
@@ -825,7 +902,7 @@ mod tests {
     use super::{
         Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, nick_color_index, time_millis,
     };
-    use crate::{BufferKind, MessageAuthorship, NetworkId};
+    use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
 
     fn incoming(
         state: &papo::State,
@@ -840,6 +917,9 @@ mod tests {
             direct_account: None,
             author: "alice".into(),
             text: text.into(),
+            kind: crate::MessageKind::Text,
+            bot: false,
+            mode_symbol: None,
             authorship: MessageAuthorship::Other,
             msgid: msgid.map(str::to_owned),
             server_time_ms,
@@ -911,6 +991,91 @@ mod tests {
         );
 
         assert_eq!(timeline(&model), ["earlier", "later"]);
+    }
+
+    #[test]
+    fn consecutive_membership_changes_collapse_until_a_message() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(
+            incoming(
+                &state,
+                "before",
+                Some("m1"),
+                Some(1),
+                1,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let channel = state.name_rules().channel("#room");
+        let first = model
+            .receive_membership(&channel, MembershipKind::Joined, "mel".into(), Some(2), 2)
+            .expect("membership row");
+        let second = model
+            .receive_membership(&channel, MembershipKind::Joined, "rafa".into(), Some(3), 3)
+            .expect("collapsed row");
+        let (
+            EngineToUi::MembershipChanged {
+                membership: first, ..
+            },
+            EngineToUi::MembershipChanged {
+                membership: second, ..
+            },
+        ) = (first, second)
+        else {
+            panic!("membership projections expected");
+        };
+        assert_eq!(first.id, second.id);
+        assert_eq!(second.nicks, ["mel", "rafa"]);
+
+        model.receive_incoming(
+            incoming(
+                &state,
+                "break",
+                Some("m2"),
+                Some(4),
+                4,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let EngineToUi::MembershipChanged {
+            membership: third, ..
+        } = model
+            .receive_membership(&channel, MembershipKind::Joined, "cyd".into(), Some(5), 5)
+            .expect("new membership row")
+        else {
+            panic!("membership projection expected");
+        };
+        assert_ne!(second.id, third.id);
+    }
+
+    #[test]
+    fn message_projection_keeps_action_bot_and_mode_metadata() {
+        let (mut model, state) = model(10);
+        let mut message = incoming(
+            &state,
+            "waves",
+            Some("action"),
+            Some(1),
+            1,
+            TimelineOrigin::Live,
+        );
+        message.kind = crate::MessageKind::Action;
+        message.bot = true;
+        message.mode_symbol = Some('@');
+
+        let projection = model
+            .receive_incoming(message, &state)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended { mut messages, .. } => messages.pop(),
+                _ => None,
+            })
+            .expect("message projection");
+        assert_eq!(projection.kind, crate::MessageKind::Action);
+        assert!(projection.bot);
+        assert_eq!(projection.mode_symbol, Some('@'));
     }
 
     #[test]

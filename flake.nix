@@ -154,7 +154,7 @@
           version = "0.1.0";
           src = appSource;
           fetcherVersion = 5;
-          hash = "sha256-PoFTXdWNS24vSnzR3912vtXtkf0TAkef8YD+WKhU3g0=";
+          hash = "sha256-WOnLqtnVYDbMWWuIY0mTuQ9AbRhUIxqalLchfijXZq4=";
         };
         appCheck =
           name: command:

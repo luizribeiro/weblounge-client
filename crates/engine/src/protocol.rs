@@ -112,6 +112,16 @@ pub enum MessageDelivery {
     Failed,
 }
 
+/// Semantic presentation of a chat message.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageKind {
+    /// A regular chat line.
+    Text,
+    /// A CTCP ACTION displayed as `/me` prose.
+    Action,
+}
+
 /// UI projection of one chat message.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct MessageProjection {
@@ -121,6 +131,12 @@ pub struct MessageProjection {
     pub author: String,
     /// Plain chat text.
     pub text: String,
+    /// Whether the message is regular text or an action.
+    pub kind: MessageKind,
+    /// Whether IRC metadata identifies the author as a bot.
+    pub bot: bool,
+    /// Highest channel membership prefix known when the message arrived.
+    pub mode_symbol: Option<char>,
     /// Authorship relative to this client.
     pub authorship: MessageAuthorship,
     /// Stable palette index derived with the network's IRC name rules.
@@ -139,6 +155,35 @@ pub struct MessageProjection {
     pub server_time_ms: Option<i64>,
     /// Local receipt timestamp in Unix milliseconds.
     #[ts(type = "number")]
+    pub received_at_ms: i64,
+}
+
+/// Kind of a collapsed channel membership run.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MembershipKind {
+    /// One or more users joined.
+    Joined,
+    /// One or more users left the channel with PART.
+    Parted,
+    /// One or more users disconnected from IRC.
+    Quit,
+}
+
+/// Consecutive membership changes collapsed by the engine.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct MembershipProjection {
+    /// Stable timeline identity.
+    pub id: MessageId,
+    /// Membership transition shared by every nick in this run.
+    pub kind: MembershipKind,
+    /// Nicks in arrival order.
+    pub nicks: Vec<String>,
+    #[ts(type = "number | null")]
+    /// Timestamp on the newest event in the run, when supplied by the server.
+    pub server_time_ms: Option<i64>,
+    #[ts(type = "number")]
+    /// Local receipt timestamp of the newest event in the run.
     pub received_at_ms: i64,
 }
 
@@ -310,6 +355,13 @@ pub enum EngineToUi {
         buffer_id: BufferId,
         /// Older rows in established timeline order.
         messages: Vec<MessageProjection>,
+    },
+    /// Insert or replace an engine-collapsed membership run.
+    MembershipChanged {
+        /// Destination channel buffer.
+        buffer_id: BufferId,
+        /// Complete current projection for the run.
+        membership: MembershipProjection,
     },
     /// Replace an optimistic row with its `papo::Sent` confirmation.
     MessageConfirmed {

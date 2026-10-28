@@ -7,6 +7,7 @@ import { IncompatibleBuildError } from "./engine/EngineClient";
 import type {
   BufferProjection,
   EngineClientMessage,
+  MembershipProjection,
   MessageProjection,
   NetworkProjection,
 } from "./engine/protocol";
@@ -35,6 +36,9 @@ export function App(props: AppProps) {
   const [messages, setMessages] = createSignal<
     ReadonlyMap<number, readonly MessageProjection[]>
   >(new Map());
+  const [memberships, setMemberships] = createSignal<
+    ReadonlyMap<number, readonly MembershipProjection[]>
+  >(new Map());
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
 
@@ -58,7 +62,13 @@ export function App(props: AppProps) {
           "This browser uses one connection per tab because SharedWorker is unavailable.",
         );
       }
-      applyDebugEvent(message, setNetworks, setBuffers, setMessages);
+      applyDebugEvent(
+        message,
+        setNetworks,
+        setBuffers,
+        setMessages,
+        setMemberships,
+      );
     });
     const updateVisibility = () => {
       mountedClient.setVisibility(document.hidden ? "hidden" : "visible");
@@ -70,6 +80,76 @@ export function App(props: AppProps) {
       new URL(window.location.href),
       (path) => window.history.replaceState(window.history.state, "", path),
     );
+    const debugMessages = debugTimelineSize(new URL(window.location.href));
+    if (debugMessages > 0) {
+      const now = Date.now();
+      const authors = ["ana", "luiz", "bruno", "cyd", "tomo", "mel", "rafa"];
+      setNetworks([
+        { id: 99, label: "Local Ergo", nickname: "weblounge", state: "online" },
+      ]);
+      setBuffers([
+        {
+          id: 100,
+          network_id: 99,
+          kind: "channel",
+          title: "#weblounge",
+          topic: "A comfortable place to talk about IRC and the open web",
+          unread: 10,
+          mentions: 1,
+          read_through: Math.max(1, debugMessages - 10),
+        },
+      ]);
+      setMessages(
+        new Map([
+          [
+            100,
+            Array.from({ length: debugMessages }, (_, index) => {
+              const author = authors[index % authors.length] ?? "ana";
+              const yesterday =
+                debugMessages <= 100 && index < debugMessages / 2;
+              return {
+                id: index + 1,
+                author,
+                text:
+                  index === debugMessages - 6
+                    ? "weblounge: the virtual timeline feels instant"
+                    : `message ${index + 1} from ${author} about IRC history and the open web`,
+                kind: index === debugMessages - 8 ? "action" : "text",
+                bot: author === "tomo",
+                mode_symbol: author === "luiz" ? "@" : null,
+                authorship: author === "luiz" ? "own" : "other",
+                nick_color_index: index % 6,
+                mentioned: index === debugMessages - 6,
+                delivery: "received",
+                local_send_id: null,
+                server_ids: [`debug-${index + 1}`],
+                server_time_ms:
+                  now -
+                  (debugMessages - index) * 60_000 -
+                  (yesterday ? 86_400_000 : 0),
+                received_at_ms: now - (debugMessages - index) * 60_000,
+              } satisfies MessageProjection;
+            }),
+          ],
+        ]),
+      );
+      setMemberships(
+        new Map([
+          [
+            100,
+            [
+              {
+                id: debugMessages + 1,
+                kind: "joined",
+                nicks: ["mel", "rafa", "cyd"],
+                server_time_ms: now - 5 * 60_000,
+                received_at_ms: now - 5 * 60_000,
+              },
+            ],
+          ],
+        ]),
+      );
+    }
     void startEngine(mountedClient, setEngineStatus, debugPassword);
     onCleanup(() => {
       unregisterContextSurface();
@@ -99,6 +179,7 @@ export function App(props: AppProps) {
         networks={networks()}
         buffers={buffers()}
         messages={messages()}
+        memberships={memberships()}
         onMarkRead={(bufferId, through) => {
           if (client === undefined) return;
           void client.send({
@@ -123,6 +204,14 @@ export function App(props: AppProps) {
       />
     </div>
   );
+}
+
+function debugTimelineSize(url: URL): number {
+  if (__DEBUG_IRC_CONFIG__ === null) return 0;
+  const value = Number(url.searchParams.get("debug-messages"));
+  return Number.isSafeInteger(value) && value > 0 && value <= 10_000
+    ? value
+    : 0;
 }
 
 async function startEngine(
@@ -184,6 +273,11 @@ function applyDebugEvent(
       current: ReadonlyMap<number, readonly MessageProjection[]>,
     ) => ReadonlyMap<number, readonly MessageProjection[]>,
   ) => void,
+  setMemberships: (
+    update: (
+      current: ReadonlyMap<number, readonly MembershipProjection[]>,
+    ) => ReadonlyMap<number, readonly MembershipProjection[]>,
+  ) => void,
 ): void {
   if (message.type === "network_state_changed") {
     setNetworks((current) => upsert(current, message.network));
@@ -229,6 +323,21 @@ function applyDebugEvent(
           (item) => !prependedIds.has(item.id),
         ),
       ]);
+      return next;
+    });
+  } else if (message.type === "membership_changed") {
+    setMemberships((current) => {
+      const next = new Map(current);
+      const existing = current.get(message.buffer_id) ?? [];
+      const found = existing.some((item) => item.id === message.membership.id);
+      next.set(
+        message.buffer_id,
+        found
+          ? existing.map((item) =>
+              item.id === message.membership.id ? message.membership : item,
+            )
+          : [...existing, message.membership],
+      );
       return next;
     });
   } else if (message.type === "message_confirmed") {

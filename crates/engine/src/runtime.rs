@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::mpsc;
 
 use crate::{
-    BufferId, Command, CommandEnvelope, EngineToUi, MessageId, NetworkConnectionState, NetworkId,
+    BufferId, Command, CommandEnvelope, EngineToUi, MembershipKind, MessageId,
+    NetworkConnectionState, NetworkId,
     direct_target::DirectSendError,
-    state::{NetworkModel, PendingSend, ReadAdvance, SendTarget},
+    state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
@@ -507,17 +508,24 @@ fn process_event(
         papo::Event::Joined(joined) => {
             process_join(&mut running.model, &snapshot, &joined, &mut output)
         }
+        papo::Event::Parted(parted) => {
+            process_part(&mut running.model, &snapshot, &parted, &mut output);
+            Vec::new()
+        }
+        papo::Event::Quit(quit) => {
+            process_quit(&mut running.model, &quit, &mut output);
+            Vec::new()
+        }
         papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
             output.extend(running.model.sync_channels(&snapshot));
             Vec::new()
         }
         papo::Event::Disconnected(disconnected) => {
-            let connection = if disconnected.is_reconnecting() {
-                NetworkConnectionState::Reconnecting
-            } else {
-                NetworkConnectionState::Stopped
-            };
-            output.push(running.model.set_connection(connection, None));
+            output.push(
+                running
+                    .model
+                    .set_connection(disconnected_state(&disconnected), None),
+            );
             Vec::new()
         }
         _ => Vec::new(),
@@ -527,6 +535,48 @@ fn process_event(
         let _ = outbound.send(event);
     }
     history_targets
+}
+
+fn disconnected_state(disconnected: &papo::Disconnected) -> NetworkConnectionState {
+    if disconnected.is_reconnecting() {
+        NetworkConnectionState::Reconnecting
+    } else {
+        NetworkConnectionState::Stopped
+    }
+}
+
+fn process_part(
+    model: &mut NetworkModel,
+    snapshot: &papo::State,
+    parted: &papo::event::Parted,
+    output: &mut Vec<EngineToUi>,
+) {
+    if parted.authorship != papo::Authorship::Own
+        && let Some(event) = model.receive_membership(
+            &parted.channel,
+            MembershipKind::Parted,
+            parted.actor.nick().to_string(),
+            parted.server_time.map(time_millis),
+            time_millis(parted.received_at),
+        )
+    {
+        output.push(event);
+    }
+    output.extend(model.sync_channels(snapshot));
+}
+
+fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit, output: &mut Vec<EngineToUi>) {
+    for channel in &quit.channels {
+        if let Some(event) = model.receive_membership(
+            channel,
+            MembershipKind::Quit,
+            quit.actor.nick().to_string(),
+            quit.server_time.map(time_millis),
+            time_millis(quit.received_at),
+        ) {
+            output.push(event);
+        }
+    }
 }
 
 fn process_join(
@@ -542,6 +592,15 @@ fn process_join(
             .into_iter()
             .collect()
     } else {
+        if let Some(event) = model.receive_membership(
+            &joined.channel,
+            MembershipKind::Joined,
+            joined.actor.nick().to_string(),
+            joined.server_time.map(time_millis),
+            time_millis(joined.received_at),
+        ) {
+            output.push(event);
+        }
         Vec::new()
     }
 }
@@ -567,20 +626,58 @@ fn process_history(
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut unread = None;
     for item in page.items {
-        if let papo::Event::Message(message) = item {
-            for event in running.model.receive(&message, true, &snapshot) {
-                match event {
-                    EngineToUi::MessagesAppended {
-                        buffer_id,
-                        messages,
-                    } => timeline
-                        .get_or_insert_with(|| (buffer_id, Vec::new()))
-                        .1
-                        .extend(messages),
-                    EngineToUi::UnreadChanged { .. } => unread = Some(event),
-                    _ => output.push(event),
+        match item {
+            papo::Event::Message(message) => {
+                for event in running.model.receive(&message, true, &snapshot) {
+                    match event {
+                        EngineToUi::MessagesAppended {
+                            buffer_id,
+                            messages,
+                        } => timeline
+                            .get_or_insert_with(|| (buffer_id, Vec::new()))
+                            .1
+                            .extend(messages),
+                        EngineToUi::UnreadChanged { .. } => unread = Some(event),
+                        _ => output.push(event),
+                    }
                 }
             }
+            papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
+                if let Some(event) = running.model.receive_membership(
+                    &joined.channel,
+                    MembershipKind::Joined,
+                    joined.actor.nick().to_string(),
+                    joined.server_time.map(time_millis),
+                    time_millis(joined.received_at),
+                ) {
+                    output.push(event);
+                }
+            }
+            papo::Event::Parted(parted) if parted.authorship != papo::Authorship::Own => {
+                if let Some(event) = running.model.receive_membership(
+                    &parted.channel,
+                    MembershipKind::Parted,
+                    parted.actor.nick().to_string(),
+                    parted.server_time.map(time_millis),
+                    time_millis(parted.received_at),
+                ) {
+                    output.push(event);
+                }
+            }
+            papo::Event::Quit(quit) => {
+                for channel in &quit.channels {
+                    if let Some(event) = running.model.receive_membership(
+                        channel,
+                        MembershipKind::Quit,
+                        quit.actor.nick().to_string(),
+                        quit.server_time.map(time_millis),
+                        time_millis(quit.received_at),
+                    ) {
+                        output.push(event);
+                    }
+                }
+            }
+            _ => {}
         }
     }
     if let Some((buffer_id, mut messages)) = timeline {

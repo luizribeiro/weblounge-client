@@ -10,8 +10,9 @@ use tokio::sync::mpsc;
 
 pub use protocol::{
     BufferId, BufferKind, BufferProjection, Command, CommandEnvelope, EngineToUi, Hello,
-    LocalSendId, MessageAuthorship, MessageDelivery, MessageId, MessageProjection,
-    NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
+    LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery,
+    MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
+    NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.

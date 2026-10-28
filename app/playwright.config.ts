@@ -10,6 +10,7 @@ const serverCommand = devServer
 
 export default defineConfig({
   testDir: "./e2e",
+  workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
   use: {
     baseURL: `http://127.0.0.1:${port}`,
   },

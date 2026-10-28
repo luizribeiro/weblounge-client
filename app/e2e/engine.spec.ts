@@ -92,6 +92,62 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("anchors live messages and preserves the away boundary", async ({
+    page,
+  }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await expect(
+      page.getByRole("heading", { name: /#weblounge-test/ }),
+    ).toBeVisible();
+    const bot = await IrcClient.connect(
+      "timeline-bot",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const list = page.locator("[data-message-list]");
+    const active = page.locator('[data-buffer-id][aria-current="page"]');
+    try {
+      for (let index = 0; index < 40; index += 1) {
+        await bot.privmsgConfirmed("#weblounge-test", `timeline seed ${index}`);
+      }
+      await expect(
+        page.getByText("timeline seed 39", { exact: true }),
+      ).toBeVisible();
+      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+      await expect(active).toHaveAttribute("data-unread", "0", {
+        timeout: 3_000,
+      });
+
+      await list.evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event("scroll"));
+      });
+      await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
+      const away = `while away ${Date.now()}`;
+      await bot.privmsgConfirmed("#weblounge-test", away);
+      await expect(
+        page.getByRole("button", { name: /new message/ }),
+      ).toBeVisible();
+      await expect
+        .poll(async () => Number(await active.getAttribute("data-unread")))
+        .toBeGreaterThan(0);
+
+      await page.keyboard.press("End");
+      await expect(
+        page.getByRole("button", { name: /new message/ }),
+      ).toHaveCount(0);
+      await expect(page.getByText(away, { exact: true })).toBeVisible();
+      await expect(page.getByText("New", { exact: true })).toBeVisible();
+      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+      await expect(active).toHaveAttribute("data-unread", "0", {
+        timeout: 3_000,
+      });
+    } finally {
+      bot.close();
+    }
+  });
+
   test("broadcasts pending and confirmed sends to a second tab", async ({
     context,
     page: secondTab,
@@ -116,6 +172,35 @@ test.describe("local Ergo user flow", () => {
     await expect
       .poll(() => observedDeliveries(secondTab))
       .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
+
+    const bot = await IrcClient.connect(
+      "read-sync-bot",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    try {
+      await secondTab.locator("[data-message-list]").evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event("scroll"));
+      });
+      await firstTab.bringToFront();
+      await firstTab.keyboard.press("End");
+      bot.privmsg("#weblounge-test", `read sync ${Date.now()}`);
+      const secondActive = secondTab.locator(
+        '[data-buffer-id][aria-current="page"]',
+      );
+      await expect
+        .poll(async () =>
+          Number(await secondActive.getAttribute("data-unread")),
+        )
+        .toBeGreaterThan(0);
+      await expect(secondActive).toHaveAttribute("data-unread", "0", {
+        timeout: 3_000,
+      });
+    } finally {
+      bot.close();
+    }
   });
 });
 
@@ -155,5 +240,14 @@ async function observedDeliveries(
     () =>
       (window as Window & { observedDeliveries?: string[] })
         .observedDeliveries ?? [],
+  );
+}
+
+async function distanceFromBottom(
+  list: import("@playwright/test").Locator,
+): Promise<number> {
+  return list.evaluate(
+    (element) =>
+      element.scrollHeight - element.scrollTop - element.clientHeight,
   );
 }

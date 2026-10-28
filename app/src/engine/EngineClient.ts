@@ -7,6 +7,7 @@ import type {
   EngineToUi,
   Hello,
   IncompatibleBuild,
+  MembershipProjection,
   MessageProjection,
   NetworkProjection,
   ResyncReason,
@@ -351,6 +352,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "membership_changed": {
+      const membership = decodeMembership(value.membership);
+      if (typeof value.buffer_id === "number" && membership !== undefined) {
+        return { type: messageType, buffer_id: value.buffer_id, membership };
+      }
+      break;
+    }
     case "message_confirmed": {
       const message = decodeMessage(value.message);
       if (
@@ -427,11 +435,33 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "buffer_added" ||
     value === "messages_appended" ||
     value === "messages_prepended" ||
+    value === "membership_changed" ||
     value === "message_confirmed" ||
     value === "message_failed" ||
     value === "unread_changed" ||
     value === "read_marker_moved"
   );
+}
+
+function decodeMembership(value: unknown): MembershipProjection | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "number" ||
+    !isOneOf(value.kind, ["joined", "parted", "quit"]) ||
+    !isStringArray(value.nicks) ||
+    !(
+      value.server_time_ms === null || typeof value.server_time_ms === "number"
+    ) ||
+    typeof value.received_at_ms !== "number"
+  )
+    return undefined;
+  return {
+    id: value.id,
+    kind: value.kind,
+    nicks: value.nicks,
+    server_time_ms: value.server_time_ms,
+    received_at_ms: value.received_at_ms,
+  };
 }
 
 function decodeNetwork(value: unknown): NetworkProjection | undefined {
@@ -484,6 +514,9 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.author !== "string" ||
     typeof value.text !== "string" ||
+    !isOneOf(value.kind, ["text", "action"]) ||
+    typeof value.bot !== "boolean" ||
+    !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
     typeof value.nick_color_index !== "number" ||
     typeof value.mentioned !== "boolean" ||
@@ -508,6 +541,9 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     id: value.id,
     author: value.author,
     text: value.text,
+    kind: value.kind,
+    bot: value.bot,
+    mode_symbol: value.mode_symbol,
     authorship: value.authorship,
     nick_color_index: value.nick_color_index,
     mentioned: value.mentioned,

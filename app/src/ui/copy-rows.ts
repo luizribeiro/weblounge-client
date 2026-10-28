@@ -6,6 +6,7 @@ export type CopyRow =
       readonly text: string;
     }
   | { readonly kind: "action"; readonly author: string; readonly text: string }
+  | { readonly kind: "membership"; readonly text: string }
   | { readonly kind: "day-divider"; readonly label: string };
 
 export function serializeCopyRows(rows: readonly CopyRow[]): string {
@@ -20,6 +21,8 @@ function serializeRow(row: CopyRow): string {
       return `* ${singleLine(row.author)} ${singleLine(row.text)}`;
     case "day-divider":
       return `--- ${singleLine(row.label)} ---`;
+    case "membership":
+      return singleLine(row.text);
   }
 }
 

@@ -3,6 +3,7 @@ import type { LocalSendId } from "./LocalSendId";
 import type { MessageAuthorship } from "./MessageAuthorship";
 import type { MessageDelivery } from "./MessageDelivery";
 import type { MessageId } from "./MessageId";
+import type { MessageKind } from "./MessageKind";
 
 /**
  * UI projection of one chat message.
@@ -20,6 +21,18 @@ author: string,
  * Plain chat text.
  */
 text: string,
+/**
+ * Whether the message is regular text or an action.
+ */
+kind: MessageKind,
+/**
+ * Whether IRC metadata identifies the author as a bot.
+ */
+bot: boolean,
+/**
+ * Highest channel membership prefix known when the message arrived.
+ */
+mode_symbol: string | null,
 /**
  * Authorship relative to this client.
  */

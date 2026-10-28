@@ -6,6 +6,7 @@ export type CommandId =
   | "list.open"
   | "list.previous"
   | "members.toggle"
+  | "message.jump-bottom"
   | "network.add"
   | "network.open-server"
   | "pane.show-buffer"
@@ -84,6 +85,12 @@ const specs: readonly CommandSpec[] = [
   ),
   command("network.add", "Add network", alwaysAvailable),
   command("network.open-server", "Open server messages", alwaysAvailable),
+  command(
+    "message.jump-bottom",
+    "Jump to latest message",
+    alwaysAvailable,
+    key("End", "End", "desktop"),
+  ),
   command("pane.show-buffer", "Show buffer", alwaysAvailable),
   command(
     "buffer.previous",

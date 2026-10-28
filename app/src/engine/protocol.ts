@@ -2,6 +2,7 @@ import type { BufferProjection } from "./generated/BufferProjection";
 import type { CommandEnvelope } from "./generated/CommandEnvelope";
 import type { EngineToUi } from "./generated/EngineToUi";
 import type { Hello } from "./generated/Hello";
+import type { MembershipProjection } from "./generated/MembershipProjection";
 import type { MessageProjection } from "./generated/MessageProjection";
 import type { NetworkProjection } from "./generated/NetworkProjection";
 import type { UiToEngine } from "./generated/UiToEngine";
@@ -11,6 +12,7 @@ export type {
   CommandEnvelope,
   EngineToUi,
   Hello,
+  MembershipProjection,
   MessageProjection,
   NetworkProjection,
   UiToEngine,

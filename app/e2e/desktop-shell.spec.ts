@@ -65,6 +65,15 @@ test.describe("desktop shell against local Ergo", () => {
     try {
       bot.privmsg("#weblounge-test", message);
       await expect(page.getByText(message, { exact: true })).toBeVisible();
+      await page.goto("/?debug-messages=40&irc-password=weblounge-test");
+      await expect(
+        page.getByText("weblounge: the virtual timeline feels instant", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(page.locator("[data-membership-row]")).toContainText(
+        "mel, rafa and cyd joined",
+      );
       await mkdir(screenshotDirectory, { recursive: true });
       await page.screenshot({
         path: path.join(screenshotDirectory, "desktop-shell-light.png"),
