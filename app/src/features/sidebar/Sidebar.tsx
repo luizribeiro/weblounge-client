@@ -4,15 +4,11 @@ import type {
   CommandId,
   CommandRegistry,
 } from "../../commands/command-registry";
-import type {
-  BufferProjection,
-  NetworkProjection,
-} from "../../engine/protocol";
+import type { NetworkProjection } from "../../engine/protocol";
 import { Line } from "../../ui/Line";
+import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
-import { SidebarRow } from "./SidebarRow";
-
-type SidebarBuffer = BufferProjection & { readonly muted?: boolean };
+import { footerStatus, SidebarFooter } from "./SidebarFooter";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -113,63 +109,23 @@ export function Sidebar(props: SidebarProps) {
         data-command-scope="list"
       >
         <For each={props.networks}>
-          {(network) => {
-            const networkBuffers = () =>
-              props.buffers.filter(
+          {(network) => (
+            <NetworkSection
+              activeBufferId={props.activeBufferId}
+              buffers={props.buffers.filter(
                 (buffer) => buffer.network_id === network.id,
-              );
-            const server = () =>
-              networkBuffers().find((buffer) => buffer.kind === "server");
-            const conversations = () =>
-              networkBuffers().filter((buffer) => buffer.kind !== "server");
-            return (
-              <section aria-label={network.label} class={styles.network}>
-                {server() !== undefined && (
-                  <button
-                    aria-current={
-                      props.activeBufferId === server()?.id ? "page" : undefined
-                    }
-                    aria-label={`${network.label}, ${network.state}`}
-                    class={styles.networkHeader}
-                    onClick={() => run("network.open-server", server())}
-                    onFocus={() => setRovingId(server()?.id)}
-                    ref={(element) => {
-                      const id = server()?.id;
-                      if (id !== undefined) elements.set(id, element);
-                    }}
-                    tabIndex={rovingId() === server()?.id ? 0 : -1}
-                    type="button"
-                  >
-                    <span aria-hidden="true" class={styles.tile}>
-                      {network.label.slice(0, 1).toLocaleUpperCase()}
-                    </span>
-                    <Line class={styles.networkName}>{network.label}</Line>
-                    <span
-                      aria-hidden="true"
-                      class={styles.statusDot}
-                      data-network-state={network.state}
-                    />
-                  </button>
-                )}
-                <div class={styles.rows}>
-                  <For each={conversations()}>
-                    {(buffer) => (
-                      <SidebarRow
-                        active={props.activeBufferId === buffer.id}
-                        badgesSuppressed={props.visibleBufferIds.has(buffer.id)}
-                        buffer={buffer}
-                        muted={buffer.muted === true}
-                        onClick={() => run("pane.show-buffer", buffer)}
-                        onFocus={() => setRovingId(buffer.id)}
-                        ref={(element) => elements.set(buffer.id, element)}
-                        tabIndex={rovingId() === buffer.id ? 0 : -1}
-                      />
-                    )}
-                  </For>
-                </div>
-              </section>
-            );
-          }}
+              )}
+              network={network}
+              onFocus={setRovingId}
+              onOpenBuffer={(buffer) => run("pane.show-buffer", buffer)}
+              onOpenServer={(buffer) => run("network.open-server", buffer)}
+              registerElement={(id, element) => {
+                if (id !== undefined) elements.set(id, element);
+              }}
+              rovingId={rovingId()}
+              visibleBufferIds={props.visibleBufferIds}
+            />
+          )}
         </For>
         <button
           class={styles.addNetwork}
@@ -181,24 +137,11 @@ export function Sidebar(props: SidebarProps) {
         </button>
       </nav>
 
-      <footer class={styles.footer}>
-        <span aria-hidden="true" class={styles.userDot} />
-        <div class={styles.userIdentity}>
-          <Line class={styles.nickname}>
-            {props.networks[0]?.nickname ?? "Offline"}
-          </Line>
-          <Line class={styles.userStatus}>{footerStatus(props.networks)}</Line>
-        </div>
-        <button
-          aria-label="Settings"
-          class={styles.settings}
-          onClick={() => run("settings.open")}
-          title={tooltip(props.registry, "settings.open")}
-          type="button"
-        >
-          <span aria-hidden="true">⚙</span>
-        </button>
-      </footer>
+      <SidebarFooter
+        networks={props.networks}
+        onOpenSettings={() => run("settings.open")}
+        settingsTooltip={tooltip(props.registry, "settings.open")}
+      />
     </aside>
   );
 }
@@ -224,20 +167,6 @@ function kindOrder(buffer: SidebarBuffer): number {
 function networkSummary(networks: readonly NetworkProjection[]): string {
   const count = networks.length;
   return `${count} ${count === 1 ? "network" : "networks"} · ${footerStatus(networks)}`;
-}
-
-function footerStatus(networks: readonly NetworkProjection[]): string {
-  if (
-    networks.some(
-      (network) =>
-        network.state === "connecting" || network.state === "reconnecting",
-    )
-  ) {
-    return "connecting";
-  }
-  return networks.some((network) => network.state === "online")
-    ? "connected"
-    : "offline";
 }
 
 function tooltip(registry: CommandRegistry, id: CommandId): string {
