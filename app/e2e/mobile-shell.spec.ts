@@ -44,6 +44,51 @@ test.describe("mobile shell against local Ergo", () => {
 
       const target = page.getByRole("button", { name: targetNick });
       await expect(target).toContainText(`preview from ${targetNick}`);
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
+      await page.getByRole("button", { name: "Show members" }).click();
+      const drawerMember = page.getByRole("button", {
+        name: `Open direct message with ${targetNick}`,
+      });
+      await expect(drawerMember).toBeVisible();
+      await page
+        .getByRole("searchbox", { name: "Filter members" })
+        .fill(targetNick);
+      await expect(drawerMember).toBeVisible();
+      await nativeFeelAudit(page);
+      await page.goBack();
+      await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(
+        0,
+      );
+      await expect(
+        page.getByRole("heading", { name: "#weblounge-test" }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Show members" }).click();
+      await page
+        .getByRole("searchbox", { name: "Filter members" })
+        .fill(targetNick);
+      await page
+        .getByRole("button", {
+          name: `Open direct message with ${targetNick}`,
+        })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: targetNick }),
+      ).toBeVisible();
+      await page
+        .locator(`[data-mobile-chat]`)
+        .filter({ has: page.getByRole("heading", { name: targetNick }) })
+        .getByRole("button", { name: "Back to chats" })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: "#weblounge-test" }),
+      ).toBeVisible();
+      await page
+        .locator(`[data-mobile-chat]`)
+        .filter({ has: page.getByRole("heading", { name: "#weblounge-test" }) })
+        .getByRole("button", { name: "Back to chats" })
+        .click();
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+
       await page.getByRole("button", { name: "Direct" }).click();
       await page
         .getByRole("searchbox", { name: "Search chats" })
@@ -201,7 +246,6 @@ test.describe("mobile shell against local Ergo", () => {
       await expect(page.locator("[data-mobile-chat]")).toBeVisible();
       await page.getByRole("button", { name: "Back to chats" }).click();
       await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
-      await nativeFeelAudit(page);
     } finally {
       for (const bot of bots) bot.close();
     }

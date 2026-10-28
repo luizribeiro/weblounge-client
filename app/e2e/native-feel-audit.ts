@@ -189,7 +189,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   expect(selectableViolations).toEqual([]);
 
   const chromeMenuPrevented = await page
-    .getByRole("heading", { exact: true, name: "weblounge" })
+    .locator("[data-app-root]")
     .evaluate((element) => {
       const event = new MouseEvent("contextmenu", {
         bubbles: true,

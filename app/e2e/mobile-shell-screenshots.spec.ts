@@ -105,6 +105,20 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-chat-dark.png"),
       });
+      await page.getByRole("button", { name: "Show members" }).click();
+      await expect(
+        page.getByRole("button", {
+          name: "Open direct message with mel-mobile",
+        }),
+      ).toBeVisible();
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.screenshot({
+        path: path.join(screenshotDirectory, "mobile-members-light.png"),
+      });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.screenshot({
+        path: path.join(screenshotDirectory, "mobile-members-dark.png"),
+      });
     } finally {
       for (const bot of bots) bot.close();
     }
