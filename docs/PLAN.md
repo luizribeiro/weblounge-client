@@ -23,6 +23,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 6. [x] Composer with optimistic send (`Sent`-based confirmation).
 6b. [x] Composer fixes (engine-owned navigation and completion, human errors, stable guarded drafts, and refreshed screenshots).
 7. [x] Mobile shell: chats list and pushed chat screen.
+7b. [x] Mobile shell fixes (inline rows, compact previews, history, swipe cancellation, consistent times, DM previews, and routing/read tests).
 8. [ ] End-to-end check against weblounge over `wss://`.
 
 Next after milestone 2 (brought forward by Luiz): split view and the core keyboard shortcuts.
