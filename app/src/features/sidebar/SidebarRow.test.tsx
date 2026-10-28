@@ -8,6 +8,7 @@ const buffer: BufferProjection = {
   network_id: 2,
   kind: "channel",
   title: "#lounge",
+  topic: null,
   unread: 4,
   mentions: 2,
 };

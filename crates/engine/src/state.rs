@@ -108,6 +108,7 @@ impl NetworkModel {
                 network_id: id,
                 kind: BufferKind::Server,
                 title: label.clone(),
+                topic: None,
                 unread: 0,
                 mentions: 0,
             },
@@ -174,18 +175,30 @@ impl NetworkModel {
     pub(crate) fn sync_channels(&mut self, state: &papo::State) -> Vec<EngineToUi> {
         let mut channels = state
             .channels()
-            .map(|channel| channel.name().clone())
+            .map(|channel| (channel.name().clone(), channel.topic().map(str::to_owned)))
             .collect::<Vec<_>>();
-        channels.sort_by_key(ToString::to_string);
+        channels.sort_by_key(|(channel, _)| channel.to_string());
         let mut events = Vec::new();
-        for channel in channels {
+        let mut changed = false;
+        for (channel, topic) in channels {
             let key = NameKey::Channel(channel);
-            if !self.names.contains_key(&key) {
-                let buffer = self.add_buffer(key, BufferKind::Channel, None);
+            if let Some(id) = self.names.get(&key).copied() {
+                if let Some(buffer) = self.buffers.get_mut(&id)
+                    && buffer.projection.topic != topic
+                {
+                    buffer.projection.topic = topic;
+                    changed = true;
+                }
+            } else {
+                let mut buffer = self.add_buffer(key, BufferKind::Channel, None);
+                buffer.topic.clone_from(&topic);
+                if let Some(state) = self.buffers.get_mut(&buffer.id) {
+                    state.projection.topic = topic;
+                }
                 events.push(EngineToUi::BufferAdded { buffer });
             }
         }
-        if !events.is_empty() {
+        if !events.is_empty() || changed {
             events.push(self.buffers_event());
         }
         events
@@ -496,6 +509,7 @@ impl NetworkModel {
             network_id: self.network.id,
             kind,
             title: key.title(),
+            topic: None,
             unread: 0,
             mentions: 0,
         };

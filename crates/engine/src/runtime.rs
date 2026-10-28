@@ -335,7 +335,7 @@ fn process_event(
             output.extend(running.model.receive(&message, false, &snapshot));
             Vec::new()
         }
-        papo::Event::Joined(_) | papo::Event::ChannelSynced(_) => {
+        papo::Event::Joined(_) | papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
             output.extend(running.model.sync_channels(&snapshot));
             Vec::new()
         }
@@ -685,6 +685,22 @@ mod tests {
                 _ => None,
             })
             .expect("join adds a channel buffer");
+
+        wire.server(":alice!a@host TOPIC #Room :A quiet place to chat")
+            .await;
+        let topic = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TopicChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, topic);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer|
+                    buffer.id == channel_id
+                        && buffer.topic.as_deref() == Some("A quiet place to chat")
+                )
+        )));
 
         wire.server(":oper!o@host RENAME #Room #Archive :Archived")
             .await;

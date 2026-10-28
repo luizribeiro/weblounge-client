@@ -24,6 +24,10 @@ kind: BufferKind,
  */
 title: string,
 /**
+ * Current channel topic, when this is a channel and the server supplied one.
+ */
+topic: string | null,
+/**
  * Messages after the local read position.
  */
 unread: number,

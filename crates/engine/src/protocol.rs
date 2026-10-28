@@ -74,6 +74,8 @@ pub struct BufferProjection {
     pub kind: BufferKind,
     /// Current channel or nick display name.
     pub title: String,
+    /// Current channel topic, when this is a channel and the server supplied one.
+    pub topic: Option<String>,
     /// Messages after the local read position.
     #[ts(type = "number")]
     pub unread: u64,
