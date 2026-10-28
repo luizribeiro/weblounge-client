@@ -6,13 +6,14 @@ Status: proposed for milestone 1 review.
 
 Every app action needs one typed identity and one availability rule. Keyboard shortcuts, the
 switcher, help, buttons, tooltips, Tauri menus, slash commands, and later context menus are views
-of that registry; none may invent an action ID, label, or binding. Defaults must work in both a
+of the `ActionRegistry`; none may invent an action ID, label, or binding. Defaults must work in both a
 browser and Tauri without corrupting text entry or assuming a US keyboard. Their primary audience
 is people arriving from Slack or Discord; familiarity with terminal IRC clients or Vim is not
 assumed.
 
-This subsystem routes UI intent. Engine commands remain the Rust-owned protocol in subsystem 02,
-and capability evidence remains the action projections in subsystem 17.
+This subsystem routes UI intent. `EngineRequest` remains the Rust-owned UI-to-engine protocol in
+subsystem 02, slash `Command`s and their runtime `CommandSpec`s come from the engine, and
+capability evidence remains the action projections in subsystem 17.
 
 ## Registry types
 
@@ -20,38 +21,41 @@ and capability evidence remains the action projections in subsystem 17.
 export type Platform = "macos" | "linux" | "windows" | "ios" | "android";
 export type Shell = "web" | "tauri";
 export type BrowserFamily = "chromium" | "firefox" | "webkit";
-export type CommandScope =
+export type ActionScope =
   | "global" | "desktop" | "mobile" | "sidebar" | "messageList"
   | "messageNavigation" | "composer" | "switcher" | "list" | "settings"
   | "paneLayout" | "paneMode" | "separator" | "onboarding" | "help";
 
-export interface CommandSpec<I extends CommandId> {
+export interface ActionSpec<I extends ActionId> {
   readonly id: I;
   readonly title: MessageKey;
   readonly group: CommandGroup;
-  readonly scope: CommandScope;
-  readonly slash?: SlashDescriptor;
+  readonly scope: ActionScope;
+  readonly command?: CommandSpec;
   readonly menu?: MenuPlacement;
-  readonly availability: (context: CommandContext) => CommandAvailability<I>;
-  readonly handler: (command: AvailableCommand<I>, services: CommandServices) => Promise<void>;
+  readonly availability: (context: ActionContext) => ActionAvailability<I>;
+  readonly handler: (action: AvailableAction<I>, services: ActionServices) => Promise<void>;
 }
 
-export type CommandAvailability<I extends CommandId> =
-  | { readonly state: "available"; readonly args: CommandArgs[I] }
+export type ActionAvailability<I extends ActionId> =
+  | { readonly state: "available"; readonly args: ActionArgs[I] }
   | { readonly state: "unavailable"; readonly reason: UnavailableReason };
 
-export type AvailableCommand<I extends CommandId> = {
+export type AvailableAction<I extends ActionId> = {
   readonly id: I;
-  readonly args: CommandArgs[I];
+  readonly args: ActionArgs[I];
 };
 ```
 
-`CommandId` and `CommandArgs` are closed generated unions checked exhaustively. Views call
+`ActionId` and `ActionArgs` are checked exhaustively. UI-only actions declare `ActionSpec`s in
+TypeScript. Engine `CommandSpec`s arrive through the generated protocol and are adapted into the
+same registry according to their declared surfaces; the runtime collection is not a closed union,
+so later user-defined commands can join it. Views call
 `t(spec.title)`; the registry stores no English display string. Availability returns the typed
 arguments needed by the handler, so a handler cannot run without a resolved current action.
 Capability-gated commands resolve from `NetworkActions`, `BufferActions`, or `MessageActions` in
 17. Pane commands resolve from the focused leaf plus `paneInDirection` or `nearestDivider` in 09.
-The handler dispatches either a UI reducer action or an engine command from 02 and revalidates at
+The handler dispatches either a UI reducer action or an `EngineRequest` from 02 and revalidates at
 that boundary. Unavailable commands are absent from shortcuts, switcher, menus, and controls; a
 command that becomes unavailable while a menu is open closes safely without dispatch.
 
@@ -69,12 +73,12 @@ export interface KeyChord {
 }
 
 export interface KeyBinding {
-  readonly command: CommandId;
+  readonly action: ActionId;
   readonly sequence: readonly [KeyChord, KeyChord?];
   readonly platforms: readonly Platform[];
   readonly shells: readonly Shell[];
   readonly browsers?: readonly BrowserFamily[];
-  readonly scopes: readonly CommandScope[];
+  readonly scopes: readonly ActionScope[];
   readonly when?: BindingCondition;
 }
 ```
@@ -139,7 +143,7 @@ Research references: [Slack keyboard shortcuts](https://slack.com/help/articles/
 [Discord Quick Switcher](https://support.discord.com/hc/en-us/articles/115000070311-Quick-Switcher),
 and [Discord keyboard navigation](https://discord.com/blog/how-to-navigate-discord-using-only-your-keyboard).
 
-| Command ID — action | macOS | Linux / Windows | Web | Source |
+| Action ID — action | macOS | Linux / Windows | Web | Source |
 |---|---|---|---|---|
 | `switcher.open` — Jump to / browse channels and DMs | `⌘K` | `Ctrl+K` | same | both |
 | `shortcuts.open` — shortcut help | `⌘/` | `Ctrl+/` | same | both |
@@ -200,8 +204,9 @@ Slack uses `Mod+Shift+K` to browse DMs on macOS and Discord folds DMs into `Mod+
 the Slack-shaped chord on macOS. Web on Linux/Windows uses `Ctrl+Alt+K` because Firefox owns
 `Ctrl+Shift+K`; Firefox macOS instead owns `⌥⌘K`, so the Slack chord remains safe there.
 
-Slash-command entries share IDs where semantics match (`/join` → `buffer.open`) and otherwise use
-their engine parser descriptor. They are shown in the switcher but do not receive global chords.
+Engine command entries use stable command-derived action IDs and retain their runtime
+`CommandSpec`; UI-only actions use the IDs below. They are shown in the palette when their surface
+metadata includes it but do not receive global chords.
 Controls without a bespoke global chord remain reachable by Tab plus Enter/Space and appear in the
 switcher when their action exists. Frequent actions in the table also have a chord in every shell.
 
@@ -273,9 +278,9 @@ bindings in Tauri but validation rejects reserved chords for web.
 
 `shortcuts.open` opens a modal generated from available registry entries. It groups Global,
 Navigation, Panes, Messages, Composer, Lists, and Settings; search matches localized title,
-command ID, and rendered chord. Results update while typing, use a roving list, and close through
+action ID, and rendered chord. Results update while typing, use a roving list, and close through
 `navigation.escape`, restoring the invoker. `Mod+/`, a “Keyboard shortcuts” switcher row, and
-the Settings link all dispatch the same command.
+the Settings link all dispatch the same action.
 
 The formatter uses the current platform and active shell. macOS modifier glyphs always render in
 Apple HIG order `⌃⌥⇧⌘` (correcting the addendum's `⌘⌥⇧⌃` example), omits `+`, and localizes key
@@ -283,16 +288,16 @@ names. Other platforms render `Ctrl+Alt+Shift+K`. `aria-keyshortcuts` uses WAI-A
 `Control+K`, never glyphs. Optional-preset sequences are described in the accessible name because
 ARIA has no sequence syntax.
 
-Command rows in the switcher, button tooltips, help, and menus ask the same resolver for the first
+Action rows in the switcher, button tooltips, help, and menus ask the same resolver for the first
 active binding. No component contains shortcut prose. Tooltips append the visual label; controls
 set `aria-keyshortcuts` only for a single chord that is active in that context.
 
 ## Tauri menus and mobile hardware keyboards
 
-The Tauri adapter filters available registry commands for platform `macos|linux|windows`, shell
+The Tauri adapter filters available registry actions for platform `macos|linux|windows`, shell
 `tauri`, and menu metadata, then emits localized menu items and native accelerators from the same
 single-chord bindings. Sequences and contextual plain keys are not menu accelerators. A menu event
-dispatches its command ID back through availability resolution; capability/layout updates rebuild
+dispatches its action ID back through availability resolution; capability/layout updates rebuild
 or disable affected menu items in one batch. macOS uses standard Application/Edit/View/Window/Help
 placement; Close Pane owns `Mod+W`, Settings owns `Command+,`, and ordinary copy/paste stay native.
 
@@ -308,7 +313,7 @@ authoritative. This is feasibility only; packaging design 19 decides the native 
 ```ts
 export interface KeymapOverridesV1 {
   readonly version: 1;
-  readonly commands: Readonly<Partial<Record<CommandId, OverrideEntry>>>;
+  readonly actions: Readonly<Partial<Record<ActionId, OverrideEntry>>>;
 }
 export type OverrideEntry =
   | { readonly kind: "disabled" }
@@ -318,7 +323,7 @@ export type OverrideEntry =
 
 This device-local data layer is decoded, normalized, and conflict-checked before use. Invalid or
 future-version data is preserved but ignored with diagnostics. Overrides cannot add handlers,
-titles, command IDs, availability rules, shell-reserved web chords, or `always` input policy.
+titles, action IDs, availability rules, shell-reserved web chords, or `always` input policy.
 There is no editing UI in this milestone.
 
 ## Testing
@@ -343,7 +348,7 @@ There is no editing UI in this milestone.
 
 ## Boundaries and out of scope
 
-This subsystem owns command identity, localization keys, availability wiring, binding data,
+This subsystem owns action identity, localization keys, availability wiring, binding data,
 resolution, display, help, override decoding, and menu generation. It does not own engine action
 semantics, pane geometry, focus-widget implementation, slash parsing, context-menu contents,
 settings persistence, or native mobile plugins.
@@ -362,6 +367,10 @@ hotkeys while the app is unfocused, and touch/gesture mappings are out of scope.
 ## Decisions
 
 - Use typed availability to produce handler arguments rather than checking capabilities in views.
+- Name this UI subsystem actions: `ActionRegistry`, `ActionId`, and `ActionSpec`. Reserve `Command`
+  for slash commands and `EngineRequest` for UI-to-engine protocol messages.
+- Merge UI-only TypeScript actions with runtime engine `CommandSpec`s in the action registry.
+  Palette, shortcuts, help, and later context menus consume only that merged registry.
 - Use `event.key` by default and explicit `event.code` only for slot and macOS Option-printable
   bindings.
 - Render macOS modifiers in `⌃⌥⇧⌘` order.
