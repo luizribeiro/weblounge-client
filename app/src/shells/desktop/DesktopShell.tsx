@@ -223,6 +223,7 @@ export function DesktopShell(props: DesktopShellProps) {
               <Composer
                 bufferId={activeBuffer()?.id ?? 0}
                 bufferTitle={activeBuffer()?.title ?? ""}
+                draftKey={activeBuffer()?.draft_key ?? ""}
                 candidatePrefix={
                   props.completion?.bufferId === activeBuffer()?.id
                     ? props.completion?.prefix

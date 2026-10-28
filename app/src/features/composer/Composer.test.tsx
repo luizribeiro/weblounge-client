@@ -2,10 +2,18 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
+import { readDraft } from "./draft-storage";
 
 it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   const onSend = vi.fn();
-  render(() => <Composer bufferId={1} bufferTitle="#lounge" onSend={onSend} />);
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      draftKey="test:#lounge"
+      onSend={onSend}
+    />
+  ));
   const input = screen.getByRole("textbox");
   fireEvent.input(input, { target: { value: "hello" } });
   fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
@@ -22,6 +30,7 @@ it("cycles completion and restores drafts by buffer", () => {
       bufferId={bufferId()}
       bufferTitle="#rust"
       candidates={["alice", "alex"]}
+      draftKey={`test:${bufferId()}`}
       onSend={() => {}}
     />
   ));
@@ -55,6 +64,7 @@ it("filters slash completion by the current token", () => {
       bufferId={4}
       bufferTitle="#rust"
       candidates={["/join"]}
+      draftKey="test:slash"
       onSend={() => {}}
     />
   ));
@@ -71,6 +81,7 @@ it("hides completion when the engine returns no candidates", () => {
       bufferId={9}
       bufferTitle="#rust"
       candidates={[]}
+      draftKey="test:empty-completion"
       onSend={() => {}}
     />
   ));
@@ -95,6 +106,7 @@ it("requests engine candidates once and applies the asynchronous result", async 
       bufferTitle="#rust"
       candidatePrefix={result()?.prefix}
       candidates={result()?.candidates}
+      draftKey="test:async-completion"
       onRequestCandidates={request}
       onSend={() => {}}
     />
@@ -113,6 +125,7 @@ it("routes Up from an empty composer to message navigation", () => {
     <Composer
       bufferId={5}
       bufferTitle="#rust"
+      draftKey="test:select-last"
       onSelectLast={onSelectLast}
       onSend={() => {}}
     />
@@ -122,7 +135,14 @@ it("routes Up from an empty composer to message navigation", () => {
 });
 
 it("grows the textarea with multiline content", async () => {
-  render(() => <Composer bufferId={7} bufferTitle="#rust" onSend={() => {}} />);
+  render(() => (
+    <Composer
+      bufferId={7}
+      bufferTitle="#rust"
+      draftKey="test:multiline"
+      onSend={() => {}}
+    />
+  ));
   const input = screen.getByRole<HTMLTextAreaElement>("textbox");
   Object.defineProperty(input, "scrollHeight", { value: 84 });
 
@@ -137,6 +157,7 @@ it("keeps a draft when the engine rejects submission", async () => {
     <Composer
       bufferId={8}
       bufferTitle="#rust"
+      draftKey="test:rejected"
       onSend={() => Promise.resolve(false)}
     />
   ));
@@ -146,5 +167,31 @@ it("keeps a draft when the engine rejects submission", async () => {
   await Promise.resolve();
 
   expect(input).toHaveValue("/join #banned");
-  expect(sessionStorage.getItem("weblounge:draft:8")).toBe("/join #banned");
+  expect(readDraft("test:rejected")).toBe("/join #banned");
+});
+
+it("restores a non-autojoined buffer draft after reload with a new buffer id", () => {
+  const first = render(() => (
+    <Composer
+      bufferId={40}
+      bufferTitle="#later"
+      draftKey="5:Local:rfc1459:#later"
+      onSend={() => {}}
+    />
+  ));
+  fireEvent.input(screen.getByRole("textbox"), {
+    target: { value: "survives reload" },
+  });
+  first.unmount();
+
+  render(() => (
+    <Composer
+      bufferId={93}
+      bufferTitle="#later"
+      draftKey="5:Local:rfc1459:#later"
+      onSend={() => {}}
+    />
+  ));
+
+  expect(screen.getByRole("textbox")).toHaveValue("survives reload");
 });

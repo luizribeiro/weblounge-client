@@ -1,8 +1,10 @@
 import { createEffect, createSignal, For, type JSX } from "solid-js";
 import styles from "../conversation/SimpleComposer.module.css";
+import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 
 interface ComposerProps {
   readonly bufferId: number;
+  readonly draftKey: string;
   readonly bufferTitle: string;
   readonly candidatePrefix?: string | undefined;
   readonly candidates?: readonly string[] | undefined;
@@ -11,8 +13,6 @@ interface ComposerProps {
   readonly onSelectLast?: () => void;
   readonly onSend: (text: string) => boolean | void | Promise<boolean | void>;
 }
-
-const draftKey = (id: number) => `weblounge:draft:${id}`;
 
 export function Composer(props: ComposerProps) {
   let textarea: HTMLTextAreaElement | undefined;
@@ -23,9 +23,8 @@ export function Composer(props: ComposerProps) {
     { start: number; end: number; prefix: string; offset: number } | undefined
   >();
   let currentBuffer = props.bufferId;
-  const [text, setText] = createSignal(
-    sessionStorage.getItem(draftKey(currentBuffer)) ?? "",
-  );
+  let currentDraftKey = props.draftKey;
+  const [text, setText] = createSignal(readDraft(currentDraftKey));
   const [selected, setSelected] = createSignal(-1);
   const [shownCandidates, setShownCandidates] = createSignal<readonly string[]>(
     [],
@@ -46,7 +45,8 @@ export function Composer(props: ComposerProps) {
   createEffect(() => {
     if (props.bufferId === currentBuffer) return;
     currentBuffer = props.bufferId;
-    setText(sessionStorage.getItem(draftKey(currentBuffer)) ?? "");
+    currentDraftKey = props.draftKey;
+    setText(readDraft(currentDraftKey));
     completion = undefined;
     setPendingCompletion(undefined);
     setSelected(-1);
@@ -55,7 +55,7 @@ export function Composer(props: ComposerProps) {
 
   const update = (value: string, resetCompletion = true) => {
     setText(value);
-    sessionStorage.setItem(draftKey(currentBuffer), value);
+    writeDraft(currentDraftKey, value);
     if (resetCompletion) {
       completion = undefined;
       setPendingCompletion(undefined);
@@ -66,12 +66,13 @@ export function Composer(props: ComposerProps) {
   const submit = () => {
     const submitted = text();
     const submittedBuffer = currentBuffer;
+    const submittedDraftKey = currentDraftKey;
     if (submitted.trim() === "") return;
     void Promise.resolve(props.onSend(submitted))
       .then((accepted) => {
         if (accepted === false) return;
-        if (sessionStorage.getItem(draftKey(submittedBuffer)) === submitted) {
-          sessionStorage.removeItem(draftKey(submittedBuffer));
+        if (readDraft(submittedDraftKey) === submitted) {
+          removeDraft(submittedDraftKey);
         }
         if (currentBuffer === submittedBuffer && text() === submitted) {
           setText("");
