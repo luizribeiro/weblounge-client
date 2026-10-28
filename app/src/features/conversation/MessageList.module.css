@@ -164,3 +164,38 @@
   transform: translateX(-50%);
   z-index: 2;
 }
+
+.list[data-presentation="mobile"] .row {
+  display: block;
+  padding-inline: 0;
+}
+.list[data-presentation="mobile"] .time,
+.list[data-presentation="mobile"] .nickColumn,
+.list[data-presentation="mobile"] .text,
+.list[data-presentation="mobile"] .pending,
+.list[data-presentation="mobile"] .failed {
+  display: inline;
+}
+.list[data-presentation="mobile"] .time,
+.list[data-presentation="mobile"] .nickColumn {
+  margin-inline-end: 6px;
+}
+.list[data-presentation="mobile"] .time [data-line],
+.list[data-presentation="mobile"] .nickColumn {
+  display: inline;
+  overflow: visible;
+  white-space: nowrap;
+}
+.list[data-presentation="mobile"] .nick {
+  direction: inherit;
+  overflow: visible;
+  white-space: nowrap;
+}
+.list[data-presentation="mobile"] .pending,
+.list[data-presentation="mobile"] .failed {
+  margin-inline-start: 6px;
+}
+.list[data-presentation="mobile"] .actionText,
+.list[data-presentation="mobile"] .membership {
+  padding-inline-start: 0;
+}

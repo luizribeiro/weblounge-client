@@ -69,6 +69,42 @@ test.describe("mobile shell against local Ergo", () => {
       await expect(
         page.getByText(`preview from ${targetNick}`, { exact: true }),
       ).toBeVisible();
+      const wrappingText =
+        "A deliberately long mobile message wraps beneath itself instead of reserving desktop columns on this narrow screen.";
+      await bots.at(-1)?.privmsgConfirmed("weblounge", wrappingText);
+      const geometry = await page
+        .getByText(wrappingText, { exact: true })
+        .evaluate((text) => {
+          const row = text.closest<HTMLElement>("[data-message-row]");
+          const nick = row?.querySelector<HTMLElement>("[title]");
+          if (row === null || nick === null)
+            throw new Error("message geometry is missing");
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          const lines = [...range.getClientRects()];
+          const lastTop = Math.max(...lines.map((line) => line.top));
+          const rowStyle = getComputedStyle(row);
+          return {
+            contentLeft:
+              row.getBoundingClientRect().left +
+              Number.parseFloat(rowStyle.paddingLeft),
+            firstLeft: lines[0]?.left,
+            firstTop: lines[0]?.top,
+            lastLeft: Math.min(
+              ...lines
+                .filter((line) => Math.abs(line.top - lastTop) < 0.5)
+                .map((line) => line.left),
+            ),
+            lineCount: lines.length,
+            nickRight: nick.getBoundingClientRect().right,
+            nickTop: nick.getBoundingClientRect().top,
+          };
+        });
+      expect(geometry.lineCount).toBeGreaterThan(1);
+      expect(geometry.firstTop).toBeCloseTo(geometry.nickTop, 0);
+      expect(geometry.firstLeft).toBeGreaterThan(geometry.nickRight);
+      expect(geometry.firstLeft - geometry.nickRight).toBeLessThan(12);
+      expect(geometry.lastLeft).toBeCloseTo(geometry.contentLeft, 0);
       const composer = page.getByRole("textbox", {
         name: `Message ${targetNick}`,
       });

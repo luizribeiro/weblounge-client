@@ -23,6 +23,7 @@ import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
+  readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readThrough?: number | null | undefined;
@@ -188,6 +189,7 @@ export function MessageList(props: MessageListProps) {
         aria-label="Messages"
         class={styles.list}
         data-message-list="true"
+        data-presentation={props.presentation ?? "desktop"}
         onKeyDown={(event) => {
           if (event.key !== "End") return;
           event.preventDefault();

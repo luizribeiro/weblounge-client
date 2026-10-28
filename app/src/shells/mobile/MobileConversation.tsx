@@ -108,6 +108,7 @@ export function MobileConversation(props: MobileConversationProps) {
           messages={props.messages}
           memberships={props.memberships}
           onLiveEdgeChange={setAtLiveEdge}
+          presentation="mobile"
           readThrough={props.buffer.read_through}
           registerController={(controller) => {
             listController = controller;
