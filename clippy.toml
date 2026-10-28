@@ -1,0 +1,4 @@
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "use papo::time::now so browser wasm uses papo's platform clock" },
+  { path = "std::time::Instant::now", reason = "use papo's runtime clock helpers so browser wasm never calls std's unsupported clock" },
+]

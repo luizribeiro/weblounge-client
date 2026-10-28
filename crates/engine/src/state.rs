@@ -623,7 +623,7 @@ fn time_millis(time: SystemTime) -> i64 {
 mod tests {
     use papo_testing::StateBuilder;
 
-    use super::{Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin};
+    use super::{Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, time_millis};
     use crate::{MessageAuthorship, NetworkId};
 
     fn incoming(
@@ -795,6 +795,25 @@ mod tests {
 
         let record = &model.buffers[&buffer.id].timeline[0];
         assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
+    }
+
+    #[test]
+    fn optimistic_send_uses_the_platform_wall_clock() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(state.name_rules().channel("#room"));
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None);
+        let before = time_millis(papo::time::now());
+
+        let (_, events) = model
+            .begin_send(buffer.id, "timestamped".into())
+            .expect("channel is sendable");
+        let after = time_millis(papo::time::now());
+        let crate::EngineToUi::MessagesAppended { messages, .. } = &events[0] else {
+            panic!("send appends its optimistic message");
+        };
+
+        assert!(messages[0].received_at_ms >= before);
+        assert!(messages[0].received_at_ms <= after);
     }
 
     #[test]
