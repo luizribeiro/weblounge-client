@@ -23,6 +23,7 @@ Comments explain *why* (a current constraint), never *what*. Prefer extracting a
 
 ## Done means a user can see it work
 Unit and engine tests are not enough: twice a task passed every check while the feature was broken in the browser. Any task that changes what a user sees ships a Playwright test that drives the built app the way a person would (against the flake's local Ergo when IRC is involved), and the dev server (`pnpm --filter @weblounge/app dev`) must keep working. Before reporting done, run the app and use the feature yourself.
+Every UI task must also keep the Playwright `nativeFeelAudit` and its idle/hidden checks green.
 
 ## Commits
 - One commit = one idea. If the message needs "and", split it.

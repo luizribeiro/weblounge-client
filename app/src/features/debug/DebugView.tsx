@@ -45,7 +45,7 @@ export function DebugView(props: DebugViewProps) {
       <h2>Buffers</h2>
       <For each={props.buffers}>
         {(buffer) => (
-          <section>
+          <section data-buffer-title={buffer.title}>
             <h3>
               <Line>
                 {buffer.title} ({buffer.kind}, {buffer.unread} unread,{" "}
