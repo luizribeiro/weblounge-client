@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, onMount } from "solid-js";
 import type { MessageProjection } from "../../engine/protocol";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import type { CopyRow } from "../../ui/copy-rows";
@@ -9,13 +9,26 @@ import styles from "./MessageList.module.css";
 
 interface MessageListProps {
   readonly messages: readonly MessageProjection[];
+  readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
 }
 
 export function MessageList(props: MessageListProps) {
+  let list: HTMLOListElement | undefined;
+  const reportLiveEdge = () => {
+    if (list === undefined) return;
+    props.onLiveEdgeChange?.(
+      list.scrollHeight - list.scrollTop - list.clientHeight <= 1,
+    );
+  };
+  onMount(reportLiveEdge);
   return (
     <ol
       class={styles.list}
       data-message-list="true"
+      onScroll={reportLiveEdge}
+      ref={(element) => {
+        list = element;
+      }}
       onCopy={(event) =>
         copySelectedRows(event, event.currentTarget, toCopyRows(props.messages))
       }

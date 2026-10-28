@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::mpsc;
 
 use crate::{
-    Command, CommandEnvelope, EngineToUi, NetworkConnectionState, NetworkId,
+    BufferId, Command, CommandEnvelope, EngineToUi, MessageId, NetworkConnectionState, NetworkId,
     direct_target::DirectSendError,
-    state::{NetworkModel, PendingSend, SendTarget},
+    state::{NetworkModel, PendingSend, ReadAdvance, SendTarget},
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
@@ -74,6 +74,10 @@ impl Runtime {
             Command::SendMessage { buffer_id, text } => {
                 self.send_message(envelope.id, buffer_id, text)
             }
+            Command::MarkRead { buffer_id, through } => {
+                self.mark_read(envelope.id, buffer_id, through)
+            }
+            Command::MarkAllRead => self.mark_all_read(envelope.id),
         }
     }
 
@@ -193,6 +197,114 @@ impl Runtime {
         });
         output
     }
+
+    fn mark_read(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        through: MessageId,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(advance) = running.model.prepare_mark_read(buffer_id, through) else {
+            return rejected_command(command_id, "engine.read_marker_invalid");
+        };
+        if !running.client.state().supports(papo::Feature::ReadMarkers) {
+            let mut output = running.model.apply_read_time(buffer_id, advance.time);
+            output.push(EngineToUi::CommandResult { id: command_id });
+            return output;
+        }
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        spawn_read_advances(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            client,
+            instance,
+            command_id,
+            vec![advance],
+        );
+        Vec::new()
+    }
+
+    fn mark_all_read(&self, command_id: String) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let advances = running.model.prepare_mark_all_read();
+        if !running.client.state().supports(papo::Feature::ReadMarkers) {
+            let mut output = advances
+                .into_iter()
+                .flat_map(|advance| {
+                    running
+                        .model
+                        .apply_read_time(advance.buffer_id, advance.time)
+                })
+                .collect::<Vec<_>>();
+            output.push(EngineToUi::CommandResult { id: command_id });
+            return output;
+        }
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        spawn_read_advances(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            client,
+            instance,
+            command_id,
+            advances,
+        );
+        Vec::new()
+    }
+}
+
+fn spawn_read_advances(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    command_id: String,
+    advances: Vec<ReadAdvance>,
+) {
+    spawn_task(async move {
+        for advance in advances {
+            let result = match advance.target.clone() {
+                SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
+                SendTarget::Direct(target) => {
+                    client.mark_read(target.nick().clone(), advance.time).await
+                }
+            };
+            if result.is_err() {
+                let _ = outbound.send(EngineToUi::CommandRejected {
+                    id: command_id,
+                    message_key: "engine.mark_read_failed".into(),
+                });
+                return;
+            }
+            let events = {
+                let mut state = lock(&state);
+                let Some(running) = state
+                    .network
+                    .as_mut()
+                    .filter(|running| running.instance == instance)
+                else {
+                    return;
+                };
+                running
+                    .model
+                    .apply_read_time(advance.buffer_id, advance.time)
+            };
+            for event in events {
+                let _ = outbound.send(event);
+            }
+        }
+        let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+    });
 }
 
 struct ConnectConfig {
@@ -333,6 +445,14 @@ fn process_event(
         }
         papo::Event::Message(message) => {
             output.extend(running.model.receive(&message, false, &snapshot));
+            Vec::new()
+        }
+        papo::Event::ReadMarkerChanged(marker) => {
+            output.extend(
+                running
+                    .model
+                    .apply_server_read_marker(&marker.conversation, marker.read_until),
+            );
             Vec::new()
         }
         papo::Event::Joined(_) | papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
@@ -605,6 +725,189 @@ mod tests {
         wire.server(format!("@batch={reply} :offline.test BATCH -{history}"))
             .await;
         wire.server(format!(":offline.test BATCH -{reply}")).await;
+    }
+
+    #[tokio::test]
+    async fn mark_read_without_server_support_advances_local_counts() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+            .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        let appended = collect(&mut receiver);
+        let (buffer_id, message_id) = appended
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("live message is projected");
+        let runtime = Runtime { state, outbound };
+
+        let output = runtime.command(CommandEnvelope {
+            id: "mark-local".into(),
+            command: Command::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                unread: 0,
+                mentions: 0,
+                ..
+            }
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::ReadMarkerMoved { through: Some(id), .. } if *id == message_id
+        )));
+    }
+
+    #[tokio::test]
+    async fn mark_read_with_server_support_uses_papo_request() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+            .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        let appended = collect(&mut receiver);
+        let (buffer_id, message_id) = appended
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("live message is projected");
+        let runtime = Runtime { state, outbound };
+
+        assert!(
+            runtime
+                .command(CommandEnvelope {
+                    id: "mark-server".into(),
+                    command: Command::MarkRead {
+                        buffer_id,
+                        through: message_id
+                    },
+                })
+                .is_empty()
+        );
+        let request = wire.next_sent().await;
+        let label = request_label(&request).to_owned();
+        assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
+        ))
+        .await;
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("mark response arrives")
+            .expect("runtime remains open");
+        assert!(matches!(
+            result,
+            EngineToUi::UnreadChanged { unread: 0, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn another_device_read_marker_never_moves_backwards() {
+        let caps = ["draft/read-marker", "message-tags", "server-time"];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+        for (id, second) in [("one", 0), ("two", 1)] {
+            wire.server(format!(
+                "@time=2026-10-27T12:00:0{second}.000Z;msgid={id} :alice!a@host PRIVMSG #room :{id}"
+            ))
+            .await;
+            let message = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Message(_))
+            })
+            .await;
+            process_event(&state, &outbound, &client, 1, message);
+        }
+        _ = collect(&mut receiver);
+
+        wire.server(":offline.test MARKREAD #room timestamp=2026-10-27T12:00:01.000Z")
+            .await;
+        let newer = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ReadMarkerChanged(_))
+        })
+        .await;
+        let conversation = match &newer {
+            papo::Event::ReadMarkerChanged(marker) => marker.conversation.clone(),
+            _ => unreachable!("matching event is a read marker"),
+        };
+        process_event(&state, &outbound, &client, 1, newer);
+        assert!(
+            collect(&mut receiver)
+                .iter()
+                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
+        );
+
+        let older = std::time::UNIX_EPOCH + std::time::Duration::from_hours(498_084);
+        let output = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .apply_server_read_marker(&conversation, Some(older));
+        assert!(output.is_empty());
     }
 
     #[tokio::test]

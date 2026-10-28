@@ -2,7 +2,7 @@ import { render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
 import type { EngineClient } from "./engine/EngineClient";
-import type { EngineClientMessage } from "./engine/protocol";
+import type { CommandEnvelope, EngineClientMessage } from "./engine/protocol";
 
 it("reports the wasm worker round trip", async () => {
   render(() => <App engineClient={new FakeEngineClient()} />);
@@ -48,6 +48,7 @@ it("lists projected networks, buffers, and messages", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
+      read_through: null,
     },
   });
   client.emit({
@@ -60,6 +61,7 @@ it("lists projected networks, buffers, and messages", async () => {
       topic: "Room topic",
       unread: 1,
       mentions: 0,
+      read_through: null,
     },
   });
   client.emit({
@@ -122,6 +124,7 @@ it("shows a confirmation received without this tab's optimistic row", async () =
       topic: null,
       unread: 0,
       mentions: 0,
+      read_through: null,
     },
   });
 
@@ -145,6 +148,7 @@ it("shows an optimistic message as failed when sending fails", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
+      read_through: null,
     },
   });
   client.emit({
@@ -180,6 +184,71 @@ it("shows an optimistic message as failed when sending fails", async () => {
   );
 });
 
+it("marks a visible live-edge buffer read only after a focused 500ms dwell", async () => {
+  vi.useFakeTimers();
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      topic: null,
+      unread: 1,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  client.emit({
+    type: "messages_appended",
+    buffer_id: 2,
+    messages: [
+      {
+        id: 9,
+        author: "alice",
+        text: "unread",
+        authorship: "other",
+        nick_color_index: 0,
+        mentioned: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: ["msg-9"],
+        server_time_ms: 9,
+        received_at_ms: 9,
+      },
+    ],
+  });
+
+  await vi.advanceTimersByTimeAsync(250);
+  focus.mockReturnValue(false);
+  window.dispatchEvent(new Event("blur"));
+  await vi.advanceTimersByTimeAsync(500);
+  expect(client.commands).not.toContainEqual(
+    expect.objectContaining({
+      command: expect.objectContaining({ type: "mark_read" }),
+    }),
+  );
+
+  focus.mockReturnValue(true);
+  window.dispatchEvent(new Event("focus"));
+  await vi.advanceTimersByTimeAsync(499);
+  expect(client.commands).not.toContainEqual(
+    expect.objectContaining({
+      command: expect.objectContaining({ type: "mark_read" }),
+    }),
+  );
+  await vi.advanceTimersByTimeAsync(1);
+  expect(client.commands).toContainEqual({
+    id: expect.any(String),
+    command: { type: "mark_read", buffer_id: 2, through: 9 },
+  });
+
+  vi.useRealTimers();
+});
+
 it("reloads only once for the same stale build", () => {
   const setStatus = vi.fn();
   const reload = vi.fn();
@@ -201,11 +270,13 @@ it("reloads only once for the same stale build", () => {
 
 class FakeEngineClient implements EngineClient {
   readonly visibility: Parameters<EngineClient["setVisibility"]>[0][] = [];
+  readonly commands: CommandEnvelope[] = [];
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
   async start(): Promise<void> {}
 
   async send(command: Parameters<EngineClient["send"]>[0]) {
+    this.commands.push(command);
     if (command.command.type === "diagnostic") {
       this.emit({
         type: "diagnostic",

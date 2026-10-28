@@ -82,6 +82,8 @@ pub struct BufferProjection {
     /// Unread messages mentioning the current nick.
     #[ts(type = "number")]
     pub mentions: u64,
+    /// Latest committed row covered by the effective read marker.
+    pub read_through: Option<MessageId>,
 }
 
 /// Who authored a projected message relative to this client.
@@ -209,6 +211,15 @@ pub enum Command {
         /// Message body.
         text: String,
     },
+    /// Advance one buffer's marker through a committed timeline row.
+    MarkRead {
+        /// Buffer being viewed.
+        buffer_id: BufferId,
+        /// Latest fully visible committed row.
+        through: MessageId,
+    },
+    /// Advance every conversation through its latest committed row.
+    MarkAllRead,
 }
 
 /// Messages accepted from a UI client.
@@ -316,6 +327,13 @@ pub enum EngineToUi {
         /// Current mention count.
         #[ts(type = "number")]
         mentions: u64,
+    },
+    /// The effective local or server-backed read position advanced.
+    ReadMarkerMoved {
+        /// Buffer whose marker moved.
+        buffer_id: BufferId,
+        /// Latest retained committed row covered by the marker.
+        through: Option<MessageId>,
     },
 }
 

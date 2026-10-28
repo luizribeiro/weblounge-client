@@ -99,6 +99,13 @@ export function App(props: AppProps) {
         networks={networks()}
         buffers={buffers()}
         messages={messages()}
+        onMarkRead={(bufferId, through) => {
+          if (client === undefined) return;
+          void client.send({
+            id: crypto.randomUUID(),
+            command: { type: "mark_read", buffer_id: bufferId, through },
+          });
+        }}
         onSend={(bufferId, text) => {
           if (client === undefined) return;
           void client.send({
@@ -185,6 +192,14 @@ function applyDebugEvent(
       current.map((buffer) =>
         buffer.id === message.buffer_id
           ? { ...buffer, unread: message.unread, mentions: message.mentions }
+          : buffer,
+      ),
+    );
+  } else if (message.type === "read_marker_moved") {
+    setBuffers((current) =>
+      current.map((buffer) =>
+        buffer.id === message.buffer_id
+          ? { ...buffer, read_through: message.through }
           : buffer,
       ),
     );

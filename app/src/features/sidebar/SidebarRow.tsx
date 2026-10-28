@@ -6,6 +6,7 @@ import styles from "./SidebarRow.module.css";
 export interface SidebarRowProps {
   readonly buffer: BufferProjection;
   readonly active: boolean;
+  readonly badgesSuppressed?: boolean;
   readonly muted?: boolean;
   readonly tabIndex: number;
   readonly onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
@@ -14,15 +15,18 @@ export interface SidebarRowProps {
 }
 
 export function SidebarRow(props: SidebarRowProps) {
+  const showBadges = () => props.badgesSuppressed !== true;
   return (
     <button
-      aria-label={rowLabel(props.buffer)}
+      aria-label={rowLabel(props.buffer, showBadges())}
       aria-current={props.active ? "page" : undefined}
       class={`${styles.row} ${props.active ? styles.active : ""} ${
         props.muted === true ? styles.muted : ""
-      } ${props.buffer.unread > 0 ? styles.unread : ""}`}
+      } ${showBadges() && props.buffer.unread > 0 ? styles.unread : ""}`}
       data-buffer-id={props.buffer.id}
+      data-mentions={props.buffer.mentions}
       data-muted={props.muted === true ? "true" : undefined}
+      data-unread={props.buffer.unread}
       onClick={props.onClick}
       onFocus={props.onFocus}
       ref={props.ref}
@@ -33,9 +37,10 @@ export function SidebarRow(props: SidebarRowProps) {
         {props.buffer.kind === "channel" ? "#" : "@"}
       </span>
       <Line class={styles.title}>{props.buffer.title.replace(/^#/, "")}</Line>
-      {props.buffer.mentions > 0 ? (
+      {showBadges() && props.buffer.mentions > 0 ? (
         <Line class={styles.mention}>{props.buffer.mentions}</Line>
       ) : (
+        showBadges() &&
         props.buffer.unread > 0 && (
           <span aria-hidden="true" class={styles.dot} />
         )
@@ -44,7 +49,8 @@ export function SidebarRow(props: SidebarRowProps) {
   );
 }
 
-function rowLabel(buffer: BufferProjection): string {
+function rowLabel(buffer: BufferProjection, showBadges: boolean): string {
+  if (!showBadges) return buffer.title;
   if (buffer.mentions > 0) {
     return `${buffer.title}, ${buffer.mentions} mentions`;
   }

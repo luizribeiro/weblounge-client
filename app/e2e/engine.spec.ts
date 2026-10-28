@@ -63,11 +63,11 @@ test.describe("local Ergo user flow", () => {
         page.getByText("hello from the test bot", { exact: true }),
       ).toBeVisible();
       bot.privmsg("#weblounge-test", "hello weblounge, this is a mention");
-      await expect(
-        page.getByRole("button", {
-          name: /#weblounge-test, 1 mentions/,
-        }),
-      ).toBeVisible();
+      const activeChannel = page.locator(
+        '[data-buffer-id][aria-current="page"]',
+      );
+      await expect(activeChannel).toHaveAttribute("data-mentions", "1");
+      await expect(activeChannel).toHaveAccessibleName("#weblounge-test");
     } finally {
       bot.close();
     }

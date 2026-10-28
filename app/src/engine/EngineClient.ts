@@ -388,6 +388,18 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "read_marker_moved":
+      if (
+        typeof value.buffer_id === "number" &&
+        (value.through === null || typeof value.through === "number")
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          through: value.through,
+        };
+      }
+      break;
     default:
       return assertNever(messageType);
   }
@@ -409,7 +421,8 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "messages_appended" ||
     value === "message_confirmed" ||
     value === "message_failed" ||
-    value === "unread_changed"
+    value === "unread_changed" ||
+    value === "read_marker_moved"
   );
 }
 
@@ -440,7 +453,8 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.title !== "string" ||
     !(value.topic === null || typeof value.topic === "string") ||
     typeof value.unread !== "number" ||
-    typeof value.mentions !== "number"
+    typeof value.mentions !== "number" ||
+    !(value.read_through === null || typeof value.read_through === "number")
   ) {
     return undefined;
   }
@@ -452,6 +466,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     topic: value.topic,
     unread: value.unread,
     mentions: value.mentions,
+    read_through: value.read_through,
   };
 }
 

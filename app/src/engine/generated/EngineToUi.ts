@@ -2,6 +2,7 @@
 import type { BufferId } from "./BufferId";
 import type { BufferProjection } from "./BufferProjection";
 import type { LocalSendId } from "./LocalSendId";
+import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
@@ -109,4 +110,12 @@ unread: number,
 /**
  * Current mention count.
  */
-mentions: number, };
+mentions: number, } | { "type": "read_marker_moved",
+/**
+ * Buffer whose marker moved.
+ */
+buffer_id: BufferId,
+/**
+ * Latest retained committed row covered by the marker.
+ */
+through: MessageId | null, };

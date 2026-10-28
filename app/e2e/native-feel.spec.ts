@@ -44,6 +44,9 @@ test.describe("native feel against local Ergo", () => {
       bot.privmsg("#weblounge-test", second);
       await expect(page.getByText(first, { exact: false })).toBeVisible();
       await expect(page.getByText(second, { exact: false })).toBeVisible();
+      await expect(
+        page.locator('[data-buffer-id][aria-current="page"]'),
+      ).toHaveAttribute("data-unread", "0");
 
       await page.evaluate(() => {
         const metrics = (

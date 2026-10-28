@@ -22,6 +22,7 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
           topic: null,
           unread: 0,
           mentions: 0,
+          read_through: null,
         },
         {
           id: 2,
@@ -31,6 +32,7 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
           topic: null,
           unread: 3,
           mentions: 1,
+          read_through: null,
         },
       ]}
       commandContext={{ bufferCount: 2, listActive: true }}
@@ -44,11 +46,12 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
       ]}
       registerListController={() => {}}
       registry={registry}
+      visibleBufferIds={new Set([2])}
     />
   ));
 
   expect(screen.getByText("1 network · connected")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "#lounge, 1 mentions" }));
+  fireEvent.click(screen.getByRole("button", { name: "#lounge" }));
   fireEvent.click(screen.getByRole("button", { name: "Local Ergo, online" }));
   expect(show).toHaveBeenCalledWith(
     expect.objectContaining({ targetBufferId: 2 }),

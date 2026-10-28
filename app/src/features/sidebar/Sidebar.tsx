@@ -24,6 +24,7 @@ interface SidebarProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly SidebarBuffer[];
   readonly activeBufferId?: number | undefined;
+  readonly visibleBufferIds: ReadonlySet<number>;
   readonly registry: CommandRegistry;
   readonly commandContext: CommandContext;
   readonly registerListController: (
@@ -155,6 +156,7 @@ export function Sidebar(props: SidebarProps) {
                     {(buffer) => (
                       <SidebarRow
                         active={props.activeBufferId === buffer.id}
+                        badgesSuppressed={props.visibleBufferIds.has(buffer.id)}
                         buffer={buffer}
                         muted={buffer.muted === true}
                         onClick={() => run("pane.show-buffer", buffer)}

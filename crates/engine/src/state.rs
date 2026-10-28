@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -47,6 +47,7 @@ struct BufferState {
     key: Option<NameKey>,
     timeline: Vec<TimelineRecord>,
     direct_account: Option<papo::AccountName>,
+    read_at_ms: Option<i64>,
 }
 
 /// Information needed to perform an outgoing send without exposing papo targets to the UI.
@@ -82,6 +83,14 @@ pub(crate) struct PendingSend {
     pub(crate) text: String,
 }
 
+/// A validated read advance ready for local or server-backed application.
+#[derive(Clone, Debug)]
+pub(crate) struct ReadAdvance {
+    pub(crate) buffer_id: BufferId,
+    pub(crate) target: SendTarget,
+    pub(crate) time: SystemTime,
+}
+
 /// Mutable application identity and timeline state for one papo client.
 pub(crate) struct NetworkModel {
     network: NetworkProjection,
@@ -111,10 +120,12 @@ impl NetworkModel {
                 topic: None,
                 unread: 0,
                 mentions: 0,
+                read_through: None,
             },
             key: None,
             timeline: Vec::new(),
             direct_account: None,
+            read_at_ms: None,
         };
         Self {
             network: NetworkProjection {
@@ -393,6 +404,88 @@ impl NetworkModel {
             .collect()
     }
 
+    pub(crate) fn prepare_mark_read(
+        &self,
+        buffer_id: BufferId,
+        through: MessageId,
+    ) -> Option<ReadAdvance> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        let record = buffer
+            .timeline
+            .iter()
+            .find(|record| record.projection.id == through && is_committed(&record.projection))?;
+        Some(ReadAdvance {
+            buffer_id,
+            target: SendTarget::from_name_key(buffer.key.clone()?, buffer.direct_account.clone()),
+            time: system_time_from_millis(message_time(&record.projection)),
+        })
+    }
+
+    pub(crate) fn prepare_mark_all_read(&self) -> Vec<ReadAdvance> {
+        self.buffer_order
+            .iter()
+            .filter_map(|id| {
+                let through = self
+                    .buffers
+                    .get(id)?
+                    .timeline
+                    .iter()
+                    .rev()
+                    .find(|record| is_committed(&record.projection))?
+                    .projection
+                    .id;
+                self.prepare_mark_read(*id, through)
+            })
+            .collect()
+    }
+
+    pub(crate) fn apply_read_time(
+        &mut self,
+        buffer_id: BufferId,
+        time: SystemTime,
+    ) -> Vec<EngineToUi> {
+        let read_at_ms = time_millis(time);
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return inconsistent_state_notice();
+        };
+        if buffer
+            .read_at_ms
+            .is_some_and(|current| current >= read_at_ms)
+        {
+            return Vec::new();
+        }
+        buffer.read_at_ms = Some(read_at_ms);
+        derive_read_projection(buffer);
+        vec![
+            EngineToUi::UnreadChanged {
+                buffer_id,
+                unread: buffer.projection.unread,
+                mentions: buffer.projection.mentions,
+            },
+            EngineToUi::ReadMarkerMoved {
+                buffer_id,
+                through: buffer.projection.read_through,
+            },
+        ]
+    }
+
+    pub(crate) fn apply_server_read_marker(
+        &mut self,
+        conversation: &papo::Conversation,
+        read_until: Option<SystemTime>,
+    ) -> Vec<EngineToUi> {
+        let Some(time) = read_until else {
+            return Vec::new();
+        };
+        let Some(key) = NameKey::from_conversation(conversation) else {
+            return Vec::new();
+        };
+        let Some(buffer_id) = self.names.get(&key).copied() else {
+            return Vec::new();
+        };
+        self.apply_read_time(buffer_id, time)
+    }
+
     #[cfg(test)]
     pub(crate) fn buffer_id_for_target(&self, target: &SendTarget) -> Option<BufferId> {
         let key = target.name_key();
@@ -454,13 +547,15 @@ impl NetworkModel {
         if self.insert(buffer_id, message.clone(), dedup).is_err() {
             return inconsistent_state_notice();
         }
-        let (unread, mentions) = {
-            let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+        let (unread, mentions, added) = {
+            let Some(buffer) = self.buffers.get(&buffer_id) else {
                 return inconsistent_state_notice();
             };
-            buffer.projection.unread += u64::from(incoming.authorship != MessageAuthorship::Own);
-            buffer.projection.mentions += u64::from(mentioned);
-            (buffer.projection.unread, buffer.projection.mentions)
+            (
+                buffer.projection.unread,
+                buffer.projection.mentions,
+                added.map(|_| buffer.projection.clone()),
+            )
         };
 
         let mut events = Vec::new();
@@ -512,6 +607,7 @@ impl NetworkModel {
             topic: None,
             unread: 0,
             mentions: 0,
+            read_through: None,
         };
         self.buffers.insert(
             id,
@@ -520,6 +616,7 @@ impl NetworkModel {
                 key: Some(key.clone()),
                 timeline: Vec::new(),
                 direct_account,
+                read_at_ms: None,
             },
         );
         self.names.insert(key, id);
@@ -559,6 +656,9 @@ impl NetworkModel {
         for record in evicted {
             self.release_dedup(record.dedup);
         }
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            derive_read_projection(buffer);
+        }
         Ok(())
     }
 
@@ -575,6 +675,55 @@ impl NetworkModel {
                 self.fallbacks.remove(&fallback);
             }
         }
+    }
+}
+
+fn derive_read_projection(buffer: &mut BufferState) {
+    buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
+        buffer
+            .timeline
+            .iter()
+            .rev()
+            .find(|record| {
+                is_committed(&record.projection) && message_time(&record.projection) <= marker
+            })
+            .map(|record| record.projection.id)
+    });
+    let (unread, mentions) = buffer
+        .timeline
+        .iter()
+        .filter(|record| {
+            record.projection.authorship != MessageAuthorship::Own
+                && buffer
+                    .read_at_ms
+                    .is_none_or(|marker| message_time(&record.projection) > marker)
+        })
+        .fold((0, 0), |(unread, mentions), record| {
+            (
+                unread + 1,
+                mentions + u64::from(record.projection.mentioned),
+            )
+        });
+    buffer.projection.unread = unread;
+    buffer.projection.mentions = mentions;
+}
+
+fn is_committed(message: &MessageProjection) -> bool {
+    matches!(
+        message.delivery,
+        MessageDelivery::Received | MessageDelivery::Confirmed
+    )
+}
+
+fn message_time(message: &MessageProjection) -> i64 {
+    message.server_time_ms.unwrap_or(message.received_at_ms)
+}
+
+fn system_time_from_millis(milliseconds: i64) -> SystemTime {
+    if milliseconds >= 0 {
+        UNIX_EPOCH + Duration::from_millis(milliseconds.unsigned_abs())
+    } else {
+        UNIX_EPOCH - Duration::from_millis(milliseconds.unsigned_abs())
     }
 }
 
@@ -741,6 +890,33 @@ mod tests {
         );
 
         assert_eq!(timeline(&model), ["earlier", "later"]);
+    }
+
+    #[test]
+    fn mark_all_read_uses_each_buffers_latest_committed_row() {
+        let (mut model, state) = model(10);
+        for (index, text) in ["one", "two"].into_iter().enumerate() {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(text),
+                    Some(i64::try_from(index + 1).expect("small index") * 1_000),
+                    i64::try_from(index).expect("small index"),
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+
+        let advances = model.prepare_mark_all_read();
+        assert_eq!(advances.len(), 1);
+        let events = model.apply_read_time(advances[0].buffer_id, advances[0].time);
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::EngineToUi::UnreadChanged { unread: 0, .. }))
+        );
     }
 
     #[test]

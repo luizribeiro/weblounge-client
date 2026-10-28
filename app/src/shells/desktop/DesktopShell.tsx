@@ -31,16 +31,25 @@ interface DesktopShellProps {
   readonly buffers: readonly BufferProjection[];
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly onSend: (bufferId: number, text: string) => void;
+  readonly onMarkRead: (bufferId: number, through: number) => void;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
   const [layout, setLayout] = createSignal(createSinglePane());
   const [sidebarShown, setSidebarShown] = createSignal(true);
+  const [atLiveEdge, setAtLiveEdge] = createSignal(false);
+  const [foreground, setForeground] = createSignal(
+    document.visibilityState === "visible" && document.hasFocus(),
+  );
   let listController: SidebarListController | undefined;
   let navigationCommitted = false;
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
+  const visibleBufferIds = createMemo<ReadonlySet<number>>(() => {
+    const buffer = activeBuffer();
+    return new Set(buffer === undefined ? [] : [buffer.id]);
+  });
   const context = (): CommandContext => ({
     bufferCount: props.buffers.length,
     listActive: sidebarShown(),
@@ -80,6 +89,25 @@ export function DesktopShell(props: DesktopShellProps) {
   const run = (id: CommandId) => registry.run(id, context());
 
   createEffect(() => {
+    const buffer = activeBuffer();
+    const latest = latestCommitted(props.messages.get(buffer?.id ?? -1) ?? []);
+    if (
+      buffer === undefined ||
+      buffer.unread === 0 ||
+      latest === undefined ||
+      !atLiveEdge() ||
+      !foreground()
+    ) {
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => props.onMarkRead(buffer.id, latest.id),
+      500,
+    );
+    onCleanup(() => window.clearTimeout(timeout));
+  });
+
+  createEffect(() => {
     if (navigationCommitted) return;
     const preferred = preferredInitialBuffer(props.buffers);
     if (preferred?.id !== activeBuffer()?.id) showBuffer(preferred?.id);
@@ -90,7 +118,19 @@ export function DesktopShell(props: DesktopShellProps) {
       registry.handleKeydown(event, context());
     };
     document.addEventListener("keydown", handleKeydown);
-    onCleanup(() => document.removeEventListener("keydown", handleKeydown));
+    const updateForeground = () =>
+      setForeground(
+        document.visibilityState === "visible" && document.hasFocus(),
+      );
+    document.addEventListener("visibilitychange", updateForeground);
+    window.addEventListener("focus", updateForeground);
+    window.addEventListener("blur", updateForeground);
+    onCleanup(() => {
+      document.removeEventListener("keydown", handleKeydown);
+      document.removeEventListener("visibilitychange", updateForeground);
+      window.removeEventListener("focus", updateForeground);
+      window.removeEventListener("blur", updateForeground);
+    });
   });
 
   return (
@@ -105,6 +145,7 @@ export function DesktopShell(props: DesktopShellProps) {
             listController = controller;
           }}
           registry={registry}
+          visibleBufferIds={visibleBufferIds()}
         />
       )}
       <main
@@ -127,6 +168,7 @@ export function DesktopShell(props: DesktopShellProps) {
             <div class={styles.conversationBody}>
               <MessageList
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
+                onLiveEdgeChange={setAtLiveEdge}
               />
               <SimpleComposer
                 bufferTitle={activeBuffer()?.title ?? ""}
@@ -146,6 +188,17 @@ export function DesktopShell(props: DesktopShellProps) {
       </main>
     </div>
   );
+}
+
+function latestCommitted(
+  messages: readonly MessageProjection[],
+): MessageProjection | undefined {
+  return [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.delivery === "received" || message.delivery === "confirmed",
+    );
 }
 
 function orderedBufferIds(

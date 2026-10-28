@@ -11,19 +11,27 @@ const buffer: BufferProjection = {
   topic: null,
   unread: 4,
   mentions: 2,
+  read_through: null,
 };
 
 describe("SidebarRow", () => {
-  it("renders active mention state on a real button", () => {
+  it("suppresses badges for a buffer rendered in a visible pane", () => {
     const onClick = vi.fn();
     render(() => (
-      <SidebarRow active buffer={buffer} onClick={onClick} tabIndex={0} />
+      <SidebarRow
+        active
+        badgesSuppressed
+        buffer={buffer}
+        onClick={onClick}
+        tabIndex={0}
+      />
     ));
 
     const row = screen.getByRole("button", {
-      name: "#lounge, 2 mentions",
+      name: "#lounge",
     });
     expect(row).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText("2")).not.toBeInTheDocument();
     row.click();
     expect(onClick).toHaveBeenCalledOnce();
   });
