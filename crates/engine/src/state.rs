@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -27,6 +27,13 @@ struct FallbackKey {
 struct TimelineRecord {
     projection: MessageProjection,
     sequence: u64,
+    dedup: DedupReferences,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DedupReferences {
+    msgids: Vec<String>,
+    fallback: Option<FallbackKey>,
 }
 
 #[derive(Clone, Debug)]
@@ -63,8 +70,8 @@ pub(crate) struct NetworkModel {
     buffer_order: Vec<BufferId>,
     buffers: HashMap<BufferId, BufferState>,
     names: HashMap<NameKey, BufferId>,
-    msgids: HashSet<String>,
-    fallbacks: HashMap<FallbackKey, TimelineOrigin>,
+    msgids: HashMap<String, usize>,
+    fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
 }
 
 impl NetworkModel {
@@ -97,7 +104,7 @@ impl NetworkModel {
             buffer_order: vec![server_id],
             buffers: HashMap::from([(server_id, server)]),
             names: HashMap::new(),
-            msgids: HashSet::new(),
+            msgids: HashMap::new(),
             fallbacks: HashMap::new(),
         }
     }
@@ -246,7 +253,7 @@ impl NetworkModel {
             server_time_ms: None,
             received_at_ms: time_millis(SystemTime::now()),
         };
-        self.insert(buffer_id, message.clone());
+        self.insert(buffer_id, message.clone(), DedupReferences::default());
         let target = match key {
             NameKey::Channel(channel) => SendTarget::Channel(channel),
             NameKey::Direct(nick) => SendTarget::Direct(nick),
@@ -280,8 +287,12 @@ impl NetworkModel {
         record.projection.server_ids = sent.msgids.iter().map(ToString::to_string).collect();
         record.projection.server_time_ms = sent.server_time.map(time_millis);
         for msgid in &record.projection.server_ids {
-            self.msgids.insert(msgid.clone());
+            *self.msgids.entry(msgid.clone()).or_default() += 1;
         }
+        record
+            .dedup
+            .msgids
+            .clone_from(&record.projection.server_ids);
         let message = record.projection.clone();
         buffer.timeline.sort_by_key(order_key);
         Some(EngineToUi::MessageConfirmed {
@@ -334,19 +345,30 @@ impl NetworkModel {
             actor: incoming.author.clone(),
             text: incoming.text.clone(),
         };
-        if let Some(msgid) = &incoming.msgid {
-            if !self.msgids.insert(msgid.clone()) {
+        let dedup = if let Some(msgid) = &incoming.msgid {
+            if self.msgids.contains_key(msgid) {
                 return Vec::new();
             }
-        } else if self
-            .fallbacks
-            .get(&fingerprint)
-            .is_some_and(|previous| *previous != incoming.origin)
-        {
-            return Vec::new();
+            self.msgids.insert(msgid.clone(), 1);
+            DedupReferences {
+                msgids: vec![msgid.clone()],
+                fallback: None,
+            }
         } else {
-            self.fallbacks.entry(fingerprint).or_insert(incoming.origin);
-        }
+            if let Some((previous, count)) = self.fallbacks.get_mut(&fingerprint) {
+                if *previous != incoming.origin {
+                    return Vec::new();
+                }
+                *count += 1;
+            } else {
+                self.fallbacks
+                    .insert(fingerprint.clone(), (incoming.origin, 1));
+            }
+            DedupReferences {
+                msgids: Vec::new(),
+                fallback: Some(fingerprint),
+            }
+        };
 
         let (buffer_id, added) = self.ensure_buffer(incoming.conversation.clone());
         let mentioned = incoming.authorship != MessageAuthorship::Own
@@ -362,7 +384,7 @@ impl NetworkModel {
             server_time_ms: incoming.server_time_ms,
             received_at_ms: incoming.received_at_ms,
         };
-        self.insert(buffer_id, message.clone());
+        self.insert(buffer_id, message.clone(), dedup);
         let (unread, mentions) = {
             let buffer = self
                 .buffers
@@ -432,10 +454,16 @@ impl NetworkModel {
         id
     }
 
-    fn insert(&mut self, buffer_id: BufferId, projection: MessageProjection) {
+    fn insert(
+        &mut self,
+        buffer_id: BufferId,
+        projection: MessageProjection,
+        dedup: DedupReferences,
+    ) {
         let record = TimelineRecord {
             projection,
             sequence: self.next_sequence,
+            dedup,
         };
         self.next_sequence += 1;
         let buffer = self
@@ -445,7 +473,31 @@ impl NetworkModel {
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
         let excess = buffer.timeline.len().saturating_sub(self.window_limit);
-        buffer.timeline.drain(..excess);
+        let evicted = buffer.timeline.drain(..excess).collect::<Vec<_>>();
+        for record in evicted {
+            for msgid in record.dedup.msgids {
+                decrement_or_remove(&mut self.msgids, &msgid);
+            }
+            if let Some(fallback) = record.dedup.fallback {
+                let remove = self.fallbacks.get_mut(&fallback).is_some_and(|(_, count)| {
+                    *count -= 1;
+                    *count == 0
+                });
+                if remove {
+                    self.fallbacks.remove(&fallback);
+                }
+            }
+        }
+    }
+}
+
+fn decrement_or_remove(counts: &mut HashMap<String, usize>, key: &str) {
+    let remove = counts.get_mut(key).is_some_and(|count| {
+        *count -= 1;
+        *count == 0
+    });
+    if remove {
+        counts.remove(key);
     }
 }
 
@@ -617,6 +669,42 @@ mod tests {
         }
 
         assert_eq!(timeline(&model), ["two", "three"]);
+    }
+
+    #[test]
+    fn dedup_indexes_plateau_with_the_timeline_window() {
+        let (mut msgid_model, state) = model(2);
+        for index in 0..100 {
+            let value = index.to_string();
+            msgid_model.receive_incoming(
+                incoming(
+                    &state,
+                    &value,
+                    Some(&value),
+                    None,
+                    index,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+        assert_eq!(msgid_model.msgids.len(), 2);
+
+        let (mut fallback_model, state) = model(2);
+        for index in 0..100 {
+            fallback_model.receive_incoming(
+                incoming(
+                    &state,
+                    &index.to_string(),
+                    None,
+                    Some(index),
+                    index,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+        assert_eq!(fallback_model.fallbacks.len(), 2);
     }
 
     #[test]
