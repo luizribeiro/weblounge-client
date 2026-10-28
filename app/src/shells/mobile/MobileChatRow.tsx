@@ -6,6 +6,7 @@ import styles from "./MobileChatRow.module.css";
 interface MobileChatRowProps {
   readonly buffer: BufferProjection;
   readonly networkLabel?: string | undefined;
+  readonly previews: boolean;
   readonly onOpen: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
 }
 
@@ -44,7 +45,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
           )}
         </span>
         <span class={styles.detail}>
-          {message() !== undefined && (
+          {props.previews && message() !== undefined && (
             <Line class={styles.preview}>{preview(message())}</Line>
           )}
           {badge() > 0 && (

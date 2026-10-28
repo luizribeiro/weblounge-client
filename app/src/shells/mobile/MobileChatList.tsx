@@ -1,4 +1,9 @@
 import { createMemo, For, Show } from "solid-js";
+import {
+  type DensityId,
+  densityDefaults,
+  densityPresets,
+} from "../../density/density";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -86,6 +91,7 @@ export function MobileChatList(props: MobileChatListProps) {
           {(buffer) => (
             <MobileChatRow
               buffer={buffer}
+              previews={mobilePreviews()}
               networkLabel={networkLabel(props.networks, buffer.network_id)}
               onOpen={() => props.onOpen(buffer.id)}
             />
@@ -97,4 +103,16 @@ export function MobileChatList(props: MobileChatListProps) {
       </div>
     </section>
   );
+}
+
+function mobilePreviews(): boolean {
+  const configured = document.documentElement.dataset.mobileDensity;
+  const density: DensityId = isDensity(configured)
+    ? configured
+    : densityDefaults.mobileList;
+  return densityPresets[density].mobilePreviews;
+}
+
+function isDensity(value: string | undefined): value is DensityId {
+  return value === "compact" || value === "cozy" || value === "comfortable";
 }

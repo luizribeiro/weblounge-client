@@ -49,3 +49,46 @@ it("updates chat filters and search through accessible controls", () => {
   fireEvent.click(screen.getByRole("button", { name: "mel" }));
   expect(open).toHaveBeenCalledWith(3);
 });
+
+it("omits the preview element at compact mobile density", () => {
+  document.documentElement.dataset.mobileDensity = "compact";
+  render(() => (
+    <MobileChatList
+      buffers={[
+        {
+          ...base,
+          id: 3,
+          kind: "direct",
+          title: "mel",
+          last_message: {
+            id: 8,
+            author: "mel",
+            text: "compact preview",
+            kind: "text",
+            bot: false,
+            mode_symbol: null,
+            authorship: "other",
+            nick_color_index: 0,
+            mentioned: false,
+            delivery: "received",
+            local_send_id: null,
+            server_ids: ["eight"],
+            server_time_ms: 8,
+            received_at_ms: 8,
+          },
+        },
+      ]}
+      filter="all"
+      networks={[]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={() => {}}
+      query=""
+      scrollTop={0}
+    />
+  ));
+
+  expect(screen.queryByText("mel: compact preview")).not.toBeInTheDocument();
+  delete document.documentElement.dataset.mobileDensity;
+});

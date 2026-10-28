@@ -41,7 +41,12 @@ function buffer(overrides: Partial<BufferProjection> = {}): BufferProjection {
 
 it("renders preview, non-default network, time, and mention badge", () => {
   render(() => (
-    <MobileChatRow buffer={buffer()} networkLabel="Libera" onOpen={vi.fn()} />
+    <MobileChatRow
+      buffer={buffer()}
+      networkLabel="Libera"
+      onOpen={vi.fn()}
+      previews={true}
+    />
   ));
 
   expect(screen.getByText("Libera")).toBeVisible();
@@ -52,7 +57,11 @@ it("renders preview, non-default network, time, and mention badge", () => {
 
 it("omits the default network label and uses the unread badge", () => {
   render(() => (
-    <MobileChatRow buffer={buffer({ mentions: 0 })} onOpen={vi.fn()} />
+    <MobileChatRow
+      buffer={buffer({ mentions: 0 })}
+      onOpen={vi.fn()}
+      previews={true}
+    />
   ));
 
   expect(screen.queryByText("Libera")).not.toBeInTheDocument();
