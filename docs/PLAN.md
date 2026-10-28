@@ -16,7 +16,8 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 3. [x] Engine connects through papo; network and buffer state; protocol types generated with ts-rs.
 3a. [x] Design doc `15-selection-and-native-feel.md` (brief §2): selectable surfaces, copy-as-IRC-text, the context-menu hook, motion tokens, base CSS defaults and primitives (`selectable`, `Line`), and a Playwright native-feel audit (chrome not selectable, no I-beam or browser context menu on chrome, selection doesn't spill, no layout shift on font load) plus idle/hidden-tab waste checks. Task 4 and later UI tasks must pass the audit in CI.
 3b. [x] Fix engine slice findings from manual testing and code review.
-4. [ ] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
+4. [x] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
+4b. [ ] Member list.
 5. [ ] Message list (virtualised, one-line layout).
 6. [ ] Composer with optimistic send (`Sent`-based confirmation).
 7. [ ] Mobile shell: chats list and pushed chat screen.
