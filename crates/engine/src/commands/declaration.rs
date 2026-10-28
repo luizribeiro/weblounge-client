@@ -110,6 +110,19 @@ mod tests {
     }
 
     #[test]
+    fn derive_parses_a_registry_resolved_command() {
+        assert!(matches!(
+            Command::parse_registered(
+                "join",
+                "room other",
+                &commands::arguments::ParseContext { chantypes: "#&" }
+            ),
+            Ok(Command::Join { channels, keys: Some(keys) })
+                if channels.0 == ["#room"] && keys.0 == ["other"]
+        ));
+    }
+
+    #[test]
     fn plain_say_and_literal_slash_share_the_typed_ast() {
         assert!(
             matches!(commands::parse("hello", "#&"), Ok(Command::Say { text }) if text.0 == "hello")

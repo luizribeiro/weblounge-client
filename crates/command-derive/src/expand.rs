@@ -84,6 +84,18 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
                 }
             }
 
+            pub(crate) fn parse_registered(
+                name: &str,
+                arguments: &str,
+                context: &ParseContext,
+            ) -> Result<Self, InputError> {
+                let mut tokens = Tokens::new(arguments);
+                match name {
+                    #(#parse_arms,)*
+                    _ => Err(InputError::UnknownCommand(name.into())),
+                }
+            }
+
             pub(crate) fn specs() -> Vec<CommandSpec> {
                 vec![#(#specs),*]
             }
