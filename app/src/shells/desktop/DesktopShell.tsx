@@ -41,6 +41,7 @@ interface DesktopShellProps {
         readonly candidates: readonly string[];
       }
     | undefined;
+  readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
@@ -59,7 +60,6 @@ export function DesktopShell(props: DesktopShellProps) {
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
   let navigationCommitted = false;
-  let pendingOpen: string | undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
@@ -127,14 +127,8 @@ export function DesktopShell(props: DesktopShellProps) {
   });
 
   createEffect(() => {
-    const buffers = props.buffers;
-    if (pendingOpen !== undefined) {
-      const buffer = buffers.find((item) => item.title === pendingOpen);
-      if (buffer !== undefined) {
-        pendingOpen = undefined;
-        showBuffer(buffer.id, true);
-      }
-    }
+    const request = props.focusRequest;
+    if (request !== undefined) showBuffer(request.bufferId, true);
   });
 
   createEffect(() => {
@@ -250,14 +244,6 @@ export function DesktopShell(props: DesktopShellProps) {
                 onSend={(text) => {
                   const buffer = activeBuffer();
                   if (buffer === undefined) return false;
-                  pendingOpen = /^\/(?:join|msg)\s+(\S+)/i.exec(text)?.[1];
-                  const existing = props.buffers.find(
-                    (item) => item.title === pendingOpen,
-                  );
-                  if (existing !== undefined) {
-                    pendingOpen = undefined;
-                    showBuffer(existing.id, true);
-                  }
                   return props.onSend(buffer.id, text);
                 }}
               />

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
 import type { EngineClient } from "./engine/EngineClient";
@@ -106,6 +106,42 @@ it("lists projected networks, buffers, and messages", async () => {
     id: expect.any(String),
     command: { type: "load_history", buffer_id: 2 },
   });
+});
+
+it("focuses command-created buffers only from engine buffer ids", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  for (const [id, title] of [
+    [2, "#home"],
+    [3, "#new"],
+  ] as const) {
+    client.emit({
+      type: "buffer_added",
+      buffer: {
+        id,
+        network_id: 1,
+        kind: "channel",
+        title,
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    });
+  }
+  const input = await screen.findByRole("textbox", { name: "Message #home" });
+  fireEvent.input(input, { target: { value: "/join #new" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(screen.getByRole("heading", { name: "#home" })).toBeInTheDocument();
+
+  client.emit({
+    type: "focus_buffer_requested",
+    command_id: "join-1",
+    buffer_id: 3,
+  });
+  expect(
+    await screen.findByRole("heading", { name: "#new" }),
+  ).toBeInTheDocument();
 });
 
 it("prepends requested history before live rows", async () => {

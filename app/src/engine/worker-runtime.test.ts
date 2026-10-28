@@ -34,6 +34,36 @@ it("broadcasts optimistic state to every shared port", async () => {
   );
 });
 
+it("routes asynchronous buffer focus requests only to the submitting port", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return { handle: () => "[]" };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  first.receive({ type: "command", payload: { id: "join-1" } });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  emit?.(
+    JSON.stringify({
+      type: "focus_buffer_requested",
+      command_id: "join-1",
+      buffer_id: 3,
+    }),
+  );
+
+  expect(first.sent).toContainEqual({
+    type: "focus_buffer_requested",
+    command_id: "join-1",
+    buffer_id: 3,
+  });
+  expect(second.sent).toEqual([]);
+});
+
 class FakePort implements WorkerHostPort {
   readonly sent: unknown[] = [];
   #listener: ((event: MessageEvent<unknown>) => void) | undefined;

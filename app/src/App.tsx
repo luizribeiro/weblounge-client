@@ -40,6 +40,7 @@ export function App(props: AppProps) {
     prefix: string;
     candidates: readonly string[];
   }>();
+  const [focusRequest, setFocusRequest] = createSignal<{ bufferId: number }>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
   const [messages, setMessages] = createSignal<
@@ -77,6 +78,9 @@ export function App(props: AppProps) {
           prefix: message.prefix,
           candidates: message.candidates,
         });
+      }
+      if (message.type === "focus_buffer_requested") {
+        setFocusRequest({ bufferId: message.buffer_id });
       }
       applyDebugEvent(
         message,
@@ -126,6 +130,7 @@ export function App(props: AppProps) {
         buffers={buffers()}
         composerNotice={composerNotice()}
         completion={completion()}
+        focusRequest={focusRequest()}
         messages={messages()}
         memberships={memberships()}
         onMarkRead={(bufferId, through) => {

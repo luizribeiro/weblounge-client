@@ -70,13 +70,21 @@ export class EngineWorkerRuntime {
   #route(event: unknown, callingPort?: WorkerHostPort): void {
     if (
       isRecord(event) &&
-      (event.type === "command_result" || event.type === "command_rejected")
+      (event.type === "command_result" ||
+        event.type === "command_rejected" ||
+        event.type === "focus_buffer_requested")
     ) {
+      const commandId =
+        event.type === "focus_buffer_requested" ? event.command_id : event.id;
       const port =
-        typeof event.id === "string"
-          ? this.#commandPorts.get(event.id)
+        typeof commandId === "string"
+          ? this.#commandPorts.get(commandId)
           : undefined;
-      if (typeof event.id === "string") this.#commandPorts.delete(event.id);
+      if (
+        event.type !== "focus_buffer_requested" &&
+        typeof commandId === "string"
+      )
+        this.#commandPorts.delete(commandId);
       (port ?? callingPort)?.postMessage(event);
     } else if (isSharedStateEvent(event)) {
       for (const port of this.#ports) port.postMessage(event);
