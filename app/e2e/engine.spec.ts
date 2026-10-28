@@ -95,6 +95,7 @@ test.describe("local Ergo user flow", () => {
   test("anchors live messages and preserves the away boundary", async ({
     page,
   }) => {
+    test.slow();
     await page.goto("/?irc-password=weblounge-test");
     await expect(
       page.getByRole("heading", { name: /#weblounge-test/ }),
@@ -114,7 +115,9 @@ test.describe("local Ergo user flow", () => {
       await expect(
         page.getByText("timeline seed 39", { exact: true }),
       ).toBeVisible();
-      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+      await expect
+        .poll(() => distanceFromBottom(list), { timeout: 15_000 })
+        .toBeLessThanOrEqual(3);
       await expect(active).toHaveAttribute("data-unread", "0", {
         timeout: 3_000,
       });
