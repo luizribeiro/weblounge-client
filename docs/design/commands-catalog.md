@@ -355,6 +355,19 @@ Pass-through commands (`ns`, `cs`, `hs`, `histserv`, `bs`, `quote`) are ordinary
 8. **Filehost.** There is no `soju.im/FILEHOST` support, and Ergo has no filehost. Does `/upload` wait for an external weblounge filehost (EXTJWT)?
 9. **Where the table lives.** Doc 14 defines the registry in TS. Is a Rust derive that generates the TS unions (and TS-only UI commands alongside them) acceptable, or should the macro idea stay TS-side as codegen from a single table?
 
+### papo's answers (2026-10-28)
+
+All after papo 0.1; none block weblounge-client's first version.
+
+1. **Mute:** papo will add `client.mute(channel, who)`, using the `+q` list where `CHANMODES` has one and Ergo's `+b m:<mask>` when advertised. Until then: `SetModes::add_with('b', "m:nick!*@*")`.
+2. **Nick to ban mask:** papo will add a `BanTarget` built from a member (account extban when logged in, else `*!*@host`); `kickban` already takes `BanTarget`.
+3. **Untyped queries:** raw is fine for the long tail; `motd()`, maybe `whowas()` and a shared `server_info()` may get typed later. `send_raw` bypasses papo's recipient guards, so anything addressed to a person must use typed paths.
+4. **CTCP:** a typed `ctcp(target, Ctcp::Version)` later; replies already arrive as `Event::CtcpReply`.
+5. **Search:** wait (soju-only draft; Ergo lacks it; weblounge DMs aren't in server history).
+6. **Services replies:** papo won't type them (free-form prose that varies by package, version and language). The engine parses them, correlating replies with `request_raw` and labeled-response.
+7. **`unstable`:** by design: draft and vendor specs outside semver. The feature only adds API and is inert unless used (a differential test enforces it). Fine to enable with a pinned rev; expect breaking changes there. Likely to stabilize first: bouncer networks, then persistence; webpush waits for ratification.
+8. **Filehost:** uploading is the app's HTTP job. Later papo could expose `soju.im/FILEHOST` and a typed `EXTJWT` request (Ergo supports EXTJWT).
+
 ## Decisions (Luiz, 2026-10-28)
 
 - The command table lives in Rust: a derive macro on the `Command` enum produces `CommandSpec`s and the generated TS types; UI-only actions are declared in TS and join the same action registry. Naming: UI→engine protocol messages are `EngineRequest`, the UI registry is actions (`ActionRegistry`, `ActionId`), slash commands are `Command`, and everything consumes a runtime `CommandSpec` (so user-defined commands could register specs later).
