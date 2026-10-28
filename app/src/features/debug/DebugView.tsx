@@ -47,7 +47,10 @@ export function DebugView(props: DebugViewProps) {
             <ol>
               <For each={props.messages.get(buffer.id) ?? []}>
                 {(message) => (
-                  <li>
+                  <li
+                    data-delivery={message.delivery}
+                    data-message-text={message.text}
+                  >
                     &lt;{message.author}&gt; {message.text} [{message.delivery}]
                   </li>
                 )}

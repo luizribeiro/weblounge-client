@@ -195,8 +195,58 @@
             cp -r app/dist $out
           '';
         };
+        e2eApp = app.overrideAttrs {
+          WEBLOUNGE_IRC_ENDPOINT = "ws://127.0.0.1:8067";
+          WEBLOUNGE_IRC_NICKNAME = "weblounge";
+          WEBLOUNGE_IRC_ACCOUNT = "weblounge";
+          WEBLOUNGE_IRC_CHANNEL = "#weblounge-test";
+        };
         e2e = pkgs.stdenvNoCC.mkDerivation {
           pname = "weblounge-e2e";
+          version = "0.1.0";
+          src = appSource;
+          inherit pnpmDeps;
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.pnpmConfigHook
+            pkgs.fontconfig
+            localErgo
+          ];
+          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+          WEBLOUNGE_APP_DIR = "${e2eApp}";
+          WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          WEBLOUNGE_E2E_ERGO = "1";
+          buildPhase = ''
+            runHook preBuild
+            weblounge-ergo >ergo.log 2>&1 &
+            ergo_pid=$!
+            trap 'kill "$ergo_pid" 2>/dev/null || true; wait "$ergo_pid" 2>/dev/null || true' EXIT
+            ready=false
+            for _ in $(seq 1 200); do
+              if grep --quiet 'local Ergo is ready' ergo.log; then
+                ready=true
+                break
+              fi
+              if ! kill -0 "$ergo_pid" 2>/dev/null; then
+                cat ergo.log >&2
+                exit 1
+              fi
+              sleep 0.05
+            done
+            if [[ "$ready" != true ]]; then
+              cat ergo.log >&2
+              exit 1
+            fi
+            pnpm --filter @weblounge/app e2e
+            runHook postBuild
+          '';
+          installPhase = "touch $out";
+        };
+        e2eDev = pkgs.stdenvNoCC.mkDerivation {
+          pname = "weblounge-e2e-dev";
           version = "0.1.0";
           src = appSource;
           inherit pnpmDeps;
@@ -209,8 +259,8 @@
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
-          WEBLOUNGE_APP_DIR = "${app}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          WEBLOUNGE_E2E_DEV = "1";
           buildPhase = ''
             runHook preBuild
             pnpm --filter @weblounge/app e2e
@@ -378,6 +428,7 @@
           wasm = engineWasm;
           app-build = app;
           inherit e2e;
+          e2e-dev = e2eDev;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
           vitest = appCheck "vitest" "${pkgs.pnpm}/bin/pnpm test";

@@ -299,7 +299,7 @@ impl NetworkModel {
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
             server_time_ms: None,
-            received_at_ms: time_millis(SystemTime::now()),
+            received_at_ms: time_millis(papo::time::now()),
         };
         self.insert(buffer_id, message.clone(), DedupReferences::default())
             .ok()?;
