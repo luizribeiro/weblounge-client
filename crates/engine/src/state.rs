@@ -480,39 +480,68 @@ impl NetworkModel {
         &mut self,
         pending: &PendingSend,
         sent: &papo::Sent,
-    ) -> Option<EngineToUi> {
+    ) -> Option<Vec<EngineToUi>> {
         let buffer = self.buffers.get_mut(&pending.buffer_id)?;
-        let record = buffer
+        let index = buffer
             .timeline
-            .iter_mut()
-            .find(|record| record.projection.local_send_id == Some(pending.local_send_id))?;
-        record.projection.delivery = MessageDelivery::Confirmed;
-        record.projection.local_send_id = None;
-        let (server_ids, server_time) = match &sent.outcome {
+            .iter()
+            .position(|record| record.projection.local_send_id == Some(pending.local_send_id))?;
+        let record = buffer.timeline.remove(index);
+        let (lines, server_time) = match &sent.outcome {
             papo::SentOutcome::Confirmed {
                 lines, server_time, ..
-            } => (
-                lines.iter().map(|(id, _)| id.to_string()).collect(),
-                server_time.map(time_millis),
-            ),
-            _ => (Vec::new(), None),
+            } if !lines.is_empty() => (Some(lines), server_time.map(time_millis)),
+            _ => (None, None),
         };
-        record.projection.server_ids = server_ids;
-        record.projection.server_time_ms = server_time;
-        for msgid in &record.projection.server_ids {
-            *self.msgids.entry(msgid.clone()).or_default() += 1;
+        let messages = if let Some(lines) = lines {
+            lines
+                .iter()
+                .enumerate()
+                .map(|(index, (msgid, text))| {
+                    let mut message = record.projection.clone();
+                    if index != 0 {
+                        message.id = self.allocate_message_id();
+                    }
+                    message.text.clone_from(text);
+                    message.server_ids = vec![msgid.to_string()];
+                    message.server_time_ms = server_time;
+                    message.delivery = MessageDelivery::Confirmed;
+                    message.local_send_id = None;
+                    message
+                })
+                .collect::<Vec<_>>()
+        } else {
+            let mut message = record.projection;
+            message.delivery = MessageDelivery::Confirmed;
+            message.local_send_id = None;
+            vec![message]
+        };
+        for message in &messages {
+            for msgid in &message.server_ids {
+                *self.msgids.entry(msgid.clone()).or_default() += 1;
+            }
+            self.insert(
+                pending.buffer_id,
+                message.clone(),
+                DedupReferences {
+                    msgids: message.server_ids.clone(),
+                    fallback: None,
+                },
+            )
+            .ok()?;
         }
-        record
-            .dedup
-            .msgids
-            .clone_from(&record.projection.server_ids);
-        let message = record.projection.clone();
-        buffer.timeline.sort_by_key(order_key);
-        Some(EngineToUi::MessageConfirmed {
+        let mut events = vec![EngineToUi::MessageConfirmed {
             buffer_id: pending.buffer_id,
             local_send_id: pending.local_send_id,
-            message,
-        })
+            message: messages[0].clone(),
+        }];
+        if messages.len() > 1 {
+            events.push(EngineToUi::MessagesAppended {
+                buffer_id: pending.buffer_id,
+                messages: messages[1..].to_vec(),
+            });
+        }
+        Some(events)
     }
 
     pub(crate) fn fail_send(&mut self, pending: &PendingSend, message_key: &str) -> EngineToUi {

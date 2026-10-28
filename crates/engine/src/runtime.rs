@@ -893,7 +893,7 @@ async fn finish_send(
     pending: &PendingSend,
 ) {
     let result = send(client, pending).await;
-    let event = {
+    let events = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -904,10 +904,10 @@ async fn finish_send(
         };
         match result {
             Ok(sent) => running.model.confirm_send(pending, &sent),
-            Err(error) => Some(running.model.fail_send(pending, error.message_key())),
+            Err(error) => Some(vec![running.model.fail_send(pending, error.message_key())]),
         }
     };
-    if let Some(event) = event {
+    for event in events.into_iter().flatten() {
         let _ = outbound.send(event);
     }
 }
@@ -2841,13 +2841,13 @@ mod tests {
             .await
             .expect("send task completes")
             .expect("send succeeds");
-        let event = model
+        let confirmation_events = model
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
 
         assert!(matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
+            confirmation_events.as_slice(),
+            [EngineToUi::MessageConfirmed { message, .. }]
                 if message.server_ids.is_empty() && message.server_time_ms.is_none()
         ));
     }
@@ -2887,16 +2887,19 @@ mod tests {
                 .await
                 .map(|sent| (pending, sent))
         });
-        assert!(
-            wire.next_sent()
-                .await
-                .starts_with("@label=0 PRIVMSG #room ")
-        );
-        assert!(
-            wire.next_sent()
-                .await
-                .starts_with("@label=0-1 PRIVMSG #room ")
-        );
+        let first_text = wire
+            .next_sent()
+            .await
+            .strip_prefix("@label=0 PRIVMSG #room ")
+            .expect("first labelled line")
+            .to_owned();
+        let second_text = wire
+            .next_sent()
+            .await
+            .strip_prefix("@label=0-1 PRIVMSG #room ")
+            .expect("second labelled line")
+            .to_owned();
+        assert_eq!(format!("{first_text}{second_text}"), "a".repeat(600));
         wire.server("@label=0;msgid=first :weblounge!u@host PRIVMSG #room :first part")
             .await;
         wire.server("@label=0-1;msgid=second :weblounge!u@host PRIVMSG #room :second part")
@@ -2905,14 +2908,20 @@ mod tests {
             .await
             .expect("send task completes")
             .expect("send succeeds");
-        let event = model
+        let confirmation_events = model
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
 
         assert!(matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
-                if message.server_ids == ["first", "second"]
+            confirmation_events.as_slice(),
+            [
+                EngineToUi::MessageConfirmed { message: first, .. },
+                EngineToUi::MessagesAppended { messages, .. }
+            ] if first.server_ids == ["first"]
+                && first.text == first_text
+                && messages.len() == 1
+                && messages[0].server_ids == ["second"]
+                && messages[0].text == second_text
         ));
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(10), events.next())
