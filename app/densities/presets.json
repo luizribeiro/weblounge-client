@@ -1,0 +1,47 @@
+{
+  "compact": {
+    "messageAvatar": "26px",
+    "groupTopPadding": "5px",
+    "continuationPadding": "0px",
+    "oneLineRowPadding": "1px",
+    "lineHeight": "1.4",
+    "fontDelta": "-1px",
+    "sidebarRowHeight": "26px",
+    "sidebarFontSize": "12.5px",
+    "memberRowHeight": "24px",
+    "memberAvatar": "18px",
+    "mobileRowHeight": "52px",
+    "mobileAvatar": "32px",
+    "mobilePreviews": false
+  },
+  "cozy": {
+    "messageAvatar": "36px",
+    "groupTopPadding": "10px",
+    "continuationPadding": "2px",
+    "oneLineRowPadding": "3px",
+    "lineHeight": "1.5",
+    "fontDelta": "0px",
+    "sidebarRowHeight": "32px",
+    "sidebarFontSize": "13px",
+    "memberRowHeight": "32px",
+    "memberAvatar": "24px",
+    "mobileRowHeight": "70px",
+    "mobileAvatar": "44px",
+    "mobilePreviews": true
+  },
+  "comfortable": {
+    "messageAvatar": "40px",
+    "groupTopPadding": "15px",
+    "continuationPadding": "4px",
+    "oneLineRowPadding": "5px",
+    "lineHeight": "1.6",
+    "fontDelta": "1px",
+    "sidebarRowHeight": "38px",
+    "sidebarFontSize": "14px",
+    "memberRowHeight": "38px",
+    "memberAvatar": "28px",
+    "mobileRowHeight": "80px",
+    "mobileAvatar": "48px",
+    "mobilePreviews": true
+  }
+}

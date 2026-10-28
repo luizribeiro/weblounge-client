@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { consumeDebugPassword } from "./debug-irc-config";
+import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import { IncompatibleBuildError } from "./engine/EngineClient";
@@ -24,7 +25,9 @@ interface AppProps {
 
 export function App(props: AppProps) {
   const theme = installSystemTheme(document, window);
+  const removeDensity = installDensity(document);
   onCleanup(() => theme.dispose());
+  onCleanup(removeDensity);
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
