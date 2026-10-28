@@ -552,6 +552,57 @@ mod tests {
         output
     }
 
+    async fn register_for_history(wire: &mut papo_testing::Wire) {
+        assert_eq!(wire.next_sent().await, "CAP LS 302");
+        assert_eq!(wire.next_sent().await, "NICK weblounge");
+        assert!(wire.next_sent().await.starts_with("USER "));
+        let caps = "draft/chathistory labeled-response batch server-time message-tags";
+        wire.server(format!(":offline.test CAP * LS :{caps}")).await;
+        let requested = wire
+            .next_sent()
+            .await
+            .strip_prefix("CAP REQ :")
+            .expect("history capabilities are requested")
+            .to_owned();
+        wire.server(format!(":offline.test CAP * ACK :{requested}"))
+            .await;
+        assert_eq!(wire.next_sent().await, "CAP END");
+        wire.server(
+            ":offline.test 005 weblounge CASEMAPPING=rfc1459 CHANTYPES=# CHATHISTORY=100 MSGREFTYPES=msgid,timestamp :supported",
+        )
+        .await;
+        wire.server(":offline.test 001 weblounge :Welcome").await;
+        wire.server(":offline.test 376 weblounge :End of MOTD")
+            .await;
+    }
+
+    fn request_label(request: &str) -> &str {
+        request
+            .strip_prefix("@label=")
+            .and_then(|line| line.split_once(' '))
+            .map(|(label, _)| label)
+            .expect("catch-up request has a label")
+    }
+
+    async fn send_history_page(wire: &mut papo_testing::Wire, label: &str, items: &[&str]) {
+        let reply = format!("reply{label}");
+        let history = format!("history{label}");
+        wire.server(format!(
+            "@label={label} :offline.test BATCH +{reply} labeled-response"
+        ))
+        .await;
+        wire.server(format!(
+            "@batch={reply} :offline.test BATCH +{history} chathistory #room"
+        ))
+        .await;
+        for item in items {
+            wire.server(format!("@batch={history};{item}")).await;
+        }
+        wire.server(format!("@batch={reply} :offline.test BATCH -{history}"))
+            .await;
+        wire.server(format!(":offline.test BATCH -{reply}")).await;
+    }
+
     #[tokio::test]
     async fn connected_and_reconnected_refresh_network_state_from_wire() {
         let (client, mut events, mut wire) =
@@ -716,6 +767,92 @@ mod tests {
         let targets = process_event(&state, &outbound, &client, 1, lagged);
 
         assert!(matches!(targets.as_slice(), [SendTarget::Channel(channel)] if channel == "#room"));
+    }
+
+    #[tokio::test]
+    async fn catchup_history_page_merges_and_deduplicates_live_overlap() {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge")
+                .history_on_reconnect(true)
+                .autojoin(["#room"]),
+        );
+        register_for_history(&mut wire).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+
+        wire.server(
+            "@time=2026-10-15T12:00:00.000Z;msgid=live-1 :alice!a@host PRIVMSG #room :before disconnect",
+        )
+        .await;
+        let live = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, live);
+        _ = collect(&mut receiver);
+
+        wire.close().await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Disconnected(_))
+        })
+        .await;
+        client.reconnect().await.expect("manual reconnect starts");
+        register_for_history(&mut wire).await;
+        let connected = next_matching(
+            &mut events,
+            |event| matches!(event, papo::Event::Connected(connected) if connected.reconnected),
+        )
+        .await;
+        process_event(&state, &outbound, &client, 1, connected);
+        _ = collect(&mut receiver);
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        assert!(request.contains("CHATHISTORY AFTER #room msgid=live-1"));
+        send_history_page(
+            &mut wire,
+            label,
+            &[
+                "time=2026-10-15T12:00:00.000Z;msgid=live-1 :alice!a@host PRIVMSG #room :before disconnect",
+                "time=2026-10-15T12:00:01.000Z;msgid=missed-1 :alice!a@host PRIVMSG #room :missed while away",
+            ],
+        )
+        .await;
+
+        let final_request = wire.next_sent().await;
+        let final_label = request_label(&final_request);
+        assert!(final_request.contains("CHATHISTORY AFTER #room msgid=missed-1"));
+        send_history_page(&mut wire, final_label, &[]).await;
+
+        let history = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::History(_))
+        })
+        .await;
+        assert!(matches!(
+            &history,
+            papo::Event::History(page) if page.reason == papo::HistoryReason::Catchup
+        ));
+        process_event(&state, &outbound, &client, 1, history);
+        let appended = collect(&mut receiver)
+            .into_iter()
+            .filter_map(|event| match event {
+                EngineToUi::MessagesAppended { messages, .. } => Some(messages),
+                _ => None,
+            })
+            .flatten()
+            .map(|message| message.text)
+            .collect::<Vec<_>>();
+
+        assert_eq!(appended, ["missed while away"]);
     }
 
     #[tokio::test]
