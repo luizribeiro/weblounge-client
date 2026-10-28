@@ -899,7 +899,10 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
     use papo_testing::wire;
     use tokio::sync::mpsc;
@@ -1129,6 +1132,54 @@ mod tests {
             |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == "alice")
         ));
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
+    }
+
+    #[tokio::test]
+    async fn banned_join_numeric_becomes_a_typed_notice() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+
+        assert!(
+            runtime
+                .command(CommandEnvelope {
+                    id: "banned-join".into(),
+                    command: Command::SubmitInput {
+                        buffer_id: BufferId(1),
+                        input: "/join #banned".into(),
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(wire.next_sent().await, "JOIN #banned");
+        wire.server(":irc.test 474 weblounge #banned :Cannot join channel (+b)")
+            .await;
+
+        let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("join rejection resolves")
+            .expect("runtime remains subscribed");
+        assert_eq!(
+            result,
+            EngineToUi::CommandRejected {
+                id: "banned-join".into(),
+                message_key: "engine.command_refused".into(),
+            }
+        );
     }
 
     async fn next_matching(
