@@ -4,6 +4,7 @@ import {
   finishTransition,
   mountedScreens,
   popChat,
+  previousScreen,
   pushChat,
   swipeBackCompletes,
 } from "./mobile-navigation";
@@ -31,8 +32,15 @@ describe("mobile stack navigation", () => {
 
   it("commits pushes and pops immediately under reduced motion", () => {
     const pushed = pushChat(createMobileStack(), 8, true);
-    expect(pushed).toEqual({ active: { kind: "chat", bufferId: 8 } });
-    expect(popChat(pushed, true)).toEqual({ active: { kind: "chats" } });
+    expect(pushed.active).toEqual({ kind: "chat", bufferId: 8 });
+    expect(popChat(pushed, true).active).toEqual({ kind: "chats" });
+  });
+
+  it("pushes a member DM over its channel", () => {
+    const channel = pushChat(createMobileStack(), 8, true);
+    const direct = pushChat(channel, 9, true, true);
+    expect(previousScreen(direct)).toEqual({ kind: "chat", bufferId: 8 });
+    expect(popChat(direct, true).active).toEqual({ kind: "chat", bufferId: 8 });
   });
 
   it("completes swipe-back by position or forward velocity", () => {

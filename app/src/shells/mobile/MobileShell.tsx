@@ -16,6 +16,7 @@ import {
   finishTransition,
   mountedScreens,
   popChat,
+  previousScreen,
   pushChat,
   swipeBackCompletes,
 } from "./mobile-navigation";
@@ -61,22 +62,27 @@ export function MobileShell(props: MobileShellProps) {
   );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let pendingDirect: { networkId: number; nick: string } | undefined;
+  let pushNextFocus = false;
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
     | undefined;
 
-  const open = (bufferId: number) => {
+  const open = (bufferId: number, preserveCurrent = false) => {
     props.onSelectBuffer(bufferId);
     const state = { ...historyState(), webloungeMobileChat: true };
-    if (stack().active.kind === "chats") window.history.pushState(state, "");
+    if (stack().active.kind === "chats" || preserveCurrent)
+      window.history.pushState(state, "");
     else window.history.replaceState(state, "");
-    setStack((current) => pushChat(current, bufferId, reducedMotion()));
+    setStack((current) =>
+      pushChat(current, bufferId, reducedMotion(), preserveCurrent),
+    );
   };
   const dispatchBack = () =>
     setStack((current) => popChat(current, reducedMotion()));
   const finishDrawerClose = () => {
     setDrawerBufferId(undefined);
     if (pendingDirect !== undefined) {
+      pushNextFocus = true;
       props.onOpenDirect?.(pendingDirect.networkId, pendingDirect.nick);
       pendingDirect = undefined;
     }
@@ -111,8 +117,9 @@ export function MobileShell(props: MobileShellProps) {
     const requested = request.bufferId;
     const active = stack().active;
     if (active.kind !== "chat" || requested !== active.bufferId) {
-      open(requested);
+      open(requested, pushNextFocus);
     }
+    pushNextFocus = false;
   });
 
   const beginSwipe = (event: PointerEvent) => {
@@ -170,7 +177,7 @@ export function MobileShell(props: MobileShellProps) {
   const screens = () =>
     swipeProgress() === undefined
       ? mountedScreens(stack())
-      : [{ kind: "chats" } as const, stack().active];
+      : [previousScreen(stack()), stack().active];
 
   onMount(() => {
     const handlePopState = () =>
