@@ -335,8 +335,15 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     case "focus_buffer_requested":
-      if (typeof value.buffer_id === "number") {
-        return { type: "focus_buffer_requested", buffer_id: value.buffer_id };
+      if (
+        typeof value.command_id === "string" &&
+        typeof value.buffer_id === "number"
+      ) {
+        return {
+          type: "focus_buffer_requested",
+          command_id: value.command_id,
+          buffer_id: value.buffer_id,
+        };
       }
       break;
     case "network_state_changed": {

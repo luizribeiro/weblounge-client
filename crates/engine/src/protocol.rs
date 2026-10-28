@@ -369,6 +369,8 @@ pub enum EngineToUi {
     },
     /// Ask the active shell to focus a buffer selected by engine-owned input semantics.
     FocusBufferRequested {
+        /// Command whose composer should navigate.
+        command_id: String,
         /// Buffer to focus.
         buffer_id: BufferId,
     },

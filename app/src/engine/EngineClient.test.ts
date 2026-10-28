@@ -139,6 +139,25 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes the command origin of a buffer focus request", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "focus_buffer_requested",
+      command_id: "join-1",
+      buffer_id: 3,
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "focus_buffer_requested",
+      command_id: "join-1",
+      buffer_id: 3,
+    });
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

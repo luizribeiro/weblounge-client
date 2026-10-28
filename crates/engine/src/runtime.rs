@@ -297,21 +297,52 @@ impl Runtime {
     }
 
     fn join(&self, command_id: String, targets: Vec<input::JoinTarget>) -> Vec<EngineToUi> {
-        let Some(client) = lock(&self.state)
+        let Some((client, instance)) = lock(&self.state)
             .network
             .as_ref()
-            .map(|running| running.client.clone())
+            .map(|running| (running.client.clone(), running.instance))
         else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        spawn_request(self.outbound.clone(), command_id, async move {
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
             for target in targets {
-                match target.key {
-                    Some(key) => client.join(target.channel).key(key).await?,
-                    None => client.join(target.channel).await?,
+                let channel = client.state().name_rules().channel(target.channel.clone());
+                let result = match target.key {
+                    Some(key) => client.join(target.channel).key(key).await,
+                    None => client.join(target.channel).await,
+                };
+                if result.is_err() {
+                    let _ = outbound.send(EngineToUi::CommandRejected {
+                        id: command_id,
+                        message_key: "engine.command_refused".into(),
+                    });
+                    return;
+                }
+                let output = {
+                    let mut state = lock(&state);
+                    let Some(running) = state
+                        .network
+                        .as_mut()
+                        .filter(|running| running.instance == instance)
+                    else {
+                        return;
+                    };
+                    let mut output = running.model.sync_channels(&client.state());
+                    if let Some(buffer_id) = running.model.buffer_id_for_channel(&channel) {
+                        output.push(EngineToUi::FocusBufferRequested {
+                            command_id: command_id.clone(),
+                            buffer_id,
+                        });
+                    }
+                    output
+                };
+                for event in output {
+                    let _ = outbound.send(event);
                 }
             }
-            Ok(())
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
         Vec::new()
     }
@@ -323,7 +354,10 @@ impl Runtime {
         };
         let snapshot = running.client.state();
         let (buffer_id, mut output) = running.model.open_direct(nick, &snapshot);
-        output.push(EngineToUi::FocusBufferRequested { buffer_id });
+        output.push(EngineToUi::FocusBufferRequested {
+            command_id: command_id.clone(),
+            buffer_id,
+        });
         drop(state);
         output.extend(self.send_input(command_id, buffer_id, text, crate::MessageKind::Text));
         output
@@ -775,9 +809,6 @@ fn process_join(
 ) -> Vec<SendTarget> {
     output.extend(model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
-        if let Some(buffer_id) = model.buffer_id_for_channel(&joined.channel) {
-            output.push(EngineToUi::FocusBufferRequested { buffer_id });
-        }
         model
             .request_latest_channel(&joined.channel)
             .into_iter()
@@ -1194,6 +1225,10 @@ mod tests {
         assert!(output.iter().any(
             |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == "alice")
         ));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::FocusBufferRequested { command_id, .. } if command_id == "msg"
+        )));
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
     }
 
@@ -1370,10 +1405,11 @@ mod tests {
         let (state, outbound, mut receiver) = harness(client.clone());
         let targets = process_event(&state, &outbound, &client, 1, joined);
         assert_eq!(targets.len(), 1);
-        assert!(collect(&mut receiver).iter().any(|event| matches!(
-            event,
-            EngineToUi::FocusBufferRequested { buffer_id } if buffer_id.0 > 1
-        )));
+        assert!(
+            !collect(&mut receiver)
+                .iter()
+                .any(|event| matches!(event, EngineToUi::FocusBufferRequested { .. }))
+        );
 
         wire.server(
             "@time=2026-10-27T12:00:02.000Z;msgid=live :alice!a@host PRIVMSG #room :live overlap",

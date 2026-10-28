@@ -85,6 +85,10 @@ buffers: Array<BufferProjection>, } | { "type": "buffer_added",
  */
 buffer: BufferProjection, } | { "type": "focus_buffer_requested",
 /**
+ * Command whose composer should navigate.
+ */
+command_id: string,
+/**
  * Buffer to focus.
  */
 buffer_id: BufferId, } | { "type": "messages_appended",
