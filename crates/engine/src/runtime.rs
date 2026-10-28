@@ -645,7 +645,9 @@ async fn drain_events(
     mut events: papo::Events,
     instance: u64,
 ) {
+    let member_changes = Arc::new(Mutex::new(crate::members::Changes::default()));
     while let Some(event) = events.next().await {
+        let schedule_members = lock(&member_changes).record(&event, &client.state());
         let history_targets = process_event(&state, &outbound, &client, instance, event);
         for target in history_targets {
             spawn_history_fetch(
@@ -656,7 +658,45 @@ async fn drain_events(
                 target,
             );
         }
+        if schedule_members {
+            let state = Arc::clone(&state);
+            let outbound = outbound.clone();
+            let client = client.clone();
+            let changes = Arc::clone(&member_changes);
+            spawn_task(async move {
+                tokio::task::yield_now().await;
+                let channels = lock(&changes).drain();
+                let events = member_windows(&state, &client, instance, channels);
+                for event in events {
+                    let _ = outbound.send(event);
+                }
+            });
+        }
     }
+}
+
+fn member_windows(
+    state: &Arc<Mutex<RuntimeState>>,
+    client: &papo::Client,
+    instance: u64,
+    channels: Vec<papo::ChannelName>,
+) -> Vec<EngineToUi> {
+    let state = lock(state);
+    let Some(running) = state
+        .network
+        .as_ref()
+        .filter(|running| running.instance == instance)
+    else {
+        return Vec::new();
+    };
+    let snapshot = client.state();
+    channels
+        .into_iter()
+        .filter_map(|channel| {
+            let buffer_id = running.model.buffer_id_for_channel(&channel)?;
+            crate::members::project(&snapshot, &channel, buffer_id, 0, 256)
+        })
+        .collect()
 }
 
 fn spawn_history_fetch(

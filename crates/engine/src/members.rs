@@ -2,6 +2,72 @@ use crate::{BufferId, EngineToUi, MemberGroup, MemberProjection, state::nick_col
 
 const MAX_WINDOW: u32 = 256;
 
+#[derive(Default)]
+pub(crate) struct Changes {
+    channels: Vec<papo::ChannelName>,
+    scheduled: bool,
+}
+
+impl Changes {
+    pub(crate) fn record(&mut self, event: &papo::Event, state: &papo::State) -> bool {
+        let channels = affected_channels(event, state);
+        for channel in channels {
+            if !self.channels.contains(&channel) {
+                self.channels.push(channel);
+            }
+        }
+        if self.channels.is_empty() || self.scheduled {
+            return false;
+        }
+        self.scheduled = true;
+        true
+    }
+
+    pub(crate) fn drain(&mut self) -> Vec<papo::ChannelName> {
+        self.scheduled = false;
+        std::mem::take(&mut self.channels)
+    }
+}
+
+fn affected_channels(event: &papo::Event, state: &papo::State) -> Vec<papo::ChannelName> {
+    match event {
+        papo::Event::Connected(_) | papo::Event::Lagged(_) | papo::Event::CasemappingChanged(_) => {
+            state
+                .channels()
+                .map(|channel| channel.name().clone())
+                .collect()
+        }
+        papo::Event::ChannelSynced(event) => vec![event.channel.clone()],
+        papo::Event::MembersRefreshed(event) => vec![event.channel.clone()],
+        papo::Event::Joined(event) => vec![event.channel.clone()],
+        papo::Event::Parted(event) => vec![event.channel.clone()],
+        papo::Event::Kicked(event) => vec![event.channel.clone()],
+        papo::Event::Quit(event) => event.channels.clone(),
+        papo::Event::NickChanged(event) => event.channels.clone(),
+        papo::Event::AwayChanged(event) => channels_for_nick(state, event.actor.nick()),
+        papo::Event::AccountChanged(event) => channels_for_nick(state, event.actor.nick()),
+        papo::Event::ModeChanged(event) => event.subject.channel().map_or_else(
+            || {
+                event
+                    .subject
+                    .nick()
+                    .map_or_else(Vec::new, |nick| channels_for_nick(state, nick))
+            },
+            |channel| vec![channel.clone()],
+        ),
+        _ => Vec::new(),
+    }
+}
+
+fn channels_for_nick(state: &papo::State, nick: &papo::Nick) -> Vec<papo::ChannelName> {
+    state
+        .user(nick)
+        .into_iter()
+        .flat_map(papo::User::channels)
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn project(
     state: &papo::State,
     channel: &papo::ChannelName,
@@ -88,7 +154,7 @@ const fn order(group: MemberGroup) -> usize {
 mod tests {
     use papo_testing::wire;
 
-    use super::project;
+    use super::{Changes, project};
     use crate::{BufferId, EngineToUi, MemberGroup};
 
     #[tokio::test]
@@ -172,5 +238,41 @@ mod tests {
         assert_eq!(counts, [1, 0, 2_000, 0, 0]);
         assert_eq!(total, 2_001);
         assert_eq!(members.len(), 256);
+    }
+
+    #[tokio::test]
+    async fn coalesces_a_five_hundred_quit_netsplit_to_one_patch() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@h JOIN #large").await;
+        wire.server(":offline.test 353 weblounge = #large :weblounge")
+            .await;
+        wire.server(":offline.test 366 weblounge #large :End of NAMES")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        for index in 0..500 {
+            wire.server(format!(":u{index:03}!u@h JOIN #large")).await;
+            while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        }
+
+        let mut changes = Changes::default();
+        let mut scheduled = 0;
+        for index in 0..500 {
+            wire.server(format!(":u{index:03}!u@h QUIT :split")).await;
+            let event = loop {
+                if let Some(event @ papo::Event::Quit(_)) = events.next().await {
+                    break event;
+                }
+            };
+            scheduled += usize::from(changes.record(&event, &client.state()));
+        }
+
+        assert_eq!(scheduled, 1);
+        assert_eq!(
+            changes.drain(),
+            [client.state().name_rules().channel("#large")]
+        );
     }
 }
