@@ -36,6 +36,11 @@ struct DedupReferences {
     fallback: Option<FallbackKey>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StateError {
+    MissingBuffer(BufferId),
+}
+
 #[derive(Clone, Debug)]
 struct BufferState {
     projection: BufferProjection,
@@ -296,7 +301,8 @@ impl NetworkModel {
             server_time_ms: None,
             received_at_ms: time_millis(SystemTime::now()),
         };
-        self.insert(buffer_id, message.clone(), DedupReferences::default());
+        self.insert(buffer_id, message.clone(), DedupReferences::default())
+            .ok()?;
         let target = SendTarget::from_name_key(key, direct_account);
         Some((
             PendingSend {
@@ -426,12 +432,13 @@ impl NetworkModel {
             server_time_ms: incoming.server_time_ms,
             received_at_ms: incoming.received_at_ms,
         };
-        self.insert(buffer_id, message.clone(), dedup);
+        if self.insert(buffer_id, message.clone(), dedup).is_err() {
+            return inconsistent_state_notice();
+        }
         let (unread, mentions) = {
-            let buffer = self
-                .buffers
-                .get_mut(&buffer_id)
-                .expect("newly ensured buffer must exist");
+            let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+                return inconsistent_state_notice();
+            };
             buffer.projection.unread += u64::from(incoming.authorship != MessageAuthorship::Own);
             buffer.projection.mentions += u64::from(mentioned);
             (buffer.projection.unread, buffer.projection.mentions)
@@ -511,36 +518,50 @@ impl NetworkModel {
         buffer_id: BufferId,
         projection: MessageProjection,
         dedup: DedupReferences,
-    ) {
+    ) -> Result<(), StateError> {
+        if !self.buffers.contains_key(&buffer_id) {
+            self.release_dedup(dedup);
+            return Err(StateError::MissingBuffer(buffer_id));
+        }
         let record = TimelineRecord {
             projection,
             sequence: self.next_sequence,
             dedup,
         };
         self.next_sequence += 1;
-        let buffer = self
-            .buffers
-            .get_mut(&buffer_id)
-            .expect("engine buffer identity must remain valid");
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(StateError::MissingBuffer(buffer_id));
+        };
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
         let excess = buffer.timeline.len().saturating_sub(self.window_limit);
         let evicted = buffer.timeline.drain(..excess).collect::<Vec<_>>();
         for record in evicted {
-            for msgid in record.dedup.msgids {
-                decrement_or_remove(&mut self.msgids, &msgid);
-            }
-            if let Some(fallback) = record.dedup.fallback {
-                let remove = self.fallbacks.get_mut(&fallback).is_some_and(|(_, count)| {
-                    *count -= 1;
-                    *count == 0
-                });
-                if remove {
-                    self.fallbacks.remove(&fallback);
-                }
+            self.release_dedup(record.dedup);
+        }
+        Ok(())
+    }
+
+    fn release_dedup(&mut self, dedup: DedupReferences) {
+        for msgid in dedup.msgids {
+            decrement_or_remove(&mut self.msgids, &msgid);
+        }
+        if let Some(fallback) = dedup.fallback {
+            let remove = self.fallbacks.get_mut(&fallback).is_some_and(|(_, count)| {
+                *count -= 1;
+                *count == 0
+            });
+            if remove {
+                self.fallbacks.remove(&fallback);
             }
         }
     }
+}
+
+fn inconsistent_state_notice() -> Vec<EngineToUi> {
+    vec![EngineToUi::Notice {
+        message_key: "engine.state_inconsistent".into(),
+    }]
 }
 
 fn decrement_or_remove(counts: &mut HashMap<String, usize>, key: &str) {
@@ -823,5 +844,30 @@ mod tests {
             let target = SendTarget::from_name_key(key.clone(), None);
             assert_eq!(target.name_key(), key);
         }
+    }
+
+    #[test]
+    fn inconsistent_buffer_identity_becomes_a_diagnostic() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(state.name_rules().channel("#room"));
+        model.names.insert(key, crate::BufferId(u64::MAX));
+
+        let events = model.receive_incoming(
+            incoming(
+                &state,
+                "still alive",
+                Some("broken-identity"),
+                None,
+                1,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+
+        assert!(matches!(
+            events.as_slice(),
+            [crate::EngineToUi::Notice { message_key }]
+                if message_key == "engine.state_inconsistent"
+        ));
     }
 }
