@@ -17,13 +17,14 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 3a. [x] Design doc `15-selection-and-native-feel.md` (brief §2): selectable surfaces, copy-as-IRC-text, the context-menu hook, motion tokens, base CSS defaults and primitives (`selectable`, `Line`), and a Playwright native-feel audit (chrome not selectable, no I-beam or browser context menu on chrome, selection doesn't spill, no layout shift on font load) plus idle/hidden-tab waste checks. Task 4 and later UI tasks must pass the audit in CI.
 3b. [x] Fix engine slice findings from manual testing and code review.
 4. [x] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
-4b. [ ] Member list.
+4b. [x] Member list.
 5. [x] Message list (virtualised one-line timeline, read state, latest history, and membership runs).
 5b. [x] Message list fixes (scrolling, logo, bottom anchor, real screenshots, and copy coverage).
 6. [x] Composer with optimistic send (`Sent`-based confirmation).
 6b. [x] Composer fixes (engine-owned navigation and completion, human errors, stable guarded drafts, and refreshed screenshots).
 7. [x] Mobile shell: chats list and pushed chat screen.
 7b. [x] Mobile shell fixes (inline rows, compact previews, history, swipe cancellation, consistent times, DM previews, and routing/read tests).
+7c. [ ] Mobile members drawer.
 8. [ ] End-to-end check against weblounge over `wss://`.
 
 Next after milestone 2 (brought forward by Luiz): split view and the core keyboard shortcuts.
