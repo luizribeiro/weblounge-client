@@ -179,6 +179,19 @@ function applyDebugEvent(
       );
       return next;
     });
+  } else if (message.type === "message_failed") {
+    setMessages((current) => {
+      const next = new Map(current);
+      next.set(
+        message.buffer_id,
+        (current.get(message.buffer_id) ?? []).map((item) =>
+          item.local_send_id === message.local_send_id
+            ? { ...item, delivery: "failed" }
+            : item,
+        ),
+      );
+      return next;
+    });
   }
 }
 

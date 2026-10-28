@@ -3,4 +3,4 @@
 /**
  * Delivery state of a timeline row.
  */
-export type MessageDelivery = "received" | "optimistic" | "confirmed";
+export type MessageDelivery = "received" | "optimistic" | "confirmed" | "failed";

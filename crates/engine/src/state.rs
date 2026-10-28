@@ -291,7 +291,15 @@ impl NetworkModel {
         })
     }
 
-    pub(crate) fn fail_send(pending: &PendingSend) -> EngineToUi {
+    pub(crate) fn fail_send(&mut self, pending: &PendingSend) -> EngineToUi {
+        if let Some(record) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
+            buffer
+                .timeline
+                .iter_mut()
+                .find(|record| record.projection.local_send_id == Some(pending.local_send_id))
+        }) {
+            record.projection.delivery = MessageDelivery::Failed;
+        }
         EngineToUi::MessageFailed {
             buffer_id: pending.buffer_id,
             local_send_id: pending.local_send_id,
@@ -609,6 +617,21 @@ mod tests {
         }
 
         assert_eq!(timeline(&model), ["two", "three"]);
+    }
+
+    #[test]
+    fn failed_send_updates_the_optimistic_timeline_row() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(state.name_rules().channel("#room"));
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel);
+        let (pending, _) = model
+            .begin_send(buffer.id, "will fail".into())
+            .expect("channel is sendable");
+
+        model.fail_send(&pending);
+
+        let record = &model.buffers[&buffer.id].timeline[0];
+        assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
     }
 
     #[test]

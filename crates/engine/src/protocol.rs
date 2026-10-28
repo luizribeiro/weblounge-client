@@ -104,6 +104,8 @@ pub enum MessageDelivery {
     Optimistic,
     /// Reconciled from `papo::Sent`.
     Confirmed,
+    /// The send attempt failed and may be retried.
+    Failed,
 }
 
 /// UI projection of one chat message.

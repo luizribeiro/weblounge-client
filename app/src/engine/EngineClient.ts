@@ -413,7 +413,12 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     typeof value.author !== "string" ||
     typeof value.text !== "string" ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
-    !isOneOf(value.delivery, ["received", "optimistic", "confirmed"]) ||
+    !isOneOf(value.delivery, [
+      "received",
+      "optimistic",
+      "confirmed",
+      "failed",
+    ]) ||
     !(
       value.local_send_id === null || typeof value.local_send_id === "number"
     ) ||

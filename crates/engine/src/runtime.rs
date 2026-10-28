@@ -176,7 +176,7 @@ impl Runtime {
                 };
                 match result {
                     Ok(sent) => running.model.confirm_send(&pending, &sent),
-                    Err(_) => Some(NetworkModel::fail_send(&pending)),
+                    Err(_) => Some(running.model.fail_send(&pending)),
                 }
             };
             if let Some(event) = event {

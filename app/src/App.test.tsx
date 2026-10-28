@@ -108,6 +108,47 @@ it("shows a confirmation received without this tab's optimistic row", async () =
   ).toBeVisible();
 });
 
+it("shows an optimistic message as failed when sending fails", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      unread: 0,
+      mentions: 0,
+    },
+  });
+  client.emit({
+    type: "messages_appended",
+    buffer_id: 2,
+    messages: [
+      {
+        id: 9,
+        author: "weblounge",
+        text: "will fail",
+        authorship: "own",
+        delivery: "optimistic",
+        local_send_id: 7,
+        server_ids: [],
+        server_time_ms: null,
+        received_at_ms: 8,
+      },
+    ],
+  });
+  client.emit({
+    type: "message_failed",
+    buffer_id: 2,
+    local_send_id: 7,
+    message_key: "engine.send_failed",
+  });
+
+  expect(await screen.findByText(/will fail \[failed\]/)).toBeVisible();
+});
+
 it("reloads only once for the same stale build", () => {
   const setStatus = vi.fn();
   const reload = vi.fn();
