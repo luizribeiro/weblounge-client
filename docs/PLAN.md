@@ -18,6 +18,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 3b. [x] Fix engine slice findings from manual testing and code review.
 4. [x] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
 4b. [x] Member list.
+4c. [x] Member window fixes (per-view live ranges, bounded delta delivery, shell-correct virtualization, and scrolling performance).
 5. [x] Message list (virtualised one-line timeline, read state, latest history, and membership runs).
 5b. [x] Message list fixes (scrolling, logo, bottom anchor, real screenshots, and copy coverage).
 6. [x] Composer with optimistic send (`Sent`-based confirmation).
