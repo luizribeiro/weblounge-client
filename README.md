@@ -11,11 +11,16 @@ nix develop
 pnpm install --frozen-lockfile
 ```
 
-Build the worker wasm, then start the web application:
+Build the worker wasm, then start the web application configured for the local
+Ergo instance:
 
 ```sh
 nix build .#engine-wasm
-pnpm --filter @weblounge/app dev
+WEBLOUNGE_IRC_ENDPOINT=ws://127.0.0.1:8067 \
+WEBLOUNGE_IRC_NICKNAME=weblounge \
+WEBLOUNGE_IRC_ACCOUNT=weblounge \
+WEBLOUNGE_IRC_CHANNEL='#weblounge-test' \
+  pnpm --filter @weblounge/app dev
 ```
 
 In another terminal, start a throwaway local Ergo with loopback-only IRC and WebSocket listeners:
@@ -26,6 +31,19 @@ nix run .#ergo
 
 The launcher prints the listener URLs and SASL test credentials. History is enabled; its account
 database and all on-disk state live in a temporary directory that is removed when the server exits.
+
+Open <http://127.0.0.1:5173/?irc-password=weblounge-test>. The app consumes the
+password at runtime and immediately removes it from the address bar. Do not set
+`WEBLOUNGE_IRC_PASSWORD`: production builds reject it so a credential cannot be
+embedded in shipped JavaScript.
+
+The debug connection variables are read when Vite starts or builds the app:
+
+- `WEBLOUNGE_IRC_ENDPOINT` enables the connection; omit it to start without IRC.
+- `WEBLOUNGE_IRC_NICKNAME` selects the nick and defaults to `weblounge`.
+- `WEBLOUNGE_IRC_ACCOUNT` selects the SASL account and defaults to `weblounge`.
+- `WEBLOUNGE_IRC_CHANNEL` selects the autojoin channel and defaults to
+  `#weblounge-test`.
 
 Run the complete project check suite:
 
