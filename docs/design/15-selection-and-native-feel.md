@@ -107,12 +107,14 @@ It asserts:
 - a pointer selection across two rows stays in the list and its `copy` payload is IRC-style text;
 - chrome images and links are not draggable;
 - cumulative layout shift stays at or below `0.01` through `document.fonts.ready`;
-- an instrumented short idle window executes no app `requestAnimationFrame`, timeout, or interval
-  callbacks after startup settles (network callbacks are outside those APIs and therefore exempt);
+- an instrumented five-second idle window executes no app `requestAnimationFrame`, timeout, or
+  interval callbacks after startup settles, and no interval is registered unless its call site is
+  allow-listed with a reason (network callbacks are outside those APIs and therefore exempt);
 - while visibility is emulated as hidden, a second Ergo client can deliver messages without
   mutating the message-list DOM; becoming visible causes one batched catch-up mutation.
 
-The timer instrumentation is installed before app code and counts callbacks, not registrations.
+The timer instrumentation is installed before app code. It counts timeout and animation-frame
+callbacks and records every interval registration as well as its callbacks.
 Tests use bounded waits rather than app polling. The hidden test uses the real local Ergo fixture
 because only a real worker event proves that engine state continues while rendering pauses.
 

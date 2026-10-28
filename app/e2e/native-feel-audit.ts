@@ -6,8 +6,27 @@ interface WasteCounters {
   readonly timeouts: number;
 }
 
+interface IntervalRegistration {
+  readonly delay: number;
+  readonly stack: string;
+}
+
+interface IntervalAllowance {
+  readonly source: RegExp;
+  readonly reason: string;
+}
+
+const intervalAllowList: readonly IntervalAllowance[] = [
+  {
+    source: /\/@vite\/client/,
+    reason: "the dev server heartbeat is tooling, not application work",
+  },
+];
+const idleObservationMilliseconds = 5_000;
+
 interface NativeFeelMetrics extends WasteCounters {
   enginePatches: number;
+  intervalRegistrations: IntervalRegistration[];
   layoutShift: number;
   trackingWaste: boolean;
 }
@@ -19,6 +38,7 @@ export async function installNativeFeelInstrumentation(
     const metrics: NativeFeelMetrics = {
       animationFrames: 0,
       enginePatches: 0,
+      intervalRegistrations: [],
       intervals: 0,
       layoutShift: 0,
       timeouts: 0,
@@ -91,11 +111,16 @@ export async function installNativeFeelInstrumentation(
       handler: TimerHandler,
       timeout?: number,
       ...args: unknown[]
-    ) =>
-      setInterval(() => {
+    ) => {
+      metrics.intervalRegistrations.push({
+        delay: timeout ?? 0,
+        stack: new Error().stack ?? "unknown call site",
+      });
+      return setInterval(() => {
         if (metrics.trackingWaste) metrics.intervals += 1;
         if (typeof handler === "function") handler(...args);
-      }, timeout)) as typeof window.setInterval;
+      }, timeout);
+    }) as typeof window.setInterval;
 
     if (typeof PerformanceObserver === "function") {
       new PerformanceObserver((entries) => {
@@ -220,23 +245,45 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     metrics.timeouts = 0;
     metrics.trackingWaste = true;
   });
-  await page.waitForTimeout(300);
-  const waste = await page.evaluate(() => {
+  await page.waitForTimeout(idleObservationMilliseconds);
+  const result = await page.evaluate(() => {
     const metrics = (
       window as Window & {
-        __nativeFeelMetrics?: WasteCounters & { trackingWaste: boolean };
+        __nativeFeelMetrics?: WasteCounters & {
+          intervalRegistrations: IntervalRegistration[];
+          trackingWaste: boolean;
+        };
       }
     ).__nativeFeelMetrics;
     if (metrics === undefined)
       throw new Error("native-feel metrics are missing");
     metrics.trackingWaste = false;
     return {
-      animationFrames: metrics.animationFrames,
-      intervals: metrics.intervals,
-      timeouts: metrics.timeouts,
+      registrations: metrics.intervalRegistrations,
+      waste: {
+        animationFrames: metrics.animationFrames,
+        intervals: metrics.intervals,
+        timeouts: metrics.timeouts,
+      },
     };
   });
-  expect(waste).toEqual({ animationFrames: 0, intervals: 0, timeouts: 0 });
+  const unexpectedIntervals = result.registrations.filter(
+    (registration) =>
+      !intervalAllowList.some((allowance) =>
+        allowance.source.test(registration.stack),
+      ),
+  );
+  const allowedReasons = intervalAllowList.map(
+    (allowance) => `${allowance.source}: ${allowance.reason}`,
+  );
+  expect(unexpectedIntervals, `allowed intervals: ${allowedReasons}`).toEqual(
+    [],
+  );
+  expect(result.waste).toEqual({
+    animationFrames: 0,
+    intervals: 0,
+    timeouts: 0,
+  });
 }
 
 export async function auditMessageSelection(
