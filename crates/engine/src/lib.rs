@@ -1,6 +1,8 @@
 //! Platform-neutral weblounge engine composition.
 
 mod direct_target;
+/// Engine-owned composer input parsing.
+pub mod input;
 mod name_key;
 mod protocol;
 mod runtime;
