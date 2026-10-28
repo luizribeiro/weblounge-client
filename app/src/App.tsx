@@ -106,6 +106,13 @@ export function App(props: AppProps) {
             command: { type: "mark_read", buffer_id: bufferId, through },
           });
         }}
+        onLoadHistory={(bufferId) => {
+          if (client === undefined) return;
+          void client.send({
+            id: crypto.randomUUID(),
+            command: { type: "load_history", buffer_id: bufferId },
+          });
+        }}
         onSend={(bufferId, text) => {
           if (client === undefined) return;
           void client.send({
@@ -209,6 +216,18 @@ function applyDebugEvent(
       next.set(message.buffer_id, [
         ...(current.get(message.buffer_id) ?? []),
         ...message.messages,
+      ]);
+      return next;
+    });
+  } else if (message.type === "messages_prepended") {
+    setMessages((current) => {
+      const next = new Map(current);
+      const prependedIds = new Set(message.messages.map((item) => item.id));
+      next.set(message.buffer_id, [
+        ...message.messages,
+        ...(current.get(message.buffer_id) ?? []).filter(
+          (item) => !prependedIds.has(item.id),
+        ),
       ]);
       return next;
     });

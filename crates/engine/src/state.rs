@@ -48,6 +48,7 @@ struct BufferState {
     timeline: Vec<TimelineRecord>,
     direct_account: Option<papo::AccountName>,
     read_at_ms: Option<i64>,
+    history_requested: bool,
 }
 
 /// Information needed to perform an outgoing send without exposing papo targets to the UI.
@@ -126,6 +127,7 @@ impl NetworkModel {
             timeline: Vec::new(),
             direct_account: None,
             read_at_ms: None,
+            history_requested: true,
         };
         Self {
             network: NetworkProjection {
@@ -400,6 +402,27 @@ impl NetworkModel {
             .collect()
     }
 
+    pub(crate) fn request_latest(&mut self, buffer_id: BufferId) -> Option<SendTarget> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        if buffer.history_requested {
+            return None;
+        }
+        let target = SendTarget::from_name_key(buffer.key.clone()?, buffer.direct_account.clone());
+        buffer.history_requested = true;
+        Some(target)
+    }
+
+    pub(crate) fn request_latest_channel(
+        &mut self,
+        channel: &papo::ChannelName,
+    ) -> Option<SendTarget> {
+        let buffer_id = self
+            .names
+            .get(&NameKey::Channel(channel.clone()))
+            .copied()?;
+        self.request_latest(buffer_id)
+    }
+
     pub(crate) fn prepare_mark_read(
         &self,
         buffer_id: BufferId,
@@ -614,6 +637,7 @@ impl NetworkModel {
                 timeline: Vec::new(),
                 direct_account,
                 read_at_ms: None,
+                history_requested: false,
             },
         );
         self.names.insert(key, id);

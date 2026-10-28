@@ -9,6 +9,7 @@ use crate::{
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
+const HISTORY_PAGE_SIZE: usize = 100;
 
 struct RunningNetwork {
     instance: u64,
@@ -78,6 +79,7 @@ impl Runtime {
                 self.mark_read(envelope.id, buffer_id, through)
             }
             Command::MarkAllRead => self.mark_all_read(envelope.id),
+            Command::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
         }
     }
 
@@ -261,6 +263,24 @@ impl Runtime {
         );
         Vec::new()
     }
+
+    fn load_history(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(target) = running.model.request_latest(buffer_id) else {
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        };
+        spawn_history_fetch(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            running.client.clone(),
+            running.instance,
+            target,
+        );
+        vec![EngineToUi::CommandResult { id: command_id }]
+    }
 }
 
 fn spawn_read_advances(
@@ -360,20 +380,49 @@ async fn drain_events(
     while let Some(event) = events.next().await {
         let history_targets = process_event(&state, &outbound, &client, instance, event);
         for target in history_targets {
-            let state = Arc::clone(&state);
-            let outbound = outbound.clone();
-            let client = client.clone();
-            spawn_task(async move {
-                let page = match target {
-                    SendTarget::Channel(channel) => client.history(channel).latest().await,
-                    SendTarget::Direct(target) => {
-                        client.history(target.nick().clone()).latest().await
-                    }
-                };
-                if let Ok(page) = page {
-                    process_history(&state, &outbound, &client, instance, page);
-                }
-            });
+            spawn_history_fetch(
+                Arc::clone(&state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                target,
+            );
+        }
+    }
+}
+
+fn spawn_history_fetch(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    target: SendTarget,
+) {
+    spawn_task(async move {
+        if let Ok(page) = fetch_latest(&client, target).await {
+            process_history(&state, &outbound, &client, instance, page);
+        }
+    });
+}
+
+async fn fetch_latest(
+    client: &papo::Client,
+    target: SendTarget,
+) -> Result<papo::HistoryPage, papo::Error> {
+    match target {
+        SendTarget::Channel(channel) => {
+            client
+                .history(channel)
+                .latest()
+                .limit(HISTORY_PAGE_SIZE)
+                .await
+        }
+        SendTarget::Direct(target) => {
+            client
+                .history(target.nick().clone())
+                .latest()
+                .limit(HISTORY_PAGE_SIZE)
+                .await
         }
     }
 }
@@ -455,7 +504,10 @@ fn process_event(
             );
             Vec::new()
         }
-        papo::Event::Joined(_) | papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
+        papo::Event::Joined(joined) => {
+            process_join(&mut running.model, &snapshot, &joined, &mut output)
+        }
+        papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
             output.extend(running.model.sync_channels(&snapshot));
             Vec::new()
         }
@@ -477,6 +529,23 @@ fn process_event(
     history_targets
 }
 
+fn process_join(
+    model: &mut NetworkModel,
+    snapshot: &papo::State,
+    joined: &papo::event::Joined,
+    output: &mut Vec<EngineToUi>,
+) -> Vec<SendTarget> {
+    output.extend(model.sync_channels(snapshot));
+    if joined.authorship == papo::Authorship::Own {
+        model
+            .request_latest_channel(&joined.channel)
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
 fn process_history(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
@@ -493,11 +562,49 @@ fn process_history(
     else {
         return;
     };
+    let prepend = page.reason == papo::HistoryReason::Requested;
     let mut output = Vec::new();
+    let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
+    let mut unread = None;
     for item in page.items {
         if let papo::Event::Message(message) = item {
-            output.extend(running.model.receive(&message, true, &snapshot));
+            for event in running.model.receive(&message, true, &snapshot) {
+                match event {
+                    EngineToUi::MessagesAppended {
+                        buffer_id,
+                        messages,
+                    } => timeline
+                        .get_or_insert_with(|| (buffer_id, Vec::new()))
+                        .1
+                        .extend(messages),
+                    EngineToUi::UnreadChanged { .. } => unread = Some(event),
+                    _ => output.push(event),
+                }
+            }
         }
+    }
+    if let Some((buffer_id, mut messages)) = timeline {
+        messages.sort_by_key(|message| {
+            (
+                message.server_time_ms.unwrap_or(message.received_at_ms),
+                message.received_at_ms,
+                message.id.0,
+            )
+        });
+        output.push(if prepend {
+            EngineToUi::MessagesPrepended {
+                buffer_id,
+                messages,
+            }
+        } else {
+            EngineToUi::MessagesAppended {
+                buffer_id,
+                messages,
+            }
+        });
+    }
+    if let Some(unread) = unread {
+        output.push(unread);
     }
     drop(state);
     for event in output {
@@ -539,7 +646,9 @@ mod tests {
     use papo_testing::wire;
     use tokio::sync::mpsc;
 
-    use super::{RunningNetwork, Runtime, RuntimeState, lock, process_event};
+    use super::{
+        RunningNetwork, Runtime, RuntimeState, fetch_latest, lock, process_event, process_history,
+    };
     use crate::{
         BufferId, BufferKind, Command, CommandEnvelope, EngineToUi, NetworkId, SaslCredentials,
         state::{NetworkModel, SendTarget},
@@ -725,6 +834,115 @@ mod tests {
         wire.server(format!("@batch={reply} :offline.test BATCH -{history}"))
             .await;
         wire.server(format!(":offline.test BATCH -{reply}")).await;
+    }
+
+    #[tokio::test]
+    async fn latest_history_on_join_is_sorted_and_deduplicates_live_overlap() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        register_for_history(&mut wire).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let targets = process_event(&state, &outbound, &client, 1, joined);
+        assert_eq!(targets.len(), 1);
+        _ = collect(&mut receiver);
+
+        wire.server(
+            "@time=2026-10-27T12:00:02.000Z;msgid=live :alice!a@host PRIVMSG #room :live overlap",
+        )
+        .await;
+        let live = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, live);
+        _ = collect(&mut receiver);
+
+        let fetch_client = client.clone();
+        let target = targets[0].clone();
+        let fetch = tokio::spawn(async move { fetch_latest(&fetch_client, target).await });
+        let request = wire.next_sent().await;
+        assert!(request.ends_with("CHATHISTORY LATEST #room * 100"));
+        let label = request_label(&request);
+        send_history_page(
+            &mut wire,
+            label,
+            &[
+                "time=2026-10-27T12:00:02.000Z;msgid=live :alice!a@host PRIVMSG #room :live overlap",
+                "time=2026-10-27T12:00:01.000Z;msgid=middle :alice!a@host PRIVMSG #room :middle",
+                "time=2026-10-27T12:00:00.000Z;msgid=older :alice!a@host PRIVMSG #room :older",
+            ],
+        )
+        .await;
+        let page = fetch
+            .await
+            .expect("history task completes")
+            .expect("history request succeeds");
+        process_history(&state, &outbound, &client, 1, page);
+
+        let prepended = collect(&mut receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesPrepended { messages, .. } => Some(
+                    messages
+                        .into_iter()
+                        .map(|message| message.text)
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .expect("requested history is prepended");
+        assert_eq!(prepended, ["older", "middle"]);
+    }
+
+    #[tokio::test]
+    async fn empty_latest_history_page_keeps_the_conversation() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        register_for_history(&mut wire).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let targets = process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+
+        let fetch_client = client.clone();
+        let target = targets[0].clone();
+        let fetch = tokio::spawn(async move { fetch_latest(&fetch_client, target).await });
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        send_history_page(&mut wire, label, &[]).await;
+        let page = fetch
+            .await
+            .expect("history task completes")
+            .expect("empty history is successful");
+        process_history(&state, &outbound, &client, 1, page);
+
+        assert!(collect(&mut receiver).is_empty());
+        let buffers = lock(&state)
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model
+            .buffers_event();
+        assert!(matches!(
+            buffers,
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer| buffer.title == "#room")
+        ));
     }
 
     #[tokio::test]

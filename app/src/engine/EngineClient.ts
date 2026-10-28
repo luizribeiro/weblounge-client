@@ -344,6 +344,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "messages_prepended": {
+      const messages = decodeArray(value.messages, decodeMessage);
+      if (typeof value.buffer_id === "number" && messages !== undefined) {
+        return { type: messageType, buffer_id: value.buffer_id, messages };
+      }
+      break;
+    }
     case "message_confirmed": {
       const message = decodeMessage(value.message);
       if (
@@ -419,6 +426,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "buffers_changed" ||
     value === "buffer_added" ||
     value === "messages_appended" ||
+    value === "messages_prepended" ||
     value === "message_confirmed" ||
     value === "message_failed" ||
     value === "unread_changed" ||

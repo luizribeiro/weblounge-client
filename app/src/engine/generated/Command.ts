@@ -59,4 +59,8 @@ buffer_id: BufferId,
 /**
  * Latest fully visible committed row.
  */
-through: MessageId, } | { "type": "mark_all_read" };
+through: MessageId, } | { "type": "mark_all_read" } | { "type": "load_history",
+/**
+ * Conversation buffer to hydrate.
+ */
+buffer_id: BufferId, };

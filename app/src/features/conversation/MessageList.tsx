@@ -1,4 +1,4 @@
-import { For, onMount } from "solid-js";
+import { createEffect, For, onMount } from "solid-js";
 import type { MessageProjection } from "../../engine/protocol";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import type { CopyRow } from "../../ui/copy-rows";
@@ -14,12 +14,30 @@ interface MessageListProps {
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLOListElement | undefined;
+  let renderedFirst: number | undefined;
+  let renderedHeight = 0;
   const reportLiveEdge = () => {
     if (list === undefined) return;
     props.onLiveEdgeChange?.(
       list.scrollHeight - list.scrollTop - list.clientHeight <= 1,
     );
   };
+  createEffect(() => {
+    const currentFirst = props.messages[0]?.id;
+    const previousFirst = renderedFirst;
+    const previousHeight = renderedHeight;
+    queueMicrotask(() => {
+      if (list === undefined) return;
+      if (
+        previousFirst !== undefined &&
+        props.messages.findIndex((message) => message.id === previousFirst) > 0
+      ) {
+        list.scrollTop += list.scrollHeight - previousHeight;
+      }
+      renderedFirst = currentFirst;
+      renderedHeight = list.scrollHeight;
+    });
+  });
   onMount(reportLiveEdge);
   return (
     <ol

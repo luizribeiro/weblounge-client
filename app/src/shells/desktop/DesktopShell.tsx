@@ -32,6 +32,7 @@ interface DesktopShellProps {
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly onSend: (bufferId: number, text: string) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onLoadHistory: (bufferId: number) => void;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -43,6 +44,7 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   let listController: SidebarListController | undefined;
   let navigationCommitted = false;
+  const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
@@ -105,6 +107,19 @@ export function DesktopShell(props: DesktopShellProps) {
       500,
     );
     onCleanup(() => window.clearTimeout(timeout));
+  });
+
+  createEffect(() => {
+    const buffer = activeBuffer();
+    if (
+      buffer === undefined ||
+      buffer.kind === "server" ||
+      requestedHistory.has(buffer.id)
+    ) {
+      return;
+    }
+    requestedHistory.add(buffer.id);
+    props.onLoadHistory(buffer.id);
   });
 
   createEffect(() => {

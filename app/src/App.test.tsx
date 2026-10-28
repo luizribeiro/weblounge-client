@@ -91,6 +91,67 @@ it("lists projected networks, buffers, and messages", async () => {
   expect(screen.getByRole("heading", { name: /#room/ })).toBeInTheDocument();
   expect(screen.getByText("Room topic")).toBeInTheDocument();
   expect(screen.getByText("hello")).toBeInTheDocument();
+  expect(client.commands).toContainEqual({
+    id: expect.any(String),
+    command: { type: "load_history", buffer_id: 2 },
+  });
+});
+
+it("prepends requested history before live rows", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  const live = {
+    id: 2,
+    author: "alice",
+    text: "live",
+    authorship: "other" as const,
+    nick_color_index: 0,
+    mentioned: false,
+    delivery: "received" as const,
+    local_send_id: null,
+    server_ids: ["live"],
+    server_time_ms: 2,
+    received_at_ms: 2,
+  };
+  client.emit({
+    type: "messages_appended",
+    buffer_id: 2,
+    messages: [live],
+  });
+  client.emit({
+    type: "messages_prepended",
+    buffer_id: 2,
+    messages: [
+      {
+        ...live,
+        id: 1,
+        text: "older",
+        server_ids: ["older"],
+        server_time_ms: 1,
+        received_at_ms: 1,
+      },
+    ],
+  });
+
+  await screen.findByText("older");
+  expect(
+    [...document.querySelectorAll<HTMLElement>("[data-message-text]")].map(
+      (row) => row.dataset.messageText,
+    ),
+  ).toEqual(["older", "live"]);
 });
 
 it("shows a confirmation received without this tab's optimistic row", async () => {

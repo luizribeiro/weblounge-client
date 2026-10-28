@@ -73,6 +73,25 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("shows existing channel history in a fresh browser", async ({
+    page,
+  }) => {
+    const seed = await IrcClient.connect(
+      "history-seed",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const text = `existing history ${Date.now()}`;
+    try {
+      await seed.privmsgConfirmed("#weblounge-test", text);
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(page.getByText(text, { exact: true })).toBeVisible();
+    } finally {
+      seed.close();
+    }
+  });
+
   test("broadcasts pending and confirmed sends to a second tab", async ({
     context,
     page: secondTab,

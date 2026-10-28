@@ -220,6 +220,11 @@ pub enum Command {
     },
     /// Advance every conversation through its latest committed row.
     MarkAllRead,
+    /// Fetch the latest history page the first time a buffer is opened.
+    LoadHistory {
+        /// Conversation buffer to hydrate.
+        buffer_id: BufferId,
+    },
 }
 
 /// Messages accepted from a UI client.
@@ -297,6 +302,13 @@ pub enum EngineToUi {
         /// Destination buffer.
         buffer_id: BufferId,
         /// Newly visible rows.
+        messages: Vec<MessageProjection>,
+    },
+    /// Insert a requested history page before already rendered live rows.
+    MessagesPrepended {
+        /// Destination buffer.
+        buffer_id: BufferId,
+        /// Older rows in established timeline order.
         messages: Vec<MessageProjection>,
     },
     /// Replace an optimistic row with its `papo::Sent` confirmation.

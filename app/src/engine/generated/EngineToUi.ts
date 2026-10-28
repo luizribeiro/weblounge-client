@@ -74,6 +74,14 @@ buffer_id: BufferId,
 /**
  * Newly visible rows.
  */
+messages: Array<MessageProjection>, } | { "type": "messages_prepended",
+/**
+ * Destination buffer.
+ */
+buffer_id: BufferId,
+/**
+ * Older rows in established timeline order.
+ */
 messages: Array<MessageProjection>, } | { "type": "message_confirmed",
 /**
  * Destination buffer.
