@@ -10,6 +10,7 @@ import type {
   NetworkProjection,
 } from "./engine/protocol";
 import { DebugView } from "./features/debug/DebugView";
+import { installSystemTheme } from "./theme/theme-controller";
 import {
   contextMenuRegistry,
   installContextMenuHandler,
@@ -22,6 +23,8 @@ interface AppProps {
 }
 
 export function App(props: AppProps) {
+  const theme = installSystemTheme(document, window);
+  onCleanup(() => theme.dispose());
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);

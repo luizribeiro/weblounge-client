@@ -1,0 +1,70 @@
+{
+  "id": "lounge-night",
+  "name": "Lounge Night",
+  "order": 2,
+  "appearance": "dark",
+  "colors": {
+    "bg": "#18221e",
+    "surface": "#18221e",
+    "panel": "#131b18",
+    "panelFg": "#edefe5",
+    "panelMuted": "#a9b3a8",
+    "panelBorder": "#2a352e",
+    "panelAlt": "#1b2621",
+    "fg": "#edefe5",
+    "muted": "#a9b3a8",
+    "border": "#39463b",
+    "accent": "#bdd9a7",
+    "accentFg": "#18221e",
+    "selection": "#2c3a2f",
+    "selectionFg": "#edefe5",
+    "mentionBg": "#25321f",
+    "unread": "#eba293",
+    "inputBg": "#202c24",
+    "chip": "#253227",
+    "codeBg": "#131b18",
+    "online": "#bdd9a7",
+    "selfNick": "#bdd9a7",
+    "error": "#eba293",
+    "focusRing": "#bdd9a7"
+  },
+  "typography": {
+    "ui": "Inter, Inter Fallback, system-ui, sans-serif",
+    "mono": "SFMono-Regular, Consolas, Liberation Mono, monospace",
+    "base": "14px",
+    "sectionFamily": "SFMono-Regular, Consolas, Liberation Mono, monospace",
+    "sectionSize": "11px",
+    "sectionTransform": "uppercase",
+    "sectionTracking": "0.12em"
+  },
+  "shape": {
+    "control": "3px",
+    "avatar": "6px",
+    "composer": "6px",
+    "palette": "6px",
+    "pill": "3px"
+  },
+  "effects": {
+    "overlayShadow": "0 20px 60px rgba(0,0,0,.45)",
+    "iconRing": "inset 0 0 0 1px rgba(237,239,229,.16)"
+  },
+  "nickPalette": [
+    "#8fd3c1",
+    "#e8c07a",
+    "#9cb8e8",
+    "#eba293",
+    "#c6aee8",
+    "#d9d48a"
+  ],
+  "onboarding": {
+    "paper": "#18221e",
+    "ink": "#edefe5",
+    "muted": "#a9b3a8",
+    "line": "#39463b",
+    "panel": "#202c24",
+    "soft": "#131b18",
+    "accent": "#bdd9a7",
+    "signal": "#bdd9a7",
+    "header": "#0f1613"
+  }
+}

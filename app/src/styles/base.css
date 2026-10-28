@@ -1,13 +1,25 @@
 :root {
-  --wl-motion-push-in: 280ms;
-  --wl-motion-push-out: 230ms;
-  --wl-motion-members: 220ms;
-  --wl-motion-fade: 200ms;
-  --wl-motion-preview-fade: 420ms;
-  --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
+  background: var(--wl-color-bg);
+  color: var(--wl-color-fg);
+  font-family: var(--wl-font-ui);
+  font-size: var(--wl-font-base);
+}
 
-  font-family:
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.2%;
+  descent-override: 22.48%;
+  line-gap-override: 0%;
+  size-adjust: 107.4%;
 }
 
 html,
@@ -77,9 +89,13 @@ textarea,
 }
 
 :focus-visible {
-  /* TODO(task 4): remove the fallback when generated focus-ring tokens land. */
-  outline: 2px solid var(--wl-color-focus-ring, currentColor);
+  outline: 2px solid var(--wl-color-focus-ring);
   outline-offset: 2px;
+}
+
+::selection {
+  background: var(--wl-color-selection);
+  color: var(--wl-color-selection-fg);
 }
 
 @media (hover: none), (pointer: coarse), (max-width: 759px) {
@@ -87,15 +103,5 @@ textarea,
   textarea,
   select {
     font-size: max(16px, 1em);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --wl-motion-push-in: 0ms;
-    --wl-motion-push-out: 0ms;
-    --wl-motion-members: 0ms;
-    --wl-motion-fade: 0ms;
-    --wl-motion-preview-fade: 0ms;
   }
 }

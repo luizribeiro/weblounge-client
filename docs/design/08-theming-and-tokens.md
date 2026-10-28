@@ -9,6 +9,8 @@ theme swap changes CSS variables without rebuilding the Solid tree. Adding a the
 one theme file, not a manifest edit or Rust code change.
 
 Density is subsystem 09. Themes contain no layout settings, capability flags, or component markup.
+This subsystem also owns the global semantic motion tokens named in subsystem 15; they travel
+through the same generated CSS pipeline but are not duplicated in individual theme files.
 
 ## Theme files
 
@@ -64,7 +66,8 @@ rejects those violations. Missing semantic roles are added to every theme file i
 change.
 
 The root carries `data-theme` and matching `color-scheme`. Theme changes mutate variables only;
-message rows do not subscribe to individual values.
+message rows do not subscribe to individual values. The generated sheet also emits the global
+motion variables and their reduced-motion overrides.
 
 ## Selection and system appearance
 
@@ -120,8 +123,9 @@ never conveyed by colour alone. Keyboard focus always uses the explicit focus-ri
 ## Boundaries
 
 This subsystem owns the theme-file schema, build validation, generated registry/CSS, system
-resolution, previews, font declarations, nick palette mapping, and icon presentation tokens. It
-does not own density, component markup, image fetching, settings persistence, or capabilities.
+resolution, previews, font declarations, nick palette mapping, icon presentation tokens, and
+global semantic motion tokens. It does not own density, component markup, image fetching,
+settings persistence, or capabilities.
 
 ## Testing
 
