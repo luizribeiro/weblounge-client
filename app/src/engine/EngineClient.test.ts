@@ -158,6 +158,44 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("publishes an optimistic row before a same-frame confirmation", () => {
+    const { client, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const optimistic = {
+      id: 1,
+      author: "weblounge",
+      text: "hello",
+      authorship: "own" as const,
+      delivery: "optimistic" as const,
+      local_send_id: 1,
+      server_ids: [],
+      server_time_ms: null,
+      received_at_ms: 1,
+    };
+
+    port.emit({
+      type: "messages_appended",
+      buffer_id: 2,
+      messages: [optimistic],
+    });
+    port.emit({
+      type: "message_confirmed",
+      buffer_id: 2,
+      local_send_id: 1,
+      message: {
+        ...optimistic,
+        delivery: "confirmed",
+        local_send_id: null,
+      },
+    });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "messages_appended" }),
+    );
+  });
+
   it("closes only its worker connection", async () => {
     const { client, close } = fixture();
 

@@ -188,6 +188,10 @@ export class WorkerEngineClient implements EngineClient {
   };
 
   #enqueueForFrame(message: EngineToUi): void {
+    if (this.#visibility === "visible" && containsOptimisticMessage(message)) {
+      this.#publish(message);
+      return;
+    }
     this.#renderQueue.push(message);
     if (this.#visibility === "hidden") return;
     this.#scheduleRenderFrame();
@@ -218,6 +222,13 @@ export class WorkerEngineClient implements EngineClient {
   #assertOpen(): void {
     if (this.#closed) throw new Error("engine client is closed");
   }
+}
+
+function containsOptimisticMessage(message: EngineToUi): boolean {
+  return (
+    message.type === "messages_appended" &&
+    message.messages.some((item) => item.delivery === "optimistic")
+  );
 }
 
 function decodeWorkerMessage(value: unknown): EngineClientMessage {
