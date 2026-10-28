@@ -1,11 +1,16 @@
-import { createEffect, For } from "solid-js";
+import { createVirtualizer, observeElementRect } from "@tanstack/solid-virtual";
+import { createEffect, createMemo, For } from "solid-js";
 import type { EngineToUi } from "../../engine/protocol";
 import styles from "./MemberPanel.module.css";
 import { MemberRow } from "./MemberRow";
-import { memberGroupLabels, memberGroups } from "./member-rows";
+import {
+  type MemberListRow,
+  memberGroupLabels,
+  memberRowAt,
+  memberRowCount,
+} from "./member-rows";
 
 export type MemberWindow = Extract<EngineToUi, { type: "members_changed" }>;
-
 interface MemberPanelProps {
   readonly bufferTitle: string;
   readonly window: MemberWindow | undefined;
@@ -15,8 +20,46 @@ interface MemberPanelProps {
 }
 
 export function MemberPanel(props: MemberPanelProps) {
+  let list: HTMLUListElement | undefined;
+  let requested = "";
+  const counts = () => props.window?.counts ?? [0, 0, 0, 0, 0];
+  const virtualizer = createVirtualizer<HTMLUListElement, HTMLLIElement>({
+    get count() {
+      return memberRowCount(counts());
+    },
+    getScrollElement: () => list ?? null,
+    initialRect: { width: 216, height: 600 },
+    observeElementRect: (instance, callback) =>
+      observeElementRect(instance, (rect) =>
+        callback(rect.height === 0 ? { width: 216, height: 600 } : rect),
+      ),
+    estimateSize: (index) =>
+      memberRowAt(index, counts(), 0, [])?.kind === "group" ? 28 : 24,
+    overscan: 10,
+  });
+  const virtualRows = createMemo(() => virtualizer.getVirtualItems());
+  const request = (offset: number) => {
+    const key = `${props.window?.buffer_id ?? "new"}:${offset}`;
+    if (key !== requested) {
+      requested = key;
+      props.onRequestRange(offset, 128);
+    }
+  };
   createEffect(() => {
-    if (props.window === undefined) props.onRequestRange(0, 128);
+    const current = props.window;
+    if (current === undefined) return request(0);
+    const missing = virtualRows()
+      .map((item) =>
+        memberRowAt(
+          item.index,
+          current.counts,
+          current.offset,
+          current.members,
+        ),
+      )
+      .find((row) => row?.kind === "member" && row.member === undefined);
+    if (missing?.kind === "member")
+      request(Math.floor(missing.memberIndex / 128) * 128);
   });
   return (
     <aside aria-label="Members" class={styles.panel}>
@@ -38,31 +81,35 @@ export function MemberPanel(props: MemberPanelProps) {
         <div class={styles.following}>
           Following <strong>{props.bufferTitle}</strong>
         </div>
-        <ul aria-label={`Members of ${props.bufferTitle}`} class={styles.list}>
-          <For each={memberGroups}>
-            {(group, index) => (
-              <>
-                {(props.window?.counts[index()] ?? 0) > 0 && (
-                  <li class={styles.group}>
-                    {memberGroupLabels[group]} —{" "}
-                    {formatCount(props.window?.counts[index()] ?? 0)}
-                  </li>
+        <ul
+          aria-label={`Members of ${props.bufferTitle}`}
+          class={styles.list}
+          ref={list}
+        >
+          <div
+            aria-hidden="true"
+            class={styles.spacer}
+            data-member-virtual-size="true"
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          />
+          <For each={virtualRows()}>
+            {(virtualRow) => (
+              <li
+                class={styles.virtualRow}
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                {renderRow(
+                  props.window === undefined
+                    ? undefined
+                    : memberRowAt(
+                        virtualRow.index,
+                        props.window.counts,
+                        props.window.offset,
+                        props.window.members,
+                      ),
+                  props.onOpenDirect,
                 )}
-                <For
-                  each={props.window?.members.filter(
-                    (member) => member.group === group,
-                  )}
-                >
-                  {(member) => (
-                    <li>
-                      <MemberRow
-                        member={member}
-                        onOpenDirect={props.onOpenDirect}
-                      />
-                    </li>
-                  )}
-                </For>
-              </>
+              </li>
             )}
           </For>
         </ul>
@@ -71,6 +118,20 @@ export function MemberPanel(props: MemberPanelProps) {
   );
 }
 
+function renderRow(
+  row: MemberListRow | undefined,
+  onOpenDirect: (nick: string) => void,
+) {
+  if (row?.kind === "group")
+    return (
+      <div class={styles.group}>
+        {memberGroupLabels[row.group]} — {formatCount(row.count)}
+      </div>
+    );
+  if (row?.kind === "member" && row.member !== undefined)
+    return <MemberRow member={row.member} onOpenDirect={onOpenDirect} />;
+  return <div class={styles.placeholder} />;
+}
 function formatCount(count: number): string {
   return count.toLocaleString("en-US");
 }

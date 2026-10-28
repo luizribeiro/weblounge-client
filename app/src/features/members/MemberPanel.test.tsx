@@ -42,6 +42,9 @@ it("renders counted groups with a bounded DOM and panel actions", async () => {
   );
   expect(screen.getByText("Operators — 1")).toBeInTheDocument();
   expect(container.querySelectorAll("li").length).toBeLessThan(80);
+  expect(container.querySelector("[data-member-virtual-size]")).toHaveStyle({
+    height: "240056px",
+  });
   fireEvent.click(
     screen.getByRole("button", { name: "Open direct message with weblounge" }),
   );
