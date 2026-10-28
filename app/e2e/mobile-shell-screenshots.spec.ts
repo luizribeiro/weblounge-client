@@ -80,6 +80,10 @@ test.describe("mobile shell screenshots against local Ergo", () => {
         }),
       ).toBeVisible();
       await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      const composerBox = await page
+        .getByRole("textbox", { name: "Message #weblounge-test" })
+        .boundingBox();
+      expect(composerBox?.y).toBeGreaterThan(760);
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-chat-light.png"),
       });
