@@ -41,7 +41,15 @@ message_key: string, } | { "type": "command_result",
 /**
  * Completed command identifier.
  */
-id: string, } | { "type": "network_state_changed",
+id: string, } | { "type": "command_rejected",
+/**
+ * Rejected command identifier.
+ */
+id: string,
+/**
+ * Stable localization key describing the rejection.
+ */
+message_key: string, } | { "type": "network_state_changed",
 /**
  * Complete current network projection.
  */

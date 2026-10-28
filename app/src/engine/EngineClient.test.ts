@@ -98,6 +98,24 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
+  it("rejects a command with the engine's typed message key", async () => {
+    const { client, port } = fixture();
+    const result = client.send({
+      id: "connect-again",
+      command: { type: "diagnostic", message: "ignored" },
+    });
+
+    port.emit({
+      type: "command_rejected",
+      id: "connect-again",
+      message_key: "engine.network_already_connected",
+    });
+
+    await expect(result).rejects.toMatchObject({
+      messageKey: "engine.network_already_connected",
+    });
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

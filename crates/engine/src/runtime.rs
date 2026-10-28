@@ -83,6 +83,9 @@ impl Runtime {
         }
 
         let mut state = lock(&self.state);
+        if state.network.is_some() {
+            return rejected_command(command_id, "engine.network_already_connected");
+        }
         let id = NetworkId(state.next_network_id);
         state.next_network_id += 1;
         let instance = state.next_instance;
@@ -358,12 +361,10 @@ fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
 }
 
 fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
-    vec![
-        EngineToUi::Notice {
-            message_key: message_key.into(),
-        },
-        EngineToUi::CommandResult { id: command_id },
-    ]
+    vec![EngineToUi::CommandRejected {
+        id: command_id,
+        message_key: message_key.into(),
+    }]
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -396,7 +397,7 @@ mod tests {
     };
 
     #[test]
-    fn rejected_commands_emit_a_notice_and_terminal_result() {
+    fn rejected_commands_emit_a_typed_terminal_result() {
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime::new(outbound);
         let commands = [
@@ -428,10 +429,61 @@ mod tests {
                 command,
             });
             assert!(matches!(output.as_slice(), [
-                EngineToUi::Notice { .. },
-                EngineToUi::CommandResult { id: result_id },
+                EngineToUi::CommandRejected { id: result_id, .. },
             ] if result_id == &id));
         }
+    }
+
+    #[tokio::test]
+    async fn second_connect_is_rejected_without_replacing_the_running_client() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(
+                        NetworkId(1),
+                        "Existing".into(),
+                        "weblounge".into(),
+                        50,
+                    ),
+                }),
+            })),
+            outbound,
+        };
+
+        let output = runtime.command(CommandEnvelope {
+            id: "connect-again".into(),
+            command: Command::Connect {
+                label: "Replacement".into(),
+                endpoint: "wss://irc.example.test".into(),
+                nickname: "weblounge".into(),
+                sasl: SaslCredentials {
+                    account: "weblounge".into(),
+                    password: "secret".into(),
+                },
+                autojoin: Vec::new(),
+                allow_insecure: false,
+            },
+        });
+
+        assert!(matches!(
+            output.as_slice(),
+            [EngineToUi::CommandRejected { id, message_key }]
+                if id == "connect-again" && message_key == "engine.network_already_connected"
+        ));
+        assert_eq!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .map(|running| running.instance),
+            Some(1)
+        );
     }
 
     async fn next_matching(

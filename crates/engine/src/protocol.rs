@@ -250,6 +250,13 @@ pub enum EngineToUi {
         /// Completed command identifier.
         id: String,
     },
+    /// A command was rejected before it changed engine state.
+    CommandRejected {
+        /// Rejected command identifier.
+        id: String,
+        /// Stable localization key describing the rejection.
+        message_key: String,
+    },
     /// A network's connection projection changed.
     NetworkStateChanged {
         /// Complete current network projection.

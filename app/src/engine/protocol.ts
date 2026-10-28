@@ -17,6 +17,7 @@ export type {
 };
 
 export type CommandResult = Extract<EngineToUi, { type: "command_result" }>;
+export type CommandRejected = Extract<EngineToUi, { type: "command_rejected" }>;
 export type IncompatibleBuild = Extract<
   EngineToUi,
   { type: "incompatible_build" }

@@ -1,6 +1,7 @@
 import type {
   BufferProjection,
   CommandEnvelope,
+  CommandRejected,
   CommandResult,
   EngineClientMessage,
   EngineToUi,
@@ -58,6 +59,17 @@ export class IncompatibleBuildError extends Error {
   constructor(readonly mismatch: IncompatibleBuild) {
     super(`engine build ${mismatch.engine} does not match UI ${mismatch.ui}`);
     this.name = "IncompatibleBuildError";
+  }
+}
+
+export class EngineCommandError extends Error {
+  constructor(readonly rejection: CommandRejected) {
+    super(rejection.message_key);
+    this.name = "EngineCommandError";
+  }
+
+  get messageKey(): string {
+    return this.rejection.message_key;
   }
 }
 
@@ -151,6 +163,13 @@ export class WorkerEngineClient implements EngineClient {
       const waiter = this.#commands.get(message.id);
       this.#commands.delete(message.id);
       waiter?.resolve(message);
+      this.#enqueueForFrame(message);
+      return;
+    }
+    if (message.type === "command_rejected") {
+      const waiter = this.#commands.get(message.id);
+      this.#commands.delete(message.id);
+      waiter?.reject(new EngineCommandError(message));
       this.#enqueueForFrame(message);
       return;
     }
@@ -270,6 +289,18 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (typeof value.id === "string")
         return { type: "command_result", id: value.id };
       break;
+    case "command_rejected":
+      if (
+        typeof value.id === "string" &&
+        typeof value.message_key === "string"
+      ) {
+        return {
+          type: "command_rejected",
+          id: value.id,
+          message_key: value.message_key,
+        };
+      }
+      break;
     case "network_state_changed": {
       const network = decodeNetwork(value.network);
       if (network !== undefined) return { type: messageType, network };
@@ -356,6 +387,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "diagnostic" ||
     value === "notice" ||
     value === "command_result" ||
+    value === "command_rejected" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
     value === "buffer_added" ||

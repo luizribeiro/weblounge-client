@@ -168,6 +168,10 @@ drops the task. Mobile backgrounding uses the same bounded quit/drop path; foreg
 new client instance and history later repairs the gap. Hidden browser tabs and minimized desktop
 windows remain connected.
 
+The milestone-2 single-network runtime rejects a second `Connect` while a client exists with the
+typed `engine.network_already_connected` command error. It never replaces a live client implicitly;
+future multi-network support routes `Connect` through configured network identity instead.
+
 ## Onboarding progress
 
 Papo events map directly to the checklist:

@@ -68,7 +68,10 @@ export class EngineWorkerRuntime {
   }
 
   #route(event: unknown, callingPort?: WorkerHostPort): void {
-    if (isRecord(event) && event.type === "command_result") {
+    if (
+      isRecord(event) &&
+      (event.type === "command_result" || event.type === "command_rejected")
+    ) {
       const port =
         typeof event.id === "string"
           ? this.#commandPorts.get(event.id)
