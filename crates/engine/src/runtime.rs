@@ -177,6 +177,7 @@ impl Runtime {
             Ok(Command::Part { channel: _, reason }) => {
                 self.part(id, buffer_id, reason.map(|reason| reason.0))
             }
+            Ok(Command::Close {}) => self.close(id, buffer_id),
             Ok(Command::Msg { target, text }) => self.message_direct(id, target.0, text.0, false),
             Ok(Command::Query { nick, text }) => self.query(id, nick.0, text.map(|text| text.0)),
             Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
@@ -541,6 +542,21 @@ impl Runtime {
             client.part(channel, reason.unwrap_or_default()).await
         });
         Vec::new()
+    }
+
+    fn close(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        if running.model.channel_for_buffer(buffer_id).is_some() {
+            drop(state);
+            return self.part(command_id, buffer_id, None);
+        }
+        let Some(event) = running.model.close_direct(buffer_id) else {
+            return rejected_command(command_id, "engine.buffer_not_sendable");
+        };
+        vec![event, EngineToUi::CommandResult { id: command_id }]
     }
 
     fn set_nick(&self, command_id: String, nick: String) -> Vec<EngineToUi> {

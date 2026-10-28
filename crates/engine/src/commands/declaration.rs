@@ -44,6 +44,12 @@ pub(crate) enum Command {
         reason: Option<Text>,
     },
     #[command(
+        name = "close", aliases = ["wc"], usage = "cmd.close.usage",
+        description = "cmd.close.description", surfaces = ["Slash", "Palette", "ChannelMenu"],
+        confirm = "Menu"
+    )]
+    Close {},
+    #[command(
         name = "topic", aliases = ["t"], usage = "cmd.topic.usage",
         description = "cmd.topic.description", surfaces = ["Slash", "Palette", "ChannelMenu"]
     )]
@@ -82,7 +88,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 9);
+        assert_eq!(specs.len(), 10);
     }
 
     #[test]
@@ -104,6 +110,7 @@ mod tests {
             "/me waves",
             "/j one,#two key1,key2",
             "/leave reason",
+            "/close",
             "/t new topic",
             "/nick new-name",
             "/exit later",

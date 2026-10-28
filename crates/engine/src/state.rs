@@ -552,6 +552,15 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    pub(crate) fn close_direct(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        (buffer.projection.kind == BufferKind::Direct).then_some(())?;
+        self.names.remove(buffer.key.as_ref()?);
+        self.buffers.remove(&buffer_id);
+        self.buffer_order.retain(|id| *id != buffer_id);
+        Some(self.buffers_event())
+    }
+
     pub(crate) fn completion_candidates(
         &self,
         buffer_id: BufferId,
@@ -1433,6 +1442,15 @@ mod tests {
             model.completion_candidates(buffer_id, "alice{", &state),
             ["Alice["]
         );
+    }
+
+    #[test]
+    fn closing_a_direct_buffer_removes_only_its_local_projection() {
+        let (mut model, state) = model(10);
+        let (buffer_id, _) = model.open_direct("alice".into(), &state);
+        assert!(model.close_direct(buffer_id).is_some());
+        assert!(!model.buffer_order.contains(&buffer_id));
+        assert!(!model.buffers.contains_key(&buffer_id));
     }
 
     #[test]
