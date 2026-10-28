@@ -157,6 +157,11 @@ mod tests {
     use super::{Changes, project};
     use crate::{BufferId, EngineToUi, MemberGroup};
 
+    fn assert_channel_change(changes: &mut Changes, event: &papo::Event, state: &papo::State) {
+        assert!(changes.record(event, state));
+        assert_eq!(changes.drain(), [state.name_rules().channel("#room")]);
+    }
+
     #[tokio::test]
     async fn projects_realistic_multi_prefix_names_and_user_facts() {
         let (client, mut events, mut wire) =
@@ -273,6 +278,62 @@ mod tests {
         assert_eq!(
             changes.drain(),
             [client.state().name_rules().channel("#large")]
+        );
+    }
+
+    #[tokio::test]
+    async fn tracks_all_live_member_fact_changes_from_wire_events() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["away-notify", "multi-prefix"]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":offline.test 005 weblounge BOT=B :supported")
+            .await;
+        wire.server(":weblounge!u@h JOIN #room").await;
+        wire.server(":offline.test 353 weblounge = #room :@weblounge +voice quitter service")
+            .await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+
+        let mut changes = Changes::default();
+        for (line, expected) in [
+            (":joiner!u@h JOIN #room", "join"),
+            (":weblounge!u@h MODE #room +o joiner", "mode"),
+            (":weblounge!u@h MODE #room -v voice", "mode"),
+            (":joiner!u@h AWAY :lunch", "away"),
+            (":joiner!u@h NICK renamed", "nick"),
+            (":voice!u@h PART #room :bye", "part"),
+            (":quitter!u@h QUIT :gone", "quit"),
+            (":offline.test MODE weblounge +B", "mode"),
+        ] {
+            wire.server(line).await;
+            let event = events.next().await.expect("typed member event");
+            let kind = match event {
+                papo::Event::Joined(_) => "join",
+                papo::Event::ModeChanged(_) => "mode",
+                papo::Event::AwayChanged(_) => "away",
+                papo::Event::NickChanged(_) => "nick",
+                papo::Event::Parted(_) => "part",
+                papo::Event::Quit(_) => "quit",
+                _ => "other",
+            };
+            assert_eq!(kind, expected);
+            assert_channel_change(&mut changes, &event, &client.state());
+        }
+
+        let channel = client.state().name_rules().channel("#room");
+        let Some(EngineToUi::MembersChanged { members, .. }) =
+            project(&client.state(), &channel, BufferId(9), 0, 256)
+        else {
+            panic!("member window")
+        };
+        assert_eq!(
+            members
+                .iter()
+                .find(|member| member.nick == "weblounge")
+                .map(|member| member.group),
+            Some(MemberGroup::Bots)
         );
     }
 }
