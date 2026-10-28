@@ -92,3 +92,14 @@ it("routes Up from an empty composer to message navigation", () => {
   fireEvent.keyDown(screen.getByRole("textbox"), { key: "ArrowUp" });
   expect(onSelectLast).toHaveBeenCalledOnce();
 });
+
+it("grows the textarea with multiline content", async () => {
+  render(() => <Composer bufferId={7} bufferTitle="#rust" onSend={() => {}} />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+  Object.defineProperty(input, "scrollHeight", { value: 84 });
+
+  fireEvent.input(input, { target: { value: "first\nsecond\nthird" } });
+  await Promise.resolve();
+
+  expect(input.style.height).toBe("84px");
+});

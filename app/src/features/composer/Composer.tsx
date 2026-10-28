@@ -27,6 +27,16 @@ export function Composer(props: ComposerProps) {
     sessionStorage.getItem(draftKey(currentBuffer)) ?? "",
   );
   const [selected, setSelected] = createSignal(-1);
+  const resize = () => {
+    if (textarea === undefined) return;
+    textarea.style.height = "0";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+
+  createEffect(() => {
+    text();
+    queueMicrotask(resize);
+  });
 
   createEffect(() => {
     if (props.bufferId === currentBuffer) return;
