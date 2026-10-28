@@ -170,6 +170,37 @@ it("keeps a draft when the engine rejects submission", async () => {
   expect(readDraft("test:rejected")).toBe("/join #banned");
 });
 
+it("does not persist secret command arguments", () => {
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      commandSpecs={[
+        {
+          name: "identify",
+          aliases: ["id"],
+          arguments: [],
+          usage: "cmd.identify.usage",
+          description: "cmd.identify.description",
+          requirements: [{ type: "connected" }],
+          permission: "anyone",
+          surfaces: ["slash"],
+          confirm: "none",
+          secret_arguments: true,
+        },
+      ]}
+      draftKey="test:secret"
+      onSend={() => true}
+    />
+  ));
+
+  fireEvent.input(screen.getByRole("textbox"), {
+    target: { value: "/id hunter2" },
+  });
+
+  expect(readDraft("test:secret")).toBe("");
+});
+
 it("restores a non-autojoined buffer draft after reload with a new buffer id", () => {
   const first = render(() => (
     <Composer

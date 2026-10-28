@@ -1,11 +1,14 @@
 import { createEffect, createSignal, For, type JSX } from "solid-js";
+import type { CommandSpec } from "../../engine/protocol";
 import styles from "../conversation/SimpleComposer.module.css";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
+import { isSecretInput } from "./secret-input";
 
 interface ComposerProps {
   readonly bufferId: number;
   readonly draftKey: string;
   readonly bufferTitle: string;
+  readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly candidatePrefix?: string | undefined;
   readonly candidates?: readonly string[] | undefined;
   readonly disabled?: boolean;
@@ -55,7 +58,11 @@ export function Composer(props: ComposerProps) {
 
   const update = (value: string, resetCompletion = true) => {
     setText(value);
-    writeDraft(currentDraftKey, value);
+    if (isSecretInput(value, props.commandSpecs ?? [])) {
+      removeDraft(currentDraftKey);
+    } else {
+      writeDraft(currentDraftKey, value);
+    }
     if (resetCompletion) {
       completion = undefined;
       setPendingCompletion(undefined);
