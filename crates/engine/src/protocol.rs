@@ -322,6 +322,9 @@ pub enum Command {
     #[allow(missing_docs)]
     RequestMembers {
         buffer_id: BufferId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        view_id: Option<String>,
         #[ts(type = "number")]
         offset: u32,
         #[ts(type = "number")]
@@ -457,6 +460,15 @@ pub enum EngineToUi {
     #[allow(missing_docs)]
     MembersChanged {
         buffer_id: BufferId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        view_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(type = "number", optional)]
+        version: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(type = "number", optional)]
+        window_size: Option<u32>,
         #[ts(type = "number")]
         offset: u32,
         #[ts(type = "number")]
@@ -534,6 +546,9 @@ mod tests {
     fn engine_event_round_trips() {
         let event = EngineToUi::MembersChanged {
             buffer_id: BufferId(2),
+            view_id: Some("pane-1".into()),
+            version: Some(3),
+            window_size: Some(256),
             offset: 1,
             total: 4,
             counts: [1, 0, 2, 0, 1],

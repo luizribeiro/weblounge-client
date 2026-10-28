@@ -118,12 +118,14 @@ impl Runtime {
             Command::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
             Command::RequestMembers {
                 buffer_id,
+                view_id,
                 offset,
                 limit,
                 filter,
             } => self.request_members(
                 envelope.id,
                 buffer_id,
+                view_id.as_deref().unwrap_or("legacy"),
                 offset,
                 limit,
                 filter.as_deref().unwrap_or_default(),
@@ -161,8 +163,9 @@ impl Runtime {
         &self,
         command_id: String,
         buffer_id: BufferId,
+        view_id: &str,
         offset: u32,
-        limit: u32,
+        _limit: u32,
         filter: &str,
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
@@ -176,8 +179,9 @@ impl Runtime {
             &running.client.state(),
             &channel,
             buffer_id,
+            view_id,
+            0,
             offset,
-            limit,
             filter,
         ) else {
             return rejected_command(command_id, "engine.channel_not_found");
@@ -707,7 +711,7 @@ fn member_windows(
         .into_iter()
         .filter_map(|channel| {
             let buffer_id = running.model.buffer_id_for_channel(&channel)?;
-            crate::members::project(&snapshot, &channel, buffer_id, 0, 256, "")
+            crate::members::project(&snapshot, &channel, buffer_id, "legacy", 0, 0, "")
         })
         .collect()
 }

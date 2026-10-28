@@ -79,7 +79,7 @@ through: MessageId, } | { "type": "mark_all_read" } | { "type": "load_history",
 /**
  * Conversation buffer to hydrate.
  */
-buffer_id: BufferId, } | { "type": "request_members", buffer_id: BufferId, offset: number, limit: number, filter?: string, } | { "type": "open_direct",
+buffer_id: BufferId, } | { "type": "request_members", buffer_id: BufferId, view_id?: string, offset: number, limit: number, filter?: string, } | { "type": "open_direct",
 /**
  * Network containing the member.
  */

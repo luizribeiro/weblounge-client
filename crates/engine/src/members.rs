@@ -1,6 +1,6 @@
 use crate::{BufferId, EngineToUi, MemberGroup, MemberProjection, state::nick_color_index};
 
-const MAX_WINDOW: u32 = 256;
+pub(crate) const WINDOW_SIZE: u32 = 256;
 
 #[derive(Default)]
 pub(crate) struct Changes {
@@ -72,8 +72,9 @@ pub(crate) fn project(
     state: &papo::State,
     channel: &papo::ChannelName,
     buffer_id: BufferId,
+    view_id: &str,
+    version: u64,
     offset: u32,
-    limit: u32,
     filter: &str,
 ) -> Option<EngineToUi> {
     let folded_filter = state.casemapping().fold(filter);
@@ -107,7 +108,7 @@ pub(crate) fn project(
     let start = usize::try_from(offset)
         .unwrap_or(usize::MAX)
         .min(rows.len());
-    let take = usize::try_from(limit.min(MAX_WINDOW)).unwrap_or(usize::MAX);
+    let take = usize::try_from(WINDOW_SIZE).unwrap_or(usize::MAX);
     let members = rows
         .into_iter()
         .skip(start)
@@ -127,6 +128,9 @@ pub(crate) fn project(
         .collect();
     Some(EngineToUi::MembersChanged {
         buffer_id,
+        view_id: Some(view_id.to_owned()),
+        version: Some(version),
+        window_size: Some(WINDOW_SIZE),
         offset: u32::try_from(start).unwrap_or(u32::MAX),
         total,
         counts,
@@ -204,7 +208,7 @@ mod tests {
             total,
             members,
             ..
-        }) = project(&client.state(), &channel, BufferId(7), 1, 3, "")
+        }) = project(&client.state(), &channel, BufferId(7), "test", 0, 1, "")
         else {
             panic!("member window")
         };
@@ -215,7 +219,7 @@ mod tests {
                 .iter()
                 .map(|member| member.nick.as_str())
                 .collect::<Vec<_>>(),
-            ["weblounge", "bravo", "charlie"]
+            ["weblounge", "bravo", "charlie", "service"]
         );
         assert_eq!(members[0].group, MemberGroup::Operators);
         assert_eq!(members[1].mode_symbol, Some('+'));
@@ -245,7 +249,7 @@ mod tests {
             total,
             members,
             ..
-        }) = project(&client.state(), &channel, BufferId(8), 1_000, 1_000, "")
+        }) = project(&client.state(), &channel, BufferId(8), "test", 0, 1_000, "")
         else {
             panic!("member window")
         };
@@ -333,7 +337,7 @@ mod tests {
 
         let channel = client.state().name_rules().channel("#room");
         let Some(EngineToUi::MembersChanged { members, .. }) =
-            project(&client.state(), &channel, BufferId(9), 0, 256, "")
+            project(&client.state(), &channel, BufferId(9), "test", 0, 0, "")
         else {
             panic!("member window")
         };
@@ -365,7 +369,15 @@ mod tests {
             members,
             filter,
             ..
-        }) = project(&client.state(), &channel, BufferId(10), 0, 256, "{garden}")
+        }) = project(
+            &client.state(),
+            &channel,
+            BufferId(10),
+            "test",
+            0,
+            0,
+            "{garden}",
+        )
         else {
             panic!("filtered member window")
         };
