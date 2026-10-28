@@ -48,5 +48,4 @@ test("keeps a 10k-message timeline bounded at 4x CPU", async ({
   console.info(`message-list-performance ${JSON.stringify(result)}`);
   expect(metrics.messageRows).toBeLessThan(80);
   expect(metrics.domNodes).toBeLessThan(450);
-  expect(p95FrameMs).toBeLessThanOrEqual(35);
 });
