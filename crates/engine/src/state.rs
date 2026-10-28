@@ -229,13 +229,18 @@ impl NetworkModel {
         history: bool,
         state: &papo::State,
     ) -> Vec<EngineToUi> {
+        let Some(conversation) = NameKey::from_conversation(&message.conversation) else {
+            return vec![EngineToUi::Notice {
+                message_key: "engine.unsupported_conversation".into(),
+            }];
+        };
         let origin = if history {
             TimelineOrigin::History
         } else {
             TimelineOrigin::Live
         };
         let incoming = Incoming {
-            conversation: NameKey::from_conversation(&message.conversation),
+            conversation,
             author: message.actor.nick().to_string(),
             text: message.text.clone(),
             authorship: map_authorship(message.authorship),
