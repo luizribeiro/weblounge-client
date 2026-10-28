@@ -84,7 +84,26 @@ impl Runtime {
                 Ok(input::ParsedInput::Me(text)) => {
                     self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Action)
                 }
-                Ok(_) => rejected_command(envelope.id, "composer.command_not_implemented"),
+                Ok(input::ParsedInput::Join { channel }) => self.join(envelope.id, channel),
+                Ok(
+                    input::ParsedInput::Part { .. }
+                    | input::ParsedInput::Nick { .. }
+                    | input::ParsedInput::Topic { .. },
+                ) => rejected_command(envelope.id, "composer.command_not_implemented"),
+                Ok(input::ParsedInput::Msg { nick, text }) => {
+                    self.message_direct(envelope.id, nick, text)
+                }
+                Ok(input::ParsedInput::Quit { reason }) => {
+                    let network_id = lock(&self.state)
+                        .network
+                        .as_ref()
+                        .map(|running| running.model.id());
+                    if let Some(id) = network_id {
+                        self.disconnect(envelope.id, id, reason)
+                    } else {
+                        rejected_command(envelope.id, "engine.network_not_found")
+                    }
+                }
                 Err(error) => rejected_command(envelope.id, error.message_key()),
             },
             Command::MarkRead { buffer_id, through } => {
@@ -218,6 +237,32 @@ impl Runtime {
             }
             let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
+        output
+    }
+
+    fn join(&self, command_id: String, channel: String) -> Vec<EngineToUi> {
+        let Some(client) = lock(&self.state)
+            .network
+            .as_ref()
+            .map(|running| running.client.clone())
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        spawn_request(self.outbound.clone(), command_id, async move {
+            client.join(channel).await
+        });
+        Vec::new()
+    }
+
+    fn message_direct(&self, command_id: String, nick: String, text: String) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let snapshot = running.client.state();
+        let (buffer_id, mut output) = running.model.open_direct(nick, &snapshot);
+        drop(state);
+        output.extend(self.send_input(command_id, buffer_id, text, crate::MessageKind::Text));
         output
     }
 
@@ -741,6 +786,23 @@ fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
     }]
 }
 
+fn spawn_request<T: Send + 'static>(
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    command_id: String,
+    request: impl std::future::Future<Output = Result<T, papo::Error>> + Send + 'static,
+) {
+    spawn_task(async move {
+        let event = match request.await {
+            Ok(_) => EngineToUi::CommandResult { id: command_id },
+            Err(_) => EngineToUi::CommandRejected {
+                id: command_id,
+                message_key: "engine.command_refused".into(),
+            },
+        };
+        let _ = outbound.send(event);
+    });
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -860,6 +922,53 @@ mod tests {
                 .map(|running| running.instance),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn submit_join_and_msg_use_typed_papo_commands() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+
+        assert!(
+            runtime
+                .command(CommandEnvelope {
+                    id: "join".into(),
+                    command: Command::SubmitInput {
+                        buffer_id: BufferId(1),
+                        input: "/join #new".into()
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(wire.next_sent().await, "JOIN #new");
+        wire.server(":weblounge!u@host JOIN #new").await;
+
+        let output = runtime.command(CommandEnvelope {
+            id: "msg".into(),
+            command: Command::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/msg alice hello".into(),
+            },
+        });
+        assert!(output.iter().any(
+            |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == "alice")
+        ));
+        assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
     }
 
     async fn next_matching(

@@ -512,6 +512,24 @@ impl NetworkModel {
         self.request_latest(buffer_id)
     }
 
+    pub(crate) fn open_direct(
+        &mut self,
+        nick: String,
+        state: &papo::State,
+    ) -> (BufferId, Vec<EngineToUi>) {
+        let nick = state.name_rules().nick(nick);
+        let account = state
+            .user(&nick)
+            .and_then(|user| user.account().name().cloned());
+        let (buffer_id, added) = self.ensure_buffer(NameKey::Direct(nick), account);
+        let mut events = Vec::new();
+        if let Some(buffer) = added {
+            events.push(EngineToUi::BufferAdded { buffer });
+            events.push(self.buffers_event());
+        }
+        (buffer_id, events)
+    }
+
     pub(crate) fn prepare_mark_read(
         &self,
         buffer_id: BufferId,
