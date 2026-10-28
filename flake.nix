@@ -444,6 +444,8 @@
           program = pkgs.lib.getExe localErgo;
         };
         devShells.default = pkgs.mkShell {
+          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           packages = [
             rustToolchain
             wasmBindgenCli
