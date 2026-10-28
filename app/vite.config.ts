@@ -7,6 +7,7 @@ import { defineConfig } from "vitest/config";
 import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
 
 export default defineConfig(({ mode }) => {
+  const performanceHarness = process.env.WEBLOUNGE_E2E_HARNESS === "1";
   const wasmDirectory =
     process.env.WEBLOUNGE_ENGINE_WASM_DIR ??
     resolve(import.meta.dirname, "../result/dist");
@@ -28,6 +29,21 @@ export default defineConfig(({ mode }) => {
       ),
     },
     plugins: [solid(), engineWasmAsset(wasmPath)],
+    ...(performanceHarness
+      ? {
+          build: {
+            rollupOptions: {
+              input: {
+                app: resolve(import.meta.dirname, "index.html"),
+                "message-list-performance": resolve(
+                  import.meta.dirname,
+                  "e2e/message-list-performance.html",
+                ),
+              },
+            },
+          },
+        }
+      : {}),
     resolve: {
       alias: {
         "@weblounge-engine": wasmModulePath,

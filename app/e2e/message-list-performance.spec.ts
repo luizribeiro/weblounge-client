@@ -10,7 +10,10 @@ test("keeps a 10k-message timeline bounded at 4x CPU", async ({
   const session = await page.context().newCDPSession(page);
   await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/?debug-messages=10000");
+  await page.goto("/e2e/message-list-performance.html");
+  await expect(
+    page.locator("[data-performance-harness='render-only']"),
+  ).toBeVisible();
   const list = page.locator("[data-message-list]");
   await expect(list).toBeVisible();
 

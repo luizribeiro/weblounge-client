@@ -196,6 +196,7 @@
           '';
         };
         e2eApp = app.overrideAttrs {
+          WEBLOUNGE_E2E_HARNESS = "1";
           WEBLOUNGE_IRC_ENDPOINT = "ws://127.0.0.1:8067";
           WEBLOUNGE_IRC_NICKNAME = "weblounge";
           WEBLOUNGE_IRC_ACCOUNT = "weblounge";
