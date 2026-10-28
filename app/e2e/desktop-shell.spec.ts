@@ -98,7 +98,7 @@ test.describe("desktop shell against local Ergo", () => {
         path: path.join(screenshotDirectory, "composer-completion-dark.png"),
       });
 
-      await composer.fill("/join #another");
+      await composer.fill("/j #another");
       await composer.press("Enter");
       await expect(
         page.getByRole("heading", { name: "#another" }),
@@ -123,12 +123,32 @@ test.describe("desktop shell against local Ergo", () => {
       });
       await expect(restoredAnother).toHaveValue("draft in another");
 
+      await restoredAnother.fill("/hop");
+      await restoredAnother.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: "#another" }),
+      ).toBeVisible();
+
       await restoredAnother.fill("/q weblounge-bot hi");
       await restoredAnother.press("Enter");
       await expect(
         page.getByRole("heading", { name: "weblounge-bot" }),
       ).toBeVisible();
       await expect(page.getByText("hi", { exact: true })).toBeVisible();
+      const direct = page.getByRole("textbox", {
+        name: "Message weblounge-bot",
+      });
+      await direct.fill("/help join");
+      await direct.press("Enter");
+      await expect(
+        page.getByRole("status").filter({ hasText: "/join" }),
+      ).toBeVisible();
+
+      await direct.fill("/close");
+      await direct.press("Enter");
+      await expect(
+        page.getByRole("button", { name: /^weblounge-bot/ }),
+      ).toHaveCount(0);
     } finally {
       bot.close();
     }
