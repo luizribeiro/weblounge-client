@@ -30,15 +30,6 @@ test.describe("native feel against local Ergo", () => {
     await expect(
       page.getByRole("heading", { name: /#weblounge-test/ }),
     ).toBeVisible();
-    await page.evaluate(() => {
-      const metrics = (
-        window as Window & {
-          __nativeFeelMetrics?: { layoutShift: number };
-        }
-      ).__nativeFeelMetrics;
-      if (metrics !== undefined) metrics.layoutShift = 0;
-    });
-    await nativeFeelAudit(page);
     const bot = await IrcClient.connect(
       "native-audit",
       "weblounge-bot",
@@ -53,6 +44,20 @@ test.describe("native feel against local Ergo", () => {
       bot.privmsg("#weblounge-test", second);
       await expect(page.getByText(first, { exact: false })).toBeVisible();
       await expect(page.getByText(second, { exact: false })).toBeVisible();
+
+      await page.evaluate(() => {
+        const metrics = (
+          window as Window & {
+            __nativeFeelMetrics?: { layoutShift: number };
+          }
+        ).__nativeFeelMetrics;
+        if (metrics !== undefined) metrics.layoutShift = 0;
+        const reorderedChromeRule = document.createElement("style");
+        reorderedChromeRule.textContent =
+          "[data-app-root] * { cursor: inherit; user-select: none; }";
+        document.head.append(reorderedChromeRule);
+      });
+      await nativeFeelAudit(page);
 
       await auditMessageSelection(page, first, second);
     } finally {

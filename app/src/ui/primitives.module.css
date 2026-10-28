@@ -1,4 +1,5 @@
-.selectable {
+:global([data-app-root]) .selectable,
+:global([data-app-root]) .selectable * {
   -webkit-touch-callout: default;
   cursor: text;
   user-select: text;

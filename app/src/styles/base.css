@@ -42,13 +42,6 @@ body,
   user-select: none;
 }
 
-[data-selectable="true"],
-[data-selectable="true"] * {
-  -webkit-touch-callout: default;
-  cursor: text;
-  user-select: text;
-}
-
 input:not([type]),
 input:is(
   [type="email"],

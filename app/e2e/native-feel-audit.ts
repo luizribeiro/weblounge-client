@@ -140,6 +140,18 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   });
   expect(violations).toEqual([]);
 
+  const selectableViolations = await page
+    .locator("[data-selectable='true']")
+    .evaluateAll((elements) =>
+      elements.flatMap((element) => {
+        const style = getComputedStyle(element);
+        return style.userSelect === "text" && style.cursor === "text"
+          ? []
+          : [`${element.tagName}: selectable style lost`];
+      }),
+    );
+  expect(selectableViolations).toEqual([]);
+
   const chromeMenuPrevented = await page
     .getByRole("heading", { exact: true, name: "weblounge" })
     .evaluate((element) => {
