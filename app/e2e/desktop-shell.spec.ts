@@ -11,6 +11,47 @@ test.describe("desktop shell against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
+  test("anchors a short real conversation to the bottom", async ({ page }) => {
+    const bot = await IrcClient.connect(
+      "short-timeline",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    try {
+      await bot.privmsgConfirmed("#weblounge-test", "short line one");
+      await bot.privmsgConfirmed("#weblounge-test", "short line two");
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByText("short line two", { exact: true }),
+      ).toBeVisible();
+      await page
+        .getByRole("textbox", { name: "Message" })
+        .fill("short line three");
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect(
+        page.getByText("short line three", { exact: true }),
+      ).toBeVisible();
+
+      const geometry = await page
+        .locator("[data-message-list]")
+        .evaluate((list) => {
+          const rows = list.querySelectorAll<HTMLElement>("[data-message-row]");
+          return {
+            firstTop: rows[0]?.getBoundingClientRect().top ?? 0,
+            lastBottom:
+              rows[rows.length - 1]?.getBoundingClientRect().bottom ?? 0,
+            listTop: list.getBoundingClientRect().top,
+            listBottom: list.getBoundingClientRect().bottom,
+          };
+        });
+      expect(geometry.firstTop).toBeGreaterThan(geometry.listTop + 300);
+      expect(geometry.listBottom - geometry.lastBottom).toBeLessThan(30);
+    } finally {
+      bot.close();
+    }
+  });
+
   test("navigates real buffers and follows the system theme", async ({
     browser,
     page,

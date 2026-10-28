@@ -183,7 +183,9 @@ export function MessageList(props: MessageListProps) {
                 class={styles.virtualRow}
                 data-copy-row-index={virtualRow.index}
                 data-index={virtualRow.index}
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                style={{
+                  transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
+                }}
               >
                 <TimelineRowView
                   index={virtualRow.index}
@@ -414,6 +416,10 @@ function messageTime(message: MessageProjection): number {
 }
 function nickColor(index: number): string {
   return `var(--wl-nick-${index % nickPaletteSize})`;
+}
+
+function bottomOffset(viewportHeight: number, contentHeight: number): number {
+  return Math.max(0, viewportHeight - contentHeight - 22);
 }
 
 function membershipArrow(kind: MembershipProjection["kind"]): string {
