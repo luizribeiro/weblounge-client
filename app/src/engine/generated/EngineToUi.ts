@@ -29,7 +29,7 @@ engine: string,
  */
 ui: string, } | { "type": "diagnostic",
 /**
- * Command that produced this event.
+ * `EngineRequest` that produced this event.
  */
 command_id: string,
 /**
@@ -53,7 +53,7 @@ id: string,
  */
 message_key: string, } | { "type": "completion_result",
 /**
- * Command that requested these candidates.
+ * `EngineRequest` that requested these candidates.
  */
 command_id: string,
 /**
@@ -89,7 +89,7 @@ buffer: BufferProjection, } | { "type": "buffer_updated",
  */
 buffer: BufferProjection, } | { "type": "focus_buffer_requested",
 /**
- * Command whose composer should navigate.
+ * `EngineRequest` whose composer should navigate.
  */
 command_id: string,
 /**

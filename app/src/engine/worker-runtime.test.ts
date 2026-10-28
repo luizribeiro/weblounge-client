@@ -19,7 +19,7 @@ it("broadcasts optimistic state to every shared port", async () => {
   runtime.attach(first);
   runtime.attach(second);
 
-  first.receive({ type: "command", payload: { id: "send-1" } });
+  first.receive({ type: "request", payload: { id: "send-1" } });
   await Promise.resolve();
   await Promise.resolve();
 
@@ -44,7 +44,7 @@ it("routes asynchronous buffer focus requests only to the submitting port", asyn
   });
   runtime.attach(first);
   runtime.attach(second);
-  first.receive({ type: "command", payload: { id: "join-1" } });
+  first.receive({ type: "request", payload: { id: "join-1" } });
   await Promise.resolve();
   await Promise.resolve();
 

@@ -3,7 +3,10 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
 import { type EngineClient, EngineCommandError } from "./engine/EngineClient";
-import type { CommandEnvelope, EngineClientMessage } from "./engine/protocol";
+import type {
+  EngineClientMessage,
+  EngineRequestEnvelope,
+} from "./engine/protocol";
 
 it("keeps synthetic timelines out of the production app", () => {
   const source = readFileSync("src/App.tsx", "utf8");
@@ -104,9 +107,9 @@ it("lists projected networks, buffers, and messages", async () => {
   expect(screen.getByRole("heading", { name: /#room/ })).toBeInTheDocument();
   expect(screen.getByText("Room topic")).toBeInTheDocument();
   expect(screen.getByText("hello")).toBeInTheDocument();
-  expect(client.commands).toContainEqual({
+  expect(client.requests).toContainEqual({
     id: expect.any(String),
-    command: { type: "load_history", buffer_id: 2 },
+    request: { type: "load_history", buffer_id: 2 },
   });
 });
 
@@ -130,12 +133,12 @@ it("opens the projected member panel and routes a member to a DM", async () => {
   fireEvent.click(
     await screen.findByRole("button", { name: "Toggle member list" }),
   );
-  const request = client.commands.find(
-    ({ command }) => command.type === "request_members",
+  const request = client.requests.find(
+    ({ request }) => request.type === "request_members",
   );
-  if (request?.command.type !== "request_members")
+  if (request?.request.type !== "request_members")
     throw new Error("member request missing");
-  const viewId = request.command.view_id;
+  const viewId = request.request.view_id;
   if (viewId === undefined) throw new Error("member view id missing");
   client.emit({
     type: "members_changed",
@@ -163,9 +166,9 @@ it("opens the projected member panel and routes a member to a DM", async () => {
   fireEvent.click(
     screen.getByRole("button", { name: "Open direct message with mel" }),
   );
-  expect(client.commands).toContainEqual({
+  expect(client.requests).toContainEqual({
     id: expect.any(String),
-    command: { type: "open_direct", network_id: 1, nick: "mel" },
+    request: { type: "open_direct", network_id: 1, nick: "mel" },
   });
 });
 
@@ -440,24 +443,24 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell", asy
   focus.mockReturnValue(false);
   window.dispatchEvent(new Event("blur"));
   await vi.advanceTimersByTimeAsync(500);
-  expect(client.commands).not.toContainEqual(
+  expect(client.requests).not.toContainEqual(
     expect.objectContaining({
-      command: expect.objectContaining({ type: "mark_read" }),
+      request: expect.objectContaining({ type: "mark_read" }),
     }),
   );
 
   focus.mockReturnValue(true);
   window.dispatchEvent(new Event("focus"));
   await vi.advanceTimersByTimeAsync(499);
-  expect(client.commands).not.toContainEqual(
+  expect(client.requests).not.toContainEqual(
     expect.objectContaining({
-      command: expect.objectContaining({ type: "mark_read" }),
+      request: expect.objectContaining({ type: "mark_read" }),
     }),
   );
   await vi.advanceTimersByTimeAsync(1);
-  expect(client.commands).toContainEqual({
+  expect(client.requests).toContainEqual({
     id: expect.any(String),
-    command: { type: "mark_read", buffer_id: 2, through: 9 },
+    request: { type: "mark_read", buffer_id: 2, through: 9 },
   });
 
   vi.useRealTimers();
@@ -484,33 +487,33 @@ it("reloads only once for the same stale build", () => {
 
 class FakeEngineClient implements EngineClient {
   readonly visibility: Parameters<EngineClient["setVisibility"]>[0][] = [];
-  readonly commands: CommandEnvelope[] = [];
+  readonly requests: EngineRequestEnvelope[] = [];
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
   constructor(private readonly rejection?: string) {}
 
   async start(): Promise<void> {}
 
-  async send(command: Parameters<EngineClient["send"]>[0]) {
-    this.commands.push(command);
+  async send(request: Parameters<EngineClient["send"]>[0]) {
+    this.requests.push(request);
     if (
-      command.command.type === "submit_input" &&
+      request.request.type === "submit_input" &&
       this.rejection !== undefined
     ) {
       throw new EngineCommandError({
         type: "command_rejected",
-        id: command.id,
+        id: request.id,
         message_key: this.rejection,
       });
     }
-    if (command.command.type === "diagnostic") {
+    if (request.request.type === "diagnostic") {
       this.emit({
         type: "diagnostic",
-        command_id: command.id,
-        message: command.command.message,
+        command_id: request.id,
+        message: request.request.message,
       });
     }
-    return { type: "command_result" as const, id: command.id };
+    return { type: "command_result" as const, id: request.id };
   }
 
   emit(message: EngineClientMessage): void {

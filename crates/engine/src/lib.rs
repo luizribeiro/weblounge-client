@@ -12,8 +12,8 @@ mod state;
 use tokio::sync::mpsc;
 
 pub use protocol::{
-    BufferId, BufferKind, BufferProjection, Command, CommandEnvelope, EngineToUi, Hello,
-    LocalSendId, MemberGroup, MemberProjection, MembershipKind, MembershipProjection,
+    BufferId, BufferKind, BufferProjection, EngineRequest, EngineRequestEnvelope, EngineToUi,
+    Hello, LocalSendId, MemberGroup, MemberProjection, MembershipKind, MembershipProjection,
     MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection,
     NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
 };
@@ -59,7 +59,7 @@ impl Engine {
     pub fn handle(&self, message: UiToEngine) -> Vec<EngineToUi> {
         match message {
             UiToEngine::Hello(hello) => self.hello(hello),
-            UiToEngine::Command(envelope) => self.runtime.command(envelope),
+            UiToEngine::Request(envelope) => self.runtime.request(envelope),
         }
     }
 
@@ -87,7 +87,9 @@ pub fn client_builder(endpoint: &str, nickname: &str) -> papo::Builder {
 mod tests {
     use papo_testing::wire;
 
-    use crate::{Command, CommandEnvelope, Engine, EngineToUi, Hello, ShellKind, UiToEngine};
+    use crate::{
+        Engine, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, ShellKind, UiToEngine,
+    };
 
     #[tokio::test]
     async fn client_builder_registers_with_papo() {
@@ -131,9 +133,9 @@ mod tests {
         let engine = Engine::new("build", "engine-1");
 
         assert_eq!(
-            engine.handle(UiToEngine::Command(CommandEnvelope {
+            engine.handle(UiToEngine::Request(EngineRequestEnvelope {
                 id: "command-1".into(),
-                command: Command::Diagnostic {
+                request: EngineRequest::Diagnostic {
                     message: "worker alive".into(),
                 },
             })),
@@ -153,9 +155,9 @@ mod tests {
     fn submit_input_surfaces_typed_parse_errors() {
         let engine = Engine::new("build", "engine-1");
         assert_eq!(
-            engine.handle(UiToEngine::Command(CommandEnvelope {
+            engine.handle(UiToEngine::Request(EngineRequestEnvelope {
                 id: "bad-command".into(),
-                command: Command::SubmitInput {
+                request: EngineRequest::SubmitInput {
                     buffer_id: crate::BufferId(1),
                     input: "/whois mel".into(),
                 },

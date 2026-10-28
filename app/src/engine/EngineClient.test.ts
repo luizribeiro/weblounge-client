@@ -74,7 +74,7 @@ describe("WorkerEngineClient", () => {
     client.subscribe(listener);
     const result = client.send({
       id: "command-1",
-      command: { type: "diagnostic", message: "worker alive" },
+      request: { type: "diagnostic", message: "worker alive" },
     });
 
     port.emit({
@@ -102,7 +102,7 @@ describe("WorkerEngineClient", () => {
     const { client, port } = fixture();
     const result = client.send({
       id: "connect-again",
-      command: { type: "diagnostic", message: "ignored" },
+      request: { type: "diagnostic", message: "ignored" },
     });
 
     port.emit({
@@ -339,7 +339,7 @@ describe("WorkerEngineClient", () => {
     expect(() =>
       client.send({
         id: "late",
-        command: { type: "diagnostic", message: "late" },
+        request: { type: "diagnostic", message: "late" },
       }),
     ).toThrow("closed");
   });

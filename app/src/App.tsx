@@ -167,14 +167,14 @@ export function App(props: AppProps) {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
-            command: { type: "mark_read", buffer_id: bufferId, through },
+            request: { type: "mark_read", buffer_id: bufferId, through },
           });
         }}
         onLoadHistory={(bufferId) => {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
-            command: { type: "load_history", buffer_id: bufferId },
+            request: { type: "load_history", buffer_id: bufferId },
           });
         }}
         onSend={(bufferId, text) => {
@@ -183,7 +183,7 @@ export function App(props: AppProps) {
           return client
             .send({
               id: crypto.randomUUID(),
-              command: {
+              request: {
                 type: "submit_input",
                 buffer_id: bufferId,
                 input: text,
@@ -204,7 +204,7 @@ export function App(props: AppProps) {
           setCompletion(undefined);
           void client.send({
             id: crypto.randomUUID(),
-            command: {
+            request: {
               type: "complete_input",
               buffer_id: bufferId,
               prefix,
@@ -215,7 +215,7 @@ export function App(props: AppProps) {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
-            command: {
+            request: {
               type: "request_members",
               buffer_id: bufferId,
               view_id: viewId,
@@ -228,7 +228,7 @@ export function App(props: AppProps) {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
-            command: { type: "open_direct", network_id: networkId, nick },
+            request: { type: "open_direct", network_id: networkId, nick },
           });
         }}
       />
@@ -252,7 +252,7 @@ async function startEngine(
     sessionStorage.removeItem(reloadMarker);
     await client.send({
       id: crypto.randomUUID(),
-      command: {
+      request: {
         type: "diagnostic",
         message: "wasm worker round trip complete",
       },
@@ -260,7 +260,7 @@ async function startEngine(
     if (__DEBUG_IRC_CONFIG__ !== null && debugPassword !== null) {
       await client.send({
         id: crypto.randomUUID(),
-        command: {
+        request: {
           type: "connect",
           label: "Local Ergo",
           endpoint: __DEBUG_IRC_CONFIG__.endpoint,

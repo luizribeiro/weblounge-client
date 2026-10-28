@@ -6,7 +6,7 @@ use std::{
 use tokio::sync::mpsc;
 
 use crate::{
-    BufferId, Command, CommandEnvelope, EngineToUi, MembershipKind, MessageId,
+    BufferId, EngineRequest, EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId,
     direct_target::DirectSendError,
     input,
@@ -81,16 +81,16 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn command(&self, envelope: CommandEnvelope) -> Vec<EngineToUi> {
-        match envelope.command {
-            Command::Diagnostic { message } => vec![
+    pub(crate) fn request(&self, envelope: EngineRequestEnvelope) -> Vec<EngineToUi> {
+        match envelope.request {
+            EngineRequest::Diagnostic { message } => vec![
                 EngineToUi::Diagnostic {
                     command_id: envelope.id.clone(),
                     message,
                 },
                 EngineToUi::CommandResult { id: envelope.id },
             ],
-            Command::Connect {
+            EngineRequest::Connect {
                 label,
                 endpoint,
                 nickname,
@@ -109,13 +109,13 @@ impl Runtime {
                     allow_insecure,
                 },
             ),
-            Command::Disconnect { network_id, reason } => {
+            EngineRequest::Disconnect { network_id, reason } => {
                 self.disconnect(envelope.id, network_id, reason)
             }
-            Command::SendMessage { buffer_id, text } => {
+            EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
             }
-            Command::SubmitInput { buffer_id, input } => match input::parse(&input) {
+            EngineRequest::SubmitInput { buffer_id, input } => match input::parse(&input) {
                 Ok(input::ParsedInput::Message(text)) => {
                     self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
                 }
@@ -146,15 +146,15 @@ impl Runtime {
                 }
                 Err(error) => rejected_command(envelope.id, error.message_key()),
             },
-            Command::CompleteInput { buffer_id, prefix } => {
+            EngineRequest::CompleteInput { buffer_id, prefix } => {
                 self.complete_input(envelope.id, buffer_id, prefix)
             }
-            Command::MarkRead { buffer_id, through } => {
+            EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }
-            Command::MarkAllRead => self.mark_all_read(envelope.id),
-            Command::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
-            Command::RequestMembers {
+            EngineRequest::MarkAllRead => self.mark_all_read(envelope.id),
+            EngineRequest::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
+            EngineRequest::RequestMembers {
                 buffer_id,
                 view_id,
                 offset,
@@ -166,7 +166,7 @@ impl Runtime {
                 offset,
                 filter.as_deref().unwrap_or_default(),
             ),
-            Command::OpenDirect { network_id, nick } => {
+            EngineRequest::OpenDirect { network_id, nick } => {
                 self.open_direct(envelope.id, network_id, nick)
             }
         }
@@ -1169,7 +1169,8 @@ mod tests {
         process_event, process_history,
     };
     use crate::{
-        BufferId, BufferKind, Command, CommandEnvelope, EngineToUi, NetworkId, SaslCredentials,
+        BufferId, BufferKind, EngineRequest, EngineRequestEnvelope, EngineToUi, NetworkId,
+        SaslCredentials,
         state::{NetworkModel, SendTarget},
     };
 
@@ -1251,9 +1252,9 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(30)).await;
         _ = collect(&mut receiver);
         for (view_id, offset) in [("left", 700), ("right", 1_400)] {
-            let output = runtime.command(CommandEnvelope {
+            let output = runtime.request(EngineRequestEnvelope {
                 id: format!("request-{view_id}"),
-                command: Command::RequestMembers {
+                request: EngineRequest::RequestMembers {
                     buffer_id,
                     view_id: view_id.into(),
                     offset,
@@ -1344,8 +1345,8 @@ mod tests {
     fn rejected_commands_emit_a_typed_terminal_result() {
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime::new(outbound);
-        let commands = [
-            Command::Connect {
+        let requests = [
+            EngineRequest::Connect {
                 label: "Test".into(),
                 endpoint: "ws://insecure.test".into(),
                 nickname: "weblounge".into(),
@@ -1356,21 +1357,21 @@ mod tests {
                 autojoin: Vec::new(),
                 allow_insecure: false,
             },
-            Command::Disconnect {
+            EngineRequest::Disconnect {
                 network_id: NetworkId(1),
                 reason: None,
             },
-            Command::SendMessage {
+            EngineRequest::SendMessage {
                 buffer_id: BufferId(1),
                 text: "hello".into(),
             },
         ];
 
-        for (index, command) in commands.into_iter().enumerate() {
+        for (index, request) in requests.into_iter().enumerate() {
             let id = format!("rejected-{index}");
-            let output = runtime.command(CommandEnvelope {
+            let output = runtime.request(EngineRequestEnvelope {
                 id: id.clone(),
-                command,
+                request,
             });
             assert!(matches!(output.as_slice(), [
                 EngineToUi::CommandRejected { id: result_id, .. },
@@ -1397,9 +1398,9 @@ mod tests {
             outbound,
         };
 
-        let output = runtime.command(CommandEnvelope {
+        let output = runtime.request(EngineRequestEnvelope {
             id: "open-mel".into(),
-            command: Command::OpenDirect {
+            request: EngineRequest::OpenDirect {
                 network_id: NetworkId(1),
                 nick: "mel".into(),
             },
@@ -1436,9 +1437,9 @@ mod tests {
             outbound,
         };
 
-        let output = runtime.command(CommandEnvelope {
+        let output = runtime.request(EngineRequestEnvelope {
             id: "connect-again".into(),
-            command: Command::Connect {
+            request: EngineRequest::Connect {
                 label: "Replacement".into(),
                 endpoint: "wss://irc.example.test".into(),
                 nickname: "weblounge".into(),
@@ -1484,9 +1485,9 @@ mod tests {
             outbound,
         };
 
-        let output = runtime.command(CommandEnvelope {
+        let output = runtime.request(EngineRequestEnvelope {
             id: "complete".into(),
-            command: Command::CompleteInput {
+            request: EngineRequest::CompleteInput {
                 buffer_id: BufferId(1),
                 prefix: "/j".into(),
             },
@@ -1531,9 +1532,9 @@ mod tests {
             outbound,
         };
 
-        let join_output = runtime.command(CommandEnvelope {
+        let join_output = runtime.request(EngineRequestEnvelope {
             id: "join".into(),
-            command: Command::SubmitInput {
+            request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/join #new secret".into(),
             },
@@ -1552,9 +1553,9 @@ mod tests {
                 .buffer_id_for_target(&target)
                 .expect("joined buffer exists")
         };
-        let completion = runtime.command(CommandEnvelope {
+        let completion = runtime.request(EngineRequestEnvelope {
             id: "complete-member".into(),
-            command: Command::CompleteInput {
+            request: EngineRequest::CompleteInput {
                 buffer_id,
                 prefix: "web".into(),
             },
@@ -1565,18 +1566,18 @@ mod tests {
                 if candidates.is_empty()
         ));
 
-        runtime.command(CommandEnvelope {
+        runtime.request(EngineRequestEnvelope {
             id: "topic".into(),
-            command: Command::SubmitInput {
+            request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/topic new topic".into(),
             },
         });
         assert_eq!(wire.next_sent().await, "TOPIC #new :new topic");
         wire.server(":weblounge!u@host TOPIC #new :new topic").await;
-        runtime.command(CommandEnvelope {
+        runtime.request(EngineRequestEnvelope {
             id: "nick".into(),
-            command: Command::SubmitInput {
+            request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/nick lounge2".into(),
             },
@@ -1589,9 +1590,9 @@ mod tests {
         .await;
         process_runtime_event(&runtime, changed);
         assert_network_nickname(&mut receiver, "lounge2");
-        runtime.command(CommandEnvelope {
+        runtime.request(EngineRequestEnvelope {
             id: "part".into(),
-            command: Command::SubmitInput {
+            request: EngineRequest::SubmitInput {
                 buffer_id,
                 input: "/part later".into(),
             },
@@ -1599,9 +1600,9 @@ mod tests {
         assert_eq!(wire.next_sent().await, "PART #new later");
         wire.server(":lounge2!u@host PART #new :later").await;
 
-        let output = runtime.command(CommandEnvelope {
+        let output = runtime.request(EngineRequestEnvelope {
             id: "msg".into(),
-            command: Command::SubmitInput {
+            request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/msg alice hello".into(),
             },
@@ -1638,9 +1639,9 @@ mod tests {
             outbound,
         };
 
-        let output = runtime.command(CommandEnvelope {
+        let output = runtime.request(EngineRequestEnvelope {
             id: "join-pairs".into(),
-            command: Command::SubmitInput {
+            request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/join #a,#b key1,key2".into(),
             },
@@ -1698,9 +1699,9 @@ mod tests {
 
         assert!(
             runtime
-                .command(CommandEnvelope {
+                .request(EngineRequestEnvelope {
                     id: "banned-join".into(),
-                    command: Command::SubmitInput {
+                    request: EngineRequest::SubmitInput {
                         buffer_id: BufferId(1),
                         input: "/join #banned".into(),
                     },
@@ -1982,9 +1983,9 @@ mod tests {
             .expect("live message is projected");
         let runtime = Runtime { state, outbound };
 
-        let output = runtime.command(CommandEnvelope {
+        let output = runtime.request(EngineRequestEnvelope {
             id: "mark-local".into(),
-            command: Command::MarkRead {
+            request: EngineRequest::MarkRead {
                 buffer_id,
                 through: message_id,
             },
@@ -2047,9 +2048,9 @@ mod tests {
 
         assert!(
             runtime
-                .command(CommandEnvelope {
+                .request(EngineRequestEnvelope {
                     id: "mark-server".into(),
-                    command: Command::MarkRead {
+                    request: EngineRequest::MarkRead {
                         buffer_id,
                         through: message_id
                     },

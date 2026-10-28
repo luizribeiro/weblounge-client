@@ -32,7 +32,7 @@ export function attachEnginePort(port: WorkerHostPort): void {
 
 export class EngineWorkerRuntime {
   readonly #ports = new Set<WorkerHostPort>();
-  readonly #commandPorts = new Map<string, WorkerHostPort>();
+  readonly #requestPorts = new Map<string, WorkerHostPort>();
   readonly #engine: Promise<WasmEngine>;
 
   constructor(load: EngineLoader) {
@@ -50,8 +50,8 @@ export class EngineWorkerRuntime {
 
   async #handleMessage(port: WorkerHostPort, message: unknown): Promise<void> {
     try {
-      const commandId = readCommandId(message);
-      if (commandId !== undefined) this.#commandPorts.set(commandId, port);
+      const requestId = readRequestId(message);
+      if (requestId !== undefined) this.#requestPorts.set(requestId, port);
       const currentEngine = await this.#engine;
       const encoded = currentEngine.handle(JSON.stringify(message));
       const events: unknown = JSON.parse(encoded);
@@ -74,17 +74,17 @@ export class EngineWorkerRuntime {
         event.type === "command_rejected" ||
         event.type === "focus_buffer_requested")
     ) {
-      const commandId =
+      const requestId =
         event.type === "focus_buffer_requested" ? event.command_id : event.id;
       const port =
-        typeof commandId === "string"
-          ? this.#commandPorts.get(commandId)
+        typeof requestId === "string"
+          ? this.#requestPorts.get(requestId)
           : undefined;
       if (
         event.type !== "focus_buffer_requested" &&
-        typeof commandId === "string"
+        typeof requestId === "string"
       )
-        this.#commandPorts.delete(commandId);
+        this.#requestPorts.delete(requestId);
       (port ?? callingPort)?.postMessage(event);
     } else if (isSharedStateEvent(event)) {
       for (const port of this.#ports) port.postMessage(event);
@@ -103,10 +103,10 @@ async function loadEngine(
   return new imported.WasmEngine(__BUILD_ID__, crypto.randomUUID(), onEvent);
 }
 
-function readCommandId(message: unknown): string | undefined {
+function readRequestId(message: unknown): string | undefined {
   if (
     isRecord(message) &&
-    message.type === "command" &&
+    message.type === "request" &&
     isRecord(message.payload) &&
     typeof message.payload.id === "string"
   ) {

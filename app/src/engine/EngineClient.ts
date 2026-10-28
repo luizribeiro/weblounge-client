@@ -1,9 +1,9 @@
 import type {
   BufferProjection,
-  CommandEnvelope,
   CommandRejected,
   CommandResult,
   EngineClientMessage,
+  EngineRequestEnvelope,
   EngineToUi,
   Hello,
   IncompatibleBuild,
@@ -19,7 +19,7 @@ import type {
 
 export interface EngineClient {
   start(hello: Hello): Promise<void>;
-  send(command: CommandEnvelope): Promise<CommandResult>;
+  send(request: EngineRequestEnvelope): Promise<CommandResult>;
   requestSnapshot(reason: ResyncReason): void;
   setVisibility(state: VisibilityState): void;
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe;
@@ -51,7 +51,7 @@ interface StartWaiter {
   reject: (reason: Error) => void;
 }
 
-interface CommandWaiter {
+interface RequestWaiter {
   resolve: (result: CommandResult) => void;
   reject: (reason: Error) => void;
 }
@@ -78,7 +78,7 @@ export class WorkerEngineClient implements EngineClient {
   readonly #connection: EngineConnection;
   readonly #scheduleFrame: FrameScheduler;
   readonly #listeners = new Set<(message: EngineClientMessage) => void>();
-  readonly #commands = new Map<string, CommandWaiter>();
+  readonly #requests = new Map<string, RequestWaiter>();
   readonly #renderQueue: EngineToUi[] = [];
   readonly #initialMessages: EngineClientMessage[];
   #startWaiter: StartWaiter | undefined;
@@ -112,16 +112,16 @@ export class WorkerEngineClient implements EngineClient {
     return started;
   }
 
-  send(command: CommandEnvelope): Promise<CommandResult> {
+  send(request: EngineRequestEnvelope): Promise<CommandResult> {
     this.#assertOpen();
-    if (this.#commands.has(command.id)) {
-      return Promise.reject(new Error(`duplicate command id: ${command.id}`));
+    if (this.#requests.has(request.id)) {
+      return Promise.reject(new Error(`duplicate request id: ${request.id}`));
     }
 
     const result = new Promise<CommandResult>((resolve, reject) => {
-      this.#commands.set(command.id, { resolve, reject });
+      this.#requests.set(request.id, { resolve, reject });
     });
-    this.#connection.port.postMessage({ type: "command", payload: command });
+    this.#connection.port.postMessage({ type: "request", payload: request });
     return result;
   }
 
@@ -150,8 +150,8 @@ export class WorkerEngineClient implements EngineClient {
     const error = new Error("engine client closed");
     this.#startWaiter?.reject(error);
     this.#startWaiter = undefined;
-    for (const waiter of this.#commands.values()) waiter.reject(error);
-    this.#commands.clear();
+    for (const waiter of this.#requests.values()) waiter.reject(error);
+    this.#requests.clear();
   }
 
   readonly #onMessage = (event: MessageEvent<unknown>): void => {
@@ -161,15 +161,15 @@ export class WorkerEngineClient implements EngineClient {
       return;
     }
     if (message.type === "command_result") {
-      const waiter = this.#commands.get(message.id);
-      this.#commands.delete(message.id);
+      const waiter = this.#requests.get(message.id);
+      this.#requests.delete(message.id);
       waiter?.resolve(message);
       this.#enqueueForFrame(message);
       return;
     }
     if (message.type === "command_rejected") {
-      const waiter = this.#commands.get(message.id);
-      this.#commands.delete(message.id);
+      const waiter = this.#requests.get(message.id);
+      this.#requests.delete(message.id);
       waiter?.reject(new EngineCommandError(message));
       this.#enqueueForFrame(message);
       return;

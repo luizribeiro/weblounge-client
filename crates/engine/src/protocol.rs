@@ -243,19 +243,19 @@ pub enum ShellKind {
     Web,
 }
 
-/// One command with its correlation identifier.
+/// One engine request with its correlation identifier.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
-pub struct CommandEnvelope {
-    /// Command correlation identifier.
+pub struct EngineRequestEnvelope {
+    /// Request correlation identifier.
     pub id: String,
     /// Requested operation.
-    pub command: Command,
+    pub request: EngineRequest,
 }
 
-/// Commands implemented by the current vertical slice.
+/// Engine requests implemented by the current vertical slice.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum Command {
+pub enum EngineRequest {
     /// Round-trip diagnostic proving the worker boundary.
     Diagnostic {
         /// Opaque non-secret diagnostic text.
@@ -344,8 +344,8 @@ pub enum Command {
 pub enum UiToEngine {
     /// Begin or resume a UI subscription.
     Hello(Hello),
-    /// Execute a command.
-    Command(CommandEnvelope),
+    /// Execute an engine request.
+    Request(EngineRequestEnvelope),
 }
 
 /// Events emitted to a UI client.
@@ -369,7 +369,7 @@ pub enum EngineToUi {
     },
     /// Diagnostic event produced by the test command.
     Diagnostic {
-        /// Command that produced this event.
+        /// `EngineRequest` that produced this event.
         command_id: String,
         /// Diagnostic text.
         message: String,
@@ -393,7 +393,7 @@ pub enum EngineToUi {
     },
     /// Candidate values for one composer completion request.
     CompletionResult {
-        /// Command that requested these candidates.
+        /// `EngineRequest` that requested these candidates.
         command_id: String,
         /// Buffer whose projection supplied the candidates.
         buffer_id: BufferId,
@@ -426,7 +426,7 @@ pub enum EngineToUi {
     },
     /// Ask the active shell to focus a buffer selected by engine-owned input semantics.
     FocusBufferRequested {
-        /// Command whose composer should navigate.
+        /// `EngineRequest` whose composer should navigate.
         command_id: String,
         /// Buffer to focus.
         buffer_id: BufferId,

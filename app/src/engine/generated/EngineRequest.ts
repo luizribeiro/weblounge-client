@@ -5,9 +5,9 @@ import type { NetworkId } from "./NetworkId";
 import type { SaslCredentials } from "./SaslCredentials";
 
 /**
- * Commands implemented by the current vertical slice.
+ * Engine requests implemented by the current vertical slice.
  */
-export type Command = { "type": "diagnostic",
+export type EngineRequest = { "type": "diagnostic",
 /**
  * Opaque non-secret diagnostic text.
  */

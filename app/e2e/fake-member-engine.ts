@@ -22,13 +22,13 @@ export class FakeMemberPort implements EnginePort {
       );
       return;
     }
-    const { command, id } = message.payload;
-    if (command.type === "request_members") {
-      this.#views.set(command.view_id, {
-        buffer: command.buffer_id,
-        offset: command.offset,
+    const { request, id } = message.payload;
+    if (request.type === "request_members") {
+      this.#views.set(request.view_id, {
+        buffer: request.buffer_id,
+        offset: request.offset,
       });
-      queueMicrotask(() => this.#emitWindow(command.view_id));
+      queueMicrotask(() => this.#emitWindow(request.view_id));
     }
     queueMicrotask(() => this.#emit({ type: "command_result", id }));
   }

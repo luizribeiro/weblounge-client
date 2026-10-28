@@ -41,7 +41,7 @@ function Harness() {
   const request = (viewId: string, offset: number) => {
     void client.send({
       id: crypto.randomUUID(),
-      command: {
+      request: {
         type: "request_members",
         buffer_id: 1,
         view_id: viewId,

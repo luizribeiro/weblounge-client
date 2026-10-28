@@ -3,7 +3,8 @@
 use std::{env, time::Duration};
 
 use weblounge_engine::{
-    BufferKind, Command, CommandEnvelope, Engine, EngineToUi, SaslCredentials, UiToEngine,
+    BufferKind, Engine, EngineRequest, EngineRequestEnvelope, EngineToUi, SaslCredentials,
+    UiToEngine,
 };
 
 #[tokio::test]
@@ -12,9 +13,9 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
         return;
     };
     let (engine, mut events) = Engine::with_events("integration", "engine-ergo");
-    let connected = engine.handle(UiToEngine::Command(CommandEnvelope {
+    let connected = engine.handle(UiToEngine::Request(EngineRequestEnvelope {
         id: "connect".into(),
-        command: Command::Connect {
+        request: EngineRequest::Connect {
             label: "Local Ergo".into(),
             endpoint,
             nickname: "weblounge".into(),
@@ -48,9 +49,9 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
     .await
     .expect("Ergo autojoin completes");
 
-    let optimistic = engine.handle(UiToEngine::Command(CommandEnvelope {
+    let optimistic = engine.handle(UiToEngine::Request(EngineRequestEnvelope {
         id: "send".into(),
-        command: Command::SendMessage {
+        request: EngineRequest::SendMessage {
             buffer_id,
             text: "integration hello".into(),
         },
