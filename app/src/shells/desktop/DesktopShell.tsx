@@ -43,7 +43,7 @@ interface DesktopShellProps {
     | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
-  readonly onSend: (bufferId: number, text: string) => void;
+  readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
@@ -249,17 +249,16 @@ export function DesktopShell(props: DesktopShellProps) {
                 onSelectLast={() => messageListController?.selectLastOwn()}
                 onSend={(text) => {
                   const buffer = activeBuffer();
-                  if (buffer !== undefined) {
-                    pendingOpen = /^\/(?:join|msg)\s+(\S+)/i.exec(text)?.[1];
-                    const existing = props.buffers.find(
-                      (item) => item.title === pendingOpen,
-                    );
-                    if (existing !== undefined) {
-                      pendingOpen = undefined;
-                      showBuffer(existing.id, true);
-                    }
-                    props.onSend(buffer.id, text);
+                  if (buffer === undefined) return false;
+                  pendingOpen = /^\/(?:join|msg)\s+(\S+)/i.exec(text)?.[1];
+                  const existing = props.buffers.find(
+                    (item) => item.title === pendingOpen,
+                  );
+                  if (existing !== undefined) {
+                    pendingOpen = undefined;
+                    showBuffer(existing.id, true);
                   }
+                  return props.onSend(buffer.id, text);
                 }}
               />
             </div>

@@ -143,9 +143,9 @@ export function App(props: AppProps) {
           });
         }}
         onSend={(bufferId, text) => {
-          if (client === undefined) return;
+          if (client === undefined) return Promise.resolve(false);
           setComposerNotice(undefined);
-          void client
+          return client
             .send({
               id: crypto.randomUUID(),
               command: {
@@ -154,12 +154,14 @@ export function App(props: AppProps) {
                 input: text,
               },
             })
+            .then(() => true)
             .catch((error: unknown) => {
               setComposerNotice(
                 error instanceof EngineCommandError
                   ? error.messageKey
                   : "engine.command_failed",
               );
+              return false;
             });
         }}
         onRequestCompletion={(bufferId, prefix) => {

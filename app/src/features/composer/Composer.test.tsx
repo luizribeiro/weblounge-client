@@ -103,3 +103,20 @@ it("grows the textarea with multiline content", async () => {
 
   expect(input.style.height).toBe("84px");
 });
+
+it("keeps a draft when the engine rejects submission", async () => {
+  render(() => (
+    <Composer
+      bufferId={8}
+      bufferTitle="#rust"
+      onSend={() => Promise.resolve(false)}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/join #banned" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await Promise.resolve();
+
+  expect(input).toHaveValue("/join #banned");
+  expect(sessionStorage.getItem("weblounge:draft:8")).toBe("/join #banned");
+});

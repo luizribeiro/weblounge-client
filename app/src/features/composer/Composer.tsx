@@ -9,7 +9,7 @@ interface ComposerProps {
   readonly disabled?: boolean;
   readonly onRequestCandidates?: (prefix: string) => void;
   readonly onSelectLast?: () => void;
-  readonly onSend: (text: string) => void;
+  readonly onSend: (text: string) => boolean | void | Promise<boolean | void>;
 }
 
 const draftKey = (id: number) => `weblounge:draft:${id}`;
@@ -57,11 +57,21 @@ export function Composer(props: ComposerProps) {
     }
   };
   const submit = () => {
-    if (text().trim() === "") return;
-    props.onSend(text());
-    sessionStorage.removeItem(draftKey(currentBuffer));
-    setText("");
-    setSelected(-1);
+    const submitted = text();
+    const submittedBuffer = currentBuffer;
+    if (submitted.trim() === "") return;
+    void Promise.resolve(props.onSend(submitted))
+      .then((accepted) => {
+        if (accepted === false) return;
+        if (sessionStorage.getItem(draftKey(submittedBuffer)) === submitted) {
+          sessionStorage.removeItem(draftKey(submittedBuffer));
+        }
+        if (currentBuffer === submittedBuffer && text() === submitted) {
+          setText("");
+          setSelected(-1);
+        }
+      })
+      .catch(() => undefined);
   };
   const complete = (offset: number) => {
     if (completion === undefined) {
@@ -117,7 +127,12 @@ export function Composer(props: ComposerProps) {
   const keydown: JSX.EventHandler<HTMLTextAreaElement, KeyboardEvent> = (
     event,
   ) => {
-    if (event.isComposing || event.keyCode === 229 || event.key === "Process")
+    if (
+      event.isComposing ||
+      event.keyCode === 229 ||
+      event.key === "Dead" ||
+      event.key === "Process"
+    )
       return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
