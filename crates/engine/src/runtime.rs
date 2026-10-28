@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     Command, CommandEnvelope, EngineToUi, NetworkConnectionState, NetworkId,
-    direct_target::DirectTarget,
+    direct_target::DirectSendError,
     state::{NetworkModel, PendingSend, SendTarget},
 };
 
@@ -179,7 +179,7 @@ impl Runtime {
                 };
                 match result {
                     Ok(sent) => running.model.confirm_send(&pending, &sent),
-                    Err(_) => Some(running.model.fail_send(&pending)),
+                    Err(error) => Some(running.model.fail_send(&pending, error.message_key())),
                 }
             };
             if let Some(event) = event {
@@ -201,13 +201,35 @@ struct ConnectConfig {
     allow_insecure: bool,
 }
 
-async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent, papo::Error> {
+#[derive(Debug)]
+enum SendError {
+    Protocol,
+    DirectAccountChanged,
+}
+
+impl SendError {
+    const fn message_key(&self) -> &'static str {
+        match self {
+            Self::Protocol => "engine.send_failed",
+            Self::DirectAccountChanged => "engine.direct_account_changed",
+        }
+    }
+}
+
+async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent, SendError> {
     match pending.target.clone() {
-        SendTarget::Channel(channel) => client.privmsg(channel, pending.text.clone()).await,
-        SendTarget::Direct(nick) => {
-            DirectTarget::new(nick)
+        SendTarget::Channel(channel) => client
+            .privmsg(channel, pending.text.clone())
+            .await
+            .map_err(|_| SendError::Protocol),
+        SendTarget::Direct(target) => {
+            target
                 .send(client, pending.text.clone())
                 .await
+                .map_err(|error| match error {
+                    DirectSendError::AccountChanged => SendError::DirectAccountChanged,
+                    DirectSendError::Protocol => SendError::Protocol,
+                })
         }
     }
 }
@@ -228,7 +250,9 @@ async fn drain_events(
             spawn_task(async move {
                 let page = match target {
                     SendTarget::Channel(channel) => client.history(channel).latest().await,
-                    SendTarget::Direct(nick) => client.history(nick).latest().await,
+                    SendTarget::Direct(target) => {
+                        client.history(target.nick().clone()).latest().await
+                    }
                 };
                 if let Ok(page) = page {
                     process_history(&state, &outbound, &client, instance, page);
