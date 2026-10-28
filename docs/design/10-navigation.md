@@ -37,15 +37,15 @@ focus to its invoker before shell navigation changes.
 ```ts
 export interface DesktopNavigation {
   readonly panes: PaneLayout;
-  readonly memberPanelOpen: boolean;
+  readonly memberVisibility: MemberVisibility;
   readonly overlays: readonly Overlay[];
   readonly paneUi: ReadonlyMap<PaneId, PaneUiState>;
 }
 ```
 
-The member panel stores only the user's open preference. Its following pane and buffer are derived
-from the focused leaf and that buffer's action projection; no second `{paneId, bufferId}` pair can
-drift. Per-pane scroll/focus state keys on stable `PaneId`; drafts key on `(PaneId, BufferId)` in
+`MemberVisibility` is per channel (a map from the channel's stable key to shown/hidden, plus the
+last choice used as the default for channels never toggled); each channel pane derives whether its
+own member list is shown from it, so no per-pane copy can drift. Per-pane scroll/focus state keys on stable `PaneId`; drafts key on `(PaneId, BufferId)` in
 the composer subsystem.
 
 Pointer-down or focus entering a pane dispatches `pane.focus`; hover does not. With multiple panes,
@@ -84,7 +84,7 @@ focus outcomes are entirely the pane reducer's deterministic rules.
 | Grow or shrink at nearest divider | `pane.grow`, `pane.shrink` |
 | Adjust a focused divider | `separator.decrease`, `separator.increase` |
 | Toggle sidebar | `sidebar.toggle` |
-| Toggle shared member panel | `members.toggle` |
+| Toggle the focused pane's member list | `members.toggle` |
 | Join channel or start DM | `buffer.open` |
 | Show a network's server buffer | `network.open-server` |
 
@@ -143,15 +143,15 @@ Opening or focusing alone never marks read. Hiding/zooming the pane, leaving the
 losing window focus cancels the dwell. Thus a mention in a zoom-hidden pane both badges and remains
 unread.
 
-## Shared member panel
+## Member lists (per pane)
 
-Opening from a pane focuses that pane and sets `memberPanelOpen`. While open, contents derive from
-the focused channel and cross-fade for 200ms; reduced motion swaps immediately. Empty, DM, and
-server panes hide the effective panel without clearing the preference, so focusing a channel
-restores it. Closing the panel clears the preference.
-
-The chip reads “Following #channel”. There is exactly one 232px panel and it never follows a
-hidden, nonfocused duplicate.
+Decided by Luiz on 2026-10-28 (see `docs/reference/split-view.md`), replacing the shared panel.
+Every channel pane renders its own member list when `memberVisibility` says the channel's list is
+shown. `members.toggle` and the pane header button flip the focused pane's channel. A pane whose
+width cannot fit the 232px list beside a conversation of at least the doc 09 minimum presents the
+list as an overlay drawer anchored to that pane's right edge instead (same component as the mobile
+drawer; Escape and the backdrop close it, back order as for the mobile drawer). DM, server and
+empty panes have no member list. Each rendered list is its own member-window view.
 
 ## Mobile navigation
 
@@ -194,7 +194,7 @@ use modal desktop presentation and stack mobile presentation.
 ## Boundaries
 
 This subsystem owns shell navigation, desktop focus/action semantics, placement adapters,
-member-panel preference/following, mobile stacks, transitions/back, deep-link interpretation, and
+per-channel member visibility, mobile stacks, transitions/back, deep-link interpretation, and
 focus restoration. It does not own pane validation, engine state, message scrolling, drafts,
 capability inference, command definitions, or shortcut chords.
 
@@ -203,7 +203,7 @@ capability inference, command definitions, or shortcut chords.
 - Reducer tests cover desktop actions, tab stacks, back priority, deep links, and focus restoration.
 - Geometry fixtures cover directional focus and nearest-divider use on uneven nested panes.
 - Playwright covers click/modified-click, five drop zones, move/swap/self-drop, pane-cap
-  degradation, zoom, close-last, server/empty panes, and member following.
+  degradation, zoom, close-last, server/empty panes, per-pane member lists, and the narrow-pane overlay.
 - Command-only accessibility tests perform every pointer operation through registry IDs and the
   placement dialog.
 - Visibility tests cover rendered versus zoom-hidden badges, 500ms dwell, duplicate panes, history

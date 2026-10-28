@@ -17,7 +17,7 @@ Port the behaviour below, not the prototype's code.
 ## Pane chrome
 
 Each pane has a 38px header: title (`#channel` or nick), topic (ellipsized), then buttons:
-- **Members** (icon + member count), pressed when the shared member panel is following this pane; clicking focuses the pane and shows the member panel.
+- **Members** (icon + member count), pressed when this pane's member list is shown; clicking focuses the pane and toggles its member list (see below).
 - **Split right**, **Split down**: split this pane, the new pane shows the same buffer and takes focus.
 - **Maximize / Restore layout** (also: double-click the header).
 - **Close pane.** Closing a leaf promotes its sibling. Closing the last pane leaves one empty pane ("Drop a channel here, or pick one from the sidebar.").
@@ -46,10 +46,15 @@ Below the header: the message list and the pane's own composer (each pane has it
 - Dragging sets the split's ratio, clamped to 0.15–0.85 of that split's box. Double-click resets to 0.5.
 - Dividers are `role="separator"` with `aria-orientation`; they should also be keyboard-adjustable (arrow keys), which the prototype lacks.
 
-## Shared member panel
+## Member list per pane
 
-- There is still **one** member panel (232px, right side), not one per pane. It **follows the focused pane**: a chip at its top reads "Following **#channel**", and its contents cross-fade (200ms, disabled with reduced motion) when focus moves to a pane with a different buffer.
-- It hides when the focused pane is empty or a server buffer; it can be closed and reopened via any pane's Members button.
+Decided by Luiz on 2026-10-28, replacing the prototype's single shared panel and its "Following #channel" chip:
+
+- Each pane showing a channel has **its own** member list, inside the pane on its right side (232px). Panes are self-contained: moving, swapping or maximizing a pane brings its member list along, and two channels' member lists can be visible at once.
+- Visibility is remembered **per channel**, not per pane: `#papo` looks the same wherever it's opened. A channel never opened before follows the last choice made.
+- When a pane is too narrow to fit the list inline next to a usable conversation, the same toggle opens it as an **overlay drawer** from that pane's right edge (the component used by the mobile drawer). The control never silently does nothing.
+- `members.toggle` (⌘. / Ctrl+.) and the pane header's Members button act on the focused pane. DMs, server buffers and empty panes have no member list.
+- Each visible list is virtualised with its own engine member window (windows are tracked per view), so several lists stay cheap.
 
 ## Open design questions (resolve in the navigation / layout design docs)
 

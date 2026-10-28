@@ -131,7 +131,8 @@ geometry implementation.
 One pane has the prototype's 48px main header. Multi-pane mode has 38px pane headers plus the 38px
 workspace bar defined by subsystem 10. Dividers expose a 7px hit target around a 1px gap. Sidebar,
 member-panel, and chromeless presentation are inputs from navigation/settings rather than fields in
-the pane tree; member-panel preference and following state live only in subsystem 10.
+the pane tree; per-channel member visibility lives only in subsystem 10. Layout supplies each
+pane's width so navigation can choose inline member list or overlay drawer.
 
 Each pane's minimum rendered box is 320×240px. If the tree cannot meet that minimum, only the
 focused pane is rendered without mutating the tree or persisted zoom flag. The workspace bar shows
