@@ -512,6 +512,13 @@ impl NetworkModel {
         self.request_latest(buffer_id)
     }
 
+    pub(crate) fn channel_for_buffer(&self, buffer_id: BufferId) -> Option<papo::ChannelName> {
+        match self.buffers.get(&buffer_id)?.key.clone()? {
+            NameKey::Channel(channel) => Some(channel),
+            NameKey::Direct(_) => None,
+        }
+    }
+
     pub(crate) fn open_direct(
         &mut self,
         nick: String,

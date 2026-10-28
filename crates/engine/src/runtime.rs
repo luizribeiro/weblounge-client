@@ -85,13 +85,15 @@ impl Runtime {
                     self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Action)
                 }
                 Ok(input::ParsedInput::Join { channel }) => self.join(envelope.id, channel),
-                Ok(
-                    input::ParsedInput::Part { .. }
-                    | input::ParsedInput::Nick { .. }
-                    | input::ParsedInput::Topic { .. },
-                ) => rejected_command(envelope.id, "composer.command_not_implemented"),
+                Ok(input::ParsedInput::Part { reason }) => {
+                    self.part(envelope.id, buffer_id, reason)
+                }
                 Ok(input::ParsedInput::Msg { nick, text }) => {
                     self.message_direct(envelope.id, nick, text)
+                }
+                Ok(input::ParsedInput::Nick { nick }) => self.set_nick(envelope.id, nick),
+                Ok(input::ParsedInput::Topic { text }) => {
+                    self.set_topic(envelope.id, buffer_id, text)
                 }
                 Ok(input::ParsedInput::Quit { reason }) => {
                     let network_id = lock(&self.state)
@@ -264,6 +266,57 @@ impl Runtime {
         drop(state);
         output.extend(self.send_input(command_id, buffer_id, text, crate::MessageKind::Text));
         output
+    }
+
+    fn part(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        reason: Option<String>,
+    ) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
+            return rejected_command(command_id, "engine.channel_required");
+        };
+        let client = running.client.clone();
+        drop(state);
+        spawn_request(self.outbound.clone(), command_id, async move {
+            client.part(channel, reason.unwrap_or_default()).await
+        });
+        Vec::new()
+    }
+
+    fn set_nick(&self, command_id: String, nick: String) -> Vec<EngineToUi> {
+        let Some(client) = lock(&self.state)
+            .network
+            .as_ref()
+            .map(|running| running.client.clone())
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        spawn_request(self.outbound.clone(), command_id, async move {
+            client.set_nick(nick).await
+        });
+        Vec::new()
+    }
+
+    fn set_topic(&self, command_id: String, buffer_id: BufferId, text: String) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
+            return rejected_command(command_id, "engine.channel_required");
+        };
+        let client = running.client.clone();
+        drop(state);
+        spawn_request(self.outbound.clone(), command_id, async move {
+            client.set_topic(channel, text).await
+        });
+        Vec::new()
     }
 
     fn mark_read(
@@ -957,6 +1010,45 @@ mod tests {
         );
         assert_eq!(wire.next_sent().await, "JOIN #new");
         wire.server(":weblounge!u@host JOIN #new").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let buffer_id = {
+            let mut state = lock(&runtime.state);
+            let running = state.network.as_mut().expect("network remains running");
+            running.model.sync_channels(&running.client.state());
+            let target = SendTarget::Channel(running.client.state().name_rules().channel("#new"));
+            running
+                .model
+                .buffer_id_for_target(&target)
+                .expect("joined buffer exists")
+        };
+
+        runtime.command(CommandEnvelope {
+            id: "topic".into(),
+            command: Command::SubmitInput {
+                buffer_id,
+                input: "/topic new topic".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "TOPIC #new :new topic");
+        wire.server(":weblounge!u@host TOPIC #new :new topic").await;
+        runtime.command(CommandEnvelope {
+            id: "nick".into(),
+            command: Command::SubmitInput {
+                buffer_id,
+                input: "/nick lounge2".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "NICK lounge2");
+        wire.server(":weblounge!u@host NICK lounge2").await;
+        runtime.command(CommandEnvelope {
+            id: "part".into(),
+            command: Command::SubmitInput {
+                buffer_id,
+                input: "/part later".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "PART #new later");
+        wire.server(":lounge2!u@host PART #new :later").await;
 
         let output = runtime.command(CommandEnvelope {
             id: "msg".into(),
