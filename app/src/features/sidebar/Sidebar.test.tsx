@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
-import { CommandRegistry } from "../../commands/command-registry";
+import { ActionRegistry } from "../../actions/action-registry";
 import type { SidebarListController } from "./Sidebar";
 import { Sidebar } from "./Sidebar";
 
 it("groups projected buffers and routes sidebar actions through commands", () => {
   const show = vi.fn();
   const server = vi.fn();
-  const registry = new CommandRegistry(
+  const registry = new ActionRegistry(
     { "pane.show-buffer": show, "network.open-server": server },
     "other",
   );
@@ -66,7 +66,7 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
 
 it("moves roving focus through real list commands", () => {
   let controller: SidebarListController | undefined;
-  const registry = new CommandRegistry(
+  const registry = new ActionRegistry(
     {
       "list.next": () => controller?.next(),
       "list.previous": () => controller?.previous(),

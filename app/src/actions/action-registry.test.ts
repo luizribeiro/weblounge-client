@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { CommandRegistry, detectPlatform } from "./command-registry";
+import { ActionRegistry, detectPlatform } from "./action-registry";
 
 const context = { bufferCount: 3, listActive: false };
 
-describe("CommandRegistry", () => {
+describe("ActionRegistry", () => {
   it("dispatches platform-aware global and desktop bindings", () => {
     const switcher = vi.fn();
     const next = vi.fn();
-    const registry = new CommandRegistry(
+    const registry = new ActionRegistry(
       { "switcher.open": switcher, "buffer.next": next },
       "macos",
     );
@@ -31,7 +31,7 @@ describe("CommandRegistry", () => {
 
   it("resolves list bindings only inside the list scope", () => {
     const next = vi.fn();
-    const registry = new CommandRegistry({ "list.next": next }, "other");
+    const registry = new ActionRegistry({ "list.next": next }, "other");
     const outside = document.createElement("button");
     const list = document.createElement("div");
     list.dataset.commandScope = "list";
@@ -57,7 +57,7 @@ describe("CommandRegistry", () => {
   it("keeps buffer traversal out of text inputs", () => {
     const next = vi.fn();
     const previous = vi.fn();
-    const registry = new CommandRegistry(
+    const registry = new ActionRegistry(
       { "buffer.next": next, "buffer.previous": previous },
       "other",
     );
@@ -78,7 +78,7 @@ describe("CommandRegistry", () => {
 
   it("does not dispatch unavailable buffer traversal", () => {
     const next = vi.fn();
-    const registry = new CommandRegistry({ "buffer.next": next }, "other");
+    const registry = new ActionRegistry({ "buffer.next": next }, "other");
 
     expect(
       registry.handleKeydown(
@@ -91,7 +91,7 @@ describe("CommandRegistry", () => {
 
   it("passes a clicked target through the typed command boundary", () => {
     const showBuffer = vi.fn();
-    const registry = new CommandRegistry(
+    const registry = new ActionRegistry(
       { "pane.show-buffer": showBuffer },
       "other",
     );

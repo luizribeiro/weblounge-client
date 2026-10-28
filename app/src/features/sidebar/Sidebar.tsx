@@ -1,9 +1,9 @@
 import { createEffect, createSignal, For, onCleanup } from "solid-js";
 import type {
-  CommandContext,
-  CommandId,
-  CommandRegistry,
-} from "../../commands/command-registry";
+  ActionContext,
+  ActionId,
+  ActionRegistry,
+} from "../../actions/action-registry";
 import type { NetworkProjection } from "../../engine/protocol";
 import { Line } from "../../ui/Line";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
@@ -21,8 +21,8 @@ interface SidebarProps {
   readonly buffers: readonly SidebarBuffer[];
   readonly activeBufferId?: number | undefined;
   readonly visibleBufferIds: ReadonlySet<number>;
-  readonly registry: CommandRegistry;
-  readonly commandContext: CommandContext;
+  readonly registry: ActionRegistry;
+  readonly commandContext: ActionContext;
   readonly registerListController: (
     controller: SidebarListController | undefined,
   ) => void;
@@ -32,7 +32,7 @@ export function Sidebar(props: SidebarProps) {
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
-  const run = (id: CommandId, target?: SidebarBuffer) =>
+  const run = (id: ActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
       ...props.commandContext,
       ...(target === undefined
@@ -169,7 +169,7 @@ function networkSummary(networks: readonly NetworkProjection[]): string {
   return `${count} ${count === 1 ? "network" : "networks"} · ${footerStatus(networks)}`;
 }
 
-function tooltip(registry: CommandRegistry, id: CommandId): string {
+function tooltip(registry: ActionRegistry, id: ActionId): string {
   const binding = registry.bindingLabel(id);
   return binding === undefined
     ? registry.title(id)

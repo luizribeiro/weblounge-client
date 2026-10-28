@@ -6,11 +6,11 @@ import {
   onMount,
 } from "solid-js";
 import {
-  type CommandContext,
-  type CommandId,
-  CommandRegistry,
+  type ActionContext,
+  type ActionId,
+  ActionRegistry,
   detectPlatform,
-} from "../../commands/command-registry";
+} from "../../actions/action-registry";
 import type {
   BufferProjection,
   MembershipProjection,
@@ -99,7 +99,7 @@ export function DesktopShell(props: DesktopShellProps) {
   });
   const membersVisible = () =>
     memberPanelOpen() && activeBuffer()?.kind === "channel";
-  const context = (): CommandContext => ({
+  const context = (): ActionContext => ({
     bufferCount: props.buffers.length,
     listActive: sidebarShown(),
   });
@@ -117,7 +117,7 @@ export function DesktopShell(props: DesktopShellProps) {
     const index = Math.max(0, ids.indexOf(current));
     showBuffer(ids[(index + offset + ids.length) % ids.length], true);
   };
-  const registry = new CommandRegistry(
+  const registry = new ActionRegistry(
     {
       "buffer.next": () => moveBuffer(1),
       "buffer.open": () => {},
@@ -137,7 +137,7 @@ export function DesktopShell(props: DesktopShellProps) {
     },
     detectPlatform(navigator),
   );
-  const run = (id: CommandId) => registry.run(id, context());
+  const run = (id: ActionId) => registry.run(id, context());
 
   createEffect(() => {
     const activeBufferId = props.activeBufferId;
@@ -369,7 +369,7 @@ function kindOrder(buffer: BufferProjection): number {
   return 2;
 }
 
-function tooltip(registry: CommandRegistry, id: CommandId): string {
+function tooltip(registry: ActionRegistry, id: ActionId): string {
   const binding = registry.bindingLabel(id);
   return binding === undefined
     ? registry.title(id)

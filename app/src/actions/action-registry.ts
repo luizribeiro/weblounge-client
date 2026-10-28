@@ -1,4 +1,4 @@
-export type CommandId =
+export type ActionId =
   | "buffer.next"
   | "buffer.open"
   | "buffer.previous"
@@ -14,21 +14,21 @@ export type CommandId =
   | "sidebar.toggle"
   | "switcher.open";
 
-export type CommandScope = "global" | "desktop" | "list";
+export type ActionScope = "global" | "desktop" | "list";
 export type Platform = "macos" | "other";
 
-export interface CommandContext {
+export interface ActionContext {
   readonly bufferCount: number;
   readonly listActive: boolean;
   readonly targetBufferId?: number;
   readonly targetNetworkId?: number;
 }
 
-export interface CommandAvailability {
+export interface ActionAvailability {
   readonly state: "available" | "unavailable";
 }
 
-export type CommandHandler = (context: CommandContext) => void;
+export type ActionHandler = (context: ActionContext) => void;
 
 interface Binding {
   readonly key: string;
@@ -36,27 +36,27 @@ interface Binding {
   readonly alt?: boolean;
   readonly mod?: boolean;
   readonly shift?: boolean;
-  readonly scope: CommandScope;
+  readonly scope: ActionScope;
   readonly input: "never" | "nonText" | "emptyComposer" | "always";
   readonly label: Readonly<Record<Platform, string>>;
 }
 
-interface CommandSpec {
-  readonly id: CommandId;
+interface ActionSpec {
+  readonly id: ActionId;
   readonly title: string;
-  readonly availability: (context: CommandContext) => CommandAvailability;
+  readonly availability: (context: ActionContext) => ActionAvailability;
   readonly binding?: Binding;
 }
 
-const alwaysAvailable = (): CommandAvailability => ({ state: "available" });
-const needsBuffers = (context: CommandContext): CommandAvailability => ({
+const alwaysAvailable = (): ActionAvailability => ({ state: "available" });
+const needsBuffers = (context: ActionContext): ActionAvailability => ({
   state: context.bufferCount > 1 ? "available" : "unavailable",
 });
-const needsList = (context: CommandContext): CommandAvailability => ({
+const needsList = (context: ActionContext): ActionAvailability => ({
   state: context.listActive ? "available" : "unavailable",
 });
 
-const specs: readonly CommandSpec[] = [
+const specs: readonly ActionSpec[] = [
   command(
     "switcher.open",
     "Jump to",
@@ -114,39 +114,39 @@ const specs: readonly CommandSpec[] = [
   command("list.open", "Open item", needsList, key("Enter", "↵", "list")),
 ];
 
-export class CommandRegistry {
-  readonly #handlers: Readonly<Partial<Record<CommandId, CommandHandler>>>;
+export class ActionRegistry {
+  readonly #handlers: Readonly<Partial<Record<ActionId, ActionHandler>>>;
   readonly #platform: Platform;
 
   constructor(
-    handlers: Readonly<Partial<Record<CommandId, CommandHandler>>>,
+    handlers: Readonly<Partial<Record<ActionId, ActionHandler>>>,
     platform: Platform,
   ) {
     this.#handlers = handlers;
     this.#platform = platform;
   }
 
-  availability(id: CommandId, context: CommandContext): CommandAvailability {
+  availability(id: ActionId, context: ActionContext): ActionAvailability {
     const spec = findSpec(id);
     if (this.#handlers[id] === undefined) return { state: "unavailable" };
     return spec.availability(context);
   }
 
-  run(id: CommandId, context: CommandContext): boolean {
+  run(id: ActionId, context: ActionContext): boolean {
     if (this.availability(id, context).state !== "available") return false;
     this.#handlers[id]?.(context);
     return true;
   }
 
-  title(id: CommandId): string {
+  title(id: ActionId): string {
     return findSpec(id).title;
   }
 
-  bindingLabel(id: CommandId): string | undefined {
+  bindingLabel(id: ActionId): string | undefined {
     return findSpec(id).binding?.label[this.#platform];
   }
 
-  handleKeydown(event: KeyboardEvent, context: CommandContext): boolean {
+  handleKeydown(event: KeyboardEvent, context: ActionContext): boolean {
     if (
       event.isComposing ||
       event.getModifierState("AltGraph") ||
@@ -175,11 +175,11 @@ export function detectPlatform(navigator: Navigator): Platform {
 }
 
 function command(
-  id: CommandId,
+  id: ActionId,
   title: string,
-  availability: CommandSpec["availability"],
+  availability: ActionSpec["availability"],
   binding?: Binding,
-): CommandSpec {
+): ActionSpec {
   return binding === undefined
     ? { id, title, availability }
     : { id, title, availability, binding };
@@ -199,7 +199,7 @@ function altKey(
   keyValue: string,
   macos: string,
   other: string,
-  scope: CommandScope,
+  scope: ActionScope,
 ): Binding {
   return {
     key: keyValue,
@@ -210,7 +210,7 @@ function altKey(
   };
 }
 
-function key(keyValue: string, label: string, scope: CommandScope): Binding {
+function key(keyValue: string, label: string, scope: ActionScope): Binding {
   return {
     key: keyValue,
     scope,
@@ -219,13 +219,13 @@ function key(keyValue: string, label: string, scope: CommandScope): Binding {
   };
 }
 
-function findSpec(id: CommandId): CommandSpec {
+function findSpec(id: ActionId): ActionSpec {
   const spec = specs.find((candidate) => candidate.id === id);
   if (spec === undefined) throw new Error(`unknown command: ${id}`);
   return spec;
 }
 
-function activeScopes(target: EventTarget | null): readonly CommandScope[] {
+function activeScopes(target: EventTarget | null): readonly ActionScope[] {
   if (!(target instanceof Element)) return ["global", "desktop"];
   const list = target.closest('[data-command-scope="list"]') !== null;
   return list ? ["list", "desktop", "global"] : ["desktop", "global"];
