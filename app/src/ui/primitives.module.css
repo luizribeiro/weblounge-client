@@ -1,0 +1,13 @@
+.selectable {
+  -webkit-touch-callout: default;
+  cursor: text;
+  user-select: text;
+}
+
+.line {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 declare const __BUILD_ID__: string;
 declare const __DEBUG_IRC_CONFIG__: {
   endpoint: string;
