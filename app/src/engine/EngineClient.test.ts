@@ -147,6 +147,9 @@ describe("WorkerEngineClient", () => {
     port.emit({
       type: "members_changed",
       buffer_id: 4,
+      view_id: "port-1:desktop:main",
+      version: 7,
+      window_size: 256,
       offset: 0,
       total: 0,
       counts: [0, 0, 0, 0, 0],
@@ -156,8 +159,33 @@ describe("WorkerEngineClient", () => {
     frames[0]?.(0);
 
     expect(listener).toHaveBeenCalledWith(
-      expect.objectContaining({ filter: "{garden}" }),
+      expect.objectContaining({
+        filter: "{garden}",
+        view_id: "port-1:desktop:main",
+        version: 7,
+        window_size: 256,
+      }),
     );
+  });
+
+  it("rejects unversioned member windows", () => {
+    const { client, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    expect(() =>
+      port.emit({
+        type: "members_changed",
+        buffer_id: 4,
+        view_id: "port-1:desktop:main",
+        offset: 0,
+        total: 0,
+        counts: [0, 0, 0, 0, 0],
+        members: [],
+      }),
+    ).toThrow("invalid engine message");
+
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("decodes the command origin of a buffer focus request", () => {

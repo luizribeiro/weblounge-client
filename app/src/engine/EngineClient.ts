@@ -394,6 +394,9 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       const counts = decodeMemberCounts(value.counts);
       if (
         typeof value.buffer_id === "number" &&
+        typeof value.view_id === "string" &&
+        typeof value.version === "number" &&
+        typeof value.window_size === "number" &&
         typeof value.offset === "number" &&
         typeof value.total === "number" &&
         (value.filter === undefined || typeof value.filter === "string") &&
@@ -403,6 +406,9 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         return {
           type: messageType,
           buffer_id: value.buffer_id,
+          view_id: value.view_id,
+          version: value.version,
+          window_size: value.window_size,
           offset: value.offset,
           total: value.total,
           counts,
