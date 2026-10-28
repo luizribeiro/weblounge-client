@@ -396,6 +396,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         typeof value.buffer_id === "number" &&
         typeof value.offset === "number" &&
         typeof value.total === "number" &&
+        (value.filter === undefined || typeof value.filter === "string") &&
         counts !== undefined &&
         members !== undefined
       ) {
@@ -406,6 +407,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           total: value.total,
           counts,
           members,
+          ...(typeof value.filter === "string" ? { filter: value.filter } : {}),
         };
       }
       break;

@@ -139,6 +139,27 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("preserves the casemapped member filter", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "members_changed",
+      buffer_id: 4,
+      offset: 0,
+      total: 0,
+      counts: [0, 0, 0, 0, 0],
+      members: [],
+      filter: "{garden}",
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: "{garden}" }),
+    );
+  });
+
   it("decodes the command origin of a buffer focus request", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
