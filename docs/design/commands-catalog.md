@@ -366,7 +366,7 @@ All after papo 0.1; none block weblounge-client's first version.
 5. **Search:** wait (soju-only draft; Ergo lacks it; weblounge DMs aren't in server history).
 6. **Services replies:** papo won't type them (free-form prose that varies by package, version and language). The engine parses them, correlating replies with `request_raw` and labeled-response.
 7. **`unstable`:** by design: draft and vendor specs outside semver. The feature only adds API and is inert unless used (a differential test enforces it). Fine to enable with a pinned rev; expect breaking changes there. Likely to stabilize first: bouncer networks, then persistence; webpush waits for ratification.
-8. **Filehost:** uploading is the app's HTTP job. Later papo could expose `soju.im/FILEHOST` and a typed `EXTJWT` request (Ergo supports EXTJWT).
+8. **Filehost:** papo already exposes the advertised upload URL: `client.state().filehost()` returns `Option<&str>`, the HTTPS endpoint from `draft/FILEHOST` or `soju.im/FILEHOST` (behind `unstable`). The upload itself (HTTP POST, URL in the `Location` header) is the app's job. A typed `EXTJWT` request is still missing (papo issue 11). See papo's `docs/ircv3-support.md`.
 
 ## Decisions (Luiz, 2026-10-28)
 
