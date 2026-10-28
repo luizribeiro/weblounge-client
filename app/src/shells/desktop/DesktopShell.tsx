@@ -33,6 +33,7 @@ import { createSinglePane, showInFocusedPane } from "./pane-layout";
 interface DesktopShellProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
+  readonly composerNotice: string | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onSend: (bufferId: number, text: string) => void;
@@ -208,11 +209,17 @@ export function DesktopShell(props: DesktopShellProps) {
                   messageListController = controller;
                 }}
               />
+              {props.composerNotice !== undefined && (
+                <p class={styles.notice} role="status">
+                  {props.composerNotice}
+                </p>
+              )}
               <Composer
                 bufferId={activeBuffer()?.id ?? 0}
                 bufferTitle={activeBuffer()?.title ?? ""}
                 candidates={composerCandidates(
                   props.messages.get(activeBuffer()?.id ?? -1) ?? [],
+                  props.buffers,
                 )}
                 disabled={activeBuffer()?.kind === "server"}
                 onSend={(text) => {
@@ -243,9 +250,24 @@ function latestCommitted(
     );
 }
 
-function composerCandidates(messages: readonly MessageProjection[]): string[] {
+function composerCandidates(
+  messages: readonly MessageProjection[],
+  buffers: readonly BufferProjection[],
+): string[] {
   const recent = [...messages].reverse().map((message) => message.author);
-  return [...new Set(recent)];
+  const commands = [
+    "/join",
+    "/me",
+    "/msg",
+    "/nick",
+    "/part",
+    "/quit",
+    "/topic",
+  ];
+  const channels = buffers
+    .filter((buffer) => buffer.kind === "channel")
+    .map((buffer) => buffer.title);
+  return [...new Set([...commands, ...recent, ...channels])];
 }
 
 function orderedBufferIds(

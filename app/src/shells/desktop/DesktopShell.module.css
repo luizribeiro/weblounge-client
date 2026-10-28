@@ -38,3 +38,9 @@
   height: 100%;
   justify-content: center;
 }
+
+.notice {
+  color: var(--wl-color-error);
+  margin: 0;
+  padding: 6px 18px;
+}

@@ -40,12 +40,15 @@ export function Composer(props: ComposerProps) {
     setSelected(-1);
   };
   const complete = (offset: number) => {
-    const candidates = props.candidates ?? [];
+    const cursor = textarea?.selectionStart ?? text().length;
+    const start = text().slice(0, cursor).search(/\S*$/);
+    const token = text().slice(start, cursor).toLocaleLowerCase();
+    const candidates = (props.candidates ?? []).filter((candidate) =>
+      candidate.toLocaleLowerCase().startsWith(token),
+    );
     if (candidates.length === 0) return false;
     const next = (selected() + offset + candidates.length) % candidates.length;
     setSelected(next);
-    const cursor = textarea?.selectionStart ?? text().length;
-    const start = text().slice(0, cursor).search(/\S*$/);
     update(
       `${text().slice(0, start)}${candidates[next]} ${text().slice(cursor)}`,
     );

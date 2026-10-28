@@ -3,7 +3,10 @@ import { consumeDebugPassword } from "./debug-irc-config";
 import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
-import { IncompatibleBuildError } from "./engine/EngineClient";
+import {
+  EngineCommandError,
+  IncompatibleBuildError,
+} from "./engine/EngineClient";
 import type {
   BufferProjection,
   EngineClientMessage,
@@ -31,6 +34,7 @@ export function App(props: AppProps) {
   onCleanup(removeDensity);
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
+  const [composerNotice, setComposerNotice] = createSignal<string>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
   const [messages, setMessages] = createSignal<
@@ -108,6 +112,7 @@ export function App(props: AppProps) {
       <DesktopShell
         networks={networks()}
         buffers={buffers()}
+        composerNotice={composerNotice()}
         messages={messages()}
         memberships={memberships()}
         onMarkRead={(bufferId, through) => {
@@ -126,10 +131,23 @@ export function App(props: AppProps) {
         }}
         onSend={(bufferId, text) => {
           if (client === undefined) return;
-          void client.send({
-            id: crypto.randomUUID(),
-            command: { type: "submit_input", buffer_id: bufferId, input: text },
-          });
+          setComposerNotice(undefined);
+          void client
+            .send({
+              id: crypto.randomUUID(),
+              command: {
+                type: "submit_input",
+                buffer_id: bufferId,
+                input: text,
+              },
+            })
+            .catch((error: unknown) => {
+              setComposerNotice(
+                error instanceof EngineCommandError
+                  ? error.messageKey
+                  : "engine.command_failed",
+              );
+            });
         }}
       />
     </div>

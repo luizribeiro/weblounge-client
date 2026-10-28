@@ -35,3 +35,18 @@ it("cycles completion and restores drafts by buffer", () => {
   setBufferId(2);
   expect(input).toHaveValue("alice ");
 });
+
+it("filters slash completion by the current token", () => {
+  render(() => (
+    <Composer
+      bufferId={4}
+      bufferTitle="#rust"
+      candidates={["/join", "/msg"]}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/j" } });
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("/join ");
+});
