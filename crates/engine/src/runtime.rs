@@ -174,17 +174,20 @@ impl Runtime {
                     .collect();
                 self.join(id, targets)
             }
-            Ok(Command::Part { channel: _, reason }) => {
-                self.part(id, buffer_id, reason.map(|reason| reason.0))
+            Ok(Command::Part { channel, reason }) => {
+                self.part(id, buffer_id, channel.0, reason.map(|reason| reason.0))
             }
             Ok(Command::Close {}) => self.close(id, buffer_id),
+            Ok(Command::Cycle { channel, reason }) => {
+                self.cycle(id, buffer_id, channel.0, reason.map(|reason| reason.0))
+            }
             Ok(Command::Msg { target, text }) => self.message_direct(id, target.0, text.0, false),
             Ok(Command::Query { nick, text }) => self.query(id, nick.0, text.map(|text| text.0)),
             Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
             Ok(Command::Topic {
-                channel: _,
+                channel,
                 text: Some(text),
-            }) => self.set_topic(id, buffer_id, text.0),
+            }) => self.set_topic(id, buffer_id, channel.0, text.0),
             Ok(Command::Topic { text: None, .. }) => vec![EngineToUi::CommandResult { id }],
             Ok(Command::Quit { reason }) => {
                 let network_id = lock(&self.state)
@@ -527,13 +530,17 @@ impl Runtime {
         &self,
         command_id: String,
         buffer_id: BufferId,
+        requested: Option<String>,
         reason: Option<String>,
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
+        let channel = requested
+            .map(|name| running.client.state().name_rules().channel(name))
+            .or_else(|| running.model.channel_for_buffer(buffer_id));
+        let Some(channel) = channel else {
             return rejected_command(command_id, "engine.channel_required");
         };
         let client = running.client.clone();
@@ -551,12 +558,40 @@ impl Runtime {
         };
         if running.model.channel_for_buffer(buffer_id).is_some() {
             drop(state);
-            return self.part(command_id, buffer_id, None);
+            return self.part(command_id, buffer_id, None, None);
         }
         let Some(event) = running.model.close_direct(buffer_id) else {
             return rejected_command(command_id, "engine.buffer_not_sendable");
         };
         vec![event, EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn cycle(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        requested: Option<String>,
+        reason: Option<String>,
+    ) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let channel = requested
+            .map(|name| running.client.state().name_rules().channel(name))
+            .or_else(|| running.model.channel_for_buffer(buffer_id));
+        let Some(channel) = channel else {
+            return rejected_command(command_id, "engine.channel_required");
+        };
+        let client = running.client.clone();
+        drop(state);
+        spawn_request(self.outbound.clone(), command_id, async move {
+            client
+                .part(channel.clone(), reason.unwrap_or_default())
+                .await?;
+            client.join(channel).await
+        });
+        Vec::new()
     }
 
     fn set_nick(&self, command_id: String, nick: String) -> Vec<EngineToUi> {
@@ -573,12 +608,21 @@ impl Runtime {
         Vec::new()
     }
 
-    fn set_topic(&self, command_id: String, buffer_id: BufferId, text: String) -> Vec<EngineToUi> {
+    fn set_topic(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        requested: Option<String>,
+        text: String,
+    ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
+        let channel = requested
+            .map(|name| running.client.state().name_rules().channel(name))
+            .or_else(|| running.model.channel_for_buffer(buffer_id));
+        let Some(channel) = channel else {
             return rejected_command(command_id, "engine.channel_required");
         };
         let client = running.client.clone();

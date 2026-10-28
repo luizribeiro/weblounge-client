@@ -50,6 +50,14 @@ pub(crate) enum Command {
     )]
     Close {},
     #[command(
+        name = "cycle", aliases = ["rejoin", "hop"], usage = "cmd.cycle.usage",
+        description = "cmd.cycle.description", surfaces = ["Slash", "ChannelMenu"]
+    )]
+    Cycle {
+        channel: Channel,
+        reason: Option<Text>,
+    },
+    #[command(
         name = "topic", aliases = ["t"], usage = "cmd.topic.usage",
         description = "cmd.topic.description", surfaces = ["Slash", "Palette", "ChannelMenu"]
     )]
@@ -88,7 +96,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 10);
+        assert_eq!(specs.len(), 11);
     }
 
     #[test]
@@ -111,6 +119,7 @@ mod tests {
             "/j one,#two key1,key2",
             "/leave reason",
             "/close",
+            "/hop",
             "/t new topic",
             "/nick new-name",
             "/exit later",
