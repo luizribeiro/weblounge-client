@@ -59,6 +59,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
           onFilter={props.onFilter}
           onOpenDirect={props.onOpenDirect}
           onRequestRange={props.onRequestRange}
+          presentation="mobile"
           window={props.window}
         />
       </div>

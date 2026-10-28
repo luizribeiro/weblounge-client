@@ -39,7 +39,7 @@
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-muted);
   font: inherit;
-  height: 28px;
+  height: var(--wl-member-group-row-height);
   width: 28px;
 }
 
@@ -107,7 +107,7 @@
   font-size: var(--wl-font-section-size);
   height: 28px;
   letter-spacing: var(--wl-font-section-tracking);
-  line-height: 28px;
+  line-height: var(--wl-member-group-row-height);
   padding-inline: 8px;
   text-transform: var(--wl-font-section-transform);
 }

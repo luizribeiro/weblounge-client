@@ -72,6 +72,24 @@ it("passes the mode-symbol setting to member rows", () => {
   expect(screen.queryByText("@")).not.toBeInTheDocument();
 });
 
+it("uses touch-sized virtual rows in the mobile presentation", async () => {
+  const { container } = render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      onClose={() => {}}
+      onOpenDirect={() => {}}
+      onRequestRange={() => {}}
+      presentation="mobile"
+      window={window}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-member-virtual-size]")).toHaveStyle({
+    height: "440056px",
+  });
+});
+
 it("requests the first window while loading", () => {
   const request = vi.fn();
   render(() => (

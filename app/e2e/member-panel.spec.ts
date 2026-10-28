@@ -42,6 +42,28 @@ test.describe("desktop members against local Ergo", () => {
           name: "Open direct message with member-bot",
         }),
       ).toBeVisible();
+      const desktopBoxes = await panel
+        .locator("li:visible")
+        .evaluateAll((rows) =>
+          rows
+            .map((row) => {
+              const box = row.getBoundingClientRect();
+              return { top: box.top, bottom: box.bottom };
+            })
+            .sort((first, second) => first.top - second.top),
+        );
+      for (let index = 1; index < desktopBoxes.length; index += 1)
+        expect(desktopBoxes[index - 1]?.bottom).toBeLessThanOrEqual(
+          desktopBoxes[index]?.top ?? 0,
+        );
+      const desktopStack = await panel.evaluate((element) => ({
+        headerBottom:
+          element.querySelector("header")?.getBoundingClientRect().bottom ?? 0,
+        listTop: element.querySelector("ul")?.getBoundingClientRect().top ?? 0,
+      }));
+      expect(desktopStack.headerBottom).toBeLessThanOrEqual(
+        desktopStack.listTop,
+      );
 
       await bot.mode(channel, "+o", "weblounge");
       await expect(panel.getByText("Operators — 1")).toBeVisible();

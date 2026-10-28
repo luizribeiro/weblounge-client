@@ -50,6 +50,27 @@ test.describe("mobile shell against local Ergo", () => {
         name: `Open direct message with ${targetNick}`,
       });
       await expect(drawerMember).toBeVisible();
+      const drawer = page.getByRole("dialog", { name: "Members" });
+      const mobileBoxes = await drawer
+        .locator("li:visible")
+        .evaluateAll((rows) =>
+          rows
+            .map((row) => {
+              const box = row.getBoundingClientRect();
+              return { top: box.top, bottom: box.bottom };
+            })
+            .sort((first, second) => first.top - second.top),
+        );
+      for (let index = 1; index < mobileBoxes.length; index += 1)
+        expect(mobileBoxes[index - 1]?.bottom).toBeLessThanOrEqual(
+          mobileBoxes[index]?.top ?? 0,
+        );
+      const mobileStack = await drawer.evaluate((element) => ({
+        headerBottom:
+          element.querySelector("header")?.getBoundingClientRect().bottom ?? 0,
+        listTop: element.querySelector("ul")?.getBoundingClientRect().top ?? 0,
+      }));
+      expect(mobileStack.headerBottom).toBeLessThanOrEqual(mobileStack.listTop);
       await page
         .getByRole("searchbox", { name: "Filter members" })
         .fill(targetNick);

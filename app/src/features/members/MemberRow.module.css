@@ -14,6 +14,10 @@
   width: 100%;
 }
 
+.row[hidden] {
+  display: none;
+}
+
 .row:hover {
   background: var(--wl-color-chip);
 }

@@ -1,5 +1,10 @@
 import { createVirtualizer, observeElementRect } from "@tanstack/solid-virtual";
 import { createMemo, createRenderEffect, Index } from "solid-js";
+import {
+  type DensityId,
+  densityDefaults,
+  densityPresets,
+} from "../../density/density";
 import type { EngineToUi } from "../../engine/protocol";
 import styles from "./MemberPanel.module.css";
 import { type Member, MemberRow } from "./MemberRow";
@@ -26,9 +31,11 @@ interface MemberPanelProps {
   readonly onOpenDirect: (nick: string) => void;
   readonly onRequestRange: (offset: number) => void;
   readonly showModeSymbols?: boolean | undefined;
+  readonly presentation?: "desktop" | "mobile" | undefined;
 }
 
 export function MemberPanel(props: MemberPanelProps) {
+  const metrics = memberPanelMetrics(props.presentation ?? "desktop");
   let list: HTMLUListElement | undefined;
   let requested = "";
   const window = () =>
@@ -47,7 +54,9 @@ export function MemberPanel(props: MemberPanelProps) {
         callback(rect.height === 0 ? { width: 216, height: 600 } : rect),
       ),
     estimateSize: (index) =>
-      memberRowAt(index, counts(), 0, [])?.kind === "group" ? 28 : 24,
+      memberRowAt(index, counts(), 0, [])?.kind === "group"
+        ? metrics.group
+        : metrics.member,
     overscan: 10,
   });
   const virtualRows = createMemo(() => virtualizer.getVirtualItems());
@@ -86,7 +95,14 @@ export function MemberPanel(props: MemberPanelProps) {
     }
   });
   return (
-    <aside aria-label="Members" class={styles.panel}>
+    <aside
+      aria-label="Members"
+      class={styles.panel}
+      style={{
+        "--wl-member-group-row-height": `${metrics.group}px`,
+        "--wl-density-sidebar-member-row-height": `${metrics.member}px`,
+      }}
+    >
       <header class={styles.header}>
         <span class={styles.title}>Members</span>
         <span class={styles.total}>{formatCount(window()?.total ?? 0)}</span>
@@ -148,6 +164,26 @@ export function MemberPanel(props: MemberPanelProps) {
       </div>
     </aside>
   );
+}
+
+function memberPanelMetrics(presentation: "desktop" | "mobile") {
+  const attribute =
+    presentation === "mobile" ? "mobileDensity" : "sidebarDensity";
+  const fallback =
+    presentation === "mobile"
+      ? densityDefaults.mobileList
+      : densityDefaults.desktopList;
+  const selected = document.documentElement.dataset[attribute];
+  const density: DensityId = isDensityId(selected) ? selected : fallback;
+  const member = Number.parseFloat(densityPresets[density].memberRowHeight);
+  return {
+    group: 28,
+    member: presentation === "mobile" ? Math.max(44, member) : member,
+  };
+}
+
+function isDensityId(value: string | undefined): value is DensityId {
+  return value === "compact" || value === "cozy" || value === "comfortable";
 }
 
 function MemberListRowView(props: {

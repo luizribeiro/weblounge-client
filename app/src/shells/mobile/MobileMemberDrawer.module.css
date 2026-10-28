@@ -27,7 +27,6 @@
 .drawer > aside {
   --wl-density-sidebar-avatar: 30px;
   --wl-density-sidebar-font-size: 15px;
-  --wl-density-sidebar-member-row-height: 44px;
   background: var(--wl-color-surface);
   height: 100%;
   padding-bottom: env(safe-area-inset-bottom, 0px);
