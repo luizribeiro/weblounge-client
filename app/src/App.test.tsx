@@ -72,6 +72,42 @@ it("lists projected networks, buffers, and messages", async () => {
   expect(screen.getByText(/<alice> hello/)).toBeInTheDocument();
 });
 
+it("shows a confirmation received without this tab's optimistic row", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "message_confirmed",
+    buffer_id: 2,
+    local_send_id: 7,
+    message: {
+      id: 9,
+      author: "weblounge",
+      text: "from another tab",
+      authorship: "own",
+      delivery: "confirmed",
+      local_send_id: null,
+      server_ids: ["msg-9"],
+      server_time_ms: 9,
+      received_at_ms: 8,
+    },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      unread: 0,
+      mentions: 0,
+    },
+  });
+
+  expect(
+    await screen.findByText(/from another tab \[confirmed\]/),
+  ).toBeVisible();
+});
+
 it("reloads only once for the same stale build", () => {
   const setStatus = vi.fn();
   const reload = vi.fn();

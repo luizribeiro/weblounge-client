@@ -7,7 +7,7 @@ export interface WorkerHostPort {
   start?: () => void;
 }
 
-interface WasmEngine {
+export interface WasmEngine {
   handle(message: string): string;
 }
 
@@ -20,49 +20,101 @@ interface WasmModule {
   ) => WasmEngine;
 }
 
+type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
+
 const wasmBinaryUrl = "/engine_bg.wasm";
-const ports = new Set<WorkerHostPort>();
-const engine = loadEngine();
+let sharedRuntime: EngineWorkerRuntime | undefined;
 
 export function attachEnginePort(port: WorkerHostPort): void {
-  ports.add(port);
-  let pending = Promise.resolve();
-  port.addEventListener("message", (event) => {
-    pending = pending.then(() => handleMessage(port, event.data));
-  });
-  port.start?.();
+  sharedRuntime ??= new EngineWorkerRuntime(loadEngine);
+  sharedRuntime.attach(port);
 }
 
-async function handleMessage(
-  port: WorkerHostPort,
-  message: unknown,
-): Promise<void> {
-  try {
-    const currentEngine = await engine;
-    const encoded = currentEngine.handle(JSON.stringify(message));
-    const events: unknown = JSON.parse(encoded);
-    if (!Array.isArray(events))
-      throw new Error("engine returned a non-array response");
-    for (const event of events) port.postMessage(event);
-  } catch {
-    port.postMessage({ type: "fatal", message_key: "engine.worker_failed" });
+export class EngineWorkerRuntime {
+  readonly #ports = new Set<WorkerHostPort>();
+  readonly #commandPorts = new Map<string, WorkerHostPort>();
+  readonly #engine: Promise<WasmEngine>;
+
+  constructor(load: EngineLoader) {
+    this.#engine = load((encoded) => this.#routeEncoded(encoded));
+  }
+
+  attach(port: WorkerHostPort): void {
+    this.#ports.add(port);
+    let pending = Promise.resolve();
+    port.addEventListener("message", (event) => {
+      pending = pending.then(() => this.#handleMessage(port, event.data));
+    });
+    port.start?.();
+  }
+
+  async #handleMessage(port: WorkerHostPort, message: unknown): Promise<void> {
+    try {
+      const commandId = readCommandId(message);
+      if (commandId !== undefined) this.#commandPorts.set(commandId, port);
+      const currentEngine = await this.#engine;
+      const encoded = currentEngine.handle(JSON.stringify(message));
+      const events: unknown = JSON.parse(encoded);
+      if (!Array.isArray(events))
+        throw new Error("engine returned a non-array response");
+      for (const event of events) this.#route(event, port);
+    } catch {
+      port.postMessage({ type: "fatal", message_key: "engine.worker_failed" });
+    }
+  }
+
+  #routeEncoded(encoded: string): void {
+    this.#route(JSON.parse(encoded));
+  }
+
+  #route(event: unknown, callingPort?: WorkerHostPort): void {
+    if (isRecord(event) && event.type === "command_result") {
+      const port =
+        typeof event.id === "string"
+          ? this.#commandPorts.get(event.id)
+          : undefined;
+      if (typeof event.id === "string") this.#commandPorts.delete(event.id);
+      (port ?? callingPort)?.postMessage(event);
+    } else if (isSharedStateEvent(event)) {
+      for (const port of this.#ports) port.postMessage(event);
+    } else {
+      callingPort?.postMessage(event);
+    }
   }
 }
 
-async function loadEngine(): Promise<WasmEngine> {
+async function loadEngine(
+  onEvent: (encoded: string) => void,
+): Promise<WasmEngine> {
   const imported: unknown = await import("@weblounge-engine");
   if (!isWasmModule(imported)) throw new Error("invalid wasm module");
   await imported.default(wasmBinaryUrl);
-  return new imported.WasmEngine(
-    __BUILD_ID__,
-    crypto.randomUUID(),
-    broadcastEngineEvent,
-  );
+  return new imported.WasmEngine(__BUILD_ID__, crypto.randomUUID(), onEvent);
 }
 
-function broadcastEngineEvent(encoded: string): void {
-  const event: unknown = JSON.parse(encoded);
-  for (const port of ports) port.postMessage(event);
+function readCommandId(message: unknown): string | undefined {
+  if (
+    isRecord(message) &&
+    message.type === "command" &&
+    isRecord(message.payload) &&
+    typeof message.payload.id === "string"
+  ) {
+    return message.payload.id;
+  }
+  return undefined;
+}
+
+function isSharedStateEvent(event: unknown): boolean {
+  if (!isRecord(event)) return false;
+  return (
+    event.type === "network_state_changed" ||
+    event.type === "buffers_changed" ||
+    event.type === "buffer_added" ||
+    event.type === "messages_appended" ||
+    event.type === "message_confirmed" ||
+    event.type === "message_failed" ||
+    event.type === "unread_changed"
+  );
 }
 
 function isWasmModule(value: unknown): value is WasmModule {

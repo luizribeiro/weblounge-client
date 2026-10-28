@@ -163,11 +163,19 @@ function applyDebugEvent(
   } else if (message.type === "message_confirmed") {
     setMessages((current) => {
       const next = new Map(current);
+      const messages = current.get(message.buffer_id) ?? [];
+      const hasPending = messages.some(
+        (item) => item.local_send_id === message.local_send_id,
+      );
       next.set(
         message.buffer_id,
-        (current.get(message.buffer_id) ?? []).map((item) =>
-          item.local_send_id === message.local_send_id ? message.message : item,
-        ),
+        hasPending
+          ? messages.map((item) =>
+              item.local_send_id === message.local_send_id
+                ? message.message
+                : item,
+            )
+          : [...messages, message.message],
       );
       return next;
     });
