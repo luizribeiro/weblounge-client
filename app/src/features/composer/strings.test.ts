@@ -24,4 +24,8 @@ describe("composer strings", () => {
   it("explains when a guarded direct recipient is gone", () => {
     expect(t("engine.direct_target_gone")).toContain("nickname now belongs");
   });
+
+  it("explains when a channel identity changed while disconnected", () => {
+    expect(t("engine.channel_recreated")).toContain("channel was recreated");
+  });
 });

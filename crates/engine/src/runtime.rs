@@ -1128,11 +1128,14 @@ fn process_event_with_direct(
             output.extend(running.model.sync_channels(&snapshot));
             Vec::new()
         }
-        papo::Event::Lagged(_) => {
-            running.model.rebuild_name_keys(&snapshot);
-            output.extend(running.model.sync_channels(&snapshot));
-            output.push(running.model.buffers_event());
-            running.model.history_targets()
+        papo::Event::Lagged(lagged) => {
+            process_lagged(&mut running.model, &snapshot, &lagged, &mut output)
+        }
+        papo::Event::Warning(papo::event::Warning::ChannelRecreated { .. }) => {
+            output.push(EngineToUi::Notice {
+                message_key: "engine.channel_recreated".into(),
+            });
+            Vec::new()
         }
         papo::Event::CasemappingChanged(_) => {
             running.model.rebuild_name_keys(&snapshot);
@@ -1191,6 +1194,22 @@ fn process_event_with_direct(
         let _ = outbound.send(event);
     }
     history_targets
+}
+
+fn process_lagged(
+    model: &mut NetworkModel,
+    snapshot: &papo::State,
+    lagged: &papo::event::Lagged,
+    output: &mut Vec<EngineToUi>,
+) -> Vec<SendTarget> {
+    output.push(EngineToUi::Diagnostic {
+        command_id: "papo.event_queue".into(),
+        message: format!("{} papo events dropped", lagged.dropped),
+    });
+    model.rebuild_name_keys(snapshot);
+    output.extend(model.sync_channels(snapshot));
+    output.push(model.buffers_event());
+    model.history_targets()
 }
 
 fn process_nick_change(
@@ -2815,7 +2834,7 @@ mod tests {
         .await;
         wire.server(":weblounge!u@host JOIN #room").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let (state, outbound, _receiver) = harness(client.clone());
+        let (state, outbound, mut receiver) = harness(client.clone());
         let snapshot = client.state();
         lock(&state)
             .network
@@ -2832,9 +2851,68 @@ mod tests {
         }
         let lagged =
             next_matching(&mut events, |event| matches!(event, papo::Event::Lagged(_))).await;
+        let dropped = lagged.as_lagged().expect("matching lagged event").dropped;
         let targets = process_event(&state, &outbound, &client, 1, lagged);
 
         assert!(matches!(targets.as_slice(), [SendTarget::Channel(channel)] if channel == "#room"));
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::Diagnostic { command_id, message }
+                if command_id == "papo.event_queue"
+                    && message == &format!("{dropped} papo events dropped")
+        )));
+    }
+
+    #[tokio::test]
+    async fn recreated_channel_warning_becomes_a_typed_notice() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        wire.server(":offline.test 329 weblounge #room 1793098800")
+            .await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+
+        wire.close().await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Disconnected(_))
+        })
+        .await;
+        client.reconnect().await.expect("manual reconnect starts");
+        wire.register(&[]).await;
+        _ = next_matching(
+            &mut events,
+            |event| matches!(event, papo::Event::Connected(connected) if connected.reconnected),
+        )
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        wire.server(":offline.test 329 weblounge #room 1793099900")
+            .await;
+        let warning = next_matching(&mut events, |event| {
+            matches!(
+                event,
+                papo::Event::Warning(papo::event::Warning::ChannelRecreated { .. })
+            )
+        })
+        .await;
+
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, warning);
+        assert!(matches!(
+            collect(&mut receiver).as_slice(),
+            [EngineToUi::Notice { message_key }] if message_key == "engine.channel_recreated"
+        ));
     }
 
     #[tokio::test]

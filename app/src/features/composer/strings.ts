@@ -9,6 +9,7 @@ export const messageKeys = [
   "composer.unknown_command",
   "engine.join_banned",
   "engine.buffer_not_sendable",
+  "engine.channel_recreated",
   "engine.channel_required",
   "engine.command_refused",
   "engine.dedicated_worker_fallback",
@@ -36,6 +37,8 @@ export function t(key: string, values: MessageValues = {}): string {
       return `Couldn't join ${joinTargetFrom(values.input)}: you're banned.`;
     case "engine.buffer_not_sendable":
       return "Messages can't be sent to this conversation.";
+    case "engine.channel_recreated":
+      return "This channel was recreated while you were away. Verify its topic and members before trusting it.";
     case "engine.channel_required":
       return "That command only works in a channel.";
     case "engine.command_refused":
