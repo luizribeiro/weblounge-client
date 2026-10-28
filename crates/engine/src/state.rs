@@ -85,6 +85,7 @@ pub(crate) struct PendingSend {
     pub(crate) local_send_id: LocalSendId,
     pub(crate) target: SendTarget,
     pub(crate) text: String,
+    pub(crate) kind: MessageKind,
 }
 
 /// A validated read advance ready for local or server-backed application.
@@ -327,6 +328,25 @@ impl NetworkModel {
         text: String,
         state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
+        self.begin_send_kind(buffer_id, text, MessageKind::Text, state)
+    }
+
+    pub(crate) fn begin_action(
+        &mut self,
+        buffer_id: BufferId,
+        text: String,
+        state: &papo::State,
+    ) -> Option<(PendingSend, Vec<EngineToUi>)> {
+        self.begin_send_kind(buffer_id, text, MessageKind::Action, state)
+    }
+
+    fn begin_send_kind(
+        &mut self,
+        buffer_id: BufferId,
+        text: String,
+        kind: MessageKind,
+        state: &papo::State,
+    ) -> Option<(PendingSend, Vec<EngineToUi>)> {
         let buffer = self.buffers.get(&buffer_id)?;
         let key = buffer.key.clone()?;
         let direct_account = buffer.direct_account.clone();
@@ -336,7 +356,7 @@ impl NetworkModel {
             id: self.allocate_message_id(),
             author: self.network.nickname.clone(),
             text: text.clone(),
-            kind: MessageKind::Text,
+            kind,
             bot: false,
             mode_symbol: None,
             authorship: MessageAuthorship::Own,
@@ -357,6 +377,7 @@ impl NetworkModel {
                 local_send_id,
                 target,
                 text,
+                kind,
             },
             vec![EngineToUi::MessagesAppended {
                 buffer_id,

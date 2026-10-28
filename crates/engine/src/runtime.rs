@@ -75,11 +75,14 @@ impl Runtime {
                 self.disconnect(envelope.id, network_id, reason)
             }
             Command::SendMessage { buffer_id, text } => {
-                self.send_message(envelope.id, buffer_id, text)
+                self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
             }
             Command::SubmitInput { buffer_id, input } => match input::parse(&input) {
                 Ok(input::ParsedInput::Message(text)) => {
-                    self.send_message(envelope.id, buffer_id, text)
+                    self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
+                }
+                Ok(input::ParsedInput::Me(text)) => {
+                    self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Action)
                 }
                 Ok(_) => rejected_command(envelope.id, "composer.command_not_implemented"),
                 Err(error) => rejected_command(envelope.id, error.message_key()),
@@ -162,21 +165,30 @@ impl Runtime {
         vec![event, EngineToUi::CommandResult { id: command_id }]
     }
 
-    fn send_message(
+    fn send_input(
         &self,
         command_id: String,
         buffer_id: crate::BufferId,
         text: String,
+        kind: crate::MessageKind,
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let Some((pending, output)) =
-            running
-                .model
-                .begin_send(buffer_id, text, &running.client.state())
-        else {
+        let pending = match kind {
+            crate::MessageKind::Text => {
+                running
+                    .model
+                    .begin_send(buffer_id, text, &running.client.state())
+            }
+            crate::MessageKind::Action => {
+                running
+                    .model
+                    .begin_action(buffer_id, text, &running.client.state())
+            }
+        };
+        let Some((pending, output)) = pending else {
             return rejected_command(command_id, "engine.buffer_not_sendable");
         };
         let client = running.client.clone();
@@ -362,20 +374,21 @@ impl SendError {
 }
 
 async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent, SendError> {
+    let action = pending.kind == crate::MessageKind::Action;
     match pending.target.clone() {
-        SendTarget::Channel(channel) => client
-            .privmsg(channel, pending.text.clone())
-            .await
-            .map_err(|_| SendError::Protocol),
-        SendTarget::Direct(target) => {
-            target
-                .send(client, pending.text.clone())
-                .await
-                .map_err(|error| match error {
-                    DirectSendError::AccountChanged => SendError::DirectAccountChanged,
-                    DirectSendError::Protocol => SendError::Protocol,
-                })
+        SendTarget::Channel(channel) => if action {
+            client.action(channel, pending.text.clone()).await
+        } else {
+            client.privmsg(channel, pending.text.clone()).await
         }
+        .map_err(|_| SendError::Protocol),
+        SendTarget::Direct(target) => target
+            .send(client, pending.text.clone(), action)
+            .await
+            .map_err(|error| match error {
+                DirectSendError::AccountChanged => SendError::DirectAccountChanged,
+                DirectSendError::Protocol => SendError::Protocol,
+            }),
     }
 }
 
@@ -1502,7 +1515,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_echo_send_confirms_without_server_metadata() {
+    async fn no_echo_action_confirms_without_server_metadata() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
@@ -1526,7 +1539,7 @@ mod tests {
             .buffer_id_for_target(&SendTarget::Channel(channel))
             .expect("projected channel has a stable id");
         let (pending, _) = model
-            .begin_send(buffer_id, "hello".into(), &client.state())
+            .begin_action(buffer_id, "waves".into(), &client.state())
             .expect("channel is sendable");
         let sender = client.clone();
         let send_task = tokio::spawn(async move {
@@ -1534,7 +1547,10 @@ mod tests {
                 .await
                 .map(|sent| (pending, sent))
         });
-        assert_eq!(wire.next_sent().await, "PRIVMSG #room hello");
+        assert_eq!(
+            wire.next_sent().await,
+            "PRIVMSG #room :\u{1}ACTION waves\u{1}"
+        );
         let (pending, metadata) = send_task
             .await
             .expect("send task completes")

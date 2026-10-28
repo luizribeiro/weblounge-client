@@ -33,6 +33,7 @@ impl DirectTarget {
         self,
         client: &papo::Client,
         text: String,
+        action: bool,
     ) -> Result<papo::Sent, DirectSendError> {
         if let Some(expected) = self.account.as_ref()
             && let Some(current) = client
@@ -43,10 +44,12 @@ impl DirectTarget {
         {
             return Err(DirectSendError::AccountChanged);
         }
-        client
-            .privmsg(self.nick, text)
-            .await
-            .map_err(|_| DirectSendError::Protocol)
+        if action {
+            client.action(self.nick, text).await
+        } else {
+            client.privmsg(self.nick, text).await
+        }
+        .map_err(|_| DirectSendError::Protocol)
     }
 }
 
@@ -87,7 +90,7 @@ mod tests {
         .await;
 
         assert!(matches!(
-            target.send(&client, "wrong recipient".into()).await,
+            target.send(&client, "wrong recipient".into(), false).await,
             Err(DirectSendError::AccountChanged)
         ));
         assert!(
