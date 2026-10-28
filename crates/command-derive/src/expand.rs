@@ -89,6 +89,7 @@ fn spec(
         aliases,
         usage,
         description,
+        requirements,
         permission,
         surfaces,
         confirm,
@@ -101,11 +102,19 @@ fn spec(
         let name = name.to_string();
         quote! { <#ty as CommandArg>::spec(#name) }
     });
+    let requirements = requirements.iter().map(|requirement| {
+        if let Some(feature) = requirement.strip_prefix("Feature:") {
+            quote! { CommandRequirement::Feature(#feature.into()) }
+        } else {
+            let requirement = format_ident!("{requirement}");
+            quote! { CommandRequirement::#requirement }
+        }
+    });
     quote! {
         CommandSpec {
             name: #name.into(), aliases: vec![#(#aliases.into()),*], arguments: vec![#(#arguments),*],
             usage: #usage.into(), description: #description.into(),
-            requirements: vec![CommandRequirement::Connected], permission: CommandPermission::#permission,
+            requirements: vec![#(#requirements),*], permission: CommandPermission::#permission,
             surfaces: vec![#(CommandSurface::#surfaces),*], confirm: ConfirmPolicy::#confirm,
             secret_arguments: #secret,
         }
