@@ -55,7 +55,11 @@ export function MobileChatList(props: MobileChatListProps) {
           value={props.query}
         />
       </label>
-      <nav aria-label="Chat filters" class={styles.filters}>
+      <nav
+        aria-label="Chat filters"
+        class={styles.filters}
+        data-horizontal-scroll="true"
+      >
         <For each={chatFilters}>
           {(item) => (
             <button

@@ -8,6 +8,7 @@ import {
   mountedScreens,
   popChat,
   pushChat,
+  swipeBackCompletes,
 } from "./mobile-navigation";
 
 interface MobileShellProps extends MobileShellData {
@@ -28,6 +29,10 @@ export function MobileShell(props: MobileShellProps) {
   const [filter, setFilter] = createSignal<ChatFilter>("all");
   const [query, setQuery] = createSignal("");
   const [scrollTop, setScrollTop] = createSignal(0);
+  const [swipeProgress, setSwipeProgress] = createSignal<number>();
+  let gesture:
+    | { pointerId: number; startX: number; startedAt: number; width: number }
+    | undefined;
 
   const open = (bufferId: number) => {
     props.onSelectBuffer(bufferId);
@@ -58,6 +63,48 @@ export function MobileShell(props: MobileShellProps) {
     }
   });
 
+  const beginSwipe = (event: PointerEvent) => {
+    const target = event.target as Element;
+    if (
+      event.clientX > 24 ||
+      stack().active.kind !== "chat" ||
+      stack().transition !== undefined ||
+      target.closest(
+        "[data-selectable], input, textarea, [data-horizontal-scroll]",
+      ) !== null
+    )
+      return;
+    gesture = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startedAt: event.timeStamp,
+      width:
+        event.currentTarget instanceof Element
+          ? event.currentTarget.getBoundingClientRect().width
+          : window.innerWidth,
+    };
+    setSwipeProgress(0);
+  };
+  const moveSwipe = (event: PointerEvent) => {
+    if (gesture?.pointerId !== event.pointerId) return;
+    const distance = Math.max(0, event.clientX - gesture.startX);
+    setSwipeProgress(Math.min(1, distance / gesture.width));
+  };
+  const endSwipe = (event: PointerEvent) => {
+    if (gesture?.pointerId !== event.pointerId) return;
+    const distance = Math.max(0, event.clientX - gesture.startX);
+    const velocity =
+      distance / Math.max(1, event.timeStamp - gesture.startedAt);
+    const completes = swipeBackCompletes(distance, gesture.width, velocity);
+    gesture = undefined;
+    setSwipeProgress(undefined);
+    if (completes) requestBack();
+  };
+  const screens = () =>
+    swipeProgress() === undefined
+      ? mountedScreens(stack())
+      : [{ kind: "chats" } as const, stack().active];
+
   onMount(() => {
     const handlePopState = () => dispatchBack();
     window.addEventListener("popstate", handlePopState);
@@ -65,8 +112,15 @@ export function MobileShell(props: MobileShellProps) {
   });
 
   return (
-    <main class={styles.shell} data-mobile-shell="true">
-      <For each={mountedScreens(stack())}>
+    <main
+      class={styles.shell}
+      data-mobile-shell="true"
+      onPointerCancel={endSwipe}
+      onPointerDown={beginSwipe}
+      onPointerMove={moveSwipe}
+      onPointerUp={endSwipe}
+    >
+      <For each={screens()}>
         {(screen, index) => {
           const transition = () => stack().transition;
           return (
@@ -98,6 +152,14 @@ export function MobileShell(props: MobileShellProps) {
               query={query()}
               screen={screen}
               scrollTop={scrollTop()}
+              swipe={
+                swipeProgress() === undefined
+                  ? undefined
+                  : screen.kind === "chat"
+                    ? "chat"
+                    : "chats"
+              }
+              swipeProgress={swipeProgress()}
               transition={transition()?.direction}
             />
           );
