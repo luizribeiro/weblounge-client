@@ -24,6 +24,10 @@ import {
   type MessageListController,
 } from "../../features/conversation/MessageList";
 import {
+  MemberPanel,
+  type MemberWindow,
+} from "../../features/members/MemberPanel";
+import {
   Sidebar,
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
@@ -44,12 +48,19 @@ export interface DesktopShellProps {
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
+  readonly memberWindows?: ReadonlyMap<number, MemberWindow> | undefined;
   readonly activeBufferId?: number | undefined;
   readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
+  readonly onRequestMembers?:
+    | ((bufferId: number, offset: number, limit: number) => void)
+    | undefined;
+  readonly onOpenDirect?:
+    | ((networkId: number, nick: string) => void)
+    | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -57,6 +68,7 @@ export function DesktopShell(props: DesktopShellProps) {
     createSinglePane(props.activeBufferId),
   );
   const [sidebarShown, setSidebarShown] = createSignal(true);
+  const [memberPanelOpen, setMemberPanelOpen] = createSignal(false);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   const [foreground, setForeground] = createSignal(
     document.visibilityState === "visible" && document.hasFocus(),
@@ -72,6 +84,11 @@ export function DesktopShell(props: DesktopShellProps) {
     const buffer = activeBuffer();
     return new Set(buffer === undefined ? [] : [buffer.id]);
   });
+  const memberWindow = createMemo(() =>
+    props.memberWindows?.get(activeBuffer()?.id ?? -1),
+  );
+  const membersVisible = () =>
+    memberPanelOpen() && activeBuffer()?.kind === "channel";
   const context = (): CommandContext => ({
     bufferCount: props.buffers.length,
     listActive: sidebarShown(),
@@ -98,7 +115,7 @@ export function DesktopShell(props: DesktopShellProps) {
       "list.next": () => listController?.next(),
       "list.open": () => listController?.open(),
       "list.previous": () => listController?.previous(),
-      "members.toggle": () => {},
+      "members.toggle": () => setMemberPanelOpen((open) => !open),
       "message.jump-bottom": () => messageListController?.jumpBottom(),
       "network.add": () => {},
       "network.open-server": (command) =>
@@ -157,6 +174,11 @@ export function DesktopShell(props: DesktopShellProps) {
   });
 
   createEffect(() => {
+    const buffer = activeBuffer();
+    if (buffer?.kind === "channel") props.onRequestMembers?.(buffer.id, 0, 128);
+  });
+
+  createEffect(() => {
     if (navigationCommitted) return;
     const preferred = preferredInitialBuffer(props.buffers);
     if (preferred?.id !== activeBuffer()?.id) showBuffer(preferred?.id);
@@ -199,7 +221,9 @@ export function DesktopShell(props: DesktopShellProps) {
       )}
       <main
         class={styles.main}
-        data-chromeless={sidebarShown() ? "false" : "true"}
+        data-chromeless={
+          !sidebarShown() && !membersVisible() ? "true" : "false"
+        }
       >
         {activeBuffer() !== undefined ? (
           <section
@@ -207,6 +231,12 @@ export function DesktopShell(props: DesktopShellProps) {
             data-buffer-title={activeBuffer()?.title}
           >
             <ConversationHeader
+              memberCount={
+                activeBuffer()?.kind === "channel"
+                  ? (memberWindow()?.total ?? 0)
+                  : undefined
+              }
+              membersPressed={membersVisible()}
               membersTooltip={tooltip(registry, "members.toggle")}
               onToggleMembers={() => run("members.toggle")}
               onToggleSidebar={() => run("sidebar.toggle")}
@@ -268,6 +298,19 @@ export function DesktopShell(props: DesktopShellProps) {
           </section>
         )}
       </main>
+      {membersVisible() && activeBuffer() !== undefined && (
+        <MemberPanel
+          bufferTitle={activeBuffer()?.title ?? ""}
+          onClose={() => setMemberPanelOpen(false)}
+          onOpenDirect={(nick) =>
+            props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick)
+          }
+          onRequestRange={(offset, limit) =>
+            props.onRequestMembers?.(activeBuffer()?.id ?? 0, offset, limit)
+          }
+          window={memberWindow()}
+        />
+      )}
     </div>
   );
 }
