@@ -6,7 +6,7 @@ use std::{
 use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, commands,
     direct_target::DirectTarget, name_key::NameKey,
 };
 
@@ -558,9 +558,11 @@ impl NetworkModel {
         prefix: &str,
         state: &papo::State,
     ) -> Vec<String> {
-        const COMMANDS: [&str; 7] = ["/join", "/me", "/msg", "/nick", "/part", "/quit", "/topic"];
         let values: Vec<String> = if prefix.starts_with('/') {
-            COMMANDS.into_iter().map(str::to_owned).collect()
+            commands::built_in_specs()
+                .into_iter()
+                .map(|spec| format!("/{}", spec.name))
+                .collect()
         } else if prefix
             .chars()
             .next()

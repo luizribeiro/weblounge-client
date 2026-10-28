@@ -50,3 +50,7 @@ pub(crate) fn parse(input: &str, chantypes: &str) -> Result<Command, InputError>
     };
     Command::parse_slash(command, &arguments::ParseContext { chantypes })
 }
+
+pub(crate) fn built_in_specs() -> Vec<CommandSpec> {
+    Command::specs()
+}

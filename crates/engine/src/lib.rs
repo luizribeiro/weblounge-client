@@ -3,8 +3,6 @@
 /// Runtime slash-command metadata and registration.
 pub mod commands;
 mod direct_target;
-/// Engine-owned composer input parsing.
-pub mod input;
 mod members;
 mod name_key;
 mod protocol;
