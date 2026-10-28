@@ -14,6 +14,9 @@ const draftKey = (id: number) => `weblounge:draft:${id}`;
 
 export function Composer(props: ComposerProps) {
   let textarea: HTMLTextAreaElement | undefined;
+  let completion:
+    | { start: number; end: number; candidates: readonly string[] }
+    | undefined;
   let currentBuffer = props.bufferId;
   const [text, setText] = createSignal(
     sessionStorage.getItem(draftKey(currentBuffer)) ?? "",
@@ -27,10 +30,13 @@ export function Composer(props: ComposerProps) {
     setSelected(-1);
   });
 
-  const update = (value: string) => {
+  const update = (value: string, resetCompletion = true) => {
     setText(value);
     sessionStorage.setItem(draftKey(currentBuffer), value);
-    setSelected(-1);
+    if (resetCompletion) {
+      completion = undefined;
+      setSelected(-1);
+    }
   };
   const submit = () => {
     if (text().trim() === "") return;
@@ -40,19 +46,32 @@ export function Composer(props: ComposerProps) {
     setSelected(-1);
   };
   const complete = (offset: number) => {
-    const cursor = textarea?.selectionStart ?? text().length;
-    const start = text().slice(0, cursor).search(/\S*$/);
-    const token = text().slice(start, cursor).toLocaleLowerCase();
-    const candidates = (props.candidates ?? []).filter((candidate) =>
-      candidate.toLocaleLowerCase().startsWith(token),
-    );
-    if (candidates.length === 0) return false;
-    const next = (selected() + offset + candidates.length) % candidates.length;
+    if (completion === undefined) {
+      const end = textarea?.selectionStart ?? text().length;
+      const start = text().slice(0, end).search(/\S*$/);
+      const token = text().slice(start, end).toLocaleLowerCase();
+      completion = {
+        start,
+        end,
+        candidates: (props.candidates ?? []).filter((candidate) =>
+          candidate.toLocaleLowerCase().startsWith(token),
+        ),
+      };
+    }
+    if (completion.candidates.length === 0) return false;
+    const next =
+      (selected() + offset + completion.candidates.length) %
+      completion.candidates.length;
     setSelected(next);
+    const candidate = completion.candidates[next] ?? "";
     update(
-      `${text().slice(0, start)}${candidates[next]} ${text().slice(cursor)}`,
+      `${text().slice(0, completion.start)}${candidate} ${text().slice(completion.end)}`,
+      false,
     );
-    setSelected(next);
+    completion.end = completion.start + candidate.length + 1;
+    queueMicrotask(() =>
+      textarea?.setSelectionRange(completion?.end ?? 0, completion?.end ?? 0),
+    );
     return true;
   };
   const keydown: JSX.EventHandler<HTMLTextAreaElement, KeyboardEvent> = (

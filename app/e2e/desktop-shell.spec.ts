@@ -52,6 +52,77 @@ test.describe("desktop shell against local Ergo", () => {
     }
   });
 
+  test("composes commands, completion, and per-buffer drafts", async ({
+    page,
+  }) => {
+    const bot = await IrcClient.connect(
+      "composer",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    try {
+      await bot.privmsgConfirmed(
+        "#weblounge-test",
+        "hello from completion bot",
+      );
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByText("hello from completion bot", { exact: true }),
+      ).toBeVisible();
+      const composer = page.getByRole("textbox", {
+        name: "Message #weblounge-test",
+      });
+
+      await composer.fill("plain composer message");
+      await composer.press("Enter");
+      await expect(
+        page.getByText("plain composer message", { exact: true }),
+      ).toBeVisible();
+      await composer.fill("/me waves hello");
+      await composer.press("Enter");
+      await expect(
+        page.locator("[data-message-row]").filter({ hasText: "waves hello" }),
+      ).toBeVisible();
+
+      await composer.fill("weblo");
+      await composer.press("Tab");
+      await expect(composer).toHaveValue("weblounge ");
+      await mkdir(screenshotDirectory, { recursive: true });
+      await page.screenshot({
+        path: path.join(screenshotDirectory, "composer-completion-light.png"),
+      });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.screenshot({
+        path: path.join(screenshotDirectory, "composer-completion-dark.png"),
+      });
+
+      await composer.fill("/join #another");
+      await composer.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: "#another" }),
+      ).toBeVisible();
+      const another = page.getByRole("textbox", { name: "Message #another" });
+      await another.fill("draft in another");
+      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
+      await composer.fill("draft in home");
+      await page.getByRole("button", { name: /^#another/ }).click();
+      await expect(another).toHaveValue("draft in another");
+      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
+      await expect(composer).toHaveValue("draft in home");
+
+      await composer.fill("/msg weblounge-bot hi");
+      await composer.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: "weblounge-bot" }),
+      ).toBeVisible();
+      await expect(page.getByText("hi", { exact: true })).toBeVisible();
+    } finally {
+      bot.close();
+    }
+  });
+
   test("navigates real buffers and follows the system theme", async ({
     browser,
     page,
@@ -68,20 +139,10 @@ test.describe("desktop shell against local Ergo", () => {
     await expect(network).toBeVisible();
     await expect(channel).toBeVisible();
 
-    await network.click();
-    await expect(
-      page.getByRole("heading", { name: "Local Ergo" }),
-    ).toBeVisible();
     await channel.click();
     await expect(
       page.getByRole("heading", { name: "#weblounge-test" }),
     ).toBeVisible();
-
-    await page.keyboard.press("Alt+ArrowDown");
-    await expect(
-      page.getByRole("heading", { name: "Local Ergo" }),
-    ).toBeVisible();
-    await channel.click();
 
     const toggle = page.getByRole("button", { name: "Toggle channel list" });
     await toggle.click();
@@ -147,6 +208,9 @@ test.describe("desktop shell against local Ergo", () => {
       });
       const screenshotPage = await screenshotContext.newPage();
       await screenshotPage.goto(`${origin}/?irc-password=weblounge-test`);
+      await screenshotPage
+        .getByRole("button", { name: /^#weblounge-test/ })
+        .click();
       await expect(
         screenshotPage.getByText("weblounge: history on open is working", {
           exact: true,

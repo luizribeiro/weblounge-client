@@ -29,11 +29,13 @@ it("cycles completion and restores drafts by buffer", () => {
   fireEvent.input(input, { target: { value: "al" } });
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("alice ");
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("alex ");
   setBufferId(3);
   expect(input).toHaveValue("");
   fireEvent.input(input, { target: { value: "other" } });
   setBufferId(2);
-  expect(input).toHaveValue("alice ");
+  expect(input).toHaveValue("alex ");
 });
 
 it("filters slash completion by the current token", () => {

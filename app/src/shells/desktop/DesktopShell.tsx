@@ -51,7 +51,7 @@ export function DesktopShell(props: DesktopShellProps) {
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
   let navigationCommitted = false;
-  let knownBufferCount = props.buffers.length;
+  let pendingOpen: string | undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
@@ -119,10 +119,14 @@ export function DesktopShell(props: DesktopShellProps) {
   });
 
   createEffect(() => {
-    if (props.buffers.length > knownBufferCount) {
-      showBuffer(props.buffers.at(-1)?.id, true);
+    const buffers = props.buffers;
+    if (pendingOpen !== undefined) {
+      const buffer = buffers.find((item) => item.title === pendingOpen);
+      if (buffer !== undefined) {
+        pendingOpen = undefined;
+        showBuffer(buffer.id, true);
+      }
     }
-    knownBufferCount = props.buffers.length;
   });
 
   createEffect(() => {
@@ -224,7 +228,17 @@ export function DesktopShell(props: DesktopShellProps) {
                 disabled={activeBuffer()?.kind === "server"}
                 onSend={(text) => {
                   const buffer = activeBuffer();
-                  if (buffer !== undefined) props.onSend(buffer.id, text);
+                  if (buffer !== undefined) {
+                    pendingOpen = /^\/(?:join|msg)\s+(\S+)/i.exec(text)?.[1];
+                    const existing = props.buffers.find(
+                      (item) => item.title === pendingOpen,
+                    );
+                    if (existing !== undefined) {
+                      pendingOpen = undefined;
+                      showBuffer(existing.id, true);
+                    }
+                    props.onSend(buffer.id, text);
+                  }
                 }}
               />
             </div>
