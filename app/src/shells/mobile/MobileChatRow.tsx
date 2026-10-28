@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
+import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
 
@@ -68,13 +69,6 @@ function preview(message: BufferProjection["last_message"]): string {
   return message.kind === "action"
     ? `* ${message.author} ${message.text}`
     : `${message.author}: ${message.text}`;
-}
-
-function formatTime(milliseconds: number): string {
-  return new Intl.DateTimeFormat([], {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(milliseconds);
 }
 
 function dateTime(milliseconds = 0): string {

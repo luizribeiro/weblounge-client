@@ -4,6 +4,7 @@ import type {
   BufferProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import { MessageList } from "../../features/conversation/MessageList";
 import { MobileChatRow } from "./MobileChatRow";
 
 const lastMessage: MessageProjection = {
@@ -66,4 +67,19 @@ it("omits the default network label and uses the unread badge", () => {
 
   expect(screen.queryByText("Libera")).not.toBeInTheDocument();
   expect(screen.getByLabelText("3 unread")).toBeVisible();
+});
+
+it("uses the same locale time in chat previews and message rows", () => {
+  const { container } = render(() => (
+    <>
+      <MobileChatRow buffer={buffer()} onOpen={vi.fn()} previews={true} />
+      <MessageList messages={[lastMessage]} />
+    </>
+  ));
+
+  const times = [...container.querySelectorAll("time")].map(
+    (time) => time.textContent,
+  );
+  expect(times).toHaveLength(2);
+  expect(times[0]).toBe(times[1]);
 });

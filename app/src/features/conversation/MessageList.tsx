@@ -16,6 +16,7 @@ import type {
 import { nickPaletteSize } from "../../theme/theme-registry";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
+import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MessageList.module.css";
@@ -331,7 +332,7 @@ function MessageRow(props: {
             data-message-chrome="true"
             dateTime={new Date(messageTime(message)).toISOString()}
           >
-            <Line>{formatTime(message)}</Line>
+            <Line>{formatTime(messageTime(message))}</Line>
           </time>
           <Line class={styles.nickColumn} data-message-chrome="true">
             {message.mode_symbol !== null && (
@@ -446,11 +447,6 @@ function formatDay(time: Date): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
     time,
   );
-}
-
-function formatTime(message: MessageProjection): string {
-  const time = new Date(messageTime(message));
-  return `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}`;
 }
 
 function messageTime(message: MessageProjection): number {
