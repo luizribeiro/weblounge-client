@@ -4,6 +4,7 @@ import { repeatScenario, summarizeFrameRuns } from "./performance-runs";
 test("keeps a 10k-message timeline bounded at 4x CPU", async ({
   page,
 }, testInfo) => {
+  test.slow();
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's instrumented build",
