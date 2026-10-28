@@ -289,6 +289,27 @@
             files = "(^|/)(app/.*\\.tsx?|package\\.json|pnpm-lock\\.yaml)$";
             pass_filenames = false;
           };
+          protocol-types = {
+            enable = true;
+            entry = "${
+              pkgs.writeShellApplication {
+                name = "protocol-types-hook";
+                runtimeInputs = [
+                  rustToolchain
+                  pkgs.diffutils
+                ];
+                text = ''
+                  generated="$(mktemp -d)"
+                  trap 'rm -rf -- "$generated"' EXIT
+                  cargo run --locked --package weblounge-engine \
+                    --example export_protocol -- "$generated"
+                  diff --recursive --unified app/src/engine/generated "$generated"
+                '';
+              }
+            }/bin/protocol-types-hook";
+            files = "(^|/)(Cargo\\.(toml|lock)|crates/engine/(src|examples)/.*\\.rs|app/src/engine/generated/.*\\.ts)$";
+            pass_filenames = false;
+          };
         };
         hooks = git-hooks.lib.${system}.run {
           src = ./.;
