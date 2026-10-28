@@ -84,6 +84,20 @@ test.describe("mobile shell screenshots against local Ergo", () => {
         .getByRole("textbox", { name: "Message #weblounge-test" })
         .boundingBox();
       expect(composerBox?.y).toBeGreaterThan(760);
+      await expect
+        .poll(() =>
+          page.locator("[data-message-row]").evaluateAll((rows) =>
+            rows.some((row, index) => {
+              const next = rows[index + 1];
+              return (
+                next !== undefined &&
+                row.getBoundingClientRect().bottom >
+                  next.getBoundingClientRect().top + 0.5
+              );
+            }),
+          ),
+        )
+        .toBe(false);
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-chat-light.png"),
       });

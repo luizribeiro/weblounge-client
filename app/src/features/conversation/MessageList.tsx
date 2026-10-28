@@ -85,6 +85,23 @@ export function MessageList(props: MessageListProps) {
     getItemKey: (index) => rows()[index]?.key ?? index,
     overscan: 12,
   });
+  createEffect(() => {
+    rows();
+    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
+      requestAnimationFrame(() => {
+        if (list?.isConnected !== true) return;
+        for (const element of list.querySelectorAll<HTMLLIElement>(
+          "li[data-index]",
+        )) {
+          virtualizer.measureElement(element);
+          virtualizer.resizeItem(
+            Number(element.dataset.index),
+            element.offsetHeight,
+          );
+        }
+      });
+    });
+  });
   const reportLiveEdge = () => {
     if (list === undefined) return;
     const live = list.scrollHeight - list.scrollTop - list.clientHeight <= 2;
