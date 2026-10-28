@@ -64,6 +64,23 @@ it("routes asynchronous buffer focus requests only to the submitting port", asyn
   expect(second.sent).toEqual([]);
 });
 
+it("broadcasts asynchronous member patches to every shared port", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return { handle: () => "[]" };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+
+  emit?.(JSON.stringify({ type: "members_changed", buffer_id: 2 }));
+
+  expect(first.sent).toContainEqual({ type: "members_changed", buffer_id: 2 });
+  expect(second.sent).toContainEqual({ type: "members_changed", buffer_id: 2 });
+});
+
 class FakePort implements WorkerHostPort {
   readonly sent: unknown[] = [];
   #listener: ((event: MessageEvent<unknown>) => void) | undefined;
