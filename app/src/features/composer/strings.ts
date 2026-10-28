@@ -2,6 +2,26 @@ interface MessageValues {
   readonly input?: string;
 }
 
+export const messageKeys = [
+  "composer.empty_input",
+  "composer.missing_argument",
+  "composer.unknown_command",
+  "engine.join_banned",
+  "engine.buffer_not_sendable",
+  "engine.channel_required",
+  "engine.command_refused",
+  "engine.dedicated_worker_fallback",
+  "engine.direct_account_changed",
+  "engine.invalid_endpoint",
+  "engine.network_already_connected",
+  "engine.network_not_found",
+  "engine.send_failed",
+  "engine.state_inconsistent",
+  "engine.unsupported_conversation",
+  "engine.worker_failed",
+  "engine.command_failed",
+] as const;
+
 export function t(key: string, values: MessageValues = {}): string {
   switch (key) {
     case "composer.empty_input":
@@ -9,9 +29,9 @@ export function t(key: string, values: MessageValues = {}): string {
     case "composer.missing_argument":
       return "That command needs more information.";
     case "composer.unknown_command":
-      return `Unknown command ${commandFrom(values.input)}`;
+      return `Unknown command ${commandFrom(values.input)}.`;
     case "engine.join_banned":
-      return `Couldn't join ${joinTargetFrom(values.input)}: you're banned`;
+      return `Couldn't join ${joinTargetFrom(values.input)}: you're banned.`;
     case "engine.buffer_not_sendable":
       return "Messages can't be sent to this conversation.";
     case "engine.channel_required":

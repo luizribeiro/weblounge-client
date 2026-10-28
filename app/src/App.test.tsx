@@ -168,7 +168,7 @@ it("renders command error and engine notice keys as human text", async () => {
   fireEvent.input(input, { target: { value: "/frobnicate" } });
   fireEvent.keyDown(input, { key: "Enter" });
 
-  expect(await screen.findByText("Unknown command /frobnicate")).toBeVisible();
+  expect(await screen.findByText("Unknown command /frobnicate.")).toBeVisible();
   client.emit({ type: "notice", message_key: "engine.state_inconsistent" });
   expect(screen.getByRole("note")).toHaveTextContent(
     "The conversation changed unexpectedly. Try again.",
