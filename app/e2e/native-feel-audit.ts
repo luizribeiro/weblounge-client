@@ -25,6 +25,7 @@ const intervalAllowList: readonly IntervalAllowance[] = [
 const idleObservationMilliseconds = 5_000;
 
 interface NativeFeelMetrics extends WasteCounters {
+  engineEvents: string[];
   enginePatches: number;
   intervalRegistrations: IntervalRegistration[];
   layoutShift: number;
@@ -37,6 +38,7 @@ export async function installNativeFeelInstrumentation(
   await page.addInitScript(() => {
     const metrics: NativeFeelMetrics = {
       animationFrames: 0,
+      engineEvents: [],
       enginePatches: 0,
       intervalRegistrations: [],
       intervals: 0,
@@ -64,6 +66,15 @@ export async function installNativeFeelInstrumentation(
       }
       const wrapped: EventListener = (event) => {
         const data = (event as MessageEvent<unknown>).data;
+        if (
+          metrics.trackingWaste &&
+          typeof data === "object" &&
+          data !== null &&
+          "type" in data &&
+          typeof data.type === "string"
+        ) {
+          metrics.engineEvents.push(data.type);
+        }
         if (
           typeof data === "object" &&
           data !== null &&
@@ -232,6 +243,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
       window as Window & {
         __nativeFeelMetrics?: {
           animationFrames: number;
+          engineEvents: string[];
           intervals: number;
           timeouts: number;
           trackingWaste: boolean;
@@ -241,6 +253,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     if (metrics === undefined)
       throw new Error("native-feel metrics are missing");
     metrics.animationFrames = 0;
+    metrics.engineEvents = [];
     metrics.intervals = 0;
     metrics.timeouts = 0;
     metrics.trackingWaste = true;
@@ -250,6 +263,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     const metrics = (
       window as Window & {
         __nativeFeelMetrics?: WasteCounters & {
+          engineEvents: string[];
           intervalRegistrations: IntervalRegistration[];
           trackingWaste: boolean;
         };
@@ -260,6 +274,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     metrics.trackingWaste = false;
     return {
       registrations: metrics.intervalRegistrations,
+      engineEvents: metrics.engineEvents,
       waste: {
         animationFrames: metrics.animationFrames,
         intervals: metrics.intervals,
@@ -279,7 +294,10 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   expect(unexpectedIntervals, `allowed intervals: ${allowedReasons}`).toEqual(
     [],
   );
-  expect(result.waste).toEqual({
+  expect(
+    result.waste,
+    `engine events: ${result.engineEvents.join(", ")}`,
+  ).toEqual({
     animationFrames: 0,
     intervals: 0,
     timeouts: 0,

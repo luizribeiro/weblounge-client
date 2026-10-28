@@ -43,9 +43,19 @@ body,
   -webkit-touch-callout: none;
   block-size: 100%;
   cursor: default;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: none;
   user-select: none;
+}
+
+.visually-hidden {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 [data-app-root] * {

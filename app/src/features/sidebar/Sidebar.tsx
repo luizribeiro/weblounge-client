@@ -23,7 +23,7 @@ export interface SidebarListController {
 interface SidebarProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly SidebarBuffer[];
-  readonly activeBufferId?: number;
+  readonly activeBufferId?: number | undefined;
   readonly registry: CommandRegistry;
   readonly commandContext: CommandContext;
   readonly registerListController: (
@@ -84,7 +84,7 @@ export function Sidebar(props: SidebarProps) {
     <aside aria-label="Channel list" class={styles.sidebar} data-sidebar="true">
       <div class={styles.brand}>
         <div class={styles.logo}>
-          <img alt="" src="/brand/chair.svg" />
+          <img alt="" draggable={false} src="/brand/chair.svg" />
         </div>
         <div class={styles.brandText}>
           <h1>

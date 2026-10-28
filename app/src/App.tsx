@@ -10,7 +10,7 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "./engine/protocol";
-import { DebugView } from "./features/debug/DebugView";
+import { DesktopShell } from "./shells/desktop/DesktopShell";
 import { installSystemTheme } from "./theme/theme-controller";
 import {
   contextMenuRegistry,
@@ -81,16 +81,21 @@ export function App(props: AppProps) {
   });
 
   return (
-    <main
+    <div
       data-app-root="true"
       ref={(element) => {
         appRoot = element;
       }}
     >
-      <h1>weblounge</h1>
-      <p role="status">{engineStatus()}</p>
-      {engineNotice() !== undefined && <p role="note">{engineNotice()}</p>}
-      <DebugView
+      <p class="visually-hidden" role="status">
+        {engineStatus()}
+      </p>
+      {engineNotice() !== undefined && (
+        <p class="visually-hidden" role="note">
+          {engineNotice()}
+        </p>
+      )}
+      <DesktopShell
         networks={networks()}
         buffers={buffers()}
         messages={messages()}
@@ -102,7 +107,7 @@ export function App(props: AppProps) {
           });
         }}
       />
-    </main>
+    </div>
   );
 }
 

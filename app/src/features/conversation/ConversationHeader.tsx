@@ -5,7 +5,7 @@ import styles from "./ConversationHeader.module.css";
 
 interface ConversationHeaderProps {
   readonly title: string;
-  readonly topic?: string;
+  readonly topic?: string | undefined;
   readonly sidebarTooltip: string;
   readonly membersTooltip: string;
   readonly onToggleSidebar: JSX.EventHandler<HTMLButtonElement, MouseEvent>;

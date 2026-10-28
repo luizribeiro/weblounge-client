@@ -41,6 +41,18 @@ it("lists projected networks, buffers, and messages", async () => {
   client.emit({
     type: "buffer_added",
     buffer: {
+      id: 1,
+      network_id: 1,
+      kind: "server",
+      title: "Local Ergo",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+    },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
       id: 2,
       network_id: 1,
       kind: "channel",
@@ -70,9 +82,13 @@ it("lists projected networks, buffers, and messages", async () => {
     ],
   });
 
-  expect(await screen.findByText(/Local Ergo: weblounge/)).toBeInTheDocument();
+  expect(await screen.findByText("1 network · connected")).toBeInTheDocument();
+  expect(
+    screen.getByRole("region", { name: "Local Ergo" }),
+  ).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /#room/ })).toBeInTheDocument();
-  expect(screen.getByText(/<alice> hello/)).toBeInTheDocument();
+  expect(screen.getByText("Room topic")).toBeInTheDocument();
+  expect(screen.getByText("hello")).toBeInTheDocument();
 });
 
 it("shows a confirmation received without this tab's optimistic row", async () => {

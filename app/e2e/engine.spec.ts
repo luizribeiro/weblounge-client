@@ -46,9 +46,7 @@ test.describe("local Ergo user flow", () => {
     await observeDeliveries(page, ownText);
     await page.getByRole("textbox", { name: "Message" }).fill(ownText);
     await page.getByRole("button", { name: "Send" }).click();
-    await expect(
-      page.getByText(`${ownText} [confirmed]`, { exact: false }),
-    ).toBeVisible();
+    await expect(page.getByText(ownText, { exact: true })).toBeVisible();
     await expect
       .poll(() => observedDeliveries(page))
       .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
@@ -62,11 +60,13 @@ test.describe("local Ergo user flow", () => {
     try {
       bot.privmsg("#weblounge-test", "hello from the test bot");
       await expect(
-        page.getByText(/hello from the test bot \[received\]/),
+        page.getByText("hello from the test bot", { exact: true }),
       ).toBeVisible();
       bot.privmsg("#weblounge-test", "hello weblounge, this is a mention");
       await expect(
-        page.getByRole("heading", { name: /1 mentions/ }),
+        page.getByRole("button", {
+          name: /#weblounge-test, 1 mentions/,
+        }),
       ).toBeVisible();
     } finally {
       bot.close();
@@ -92,9 +92,7 @@ test.describe("local Ergo user flow", () => {
     await observeDeliveries(secondTab, text);
     await firstTab.getByRole("textbox", { name: "Message" }).fill(text);
     await firstTab.getByRole("button", { name: "Send" }).click();
-    await expect(
-      secondTab.getByText(`${text} [confirmed]`, { exact: false }),
-    ).toBeVisible();
+    await expect(secondTab.getByText(text, { exact: true })).toBeVisible();
 
     await expect
       .poll(() => observedDeliveries(secondTab))
