@@ -16,12 +16,14 @@ import type {
 export interface MobileShellData {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
-  readonly composerNotice?: string | undefined;
-  readonly completion?: {
-    readonly bufferId: number;
-    readonly prefix: string;
-    readonly candidates: readonly string[];
-  };
+  readonly composerNotice: string | undefined;
+  readonly completion:
+    | {
+        readonly bufferId: number;
+        readonly prefix: string;
+        readonly candidates: readonly string[];
+      }
+    | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;

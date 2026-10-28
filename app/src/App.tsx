@@ -15,7 +15,7 @@ import type {
   NetworkProjection,
 } from "./engine/protocol";
 import { t } from "./features/composer/strings";
-import { DesktopShell } from "./shells/desktop/DesktopShell";
+import { ResponsiveShell } from "./shells/ResponsiveShell";
 import { installSystemTheme } from "./theme/theme-controller";
 import {
   contextMenuRegistry,
@@ -124,7 +124,7 @@ export function App(props: AppProps) {
           {engineNotice()}
         </p>
       )}
-      <DesktopShell
+      <ResponsiveShell
         networks={networks()}
         buffers={buffers()}
         composerNotice={composerNotice()}
@@ -258,6 +258,8 @@ function applyDebugEvent(
       ...message.buffers,
     ]);
   } else if (message.type === "buffer_added") {
+    setBuffers((current) => upsert(current, message.buffer));
+  } else if (message.type === "buffer_updated") {
     setBuffers((current) => upsert(current, message.buffer));
   } else if (message.type === "unread_changed") {
     setBuffers((current) =>

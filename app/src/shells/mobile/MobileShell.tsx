@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
 import type { ChatFilter } from "./mobile-chats";
@@ -11,6 +11,7 @@ import {
 } from "./mobile-navigation";
 
 interface MobileShellProps extends MobileShellData {
+  readonly focusRequest?: { readonly bufferId: number } | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
 }
@@ -46,6 +47,17 @@ export function MobileShell(props: MobileShellProps) {
     }
   };
 
+  createEffect(() => {
+    const requested = props.focusRequest?.bufferId;
+    const active = stack().active;
+    if (
+      requested !== undefined &&
+      (active.kind !== "chat" || requested !== active.bufferId)
+    ) {
+      open(requested);
+    }
+  });
+
   onMount(() => {
     const handlePopState = () => dispatchBack();
     window.addEventListener("popstate", handlePopState);
@@ -60,6 +72,8 @@ export function MobileShell(props: MobileShellProps) {
           return (
             <MobileScreen
               buffers={props.buffers}
+              composerNotice={props.composerNotice}
+              completion={props.completion}
               filter={filter()}
               memberships={props.memberships}
               messages={props.messages}
@@ -85,12 +99,6 @@ export function MobileShell(props: MobileShellProps) {
               screen={screen}
               scrollTop={scrollTop()}
               transition={transition()?.direction}
-              {...(props.composerNotice === undefined
-                ? {}
-                : { composerNotice: props.composerNotice })}
-              {...(props.completion === undefined
-                ? {}
-                : { completion: props.completion })}
             />
           );
         }}
