@@ -129,7 +129,29 @@ impl Runtime {
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let candidates = running.model.completion_candidates(buffer_id, &prefix);
+        let mut candidates = running.model.completion_candidates(buffer_id, &prefix);
+        if !prefix.starts_with('/') && !prefix.starts_with('#') {
+            let folded_prefix = prefix.to_lowercase();
+            let snapshot = running.client.state();
+            let mut members = running
+                .model
+                .channel_for_buffer(buffer_id)
+                .and_then(|channel| snapshot.channel(channel))
+                .into_iter()
+                .flat_map(papo::Channel::members)
+                .map(|member| member.nick().to_string())
+                .filter(|nick| nick.to_lowercase().starts_with(&folded_prefix))
+                .collect::<Vec<_>>();
+            members.sort_by_key(|nick| nick.to_lowercase());
+            for member in members {
+                if !candidates
+                    .iter()
+                    .any(|candidate| candidate.eq_ignore_ascii_case(&member))
+                {
+                    candidates.push(member);
+                }
+            }
+        }
         vec![
             EngineToUi::CompletionResult {
                 command_id: command_id.clone(),
@@ -1092,6 +1114,18 @@ mod tests {
                 .buffer_id_for_target(&target)
                 .expect("joined buffer exists")
         };
+        let completion = runtime.command(CommandEnvelope {
+            id: "complete-member".into(),
+            command: Command::CompleteInput {
+                buffer_id,
+                prefix: "web".into(),
+            },
+        });
+        assert!(matches!(
+            completion.first(),
+            Some(EngineToUi::CompletionResult { candidates, .. })
+                if candidates == &["weblounge"]
+        ));
 
         runtime.command(CommandEnvelope {
             id: "topic".into(),
