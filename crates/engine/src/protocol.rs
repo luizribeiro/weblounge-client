@@ -86,6 +86,10 @@ pub struct BufferProjection {
     pub mentions: u64,
     /// Latest committed row covered by the effective read marker.
     pub read_through: Option<MessageId>,
+    /// Latest timeline row for conversation-list previews.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_message: Option<MessageProjection>,
 }
 
 /// Who authored a projected message relative to this client.
@@ -367,6 +371,11 @@ pub enum EngineToUi {
     /// Append one newly discovered buffer.
     BufferAdded {
         /// New buffer projection.
+        buffer: BufferProjection,
+    },
+    /// Replace one changed buffer projection.
+    BufferUpdated {
+        /// Complete current buffer projection.
         buffer: BufferProjection,
     },
     /// Ask the active shell to focus a buffer selected by engine-owned input semantics.

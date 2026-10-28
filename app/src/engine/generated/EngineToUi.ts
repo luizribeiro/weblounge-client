@@ -83,6 +83,10 @@ buffers: Array<BufferProjection>, } | { "type": "buffer_added",
 /**
  * New buffer projection.
  */
+buffer: BufferProjection, } | { "type": "buffer_updated",
+/**
+ * Complete current buffer projection.
+ */
 buffer: BufferProjection, } | { "type": "focus_buffer_requested",
 /**
  * Command whose composer should navigate.

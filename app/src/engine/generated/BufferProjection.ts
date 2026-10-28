@@ -2,6 +2,7 @@
 import type { BufferId } from "./BufferId";
 import type { BufferKind } from "./BufferKind";
 import type { MessageId } from "./MessageId";
+import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 
 /**
@@ -43,4 +44,8 @@ mentions: number,
 /**
  * Latest committed row covered by the effective read marker.
  */
-read_through: MessageId | null, };
+read_through: MessageId | null,
+/**
+ * Latest timeline row for conversation-list previews.
+ */
+last_message?: MessageProjection, };

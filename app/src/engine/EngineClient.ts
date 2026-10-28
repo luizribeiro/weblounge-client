@@ -362,7 +362,8 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
-    case "buffer_added": {
+    case "buffer_added":
+    case "buffer_updated": {
       const buffer = decodeBuffer(value.buffer);
       if (buffer !== undefined) return { type: messageType, buffer };
       break;
@@ -463,6 +464,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "network_state_changed" ||
     value === "buffers_changed" ||
     value === "buffer_added" ||
+    value === "buffer_updated" ||
     value === "focus_buffer_requested" ||
     value === "messages_appended" ||
     value === "messages_prepended" ||
@@ -514,6 +516,10 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
 }
 
 function decodeBuffer(value: unknown): BufferProjection | undefined {
+  const lastMessage =
+    isRecord(value) && value.last_message !== undefined
+      ? decodeMessage(value.last_message)
+      : undefined;
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
@@ -524,7 +530,8 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     !(value.topic === null || typeof value.topic === "string") ||
     typeof value.unread !== "number" ||
     typeof value.mentions !== "number" ||
-    !(value.read_through === null || typeof value.read_through === "number")
+    !(value.read_through === null || typeof value.read_through === "number") ||
+    (value.last_message !== undefined && lastMessage === undefined)
   ) {
     return undefined;
   }
@@ -538,6 +545,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     unread: value.unread,
     mentions: value.mentions,
     read_through: value.read_through,
+    ...(lastMessage === undefined ? {} : { last_message: lastMessage }),
   };
 }
 

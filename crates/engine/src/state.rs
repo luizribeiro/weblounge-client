@@ -129,6 +129,7 @@ impl NetworkModel {
                 unread: 0,
                 mentions: 0,
                 read_through: None,
+                last_message: None,
             },
             key: None,
             timeline: Vec::new(),
@@ -402,10 +403,15 @@ impl NetworkModel {
                 text,
                 kind,
             },
-            vec![EngineToUi::MessagesAppended {
-                buffer_id,
-                messages: vec![message],
-            }],
+            vec![
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages: vec![message],
+                },
+                EngineToUi::BufferUpdated {
+                    buffer: self.buffers[&buffer_id].projection.clone(),
+                },
+            ],
         ))
     }
 
@@ -768,6 +774,9 @@ impl NetworkModel {
             buffer_id,
             messages: vec![message],
         });
+        events.push(EngineToUi::BufferUpdated {
+            buffer: self.buffers[&buffer_id].projection.clone(),
+        });
         events.push(EngineToUi::UnreadChanged {
             buffer_id,
             unread,
@@ -811,6 +820,7 @@ impl NetworkModel {
             unread: 0,
             mentions: 0,
             read_through: None,
+            last_message: None,
         };
         self.buffers.insert(
             id,
@@ -886,6 +896,10 @@ impl NetworkModel {
 }
 
 fn derive_read_projection(buffer: &mut BufferState) {
+    buffer.projection.last_message = buffer
+        .timeline
+        .last()
+        .map(|record| record.projection.clone());
     buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
         buffer
             .timeline
@@ -1113,6 +1127,14 @@ mod tests {
         );
 
         assert_eq!(timeline(&model), ["earlier", "later"]);
+        let preview = model
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.title == "#room")
+            .and_then(|buffer| buffer.projection.last_message.as_ref())
+            .expect("latest message is projected for the buffer list");
+        assert_eq!(preview.text, "later");
+        assert_eq!(preview.author, "alice");
     }
 
     #[test]
