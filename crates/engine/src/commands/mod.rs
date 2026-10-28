@@ -1,6 +1,5 @@
 #[allow(dead_code, reason = "consumed by the command declaration next")]
 mod arguments;
-#[allow(dead_code, reason = "wired into request execution next")]
 mod declaration;
 mod spec;
 #[allow(dead_code, reason = "consumed by the command declaration next")]
@@ -25,7 +24,6 @@ pub(crate) enum InputError {
 }
 
 impl InputError {
-    #[allow(dead_code, reason = "wired into request rejection next")]
     pub(crate) const fn message_key(&self) -> &'static str {
         match self {
             Self::Empty => "composer.empty_input",
@@ -36,7 +34,6 @@ impl InputError {
     }
 }
 
-#[allow(dead_code, reason = "wired into request execution next")]
 pub(crate) fn parse(input: &str, chantypes: &str) -> Result<Command, InputError> {
     if input.is_empty() {
         return Err(InputError::Empty);

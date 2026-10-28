@@ -8,8 +8,8 @@ use tokio::sync::mpsc;
 use crate::{
     BufferId, EngineRequest, EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId,
+    commands::{self, Command},
     direct_target::DirectSendError,
-    input,
     state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
@@ -20,6 +20,11 @@ struct RunningNetwork {
     instance: u64,
     client: papo::Client,
     model: NetworkModel,
+}
+
+struct JoinTarget {
+    channel: String,
+    key: Option<String>,
 }
 
 struct RuntimeState {
@@ -115,37 +120,9 @@ impl Runtime {
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
             }
-            EngineRequest::SubmitInput { buffer_id, input } => match input::parse(&input) {
-                Ok(input::ParsedInput::Message(text)) => {
-                    self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
-                }
-                Ok(input::ParsedInput::Me(text)) => {
-                    self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Action)
-                }
-                Ok(input::ParsedInput::Join { targets }) => self.join(envelope.id, targets),
-                Ok(input::ParsedInput::Part { reason }) => {
-                    self.part(envelope.id, buffer_id, reason)
-                }
-                Ok(input::ParsedInput::Msg { nick, text }) => {
-                    self.message_direct(envelope.id, nick, text)
-                }
-                Ok(input::ParsedInput::Nick { nick }) => self.set_nick(envelope.id, nick),
-                Ok(input::ParsedInput::Topic { text }) => {
-                    self.set_topic(envelope.id, buffer_id, text)
-                }
-                Ok(input::ParsedInput::Quit { reason }) => {
-                    let network_id = lock(&self.state)
-                        .network
-                        .as_ref()
-                        .map(|running| running.model.id());
-                    if let Some(id) = network_id {
-                        self.disconnect(envelope.id, id, reason)
-                    } else {
-                        rejected_command(envelope.id, "engine.network_not_found")
-                    }
-                }
-                Err(error) => rejected_command(envelope.id, error.message_key()),
-            },
+            EngineRequest::SubmitInput { buffer_id, input } => {
+                self.submit_input(envelope.id, buffer_id, &input)
+            }
             EngineRequest::CompleteInput { buffer_id, prefix } => {
                 self.complete_input(envelope.id, buffer_id, prefix)
             }
@@ -169,6 +146,56 @@ impl Runtime {
             EngineRequest::OpenDirect { network_id, nick } => {
                 self.open_direct(envelope.id, network_id, nick)
             }
+        }
+    }
+
+    fn submit_input(&self, id: String, buffer_id: BufferId, input: &str) -> Vec<EngineToUi> {
+        let chantypes = lock(&self.state).network.as_ref().map_or_else(
+            || "#&".to_owned(),
+            |running| running.client.state().isupport().chantypes().to_owned(),
+        );
+        match commands::parse(input, &chantypes) {
+            Ok(Command::Say { text }) => {
+                self.send_input(id, buffer_id, text.0, crate::MessageKind::Text)
+            }
+            Ok(Command::Me { text }) => {
+                self.send_input(id, buffer_id, text.0, crate::MessageKind::Action)
+            }
+            Ok(Command::Join { channels, keys }) => {
+                let keys = keys.map_or_else(Vec::new, |keys| keys.0);
+                let targets = channels
+                    .0
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, channel)| JoinTarget {
+                        channel,
+                        key: keys.get(index).cloned(),
+                    })
+                    .collect();
+                self.join(id, targets)
+            }
+            Ok(Command::Part { channel: _, reason }) => {
+                self.part(id, buffer_id, reason.map(|reason| reason.0))
+            }
+            Ok(Command::Msg { target, text }) => self.message_direct(id, target.0, text.0),
+            Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
+            Ok(Command::Topic {
+                channel: _,
+                text: Some(text),
+            }) => self.set_topic(id, buffer_id, text.0),
+            Ok(Command::Topic { text: None, .. }) => vec![EngineToUi::CommandResult { id }],
+            Ok(Command::Quit { reason }) => {
+                let network_id = lock(&self.state)
+                    .network
+                    .as_ref()
+                    .map(|running| running.model.id());
+                if let Some(network_id) = network_id {
+                    self.disconnect(id, network_id, reason.map(|reason| reason.0))
+                } else {
+                    rejected_command(id, "engine.network_not_found")
+                }
+            }
+            Err(error) => rejected_command(id, error.message_key()),
         }
     }
 
@@ -404,7 +431,7 @@ impl Runtime {
         output
     }
 
-    fn join(&self, command_id: String, targets: Vec<input::JoinTarget>) -> Vec<EngineToUi> {
+    fn join(&self, command_id: String, targets: Vec<JoinTarget>) -> Vec<EngineToUi> {
         let Some((client, instance)) = lock(&self.state)
             .network
             .as_ref()
