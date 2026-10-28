@@ -1,0 +1,121 @@
+.root {
+  background: var(--wl-color-surface);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-height: 58px;
+  padding: 7px 14px;
+}
+
+.logo {
+  align-items: center;
+  background: var(--wl-color-fg);
+  border-radius: var(--wl-radius-avatar);
+  display: flex;
+  flex: 0 0 36px;
+  height: 36px;
+  justify-content: center;
+}
+
+.logoMark {
+  background: var(--wl-color-surface);
+  height: 26px;
+  mask: url("/brand/chair.svg") center / contain no-repeat;
+  width: 26px;
+}
+
+.identity {
+  flex: 1;
+  min-width: 0;
+}
+.identity h1 {
+  font-size: 18px;
+  margin: 0;
+}
+.status {
+  color: var(--wl-color-muted);
+  font-size: 12px;
+}
+.statusDot {
+  background: var(--wl-color-online);
+  border-radius: 50%;
+  display: inline-block;
+  height: 7px;
+  margin-inline-end: 6px;
+  width: 7px;
+}
+
+.search {
+  align-items: center;
+  background: var(--wl-color-chip);
+  border: 1px solid transparent;
+  border-radius: var(--wl-radius-composer);
+  display: flex;
+  margin: 2px 12px 8px;
+  min-height: 40px;
+  padding: 0 11px;
+}
+
+.search:focus-within {
+  border-color: var(--wl-color-focus-ring);
+}
+.search input {
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-fg);
+  flex: 1;
+  font: inherit;
+  min-width: 0;
+}
+.search input:focus-visible {
+  border: 0;
+}
+.search input::placeholder {
+  color: var(--wl-color-muted);
+}
+
+.filters {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 0 12px 9px;
+}
+
+.filter {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-pill);
+  color: var(--wl-color-muted);
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.filter[aria-pressed="true"] {
+  background: var(--wl-color-accent);
+  border-color: var(--wl-color-accent);
+  color: var(--wl-color-accent-fg);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.empty {
+  color: var(--wl-color-muted);
+  padding: 32px 18px;
+  text-align: center;
+}
