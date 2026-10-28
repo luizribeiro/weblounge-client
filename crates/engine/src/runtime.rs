@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use tokio::sync::mpsc;
 
@@ -23,6 +26,40 @@ struct RuntimeState {
     next_network_id: u64,
     next_instance: u64,
     network: Option<RunningNetwork>,
+    member_views: MemberViews,
+}
+
+#[derive(Clone)]
+struct MemberView {
+    buffer_id: BufferId,
+    offset: u32,
+    filter: String,
+}
+
+#[derive(Default)]
+struct MemberViews {
+    views: HashMap<String, MemberView>,
+    versions: HashMap<BufferId, u64>,
+}
+
+impl MemberViews {
+    fn remember(&mut self, view_id: &str, view: MemberView) -> u64 {
+        let version = self.versions.get(&view.buffer_id).copied().unwrap_or(0);
+        self.views.insert(view_id.to_owned(), view);
+        version
+    }
+
+    fn changed(&mut self, buffer_id: BufferId) -> (u64, Vec<(String, MemberView)>) {
+        let version = self.versions.entry(buffer_id).or_default();
+        *version = version.saturating_add(1);
+        let views = self
+            .views
+            .iter()
+            .filter(|(_, view)| view.buffer_id == buffer_id)
+            .map(|(id, view)| (id.clone(), view.clone()))
+            .collect();
+        (*version, views)
+    }
 }
 
 /// Owns live papo clients independently of any attached UI tab.
@@ -38,6 +75,7 @@ impl Runtime {
                 next_network_id: 1,
                 next_instance: 1,
                 network: None,
+                member_views: MemberViews::default(),
             })),
             outbound,
         }
@@ -122,14 +160,17 @@ impl Runtime {
                 offset,
                 limit,
                 filter,
-            } => self.request_members(
-                envelope.id,
-                buffer_id,
-                view_id.as_deref().unwrap_or("legacy"),
-                offset,
-                limit,
-                filter.as_deref().unwrap_or_default(),
-            ),
+            } => {
+                let view_id = view_id.unwrap_or_else(|| format!("legacy:{}", buffer_id.0));
+                self.request_members(
+                    envelope.id,
+                    buffer_id,
+                    &view_id,
+                    offset,
+                    limit,
+                    filter.as_deref().unwrap_or_default(),
+                )
+            }
             Command::OpenDirect { network_id, nick } => {
                 self.open_direct(envelope.id, network_id, nick)
             }
@@ -168,21 +209,24 @@ impl Runtime {
         _limit: u32,
         filter: &str,
     ) -> Vec<EngineToUi> {
-        let state = lock(&self.state);
+        let mut state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
             return rejected_command(command_id, "engine.channel_required");
         };
-        let Some(window) = crate::members::project(
-            &running.client.state(),
-            &channel,
-            buffer_id,
+        let snapshot = running.client.state();
+        let version = state.member_views.remember(
             view_id,
-            0,
-            offset,
-            filter,
+            MemberView {
+                buffer_id,
+                offset,
+                filter: filter.to_owned(),
+            },
+        );
+        let Some(window) = crate::members::project(
+            &snapshot, &channel, buffer_id, view_id, version, offset, filter,
         ) else {
             return rejected_command(command_id, "engine.channel_not_found");
         };
@@ -698,7 +742,7 @@ fn member_windows(
     instance: u64,
     channels: Vec<papo::ChannelName>,
 ) -> Vec<EngineToUi> {
-    let state = lock(state);
+    let mut state = lock(state);
     let Some(running) = state
         .network
         .as_ref()
@@ -707,11 +751,31 @@ fn member_windows(
         return Vec::new();
     };
     let snapshot = client.state();
-    channels
+    let buffers = channels
         .into_iter()
         .filter_map(|channel| {
             let buffer_id = running.model.buffer_id_for_channel(&channel)?;
-            crate::members::project(&snapshot, &channel, buffer_id, "legacy", 0, 0, "")
+            Some((channel, buffer_id))
+        })
+        .collect::<Vec<_>>();
+    buffers
+        .into_iter()
+        .flat_map(|(channel, buffer_id)| {
+            let (version, views) = state.member_views.changed(buffer_id);
+            views
+                .into_iter()
+                .filter_map(|(view_id, view)| {
+                    crate::members::project(
+                        &snapshot,
+                        &channel,
+                        buffer_id,
+                        &view_id,
+                        version,
+                        view.offset,
+                        &view.filter,
+                    )
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -1107,12 +1171,40 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        RunningNetwork, Runtime, RuntimeState, fetch_latest, lock, process_event, process_history,
+        MemberViews, RunningNetwork, Runtime, RuntimeState, fetch_latest, lock, process_event,
+        process_history,
     };
     use crate::{
         BufferId, BufferKind, Command, CommandEnvelope, EngineToUi, NetworkId, SaslCredentials,
         state::{NetworkModel, SendTarget},
     };
+
+    #[test]
+    fn member_views_keep_independent_ranges_and_advance_together() {
+        let mut views = MemberViews::default();
+        for (id, offset) in [("left", 640), ("right", 1_280)] {
+            assert_eq!(
+                views.remember(
+                    id,
+                    super::MemberView {
+                        buffer_id: BufferId(7),
+                        offset,
+                        filter: String::new(),
+                    },
+                ),
+                0
+            );
+        }
+
+        let (version, changed) = views.changed(BufferId(7));
+        let mut ranges = changed
+            .into_iter()
+            .map(|(id, view)| (id, view.offset))
+            .collect::<Vec<_>>();
+        ranges.sort();
+        assert_eq!(version, 1);
+        assert_eq!(ranges, [("left".into(), 640), ("right".into(), 1_280)]);
+    }
 
     #[test]
     fn rejected_commands_emit_a_typed_terminal_result() {
@@ -1161,6 +1253,7 @@ mod tests {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
                 next_instance: 2,
+                member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
                     client,
@@ -1194,6 +1287,7 @@ mod tests {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
                 next_instance: 2,
+                member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
                     client,
@@ -1246,6 +1340,7 @@ mod tests {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
                 next_instance: 2,
+                member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
                     client,
@@ -1292,6 +1387,7 @@ mod tests {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
                 next_instance: 2,
+                member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
                     client,
@@ -1398,6 +1494,7 @@ mod tests {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
                 next_instance: 2,
+                member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
                     client,
@@ -1455,6 +1552,7 @@ mod tests {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
                 next_instance: 2,
+                member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
                     client,
@@ -1532,6 +1630,7 @@ mod tests {
         let state = Arc::new(Mutex::new(RuntimeState {
             next_network_id: 2,
             next_instance: 2,
+            member_views: MemberViews::default(),
             network: Some(RunningNetwork {
                 instance: 1,
                 client,
