@@ -49,3 +49,12 @@
   background: var(--wl-color-chip);
   color: var(--wl-color-fg);
 }
+
+.iconButton svg {
+  fill: none;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.7;
+  width: 18px;
+}

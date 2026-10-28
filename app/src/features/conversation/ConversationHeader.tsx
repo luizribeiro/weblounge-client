@@ -43,7 +43,12 @@ export function ConversationHeader(props: ConversationHeaderProps) {
         title={props.membersTooltip}
         type="button"
       >
-        <span aria-hidden="true">♟</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 18c.5-3.2 2.3-5 5.5-5s5 1.8 5.5 5" />
+          <circle cx="17" cy="9" r="2.4" />
+          <path d="M15.4 14.1c2.9-.7 4.6.6 5.1 3.4" />
+        </svg>
       </button>
     </header>
   );

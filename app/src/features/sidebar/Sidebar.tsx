@@ -84,7 +84,7 @@ export function Sidebar(props: SidebarProps) {
     <aside aria-label="Channel list" class={styles.sidebar} data-sidebar="true">
       <div class={styles.brand}>
         <div class={styles.logo}>
-          <img alt="" draggable={false} src="/brand/chair.svg" />
+          <span aria-hidden="true" class={styles.logoMark} />
         </div>
         <div class={styles.brandText}>
           <h1>
@@ -174,7 +174,7 @@ export function Sidebar(props: SidebarProps) {
           onClick={() => run("network.add")}
           type="button"
         >
-          <span aria-hidden="true">＋</span>
+          <span aria-hidden="true">+</span>
           <Line>Add network</Line>
         </button>
       </nav>

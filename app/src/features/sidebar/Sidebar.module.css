@@ -30,8 +30,10 @@
   overflow: hidden;
 }
 
-.logo img {
+.logoMark {
+  background: var(--wl-color-panel);
   height: 27px;
+  mask: url("/brand/chair.svg") center / contain no-repeat;
   width: 27px;
 }
 
