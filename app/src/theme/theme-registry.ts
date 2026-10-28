@@ -89,6 +89,7 @@ export const motionTokens = {
 } as const;
 
 export const themes = buildRegistry(themeFiles);
+export const nickPaletteSize = sharedNickPaletteSize(themes);
 
 export function themeStyleSheet(registry = themes): string {
   const motion = Object.entries(motionTokens)
@@ -122,6 +123,15 @@ function buildRegistry(
   if (ids.size !== registry.length) throw new Error("duplicate theme id");
   if (orders.size !== registry.length) throw new Error("duplicate theme order");
   return registry.sort((first, second) => first.order - second.order);
+}
+
+function sharedNickPaletteSize(registry: readonly ThemeDefinition[]): number {
+  const sizes = new Set(registry.map((theme) => theme.nickPalette.length));
+  if (sizes.size !== 1)
+    throw new Error("theme nick palettes must have equal sizes");
+  const size = registry[0]?.nickPalette.length;
+  if (size === undefined) throw new Error("at least one theme is required");
+  return size;
 }
 
 function parseTheme(path: string, value: unknown): ThemeDefinition {

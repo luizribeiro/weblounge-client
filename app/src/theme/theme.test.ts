@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { installTheme } from "./theme-controller";
-import { motionTokens, themeStyleSheet, themes } from "./theme-registry";
+import {
+  motionTokens,
+  nickPaletteSize,
+  themeStyleSheet,
+  themes,
+} from "./theme-registry";
 
 class FakeMedia {
   listener: (() => void) | undefined;
@@ -25,6 +30,7 @@ describe("theme registry", () => {
   it("loads Lounge themes and emits their tokens", () => {
     expect(themes.map((theme) => theme.id)).toEqual(["lounge", "lounge-night"]);
     expect(themes[0]?.nickPalette).toHaveLength(6);
+    expect(nickPaletteSize).toBe(6);
     expect(themeStyleSheet()).toContain("--wl-color-bg:#f3f1e9");
     expect(themeStyleSheet()).toContain("--wl-color-bg:#18221e");
   });

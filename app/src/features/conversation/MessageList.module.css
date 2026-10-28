@@ -1,0 +1,61 @@
+.list {
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px 22px;
+}
+
+.row {
+  align-items: baseline;
+  border-radius: var(--wl-radius-control);
+  display: grid;
+  font-size: calc(var(--wl-font-base) + var(--wl-density-message-font-delta));
+  gap: 10px;
+  grid-template-columns: 48px 96px minmax(0, 1fr) auto;
+  line-height: var(--wl-density-message-line-height);
+  padding: var(--wl-density-message-one-line-row-padding) 8px;
+}
+
+.row:hover {
+  background: var(--wl-color-panel-alt);
+}
+
+.mentioned {
+  background: var(--wl-color-mention-bg);
+}
+
+.time {
+  color: var(--wl-color-muted);
+  font-family: var(--wl-font-mono);
+  font-size: 11px;
+}
+
+.nick {
+  font-weight: 650;
+  text-align: end;
+}
+
+.own {
+  color: var(--wl-color-self-nick);
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.pending,
+.failed {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pending {
+  color: var(--wl-color-muted);
+}
+
+.failed {
+  color: var(--wl-color-error);
+}
