@@ -7,12 +7,13 @@ import {
 } from "solid-js";
 import {
   type ActionContext,
-  type ActionId,
   ActionRegistry,
   detectPlatform,
+  type UiActionId,
 } from "../../actions/action-registry";
 import type {
   BufferProjection,
+  CommandSpec,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -37,6 +38,7 @@ import { createSinglePane, showInFocusedPane } from "./pane-layout";
 export interface DesktopShellProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
+  readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
   readonly completion:
     | {
@@ -136,8 +138,10 @@ export function DesktopShell(props: DesktopShellProps) {
       "switcher.open": () => {},
     },
     detectPlatform(navigator),
+    props.commandSpecs ?? [],
   );
-  const run = (id: ActionId) => registry.run(id, context());
+  createEffect(() => registry.updateCommands(props.commandSpecs ?? []));
+  const run = (id: UiActionId) => registry.run(id, context());
 
   createEffect(() => {
     const activeBufferId = props.activeBufferId;
@@ -369,7 +373,7 @@ function kindOrder(buffer: BufferProjection): number {
   return 2;
 }
 
-function tooltip(registry: ActionRegistry, id: ActionId): string {
+function tooltip(registry: ActionRegistry, id: UiActionId): string {
   const binding = registry.bindingLabel(id);
   return binding === undefined
     ? registry.title(id)

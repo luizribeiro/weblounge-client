@@ -1,4 +1,6 @@
-export type ActionId =
+import type { CommandSpec } from "../engine/protocol";
+
+export type UiActionId =
   | "buffer.next"
   | "buffer.open"
   | "buffer.previous"
@@ -13,6 +15,8 @@ export type ActionId =
   | "settings.open"
   | "sidebar.toggle"
   | "switcher.open";
+export type EngineActionId = `command.${string}`;
+export type ActionId = UiActionId | EngineActionId;
 
 export type ActionScope = "global" | "desktop" | "list";
 export type Platform = "macos" | "other";
@@ -30,6 +34,12 @@ export interface ActionAvailability {
 
 export type ActionHandler = (context: ActionContext) => void;
 
+export interface ActionEntry {
+  readonly id: ActionId;
+  readonly title: string;
+  readonly command?: CommandSpec;
+}
+
 interface Binding {
   readonly key: string;
   readonly code?: string;
@@ -42,7 +52,7 @@ interface Binding {
 }
 
 interface ActionSpec {
-  readonly id: ActionId;
+  readonly id: UiActionId;
   readonly title: string;
   readonly availability: (context: ActionContext) => ActionAvailability;
   readonly binding?: Binding;
@@ -115,34 +125,37 @@ const specs: readonly ActionSpec[] = [
 ];
 
 export class ActionRegistry {
-  readonly #handlers: Readonly<Partial<Record<ActionId, ActionHandler>>>;
+  readonly #handlers: Readonly<Partial<Record<UiActionId, ActionHandler>>>;
   readonly #platform: Platform;
+  #commands: readonly CommandSpec[];
 
   constructor(
-    handlers: Readonly<Partial<Record<ActionId, ActionHandler>>>,
+    handlers: Readonly<Partial<Record<UiActionId, ActionHandler>>>,
     platform: Platform,
+    commands: readonly CommandSpec[] = [],
   ) {
     this.#handlers = handlers;
     this.#platform = platform;
+    this.#commands = commands;
   }
 
-  availability(id: ActionId, context: ActionContext): ActionAvailability {
+  availability(id: UiActionId, context: ActionContext): ActionAvailability {
     const spec = findSpec(id);
     if (this.#handlers[id] === undefined) return { state: "unavailable" };
     return spec.availability(context);
   }
 
-  run(id: ActionId, context: ActionContext): boolean {
+  run(id: UiActionId, context: ActionContext): boolean {
     if (this.availability(id, context).state !== "available") return false;
     this.#handlers[id]?.(context);
     return true;
   }
 
-  title(id: ActionId): string {
+  title(id: UiActionId): string {
     return findSpec(id).title;
   }
 
-  bindingLabel(id: ActionId): string | undefined {
+  bindingLabel(id: UiActionId): string | undefined {
     return findSpec(id).binding?.label[this.#platform];
   }
 
@@ -168,6 +181,53 @@ export class ActionRegistry {
     event.stopPropagation();
     return this.run(spec.id, context);
   }
+
+  updateCommands(commands: readonly CommandSpec[]): void {
+    this.#commands = commands;
+  }
+
+  palette(context: ActionContext): readonly ActionEntry[] {
+    return this.#entries(context, "palette");
+  }
+
+  help(context: ActionContext): readonly ActionEntry[] {
+    return this.#entries(context, "help");
+  }
+
+  commandHelp(requested: string | null): string {
+    if (requested === null) {
+      return this.#commands.map(({ name }) => `/${name}`).join(", ");
+    }
+    const command = this.#commands.find(
+      ({ name, aliases }) => name === requested || aliases.includes(requested),
+    );
+    return command === undefined
+      ? `Unknown command /${requested}`
+      : `/${command.name} — ${command.usage}`;
+  }
+
+  #entries(
+    context: ActionContext,
+    surface: "palette" | "help",
+  ): readonly ActionEntry[] {
+    const ui = specs
+      .filter(
+        (spec) =>
+          this.#handlers[spec.id] !== undefined &&
+          spec.availability(context).state === "available",
+      )
+      .map(({ id, title }) => ({ id, title }));
+    const commands = this.#commands
+      .filter(
+        (command) => surface === "help" || command.surfaces.includes("palette"),
+      )
+      .map((command) => ({
+        id: `command.${command.name}` as const,
+        title: command.description,
+        command,
+      }));
+    return [...ui, ...commands];
+  }
 }
 
 export function detectPlatform(navigator: Navigator): Platform {
@@ -175,7 +235,7 @@ export function detectPlatform(navigator: Navigator): Platform {
 }
 
 function command(
-  id: ActionId,
+  id: UiActionId,
   title: string,
   availability: ActionSpec["availability"],
   binding?: Binding,
@@ -219,7 +279,7 @@ function key(keyValue: string, label: string, scope: ActionScope): Binding {
   };
 }
 
-function findSpec(id: ActionId): ActionSpec {
+function findSpec(id: UiActionId): ActionSpec {
   const spec = specs.find((candidate) => candidate.id === id);
   if (spec === undefined) throw new Error(`unknown command: ${id}`);
   return spec;

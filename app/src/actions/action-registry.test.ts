@@ -107,6 +107,25 @@ describe("ActionRegistry", () => {
     });
   });
 
+  it("merges UI actions and runtime commands for palette and help", () => {
+    const registry = new ActionRegistry({ "settings.open": vi.fn() }, "other", [
+      command("join", ["slash", "palette"]),
+      command("say", ["slash"]),
+    ]);
+
+    expect(registry.palette(context).map(({ id }) => id)).toEqual([
+      "settings.open",
+      "command.join",
+    ]);
+    expect(registry.help(context).map(({ id }) => id)).toEqual([
+      "settings.open",
+      "command.join",
+      "command.say",
+    ]);
+    expect(registry.commandHelp(null)).toBe("/join, /say");
+    expect(registry.commandHelp("j")).toBe("/join — cmd.join.usage");
+  });
+
   it("detects Apple shortcut labels", () => {
     expect(detectPlatform({ platform: "MacIntel" } as Navigator)).toBe("macos");
     expect(detectPlatform({ platform: "Linux x86_64" } as Navigator)).toBe(
@@ -129,4 +148,22 @@ function modifiedKeydown(key: string, target: Element): KeyboardEvent {
   });
   Object.defineProperty(event, "target", { value: target });
   return event;
+}
+
+function command(
+  name: string,
+  surfaces: ("slash" | "palette")[],
+): import("../engine/protocol").CommandSpec {
+  return {
+    name,
+    aliases: name === "join" ? ["j"] : [],
+    arguments: [],
+    usage: `cmd.${name}.usage`,
+    description: `cmd.${name}.description`,
+    requirements: [{ type: "connected" }],
+    permission: "anyone",
+    surfaces,
+    confirm: "none",
+    secret_arguments: false,
+  };
 }

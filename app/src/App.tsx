@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
+import { ActionRegistry, detectPlatform } from "./actions/action-registry";
 import { consumeDebugPassword } from "./debug-irc-config";
 import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
@@ -9,6 +10,7 @@ import {
 } from "./engine/EngineClient";
 import type {
   BufferProjection,
+  CommandSpec,
   EngineClientMessage,
   MembershipProjection,
   MessageProjection,
@@ -38,6 +40,7 @@ export function App(props: AppProps) {
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [composerNotice, setComposerNotice] = createSignal<string>();
+  const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>([]);
   const [completion, setCompletion] = createSignal<{
     bufferId: number;
     prefix: string;
@@ -75,6 +78,17 @@ export function App(props: AppProps) {
       }
       if (message.type === "notice") {
         setEngineNotice(t(message.message_key));
+      }
+      if (message.type === "command_specs_changed") {
+        setCommandSpecs(message.specs);
+      }
+      if (message.type === "command_help_requested") {
+        const registry = new ActionRegistry(
+          {},
+          detectPlatform(navigator),
+          commandSpecs(),
+        );
+        setComposerNotice(registry.commandHelp(message.command));
       }
       if (message.type === "completion_result") {
         setCompletion({
@@ -157,6 +171,7 @@ export function App(props: AppProps) {
         memberViewScope={clientId}
         networks={networks()}
         buffers={buffers()}
+        commandSpecs={commandSpecs()}
         composerNotice={composerNotice()}
         completion={completion()}
         focusRequest={focusRequest()}

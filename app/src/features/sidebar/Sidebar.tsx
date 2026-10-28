@@ -1,8 +1,8 @@
 import { createEffect, createSignal, For, onCleanup } from "solid-js";
 import type {
   ActionContext,
-  ActionId,
   ActionRegistry,
+  UiActionId,
 } from "../../actions/action-registry";
 import type { NetworkProjection } from "../../engine/protocol";
 import { Line } from "../../ui/Line";
@@ -32,7 +32,7 @@ export function Sidebar(props: SidebarProps) {
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
-  const run = (id: ActionId, target?: SidebarBuffer) =>
+  const run = (id: UiActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
       ...props.commandContext,
       ...(target === undefined
@@ -169,7 +169,7 @@ function networkSummary(networks: readonly NetworkProjection[]): string {
   return `${count} ${count === 1 ? "network" : "networks"} · ${footerStatus(networks)}`;
 }
 
-function tooltip(registry: ActionRegistry, id: ActionId): string {
+function tooltip(registry: ActionRegistry, id: UiActionId): string {
   const binding = registry.bindingLabel(id);
   return binding === undefined
     ? registry.title(id)
