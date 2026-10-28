@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => {
     process.env.WEBLOUNGE_ENGINE_WASM_DIR ??
     resolve(import.meta.dirname, "../result/dist");
   const wasmPath = resolve(wasmDirectory, "engine_bg.wasm");
+  const wasmModulePath =
+    mode === "test"
+      ? resolve(import.meta.dirname, "src/engine/wasm-test-stub.ts")
+      : resolve(wasmDirectory, "engine.js");
 
   if (mode !== "test" && !existsSync(wasmPath)) {
     throw new Error("engine wasm is missing; run `nix build .#engine-wasm`");
@@ -23,7 +27,7 @@ export default defineConfig(({ mode }) => {
     publicDir: wasmDirectory,
     resolve: {
       alias: {
-        "@weblounge-engine": resolve(wasmDirectory, "engine.js"),
+        "@weblounge-engine": wasmModulePath,
       },
     },
     test: {
