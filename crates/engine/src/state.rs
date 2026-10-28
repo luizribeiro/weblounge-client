@@ -72,6 +72,8 @@ pub(crate) struct NetworkModel {
     names: HashMap<NameKey, BufferId>,
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
+    #[cfg(test)]
+    name_rebuilds: usize,
 }
 
 impl NetworkModel {
@@ -106,6 +108,8 @@ impl NetworkModel {
             names: HashMap::new(),
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
+            #[cfg(test)]
+            name_rebuilds: 0,
         }
     }
 
@@ -164,6 +168,10 @@ impl NetworkModel {
     }
 
     pub(crate) fn rebuild_name_keys(&mut self, state: &papo::State) {
+        #[cfg(test)]
+        {
+            self.name_rebuilds += 1;
+        }
         self.names.clear();
         for (id, buffer) in &mut self.buffers {
             let key = match buffer.projection.kind {
@@ -180,6 +188,11 @@ impl NetworkModel {
                 self.names.insert(key, *id);
             }
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn name_rebuild_count(&self) -> usize {
+        self.name_rebuilds
     }
 
     pub(crate) fn rename_channel(

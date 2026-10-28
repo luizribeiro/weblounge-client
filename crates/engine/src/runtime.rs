@@ -269,6 +269,7 @@ fn process_event(
             Vec::new()
         }
         papo::Event::Connected(connected) => {
+            running.model.rebuild_name_keys(&snapshot);
             output.push(running.model.set_connection(
                 NetworkConnectionState::Online,
                 Some(connected.nick.to_string()),
@@ -538,6 +539,13 @@ mod tests {
         .await;
         let (state, outbound, mut receiver) = harness(client.clone());
         process_event(&state, &outbound, &client, 1, connected);
+        assert_eq!(
+            lock(&state)
+                .network
+                .as_ref()
+                .map(|running| running.model.name_rebuild_count()),
+            Some(1)
+        );
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
             EngineToUi::NetworkStateChanged { network }
@@ -558,6 +566,13 @@ mod tests {
         )
         .await;
         process_event(&state, &outbound, &client, 1, connected);
+        assert_eq!(
+            lock(&state)
+                .network
+                .as_ref()
+                .map(|running| running.model.name_rebuild_count()),
+            Some(2)
+        );
 
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
