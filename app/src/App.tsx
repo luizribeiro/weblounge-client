@@ -35,6 +35,11 @@ export function App(props: AppProps) {
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [composerNotice, setComposerNotice] = createSignal<string>();
+  const [completion, setCompletion] = createSignal<{
+    bufferId: number;
+    prefix: string;
+    candidates: readonly string[];
+  }>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
   const [messages, setMessages] = createSignal<
@@ -65,6 +70,13 @@ export function App(props: AppProps) {
         setEngineNotice(
           "This browser uses one connection per tab because SharedWorker is unavailable.",
         );
+      }
+      if (message.type === "completion_result") {
+        setCompletion({
+          bufferId: message.buffer_id,
+          prefix: message.prefix,
+          candidates: message.candidates,
+        });
       }
       applyDebugEvent(
         message,
@@ -113,6 +125,7 @@ export function App(props: AppProps) {
         networks={networks()}
         buffers={buffers()}
         composerNotice={composerNotice()}
+        completion={completion()}
         messages={messages()}
         memberships={memberships()}
         onMarkRead={(bufferId, through) => {
@@ -148,6 +161,18 @@ export function App(props: AppProps) {
                   : "engine.command_failed",
               );
             });
+        }}
+        onRequestCompletion={(bufferId, prefix) => {
+          if (client === undefined) return;
+          setCompletion(undefined);
+          void client.send({
+            id: crypto.randomUUID(),
+            command: {
+              type: "complete_input",
+              buffer_id: bufferId,
+              prefix,
+            },
+          });
         }}
       />
     </div>

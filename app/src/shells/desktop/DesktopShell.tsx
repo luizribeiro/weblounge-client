@@ -34,11 +34,19 @@ interface DesktopShellProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly composerNotice: string | undefined;
+  readonly completion:
+    | {
+        readonly bufferId: number;
+        readonly prefix: string;
+        readonly candidates: readonly string[];
+      }
+    | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onSend: (bufferId: number, text: string) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
+  readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -221,11 +229,23 @@ export function DesktopShell(props: DesktopShellProps) {
               <Composer
                 bufferId={activeBuffer()?.id ?? 0}
                 bufferTitle={activeBuffer()?.title ?? ""}
-                candidates={composerCandidates(
-                  props.messages.get(activeBuffer()?.id ?? -1) ?? [],
-                  props.buffers,
-                )}
+                candidatePrefix={
+                  props.completion?.bufferId === activeBuffer()?.id
+                    ? props.completion?.prefix
+                    : undefined
+                }
+                candidates={
+                  props.completion?.bufferId === activeBuffer()?.id
+                    ? props.completion?.candidates
+                    : []
+                }
                 disabled={activeBuffer()?.kind === "server"}
+                onRequestCandidates={(prefix) => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined) {
+                    props.onRequestCompletion(buffer.id, prefix);
+                  }
+                }}
                 onSelectLast={() => messageListController?.selectLastOwn()}
                 onSend={(text) => {
                   const buffer = activeBuffer();
@@ -263,26 +283,6 @@ function latestCommitted(
       (message) =>
         message.delivery === "received" || message.delivery === "confirmed",
     );
-}
-
-function composerCandidates(
-  messages: readonly MessageProjection[],
-  buffers: readonly BufferProjection[],
-): string[] {
-  const recent = [...messages].reverse().map((message) => message.author);
-  const commands = [
-    "/join",
-    "/me",
-    "/msg",
-    "/nick",
-    "/part",
-    "/quit",
-    "/topic",
-  ];
-  const channels = buffers
-    .filter((buffer) => buffer.kind === "channel")
-    .map((buffer) => buffer.title);
-  return [...new Set([...commands, ...recent, ...channels])];
 }
 
 function orderedBufferIds(

@@ -4,8 +4,10 @@ import styles from "../conversation/SimpleComposer.module.css";
 interface ComposerProps {
   readonly bufferId: number;
   readonly bufferTitle: string;
-  readonly candidates?: readonly string[];
+  readonly candidatePrefix?: string | undefined;
+  readonly candidates?: readonly string[] | undefined;
   readonly disabled?: boolean;
+  readonly onRequestCandidates?: (prefix: string) => void;
   readonly onSelectLast?: () => void;
   readonly onSend: (text: string) => void;
 }
@@ -17,6 +19,9 @@ export function Composer(props: ComposerProps) {
   let completion:
     | { start: number; end: number; candidates: readonly string[] }
     | undefined;
+  const [pendingCompletion, setPendingCompletion] = createSignal<
+    { start: number; end: number; prefix: string; offset: number } | undefined
+  >();
   let currentBuffer = props.bufferId;
   const [text, setText] = createSignal(
     sessionStorage.getItem(draftKey(currentBuffer)) ?? "",
@@ -27,6 +32,8 @@ export function Composer(props: ComposerProps) {
     if (props.bufferId === currentBuffer) return;
     currentBuffer = props.bufferId;
     setText(sessionStorage.getItem(draftKey(currentBuffer)) ?? "");
+    completion = undefined;
+    setPendingCompletion(undefined);
     setSelected(-1);
   });
 
@@ -35,6 +42,7 @@ export function Composer(props: ComposerProps) {
     sessionStorage.setItem(draftKey(currentBuffer), value);
     if (resetCompletion) {
       completion = undefined;
+      setPendingCompletion(undefined);
       setSelected(-1);
     }
   };
@@ -49,7 +57,16 @@ export function Composer(props: ComposerProps) {
     if (completion === undefined) {
       const end = textarea?.selectionStart ?? text().length;
       const start = text().slice(0, end).search(/\S*$/);
-      const token = text().slice(start, end).toLocaleLowerCase();
+      const prefix = text().slice(start, end);
+      const token = prefix.toLocaleLowerCase();
+      if (
+        props.onRequestCandidates !== undefined &&
+        props.candidatePrefix?.toLocaleLowerCase() !== token
+      ) {
+        setPendingCompletion({ start, end, prefix, offset });
+        props.onRequestCandidates(prefix);
+        return true;
+      }
       completion = {
         start,
         end,
@@ -74,6 +91,19 @@ export function Composer(props: ComposerProps) {
     );
     return true;
   };
+  createEffect(() => {
+    const prefix = props.candidatePrefix;
+    const candidates = props.candidates;
+    const pending = pendingCompletion();
+    if (pending === undefined || prefix !== pending.prefix) return;
+    completion = {
+      start: pending.start,
+      end: pending.end,
+      candidates: candidates ?? [],
+    };
+    setPendingCompletion(undefined);
+    complete(pending.offset);
+  });
   const keydown: JSX.EventHandler<HTMLTextAreaElement, KeyboardEvent> = (
     event,
   ) => {

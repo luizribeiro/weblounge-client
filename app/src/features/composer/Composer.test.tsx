@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
@@ -51,6 +51,32 @@ it("filters slash completion by the current token", () => {
   fireEvent.input(input, { target: { value: "/j" } });
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("/join ");
+});
+
+it("requests engine candidates once and applies the asynchronous result", async () => {
+  const [result, setResult] = createSignal<{
+    prefix: string;
+    candidates: readonly string[];
+  }>();
+  const request = vi.fn((value: string) => {
+    setResult({ prefix: value, candidates: ["weblounge"] });
+  });
+  render(() => (
+    <Composer
+      bufferId={6}
+      bufferTitle="#rust"
+      candidatePrefix={result()?.prefix}
+      candidates={result()?.candidates}
+      onRequestCandidates={request}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "weblo" } });
+  fireEvent.keyDown(input, { key: "Tab" });
+
+  expect(request).toHaveBeenCalledWith("weblo");
+  await waitFor(() => expect(input).toHaveValue("weblounge "));
 });
 
 it("routes Up from an empty composer to message navigation", () => {
