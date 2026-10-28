@@ -43,6 +43,10 @@ export default defineConfig(({ mode }) => {
                   import.meta.dirname,
                   "e2e/member-list-performance.html",
                 ),
+                "member-window-live": resolve(
+                  import.meta.dirname,
+                  "e2e/member-window-live.html",
+                ),
               },
             },
           },
