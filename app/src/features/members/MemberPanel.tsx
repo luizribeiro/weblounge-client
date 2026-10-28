@@ -10,7 +10,12 @@ import {
   memberRowCount,
 } from "./member-rows";
 
-export type MemberWindow = Extract<EngineToUi, { type: "members_changed" }>;
+type MemberWindowEvent = Extract<EngineToUi, { type: "members_changed" }>;
+export type MemberWindow = MemberWindowEvent & {
+  readonly view_id: string;
+  readonly version: number;
+  readonly window_size: number;
+};
 interface MemberPanelProps {
   readonly bufferTitle: string;
   readonly closeLabel?: string | undefined;
@@ -19,7 +24,7 @@ interface MemberPanelProps {
   readonly onClose: () => void;
   readonly onFilter?: ((filter: string) => void) | undefined;
   readonly onOpenDirect: (nick: string) => void;
-  readonly onRequestRange: (offset: number, limit: number) => void;
+  readonly onRequestRange: (offset: number) => void;
   readonly showModeSymbols?: boolean | undefined;
 }
 
@@ -62,10 +67,11 @@ export function MemberPanel(props: MemberPanelProps) {
     }));
   });
   const request = (offset: number) => {
-    const key = `${window()?.buffer_id ?? "new"}:${props.filter ?? ""}:${offset}`;
+    const current = window();
+    const key = `${current?.view_id ?? "new"}:${current?.version ?? "new"}:${props.filter ?? ""}:${offset}`;
     if (key !== requested) {
       requested = key;
-      props.onRequestRange(offset, 256);
+      props.onRequestRange(offset);
     }
   };
   createRenderEffect(() => {
@@ -74,8 +80,10 @@ export function MemberPanel(props: MemberPanelProps) {
     const missing = renderedRows()
       .map(({ row }) => row)
       .find((row) => row?.kind === "member" && row.member === undefined);
-    if (missing?.kind === "member")
-      request(Math.floor(missing.memberIndex / 128) * 128);
+    if (missing?.kind === "member") {
+      const stride = Math.max(1, Math.floor(current.window_size / 2));
+      request(Math.floor(missing.memberIndex / stride) * stride);
+    }
   });
   return (
     <aside aria-label="Members" class={styles.panel}>

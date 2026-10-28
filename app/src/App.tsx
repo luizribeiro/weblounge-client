@@ -94,8 +94,21 @@ export function App(props: AppProps) {
       }
       if (message.type === "members_changed") {
         const viewId = message.view_id;
-        if (viewId !== undefined)
-          setMemberWindows((current) => new Map(current).set(viewId, message));
+        const version = message.version;
+        const windowSize = message.window_size;
+        if (
+          viewId !== undefined &&
+          version !== undefined &&
+          windowSize !== undefined
+        )
+          setMemberWindows((current) =>
+            new Map(current).set(viewId, {
+              ...message,
+              view_id: viewId,
+              version,
+              window_size: windowSize,
+            }),
+          );
       }
       applyDebugEvent(
         message,

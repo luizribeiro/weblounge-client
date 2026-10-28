@@ -11,7 +11,7 @@ interface MobileMemberDrawerProps {
   readonly onClose: () => void;
   readonly onFilter: (filter: string) => void;
   readonly onOpenDirect: (nick: string) => void;
-  readonly onRequestRange: (offset: number, limit: number) => void;
+  readonly onRequestRange: (offset: number) => void;
 }
 
 export function MobileMemberDrawer(props: MobileMemberDrawerProps) {

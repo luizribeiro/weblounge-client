@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { MemberPanel, type MemberWindow } from "./MemberPanel";
 import type { Member } from "./MemberRow";
@@ -16,6 +17,9 @@ const member: Member = {
 const window: MemberWindow = {
   type: "members_changed",
   buffer_id: 2,
+  view_id: "test:desktop:pane-1",
+  version: 0,
+  window_size: 256,
   offset: 0,
   total: 10_000,
   counts: [1, 0, 9_999, 0, 0],
@@ -79,7 +83,29 @@ it("requests the first window while loading", () => {
       onRequestRange={request}
     />
   ));
-  expect(request).toHaveBeenCalledWith(0, 256);
+  expect(request).toHaveBeenCalledWith(0);
+});
+
+it("allows a newer member version to refill the same range", async () => {
+  const request = vi.fn();
+  const [current, setCurrent] = createSignal(window);
+  render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      window={current()}
+      onClose={() => {}}
+      onOpenDirect={() => {}}
+      onRequestRange={request}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(request).toHaveBeenCalledWith(0);
+
+  setCurrent({ ...window, version: 1 });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request).toHaveBeenLastCalledWith(0);
 });
 
 it("filters into the matching casemapped engine window", () => {

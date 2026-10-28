@@ -15,6 +15,7 @@ type Member = Extract<
 >["members"][number];
 const groups = ["operators", "voiced", "online", "away", "bots"] as const;
 const counts = [500, 500, 7_000, 1_000, 1_000] as const;
+const windowSize = 256;
 const members: Member[] = groups.flatMap((group, groupIndex) =>
   Array.from({ length: counts[groupIndex] }, (_, index) => ({
     group,
@@ -39,10 +40,13 @@ function Harness() {
   const windowAt = (offset: number): MemberWindow => ({
     type: "members_changed",
     buffer_id: 1,
+    view_id: "performance:desktop:pane-1",
+    version: 0,
+    window_size: windowSize,
     offset,
     total: members.length,
     counts: [...counts],
-    members: members.slice(offset, offset + 256),
+    members: members.slice(offset, offset + windowSize),
   });
   const [memberWindow, setMemberWindow] = createSignal(windowAt(0));
   return (

@@ -18,6 +18,9 @@ const channel: BufferProjection = {
 const members: MemberWindow = {
   type: "members_changed",
   buffer_id: 2,
+  view_id: "test-port:desktop:pane-1",
+  version: 0,
+  window_size: 256,
   offset: 0,
   total: 7,
   counts: [1, 0, 6, 0, 0],
