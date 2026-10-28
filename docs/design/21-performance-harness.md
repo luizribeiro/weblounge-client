@@ -51,6 +51,12 @@ engine or worker and measures only list virtualisation and painting. Its fixture
 indices produced by the engine's nick hash, including correct own-nick authorship; real protocol
 and history behavior remain covered by the Ergo journeys.
 
+The 10,000-message and 10,000-member scroll scenarios each run five measured passes in one browser
+session. They report every pass's frame p95, the median of those per-pass values, and their
+p95-of-runs. Frame timings remain diagnostic because throttled animation frames quantise to whole
+frames and otherwise-identical single passes can alternate between roughly 16.7ms and 33.4ms. The
+milestone-2 gate therefore applies only to the scenarios' DOM and rendered-row bounds.
+
 ## Milestone-1 scenarios
 
 All performance gates use Ergo. Each scenario includes functional assertions before accepting
@@ -128,10 +134,12 @@ The checked uncompressed budget is therefore 1,347,400 bytes, the measured shipp
 10% headroom rounded up to the next hundred bytes. The increase links papo's WebSocket transport,
 IRC state machine, SASL, history, and Unicode PRECIS implementation into the worker.
 
-Timing scenarios run after one warm-up and produce enough samples for p95. A run with fixture
-errors, missing marks, or an environment mismatch is invalid, never zero. Absolute budgets apply;
-baseline comparison additionally flags regressions above 10% and a metric-specific noise floor.
-Baseline updates require a reviewed environment fingerprint and explanation.
+Timing scenarios run after one warm-up and produce enough samples for p95. Interaction scenarios
+with quantised frame samples repeat within the test and report median and p95-of-runs rather than
+treating one pass as stable. A run with fixture errors, missing marks, or an environment mismatch is
+invalid, never zero. Absolute budgets apply where adopted; baseline comparison additionally flags
+regressions above 10% and a metric-specific noise floor. Baseline updates require a reviewed
+environment fingerprint and explanation.
 
 ## Bundles and Rust benchmarks
 
