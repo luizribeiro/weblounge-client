@@ -657,12 +657,7 @@ fn process_event(
             Vec::new()
         }
         papo::Event::NickChanged(changed) => {
-            if let Some(event) = running
-                .model
-                .rename_direct(changed.actor.nick(), changed.new)
-            {
-                output.push(event);
-            }
+            process_nick_change(&mut running.model, changed, &mut output);
             Vec::new()
         }
         papo::Event::Message(message) => {
@@ -707,6 +702,19 @@ fn process_event(
         let _ = outbound.send(event);
     }
     history_targets
+}
+
+fn process_nick_change(
+    model: &mut NetworkModel,
+    changed: papo::event::NickChanged,
+    output: &mut Vec<EngineToUi>,
+) {
+    if changed.authorship == papo::Authorship::Own {
+        output.push(model.set_nickname(changed.new.to_string()));
+    }
+    if let Some(event) = model.rename_direct(changed.actor.nick(), changed.new) {
+        output.push(event);
+    }
 }
 
 fn disconnected_state(disconnected: &papo::Disconnected) -> NetworkConnectionState {
@@ -1083,7 +1091,7 @@ mod tests {
         );
         wire.register(&[]).await;
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
-        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
@@ -1149,6 +1157,12 @@ mod tests {
         });
         assert_eq!(wire.next_sent().await, "NICK lounge2");
         wire.server(":weblounge!u@host NICK lounge2").await;
+        let changed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::NickChanged(_))
+        })
+        .await;
+        process_runtime_event(&runtime, changed);
+        assert_network_nickname(&mut receiver, "lounge2");
         runtime.command(CommandEnvelope {
             id: "part".into(),
             command: Command::SubmitInput {
@@ -1230,6 +1244,23 @@ mod tests {
                 return event;
             }
         }
+    }
+
+    fn process_runtime_event(runtime: &Runtime, event: papo::Event) {
+        let client = lock(&runtime.state)
+            .network
+            .as_ref()
+            .expect("network remains running")
+            .client
+            .clone();
+        process_event(&runtime.state, &runtime.outbound, &client, 1, event);
+    }
+
+    fn assert_network_nickname(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>, expected: &str) {
+        assert!(collect(receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::NetworkStateChanged { network } if network.nickname == expected
+        )));
     }
 
     fn harness(

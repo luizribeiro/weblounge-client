@@ -167,6 +167,11 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {
+        self.network.nickname = nickname;
+        self.network_event()
+    }
+
     pub(crate) fn buffers_event(&self) -> EngineToUi {
         EngineToUi::BuffersChanged {
             network_id: self.network.id,
