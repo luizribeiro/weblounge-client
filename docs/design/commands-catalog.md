@@ -357,7 +357,7 @@ Pass-through commands (`ns`, `cs`, `hs`, `histserv`, `bs`, `quote`) are ordinary
 
 ## Decisions (Luiz, 2026-10-28)
 
-- The command table lives in Rust: a derive macro on the `Command` enum produces `CommandSpec`s and the generated TS types; UI-only actions are declared in TS and join the same action registry (memory: task 6c naming).
+- The command table lives in Rust: a derive macro on the `Command` enum produces `CommandSpec`s and the generated TS types; UI-only actions are declared in TS and join the same action registry. Naming: UI→engine protocol messages are `EngineRequest`, the UI registry is actions (`ActionRegistry`, `ActionId`), slash commands are `Command`, and everything consumes a runtime `CommandSpec` (so user-defined commands could register specs later).
 - `/close` on a channel parts it (irssi/gamja behaviour), with a menu confirmation on always-on servers.
 - The ignore list is per device for now; syncing is decided together with settings sync.
 - `/hop` is an alias of `/cycle`.
