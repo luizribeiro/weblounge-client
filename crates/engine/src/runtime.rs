@@ -177,7 +177,8 @@ impl Runtime {
             Ok(Command::Part { channel: _, reason }) => {
                 self.part(id, buffer_id, reason.map(|reason| reason.0))
             }
-            Ok(Command::Msg { target, text }) => self.message_direct(id, target.0, text.0),
+            Ok(Command::Msg { target, text }) => self.message_direct(id, target.0, text.0, false),
+            Ok(Command::Query { nick, text }) => self.query(id, nick.0, text.map(|text| text.0)),
             Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
             Ok(Command::Topic {
                 channel: _,
@@ -482,17 +483,40 @@ impl Runtime {
         Vec::new()
     }
 
-    fn message_direct(&self, command_id: String, nick: String, text: String) -> Vec<EngineToUi> {
+    fn query(&self, command_id: String, nick: String, text: Option<String>) -> Vec<EngineToUi> {
+        if let Some(text) = text {
+            return self.message_direct(command_id, nick, text, true);
+        }
+        let network_id = lock(&self.state)
+            .network
+            .as_ref()
+            .map(|running| running.model.id());
+        if let Some(network_id) = network_id {
+            self.open_direct(command_id, network_id, nick)
+        } else {
+            rejected_command(command_id, "engine.network_not_found")
+        }
+    }
+
+    fn message_direct(
+        &self,
+        command_id: String,
+        nick: String,
+        text: String,
+        focus: bool,
+    ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let snapshot = running.client.state();
         let (buffer_id, mut output) = running.model.open_direct(nick, &snapshot);
-        output.push(EngineToUi::FocusBufferRequested {
-            command_id: command_id.clone(),
-            buffer_id,
-        });
+        if focus {
+            output.push(EngineToUi::FocusBufferRequested {
+                command_id: command_id.clone(),
+                buffer_id,
+            });
+        }
         drop(state);
         output.extend(self.send_input(command_id, buffer_id, text, crate::MessageKind::Text));
         output
@@ -1637,10 +1661,10 @@ mod tests {
         assert!(output.iter().any(
             |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == "alice")
         ));
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::FocusBufferRequested { command_id, .. } if command_id == "msg"
-        )));
+        let focused = output
+            .iter()
+            .any(|event| matches!(event, EngineToUi::FocusBufferRequested { .. }));
+        assert!(!focused);
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
     }
 

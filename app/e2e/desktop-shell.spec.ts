@@ -123,7 +123,7 @@ test.describe("desktop shell against local Ergo", () => {
       });
       await expect(restoredAnother).toHaveValue("draft in another");
 
-      await restoredAnother.fill("/msg weblounge-bot hi");
+      await restoredAnother.fill("/q weblounge-bot hi");
       await restoredAnother.press("Enter");
       await expect(
         page.getByRole("heading", { name: "weblounge-bot" }),
