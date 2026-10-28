@@ -81,3 +81,26 @@ it("requests the first window while loading", () => {
   ));
   expect(request).toHaveBeenCalledWith(0, 256);
 });
+
+it("filters into the matching casemapped engine window", () => {
+  const filter = vi.fn();
+  render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      filter="web"
+      onClose={() => {}}
+      onFilter={filter}
+      onOpenDirect={() => {}}
+      onRequestRange={() => {}}
+      window={{ ...window, filter: "web" }}
+    />
+  ));
+
+  expect(screen.getByRole("searchbox", { name: "Filter members" })).toHaveValue(
+    "web",
+  );
+  fireEvent.input(screen.getByRole("searchbox"), {
+    target: { value: "garden" },
+  });
+  expect(filter).toHaveBeenCalledWith("garden");
+});

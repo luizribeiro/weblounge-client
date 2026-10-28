@@ -115,3 +115,26 @@
 .placeholder {
   height: var(--wl-density-sidebar-member-row-height);
 }
+
+.filter {
+  align-items: center;
+  background: var(--wl-color-chip);
+  border-radius: var(--wl-radius-composer);
+  color: var(--wl-color-muted);
+  display: flex;
+  gap: 8px;
+  height: 44px;
+  margin: 10px 14px 4px;
+  padding-inline: 10px;
+}
+
+.filter input {
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-fg);
+  flex: 1;
+  font: inherit;
+  font-size: 16px;
+  min-width: 0;
+  outline: 0;
+}
