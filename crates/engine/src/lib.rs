@@ -3,6 +3,7 @@
 mod direct_target;
 /// Engine-owned composer input parsing.
 pub mod input;
+mod members;
 mod name_key;
 mod protocol;
 mod runtime;
@@ -12,9 +13,9 @@ use tokio::sync::mpsc;
 
 pub use protocol::{
     BufferId, BufferKind, BufferProjection, Command, CommandEnvelope, EngineToUi, Hello,
-    LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery,
-    MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
+    LocalSendId, MemberGroup, MemberProjection, MembershipKind, MembershipProjection,
+    MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection,
+    NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.

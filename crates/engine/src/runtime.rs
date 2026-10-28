@@ -116,10 +116,34 @@ impl Runtime {
             }
             Command::MarkAllRead => self.mark_all_read(envelope.id),
             Command::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
-            Command::RequestMembers { .. } => {
-                rejected_command(envelope.id, "engine.members_not_ready")
-            }
+            Command::RequestMembers {
+                buffer_id,
+                offset,
+                limit,
+            } => self.request_members(envelope.id, buffer_id, offset, limit),
         }
+    }
+
+    fn request_members(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
+            return rejected_command(command_id, "engine.channel_required");
+        };
+        let Some(window) =
+            crate::members::project(&running.client.state(), &channel, buffer_id, offset, limit)
+        else {
+            return rejected_command(command_id, "engine.channel_not_found");
+        };
+        vec![window, EngineToUi::CommandResult { id: command_id }]
     }
 
     fn complete_input(

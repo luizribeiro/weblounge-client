@@ -1003,7 +1003,7 @@ fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
         .any(|word| state.name_rules().nick(word) == *state.nick())
 }
 
-fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u32 {
+pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u32 {
     casemapping
         .fold(nick)
         .bytes()
