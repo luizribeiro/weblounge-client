@@ -119,7 +119,7 @@ buffer_id: BufferId,
 /**
  * Complete current projection for the run.
  */
-membership: MembershipProjection, } | { "type": "message_confirmed",
+membership: MembershipProjection, } | { "type": "members_changed", buffer_id: BufferId, offset: number, total: number, counts: [number, number, number, number, number], members: Array<{ group: "operators" | "voiced" | "online" | "away" | "bots", nick: string, mode_symbol: string | null, away: boolean, bot: boolean, account: string | null, nick_color_index: number, is_you: boolean }>, } | { "type": "message_confirmed",
 /**
  * Destination buffer.
  */

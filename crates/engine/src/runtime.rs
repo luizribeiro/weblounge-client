@@ -116,6 +116,9 @@ impl Runtime {
             }
             Command::MarkAllRead => self.mark_all_read(envelope.id),
             Command::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
+            Command::RequestMembers { .. } => {
+                rejected_command(envelope.id, "engine.members_not_ready")
+            }
         }
     }
 

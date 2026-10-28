@@ -193,6 +193,34 @@ pub struct MembershipProjection {
     pub received_at_ms: i64,
 }
 
+/// Exclusive presentation group for one channel member.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum MemberGroup {
+    Operators,
+    Voiced,
+    Online,
+    Away,
+    Bots,
+}
+
+/// One row in a bounded channel-member window.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[allow(missing_docs)]
+pub struct MemberProjection {
+    #[ts(type = "\"operators\" | \"voiced\" | \"online\" | \"away\" | \"bots\"")]
+    pub group: MemberGroup,
+    pub nick: String,
+    pub mode_symbol: Option<char>,
+    pub away: bool,
+    pub bot: bool,
+    pub account: Option<String>,
+    #[ts(type = "number")]
+    pub nick_color_index: u32,
+    pub is_you: bool,
+}
+
 /// Initial UI identity and revision state.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct Hello {
@@ -289,6 +317,15 @@ pub enum Command {
     LoadHistory {
         /// Conversation buffer to hydrate.
         buffer_id: BufferId,
+    },
+    /// Project a bounded range of one channel's current members.
+    #[allow(missing_docs)]
+    RequestMembers {
+        buffer_id: BufferId,
+        #[ts(type = "number")]
+        offset: u32,
+        #[ts(type = "number")]
+        limit: u32,
     },
 }
 
@@ -406,6 +443,21 @@ pub enum EngineToUi {
         /// Complete current projection for the run.
         membership: MembershipProjection,
     },
+    /// Replace a requested bounded member window and current group counts.
+    #[allow(missing_docs)]
+    MembersChanged {
+        buffer_id: BufferId,
+        #[ts(type = "number")]
+        offset: u32,
+        #[ts(type = "number")]
+        total: u32,
+        #[ts(type = "[number, number, number, number, number]")]
+        counts: [u32; 5],
+        #[ts(
+            type = "Array<{ group: \"operators\" | \"voiced\" | \"online\" | \"away\" | \"bots\", nick: string, mode_symbol: string | null, away: boolean, bot: boolean, account: string | null, nick_color_index: number, is_you: boolean }>"
+        )]
+        members: Vec<MemberProjection>,
+    },
     /// Replace an optimistic row with its `papo::Sent` confirmation.
     MessageConfirmed {
         /// Destination buffer.
@@ -446,7 +498,9 @@ pub enum EngineToUi {
 
 #[cfg(test)]
 mod tests {
-    use super::{EngineToUi, Hello, ShellKind, UiToEngine};
+    use super::{
+        BufferId, EngineToUi, Hello, MemberGroup, MemberProjection, ShellKind, UiToEngine,
+    };
 
     #[test]
     fn hello_json_is_stable() {
@@ -465,9 +519,21 @@ mod tests {
 
     #[test]
     fn engine_event_round_trips() {
-        let event = EngineToUi::Ready {
-            engine_instance: "engine-1".into(),
-            revision: 0,
+        let event = EngineToUi::MembersChanged {
+            buffer_id: BufferId(2),
+            offset: 1,
+            total: 4,
+            counts: [1, 0, 2, 0, 1],
+            members: vec![MemberProjection {
+                group: MemberGroup::Online,
+                nick: "mel".into(),
+                mode_symbol: None,
+                away: false,
+                bot: false,
+                account: Some("mel".into()),
+                nick_color_index: 3,
+                is_you: false,
+            }],
         };
         let json = serde_json::to_string(&event).expect("event serializes");
 

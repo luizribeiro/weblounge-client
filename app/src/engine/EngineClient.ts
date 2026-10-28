@@ -389,6 +389,27 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "members_changed": {
+      const members = decodeArray(value.members, decodeMember);
+      const counts = decodeMemberCounts(value.counts);
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.offset === "number" &&
+        typeof value.total === "number" &&
+        counts !== undefined &&
+        members !== undefined
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          offset: value.offset,
+          total: value.total,
+          counts,
+          members,
+        };
+      }
+      break;
+    }
     case "message_confirmed": {
       const message = decodeMessage(value.message);
       if (
@@ -469,11 +490,63 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "messages_appended" ||
     value === "messages_prepended" ||
     value === "membership_changed" ||
+    value === "members_changed" ||
     value === "message_confirmed" ||
     value === "message_failed" ||
     value === "unread_changed" ||
     value === "read_marker_moved"
   );
+}
+
+type MemberProjection = Extract<
+  EngineToUi,
+  { type: "members_changed" }
+>["members"][number];
+
+function decodeMember(value: unknown): MemberProjection | undefined {
+  if (
+    !isRecord(value) ||
+    !isOneOf(value.group, ["operators", "voiced", "online", "away", "bots"]) ||
+    typeof value.nick !== "string" ||
+    !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
+    typeof value.away !== "boolean" ||
+    typeof value.bot !== "boolean" ||
+    !(value.account === null || typeof value.account === "string") ||
+    typeof value.nick_color_index !== "number" ||
+    typeof value.is_you !== "boolean"
+  )
+    return undefined;
+  return {
+    group: value.group,
+    nick: value.nick,
+    mode_symbol: value.mode_symbol,
+    away: value.away,
+    bot: value.bot,
+    account: value.account,
+    nick_color_index: value.nick_color_index,
+    is_you: value.is_you,
+  };
+}
+
+function decodeMemberCounts(
+  value: unknown,
+): [number, number, number, number, number] | undefined {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 5 ||
+    !value.every((item) => typeof item === "number")
+  )
+    return undefined;
+  const [operators, voiced, online, away, bots] = value;
+  if (
+    operators === undefined ||
+    voiced === undefined ||
+    online === undefined ||
+    away === undefined ||
+    bots === undefined
+  )
+    return undefined;
+  return [operators, voiced, online, away, bots];
 }
 
 function decodeMembership(value: unknown): MembershipProjection | undefined {
