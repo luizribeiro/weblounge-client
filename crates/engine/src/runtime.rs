@@ -183,6 +183,7 @@ impl Runtime {
             }
             Ok(Command::Msg { target, text }) => self.message_direct(id, target.0, text.0, false),
             Ok(Command::Query { nick, text }) => self.query(id, nick.0, text.map(|text| text.0)),
+            Ok(Command::Notice { target, text }) => self.notice(id, target.0, text.0),
             Ok(Command::Nick { nick }) => self.set_nick(id, nick.0),
             Ok(Command::Topic {
                 channel,
@@ -500,6 +501,29 @@ impl Runtime {
         } else {
             rejected_command(command_id, "engine.network_not_found")
         }
+    }
+
+    fn notice(&self, command_id: String, target: String, text: String) -> Vec<EngineToUi> {
+        let Some(client) = lock(&self.state)
+            .network
+            .as_ref()
+            .map(|running| running.client.clone())
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let snapshot = client.state();
+        if snapshot.isupport().is_channel(&target) {
+            let channel = snapshot.name_rules().channel(target);
+            spawn_request(self.outbound.clone(), command_id, async move {
+                client.notice(channel, text).await
+            });
+        } else {
+            let nick = snapshot.name_rules().nick(target);
+            spawn_request(self.outbound.clone(), command_id, async move {
+                client.notice(nick, text).await
+            });
+        }
+        Vec::new()
     }
 
     fn message_direct(

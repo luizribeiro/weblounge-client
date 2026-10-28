@@ -22,6 +22,11 @@ pub(crate) enum Command {
     )]
     Query { nick: Nick, text: Option<Text> },
     #[command(
+        name = "notice", aliases = [], usage = "cmd.notice.usage",
+        description = "cmd.notice.description", surfaces = ["Slash"]
+    )]
+    Notice { target: Target, text: Text },
+    #[command(
         name = "me", aliases = [], usage = "cmd.me.usage", description = "cmd.me.description",
         surfaces = ["Slash"]
     )]
@@ -96,7 +101,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 11);
+        assert_eq!(specs.len(), 12);
     }
 
     #[test]
@@ -115,6 +120,7 @@ mod tests {
             "/say /literal",
             "/m nick hello",
             "/q nick hello",
+            "/notice nick hello",
             "/me waves",
             "/j one,#two key1,key2",
             "/leave reason",
