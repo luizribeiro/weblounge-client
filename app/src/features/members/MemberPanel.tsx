@@ -13,6 +13,7 @@ import {
 export type MemberWindow = Extract<EngineToUi, { type: "members_changed" }>;
 interface MemberPanelProps {
   readonly bufferTitle: string;
+  readonly closeLabel?: string | undefined;
   readonly filter?: string | undefined;
   readonly window: MemberWindow | undefined;
   readonly onClose: () => void;
@@ -74,7 +75,7 @@ export function MemberPanel(props: MemberPanelProps) {
         <span class={styles.title}>Members</span>
         <span class={styles.total}>{formatCount(window()?.total ?? 0)}</span>
         <button
-          aria-label="Hide members"
+          aria-label={props.closeLabel ?? "Hide members"}
           class={styles.close}
           onClick={props.onClose}
           type="button"
