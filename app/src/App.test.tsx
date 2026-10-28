@@ -110,6 +110,55 @@ it("lists projected networks, buffers, and messages", async () => {
   });
 });
 
+it("opens the projected member panel and routes a member to a DM", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      draft_key: "test:#room",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  client.emit({
+    type: "members_changed",
+    buffer_id: 2,
+    offset: 0,
+    total: 1,
+    counts: [1, 0, 0, 0, 0],
+    members: [
+      {
+        group: "operators",
+        nick: "mel",
+        mode_symbol: "@",
+        away: false,
+        bot: false,
+        account: "mel",
+        nick_color_index: 1,
+        is_you: false,
+      },
+    ],
+  });
+
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Toggle member list" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open direct message with mel" }),
+  );
+  expect(client.commands).toContainEqual({
+    id: expect.any(String),
+    command: { type: "open_direct", network_id: 1, nick: "mel" },
+  });
+});
+
 it("focuses command-created buffers only from engine buffer ids", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);

@@ -15,6 +15,7 @@ import type {
   NetworkProjection,
 } from "./engine/protocol";
 import { t } from "./features/composer/strings";
+import type { MemberWindow } from "./features/members/MemberPanel";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
 import { installSystemTheme } from "./theme/theme-controller";
 import {
@@ -49,6 +50,9 @@ export function App(props: AppProps) {
   >(new Map());
   const [memberships, setMemberships] = createSignal<
     ReadonlyMap<number, readonly MembershipProjection[]>
+  >(new Map());
+  const [memberWindows, setMemberWindows] = createSignal<
+    ReadonlyMap<number, MemberWindow>
   >(new Map());
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
@@ -85,6 +89,11 @@ export function App(props: AppProps) {
           setFocusRequest((current) =>
             current === request ? undefined : current,
           ),
+        );
+      }
+      if (message.type === "members_changed") {
+        setMemberWindows((current) =>
+          new Map(current).set(message.buffer_id, message),
         );
       }
       applyDebugEvent(
@@ -138,6 +147,7 @@ export function App(props: AppProps) {
         focusRequest={focusRequest()}
         messages={messages()}
         memberships={memberships()}
+        memberWindows={memberWindows()}
         onMarkRead={(bufferId, through) => {
           if (client === undefined) return;
           void client.send({
@@ -184,6 +194,25 @@ export function App(props: AppProps) {
               buffer_id: bufferId,
               prefix,
             },
+          });
+        }}
+        onRequestMembers={(bufferId, offset, limit) => {
+          if (client === undefined) return;
+          void client.send({
+            id: crypto.randomUUID(),
+            command: {
+              type: "request_members",
+              buffer_id: bufferId,
+              offset,
+              limit,
+            },
+          });
+        }}
+        onOpenDirect={(networkId, nick) => {
+          if (client === undefined) return;
+          void client.send({
+            id: crypto.randomUUID(),
+            command: { type: "open_direct", network_id: networkId, nick },
           });
         }}
       />
