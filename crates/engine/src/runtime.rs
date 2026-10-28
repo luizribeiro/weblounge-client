@@ -1171,8 +1171,8 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        MemberViews, RunningNetwork, Runtime, RuntimeState, fetch_latest, lock, process_event,
-        process_history,
+        MemberViews, RunningNetwork, Runtime, RuntimeState, drain_events, fetch_latest, lock,
+        process_event, process_history,
     };
     use crate::{
         BufferId, BufferKind, Command, CommandEnvelope, EngineToUi, NetworkId, SaslCredentials,
@@ -1204,6 +1204,147 @@ mod tests {
         ranges.sort();
         assert_eq!(version, 1);
         assert_eq!(ranges, [("left".into(), 640), ("right".into(), 1_280)]);
+    }
+
+    #[tokio::test]
+    async fn live_member_deltas_refresh_each_viewed_window() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["multi-prefix"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":offline.test 005 weblounge PREFIX=(ov)@+ CHANMODES=b,k,l,imnst :supported")
+            .await;
+        wire.server(":weblounge!u@h JOIN #large").await;
+        for start in (0..2_000).step_by(50) {
+            let names = (start..start + 50)
+                .map(|index| format!("u{index:04}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            wire.server(format!(":offline.test 353 weblounge = #large :{names}"))
+                .await;
+        }
+        wire.server(":offline.test 366 weblounge #large :End of NAMES")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let buffer_id = {
+            let mut runtime = lock(&state);
+            let running = runtime.network.as_mut().expect("network remains running");
+            running.model.sync_channels(&client.state());
+            running
+                .model
+                .buffer_id_for_channel(&client.state().name_rules().channel("#large"))
+                .expect("large channel buffer")
+        };
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        };
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound,
+            client,
+            events,
+            1,
+        ));
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        _ = collect(&mut receiver);
+        for (view_id, offset) in [("left", 700), ("right", 1_400)] {
+            let output = runtime.command(CommandEnvelope {
+                id: format!("request-{view_id}"),
+                command: Command::RequestMembers {
+                    buffer_id,
+                    view_id: Some(view_id.into()),
+                    offset,
+                    limit: 1,
+                    filter: None,
+                },
+            });
+            assert_latest_window(
+                &output,
+                view_id,
+                offset,
+                if offset == 700 { "u0700" } else { "u1400" },
+            );
+        }
+
+        wire.server(":a-new!u@h JOIN #large").await;
+        let joined = member_patch_burst(&mut receiver).await;
+        assert_latest_window(&joined, "left", 700, "u0699");
+        assert_latest_window(&joined, "right", 1_400, "u1399");
+
+        wire.server(":weblounge!u@h MODE #large +o u1500").await;
+        let mode = member_patch_burst(&mut receiver).await;
+        assert_latest_window(&mode, "left", 700, "u0698");
+        assert_latest_window(&mode, "right", 1_400, "u1398");
+
+        for index in 0..500 {
+            wire.server(format!(":u{index:04}!u@h QUIT :split")).await;
+        }
+        let split = member_patch_burst(&mut receiver).await;
+        assert!(
+            split.len() <= 10,
+            "unbounded split patches: {}",
+            split.len()
+        );
+        assert_latest_window(&split, "left", 700, "u1198");
+        assert_latest_window(&split, "right", 1_400, "u1899");
+        drain.abort();
+    }
+
+    fn assert_window(
+        events: &[EngineToUi],
+        view_id: &str,
+        offset: u32,
+        version: u64,
+        first_nick: &str,
+    ) {
+        assert!(
+            events.iter().any(|event| matches!(event,
+                EngineToUi::MembersChanged {
+                    view_id: Some(id), version: Some(current), offset: start, members, ..
+                } if id == view_id && *current == version && *start == offset
+                    && members.first().is_some_and(|member| member.nick == first_nick)
+            )),
+            "missing {view_id} window at version {version}"
+        );
+    }
+
+    fn assert_latest_window(events: &[EngineToUi], view_id: &str, offset: u32, first_nick: &str) {
+        let version = events
+            .iter()
+            .filter_map(|event| match event {
+                EngineToUi::MembersChanged {
+                    view_id: Some(id),
+                    version,
+                    ..
+                } if id == view_id => *version,
+                _ => None,
+            })
+            .max()
+            .expect("view received a split window");
+        assert_window(events, view_id, offset, version, first_nick);
+    }
+
+    async fn member_patch_burst(
+        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
+    ) -> Vec<EngineToUi> {
+        let mut members = Vec::new();
+        loop {
+            match tokio::time::timeout(Duration::from_millis(250), receiver.recv()).await {
+                Ok(Some(event @ EngineToUi::MembersChanged { .. })) => members.push(event),
+                Ok(None) | Err(_) if !members.is_empty() => return members,
+                Ok(None) => panic!("runtime event stream closed"),
+                Ok(Some(_)) | Err(_) => {}
+            }
+        }
     }
 
     #[test]
