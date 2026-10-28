@@ -128,7 +128,7 @@ export function App(props: AppProps) {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
-            command: { type: "send_message", buffer_id: bufferId, text },
+            command: { type: "submit_input", buffer_id: bufferId, input: text },
           });
         }}
       />

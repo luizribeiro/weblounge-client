@@ -6,6 +6,16 @@
   padding: 10px 14px 14px;
 }
 
+.wrap {
+  border-top: 1px solid var(--wl-color-border);
+  padding: 8px 14px 14px;
+}
+
+.wrap .form {
+  border: 0;
+  padding: 0;
+}
+
 .input {
   background: var(--wl-color-input-bg);
   border: 1px solid var(--wl-color-border);
@@ -15,6 +25,20 @@
   font: inherit;
   min-width: 0;
   padding: 9px 11px;
+  resize: none;
+}
+
+textarea.input {
+  max-height: 7em;
+  min-height: 40px;
+}
+
+.candidates {
+  color: var(--wl-color-muted);
+  overflow: hidden;
+  padding: 0 4px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .input::placeholder {
@@ -35,4 +59,10 @@
 .send:disabled,
 .input:disabled {
   opacity: 0.55;
+}
+
+@media (max-width: 600px), (pointer: coarse) {
+  .input {
+    font-size: 16px;
+  }
 }

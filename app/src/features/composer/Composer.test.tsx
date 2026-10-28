@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
 
@@ -15,9 +16,10 @@ it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
 });
 
 it("cycles completion and restores drafts by buffer", () => {
-  const view = render(() => (
+  const [bufferId, setBufferId] = createSignal(2);
+  render(() => (
     <Composer
-      bufferId={2}
+      bufferId={bufferId()}
       bufferTitle="#rust"
       candidates={["alice", "alex"]}
       onSend={() => {}}
@@ -27,7 +29,9 @@ it("cycles completion and restores drafts by buffer", () => {
   fireEvent.input(input, { target: { value: "al" } });
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("alice ");
-  view.unmount();
-  render(() => <Composer bufferId={2} bufferTitle="#rust" onSend={() => {}} />);
-  expect(screen.getByRole("textbox")).toHaveValue("alice ");
+  setBufferId(3);
+  expect(input).toHaveValue("");
+  fireEvent.input(input, { target: { value: "other" } });
+  setBufferId(2);
+  expect(input).toHaveValue("alice ");
 });

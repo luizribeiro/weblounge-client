@@ -17,12 +17,12 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { Composer } from "../../features/composer/Composer";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
 import {
   MessageList,
   type MessageListController,
 } from "../../features/conversation/MessageList";
-import { SimpleComposer } from "../../features/conversation/SimpleComposer";
 import {
   Sidebar,
   type SidebarListController,
@@ -50,6 +50,7 @@ export function DesktopShell(props: DesktopShellProps) {
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
   let navigationCommitted = false;
+  let knownBufferCount = props.buffers.length;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
@@ -114,6 +115,13 @@ export function DesktopShell(props: DesktopShellProps) {
       500,
     );
     onCleanup(() => window.clearTimeout(timeout));
+  });
+
+  createEffect(() => {
+    if (props.buffers.length > knownBufferCount) {
+      showBuffer(props.buffers.at(-1)?.id, true);
+    }
+    knownBufferCount = props.buffers.length;
   });
 
   createEffect(() => {
@@ -200,8 +208,12 @@ export function DesktopShell(props: DesktopShellProps) {
                   messageListController = controller;
                 }}
               />
-              <SimpleComposer
+              <Composer
+                bufferId={activeBuffer()?.id ?? 0}
                 bufferTitle={activeBuffer()?.title ?? ""}
+                candidates={composerCandidates(
+                  props.messages.get(activeBuffer()?.id ?? -1) ?? [],
+                )}
                 disabled={activeBuffer()?.kind === "server"}
                 onSend={(text) => {
                   const buffer = activeBuffer();
@@ -229,6 +241,11 @@ function latestCommitted(
       (message) =>
         message.delivery === "received" || message.delivery === "confirmed",
     );
+}
+
+function composerCandidates(messages: readonly MessageProjection[]): string[] {
+  const recent = [...messages].reverse().map((message) => message.author);
+  return [...new Set(recent)];
 }
 
 function orderedBufferIds(
