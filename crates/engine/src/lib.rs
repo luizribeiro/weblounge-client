@@ -1,5 +1,7 @@
 //! Platform-neutral weblounge engine composition.
 
+/// Runtime slash-command metadata and registration.
+pub mod commands;
 mod direct_target;
 /// Engine-owned composer input parsing.
 pub mod input;
