@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type JSX } from "solid-js";
+import { createEffect, createSignal, For, type JSX } from "solid-js";
 import styles from "../conversation/SimpleComposer.module.css";
 
 interface ComposerProps {
@@ -27,6 +27,11 @@ export function Composer(props: ComposerProps) {
     sessionStorage.getItem(draftKey(currentBuffer)) ?? "",
   );
   const [selected, setSelected] = createSignal(-1);
+  const [shownCandidates, setShownCandidates] = createSignal<readonly string[]>(
+    [],
+  );
+  const listId = () => `composer-completions-${props.bufferId}`;
+  const optionId = (index: number) => `${listId()}-${index}`;
   const resize = () => {
     if (textarea === undefined) return;
     textarea.style.height = "0";
@@ -45,6 +50,7 @@ export function Composer(props: ComposerProps) {
     completion = undefined;
     setPendingCompletion(undefined);
     setSelected(-1);
+    setShownCandidates([]);
   });
 
   const update = (value: string, resetCompletion = true) => {
@@ -54,6 +60,7 @@ export function Composer(props: ComposerProps) {
       completion = undefined;
       setPendingCompletion(undefined);
       setSelected(-1);
+      setShownCandidates([]);
     }
   };
   const submit = () => {
@@ -78,10 +85,9 @@ export function Composer(props: ComposerProps) {
       const end = textarea?.selectionStart ?? text().length;
       const start = text().slice(0, end).search(/\S*$/);
       const prefix = text().slice(start, end);
-      const token = prefix.toLocaleLowerCase();
       if (
         props.onRequestCandidates !== undefined &&
-        props.candidatePrefix?.toLocaleLowerCase() !== token
+        props.candidatePrefix !== prefix
       ) {
         setPendingCompletion({ start, end, prefix, offset });
         props.onRequestCandidates(prefix);
@@ -90,10 +96,9 @@ export function Composer(props: ComposerProps) {
       completion = {
         start,
         end,
-        candidates: (props.candidates ?? []).filter((candidate) =>
-          candidate.toLocaleLowerCase().startsWith(token),
-        ),
+        candidates: props.candidates ?? [],
       };
+      setShownCandidates(completion.candidates);
     }
     if (completion.candidates.length === 0) return false;
     const next =
@@ -121,6 +126,7 @@ export function Composer(props: ComposerProps) {
       end: pending.end,
       candidates: candidates ?? [],
     };
+    setShownCandidates(completion.candidates);
     setPendingCompletion(undefined);
     complete(pending.offset);
   });
@@ -146,16 +152,35 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div class={styles.wrap}>
-      {selected() >= 0 && (
-        <div class={styles.candidates}>{props.candidates?.join("  ")}</div>
+      {shownCandidates().length > 0 && selected() >= 0 && (
+        <div class={styles.candidates} id={listId()} role="listbox">
+          <For each={shownCandidates()}>
+            {(candidate, index) => (
+              <div
+                aria-selected={index() === selected()}
+                class={styles.candidate}
+                data-selected={index() === selected()}
+                id={optionId(index())}
+                role="option"
+                tabIndex={-1}
+              >
+                {candidate}
+              </div>
+            )}
+          </For>
+        </div>
       )}
       <div class={styles.form}>
         <textarea
+          aria-activedescendant={
+            selected() >= 0 ? optionId(selected()) : undefined
+          }
+          aria-controls={shownCandidates().length > 0 ? listId() : undefined}
           aria-label={`Message ${props.bufferTitle}`}
           autocomplete="off"
           class={styles.input}
           disabled={props.disabled}
-          onCompositionStart={() => setSelected(-1)}
+          onCompositionStart={() => update(text())}
           onInput={(event) => update(event.currentTarget.value)}
           onKeyDown={keydown}
           placeholder={`Message ${props.bufferTitle}`}

@@ -34,11 +34,22 @@ textarea.input {
 }
 
 .candidates {
-  color: var(--wl-color-muted);
-  overflow: hidden;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  overflow-x: auto;
   padding: 0 4px 6px;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.candidate {
+  color: var(--wl-color-muted);
+  padding: 2px 5px;
+}
+
+.candidate[data-selected="true"] {
+  background: var(--wl-color-selection);
+  color: var(--wl-color-selection-fg);
 }
 
 .input::placeholder {

@@ -29,6 +29,17 @@ it("cycles completion and restores drafts by buffer", () => {
   fireEvent.input(input, { target: { value: "al" } });
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("alice ");
+  const listbox = screen.getByRole("listbox");
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.getByRole("option", { name: "alice" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    screen.getByRole("option", { name: "alice" }).id,
+  );
+  expect(input).toHaveAttribute("aria-controls", listbox.id);
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("alex ");
   setBufferId(3);
@@ -43,7 +54,7 @@ it("filters slash completion by the current token", () => {
     <Composer
       bufferId={4}
       bufferTitle="#rust"
-      candidates={["/join", "/msg"]}
+      candidates={["/join"]}
       onSend={() => {}}
     />
   ));
@@ -51,6 +62,23 @@ it("filters slash completion by the current token", () => {
   fireEvent.input(input, { target: { value: "/j" } });
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("/join ");
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+});
+
+it("hides completion when the engine returns no candidates", () => {
+  render(() => (
+    <Composer
+      bufferId={9}
+      bufferTitle="#rust"
+      candidates={[]}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "nobody" } });
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(input).not.toHaveAttribute("aria-activedescendant");
 });
 
 it("requests engine candidates once and applies the asynchronous result", async () => {
