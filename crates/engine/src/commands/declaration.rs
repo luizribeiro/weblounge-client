@@ -89,4 +89,24 @@ mod tests {
             matches!(commands::parse("//join #x", "#&"), Ok(Command::Say { text }) if text.0 == "/join #x")
         );
     }
+
+    #[test]
+    fn catalog_syntax_and_aliases_parse_without_a_raw_fallback() {
+        for input in [
+            "/say /literal",
+            "/m nick hello",
+            "/me waves",
+            "/j one,#two key1,key2",
+            "/leave reason",
+            "/t new topic",
+            "/nick new-name",
+            "/exit later",
+        ] {
+            assert!(commands::parse(input, "#&").is_ok(), "input: {input}");
+        }
+        assert!(matches!(
+            commands::parse("/whois mel", "#&"),
+            Err(commands::InputError::UnknownCommand(name)) if name == "whois"
+        ));
+    }
 }
