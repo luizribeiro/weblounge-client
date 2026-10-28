@@ -10,6 +10,7 @@ import {
   pushChat,
   swipeBackCompletes,
 } from "./mobile-navigation";
+import { type MobileViewport, observeMobileViewport } from "./mobile-viewport";
 
 interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
@@ -30,6 +31,7 @@ export function MobileShell(props: MobileShellProps) {
   const [query, setQuery] = createSignal("");
   const [scrollTop, setScrollTop] = createSignal(0);
   const [swipeProgress, setSwipeProgress] = createSignal<number>();
+  const [viewport, setViewport] = createSignal<MobileViewport>();
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
     | undefined;
@@ -108,7 +110,11 @@ export function MobileShell(props: MobileShellProps) {
   onMount(() => {
     const handlePopState = () => dispatchBack();
     window.addEventListener("popstate", handlePopState);
-    onCleanup(() => window.removeEventListener("popstate", handlePopState));
+    const stopViewport = observeMobileViewport(window, setViewport);
+    onCleanup(() => {
+      stopViewport();
+      window.removeEventListener("popstate", handlePopState);
+    });
   });
 
   return (
@@ -119,6 +125,12 @@ export function MobileShell(props: MobileShellProps) {
       onPointerDown={beginSwipe}
       onPointerMove={moveSwipe}
       onPointerUp={endSwipe}
+      style={{
+        "--wl-visual-height":
+          viewport() === undefined ? undefined : `${viewport()?.height}px`,
+        "--wl-visual-top":
+          viewport() === undefined ? undefined : `${viewport()?.offsetTop}px`,
+      }}
     >
       <For each={screens()}>
         {(screen, index) => {

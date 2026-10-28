@@ -2,11 +2,11 @@
   --wl-safe-bottom: env(safe-area-inset-bottom, 0px);
   --wl-safe-top: env(safe-area-inset-top, 0px);
   background: var(--wl-color-surface);
-  height: 100%;
+  height: var(--wl-visual-height, 100%);
   overflow: hidden;
-  padding-block: var(--wl-safe-top) var(--wl-safe-bottom);
   position: relative;
   touch-action: pan-y;
+  transform: translateY(var(--wl-visual-top, 0));
 }
 
 .screen {
