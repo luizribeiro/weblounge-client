@@ -34,10 +34,19 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 8. [ ] Local Ergo configured like weblounge (from `~/weblounge/services/ergo.nix`: SASL required, always-on, persistent channel history, DM history disabled, read markers) reached over `wss://` through a local TLS proxy, as an end-to-end check. Testing against the real server waits for beta.weblounge.org (milestone 4).
 8b. [ ] End-to-end perf scenarios through the engine and worker: cold/warm start, buffer switch, 2,000-message burst, reconnect, typing latency (doc 21 budgets).
 
-## After milestone 2
+## After milestone 2: dogfood first (Luiz, 2026-10-28)
 
-- **Milestone 2.5 (brought forward by Luiz):** split view and the core keyboard shortcuts.
-- **Milestone 4 (Luiz, 2026-10-28): hosted mode at beta.weblounge.org first** — concierge OAuth as gamja does, deployed from the weblounge NixOS config, `https://beta.weblounge.org` added to Ergo's `allowed-origins`. Luiz and friends try it there (including on phones, installed as a PWA); replacing gamja at irc.weblounge.org is the last step once the beta has proven itself.
+Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then beta.weblounge.org. Luiz dogfoods it and gives feedback; split view and the core shortcuts come after, informed by real use.
+
+- **Dogfood slice** (minimal milestone 3):
+  - D1. [ ] Load older history on scroll-up (`CHATHISTORY BEFORE` with msgid cursors; scroll anchoring already exists).
+  - D2. [ ] Rebuild the DM list from `CHATHISTORY TARGETS` on connect.
+  - D3. [ ] Clean resume after reconnect: papo catch-up gap fill, `Lagged` resync, a quiet "reconnecting" state, the composer queues sends while offline.
+- **Milestone 4 at beta.weblounge.org:**
+  - B1. [ ] Hosted-mode build configuration and the concierge OAuth handover (design 03).
+  - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
+- **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
+- **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.
 
 ## External dependencies
 
