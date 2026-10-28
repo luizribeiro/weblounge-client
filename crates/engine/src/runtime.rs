@@ -84,7 +84,7 @@ impl Runtime {
                 Ok(input::ParsedInput::Me(text)) => {
                     self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Action)
                 }
-                Ok(input::ParsedInput::Join { channel }) => self.join(envelope.id, channel),
+                Ok(input::ParsedInput::Join { targets }) => self.join(envelope.id, targets),
                 Ok(input::ParsedInput::Part { reason }) => {
                     self.part(envelope.id, buffer_id, reason)
                 }
@@ -289,7 +289,7 @@ impl Runtime {
         output
     }
 
-    fn join(&self, command_id: String, channel: String) -> Vec<EngineToUi> {
+    fn join(&self, command_id: String, targets: Vec<input::JoinTarget>) -> Vec<EngineToUi> {
         let Some(client) = lock(&self.state)
             .network
             .as_ref()
@@ -298,7 +298,13 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         spawn_request(self.outbound.clone(), command_id, async move {
-            client.join(channel).await
+            for target in targets {
+                match target.key {
+                    Some(key) => client.join(target.channel).key(key).await?,
+                    None => client.join(target.channel).await?,
+                }
+            }
+            Ok(())
         });
         Vec::new()
     }
@@ -1072,8 +1078,9 @@ mod tests {
 
     #[tokio::test]
     async fn submit_join_and_msg_use_typed_papo_commands() {
-        let (client, mut events, mut wire) =
-            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
         wire.register(&[]).await;
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
         let (outbound, _receiver) = mpsc::unbounded_channel();
@@ -1090,18 +1097,15 @@ mod tests {
             outbound,
         };
 
-        assert!(
-            runtime
-                .command(CommandEnvelope {
-                    id: "join".into(),
-                    command: Command::SubmitInput {
-                        buffer_id: BufferId(1),
-                        input: "/join #new".into()
-                    },
-                })
-                .is_empty()
-        );
-        assert_eq!(wire.next_sent().await, "JOIN #new");
+        let join_output = runtime.command(CommandEnvelope {
+            id: "join".into(),
+            command: Command::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/join #new secret".into(),
+            },
+        });
+        assert!(join_output.is_empty(), "unexpected output: {join_output:?}");
+        assert_eq!(wire.next_sent().await, "JOIN #new secret");
         wire.server(":weblounge!u@host JOIN #new").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let buffer_id = {

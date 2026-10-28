@@ -7,12 +7,18 @@
 pub enum ParsedInput {
     Message(String),
     Me(String),
-    Join { channel: String },
+    Join { targets: Vec<JoinTarget> },
     Part { reason: Option<String> },
     Msg { nick: String, text: String },
     Nick { nick: String },
     Topic { text: String },
     Quit { reason: Option<String> },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JoinTarget {
+    pub channel: String,
+    pub key: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,7 +52,7 @@ pub fn parse(input: &str) -> Result<ParsedInput, InputError> {
     match command.to_ascii_lowercase().as_str() {
         "me" => Ok(ParsedInput::Me(required(arguments)?)),
         "join" => Ok(ParsedInput::Join {
-            channel: required(arguments)?,
+            targets: join_targets(arguments)?,
         }),
         "part" => Ok(ParsedInput::Part {
             reason: optional(arguments),
@@ -88,6 +94,26 @@ fn optional(input: &str) -> Option<String> {
     (!input.is_empty()).then(|| input.to_owned())
 }
 
+fn join_targets(arguments: &str) -> Result<Vec<JoinTarget>, InputError> {
+    let (channels, keys) = split_once(arguments);
+    if channels.is_empty() {
+        return Err(InputError::MissingArgument);
+    }
+    let keys = keys.split(',').map(str::to_owned).collect::<Vec<_>>();
+    channels
+        .split(',')
+        .enumerate()
+        .map(|(index, channel)| {
+            (!channel.is_empty())
+                .then(|| JoinTarget {
+                    channel: channel.to_owned(),
+                    key: keys.get(index).filter(|key| !key.is_empty()).cloned(),
+                })
+                .ok_or(InputError::MissingArgument)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{InputError, ParsedInput, parse};
@@ -98,9 +124,27 @@ mod tests {
             ("hello\nworld", ParsedInput::Message("hello\nworld".into())),
             ("/ME waves", ParsedInput::Me("waves".into())),
             (
-                "/join   #rust",
+                "/join   #rust key",
                 ParsedInput::Join {
-                    channel: "#rust".into(),
+                    targets: vec![super::JoinTarget {
+                        channel: "#rust".into(),
+                        key: Some("key".into()),
+                    }],
+                },
+            ),
+            (
+                "/join #a,#b key1,key2",
+                ParsedInput::Join {
+                    targets: vec![
+                        super::JoinTarget {
+                            channel: "#a".into(),
+                            key: Some("key1".into()),
+                        },
+                        super::JoinTarget {
+                            channel: "#b".into(),
+                            key: Some("key2".into()),
+                        },
+                    ],
                 },
             ),
             (
