@@ -1,8 +1,16 @@
+import { readFileSync } from "node:fs";
 import { render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
 import type { EngineClient } from "./engine/EngineClient";
 import type { CommandEnvelope, EngineClientMessage } from "./engine/protocol";
+
+it("keeps synthetic timelines out of the production app", () => {
+  const source = readFileSync("src/App.tsx", "utf8");
+
+  expect(source).not.toContain("debug-messages");
+  expect(source).not.toContain("debugTimelineSize");
+});
 
 it("reports the wasm worker round trip", async () => {
   render(() => <App engineClient={new FakeEngineClient()} />);
