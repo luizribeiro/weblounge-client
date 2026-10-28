@@ -1244,6 +1244,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_join_preserves_each_channel_key_on_the_wire() {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+
+        let output = runtime.command(CommandEnvelope {
+            id: "join-pairs".into(),
+            command: Command::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/join #a,#b key1,key2".into(),
+            },
+        });
+
+        assert!(output.is_empty(), "unexpected output: {output:?}");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), wire.next_sent())
+                .await
+                .expect("first keyed join is sent"),
+            "JOIN #a key1"
+        );
+        wire.server(":weblounge!u@host JOIN #a").await;
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))),
+        )
+        .await
+        .expect("first join completes");
+        wire.server(":offline.test 366 weblounge #a :End of NAMES")
+            .await;
+        let second = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let line = wire.next_sent().await;
+                if line.starts_with("JOIN ") {
+                    break line;
+                }
+            }
+        })
+        .await
+        .expect("second keyed join is sent");
+        assert_eq!(second, "JOIN #b key2");
+    }
+
+    #[tokio::test]
     async fn banned_join_numeric_becomes_a_typed_notice() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
