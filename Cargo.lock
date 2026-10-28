@@ -1113,6 +1113,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "weblounge-command-derive"
+version = "0.1.0"
+
+[[package]]
 name = "weblounge-engine"
 version = "0.1.0"
 dependencies = [
@@ -1123,6 +1127,7 @@ dependencies = [
  "tokio",
  "ts-rs",
  "wasm-bindgen-futures",
+ "weblounge-command-derive",
 ]
 
 [[package]]
