@@ -10,16 +10,19 @@ composition, and expose failures without teaching the UI about IRC numerics or c
 
 ## Types
 
-`SubmitInput { buffer_id, input }` parses ordinary text or a slash command into a closed
-`ParsedInput` union. Milestone 2 supports `Message`, `Me`, `Join`, `Part`, `Msg`, `Nick`, `Topic`,
-and `Quit`; each command has validated, nonempty fields. Parse failures are typed
-`InputError { kind, command_id?, message_key }` results, including `UnknownCommand`, rather than
+`SubmitInput { buffer_id, input }` parses ordinary text or a slash command into the typed
+`Command` enum generated from the built-in declarations described in the catalog. Milestone 2
+implements the catalog's M2 rows plus `close`, `cycle`, `query`, `notice`, and `help`; each variant
+has validated typed fields. Parse failures are typed
+`InputError { kind, command_name?, message_key }` results, including `UnknownCommand`, rather than
 strings or attempted raw IRC.
 
-Slash descriptors use command-registry IDs from 14 where semantics match: `/join` is
-`buffer.open`, `/part` is `channel.part`, and `/quit` is `network.disconnect`. The other four use
-engine descriptor IDs until registry actions exist. Parsing is ASCII case-insensitive, preserves
-message/reason text after required arguments, and never exposes a raw-command escape hatch.
+The derive produces runtime `CommandSpec`s (name, aliases, typed arguments, usage, description,
+requirements, surfaces, confirmation policy, and secret-argument policy) beside the parser and
+typed AST. Parsing is ASCII case-insensitive, preserves rest-of-line text, applies the catalog's
+current-target and comma-list conventions, treats `//text` and `/say text` as literal messages,
+and never exposes a raw-command escape hatch. The runtime registry is open to later user-defined
+specs even though only built-ins are executable now.
 
 `CompleteInput { buffer_id, prefix }` returns a correlated `CompletionResult` with ordered string
 values. Candidates are commands at a leading slash, open channels for channel-shaped tokens, and
@@ -66,6 +69,9 @@ the native-feel idle/hidden audits; light and dark completion screenshots are in
 - Keep drafts UI-owned in `sessionStorage`; they are ephemeral input state, not IRC/domain state.
 - Submit all input through the engine parser so ordinary text and slash commands share validation
   and acknowledgement behavior.
+- Declare built-ins once and derive their parser, typed AST, specs, and completion metadata.
+- Keep the runtime spec registry extensible for later user-defined commands and redact every input
+  whose spec contains a secret argument.
 - Fetch completion candidates per token and cycle the returned list locally.
 - Surface server command failures as buffer notice rows with typed stable fields.
 - Let papo own multiline framing and confirm optimistic output from `Sent`, never echo matching.
@@ -74,8 +80,7 @@ the native-feel idle/hidden audits; light and dark completion screenshots are in
 ## Later
 
 Typing notifications, uploads, reply/edit affordances, command history, persisted/cross-device
-drafts, and slash commands beyond this milestone. The registry may replace temporary engine-only
-descriptor IDs when corresponding product actions are designed.
+drafts, user-defined commands, and slash commands beyond this milestone.
 
 ## Questions
 
