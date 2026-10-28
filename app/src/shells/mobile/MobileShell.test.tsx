@@ -39,6 +39,13 @@ it("commits reduced-motion stack changes without transition neighbours", () => {
   fireEvent.click(screen.getByRole("button", { name: "mel" }));
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
   expect(document.querySelectorAll("[data-mobile-chats]")).toHaveLength(0);
+  const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
+  if (shell === null) throw new Error("mobile shell is missing");
+  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
+  fireEvent.pointerMove(shell, { clientX: 45, pointerId: 7 });
+  fireEvent.pointerCancel(shell, { clientX: 45, pointerId: 7 });
+  expect(document.querySelector("[data-swipe]")).toBeNull();
+  expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
   expect(document.querySelectorAll("[data-mobile-chat]")).toHaveLength(0);

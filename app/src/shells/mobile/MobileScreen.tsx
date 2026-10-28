@@ -40,12 +40,14 @@ interface MobileScreenProps extends MobileShellData {
   readonly scrollTop: number;
   readonly swipe?: "chat" | "chats" | undefined;
   readonly swipeProgress?: number | undefined;
+  readonly swipeReturning?: boolean | undefined;
   readonly transition?: MobileTransition["direction"] | undefined;
   readonly onBack: () => void;
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number) => void;
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
+  readonly onSwipeReturnEnd: () => void;
   readonly onTransitionEnd: () => void;
 }
 
@@ -61,8 +63,10 @@ export function MobileScreen(props: MobileScreenProps) {
       class={styles.screen}
       data-position={props.position}
       data-swipe={props.swipe}
+      data-swipe-returning={props.swipeReturning}
       data-transition={props.transition}
       onAnimationEnd={props.onTransitionEnd}
+      onTransitionEnd={props.onSwipeReturnEnd}
       style={{ "--wl-swipe-progress": props.swipeProgress }}
     >
       {props.screen.kind === "chats" ? (

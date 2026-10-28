@@ -31,6 +31,7 @@ export function MobileShell(props: MobileShellProps) {
   const [query, setQuery] = createSignal("");
   const [scrollTop, setScrollTop] = createSignal(0);
   const [swipeProgress, setSwipeProgress] = createSignal<number>();
+  const [swipeReturning, setSwipeReturning] = createSignal(false);
   const [viewport, setViewport] = createSignal<MobileViewport>();
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let gesture:
@@ -92,6 +93,14 @@ export function MobileShell(props: MobileShellProps) {
     const distance = Math.max(0, event.clientX - gesture.startX);
     setSwipeProgress(Math.min(1, distance / gesture.width));
   };
+  const returnSwipe = () => {
+    if (reducedMotion() || swipeProgress() === 0) {
+      setSwipeProgress(undefined);
+      return;
+    }
+    setSwipeReturning(true);
+    setSwipeProgress(0);
+  };
   const endSwipe = (event: PointerEvent) => {
     if (gesture?.pointerId !== event.pointerId) return;
     const distance = Math.max(0, event.clientX - gesture.startX);
@@ -99,8 +108,15 @@ export function MobileShell(props: MobileShellProps) {
       distance / Math.max(1, event.timeStamp - gesture.startedAt);
     const completes = swipeBackCompletes(distance, gesture.width, velocity);
     gesture = undefined;
-    setSwipeProgress(undefined);
-    if (completes) requestBack();
+    if (completes) {
+      setSwipeProgress(undefined);
+      requestBack();
+    } else returnSwipe();
+  };
+  const cancelSwipe = (event: PointerEvent) => {
+    if (gesture?.pointerId !== event.pointerId) return;
+    gesture = undefined;
+    returnSwipe();
   };
   const screens = () =>
     swipeProgress() === undefined
@@ -121,7 +137,7 @@ export function MobileShell(props: MobileShellProps) {
     <main
       class={styles.shell}
       data-mobile-shell="true"
-      onPointerCancel={endSwipe}
+      onPointerCancel={cancelSwipe}
       onPointerDown={beginSwipe}
       onPointerMove={moveSwipe}
       onPointerUp={endSwipe}
@@ -171,8 +187,13 @@ export function MobileShell(props: MobileShellProps) {
                     ? "chat"
                     : "chats"
               }
+              swipeReturning={swipeReturning() || undefined}
               swipeProgress={swipeProgress()}
               transition={transition()?.direction}
+              onSwipeReturnEnd={() => {
+                setSwipeReturning(false);
+                setSwipeProgress(undefined);
+              }}
             />
           );
         }}

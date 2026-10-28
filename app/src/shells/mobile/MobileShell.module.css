@@ -46,6 +46,10 @@
   opacity: calc(0.72 + var(--wl-swipe-progress, 0) * 0.28);
   transform: translateX(calc(-28% + var(--wl-swipe-progress, 0) * 28%));
 }
+.screen[data-swipe-returning="true"] {
+  transition: transform var(--wl-motion-push-out)
+    var(--wl-motion-standard-curve);
+}
 
 .chat {
   display: flex;

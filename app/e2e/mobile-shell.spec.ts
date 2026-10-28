@@ -158,6 +158,14 @@ test.describe("mobile shell against local Ergo", () => {
         clientY: 300,
         pointerId: 7,
       });
+      const returningScreen = page.locator(
+        '[data-swipe="chat"][data-swipe-returning="true"]',
+      );
+      await expect(returningScreen).toHaveCSS(
+        "transition-property",
+        "transform",
+      );
+      await expect(page.locator("[data-swipe]")).toHaveCount(0);
       await expect(
         page.getByRole("heading", { name: targetNick }),
       ).toBeVisible();
