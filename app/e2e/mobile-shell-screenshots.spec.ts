@@ -111,6 +111,15 @@ test.describe("mobile shell screenshots against local Ergo", () => {
           name: "Open direct message with mel-mobile",
         }),
       ).toBeVisible();
+      await page
+        .getByRole("dialog", { name: "Members" })
+        .evaluate(async (dialog) =>
+          Promise.all(
+            dialog
+              .getAnimations({ subtree: true })
+              .map((animation) => animation.finished),
+          ),
+        );
       await page.emulateMedia({ colorScheme: "light" });
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-members-light.png"),
