@@ -128,9 +128,9 @@ pub(crate) fn project(
         .collect();
     Some(EngineToUi::MembersChanged {
         buffer_id,
-        view_id: Some(view_id.to_owned()),
-        version: Some(version),
-        window_size: Some(WINDOW_SIZE),
+        view_id: view_id.to_owned(),
+        version,
+        window_size: WINDOW_SIZE,
         offset: u32::try_from(start).unwrap_or(u32::MAX),
         total,
         counts,

@@ -158,19 +158,14 @@ impl Runtime {
                 buffer_id,
                 view_id,
                 offset,
-                limit,
                 filter,
-            } => {
-                let view_id = view_id.unwrap_or_else(|| format!("legacy:{}", buffer_id.0));
-                self.request_members(
-                    envelope.id,
-                    buffer_id,
-                    &view_id,
-                    offset,
-                    limit,
-                    filter.as_deref().unwrap_or_default(),
-                )
-            }
+            } => self.request_members(
+                envelope.id,
+                buffer_id,
+                &view_id,
+                offset,
+                filter.as_deref().unwrap_or_default(),
+            ),
             Command::OpenDirect { network_id, nick } => {
                 self.open_direct(envelope.id, network_id, nick)
             }
@@ -206,7 +201,6 @@ impl Runtime {
         buffer_id: BufferId,
         view_id: &str,
         offset: u32,
-        _limit: u32,
         filter: &str,
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
@@ -1261,9 +1255,8 @@ mod tests {
                 id: format!("request-{view_id}"),
                 command: Command::RequestMembers {
                     buffer_id,
-                    view_id: Some(view_id.into()),
+                    view_id: view_id.into(),
                     offset,
-                    limit: 1,
                     filter: None,
                 },
             });
@@ -1309,7 +1302,7 @@ mod tests {
         assert!(
             events.iter().any(|event| matches!(event,
                 EngineToUi::MembersChanged {
-                    view_id: Some(id), version: Some(current), offset: start, members, ..
+                    view_id: id, version: current, offset: start, members, ..
                 } if id == view_id && *current == version && *start == offset
                     && members.first().is_some_and(|member| member.nick == first_nick)
             )),
@@ -1322,10 +1315,10 @@ mod tests {
             .iter()
             .filter_map(|event| match event {
                 EngineToUi::MembersChanged {
-                    view_id: Some(id),
+                    view_id: id,
                     version,
                     ..
-                } if id == view_id => *version,
+                } if id == view_id => Some(*version),
                 _ => None,
             })
             .max()

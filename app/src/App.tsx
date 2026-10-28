@@ -220,7 +220,6 @@ export function App(props: AppProps) {
               buffer_id: bufferId,
               view_id: viewId,
               offset,
-              limit: 0,
               filter,
             },
           });
