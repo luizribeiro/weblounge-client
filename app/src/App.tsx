@@ -79,7 +79,13 @@ export function App(props: AppProps) {
         });
       }
       if (message.type === "focus_buffer_requested") {
-        setFocusRequest({ bufferId: message.buffer_id });
+        const request = { bufferId: message.buffer_id };
+        setFocusRequest(request);
+        queueMicrotask(() =>
+          setFocusRequest((current) =>
+            current === request ? undefined : current,
+          ),
+        );
       }
       applyDebugEvent(
         message,

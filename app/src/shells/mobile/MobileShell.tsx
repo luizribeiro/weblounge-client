@@ -32,16 +32,16 @@ export function MobileShell(props: MobileShellProps) {
   const [scrollTop, setScrollTop] = createSignal(0);
   const [swipeProgress, setSwipeProgress] = createSignal<number>();
   const [viewport, setViewport] = createSignal<MobileViewport>();
+  let handledFocusRequest: { readonly bufferId: number } | undefined;
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
     | undefined;
 
   const open = (bufferId: number) => {
     props.onSelectBuffer(bufferId);
-    window.history.pushState(
-      { ...historyState(), webloungeMobileChat: true },
-      "",
-    );
+    const state = { ...historyState(), webloungeMobileChat: true };
+    if (stack().active.kind === "chats") window.history.pushState(state, "");
+    else window.history.replaceState(state, "");
     setStack((current) => pushChat(current, bufferId, reducedMotion()));
   };
   const dispatchBack = () =>
@@ -55,12 +55,12 @@ export function MobileShell(props: MobileShellProps) {
   };
 
   createEffect(() => {
-    const requested = props.focusRequest?.bufferId;
+    const request = props.focusRequest;
+    if (request === undefined || request === handledFocusRequest) return;
+    handledFocusRequest = request;
+    const requested = request.bufferId;
     const active = stack().active;
-    if (
-      requested !== undefined &&
-      (active.kind !== "chat" || requested !== active.bufferId)
-    ) {
+    if (active.kind !== "chat" || requested !== active.bufferId) {
       open(requested);
     }
   });

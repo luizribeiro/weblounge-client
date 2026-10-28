@@ -66,6 +66,22 @@ test.describe("mobile shell against local Ergo", () => {
       await expect(
         page.getByRole("heading", { name: targetNick }),
       ).toBeVisible();
+      const chatHistoryLength = await page.evaluate(() => history.length);
+      const joinedChannel = `#mobile-back-${suffix}`;
+      const joinComposer = page.getByRole("textbox", {
+        name: `Message ${targetNick}`,
+      });
+      await joinComposer.fill(`/join ${joinedChannel}`);
+      await joinComposer.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: joinedChannel }),
+      ).toBeVisible();
+      await expect(page.locator("[data-position]")).toHaveCount(0);
+      expect(await page.evaluate(() => history.length)).toBe(chatHistoryLength);
+      await page.goBack();
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
+      await page.getByRole("button", { name: targetNick }).click();
       await expect(
         page.getByText(`preview from ${targetNick}`, { exact: true }),
       ).toBeVisible();
