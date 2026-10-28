@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
 import { defineConfig } from "vitest/config";
 import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
@@ -26,8 +27,7 @@ export default defineConfig(({ mode }) => {
         buildDebugIrcConfig(mode, process.env),
       ),
     },
-    plugins: [solid()],
-    publicDir: wasmDirectory,
+    plugins: [solid(), engineWasmAsset(wasmPath)],
     resolve: {
       alias: {
         "@weblounge-engine": wasmModulePath,
@@ -40,6 +40,25 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+function engineWasmAsset(wasmPath: string): Plugin {
+  return {
+    name: "weblounge-engine-wasm",
+    configureServer(server) {
+      server.middlewares.use("/engine_bg.wasm", (_request, response) => {
+        response.setHeader("Content-Type", "application/wasm");
+        response.end(readFileSync(wasmPath));
+      });
+    },
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "engine_bg.wasm",
+        source: readFileSync(wasmPath),
+      });
+    },
+  };
+}
 
 function buildId(wasmPath: string): string {
   const hash = createHash("sha256");
