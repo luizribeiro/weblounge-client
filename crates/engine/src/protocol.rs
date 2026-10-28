@@ -327,6 +327,13 @@ pub enum Command {
         #[ts(type = "number")]
         limit: u32,
     },
+    /// Open or focus a direct conversation without sending a message.
+    OpenDirect {
+        /// Network containing the member.
+        network_id: NetworkId,
+        /// Current nickname selected from the member projection.
+        nick: String,
+    },
 }
 
 /// Messages accepted from a UI client.

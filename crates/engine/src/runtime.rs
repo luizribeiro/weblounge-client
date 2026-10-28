@@ -121,7 +121,33 @@ impl Runtime {
                 offset,
                 limit,
             } => self.request_members(envelope.id, buffer_id, offset, limit),
+            Command::OpenDirect { network_id, nick } => {
+                self.open_direct(envelope.id, network_id, nick)
+            }
         }
+    }
+
+    fn open_direct(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        nick: String,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.model.id() == network_id)
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let (buffer_id, mut output) = running.model.open_direct(nick, &running.client.state());
+        output.push(EngineToUi::FocusBufferRequested {
+            command_id: command_id.clone(),
+            buffer_id,
+        });
+        output.push(EngineToUi::CommandResult { id: command_id });
+        output
     }
 
     fn request_members(
@@ -1067,6 +1093,39 @@ mod tests {
                 EngineToUi::CommandRejected { id: result_id, .. },
             ] if result_id == &id));
         }
+    }
+
+    #[tokio::test]
+    async fn open_direct_adds_and_focuses_the_engine_buffer() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+
+        let output = runtime.command(CommandEnvelope {
+            id: "open-mel".into(),
+            command: Command::OpenDirect {
+                network_id: NetworkId(1),
+                nick: "mel".into(),
+            },
+        });
+        assert!(matches!(output.as_slice(), [
+            EngineToUi::BufferAdded { buffer },
+            EngineToUi::BuffersChanged { .. },
+            EngineToUi::FocusBufferRequested { buffer_id, .. },
+            EngineToUi::CommandResult { .. },
+        ] if buffer.kind == BufferKind::Direct && buffer.title == "mel" && buffer.id == *buffer_id));
     }
 
     #[tokio::test]

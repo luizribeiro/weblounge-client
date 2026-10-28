@@ -79,4 +79,12 @@ through: MessageId, } | { "type": "mark_all_read" } | { "type": "load_history",
 /**
  * Conversation buffer to hydrate.
  */
-buffer_id: BufferId, } | { "type": "request_members", buffer_id: BufferId, offset: number, limit: number, };
+buffer_id: BufferId, } | { "type": "request_members", buffer_id: BufferId, offset: number, limit: number, } | { "type": "open_direct",
+/**
+ * Network containing the member.
+ */
+network_id: NetworkId,
+/**
+ * Current nickname selected from the member projection.
+ */
+nick: string, };
