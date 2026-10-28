@@ -23,11 +23,14 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 5b. [x] Message list fixes (scrolling, logo, bottom anchor, real screenshots, and copy coverage).
 6. [x] Composer with optimistic send (`Sent`-based confirmation).
 6b. [x] Composer fixes (engine-owned navigation and completion, human errors, stable guarded drafts, and refreshed screenshots).
+6c. [ ] One `Command` table (derive macro producing `CommandSpec`s, from `docs/design/commands-catalog.md`, M2 subset), renames (`EngineRequest`, action registry), action registry fed by UI actions + engine `CommandSpec`s.
+6d. [ ] Composer suggestions popup for `/`, `@`, `#` (Luiz's UI rules: compact, consistent on desktop and mobile).
 7. [x] Mobile shell: chats list and pushed chat screen.
 7b. [x] Mobile shell fixes (inline rows, compact previews, history, swipe cancellation, consistent times, DM previews, and routing/read tests).
 7c. [x] Mobile members drawer.
 7d. [ ] Mobile and PWA polish, iPhone 16 Pro as the reference device (Android first-class too): manifest, icons and iOS launch images, standalone display, status-bar colour per theme under the Dynamic Island (`theme-color` per light/dark, translucent iOS status bar), safe areas from `env()` only (Dynamic Island, home indicator, landscape), `100dvh` fixed root, composer above the keyboard on iOS and Android, no input zoom/double-tap zoom/rubber-band/pull-to-refresh/callouts on chrome, swipe-back not fighting Safari's edge swipe, Android back via the stack, Dynamic Type/font scaling, minimal app-shell service worker. Tested with Playwright WebKit (iPhone 16 Pro profile) and an Android profile; Luiz's phone is the final check once beta.weblounge.org exists.
 7e. [x] Perf scenarios run several times and report the median (single runs quantise to whole frames and are noisy under throttling).
+7f. [ ] First paint and loading: inline splash (theme background, large tinted chair mark), metrics-matched font fallback, ≤200ms cross-fade, CI filmstrip test (no blank/white frames, no font shift; light/dark, Chromium+WebKit, slow network).
 8. [ ] Local Ergo configured like weblounge (from `~/weblounge/services/ergo.nix`: SASL required, always-on, persistent channel history, DM history disabled, read markers) reached over `wss://` through a local TLS proxy, as an end-to-end check. Testing against the real server waits for beta.weblounge.org (milestone 4).
 8b. [ ] End-to-end perf scenarios through the engine and worker: cold/warm start, buffer switch, 2,000-message burst, reconnect, typing latency (doc 21 budgets).
 
