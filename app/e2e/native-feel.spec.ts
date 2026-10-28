@@ -115,6 +115,13 @@ test.describe("native feel against local Ergo", () => {
     );
     const text = `hidden message ${Date.now()}`;
     try {
+      await page.waitForTimeout(100);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
       await page.evaluate(() => {
         const state = window as Window & {
           __hiddenMutations?: number;
