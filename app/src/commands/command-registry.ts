@@ -19,6 +19,8 @@ export type Platform = "macos" | "other";
 export interface CommandContext {
   readonly bufferCount: number;
   readonly listActive: boolean;
+  readonly targetBufferId?: number;
+  readonly targetNetworkId?: number;
 }
 
 export interface CommandAvailability {

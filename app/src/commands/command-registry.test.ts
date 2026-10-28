@@ -67,6 +67,24 @@ describe("CommandRegistry", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it("passes a clicked target through the typed command boundary", () => {
+    const showBuffer = vi.fn();
+    const registry = new CommandRegistry(
+      { "pane.show-buffer": showBuffer },
+      "other",
+    );
+
+    registry.run("pane.show-buffer", {
+      ...context,
+      targetBufferId: 42,
+    });
+
+    expect(showBuffer).toHaveBeenCalledWith({
+      ...context,
+      targetBufferId: 42,
+    });
+  });
+
   it("detects Apple shortcut labels", () => {
     expect(detectPlatform({ platform: "MacIntel" } as Navigator)).toBe("macos");
     expect(detectPlatform({ platform: "Linux x86_64" } as Navigator)).toBe(
