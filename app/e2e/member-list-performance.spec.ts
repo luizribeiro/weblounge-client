@@ -46,4 +46,5 @@ test("keeps a 10k-member channel bounded at 4x CPU", async ({
   console.info(`member-list-performance ${JSON.stringify(result)}`);
   expect(result.renderedRows).toBeLessThan(80);
   expect(result.domNodes).toBeLessThan(400);
+  expect(result.medianFrameMs).toBeLessThan(25);
 });

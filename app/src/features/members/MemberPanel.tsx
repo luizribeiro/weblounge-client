@@ -1,8 +1,8 @@
 import { createVirtualizer, observeElementRect } from "@tanstack/solid-virtual";
-import { createEffect, createMemo, For } from "solid-js";
+import { createMemo, createRenderEffect, Index } from "solid-js";
 import type { EngineToUi } from "../../engine/protocol";
 import styles from "./MemberPanel.module.css";
-import { MemberRow } from "./MemberRow";
+import { type Member, MemberRow } from "./MemberRow";
 import {
   type MemberListRow,
   memberGroupLabels,
@@ -46,6 +46,21 @@ export function MemberPanel(props: MemberPanelProps) {
     overscan: 10,
   });
   const virtualRows = createMemo(() => virtualizer.getVirtualItems());
+  const renderedRows = createMemo(() => {
+    const current = window();
+    return virtualRows().map((virtual) => ({
+      virtual,
+      row:
+        current === undefined
+          ? undefined
+          : memberRowAt(
+              virtual.index,
+              current.counts,
+              current.offset,
+              current.members,
+            ),
+    }));
+  });
   const request = (offset: number) => {
     const key = `${window()?.buffer_id ?? "new"}:${props.filter ?? ""}:${offset}`;
     if (key !== requested) {
@@ -53,18 +68,11 @@ export function MemberPanel(props: MemberPanelProps) {
       props.onRequestRange(offset, 256);
     }
   };
-  createEffect(() => {
+  createRenderEffect(() => {
     const current = window();
     if (current === undefined) return request(0);
-    const missing = virtualRows()
-      .map((item) =>
-        memberRowAt(
-          item.index,
-          current.counts,
-          current.offset,
-          current.members,
-        ),
-      )
+    const missing = renderedRows()
+      .map(({ row }) => row)
       .find((row) => row?.kind === "member" && row.member === undefined);
     if (missing?.kind === "member")
       request(Math.floor(missing.memberIndex / 128) * 128);
@@ -112,54 +120,66 @@ export function MemberPanel(props: MemberPanelProps) {
             data-member-virtual-size="true"
             style={{ height: `${virtualizer.getTotalSize()}px` }}
           />
-          <For each={virtualRows()}>
-            {(virtualRow) => (
+          <Index each={renderedRows()}>
+            {(rendered) => (
               <li
                 class={styles.virtualRow}
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                style={{
+                  transform: `translateY(${rendered().virtual.start}px)`,
+                }}
               >
-                {renderRow(
-                  window() === undefined
-                    ? undefined
-                    : memberRowAt(
-                        virtualRow.index,
-                        window()?.counts ?? [0, 0, 0, 0, 0],
-                        window()?.offset ?? 0,
-                        window()?.members ?? [],
-                      ),
-                  props.onOpenDirect,
-                  props.showModeSymbols !== false,
-                )}
+                <MemberListRowView
+                  onOpenDirect={props.onOpenDirect}
+                  row={rendered().row}
+                  showModeSymbols={props.showModeSymbols !== false}
+                />
               </li>
             )}
-          </For>
+          </Index>
         </ul>
       </div>
     </aside>
   );
 }
 
-function renderRow(
-  row: MemberListRow | undefined,
-  onOpenDirect: (nick: string) => void,
-  showModeSymbols: boolean,
-) {
-  if (row?.kind === "group")
-    return (
-      <div class={styles.group}>
-        {memberGroupLabels[row.group]} — {formatCount(row.count)}
+function MemberListRowView(props: {
+  readonly row: MemberListRow | undefined;
+  readonly onOpenDirect: (nick: string) => void;
+  readonly showModeSymbols: boolean;
+}) {
+  const member = () =>
+    props.row?.kind === "member" ? props.row.member : undefined;
+  const retainedMember = createMemo<Member>(
+    (previous) => member() ?? previous,
+    loadingMember,
+  );
+  return (
+    <>
+      <div class={styles.group} hidden={props.row?.kind !== "group"}>
+        {props.row?.kind === "group"
+          ? `${memberGroupLabels[props.row.group]} — ${formatCount(props.row.count)}`
+          : ""}
       </div>
-    );
-  if (row?.kind === "member" && row.member !== undefined)
-    return (
       <MemberRow
-        member={row.member}
-        onOpenDirect={onOpenDirect}
-        showModeSymbol={showModeSymbols}
+        hidden={member() === undefined}
+        member={retainedMember()}
+        onOpenDirect={props.onOpenDirect}
+        showModeSymbol={props.showModeSymbols}
       />
-    );
-  return <div class={styles.placeholder} />;
+    </>
+  );
 }
+
+const loadingMember: Member = {
+  group: "online",
+  nick: "",
+  mode_symbol: null,
+  away: false,
+  bot: false,
+  account: null,
+  nick_color_index: 0,
+  is_you: false,
+};
 function formatCount(count: number): string {
   return count.toLocaleString("en-US");
 }

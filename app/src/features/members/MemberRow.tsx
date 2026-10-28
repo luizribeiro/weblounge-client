@@ -11,7 +11,7 @@ export type Member = Extract<
 interface MemberRowProps {
   readonly member: Member;
   readonly onOpenDirect: (nick: string) => void;
-  readonly showAvatar?: boolean | undefined;
+  readonly hidden?: boolean | undefined;
   readonly showModeSymbol?: boolean | undefined;
 }
 
@@ -25,18 +25,17 @@ export function MemberRow(props: MemberRowProps) {
       aria-label={`Open direct message with ${props.member.nick}`}
       class={styles.row}
       data-away={props.member.away ? "true" : "false"}
+      hidden={props.hidden}
       onClick={() => props.onOpenDirect(props.member.nick)}
       type="button"
     >
-      {props.showAvatar !== false && (
-        <span
-          aria-hidden="true"
-          class={styles.avatar}
-          style={{ background: color() }}
-        >
-          {initial(props.member.nick)}
-        </span>
-      )}
+      <span
+        aria-hidden="true"
+        class={styles.avatar}
+        style={{ background: color() }}
+      >
+        {initial(props.member.nick)}
+      </span>
       <Line class={styles.identity} title={props.member.nick}>
         {props.showModeSymbol !== false && (
           <span class={styles.mode}>{props.member.mode_symbol ?? ""}</span>
