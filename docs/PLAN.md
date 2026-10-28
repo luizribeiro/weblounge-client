@@ -50,4 +50,4 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** pinned at `7d5e4bf`. Breaking changes approved for 0.1 are in flight (guarded `client.direct(nick)`, `Sent::Confirmed|Unconfirmed`, `name_rules()` unavailable before 005, per-conversation lag gaps). The engine wraps DM sending and name storage in its own small types so adopting them stays local. papo 0.1.0 is tagged after this milestone's slice works on it.
+- **papo:** papo 0.1 adopted at `73be450`. Guarded directs, split-send reconciliation, server name rules, lag diagnostics, and channel-recreation warnings are integrated.
