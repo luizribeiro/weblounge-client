@@ -30,14 +30,14 @@ writes `text/plain`; it never serializes `innerText` or cloned DOM. The pure mod
 ```ts
 export type CopyRow =
   | { readonly kind: "message"; readonly time: Date; readonly author: string; readonly text: string }
-  | { readonly kind: "action"; readonly time: Date; readonly author: string; readonly text: string }
+  | { readonly kind: "action"; readonly author: string; readonly text: string }
   | { readonly kind: "day-divider"; readonly label: string };
 
 serializeCopyRows(rows: readonly CopyRow[]): string;
 ```
 
 Messages, including mentions, serialize as `[22:01] <luiz> text`; actions as
-`[22:01] * tomo is grabbing coffee`; dividers as `--- Today ---`. The initial debug view derives
+`* tomo is grabbing coffee`; dividers as `--- Today ---`. The initial debug view derives
 message rows from `MessageProjection`; final message rows will carry their already-derived display
 kind from the engine. An empty range leaves native copy alone. Copying an input always remains
 native.
