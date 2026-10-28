@@ -18,7 +18,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 3b. [x] Fix engine slice findings from manual testing and code review.
 4. [x] Desktop shell: sidebar buffer list, single pane, Lounge and Lounge Night themes following the system.
 4b. [ ] Member list.
-5. [ ] Message list (virtualised, one-line layout).
+5. [x] Message list (virtualised one-line timeline, read state, latest history, and membership runs).
 6. [ ] Composer with optimistic send (`Sent`-based confirmation).
 7. [ ] Mobile shell: chats list and pushed chat screen.
 8. [ ] End-to-end check against weblounge over `wss://`.
