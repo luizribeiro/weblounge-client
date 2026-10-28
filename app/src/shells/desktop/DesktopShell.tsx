@@ -49,6 +49,7 @@ export interface DesktopShellProps {
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly memberWindows?: ReadonlyMap<number, MemberWindow> | undefined;
+  readonly showMemberModeSymbols?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
   readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
@@ -308,6 +309,7 @@ export function DesktopShell(props: DesktopShellProps) {
           onRequestRange={(offset, limit) =>
             props.onRequestMembers?.(activeBuffer()?.id ?? 0, offset, limit)
           }
+          showModeSymbols={props.showMemberModeSymbols}
           window={memberWindow()}
         />
       )}

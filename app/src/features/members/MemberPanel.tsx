@@ -17,6 +17,7 @@ interface MemberPanelProps {
   readonly onClose: () => void;
   readonly onOpenDirect: (nick: string) => void;
   readonly onRequestRange: (offset: number, limit: number) => void;
+  readonly showModeSymbols?: boolean | undefined;
 }
 
 export function MemberPanel(props: MemberPanelProps) {
@@ -108,6 +109,7 @@ export function MemberPanel(props: MemberPanelProps) {
                         props.window.members,
                       ),
                   props.onOpenDirect,
+                  props.showModeSymbols !== false,
                 )}
               </li>
             )}
@@ -121,6 +123,7 @@ export function MemberPanel(props: MemberPanelProps) {
 function renderRow(
   row: MemberListRow | undefined,
   onOpenDirect: (nick: string) => void,
+  showModeSymbols: boolean,
 ) {
   if (row?.kind === "group")
     return (
@@ -129,7 +132,13 @@ function renderRow(
       </div>
     );
   if (row?.kind === "member" && row.member !== undefined)
-    return <MemberRow member={row.member} onOpenDirect={onOpenDirect} />;
+    return (
+      <MemberRow
+        member={row.member}
+        onOpenDirect={onOpenDirect}
+        showModeSymbol={showModeSymbols}
+      />
+    );
   return <div class={styles.placeholder} />;
 }
 function formatCount(count: number): string {

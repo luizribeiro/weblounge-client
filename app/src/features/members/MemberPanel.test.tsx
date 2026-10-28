@@ -41,6 +41,7 @@ it("renders counted groups with a bounded DOM and panel actions", async () => {
     "Following #room",
   );
   expect(screen.getByText("Operators — 1")).toBeInTheDocument();
+  expect(screen.getByText("@")).toBeInTheDocument();
   expect(container.querySelectorAll("li").length).toBeLessThan(80);
   expect(container.querySelector("[data-member-virtual-size]")).toHaveStyle({
     height: "240056px",
@@ -51,6 +52,20 @@ it("renders counted groups with a bounded DOM and panel actions", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Hide members" }));
   expect(open).toHaveBeenCalledWith("weblounge");
   expect(close).toHaveBeenCalledOnce();
+});
+
+it("passes the mode-symbol setting to member rows", () => {
+  render(() => (
+    <MemberPanel
+      bufferTitle="#room"
+      onClose={() => {}}
+      onOpenDirect={() => {}}
+      onRequestRange={() => {}}
+      showModeSymbols={false}
+      window={window}
+    />
+  ));
+  expect(screen.queryByText("@")).not.toBeInTheDocument();
 });
 
 it("requests the first window while loading", () => {
