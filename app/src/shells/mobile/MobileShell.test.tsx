@@ -70,6 +70,7 @@ it("closes the member drawer before popping the chat", () => {
       completion={undefined}
       initialBufferId={3}
       memberships={new Map()}
+      memberViewScope="test-port"
       messages={new Map()}
       networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
       onLoadHistory={() => {}}
@@ -81,9 +82,15 @@ it("closes the member drawer before popping the chat", () => {
     />
   ));
 
+  expect(requestMembers).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Show members" }));
   expect(screen.getByRole("dialog", { name: "Members" })).toBeVisible();
-  expect(requestMembers).toHaveBeenCalledWith(3, 0, 256, "");
+  expect(requestMembers).toHaveBeenCalledWith(
+    "test-port:mobile:drawer",
+    3,
+    0,
+    "",
+  );
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   expect(screen.getByRole("heading", { name: "#room" })).toBeVisible();

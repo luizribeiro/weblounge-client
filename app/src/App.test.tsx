@@ -127,9 +127,22 @@ it("opens the projected member panel and routes a member to a DM", async () => {
       read_through: null,
     },
   });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Toggle member list" }),
+  );
+  const request = client.commands.find(
+    ({ command }) => command.type === "request_members",
+  );
+  if (request?.command.type !== "request_members")
+    throw new Error("member request missing");
+  const viewId = request.command.view_id;
+  if (viewId === undefined) throw new Error("member view id missing");
   client.emit({
     type: "members_changed",
     buffer_id: 2,
+    view_id: viewId,
+    version: 0,
+    window_size: 256,
     offset: 0,
     total: 1,
     counts: [1, 0, 0, 0, 0],
@@ -147,9 +160,6 @@ it("opens the projected member panel and routes a member to a DM", async () => {
     ],
   });
 
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Toggle member list" }),
-  );
   fireEvent.click(
     screen.getByRole("button", { name: "Open direct message with mel" }),
   );

@@ -48,7 +48,8 @@ export interface DesktopShellProps {
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
-  readonly memberWindows?: ReadonlyMap<number, MemberWindow> | undefined;
+  readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
+  readonly memberViewScope?: string | undefined;
   readonly showMemberModeSymbols?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
   readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
@@ -58,9 +59,9 @@ export interface DesktopShellProps {
   readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
   readonly onRequestMembers?:
     | ((
+        viewId: string,
         bufferId: number,
         offset: number,
-        limit: number,
         filter?: string,
       ) => void)
     | undefined;
@@ -70,6 +71,7 @@ export interface DesktopShellProps {
 }
 
 export function DesktopShell(props: DesktopShellProps) {
+  const memberViewScope = props.memberViewScope ?? crypto.randomUUID();
   const [layout, setLayout] = createSignal(
     createSinglePane(props.activeBufferId),
   );
@@ -90,9 +92,11 @@ export function DesktopShell(props: DesktopShellProps) {
     const buffer = activeBuffer();
     return new Set(buffer === undefined ? [] : [buffer.id]);
   });
-  const memberWindow = createMemo(() =>
-    props.memberWindows?.get(activeBuffer()?.id ?? -1),
-  );
+  const memberViewId = () => `${memberViewScope}:desktop:${layout().root.id}`;
+  const memberWindow = createMemo(() => {
+    const current = props.memberWindows?.get(memberViewId());
+    return current?.buffer_id === activeBuffer()?.id ? current : undefined;
+  });
   const membersVisible = () =>
     memberPanelOpen() && activeBuffer()?.kind === "channel";
   const context = (): CommandContext => ({
@@ -177,11 +181,6 @@ export function DesktopShell(props: DesktopShellProps) {
     }
     requestedHistory.add(buffer.id);
     props.onLoadHistory(buffer.id);
-  });
-
-  createEffect(() => {
-    const buffer = activeBuffer();
-    if (buffer?.kind === "channel") props.onRequestMembers?.(buffer.id, 0, 128);
   });
 
   createEffect(() => {
@@ -311,8 +310,12 @@ export function DesktopShell(props: DesktopShellProps) {
           onOpenDirect={(nick) =>
             props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick)
           }
-          onRequestRange={(offset, limit) =>
-            props.onRequestMembers?.(activeBuffer()?.id ?? 0, offset, limit)
+          onRequestRange={(offset) =>
+            props.onRequestMembers?.(
+              memberViewId(),
+              activeBuffer()?.id ?? 0,
+              offset,
+            )
           }
           showModeSymbols={props.showMemberModeSymbols}
           window={memberWindow()}

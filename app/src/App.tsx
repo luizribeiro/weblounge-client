@@ -30,6 +30,7 @@ interface AppProps {
 }
 
 export function App(props: AppProps) {
+  const clientId = crypto.randomUUID();
   const theme = installSystemTheme(document, window);
   const removeDensity = installDensity(document);
   onCleanup(() => theme.dispose());
@@ -52,7 +53,7 @@ export function App(props: AppProps) {
     ReadonlyMap<number, readonly MembershipProjection[]>
   >(new Map());
   const [memberWindows, setMemberWindows] = createSignal<
-    ReadonlyMap<number, MemberWindow>
+    ReadonlyMap<string, MemberWindow>
   >(new Map());
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
@@ -92,9 +93,9 @@ export function App(props: AppProps) {
         );
       }
       if (message.type === "members_changed") {
-        setMemberWindows((current) =>
-          new Map(current).set(message.buffer_id, message),
-        );
+        const viewId = message.view_id;
+        if (viewId !== undefined)
+          setMemberWindows((current) => new Map(current).set(viewId, message));
       }
       applyDebugEvent(
         message,
@@ -114,7 +115,7 @@ export function App(props: AppProps) {
       new URL(window.location.href),
       (path) => window.history.replaceState(window.history.state, "", path),
     );
-    void startEngine(mountedClient, setEngineStatus, debugPassword);
+    void startEngine(mountedClient, setEngineStatus, debugPassword, clientId);
     onCleanup(() => {
       unregisterContextSurface();
       removeContextMenuHandler();
@@ -140,6 +141,7 @@ export function App(props: AppProps) {
         </p>
       )}
       <ResponsiveShell
+        memberViewScope={clientId}
         networks={networks()}
         buffers={buffers()}
         composerNotice={composerNotice()}
@@ -196,15 +198,16 @@ export function App(props: AppProps) {
             },
           });
         }}
-        onRequestMembers={(bufferId, offset, limit, filter = "") => {
+        onRequestMembers={(viewId, bufferId, offset, filter = "") => {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
             command: {
               type: "request_members",
               buffer_id: bufferId,
+              view_id: viewId,
               offset,
-              limit,
+              limit: 0,
               filter,
             },
           });
@@ -225,11 +228,12 @@ async function startEngine(
   client: EngineClient,
   setStatus: (status: string) => void,
   debugPassword: string | null,
+  clientId: string,
 ): Promise<void> {
   try {
     await client.start({
       build_id: __BUILD_ID__,
-      client_id: crypto.randomUUID(),
+      client_id: clientId,
       last_revision: null,
       shell: "web",
     });

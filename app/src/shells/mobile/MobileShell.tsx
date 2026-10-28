@@ -26,21 +26,23 @@ interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
-  readonly memberWindows?: ReadonlyMap<number, MemberWindow> | undefined;
+  readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
+  readonly memberViewScope?: string | undefined;
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
     | undefined;
   readonly onRequestMembers?:
     | ((
+        viewId: string,
         bufferId: number,
         offset: number,
-        limit: number,
         filter?: string,
       ) => void)
     | undefined;
 }
 
 export function MobileShell(props: MobileShellProps) {
+  const memberViewId = `${props.memberViewScope ?? crypto.randomUUID()}:mobile:drawer`;
   const reducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const initial = createMobileStack();
@@ -103,7 +105,6 @@ export function MobileShell(props: MobileShellProps) {
   const openMembers = (bufferId: number) => {
     setMemberFilter("");
     setDrawerBufferId(bufferId);
-    props.onRequestMembers?.(bufferId, 0, 256, "");
     window.history.pushState(
       { ...historyState(), webloungeMobileDrawer: true },
       "",
@@ -263,7 +264,6 @@ export function MobileShell(props: MobileShellProps) {
           onClose={closeDrawer}
           onFilter={(filter) => {
             setMemberFilter(filter);
-            props.onRequestMembers?.(drawerBufferId() ?? 0, 0, 256, filter);
           }}
           onOpenDirect={(nick) => {
             pendingDirect = {
@@ -272,15 +272,15 @@ export function MobileShell(props: MobileShellProps) {
             };
             closeDrawer();
           }}
-          onRequestRange={(offset, limit) =>
+          onRequestRange={(offset) =>
             props.onRequestMembers?.(
+              memberViewId,
               drawerBufferId() ?? 0,
               offset,
-              limit,
               memberFilter(),
             )
           }
-          window={props.memberWindows?.get(drawerBufferId() ?? -1)}
+          window={props.memberWindows?.get(memberViewId)}
         />
       )}
     </main>

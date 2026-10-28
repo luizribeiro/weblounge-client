@@ -46,7 +46,8 @@ it("toggles the channel member panel and routes direct messages", () => {
       completion={undefined}
       focusRequest={undefined}
       memberships={new Map()}
-      memberWindows={new Map([[2, members]])}
+      memberViewScope="test-port"
+      memberWindows={new Map([["test-port:desktop:pane-1", members]])}
       messages={new Map()}
       networks={[]}
       onLoadHistory={() => {}}
@@ -60,6 +61,7 @@ it("toggles the channel member panel and routes direct messages", () => {
 
   const toggle = screen.getByRole("button", { name: "Toggle member list" });
   expect(toggle).toHaveTextContent("7");
+  expect(requestMembers).not.toHaveBeenCalled();
   fireEvent.click(toggle);
   expect(screen.getByRole("complementary", { name: "Members" })).toBeVisible();
   fireEvent.click(
@@ -68,5 +70,5 @@ it("toggles the channel member panel and routes direct messages", () => {
   expect(openDirect).toHaveBeenCalledWith(1, "mel");
   fireEvent.click(screen.getByRole("button", { name: "Hide members" }));
   expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
-  expect(requestMembers).toHaveBeenCalledWith(2, 0, 128);
+  expect(requestMembers).toHaveBeenCalledWith("test-port:desktop:pane-1", 2, 0);
 });
