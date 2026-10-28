@@ -115,6 +115,13 @@ test.describe("native feel against local Ergo", () => {
     );
     const text = `hidden message ${Date.now()}`;
     try {
+      await page.getByRole("button", { name: "Show members" }).click();
+      await expect(page.getByRole("dialog", { name: "Members" })).toBeVisible();
+      await expect(
+        page.getByRole("button", {
+          name: "Open direct message with hidden-audit",
+        }),
+      ).toBeVisible();
       await page.waitForTimeout(100);
       await page.evaluate(
         () =>

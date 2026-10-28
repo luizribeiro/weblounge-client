@@ -90,18 +90,16 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     rows();
     void (document.fonts?.ready ?? Promise.resolve()).then(() => {
-      requestAnimationFrame(() => {
-        if (list?.isConnected !== true) return;
-        for (const element of list.querySelectorAll<HTMLLIElement>(
-          "li[data-index]",
-        )) {
-          virtualizer.measureElement(element);
-          virtualizer.resizeItem(
-            Number(element.dataset.index),
-            element.offsetHeight,
-          );
-        }
-      });
+      if (list?.isConnected !== true) return;
+      for (const element of list.querySelectorAll<HTMLLIElement>(
+        "li[data-index]",
+      )) {
+        virtualizer.measureElement(element);
+        virtualizer.resizeItem(
+          Number(element.dataset.index),
+          element.offsetHeight,
+        );
+      }
     });
   });
   const reportLiveEdge = () => {
