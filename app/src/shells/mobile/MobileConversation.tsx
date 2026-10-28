@@ -26,6 +26,7 @@ export interface MobileConversationProps {
   readonly onBack: () => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onOpenMembers: () => void;
   readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
 }
@@ -100,7 +101,32 @@ export function MobileConversation(props: MobileConversationProps) {
             )}
           </Line>
         </span>
-        <span aria-hidden="true" />
+        {props.buffer.kind === "channel" ? (
+          <button
+            aria-label="Show members"
+            class={styles.members}
+            onClick={props.onOpenMembers}
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              fill="none"
+              height="20"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+              viewBox="0 0 24 24"
+              width="20"
+            >
+              <path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1" />
+              <circle cx="9.5" cy="8" r="3.5" />
+              <path d="M21 19v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </button>
+        ) : (
+          <span aria-hidden="true" />
+        )}
       </header>
       <div class={styles.conversation}>
         <MessageList

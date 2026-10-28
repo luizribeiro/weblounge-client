@@ -1,4 +1,4 @@
-import { render } from "@solidjs/testing-library";
+import { render, screen } from "@solidjs/testing-library";
 import { onMount } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
@@ -96,19 +96,37 @@ it("waits for both visibility and window focus before starting the dwell", () =>
   expect(markRead).toHaveBeenCalledWith(2, 8);
 });
 
+it("shows the members action only for channels", () => {
+  const result = render(() =>
+    conversation({ ...buffer, kind: "channel", title: "#room" }, () => {}),
+  );
+  expect(screen.getByRole("button", { name: "Show members" })).toBeVisible();
+  result.unmount();
+  render(() => conversation({ ...buffer, kind: "direct" }, () => {}));
+  expect(screen.queryByRole("button", { name: "Show members" })).toBeNull();
+});
+
 function renderConversation(
   onMarkRead: (bufferId: number, through: number) => void,
 ) {
-  render(() => (
+  return render(() => conversation(buffer, onMarkRead));
+}
+
+function conversation(
+  currentBuffer: BufferProjection,
+  onMarkRead: (bufferId: number, through: number) => void,
+) {
+  return (
     <MobileConversation
-      buffer={buffer}
+      buffer={currentBuffer}
       memberships={[]}
       messages={[message]}
       onBack={() => {}}
       onLoadHistory={() => {}}
       onMarkRead={onMarkRead}
+      onOpenMembers={() => {}}
       onRequestCompletion={() => {}}
       onSend={async () => true}
     />
-  ));
+  );
 }

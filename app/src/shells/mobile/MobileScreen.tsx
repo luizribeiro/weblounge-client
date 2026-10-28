@@ -28,6 +28,7 @@ export interface MobileShellData {
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onOpenMembers?: ((bufferId: number) => void) | undefined;
   readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
 }
@@ -95,6 +96,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onBack={props.onBack}
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}
+          onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
           onRequestCompletion={props.onRequestCompletion}
           onSend={props.onSend}
         />
