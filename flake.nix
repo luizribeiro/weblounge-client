@@ -156,6 +156,15 @@
           fetcherVersion = 5;
           hash = "sha256-WOnLqtnVYDbMWWuIY0mTuQ9AbRhUIxqalLchfijXZq4=";
         };
+        vitestEnvironment = {
+          maxWorkers = 4;
+          testTimeout = 15000;
+        };
+        vitestCommand = command: ''
+          WEBLOUNGE_VITEST_MAX_WORKERS=${toString vitestEnvironment.maxWorkers} \
+            WEBLOUNGE_VITEST_TEST_TIMEOUT=${toString vitestEnvironment.testTimeout} \
+            ${command}
+        '';
         appCheck =
           name: command:
           pkgs.stdenvNoCC.mkDerivation {
@@ -334,7 +343,7 @@
                   pkgs.nodejs
                   pkgs.pnpm
                 ];
-                text = "pnpm test";
+                text = vitestCommand "pnpm test";
               }
             }/bin/vitest-hook";
             files = "(^|/)(app/.*\\.tsx?|package\\.json|pnpm-lock\\.yaml)$";
@@ -432,11 +441,7 @@
           e2e-dev = e2eDev;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
-          vitest = appCheck "vitest" ''
-            WEBLOUNGE_VITEST_MAX_WORKERS=4 \
-              WEBLOUNGE_VITEST_TEST_TIMEOUT=15000 \
-              ${pkgs.pnpm}/bin/pnpm test
-          '';
+          vitest = appCheck "vitest" (vitestCommand "${pkgs.pnpm}/bin/pnpm test");
         };
         formatter = pkgs.nixfmt-tree;
         packages = {
