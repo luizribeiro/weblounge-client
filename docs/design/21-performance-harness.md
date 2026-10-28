@@ -44,6 +44,13 @@ accounts/channels, obeys server rate limits, and emits JSON Lines for readiness,
 progress, and failure. Timed work begins only after seed state is confirmed. It never implements
 IRC or uses raw protocol sends to bypass papo.
 
+The milestone-2 message-list scroll check has a separate e2e-only Vite entry that directly renders
+`MessageList` with 10,000 engine-shaped projections. It is built only when the e2e harness flag is
+set and never ships in the production app. This check is deliberately **render-only**: it starts no
+engine or worker and measures only list virtualisation and painting. Its fixture uses palette
+indices produced by the engine's nick hash, including correct own-nick authorship; real protocol
+and history behavior remain covered by the Ergo journeys.
+
 ## Milestone-1 scenarios
 
 All performance gates use Ergo. Each scenario includes functional assertions before accepting
