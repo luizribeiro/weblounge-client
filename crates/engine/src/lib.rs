@@ -147,4 +147,22 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn submit_input_surfaces_typed_parse_errors() {
+        let engine = Engine::new("build", "engine-1");
+        assert_eq!(
+            engine.handle(UiToEngine::Command(CommandEnvelope {
+                id: "bad-command".into(),
+                command: Command::SubmitInput {
+                    buffer_id: crate::BufferId(1),
+                    input: "/whois mel".into(),
+                },
+            })),
+            [EngineToUi::CommandRejected {
+                id: "bad-command".into(),
+                message_key: "composer.unknown_command".into(),
+            }]
+        );
+    }
 }

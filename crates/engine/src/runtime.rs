@@ -6,6 +6,7 @@ use crate::{
     BufferId, Command, CommandEnvelope, EngineToUi, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId,
     direct_target::DirectSendError,
+    input,
     state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
@@ -76,6 +77,13 @@ impl Runtime {
             Command::SendMessage { buffer_id, text } => {
                 self.send_message(envelope.id, buffer_id, text)
             }
+            Command::SubmitInput { buffer_id, input } => match input::parse(&input) {
+                Ok(input::ParsedInput::Message(text)) => {
+                    self.send_message(envelope.id, buffer_id, text)
+                }
+                Ok(_) => rejected_command(envelope.id, "composer.command_not_implemented"),
+                Err(error) => rejected_command(envelope.id, error.message_key()),
+            },
             Command::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }

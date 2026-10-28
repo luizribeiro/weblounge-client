@@ -256,6 +256,13 @@ pub enum Command {
         /// Message body.
         text: String,
     },
+    /// Parse and submit ordinary composer text or a supported slash command.
+    SubmitInput {
+        /// Buffer whose composer produced the input.
+        buffer_id: BufferId,
+        /// Nonempty composer contents.
+        input: String,
+    },
     /// Advance one buffer's marker through a committed timeline row.
     MarkRead {
         /// Buffer being viewed.

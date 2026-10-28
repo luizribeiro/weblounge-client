@@ -51,7 +51,15 @@ buffer_id: BufferId,
 /**
  * Message body.
  */
-text: string, } | { "type": "mark_read",
+text: string, } | { "type": "submit_input",
+/**
+ * Buffer whose composer produced the input.
+ */
+buffer_id: BufferId,
+/**
+ * Nonempty composer contents.
+ */
+input: string, } | { "type": "mark_read",
 /**
  * Buffer being viewed.
  */
