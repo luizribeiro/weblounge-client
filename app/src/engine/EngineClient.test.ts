@@ -158,8 +158,8 @@ describe("WorkerEngineClient", () => {
     );
   });
 
-  it("publishes an optimistic row before a same-frame confirmation", () => {
-    const { client, port } = fixture();
+  it("flushes prior events before an optimistic row in the same frame", () => {
+    const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
     const optimistic = {
@@ -174,6 +174,7 @@ describe("WorkerEngineClient", () => {
       received_at_ms: 1,
     };
 
+    port.emit({ type: "notice", message_key: "already-queued" });
     port.emit({
       type: "messages_appended",
       buffer_id: 2,
@@ -190,10 +191,17 @@ describe("WorkerEngineClient", () => {
       },
     });
 
-    expect(listener).toHaveBeenCalledOnce();
-    expect(listener).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "messages_appended" }),
-    );
+    expect(listener.mock.calls.map(([message]) => message.type)).toEqual([
+      "notice",
+      "messages_appended",
+    ]);
+
+    frames[0]?.(0);
+    expect(listener.mock.calls.map(([message]) => message.type)).toEqual([
+      "notice",
+      "messages_appended",
+      "message_confirmed",
+    ]);
   });
 
   it("closes only its worker connection", async () => {

@@ -188,12 +188,12 @@ export class WorkerEngineClient implements EngineClient {
   };
 
   #enqueueForFrame(message: EngineToUi): void {
-    if (this.#visibility === "visible" && containsOptimisticMessage(message)) {
-      this.#publish(message);
-      return;
-    }
     this.#renderQueue.push(message);
     if (this.#visibility === "hidden") return;
+    if (containsOptimisticMessage(message)) {
+      this.#drainRenderQueue();
+      return;
+    }
     this.#scheduleRenderFrame();
   }
 
@@ -206,6 +206,10 @@ export class WorkerEngineClient implements EngineClient {
   #flushRenderQueue(): void {
     this.#framePending = false;
     if (this.#visibility === "hidden") return;
+    this.#drainRenderQueue();
+  }
+
+  #drainRenderQueue(): void {
     const messages = this.#renderQueue.splice(0);
     for (const message of messages) this.#publish(message);
   }
