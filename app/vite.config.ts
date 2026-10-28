@@ -8,6 +8,8 @@ import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
 
 export default defineConfig(({ mode }) => {
   const performanceHarness = process.env.WEBLOUNGE_E2E_HARNESS === "1";
+  const maxWorkers = process.env.WEBLOUNGE_VITEST_MAX_WORKERS;
+  const testTimeout = process.env.WEBLOUNGE_VITEST_TEST_TIMEOUT;
   const wasmDirectory =
     process.env.WEBLOUNGE_ENGINE_WASM_DIR ??
     resolve(import.meta.dirname, "../result/dist");
@@ -61,6 +63,12 @@ export default defineConfig(({ mode }) => {
       environment: "jsdom",
       exclude: ["e2e/**", "node_modules/**"],
       setupFiles: ["./src/test-setup.ts"],
+      ...(maxWorkers === undefined
+        ? {}
+        : { maxWorkers: Number.parseInt(maxWorkers, 10) }),
+      ...(testTimeout === undefined
+        ? {}
+        : { testTimeout: Number.parseInt(testTimeout, 10) }),
     },
   };
 });

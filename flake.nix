@@ -432,7 +432,11 @@
           e2e-dev = e2eDev;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
-          vitest = appCheck "vitest" "${pkgs.pnpm}/bin/pnpm test";
+          vitest = appCheck "vitest" ''
+            WEBLOUNGE_VITEST_MAX_WORKERS=4 \
+              WEBLOUNGE_VITEST_TEST_TIMEOUT=15000 \
+              ${pkgs.pnpm}/bin/pnpm test
+          '';
         };
         formatter = pkgs.nixfmt-tree;
         packages = {
