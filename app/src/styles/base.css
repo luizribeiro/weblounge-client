@@ -103,6 +103,13 @@ textarea,
   outline-offset: 2px;
 }
 
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--wl-color-focus-ring);
+  outline: none;
+}
+
 ::selection {
   background: var(--wl-color-selection);
   color: var(--wl-color-selection-fg);

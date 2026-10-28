@@ -68,6 +68,34 @@ test.describe("native feel against local Ergo", () => {
     }
   });
 
+  test("uses one focus border on the composer", async ({ page }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    await composer.focus();
+
+    const composerFocus = await composer.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--wl-color-focus-ring)";
+      document.body.append(probe);
+      const focus = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        border: style.borderTopColor,
+        focus,
+        outline: style.outlineStyle,
+      };
+    });
+    expect(composerFocus.outline).toBe("none");
+    expect(composerFocus.border).toBe(composerFocus.focus);
+
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.keyboard.press("Tab");
+    await expect(page.locator(":focus")).toHaveCSS("outline-style", "solid");
+  });
+
   test("batches hidden message rendering into one visible catch-up", async ({
     page,
   }) => {
