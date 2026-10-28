@@ -20,7 +20,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 4b. [ ] Member list.
 5. [x] Message list (virtualised one-line timeline, read state, latest history, and membership runs).
 5b. [x] Message list fixes (scrolling, logo, bottom anchor, real screenshots, and copy coverage).
-6. [ ] Composer with optimistic send (`Sent`-based confirmation).
+6. [x] Composer with optimistic send (`Sent`-based confirmation).
 7. [ ] Mobile shell: chats list and pushed chat screen.
 8. [ ] End-to-end check against weblounge over `wss://`.
 
