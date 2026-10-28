@@ -14,6 +14,7 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "./engine/protocol";
+import { t } from "./features/composer/strings";
 import { DesktopShell } from "./shells/desktop/DesktopShell";
 import { installSystemTheme } from "./theme/theme-controller";
 import {
@@ -68,9 +69,7 @@ export function App(props: AppProps) {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
       if (message.type === "notice") {
-        setEngineNotice(
-          "This browser uses one connection per tab because SharedWorker is unavailable.",
-        );
+        setEngineNotice(t(message.message_key));
       }
       if (message.type === "completion_result") {
         setCompletion({
@@ -163,8 +162,8 @@ export function App(props: AppProps) {
             .catch((error: unknown) => {
               setComposerNotice(
                 error instanceof EngineCommandError
-                  ? error.messageKey
-                  : "engine.command_failed",
+                  ? t(error.messageKey, { input: text })
+                  : t("engine.command_failed"),
               );
               return false;
             });

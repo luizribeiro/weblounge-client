@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
-import type { EngineClient } from "./engine/EngineClient";
+import { type EngineClient, EngineCommandError } from "./engine/EngineClient";
 import type { CommandEnvelope, EngineClientMessage } from "./engine/protocol";
 
 it("keeps synthetic timelines out of the production app", () => {
@@ -142,6 +142,33 @@ it("focuses command-created buffers only from engine buffer ids", async () => {
   expect(
     await screen.findByRole("heading", { name: "#new" }),
   ).toBeInTheDocument();
+});
+
+it("renders command error and engine notice keys as human text", async () => {
+  const client = new FakeEngineClient("composer.unknown_command");
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#home",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  const input = await screen.findByRole("textbox", { name: "Message #home" });
+  fireEvent.input(input, { target: { value: "/frobnicate" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  expect(await screen.findByText("Unknown command /frobnicate")).toBeVisible();
+  client.emit({ type: "notice", message_key: "engine.state_inconsistent" });
+  expect(screen.getByRole("note")).toHaveTextContent(
+    "The conversation changed unexpectedly. Try again.",
+  );
 });
 
 it("prepends requested history before live rows", async () => {
@@ -393,10 +420,22 @@ class FakeEngineClient implements EngineClient {
   readonly commands: CommandEnvelope[] = [];
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
+  constructor(private readonly rejection?: string) {}
+
   async start(): Promise<void> {}
 
   async send(command: Parameters<EngineClient["send"]>[0]) {
     this.commands.push(command);
+    if (
+      command.command.type === "submit_input" &&
+      this.rejection !== undefined
+    ) {
+      throw new EngineCommandError({
+        type: "command_rejected",
+        id: command.id,
+        message_key: this.rejection,
+      });
+    }
     if (command.command.type === "diagnostic") {
       this.emit({
         type: "diagnostic",

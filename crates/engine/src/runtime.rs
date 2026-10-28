@@ -313,10 +313,10 @@ impl Runtime {
                     Some(key) => client.join(target.channel).key(key).await,
                     None => client.join(target.channel).await,
                 };
-                if result.is_err() {
+                if let Err(error) = result {
                     let _ = outbound.send(EngineToUi::CommandRejected {
                         id: command_id,
-                        message_key: "engine.command_refused".into(),
+                        message_key: join_error_key(&error).into(),
                     });
                     return;
                 }
@@ -942,6 +942,17 @@ fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
     }]
 }
 
+fn join_error_key(error: &papo::Error) -> &'static str {
+    if matches!(
+        error,
+        papo::Error::Server(error) if error.refusal() == papo::Refusal::BannedFromChannel
+    ) {
+        "engine.join_banned"
+    } else {
+        "engine.command_refused"
+    }
+}
+
 fn spawn_request<T: Send + 'static>(
     outbound: mpsc::UnboundedSender<EngineToUi>,
     command_id: String,
@@ -1275,7 +1286,7 @@ mod tests {
             result,
             EngineToUi::CommandRejected {
                 id: "banned-join".into(),
-                message_key: "engine.command_refused".into(),
+                message_key: "engine.join_banned".into(),
             }
         );
     }
