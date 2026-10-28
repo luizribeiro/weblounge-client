@@ -30,7 +30,7 @@ import {
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
 
-interface DesktopShellProps {
+export interface DesktopShellProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly composerNotice: string | undefined;
@@ -44,6 +44,8 @@ interface DesktopShellProps {
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
+  readonly activeBufferId?: number | undefined;
+  readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
@@ -51,7 +53,9 @@ interface DesktopShellProps {
 }
 
 export function DesktopShell(props: DesktopShellProps) {
-  const [layout, setLayout] = createSignal(createSinglePane());
+  const [layout, setLayout] = createSignal(
+    createSinglePane(props.activeBufferId),
+  );
   const [sidebarShown, setSidebarShown] = createSignal(true);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   const [foreground, setForeground] = createSignal(
@@ -76,6 +80,7 @@ export function DesktopShell(props: DesktopShellProps) {
     if (bufferId !== undefined) {
       if (deliberate) navigationCommitted = true;
       setLayout((current) => showInFocusedPane(current, bufferId));
+      props.onSelectBuffer?.(bufferId);
     }
   };
   const moveBuffer = (offset: -1 | 1) => {
@@ -106,6 +111,13 @@ export function DesktopShell(props: DesktopShellProps) {
     detectPlatform(navigator),
   );
   const run = (id: CommandId) => registry.run(id, context());
+
+  createEffect(() => {
+    const activeBufferId = props.activeBufferId;
+    if (activeBufferId !== undefined && activeBufferId !== activeBuffer()?.id) {
+      setLayout((current) => showInFocusedPane(current, activeBufferId));
+    }
+  });
 
   createEffect(() => {
     const buffer = activeBuffer();
