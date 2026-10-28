@@ -326,6 +326,9 @@ pub enum Command {
         offset: u32,
         #[ts(type = "number")]
         limit: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        filter: Option<String>,
     },
     /// Open or focus a direct conversation without sending a message.
     OpenDirect {
@@ -464,6 +467,9 @@ pub enum EngineToUi {
             type = "Array<{ group: \"operators\" | \"voiced\" | \"online\" | \"away\" | \"bots\", nick: string, mode_symbol: string | null, away: boolean, bot: boolean, account: string | null, nick_color_index: number, is_you: boolean }>"
         )]
         members: Vec<MemberProjection>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        filter: Option<String>,
     },
     /// Replace an optimistic row with its `papo::Sent` confirmation.
     MessageConfirmed {
@@ -541,6 +547,7 @@ mod tests {
                 nick_color_index: 3,
                 is_you: false,
             }],
+            filter: None,
         };
         let json = serde_json::to_string(&event).expect("event serializes");
 

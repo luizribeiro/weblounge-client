@@ -74,10 +74,18 @@ pub(crate) fn project(
     buffer_id: BufferId,
     offset: u32,
     limit: u32,
+    filter: &str,
 ) -> Option<EngineToUi> {
+    let folded_filter = state.casemapping().fold(filter);
     let mut rows = state
         .channel(channel)?
         .members()
+        .filter(|member| {
+            state
+                .casemapping()
+                .fold(member.nick().as_ref())
+                .contains(folded_filter.as_ref())
+        })
         .map(|member| {
             let user = state.user(member.nick());
             let away = user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. }));
@@ -123,6 +131,7 @@ pub(crate) fn project(
         total,
         counts,
         members,
+        filter: (!filter.is_empty()).then(|| filter.to_owned()),
     })
 }
 
@@ -195,7 +204,7 @@ mod tests {
             total,
             members,
             ..
-        }) = project(&client.state(), &channel, BufferId(7), 1, 3)
+        }) = project(&client.state(), &channel, BufferId(7), 1, 3, "")
         else {
             panic!("member window")
         };
@@ -236,7 +245,7 @@ mod tests {
             total,
             members,
             ..
-        }) = project(&client.state(), &channel, BufferId(8), 1_000, 1_000)
+        }) = project(&client.state(), &channel, BufferId(8), 1_000, 1_000, "")
         else {
             panic!("member window")
         };
@@ -324,7 +333,7 @@ mod tests {
 
         let channel = client.state().name_rules().channel("#room");
         let Some(EngineToUi::MembersChanged { members, .. }) =
-            project(&client.state(), &channel, BufferId(9), 0, 256)
+            project(&client.state(), &channel, BufferId(9), 0, 256, "")
         else {
             panic!("member window")
         };
@@ -335,5 +344,33 @@ mod tests {
                 .map(|member| member.group),
             Some(MemberGroup::Bots)
         );
+    }
+
+    #[tokio::test]
+    async fn filters_member_windows_with_the_servers_casemapping() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@h JOIN #room").await;
+        wire.server(":offline.test 353 weblounge = #room :weblounge [Garden]")
+            .await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+
+        let channel = client.state().name_rules().channel("#room");
+        let Some(EngineToUi::MembersChanged {
+            total,
+            members,
+            filter,
+            ..
+        }) = project(&client.state(), &channel, BufferId(10), 0, 256, "{garden}")
+        else {
+            panic!("filtered member window")
+        };
+        assert_eq!(total, 1);
+        assert_eq!(members[0].nick, "[Garden]");
+        assert_eq!(filter.as_deref(), Some("{garden}"));
     }
 }

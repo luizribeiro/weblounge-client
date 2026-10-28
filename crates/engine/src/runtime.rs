@@ -120,7 +120,14 @@ impl Runtime {
                 buffer_id,
                 offset,
                 limit,
-            } => self.request_members(envelope.id, buffer_id, offset, limit),
+                filter,
+            } => self.request_members(
+                envelope.id,
+                buffer_id,
+                offset,
+                limit,
+                filter.as_deref().unwrap_or_default(),
+            ),
             Command::OpenDirect { network_id, nick } => {
                 self.open_direct(envelope.id, network_id, nick)
             }
@@ -156,6 +163,7 @@ impl Runtime {
         buffer_id: BufferId,
         offset: u32,
         limit: u32,
+        filter: &str,
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
@@ -164,9 +172,14 @@ impl Runtime {
         let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
             return rejected_command(command_id, "engine.channel_required");
         };
-        let Some(window) =
-            crate::members::project(&running.client.state(), &channel, buffer_id, offset, limit)
-        else {
+        let Some(window) = crate::members::project(
+            &running.client.state(),
+            &channel,
+            buffer_id,
+            offset,
+            limit,
+            filter,
+        ) else {
             return rejected_command(command_id, "engine.channel_not_found");
         };
         vec![window, EngineToUi::CommandResult { id: command_id }]
@@ -694,7 +707,7 @@ fn member_windows(
         .into_iter()
         .filter_map(|channel| {
             let buffer_id = running.model.buffer_id_for_channel(&channel)?;
-            crate::members::project(&snapshot, &channel, buffer_id, 0, 256)
+            crate::members::project(&snapshot, &channel, buffer_id, 0, 256, "")
         })
         .collect()
 }
