@@ -129,10 +129,12 @@ impl Runtime {
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let mut candidates = running.model.completion_candidates(buffer_id, &prefix);
-        if !prefix.starts_with('/') && !prefix.starts_with('#') {
-            let folded_prefix = prefix.to_lowercase();
-            let snapshot = running.client.state();
+        let snapshot = running.client.state();
+        let mut candidates = running
+            .model
+            .completion_candidates(buffer_id, &prefix, &snapshot);
+        if !prefix.starts_with('/') && !snapshot.isupport().is_channel(&prefix) {
+            let folded_prefix = snapshot.casemapping().fold(&prefix);
             let mut members = running
                 .model
                 .channel_for_buffer(buffer_id)
@@ -140,14 +142,19 @@ impl Runtime {
                 .into_iter()
                 .flat_map(papo::Channel::members)
                 .map(|member| member.nick().to_string())
-                .filter(|nick| nick.to_lowercase().starts_with(&folded_prefix))
+                .filter(|nick| snapshot.name_rules().nick(nick) != *snapshot.nick())
+                .filter(|nick| {
+                    snapshot
+                        .casemapping()
+                        .fold(nick)
+                        .starts_with(&*folded_prefix)
+                })
                 .collect::<Vec<_>>();
-            members.sort_by_key(|nick| nick.to_lowercase());
+            members.sort_by_key(|nick| snapshot.casemapping().fold(nick).into_owned());
             for member in members {
-                if !candidates
-                    .iter()
-                    .any(|candidate| candidate.eq_ignore_ascii_case(&member))
-                {
+                if !candidates.iter().any(|candidate| {
+                    snapshot.casemapping().fold(candidate) == snapshot.casemapping().fold(&member)
+                }) {
                     candidates.push(member);
                 }
             }
@@ -1136,7 +1143,7 @@ mod tests {
         assert!(matches!(
             completion.first(),
             Some(EngineToUi::CompletionResult { candidates, .. })
-                if candidates == &["weblounge"]
+                if candidates.is_empty()
         ));
 
         runtime.command(CommandEnvelope {

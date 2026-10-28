@@ -24,7 +24,8 @@ message/reason text after required arguments, and never exposes a raw-command es
 `CompleteInput { buffer_id, prefix }` returns a correlated `CompletionResult` with ordered string
 values. Candidates are commands at a leading slash, open channels for channel-shaped tokens, and
 channel nicks otherwise. Nicks are ordered by most recent message activity, followed by quiet
-members from papo's channel state. The UI identifies the token's replace range, requests candidates
+members from papo's channel state. IRC names match and deduplicate with papo's active server name
+rules, never UI locale casing. The UI identifies the token's replace range, requests candidates
 when a completion session starts, caches that result for Tab cycling, and applies selection locally,
 avoiding a worker round trip for every cycle or paint.
 

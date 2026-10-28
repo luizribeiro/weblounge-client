@@ -524,11 +524,20 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn completion_candidates(&self, buffer_id: BufferId, prefix: &str) -> Vec<String> {
+    pub(crate) fn completion_candidates(
+        &self,
+        buffer_id: BufferId,
+        prefix: &str,
+        state: &papo::State,
+    ) -> Vec<String> {
         const COMMANDS: [&str; 7] = ["/join", "/me", "/msg", "/nick", "/part", "/quit", "/topic"];
         let values: Vec<String> = if prefix.starts_with('/') {
             COMMANDS.into_iter().map(str::to_owned).collect()
-        } else if prefix.starts_with('#') {
+        } else if prefix
+            .chars()
+            .next()
+            .is_some_and(|first| state.isupport().chantypes().contains(first))
+        {
             self.buffer_order
                 .iter()
                 .filter_map(|id| self.buffers.get(id))
@@ -541,14 +550,15 @@ impl NetworkModel {
                 .into_iter()
                 .flat_map(|buffer| buffer.timeline.iter().rev())
                 .map(|record| record.projection.author.clone())
+                .filter(|nick| state.name_rules().nick(nick) != *state.nick())
                 .collect()
         };
-        let folded_prefix = prefix.to_lowercase();
+        let folded_prefix = state.casemapping().fold(prefix);
         let mut seen = std::collections::HashSet::new();
         values
             .into_iter()
-            .filter(|value| value.to_lowercase().starts_with(&folded_prefix))
-            .filter(|value| seen.insert(value.to_lowercase()))
+            .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
+            .filter(|value| seen.insert(state.casemapping().fold(value).into_owned()))
             .collect()
     }
 
@@ -1321,7 +1331,7 @@ mod tests {
     fn completion_candidates_follow_command_channel_and_recent_nick_order() {
         let (mut model, state) = model(10);
         let mut first = incoming(&state, "first", Some("one"), None, 1, TimelineOrigin::Live);
-        first.author = "alice".into();
+        first.author = "Alice[".into();
         model.receive_incoming(first, &state);
         let mut second = incoming(&state, "second", Some("two"), None, 2, TimelineOrigin::Live);
         second.author = "bob".into();
@@ -1334,9 +1344,26 @@ mod tests {
             })
             .expect("message buffer exists");
 
-        assert_eq!(model.completion_candidates(buffer_id, ""), ["bob", "alice"]);
-        assert_eq!(model.completion_candidates(buffer_id, "/j"), ["/join"]);
-        assert_eq!(model.completion_candidates(buffer_id, "#r"), ["#room"]);
+        assert_eq!(
+            model.completion_candidates(buffer_id, "", &state),
+            ["bob", "Alice["]
+        );
+        assert_eq!(
+            model.completion_candidates(buffer_id, "/j", &state),
+            ["/join"]
+        );
+        assert_eq!(
+            model.completion_candidates(buffer_id, "#r", &state),
+            ["#room"]
+        );
+        assert_eq!(
+            model.completion_candidates(buffer_id, "BOB", &state),
+            ["bob"]
+        );
+        assert_eq!(
+            model.completion_candidates(buffer_id, "alice{", &state),
+            ["Alice["]
+        );
     }
 
     #[test]

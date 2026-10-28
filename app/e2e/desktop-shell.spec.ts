@@ -86,9 +86,9 @@ test.describe("desktop shell against local Ergo", () => {
         page.locator("[data-message-row]").filter({ hasText: "waves hello" }),
       ).toBeVisible();
 
-      await composer.fill("weblo");
+      await composer.fill("comp");
       await composer.press("Tab");
-      await expect(composer).toHaveValue("weblounge ");
+      await expect(composer).toHaveValue("composer ");
       await mkdir(screenshotDirectory, { recursive: true });
       await page.screenshot({
         path: path.join(screenshotDirectory, "composer-completion-light.png"),
