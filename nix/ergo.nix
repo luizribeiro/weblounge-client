@@ -21,6 +21,7 @@ let
       .accounts.require-sasl.enabled = true |
       .accounts.require-sasl.exempted = [] |
       .accounts.login-throttling.enabled = false |
+      .accounts.nick-reservation.force-nick-equals-account = false |
       .history.enabled = true |
       .history.persistent.enabled = false |
       .languages.enabled = false |

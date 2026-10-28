@@ -152,6 +152,17 @@ test.describe("desktop shell against local Ergo", () => {
           exact: true,
         }),
       ).toBeVisible();
+      for (const [text, nick] of [
+        ["The garden is looking especially cozy today", "ana"],
+        ["puts a fresh pot of coffee on", "tomo"],
+        ["weblounge: history on open is working", "mel"],
+      ] as const) {
+        await expect(
+          screenshotPage
+            .locator("[data-message-row]")
+            .filter({ hasText: text }),
+        ).toContainText(nick);
+      }
       await mkdir(screenshotDirectory, { recursive: true });
       await screenshotPage.screenshot({
         path: path.join(screenshotDirectory, "desktop-shell-light.png"),

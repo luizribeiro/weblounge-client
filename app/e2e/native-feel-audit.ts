@@ -372,8 +372,8 @@ export async function auditMessageSelection(
   );
   expect(copied).toMatch(
     new RegExp(
-      `^\\[\\d{2}:\\d{2}\\] <weblounge-bot> ${firstText}\\n` +
-        `\\[\\d{2}:\\d{2}\\] <weblounge-bot> ${secondText}$`,
+      `^\\[\\d{2}:\\d{2}\\] <native-audit> ${firstText}\\n` +
+        `\\[\\d{2}:\\d{2}\\] <native-audit> ${secondText}$`,
     ),
   );
 }
