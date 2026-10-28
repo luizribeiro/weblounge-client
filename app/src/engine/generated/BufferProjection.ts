@@ -25,6 +25,10 @@ kind: BufferKind,
  */
 title: string,
 /**
+ * Session draft identity derived from the network and IRC-casemapped name.
+ */
+draft_key: string,
+/**
  * Current channel topic, when this is a channel and the server supplied one.
  */
 topic: string | null,

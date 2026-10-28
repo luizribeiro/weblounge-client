@@ -74,6 +74,8 @@ pub struct BufferProjection {
     pub kind: BufferKind,
     /// Current channel or nick display name.
     pub title: String,
+    /// Session draft identity derived from the network and IRC-casemapped name.
+    pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.
     pub topic: Option<String>,
     /// Messages after the local read position.

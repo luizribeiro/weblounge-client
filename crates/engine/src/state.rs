@@ -99,6 +99,7 @@ pub(crate) struct ReadAdvance {
 /// Mutable application identity and timeline state for one papo client.
 pub(crate) struct NetworkModel {
     network: NetworkProjection,
+    casemapping: papo::Casemapping,
     next_buffer_id: u64,
     next_message_id: u64,
     next_local_send_id: u64,
@@ -116,12 +117,14 @@ pub(crate) struct NetworkModel {
 impl NetworkModel {
     pub(crate) fn new(id: NetworkId, label: String, nickname: String, window_limit: usize) -> Self {
         let server_id = BufferId(1);
+        let casemapping = papo::Casemapping::default();
         let server = BufferState {
             projection: BufferProjection {
                 id: server_id,
                 network_id: id,
                 kind: BufferKind::Server,
                 title: label.clone(),
+                draft_key: draft_key(&label, &label, casemapping),
                 topic: None,
                 unread: 0,
                 mentions: 0,
@@ -142,6 +145,7 @@ impl NetworkModel {
                 nickname,
                 state: NetworkConnectionState::Connecting,
             },
+            casemapping,
             next_buffer_id: 2,
             next_message_id: 1,
             next_local_send_id: 1,
@@ -229,7 +233,9 @@ impl NetworkModel {
         {
             self.name_rebuilds += 1;
         }
+        self.casemapping = state.casemapping();
         self.names.clear();
+        let network_label = self.network.label.clone();
         for (id, buffer) in &mut self.buffers {
             let key = match buffer.projection.kind {
                 BufferKind::Channel => Some(NameKey::Channel(
@@ -241,6 +247,8 @@ impl NetworkModel {
                 BufferKind::Server => None,
             };
             buffer.key.clone_from(&key);
+            buffer.projection.draft_key =
+                draft_key(&network_label, &buffer.projection.title, self.casemapping);
             if let Some(key) = key {
                 self.names.insert(key, *id);
             }
@@ -261,6 +269,11 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&id)?;
         let key = NameKey::Channel(new);
         buffer.projection.title = key.title();
+        buffer.projection.draft_key = draft_key(
+            &self.network.label,
+            &buffer.projection.title,
+            self.casemapping,
+        );
         buffer.key = Some(key.clone());
         self.names.insert(key, id);
         Some(self.buffers_event())
@@ -275,6 +288,11 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&id)?;
         let key = NameKey::Direct(new);
         buffer.projection.title = key.title();
+        buffer.projection.draft_key = draft_key(
+            &self.network.label,
+            &buffer.projection.title,
+            self.casemapping,
+        );
         buffer.key = Some(key.clone());
         self.names.insert(key, id);
         Some(self.buffers_event())
@@ -788,6 +806,7 @@ impl NetworkModel {
             network_id: self.network.id,
             kind,
             title: key.title(),
+            draft_key: draft_key(&self.network.label, &key.title(), self.casemapping),
             topic,
             unread: 0,
             mentions: 0,
@@ -921,6 +940,15 @@ fn inconsistent_state_notice() -> Vec<EngineToUi> {
     }]
 }
 
+fn draft_key(network: &str, buffer: &str, casemapping: papo::Casemapping) -> String {
+    let folded = casemapping.fold(buffer);
+    format!(
+        "{}:{network}:{}:{folded}",
+        network.len(),
+        casemapping.as_str()
+    )
+}
+
 fn decrement_or_remove(counts: &mut HashMap<String, usize>, key: &str) {
     let remove = counts.get_mut(key).is_some_and(|count| {
         *count -= 1;
@@ -993,7 +1021,8 @@ mod tests {
     use papo_testing::StateBuilder;
 
     use super::{
-        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, nick_color_index, time_millis,
+        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, draft_key, nick_color_index,
+        time_millis,
     };
     use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
 
@@ -1328,6 +1357,18 @@ mod tests {
         assert_ne!(
             nick_color_index(papo::Casemapping::Ascii, "Alice["),
             nick_color_index(papo::Casemapping::Ascii, "ALICE{")
+        );
+    }
+
+    #[test]
+    fn draft_keys_use_the_network_and_irc_casemapped_name() {
+        assert_eq!(
+            draft_key("Test", "#ROOM[", papo::Casemapping::Rfc1459),
+            "4:Test:rfc1459:#room{"
+        );
+        assert_ne!(
+            draft_key("Other", "#ROOM[", papo::Casemapping::Rfc1459),
+            "4:Test:rfc1459:#room{"
         );
     }
 

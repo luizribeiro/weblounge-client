@@ -158,6 +158,36 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes engine-owned stable draft keys", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "buffer_added",
+      buffer: {
+        id: 3,
+        network_id: 1,
+        kind: "channel",
+        title: "#Room[",
+        draft_key: "5:Local:rfc1459:#room{",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buffer: expect.objectContaining({
+          draft_key: "5:Local:rfc1459:#room{",
+        }),
+      }),
+    );
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

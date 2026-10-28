@@ -520,6 +520,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.network_id !== "number" ||
     !isOneOf(value.kind, ["server", "channel", "direct"]) ||
     typeof value.title !== "string" ||
+    typeof value.draft_key !== "string" ||
     !(value.topic === null || typeof value.topic === "string") ||
     typeof value.unread !== "number" ||
     typeof value.mentions !== "number" ||
@@ -532,6 +533,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     network_id: value.network_id,
     kind: value.kind,
     title: value.title,
+    draft_key: value.draft_key,
     topic: value.topic,
     unread: value.unread,
     mentions: value.mentions,
