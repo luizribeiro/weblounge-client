@@ -6,12 +6,19 @@ interface WasteCounters {
   readonly timeouts: number;
 }
 
+interface NativeFeelMetrics extends WasteCounters {
+  enginePatches: number;
+  layoutShift: number;
+  trackingWaste: boolean;
+}
+
 export async function installNativeFeelInstrumentation(
   page: Page,
 ): Promise<void> {
   await page.addInitScript(() => {
-    const metrics = {
+    const metrics: NativeFeelMetrics = {
       animationFrames: 0,
+      enginePatches: 0,
       intervals: 0,
       layoutShift: 0,
       timeouts: 0,
@@ -22,6 +29,44 @@ export async function installNativeFeelInstrumentation(
       __setNativeVisibility?: (hidden: boolean) => void;
     };
     state.__nativeFeelMetrics = metrics;
+
+    const addPortListener = MessagePort.prototype.addEventListener;
+    const removePortListener = MessagePort.prototype.removeEventListener;
+    const portListeners = new WeakMap<object, EventListener>();
+    MessagePort.prototype.addEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type !== "message" || listener === null) {
+        addPortListener.call(this, type, listener, options);
+        return;
+      }
+      const wrapped: EventListener = (event) => {
+        const data = (event as MessageEvent<unknown>).data;
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "type" in data &&
+          data.type === "messages_appended"
+        ) {
+          metrics.enginePatches += 1;
+        }
+        if (typeof listener === "function") listener.call(this, event);
+        else listener.handleEvent(event);
+      };
+      portListeners.set(listener, wrapped);
+      addPortListener.call(this, type, wrapped, options);
+    };
+    MessagePort.prototype.removeEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      const wrapped =
+        listener === null ? undefined : portListeners.get(listener);
+      removePortListener.call(this, type, wrapped ?? listener, options);
+    };
 
     const requestFrame = window.requestAnimationFrame.bind(window);
     window.requestAnimationFrame = (callback) =>

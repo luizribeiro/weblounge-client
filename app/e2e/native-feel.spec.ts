@@ -79,6 +79,7 @@ test.describe("native feel against local Ergo", () => {
       await page.evaluate(() => {
         const state = window as Window & {
           __hiddenMutations?: number;
+          __nativeFeelMetrics?: { enginePatches: number };
           __setNativeVisibility?: (hidden: boolean) => void;
         };
         const list = document.querySelector(
@@ -89,11 +90,26 @@ test.describe("native feel against local Ergo", () => {
         new MutationObserver(() => {
           state.__hiddenMutations = (state.__hiddenMutations ?? 0) + 1;
         }).observe(list, { attributes: true, childList: true, subtree: true });
+        if (state.__nativeFeelMetrics === undefined) {
+          throw new Error("native-feel metrics are missing");
+        }
+        state.__nativeFeelMetrics.enginePatches = 0;
         state.__setNativeVisibility?.(true);
       });
 
       bot.privmsg("#weblounge-test", text);
-      await page.waitForTimeout(300);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as Window & {
+                  __nativeFeelMetrics?: { enginePatches: number };
+                }
+              ).__nativeFeelMetrics?.enginePatches ?? 0,
+          ),
+        )
+        .toBe(1);
       expect(
         await page.evaluate(
           () =>
