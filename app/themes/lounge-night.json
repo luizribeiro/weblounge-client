@@ -62,9 +62,7 @@
     "muted": "#a9b3a8",
     "line": "#39463b",
     "panel": "#202c24",
-    "soft": "#131b18",
     "accent": "#bdd9a7",
-    "signal": "#bdd9a7",
     "header": "#0f1613"
   }
 }

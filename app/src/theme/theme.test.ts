@@ -33,6 +33,8 @@ describe("theme registry", () => {
     expect(nickPaletteSize).toBe(6);
     expect(themeStyleSheet()).toContain("--wl-color-bg:#f3f1e9");
     expect(themeStyleSheet()).toContain("--wl-color-bg:#18221e");
+    expect(themes[1]?.onboarding).not.toHaveProperty("soft");
+    expect(themes[1]?.onboarding).not.toHaveProperty("signal");
   });
 
   it("owns motion tokens and their reduced-motion override", () => {

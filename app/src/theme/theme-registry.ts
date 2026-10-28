@@ -11,7 +11,8 @@ export interface ThemeDefinition {
   readonly shape: Readonly<Record<ShapeToken, string>>;
   readonly effects: Readonly<Record<EffectToken, string>>;
   readonly nickPalette: readonly [CssColor, ...CssColor[]];
-  readonly onboarding: Readonly<Record<OnboardingToken, CssColor>>;
+  readonly onboarding: Readonly<Record<OnboardingToken, CssColor>> &
+    Readonly<Partial<Record<LightOnboardingToken, CssColor>>>;
 }
 
 const colorTokens = [
@@ -62,17 +63,17 @@ const onboardingTokens = [
   "muted",
   "line",
   "panel",
-  "soft",
   "accent",
-  "signal",
   "header",
 ] as const;
+const lightOnboardingTokens = ["soft", "signal"] as const;
 
 type ColorToken = (typeof colorTokens)[number];
 type TypographyToken = (typeof typographyTokens)[number];
 type ShapeToken = (typeof shapeTokens)[number];
 type EffectToken = (typeof effectTokens)[number];
 type OnboardingToken = (typeof onboardingTokens)[number];
+type LightOnboardingToken = (typeof lightOnboardingTokens)[number];
 
 const themeFiles = import.meta.glob("../../themes/*.json", {
   eager: true,
@@ -187,10 +188,12 @@ function parseTheme(path: string, value: unknown): ThemeDefinition {
     nickPalette,
     onboarding: parseTokenRecord(
       value.onboarding,
-      onboardingTokens,
+      value.appearance === "light"
+        ? [...onboardingTokens, ...lightOnboardingTokens]
+        : onboardingTokens,
       true,
       `${path}.onboarding`,
-    ),
+    ) as ThemeDefinition["onboarding"],
   };
 }
 
