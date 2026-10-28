@@ -36,10 +36,12 @@ sends, and execution through papo's typed APIs. `/msg` creates or reuses a DM bu
 through its guarded `DirectTarget`; a conversation name is never treated as a send target. papo
 owns splitting and `draft/multiline`, and `Sent` confirms every optimistic row.
 
-The UI owns textarea geometry, the active completion session, focus, and per-buffer drafts. Drafts
-are keyed by stable buffer ID in `sessionStorage`, so buffer switches and tab reloads survive while
-devices and unrelated tabs do not share unsent text. The UI removes a draft only after submission
-is accepted and keeps it on typed rejection.
+The UI owns textarea geometry, the active completion session, focus, and per-buffer drafts. The
+engine projects each draft key from the configured network identity and buffer name folded with
+the server's active name rules; process-local buffer IDs never enter storage. Guarded
+`sessionStorage` access caps each draft and the total draft collection, so buffer switches and tab
+reloads survive while devices and unrelated tabs do not share unsent text. The UI removes a draft
+only after submission is accepted and keeps it on typed rejection.
 
 Enter submits, Shift+Enter inserts a newline, and the send button submits the same path. All
 composer shortcuts ignore `isComposing`, key code 229, `Dead`, and `Process`; composition events
@@ -54,8 +56,9 @@ as a notice beside the affected buffer's composer. UI code does not classify pro
 Parser tables cover every command, missing arguments, unknown commands, whitespace, and multiline
 text. Scripted papo wire tests cover command lines, `Sent` confirmation, splitting, and correlated
 standard-reply/numeric refusals. Completion tests cover activity order and channel membership;
-component tests cover replace ranges, Enter/Shift+Enter, Tab cycling, drafts, empty-Up, and IME. Playwright
-uses local Ergo for plain send, `/me`, `/join`, `/msg`, nick completion, reload/switch drafts, and
+component tests cover replace ranges, Enter/Shift+Enter, Tab cycling, storage failures and caps,
+stable-key reload drafts, empty-Up, and IME. Playwright uses local Ergo for plain send, `/me`,
+`/join`, `/msg`, nick completion, reload/rejoin of a non-autojoined draft, buffer switching, and
 the native-feel idle/hidden audits; light and dark completion screenshots are inspected.
 
 ## Decisions
