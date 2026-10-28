@@ -26,6 +26,7 @@ pub(crate) struct Text(pub(crate) String);
 
 impl CommandArg for Text {
     const KIND: CommandArgumentKind = CommandArgumentKind::Text;
+    const CONSUMES_REST: bool = true;
     fn parse(tokens: &mut Tokens<'_>, _: &ParseContext<'_>) -> Result<Self, InputError> {
         tokens
             .text()
@@ -128,5 +129,12 @@ mod tests {
             ChannelList::parse(&mut tokens, &context),
             Ok(ChannelList(vec!["#one".into(), "&two".into()]))
         );
+    }
+
+    #[test]
+    fn text_declares_that_it_consumes_the_rest_of_input() {
+        const _: () = assert!(Text::CONSUMES_REST);
+        const _: () = assert!(<Option<Text>>::CONSUMES_REST);
+        const _: () = assert!(!Channel::CONSUMES_REST);
     }
 }

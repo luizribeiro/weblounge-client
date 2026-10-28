@@ -47,6 +47,7 @@ impl<'a> Tokens<'a> {
 
 pub(crate) trait CommandArg: Sized {
     const KIND: CommandArgumentKind;
+    const CONSUMES_REST: bool = false;
     fn parse(tokens: &mut Tokens<'_>, context: &ParseContext<'_>) -> Result<Self, InputError>;
     fn spec(name: &str) -> CommandArgumentSpec {
         CommandArgumentSpec {
@@ -59,6 +60,7 @@ pub(crate) trait CommandArg: Sized {
 
 impl<T: CommandArg> CommandArg for Option<T> {
     const KIND: CommandArgumentKind = T::KIND;
+    const CONSUMES_REST: bool = T::CONSUMES_REST;
     fn parse(tokens: &mut Tokens<'_>, context: &ParseContext<'_>) -> Result<Self, InputError> {
         if tokens.remaining.is_empty() {
             Ok(None)

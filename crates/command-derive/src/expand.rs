@@ -33,7 +33,6 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
                 "command variants require named fields",
             ));
         };
-        validate_text_is_last(fields)?;
         let ident = &variant.ident;
         let field_names = fields
             .named
@@ -45,9 +44,22 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
             .iter()
             .map(|field| &field.ty)
             .collect::<Vec<_>>();
-        let parses = field_names.iter().zip(&field_types).map(|(name, ty)| {
-            quote! { let #name = <#ty as CommandArg>::parse(&mut tokens, context)?; }
-        });
+        let last = field_types.len().saturating_sub(1);
+        let parses = field_names
+            .iter()
+            .zip(&field_types)
+            .enumerate()
+            .map(|(index, (name, ty))| {
+                let rest_guard = (index != last).then(|| {
+                    quote! {
+                        const { assert!(!<#ty as CommandArg>::CONSUMES_REST, "rest-consuming argument must be last"); }
+                    }
+                });
+                quote! {
+                    #rest_guard
+                    let #name = <#ty as CommandArg>::parse(&mut tokens, context)?;
+                }
+            });
         let patterns = std::iter::once(&metadata.name)
             .chain(&metadata.aliases)
             .collect::<Vec<_>>();
@@ -119,20 +131,4 @@ fn spec(
             secret_arguments: #secret,
         }
     }
-}
-
-fn validate_text_is_last(fields: &syn::FieldsNamed) -> syn::Result<()> {
-    for field in fields
-        .named
-        .iter()
-        .take(fields.named.len().saturating_sub(1))
-    {
-        if quote!(#field).to_string().contains("Text") {
-            return Err(syn::Error::new_spanned(
-                field,
-                "Text must be the last argument",
-            ));
-        }
-    }
-    Ok(())
 }
