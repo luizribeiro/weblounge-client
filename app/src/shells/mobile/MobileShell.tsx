@@ -212,6 +212,7 @@ export function MobileShell(props: MobileShellProps) {
           return (
             <MobileScreen
               buffers={props.buffers}
+              commandSpecs={props.commandSpecs}
               composerNotice={props.composerNotice}
               completion={props.completion}
               filter={filter()}

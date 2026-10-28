@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   BufferProjection,
+  CommandSpec,
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
@@ -16,6 +17,7 @@ import styles from "./MobileShell.module.css";
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;
   readonly composerNotice?: string | undefined;
+  readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: {
     readonly bufferId: number;
     readonly prefix: string;
@@ -148,6 +150,7 @@ export function MobileConversation(props: MobileConversationProps) {
         <Composer
           bufferId={props.buffer.id}
           bufferTitle={props.buffer.title}
+          commandSpecs={props.commandSpecs}
           draftKey={props.buffer.draft_key}
           candidatePrefix={
             props.completion?.bufferId === props.buffer.id
