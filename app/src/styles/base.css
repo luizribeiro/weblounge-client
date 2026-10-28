@@ -28,6 +28,7 @@ body,
 }
 
 [data-app-root] {
+  -webkit-touch-callout: none;
   block-size: 100%;
   cursor: default;
   overflow: auto;
@@ -36,6 +37,7 @@ body,
 }
 
 [data-app-root] * {
+  -webkit-touch-callout: none;
   cursor: inherit;
   user-select: none;
 }
