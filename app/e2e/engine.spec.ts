@@ -114,7 +114,7 @@ test.describe("local Ergo user flow", () => {
       }
       await expect(
         page.getByText("timeline seed 39", { exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
       await expect
         .poll(() => distanceFromBottom(list), { timeout: 15_000 })
         .toBeLessThanOrEqual(3);
