@@ -399,7 +399,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 [[package]]
 name = "papo"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=7d5e4bf2da42f1863753e1311ee817db9e08aa2f#7d5e4bf2da42f1863753e1311ee817db9e08aa2f"
+source = "git+https://github.com/luizribeiro/papo?rev=73be4508936cb98a168e243ff59e78d9570e74bd#73be4508936cb98a168e243ff59e78d9570e74bd"
 dependencies = [
  "futures-core",
  "futures-io",
@@ -424,7 +424,7 @@ dependencies = [
 [[package]]
 name = "papo-core"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=7d5e4bf2da42f1863753e1311ee817db9e08aa2f#7d5e4bf2da42f1863753e1311ee817db9e08aa2f"
+source = "git+https://github.com/luizribeiro/papo?rev=73be4508936cb98a168e243ff59e78d9570e74bd#73be4508936cb98a168e243ff59e78d9570e74bd"
 dependencies = [
  "base64",
  "hmac",
@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "papo-proto"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=7d5e4bf2da42f1863753e1311ee817db9e08aa2f#7d5e4bf2da42f1863753e1311ee817db9e08aa2f"
+source = "git+https://github.com/luizribeiro/papo?rev=73be4508936cb98a168e243ff59e78d9570e74bd#73be4508936cb98a168e243ff59e78d9570e74bd"
 dependencies = [
  "precis-profiles",
  "zeroize",
@@ -447,10 +447,11 @@ dependencies = [
 [[package]]
 name = "papo-testing"
 version = "0.1.0"
-source = "git+https://github.com/luizribeiro/papo?rev=7d5e4bf2da42f1863753e1311ee817db9e08aa2f#7d5e4bf2da42f1863753e1311ee817db9e08aa2f"
+source = "git+https://github.com/luizribeiro/papo?rev=73be4508936cb98a168e243ff59e78d9570e74bd#73be4508936cb98a168e243ff59e78d9570e74bd"
 dependencies = [
  "papo",
  "tokio",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

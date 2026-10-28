@@ -7,7 +7,8 @@ use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, commands,
-    direct_target::DirectTarget, name_key::NameKey,
+    direct_target::DirectTarget,
+    name_key::{NameKey, channel as channel_name, nick as nick_name},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -239,12 +240,14 @@ impl NetworkModel {
         let network_label = self.network.label.clone();
         for (id, buffer) in &mut self.buffers {
             let key = match buffer.projection.kind {
-                BufferKind::Channel => Some(NameKey::Channel(
-                    state.name_rules().channel(buffer.projection.title.clone()),
-                )),
-                BufferKind::Direct => Some(NameKey::Direct(
-                    state.name_rules().nick(buffer.projection.title.clone()),
-                )),
+                BufferKind::Channel => Some(NameKey::Channel(channel_name(
+                    state,
+                    buffer.projection.title.clone(),
+                ))),
+                BufferKind::Direct => Some(NameKey::Direct(nick_name(
+                    state,
+                    buffer.projection.title.clone(),
+                ))),
                 BufferKind::Server => None,
             };
             buffer.key.clone_from(&key);
@@ -473,8 +476,17 @@ impl NetworkModel {
             .find(|record| record.projection.local_send_id == Some(pending.local_send_id))?;
         record.projection.delivery = MessageDelivery::Confirmed;
         record.projection.local_send_id = None;
-        record.projection.server_ids = sent.msgids.iter().map(ToString::to_string).collect();
-        record.projection.server_time_ms = sent.server_time.map(time_millis);
+        let (server_ids, server_time) = match &sent.outcome {
+            papo::SentOutcome::Confirmed {
+                lines, server_time, ..
+            } => (
+                lines.iter().map(|(id, _)| id.to_string()).collect(),
+                server_time.map(time_millis),
+            ),
+            _ => (Vec::new(), None),
+        };
+        record.projection.server_ids = server_ids;
+        record.projection.server_time_ms = server_time;
         for msgid in &record.projection.server_ids {
             *self.msgids.entry(msgid.clone()).or_default() += 1;
         }
@@ -589,7 +601,7 @@ impl NetworkModel {
                 .into_iter()
                 .flat_map(|buffer| buffer.timeline.iter().rev())
                 .map(|record| record.projection.author.clone())
-                .filter(|nick| state.name_rules().nick(nick) != *state.nick())
+                .filter(|nick| nick_name(state, nick) != *state.nick())
                 .collect()
         };
         let folded_prefix = state.casemapping().fold(prefix);
@@ -606,7 +618,7 @@ impl NetworkModel {
         nick: String,
         state: &papo::State,
     ) -> (BufferId, Vec<EngineToUi>) {
-        let nick = state.name_rules().nick(nick);
+        let nick = nick_name(state, nick);
         let account = state
             .user(&nick)
             .and_then(|user| user.account().name().cloned());
@@ -1011,7 +1023,7 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
 fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
     text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty())
-        .any(|word| state.name_rules().nick(word) == *state.nick())
+        .any(|word| nick_name(state, word) == *state.nick())
 }
 
 pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u32 {
@@ -1046,8 +1058,8 @@ mod tests {
     use papo_testing::StateBuilder;
 
     use super::{
-        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, draft_key, nick_color_index,
-        time_millis,
+        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, channel_name, draft_key,
+        nick_color_index, nick_name, time_millis,
     };
     use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
 
@@ -1060,7 +1072,7 @@ mod tests {
         origin: TimelineOrigin,
     ) -> Incoming {
         Incoming {
-            conversation: NameKey::Channel(state.name_rules().channel("#room")),
+            conversation: NameKey::Channel(channel_name(state, "#room")),
             direct_account: None,
             author: "alice".into(),
             text: text.into(),
@@ -1162,7 +1174,7 @@ mod tests {
             ),
             &state,
         );
-        let channel = state.name_rules().channel("#room");
+        let channel = channel_name(&state, "#room");
         let first = model
             .receive_membership(&channel, MembershipKind::Joined, "mel".into(), Some(2), 2)
             .expect("membership row");
@@ -1237,7 +1249,7 @@ mod tests {
     fn add_buffer_stores_its_initial_topic_atomically() {
         let (mut model, state) = model(10);
         let buffer = model.add_buffer(
-            NameKey::Channel(state.name_rules().channel("#room")),
+            NameKey::Channel(channel_name(&state, "#room")),
             BufferKind::Channel,
             None,
             Some("A quiet room".into()),
@@ -1350,7 +1362,7 @@ mod tests {
     #[test]
     fn failed_send_updates_the_optimistic_timeline_row() {
         let (mut model, state) = model(10);
-        let key = NameKey::Channel(state.name_rules().channel("#room"));
+        let key = NameKey::Channel(channel_name(&state, "#room"));
         let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
         let (pending, _) = model
             .begin_send(buffer.id, "will fail".into(), &state)
@@ -1365,7 +1377,7 @@ mod tests {
     #[test]
     fn optimistic_send_uses_the_platform_wall_clock() {
         let (mut model, state) = model(10);
-        let key = NameKey::Channel(state.name_rules().channel("#room"));
+        let key = NameKey::Channel(channel_name(&state, "#room"));
         let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
         let before = time_millis(papo::time::now());
 
@@ -1493,8 +1505,8 @@ mod tests {
     #[test]
     fn send_targets_round_trip_through_name_keys() {
         let (_, state) = model(10);
-        let channel = NameKey::Channel(state.name_rules().channel("#room"));
-        let direct = NameKey::Direct(state.name_rules().nick("alice"));
+        let channel = NameKey::Channel(channel_name(&state, "#room"));
+        let direct = NameKey::Direct(nick_name(&state, "alice"));
 
         for key in [channel, direct] {
             let target = SendTarget::from_name_key(key.clone(), None);
@@ -1505,7 +1517,7 @@ mod tests {
     #[test]
     fn inconsistent_buffer_identity_becomes_a_diagnostic() {
         let (mut model, state) = model(10);
-        let key = NameKey::Channel(state.name_rules().channel("#room"));
+        let key = NameKey::Channel(channel_name(&state, "#room"));
         model.names.insert(key, crate::BufferId(u64::MAX));
 
         let events = model.receive_incoming(

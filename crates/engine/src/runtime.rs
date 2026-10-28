@@ -10,6 +10,7 @@ use crate::{
     NetworkConnectionState, NetworkId,
     commands::{self, Command},
     direct_target::DirectSendError,
+    name_key::RequiredNameRules,
     state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
@@ -289,7 +290,7 @@ impl Runtime {
                 .into_iter()
                 .flat_map(papo::Channel::members)
                 .map(|member| member.nick().to_string())
-                .filter(|nick| snapshot.name_rules().nick(nick) != *snapshot.nick())
+                .filter(|nick| snapshot.required_name_rules().nick(nick) != *snapshot.nick())
                 .filter(|nick| {
                     snapshot
                         .casemapping()
@@ -455,7 +456,10 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             for target in targets {
-                let channel = client.state().name_rules().channel(target.channel.clone());
+                let channel = client
+                    .state()
+                    .required_name_rules()
+                    .channel(target.channel.clone());
                 let result = match target.key {
                     Some(key) => client.join(target.channel).key(key).await,
                     None => client.join(target.channel).await,
@@ -519,14 +523,15 @@ impl Runtime {
         };
         let snapshot = client.state();
         if snapshot.isupport().is_channel(&target) {
-            let channel = snapshot.name_rules().channel(target);
+            let channel = snapshot.required_name_rules().channel(target);
             spawn_request(self.outbound.clone(), command_id, async move {
                 client.notice(channel, text).await
             });
         } else {
-            let nick = snapshot.name_rules().nick(target);
+            let nick = snapshot.required_name_rules().nick(target);
             spawn_request(self.outbound.clone(), command_id, async move {
-                client.notice(nick, text).await
+                let target = client.direct(nick).await?;
+                client.notice(target, text).await
             });
         }
         Vec::new()
@@ -568,7 +573,7 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let channel = requested
-            .map(|name| running.client.state().name_rules().channel(name))
+            .map(|name| running.client.state().required_name_rules().channel(name))
             .or_else(|| running.model.channel_for_buffer(buffer_id));
         let Some(channel) = channel else {
             return rejected_command(command_id, "engine.channel_required");
@@ -608,7 +613,7 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let channel = requested
-            .map(|name| running.client.state().name_rules().channel(name))
+            .map(|name| running.client.state().required_name_rules().channel(name))
             .or_else(|| running.model.channel_for_buffer(buffer_id));
         let Some(channel) = channel else {
             return rejected_command(command_id, "engine.channel_required");
@@ -650,7 +655,7 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let channel = requested
-            .map(|name| running.client.state().name_rules().channel(name))
+            .map(|name| running.client.state().required_name_rules().channel(name))
             .or_else(|| running.model.channel_for_buffer(buffer_id));
         let Some(channel) = channel else {
             return rejected_command(command_id, "engine.channel_required");
@@ -1312,6 +1317,7 @@ mod tests {
     use crate::{
         BufferId, BufferKind, EngineRequest, EngineRequestEnvelope, EngineToUi, NetworkId,
         SaslCredentials,
+        name_key::RequiredNameRules,
         state::{NetworkModel, SendTarget},
     };
 
@@ -1376,7 +1382,7 @@ mod tests {
             running.model.sync_channels(&client.state());
             running
                 .model
-                .buffer_id_for_channel(&client.state().name_rules().channel("#large"))
+                .buffer_id_for_channel(&client.state().required_name_rules().channel("#large"))
                 .expect("large channel buffer")
         };
         let runtime = Runtime {
@@ -1712,7 +1718,7 @@ mod tests {
             let mut state = lock(&runtime.state);
             let running = state.network.as_mut().expect("network remains running");
             running.model.sync_channels(&running.client.state());
-            let target = SendTarget::Channel(running.client.state().name_rules().channel("#new"));
+            let target = SendTarget::Channel(known_channel(&running.client, "#new"));
             running
                 .model
                 .buffer_id_for_target(&target)
@@ -1755,6 +1761,18 @@ mod tests {
         .await;
         process_runtime_event(&runtime, changed);
         assert_network_nickname(&mut receiver, "lounge2");
+        wire.server(":alice!u@host JOIN #new").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "msg".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/msg alice hello".into(),
+            },
+        });
+        assert_unfocused_direct(&output, "alice");
+        assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
+
         runtime.request(EngineRequestEnvelope {
             id: "part".into(),
             request: EngineRequest::SubmitInput {
@@ -1764,22 +1782,6 @@ mod tests {
         });
         assert_eq!(wire.next_sent().await, "PART #new later");
         wire.server(":lounge2!u@host PART #new :later").await;
-
-        let output = runtime.request(EngineRequestEnvelope {
-            id: "msg".into(),
-            request: EngineRequest::SubmitInput {
-                buffer_id: BufferId(1),
-                input: "/msg alice hello".into(),
-            },
-        });
-        assert!(output.iter().any(
-            |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == "alice")
-        ));
-        let focused = output
-            .iter()
-            .any(|event| matches!(event, EngineToUi::FocusBufferRequested { .. }));
-        assert!(!focused);
-        assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
     }
 
     #[tokio::test]
@@ -1900,6 +1902,21 @@ mod tests {
                 return event;
             }
         }
+    }
+
+    fn known_channel(client: &papo::Client, name: &str) -> papo::ChannelName {
+        client.state().required_name_rules().channel(name)
+    }
+
+    fn assert_unfocused_direct(output: &[EngineToUi], nick: &str) {
+        assert!(output.iter().any(
+            |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == nick)
+        ));
+        assert!(
+            !output
+                .iter()
+                .any(|event| matches!(event, EngineToUi::FocusBufferRequested { .. }))
+        );
     }
 
     fn process_runtime_event(runtime: &Runtime, event: papo::Event) {

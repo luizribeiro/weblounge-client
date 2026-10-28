@@ -44,10 +44,14 @@ impl DirectTarget {
         {
             return Err(DirectSendError::AccountChanged);
         }
+        let target = client
+            .direct(&self.nick)
+            .await
+            .map_err(|_| DirectSendError::Protocol)?;
         if action {
-            client.action(self.nick, text).await
+            client.action(target, text).await
         } else {
-            client.privmsg(self.nick, text).await
+            client.privmsg(target, text).await
         }
         .map_err(|_| DirectSendError::Protocol)
     }
@@ -60,6 +64,7 @@ mod tests {
     use papo_testing::wire;
 
     use super::{DirectSendError, DirectTarget};
+    use crate::name_key::RequiredNameRules;
 
     #[tokio::test]
     async fn refuses_a_dm_when_the_known_account_changed() {
@@ -79,8 +84,8 @@ mod tests {
         wait_for(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let snapshot = client.state();
         let target = DirectTarget::new(
-            snapshot.name_rules().nick("alice"),
-            Some(snapshot.name_rules().account("alice-one")),
+            snapshot.required_name_rules().nick("alice"),
+            Some(snapshot.required_name_rules().account("alice-one")),
         );
 
         wire.server(":alice!a@host ACCOUNT alice-two").await;
