@@ -100,10 +100,13 @@ test.describe("native feel against local Ergo", () => {
     page,
   }) => {
     await installNativeFeelInstrumentation(page);
+    await page.setViewportSize({ width: 402, height: 874 });
     await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: "#weblounge-test" }).click();
     await expect(
       page.getByRole("heading", { name: /#weblounge-test/ }),
     ).toBeVisible();
+    await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
     const bot = await IrcClient.connect(
       "hidden-audit",
       "weblounge-bot",
@@ -118,13 +121,17 @@ test.describe("native feel against local Ergo", () => {
           __nativeFeelMetrics?: { enginePatches: number };
           __setNativeVisibility?: (hidden: boolean) => void;
         };
-        const list = document.querySelector(
-          '[data-buffer-title="#weblounge-test"] [data-message-list]',
-        );
+        const list = document.querySelector("[data-message-list]");
         if (list === null) throw new Error("channel message list is missing");
         state.__hiddenMutations = 0;
+        let catchupPending = false;
         new MutationObserver(() => {
+          if (catchupPending) return;
+          catchupPending = true;
           state.__hiddenMutations = (state.__hiddenMutations ?? 0) + 1;
+          requestAnimationFrame(() => {
+            catchupPending = false;
+          });
         }).observe(list, { attributes: true, childList: true, subtree: true });
         if (state.__nativeFeelMetrics === undefined) {
           throw new Error("native-feel metrics are missing");
