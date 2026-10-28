@@ -51,7 +51,23 @@ id: string,
 /**
  * Stable localization key describing the rejection.
  */
-message_key: string, } | { "type": "network_state_changed",
+message_key: string, } | { "type": "completion_result",
+/**
+ * Command that requested these candidates.
+ */
+command_id: string,
+/**
+ * Buffer whose projection supplied the candidates.
+ */
+buffer_id: BufferId,
+/**
+ * Prefix used to filter the candidates.
+ */
+prefix: string,
+/**
+ * Ordered candidates, with the most recently active nick first.
+ */
+candidates: Array<string>, } | { "type": "network_state_changed",
 /**
  * Complete current network projection.
  */

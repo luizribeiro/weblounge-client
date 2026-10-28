@@ -59,7 +59,15 @@ buffer_id: BufferId,
 /**
  * Nonempty composer contents.
  */
-input: string, } | { "type": "mark_read",
+input: string, } | { "type": "complete_input",
+/**
+ * Buffer whose composer owns the completion session.
+ */
+buffer_id: BufferId,
+/**
+ * Current token prefix at the caret.
+ */
+prefix: string, } | { "type": "mark_read",
 /**
  * Buffer being viewed.
  */

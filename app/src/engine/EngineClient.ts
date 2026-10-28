@@ -317,6 +317,23 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "completion_result":
+      if (
+        typeof value.command_id === "string" &&
+        typeof value.buffer_id === "number" &&
+        typeof value.prefix === "string" &&
+        Array.isArray(value.candidates) &&
+        value.candidates.every((candidate) => typeof candidate === "string")
+      ) {
+        return {
+          type: "completion_result",
+          command_id: value.command_id,
+          buffer_id: value.buffer_id,
+          prefix: value.prefix,
+          candidates: value.candidates,
+        };
+      }
+      break;
     case "network_state_changed": {
       const network = decodeNetwork(value.network);
       if (network !== undefined) return { type: messageType, network };
@@ -430,6 +447,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "notice" ||
     value === "command_result" ||
     value === "command_rejected" ||
+    value === "completion_result" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
     value === "buffer_added" ||

@@ -108,12 +108,37 @@ impl Runtime {
                 }
                 Err(error) => rejected_command(envelope.id, error.message_key()),
             },
+            Command::CompleteInput { buffer_id, prefix } => {
+                self.complete_input(envelope.id, buffer_id, prefix)
+            }
             Command::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }
             Command::MarkAllRead => self.mark_all_read(envelope.id),
             Command::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
         }
+    }
+
+    fn complete_input(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        prefix: String,
+    ) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let candidates = running.model.completion_candidates(buffer_id, &prefix);
+        vec![
+            EngineToUi::CompletionResult {
+                command_id: command_id.clone(),
+                buffer_id,
+                prefix,
+                candidates,
+            },
+            EngineToUi::CommandResult { id: command_id },
+        ]
     }
 
     fn connect(&self, command_id: String, config: ConnectConfig) -> Vec<EngineToUi> {
@@ -975,6 +1000,49 @@ mod tests {
                 .map(|running| running.instance),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn completion_results_are_computed_by_the_engine_projection() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+
+        let output = runtime.command(CommandEnvelope {
+            id: "complete".into(),
+            command: Command::CompleteInput {
+                buffer_id: BufferId(1),
+                prefix: "/j".into(),
+            },
+        });
+
+        assert!(matches!(
+            output.as_slice(),
+            [
+                EngineToUi::CompletionResult {
+                    command_id,
+                    prefix,
+                    candidates,
+                    ..
+                },
+                EngineToUi::CommandResult { id }
+            ] if command_id == "complete"
+                && id == "complete"
+                && prefix == "/j"
+                && candidates == &["/join"]
+        ));
     }
 
     #[tokio::test]

@@ -263,6 +263,13 @@ pub enum Command {
         /// Nonempty composer contents.
         input: String,
     },
+    /// Compute completion candidates from the engine's current IRC projection.
+    CompleteInput {
+        /// Buffer whose composer owns the completion session.
+        buffer_id: BufferId,
+        /// Current token prefix at the caret.
+        prefix: String,
+    },
     /// Advance one buffer's marker through a committed timeline row.
     MarkRead {
         /// Buffer being viewed.
@@ -331,6 +338,17 @@ pub enum EngineToUi {
         id: String,
         /// Stable localization key describing the rejection.
         message_key: String,
+    },
+    /// Candidate values for one composer completion request.
+    CompletionResult {
+        /// Command that requested these candidates.
+        command_id: String,
+        /// Buffer whose projection supplied the candidates.
+        buffer_id: BufferId,
+        /// Prefix used to filter the candidates.
+        prefix: String,
+        /// Ordered candidates, with the most recently active nick first.
+        candidates: Vec<String>,
     },
     /// A network's connection projection changed.
     NetworkStateChanged {

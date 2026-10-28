@@ -116,6 +116,29 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes engine-owned completion candidates", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "completion_result",
+      command_id: "complete-1",
+      buffer_id: 4,
+      prefix: "/j",
+      candidates: ["/join"],
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "completion_result",
+      command_id: "complete-1",
+      buffer_id: 4,
+      prefix: "/j",
+      candidates: ["/join"],
+    });
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

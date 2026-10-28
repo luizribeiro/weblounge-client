@@ -519,6 +519,34 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn completion_candidates(&self, buffer_id: BufferId, prefix: &str) -> Vec<String> {
+        const COMMANDS: [&str; 7] = ["/join", "/me", "/msg", "/nick", "/part", "/quit", "/topic"];
+        let values: Vec<String> = if prefix.starts_with('/') {
+            COMMANDS.into_iter().map(str::to_owned).collect()
+        } else if prefix.starts_with('#') {
+            self.buffer_order
+                .iter()
+                .filter_map(|id| self.buffers.get(id))
+                .filter(|buffer| buffer.projection.kind == BufferKind::Channel)
+                .map(|buffer| buffer.projection.title.clone())
+                .collect()
+        } else {
+            self.buffers
+                .get(&buffer_id)
+                .into_iter()
+                .flat_map(|buffer| buffer.timeline.iter().rev())
+                .map(|record| record.projection.author.clone())
+                .collect()
+        };
+        let folded_prefix = prefix.to_lowercase();
+        let mut seen = std::collections::HashSet::new();
+        values
+            .into_iter()
+            .filter(|value| value.to_lowercase().starts_with(&folded_prefix))
+            .filter(|value| seen.insert(value.to_lowercase()))
+            .collect()
+    }
+
     pub(crate) fn open_direct(
         &mut self,
         nick: String,
@@ -1282,6 +1310,28 @@ mod tests {
             nick_color_index(papo::Casemapping::Ascii, "Alice["),
             nick_color_index(papo::Casemapping::Ascii, "ALICE{")
         );
+    }
+
+    #[test]
+    fn completion_candidates_follow_command_channel_and_recent_nick_order() {
+        let (mut model, state) = model(10);
+        let mut first = incoming(&state, "first", Some("one"), None, 1, TimelineOrigin::Live);
+        first.author = "alice".into();
+        model.receive_incoming(first, &state);
+        let mut second = incoming(&state, "second", Some("two"), None, 2, TimelineOrigin::Live);
+        second.author = "bob".into();
+        let events = model.receive_incoming(second, &state);
+        let buffer_id = events
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended { buffer_id, .. } => Some(*buffer_id),
+                _ => None,
+            })
+            .expect("message buffer exists");
+
+        assert_eq!(model.completion_candidates(buffer_id, ""), ["bob", "alice"]);
+        assert_eq!(model.completion_candidates(buffer_id, "/j"), ["/join"]);
+        assert_eq!(model.completion_candidates(buffer_id, "#r"), ["#room"]);
     }
 
     #[test]
