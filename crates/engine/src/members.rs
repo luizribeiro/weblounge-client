@@ -168,14 +168,18 @@ mod tests {
     use papo_testing::wire;
 
     use super::{Changes, project};
-    use crate::{BufferId, EngineToUi, MemberGroup, name_key::RequiredNameRules};
+    use crate::{BufferId, EngineToUi, MemberGroup};
+
+    fn channel(state: &papo::State, name: &str) -> papo::ChannelName {
+        state
+            .name_rules()
+            .expect("registered test client has name rules")
+            .channel(name)
+    }
 
     fn assert_channel_change(changes: &mut Changes, event: &papo::Event, state: &papo::State) {
         assert!(changes.record(event, state));
-        assert_eq!(
-            changes.drain(),
-            [state.required_name_rules().channel("#room")]
-        );
+        assert_eq!(changes.drain(), [channel(state, "#room")]);
     }
 
     #[tokio::test]
@@ -205,7 +209,7 @@ mod tests {
             _ = events.next().await;
         }
 
-        let channel = client.state().required_name_rules().channel("#room");
+        let channel = channel(&client.state(), "#room");
         let Some(EngineToUi::MembersChanged {
             counts,
             total,
@@ -246,7 +250,7 @@ mod tests {
             while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
         }
 
-        let channel = client.state().required_name_rules().channel("#large");
+        let channel = channel(&client.state(), "#large");
         let Some(EngineToUi::MembersChanged {
             counts,
             total,
@@ -291,10 +295,7 @@ mod tests {
         }
 
         assert_eq!(scheduled, 1);
-        assert_eq!(
-            changes.drain(),
-            [client.state().required_name_rules().channel("#large")]
-        );
+        assert_eq!(changes.drain(), [channel(&client.state(), "#large")]);
     }
 
     #[tokio::test]
@@ -338,7 +339,7 @@ mod tests {
             assert_channel_change(&mut changes, &event, &client.state());
         }
 
-        let channel = client.state().required_name_rules().channel("#room");
+        let channel = channel(&client.state(), "#room");
         let Some(EngineToUi::MembersChanged { members, .. }) =
             project(&client.state(), &channel, BufferId(9), "test", 0, 0, "")
         else {
@@ -366,7 +367,7 @@ mod tests {
             .await;
         while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
 
-        let channel = client.state().required_name_rules().channel("#room");
+        let channel = channel(&client.state(), "#room");
         let Some(EngineToUi::MembersChanged {
             total,
             members,

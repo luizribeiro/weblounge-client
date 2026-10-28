@@ -9,7 +9,6 @@ use crate::{
     BufferId, EngineRequest, EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId,
     commands::{self, Command},
-    name_key::RequiredNameRules,
     state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
@@ -25,6 +24,34 @@ struct RunningNetwork {
 struct JoinTarget {
     channel: String,
     key: Option<String>,
+}
+
+enum ChannelTarget {
+    Known(papo::ChannelName),
+    Text(String),
+}
+
+impl ChannelTarget {
+    async fn part(&self, client: &papo::Client, reason: String) -> Result<(), papo::Error> {
+        match self {
+            Self::Known(channel) => client.part(channel, reason).await,
+            Self::Text(channel) => client.part(channel, reason).await,
+        }
+    }
+
+    async fn join(&self, client: &papo::Client) -> Result<(), papo::Error> {
+        match self {
+            Self::Known(channel) => client.join(channel).await,
+            Self::Text(channel) => client.join(channel).await,
+        }
+    }
+
+    async fn set_topic(&self, client: &papo::Client, text: String) -> Result<(), papo::Error> {
+        match self {
+            Self::Known(channel) => client.set_topic(channel, text).await,
+            Self::Text(channel) => client.set_topic(channel, text).await,
+        }
+    }
 }
 
 struct RuntimeState {
@@ -287,7 +314,7 @@ impl Runtime {
                 .into_iter()
                 .flat_map(papo::Channel::members)
                 .map(|member| member.nick().to_string())
-                .filter(|nick| snapshot.required_name_rules().nick(nick) != *snapshot.nick())
+                .filter(|nick| snapshot.casemapping().fold(nick) != snapshot.nick().as_ref())
                 .filter(|nick| {
                     snapshot
                         .casemapping()
@@ -432,14 +459,17 @@ impl Runtime {
         else {
             return rejected_command(command_id, "engine.network_not_found");
         };
+        if targets
+            .iter()
+            .any(|target| !valid_channel_input(&client.state(), &target.channel))
+        {
+            return rejected_command(command_id, "engine.command_refused");
+        }
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
             for target in targets {
-                let channel = client
-                    .state()
-                    .required_name_rules()
-                    .channel(target.channel.clone());
+                let channel_name = target.channel.clone();
                 let result = match target.key {
                     Some(key) => client.join(target.channel).key(key).await,
                     None => client.join(target.channel).await,
@@ -461,7 +491,14 @@ impl Runtime {
                         return;
                     };
                     let mut output = running.model.sync_channels(&client.state());
-                    if let Some(buffer_id) = running.model.buffer_id_for_channel(&channel) {
+                    let channel = client
+                        .state()
+                        .name_rules()
+                        .map(|rules| rules.channel(channel_name));
+                    if let Some(buffer_id) = channel
+                        .as_ref()
+                        .and_then(|channel| running.model.buffer_id_for_channel(channel))
+                    {
                         output.push(EngineToUi::FocusBufferRequested {
                             command_id: command_id.clone(),
                             buffer_id,
@@ -503,14 +540,12 @@ impl Runtime {
         };
         let snapshot = client.state();
         if snapshot.isupport().is_channel(&target) {
-            let channel = snapshot.required_name_rules().channel(target);
             spawn_request(self.outbound.clone(), command_id, async move {
-                client.notice(channel, text).await
+                client.notice(target, text).await
             });
         } else {
-            let nick = snapshot.required_name_rules().nick(target);
             spawn_request(self.outbound.clone(), command_id, async move {
-                let target = client.direct(nick).await?;
+                let target = client.direct(target).await?;
                 client.notice(target, text).await
             });
         }
@@ -548,12 +583,16 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let snapshot = client.state();
-            let nick = snapshot.required_name_rules().nick(nick);
+            let known_nick = snapshot.name_rules().map(|rules| rules.nick(nick.clone()));
             let known = lock(&state)
                 .network
                 .as_ref()
                 .filter(|running| running.instance == instance)
-                .and_then(|running| running.model.direct(&nick));
+                .and_then(|running| {
+                    known_nick
+                        .as_ref()
+                        .and_then(|nick| running.model.direct(nick))
+                });
             let direct = match known {
                 Some(direct) => direct,
                 None => {
@@ -567,6 +606,17 @@ impl Runtime {
                         return;
                     }
                 }
+            };
+            let Some(nick) = client
+                .state()
+                .name_rules()
+                .map(|rules| rules.nick(direct.to_string()))
+            else {
+                let _ = outbound.send(EngineToUi::CommandRejected {
+                    id: command_id,
+                    message_key: "engine.command_refused".into(),
+                });
+                return;
             };
             let (pending, output) = {
                 let mut state = lock(&state);
@@ -615,16 +665,14 @@ impl Runtime {
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let channel = requested
-            .map(|name| running.client.state().required_name_rules().channel(name))
-            .or_else(|| running.model.channel_for_buffer(buffer_id));
-        let Some(channel) = channel else {
-            return rejected_command(command_id, "engine.channel_required");
+        let channel = match channel_target(running, buffer_id, requested) {
+            Ok(channel) => channel,
+            Err(key) => return rejected_command(command_id, key),
         };
         let client = running.client.clone();
         drop(state);
         spawn_request(self.outbound.clone(), command_id, async move {
-            client.part(channel, reason.unwrap_or_default()).await
+            channel.part(&client, reason.unwrap_or_default()).await
         });
         Vec::new()
     }
@@ -655,19 +703,15 @@ impl Runtime {
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let channel = requested
-            .map(|name| running.client.state().required_name_rules().channel(name))
-            .or_else(|| running.model.channel_for_buffer(buffer_id));
-        let Some(channel) = channel else {
-            return rejected_command(command_id, "engine.channel_required");
+        let channel = match channel_target(running, buffer_id, requested) {
+            Ok(channel) => channel,
+            Err(key) => return rejected_command(command_id, key),
         };
         let client = running.client.clone();
         drop(state);
         spawn_request(self.outbound.clone(), command_id, async move {
-            client
-                .part(channel.clone(), reason.unwrap_or_default())
-                .await?;
-            client.join(channel).await
+            channel.part(&client, reason.unwrap_or_default()).await?;
+            channel.join(&client).await
         });
         Vec::new()
     }
@@ -680,6 +724,9 @@ impl Runtime {
         else {
             return rejected_command(command_id, "engine.network_not_found");
         };
+        if !valid_nick_input(&client.state(), &nick) {
+            return rejected_command(command_id, "engine.command_refused");
+        }
         spawn_request(self.outbound.clone(), command_id, async move {
             client.set_nick(nick).await
         });
@@ -697,16 +744,14 @@ impl Runtime {
         let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let channel = requested
-            .map(|name| running.client.state().required_name_rules().channel(name))
-            .or_else(|| running.model.channel_for_buffer(buffer_id));
-        let Some(channel) = channel else {
-            return rejected_command(command_id, "engine.channel_required");
+        let channel = match channel_target(running, buffer_id, requested) {
+            Ok(channel) => channel,
+            Err(key) => return rejected_command(command_id, key),
         };
         let client = running.client.clone();
         drop(state);
         spawn_request(self.outbound.clone(), command_id, async move {
-            client.set_topic(channel, text).await
+            channel.set_topic(&client, text).await
         });
         Vec::new()
     }
@@ -1355,6 +1400,39 @@ fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
     endpoint.starts_with("wss://") || (allow_insecure && endpoint.starts_with("ws://"))
 }
 
+fn channel_target(
+    running: &RunningNetwork,
+    buffer_id: BufferId,
+    requested: Option<String>,
+) -> Result<ChannelTarget, &'static str> {
+    requested.map(ChannelTarget::Text).map_or_else(
+        || {
+            running
+                .model
+                .channel_for_buffer(buffer_id)
+                .map(ChannelTarget::Known)
+                .ok_or("engine.channel_required")
+        },
+        Ok,
+    )
+}
+
+fn valid_nick_input(state: &papo::State, nick: &str) -> bool {
+    state
+        .name_rules()
+        .is_none_or(|rules| valid_name_check(rules.check_nick(nick)))
+}
+
+fn valid_channel_input(state: &papo::State, channel: &str) -> bool {
+    state
+        .name_rules()
+        .is_none_or(|rules| valid_name_check(rules.check_channel(channel)))
+}
+
+fn valid_name_check(check: papo::NameCheck) -> bool {
+    !matches!(check, papo::NameCheck::Invalid(_))
+}
+
 fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
     vec![EngineToUi::CommandRejected {
         id: command_id,
@@ -1423,7 +1501,6 @@ mod tests {
     use crate::{
         BufferId, BufferKind, EngineRequest, EngineRequestEnvelope, EngineToUi, NetworkId,
         SaslCredentials,
-        name_key::RequiredNameRules,
         state::{NetworkModel, PendingSend, SendTarget},
     };
 
@@ -1452,6 +1529,47 @@ mod tests {
         ranges.sort();
         assert_eq!(version, 1);
         assert_eq!(ranges, [("left".into(), 640), ("right".into(), 1_280)]);
+    }
+
+    #[tokio::test]
+    async fn name_checks_defer_to_papo_until_server_rules_arrive() {
+        let (unseeded, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        assert!(matches!(
+            unseeded.set_nick("alice").await,
+            Err(papo::Error::InvalidInput(
+                papo::InvalidInput::NameRulesUnknown
+            ))
+        ));
+
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge")
+                .casemapping(papo::Casemapping::default()),
+        );
+        let snapshot = client.state();
+        let rules = snapshot.name_rules().expect("seeded name rules");
+        assert_eq!(rules.check_nick("alice"), papo::NameCheck::Unknown);
+        assert!(matches!(
+            rules.check_nick("bad nick"),
+            papo::NameCheck::Invalid(_)
+        ));
+        drop(snapshot);
+        assert!(super::valid_nick_input(&client.state(), "alice"));
+        assert!(!super::valid_nick_input(&client.state(), "bad nick"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert_eq!(
+            client
+                .state()
+                .name_rules()
+                .expect("registered name rules")
+                .check_nick("alice"),
+            papo::NameCheck::Valid
+        );
+        assert!(super::valid_nick_input(&client.state(), "alice"));
     }
 
     #[tokio::test]
@@ -1488,7 +1606,7 @@ mod tests {
             running.model.sync_channels(&client.state());
             running
                 .model
-                .buffer_id_for_channel(&client.state().required_name_rules().channel("#large"))
+                .buffer_id_for_channel(&known_channel(&client, "#large"))
                 .expect("large channel buffer")
         };
         let runtime = Runtime {
@@ -1971,7 +2089,11 @@ mod tests {
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let direct = client.direct("alice").await.expect("shared user is direct");
-        let nick = client.state().required_name_rules().nick("alice");
+        let nick = client
+            .state()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .nick("alice");
 
         wire.server(":alice!a@host QUIT :gone").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Quit(_))).await;
@@ -2121,7 +2243,11 @@ mod tests {
     }
 
     fn known_channel(client: &papo::Client, name: &str) -> papo::ChannelName {
-        client.state().required_name_rules().channel(name)
+        client
+            .state()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .channel(name)
     }
 
     fn assert_unfocused_direct(output: &[EngineToUi], nick: &str) {

@@ -7,7 +7,7 @@ use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, commands,
-    name_key::{NameKey, channel as channel_name, nick as nick_name},
+    name_key::NameKey,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -238,6 +238,9 @@ impl NetworkModel {
     }
 
     pub(crate) fn rebuild_name_keys(&mut self, state: &papo::State) {
+        let Some(rules) = state.name_rules() else {
+            return;
+        };
         #[cfg(test)]
         {
             self.name_rebuilds += 1;
@@ -247,14 +250,12 @@ impl NetworkModel {
         let network_label = self.network.label.clone();
         for (id, buffer) in &mut self.buffers {
             let key = match buffer.projection.kind {
-                BufferKind::Channel => Some(NameKey::Channel(channel_name(
-                    state,
-                    buffer.projection.title.clone(),
-                ))),
-                BufferKind::Direct => Some(NameKey::Direct(nick_name(
-                    state,
-                    buffer.projection.title.clone(),
-                ))),
+                BufferKind::Channel => Some(NameKey::Channel(
+                    rules.channel(buffer.projection.title.clone()),
+                )),
+                BufferKind::Direct => {
+                    Some(NameKey::Direct(rules.nick(buffer.projection.title.clone())))
+                }
                 BufferKind::Server => None,
             };
             buffer.key.clone_from(&key);
@@ -639,7 +640,7 @@ impl NetworkModel {
                 .into_iter()
                 .flat_map(|buffer| buffer.timeline.iter().rev())
                 .map(|record| record.projection.author.clone())
-                .filter(|nick| nick_name(state, nick) != *state.nick())
+                .filter(|nick| state.casemapping().fold(nick) != state.nick().as_ref())
                 .collect()
         };
         let folded_prefix = state.casemapping().fold(prefix);
@@ -1064,7 +1065,7 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
 fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
     text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty())
-        .any(|word| nick_name(state, word) == *state.nick())
+        .any(|word| state.casemapping().fold(word) == state.nick().as_ref())
 }
 
 pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u32 {
@@ -1099,10 +1100,18 @@ mod tests {
     use papo_testing::StateBuilder;
 
     use super::{
-        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, channel_name, draft_key,
-        nick_color_index, nick_name, time_millis,
+        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, draft_key, nick_color_index,
+        time_millis,
     };
     use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
+
+    fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
+        papo_testing::channel(state.casemapping(), name)
+    }
+
+    fn nick_name(state: &papo::State, name: &str) -> papo::Nick {
+        papo_testing::nick(state.casemapping(), name)
+    }
 
     fn incoming(
         state: &papo::State,

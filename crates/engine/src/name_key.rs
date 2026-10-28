@@ -1,4 +1,4 @@
-//! Typed IRC lookup keys isolated for papo's planned 0.1 name API changes.
+//! Typed IRC lookup keys built from papo's server-provided name rules.
 
 /// A channel or direct-message identity under papo's active casemapping.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -26,39 +26,6 @@ impl NameKey {
     }
 }
 
-pub(crate) trait RequiredNameRules {
-    fn required_name_rules(&self) -> papo::NameRules<'_>;
-}
-
-impl RequiredNameRules for papo::State {
-    fn required_name_rules(&self) -> papo::NameRules<'_> {
-        self.name_rules()
-            .expect("name construction is gated until server rules arrive")
-    }
-}
-
-pub(crate) fn channel(state: &papo::State, text: impl Into<String>) -> papo::ChannelName {
-    let text = text.into();
-    if let Some(rules) = state.name_rules() {
-        return rules.channel(text);
-    }
-    #[cfg(test)]
-    return papo_testing::channel(state.casemapping(), text);
-    #[cfg(not(test))]
-    unreachable!("name construction is gated until server rules arrive")
-}
-
-pub(crate) fn nick(state: &papo::State, text: impl Into<String>) -> papo::Nick {
-    let text = text.into();
-    if let Some(rules) = state.name_rules() {
-        return rules.nick(text);
-    }
-    #[cfg(test)]
-    return papo_testing::nick(state.casemapping(), text);
-    #[cfg(not(test))]
-    unreachable!("name construction is gated until server rules arrive")
-}
-
 #[cfg(test)]
 mod tests {
     use papo_testing::StateBuilder;
@@ -68,7 +35,8 @@ mod tests {
     #[test]
     fn conversation_conversion_is_fallible_for_future_variants() {
         let state = StateBuilder::new("weblounge").build();
-        let conversation = papo::Conversation::Channel(super::channel(&state, "#room"));
+        let channel = papo_testing::channel(state.casemapping(), "#room");
+        let conversation = papo::Conversation::Channel(channel);
 
         let key: Option<NameKey> = NameKey::from_conversation(&conversation);
 
