@@ -7,3 +7,16 @@ declare const __DEBUG_IRC_CONFIG__: {
   channel: string;
   allowInsecure: boolean;
 } | null;
+
+declare module "@weblounge-engine" {
+  export default function initialize(module: string): Promise<unknown>;
+
+  export class WasmEngine {
+    constructor(
+      buildId: string,
+      instanceId: string,
+      onEvent: (encoded: string) => void,
+    );
+    handle(message: string): string;
+  }
+}

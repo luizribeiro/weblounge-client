@@ -20,7 +20,6 @@ interface WasmModule {
   ) => WasmEngine;
 }
 
-const wasmModuleUrl = "/engine.js";
 const wasmBinaryUrl = "/engine_bg.wasm";
 const ports = new Set<WorkerHostPort>();
 const engine = loadEngine();
@@ -51,7 +50,7 @@ async function handleMessage(
 }
 
 async function loadEngine(): Promise<WasmEngine> {
-  const imported: unknown = await import(/* @vite-ignore */ wasmModuleUrl);
+  const imported: unknown = await import("@weblounge-engine");
   if (!isWasmModule(imported)) throw new Error("invalid wasm module");
   await imported.default(wasmBinaryUrl);
   return new imported.WasmEngine(

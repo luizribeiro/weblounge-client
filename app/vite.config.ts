@@ -21,6 +21,11 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [solid()],
     publicDir: wasmDirectory,
+    resolve: {
+      alias: {
+        "@weblounge-engine": resolve(wasmDirectory, "engine.js"),
+      },
+    },
     test: {
       environment: "jsdom",
       exclude: ["e2e/**", "node_modules/**"],
