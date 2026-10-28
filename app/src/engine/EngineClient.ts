@@ -1,3 +1,4 @@
+import { decodeCommandSpecs } from "./decodeCommandSpec";
 import type {
   BufferProjection,
   CommandRejected,
@@ -275,6 +276,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "command_specs_changed": {
+      const specs = decodeCommandSpecs(value.specs);
+      if (specs !== undefined) return { type: messageType, specs };
+      break;
+    }
     case "incompatible_build":
       if (typeof value.engine === "string" && typeof value.ui === "string") {
         return {
@@ -299,6 +305,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
     case "notice":
       if (typeof value.message_key === "string") {
         return { type: "notice", message_key: value.message_key };
+      }
+      break;
+    case "command_help_requested":
+      if (value.command === null || typeof value.command === "string") {
+        return { type: messageType, command: value.command };
       }
       break;
     case "command_result":
@@ -484,9 +495,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
 function isEngineMessageType(value: string): value is EngineToUi["type"] {
   return (
     value === "ready" ||
+    value === "command_specs_changed" ||
     value === "incompatible_build" ||
     value === "diagnostic" ||
     value === "notice" ||
+    value === "command_help_requested" ||
     value === "command_result" ||
     value === "command_rejected" ||
     value === "completion_result" ||

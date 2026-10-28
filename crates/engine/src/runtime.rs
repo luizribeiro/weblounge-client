@@ -201,6 +201,12 @@ impl Runtime {
                     rejected_command(id, "engine.network_not_found")
                 }
             }
+            Ok(Command::Help { command }) => vec![
+                EngineToUi::CommandHelpRequested {
+                    command: command.map(|command| command.0),
+                },
+                EngineToUi::CommandResult { id },
+            ],
             Err(error) => rejected_command(id, error.message_key()),
         }
     }
@@ -1512,6 +1518,30 @@ mod tests {
                 EngineToUi::CommandRejected { id: result_id, .. },
             ] if result_id == &id));
         }
+    }
+
+    #[test]
+    fn help_requests_client_side_catalog_rendering() {
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+
+        assert_eq!(
+            runtime.request(EngineRequestEnvelope {
+                id: "help-1".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id: BufferId(1),
+                    input: "/help join".into(),
+                },
+            }),
+            [
+                EngineToUi::CommandHelpRequested {
+                    command: Some("join".into()),
+                },
+                EngineToUi::CommandResult {
+                    id: "help-1".into(),
+                },
+            ]
+        );
     }
 
     #[tokio::test]

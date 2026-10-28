@@ -65,10 +65,15 @@ impl Engine {
 
     fn hello(&self, hello: Hello) -> Vec<EngineToUi> {
         if hello.build_id == self.build_id {
-            vec![EngineToUi::Ready {
-                engine_instance: self.instance_id.clone(),
-                revision: 0,
-            }]
+            vec![
+                EngineToUi::Ready {
+                    engine_instance: self.instance_id.clone(),
+                    revision: 0,
+                },
+                EngineToUi::CommandSpecsChanged {
+                    specs: commands::built_in_specs(),
+                },
+            ]
         } else {
             vec![EngineToUi::IncompatibleBuild {
                 engine: self.build_id.clone(),
@@ -126,6 +131,23 @@ mod tests {
                 ui: "stale".into(),
             }]
         );
+    }
+
+    #[test]
+    fn handshake_delivers_the_runtime_command_registry() {
+        let engine = Engine::new("current", "engine-1");
+        let output = engine.handle(UiToEngine::Hello(Hello {
+            build_id: "current".into(),
+            client_id: "tab-1".into(),
+            last_revision: None,
+            shell: ShellKind::Web,
+        }));
+
+        assert!(matches!(
+            output.as_slice(),
+            [EngineToUi::Ready { .. }, EngineToUi::CommandSpecsChanged { specs }]
+                if specs.iter().any(|spec| spec.name == "help")
+        ));
     }
 
     #[test]

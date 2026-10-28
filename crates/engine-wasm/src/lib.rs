@@ -48,10 +48,22 @@ mod tests {
     fn json_boundary_returns_ready() {
         let engine = Engine::new("build-1", "engine-1");
         let input = r#"{"type":"hello","payload":{"build_id":"build-1","client_id":"tab-1","last_revision":null,"shell":"web"}}"#;
+        let output = super::handle_json(&engine, input).expect("boundary accepts hello");
+        let events: serde_json::Value = serde_json::from_str(&output).expect("boundary emits JSON");
 
         assert_eq!(
-            super::handle_json(&engine, input).expect("boundary accepts hello"),
-            r#"[{"type":"ready","engine_instance":"engine-1","revision":0}]"#
+            events[0],
+            serde_json::json!({
+                "type": "ready",
+                "engine_instance": "engine-1",
+                "revision": 0,
+            })
+        );
+        assert_eq!(events[1]["type"], "command_specs_changed");
+        assert!(
+            events[1]["specs"]
+                .as_array()
+                .is_some_and(|specs| !specs.is_empty())
         );
     }
 

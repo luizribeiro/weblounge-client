@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::commands::CommandSpec;
+
 macro_rules! numeric_id {
     ($name:ident, $documentation:literal) => {
         #[doc = $documentation]
@@ -360,6 +362,11 @@ pub enum EngineToUi {
         #[ts(type = "number")]
         revision: u64,
     },
+    /// Replace the runtime slash-command specifications.
+    CommandSpecsChanged {
+        /// Complete current runtime registry, including later user-defined commands.
+        specs: Vec<CommandSpec>,
+    },
     /// UI and worker assets were built from different content.
     IncompatibleBuild {
         /// Worker build identifier.
@@ -378,6 +385,11 @@ pub enum EngineToUi {
     Notice {
         /// Localization key interpreted by the UI shell.
         message_key: String,
+    },
+    /// Ask the UI to present command help from its merged action registry.
+    CommandHelpRequested {
+        /// Optional command or alias selected by `/help`.
+        command: Option<String>,
     },
     /// Successful command acknowledgement.
     CommandResult {

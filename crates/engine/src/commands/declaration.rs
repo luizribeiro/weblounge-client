@@ -1,7 +1,7 @@
 use super::{
     CommandPermission, CommandRequirement, CommandSpec, CommandSurface, ConfirmPolicy, InputError,
     arguments::{CommandArg, ParseContext, Tokens},
-    values::{Channel, ChannelList, KeyList, Nick, Target, Text},
+    values::{Channel, ChannelList, CommandName, KeyList, Nick, Target, Text},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, weblounge_command_derive::Command)]
@@ -80,6 +80,11 @@ pub(crate) enum Command {
         description = "cmd.quit.description", surfaces = ["Slash", "Palette"], confirm = "Always"
     )]
     Quit { reason: Option<Text> },
+    #[command(
+        name = "help", aliases = ["?", "commands"], usage = "cmd.help.usage",
+        description = "cmd.help.description", surfaces = ["Slash", "Palette"]
+    )]
+    Help { command: Option<CommandName> },
 }
 
 #[cfg(test)]
@@ -101,7 +106,7 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 12);
+        assert_eq!(specs.len(), 13);
     }
 
     #[test]
@@ -129,6 +134,7 @@ mod tests {
             "/t new topic",
             "/nick new-name",
             "/exit later",
+            "/help join",
         ] {
             assert!(commands::parse(input, "#&").is_ok(), "input: {input}");
         }

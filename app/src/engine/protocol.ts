@@ -1,4 +1,5 @@
 import type { BufferProjection } from "./generated/BufferProjection";
+import type { CommandSpec } from "./generated/CommandSpec";
 import type { EngineRequestEnvelope } from "./generated/EngineRequestEnvelope";
 import type { EngineToUi } from "./generated/EngineToUi";
 import type { Hello } from "./generated/Hello";
@@ -9,6 +10,7 @@ import type { UiToEngine } from "./generated/UiToEngine";
 
 export type {
   BufferProjection,
+  CommandSpec,
   EngineRequestEnvelope,
   EngineToUi,
   Hello,

@@ -139,6 +139,40 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes the engine runtime command registry", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "command_specs_changed",
+      specs: [
+        {
+          name: "help",
+          aliases: ["?"],
+          arguments: [
+            { name: "command", kind: "command_name", required: false },
+          ],
+          usage: "cmd.help.usage",
+          description: "cmd.help.description",
+          requirements: [{ type: "connected" }],
+          permission: "anyone",
+          surfaces: ["slash", "palette"],
+          confirm: "none",
+          secret_arguments: false,
+        },
+      ],
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "command_specs_changed",
+        specs: [expect.objectContaining({ name: "help" })],
+      }),
+    );
+  });
+
   it("preserves the casemapped member filter", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
