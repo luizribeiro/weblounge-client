@@ -14,7 +14,7 @@ test.describe("desktop shell against local Ergo", () => {
   test("navigates real buffers and follows the system theme", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1440, height: 1300 });
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("/?irc-password=weblounge-test");
 
