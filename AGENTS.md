@@ -21,6 +21,9 @@ See brief §7 "Code standards" and "Testing". In short: TS strict, no `any`, exh
 
 Comments explain *why* (a current constraint), never *what*. Prefer extracting a well-named function to writing a comment.
 
+## Done means a user can see it work
+Unit and engine tests are not enough: twice a task passed every check while the feature was broken in the browser. Any task that changes what a user sees ships a Playwright test that drives the built app the way a person would (against the flake's local Ergo when IRC is involved), and the dev server (`pnpm --filter @weblounge/app dev`) must keep working. Before reporting done, run the app and use the feature yourself.
+
 ## Commits
 - One commit = one idea. If the message needs "and", split it.
 - Commit after each small unit (a function with its tests, a single doc, a single fix). Aim for < ~5 files and < ~100 changed lines per commit (design docs may be longer, but one doc per commit).
