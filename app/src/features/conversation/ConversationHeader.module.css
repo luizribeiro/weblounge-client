@@ -5,7 +5,7 @@
   display: grid;
   flex: 0 0 48px;
   gap: 10px;
-  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   height: 48px;
   padding-inline: 10px;
 }
@@ -57,4 +57,15 @@
   stroke-linecap: round;
   stroke-width: 1.7;
   width: 18px;
+}
+
+.memberButton {
+  gap: 5px;
+  padding-inline: 7px;
+  width: auto;
+}
+
+.memberButton[aria-pressed="true"] {
+  background: var(--wl-color-selection);
+  color: var(--wl-color-selection-fg);
 }

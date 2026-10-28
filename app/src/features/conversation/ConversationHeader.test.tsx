@@ -8,6 +8,8 @@ it("renders one-line identity and routes both header controls", () => {
   render(() => (
     <ConversationHeader
       membersTooltip="Toggle member list (Ctrl+.)"
+      memberCount={1284}
+      membersPressed={true}
       onToggleMembers={toggleMembers}
       onToggleSidebar={toggleSidebar}
       sidebarTooltip="Toggle channel list (Ctrl+Alt+S)"
@@ -21,6 +23,10 @@ it("renders one-line identity and routes both header controls", () => {
     "data-selectable",
     "true",
   );
+  expect(screen.getByText("1,284")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Toggle member list" }),
+  ).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Toggle channel list" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle member list" }));
   expect(toggleSidebar).toHaveBeenCalledOnce();

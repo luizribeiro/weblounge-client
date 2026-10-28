@@ -8,6 +8,8 @@ interface ConversationHeaderProps {
   readonly topic?: string | undefined;
   readonly sidebarTooltip: string;
   readonly membersTooltip: string;
+  readonly memberCount?: number | undefined;
+  readonly membersPressed?: boolean | undefined;
   readonly onToggleSidebar: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onToggleMembers: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
 }
@@ -36,20 +38,24 @@ export function ConversationHeader(props: ConversationHeaderProps) {
           </Line>
         )}
       </div>
-      <button
-        aria-label="Toggle member list"
-        class={styles.iconButton}
-        onClick={props.onToggleMembers}
-        title={props.membersTooltip}
-        type="button"
-      >
-        <svg aria-hidden="true" viewBox="0 0 24 24">
-          <circle cx="9" cy="8" r="3" />
-          <path d="M3.5 18c.5-3.2 2.3-5 5.5-5s5 1.8 5.5 5" />
-          <circle cx="17" cy="9" r="2.4" />
-          <path d="M15.4 14.1c2.9-.7 4.6.6 5.1 3.4" />
-        </svg>
-      </button>
+      {props.memberCount !== undefined && (
+        <button
+          aria-label="Toggle member list"
+          aria-pressed={props.membersPressed ?? false}
+          class={`${styles.iconButton} ${styles.memberButton}`}
+          onClick={props.onToggleMembers}
+          title={props.membersTooltip}
+          type="button"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <circle cx="9" cy="8" r="3" />
+            <path d="M3.5 18c.5-3.2 2.3-5 5.5-5s5 1.8 5.5 5" />
+            <circle cx="17" cy="9" r="2.4" />
+            <path d="M15.4 14.1c2.9-.7 4.6.6 5.1 3.4" />
+          </svg>
+          <span>{props.memberCount.toLocaleString("en-US")}</span>
+        </button>
+      )}
     </header>
   );
 }
