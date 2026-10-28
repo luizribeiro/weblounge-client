@@ -141,4 +141,36 @@ mod tests {
         assert_eq!(members[1].mode_symbol, Some('+'));
         assert!(members[2].away);
     }
+
+    #[tokio::test]
+    async fn caps_a_two_thousand_member_channel_to_one_window() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["multi-prefix"]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@h JOIN #large").await;
+        wire.server(":offline.test 353 weblounge = #large :@weblounge")
+            .await;
+        wire.server(":offline.test 366 weblounge #large :End of NAMES")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::ChannelSynced(_))) {}
+        for index in 0..2_000 {
+            wire.server(format!(":u{index:04}!u@h JOIN #large")).await;
+            while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        }
+
+        let channel = client.state().name_rules().channel("#large");
+        let Some(EngineToUi::MembersChanged {
+            counts,
+            total,
+            members,
+            ..
+        }) = project(&client.state(), &channel, BufferId(8), 1_000, 1_000)
+        else {
+            panic!("member window")
+        };
+        assert_eq!(counts, [1, 0, 2_000, 0, 0]);
+        assert_eq!(total, 2_001);
+        assert_eq!(members.len(), 256);
+    }
 }
