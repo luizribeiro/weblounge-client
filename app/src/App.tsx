@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
+import { consumeDebugPassword } from "./debug-irc-config";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import { IncompatibleBuildError } from "./engine/EngineClient";
@@ -46,7 +47,11 @@ export function App(props: AppProps) {
     document.addEventListener("visibilitychange", updateVisibility);
     updateVisibility();
 
-    void startEngine(mountedClient, setEngineStatus);
+    const debugPassword = consumeDebugPassword(
+      new URL(window.location.href),
+      (path) => window.history.replaceState(window.history.state, "", path),
+    );
+    void startEngine(mountedClient, setEngineStatus, debugPassword);
     onCleanup(() => {
       document.removeEventListener("visibilitychange", updateVisibility);
       unsubscribe();
@@ -78,6 +83,7 @@ export function App(props: AppProps) {
 async function startEngine(
   client: EngineClient,
   setStatus: (status: string) => void,
+  debugPassword: string | null,
 ): Promise<void> {
   try {
     await client.start({
@@ -94,7 +100,7 @@ async function startEngine(
         message: "wasm worker round trip complete",
       },
     });
-    if (__DEBUG_IRC_CONFIG__ !== null) {
+    if (__DEBUG_IRC_CONFIG__ !== null && debugPassword !== null) {
       await client.send({
         id: crypto.randomUUID(),
         command: {
@@ -104,7 +110,7 @@ async function startEngine(
           nickname: __DEBUG_IRC_CONFIG__.nickname,
           sasl: {
             account: __DEBUG_IRC_CONFIG__.account,
-            password: __DEBUG_IRC_CONFIG__.password,
+            password: debugPassword,
           },
           autojoin: [__DEBUG_IRC_CONFIG__.channel],
           allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
