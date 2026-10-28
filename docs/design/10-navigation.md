@@ -222,3 +222,4 @@ cross-device navigation sync are later work.
 - Suppress badges only for buffers in rendered, visible panes.
 - Wait 500ms at the focused live edge before marking read.
 - Reselecting a mobile tab pops to root, then a second reselection scrolls to top.
+- Ship the tab bar with Activity and Settings in milestone 5; milestone 2 exposes no broken tabs.
