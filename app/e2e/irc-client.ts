@@ -68,6 +68,15 @@ export class IrcClient {
     await this.waitFor((line) => line.includes(` PRIVMSG ${channel} :${text}`));
   }
 
+  async actionConfirmed(channel: string, text: string): Promise<void> {
+    await this.privmsgConfirmed(channel, `\u0001ACTION ${text}\u0001`);
+  }
+
+  async part(channel: string): Promise<void> {
+    this.send(`PART ${channel} :screenshot seed complete`);
+    await this.waitFor((line) => line.includes(` PART ${channel} `));
+  }
+
   close(): void {
     this.#socket.end("QUIT :test complete\r\n");
   }

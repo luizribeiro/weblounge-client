@@ -12,6 +12,7 @@ test.describe("desktop shell against local Ergo", () => {
   );
 
   test("navigates real buffers and follows the system theme", async ({
+    browser,
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 1300 });
@@ -62,27 +63,63 @@ test.describe("desktop shell against local Ergo", () => {
       "#weblounge-test",
     );
     const message = `the desktop shell is live ${Date.now()}`;
+    const seedClients: IrcClient[] = [];
+    let screenshotContext:
+      | Awaited<ReturnType<typeof browser.newContext>>
+      | undefined;
     try {
-      bot.privmsg("#weblounge-test", message);
+      await bot.privmsgConfirmed("#weblounge-test", message);
       await expect(page.getByText(message, { exact: true })).toBeVisible();
-      await page.goto("/?debug-messages=40&irc-password=weblounge-test");
+      await page
+        .getByRole("textbox", { name: "Message" })
+        .fill("I like where this client is going");
+      await page.getByRole("button", { name: "Send" }).click();
+
+      for (const nick of ["ana", "tomo", "mel"]) {
+        seedClients.push(
+          await IrcClient.connect(
+            nick,
+            "weblounge-bot",
+            "weblounge-bot-test",
+            "#weblounge-test",
+          ),
+        );
+      }
+      await seedClients[0]?.privmsgConfirmed(
+        "#weblounge-test",
+        "The garden is looking especially cozy today",
+      );
+      await seedClients[1]?.actionConfirmed(
+        "#weblounge-test",
+        "puts a fresh pot of coffee on",
+      );
+      await seedClients[2]?.privmsgConfirmed(
+        "#weblounge-test",
+        "weblounge: history on open is working",
+      );
+      await seedClients[2]?.part("#weblounge-test");
+
+      const origin = new URL(page.url()).origin;
+      screenshotContext = await browser.newContext({
+        colorScheme: "light",
+        viewport: { width: 1440, height: 1300 },
+      });
+      const screenshotPage = await screenshotContext.newPage();
+      await screenshotPage.goto(`${origin}/?irc-password=weblounge-test`);
       await expect(
-        page.getByText("weblounge: the virtual timeline feels instant", {
+        screenshotPage.getByText("weblounge: history on open is working", {
           exact: true,
         }),
       ).toBeVisible();
-      await expect(page.locator("[data-membership-row]")).toContainText(
-        "mel, rafa and cyd joined",
-      );
       await mkdir(screenshotDirectory, { recursive: true });
-      await page.screenshot({
+      await screenshotPage.screenshot({
         path: path.join(screenshotDirectory, "desktop-shell-light.png"),
       });
 
-      await page.emulateMedia({ colorScheme: "dark" });
+      await screenshotPage.emulateMedia({ colorScheme: "dark" });
       await expect
         .poll(() =>
-          page.evaluate(() => ({
+          screenshotPage.evaluate(() => ({
             background: getComputedStyle(document.documentElement)
               .getPropertyValue("--wl-color-bg")
               .trim(),
@@ -90,10 +127,12 @@ test.describe("desktop shell against local Ergo", () => {
           })),
         )
         .toEqual({ background: "#18221e", theme: "lounge-night" });
-      await page.screenshot({
+      await screenshotPage.screenshot({
         path: path.join(screenshotDirectory, "desktop-shell-dark.png"),
       });
     } finally {
+      await screenshotContext?.close();
+      for (const client of seedClients) client.close();
       bot.close();
     }
   });
