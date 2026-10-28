@@ -42,7 +42,7 @@ export function MemberPanel(props: MemberPanelProps) {
     const key = `${props.window?.buffer_id ?? "new"}:${offset}`;
     if (key !== requested) {
       requested = key;
-      props.onRequestRange(offset, 128);
+      props.onRequestRange(offset, 256);
     }
   };
   createEffect(() => {

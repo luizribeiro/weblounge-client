@@ -64,5 +64,5 @@ it("requests the first window while loading", () => {
       onRequestRange={request}
     />
   ));
-  expect(request).toHaveBeenCalledWith(0, 128);
+  expect(request).toHaveBeenCalledWith(0, 256);
 });
