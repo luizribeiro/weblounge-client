@@ -54,6 +54,28 @@ describe("CommandRegistry", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
+  it("keeps buffer traversal out of text inputs", () => {
+    const next = vi.fn();
+    const previous = vi.fn();
+    const registry = new CommandRegistry(
+      { "buffer.next": next, "buffer.previous": previous },
+      "other",
+    );
+    const input = document.createElement("input");
+    const button = document.createElement("button");
+
+    for (const key of ["ArrowUp", "ArrowDown"]) {
+      expect(registry.handleKeydown(modifiedKeydown(key, input), context)).toBe(
+        false,
+      );
+      expect(
+        registry.handleKeydown(modifiedKeydown(key, button), context),
+      ).toBe(true);
+    }
+    expect(previous).toHaveBeenCalledOnce();
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it("does not dispatch unavailable buffer traversal", () => {
     const next = vi.fn();
     const registry = new CommandRegistry({ "buffer.next": next }, "other");
@@ -95,6 +117,16 @@ describe("CommandRegistry", () => {
 
 function keydown(key: string, target: Element): KeyboardEvent {
   const event = new KeyboardEvent("keydown", { key, cancelable: true });
+  Object.defineProperty(event, "target", { value: target });
+  return event;
+}
+
+function modifiedKeydown(key: string, target: Element): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    altKey: true,
+    cancelable: true,
+  });
   Object.defineProperty(event, "target", { value: target });
   return event;
 }

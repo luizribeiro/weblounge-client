@@ -36,6 +36,7 @@ interface Binding {
   readonly mod?: boolean;
   readonly shift?: boolean;
   readonly scope: CommandScope;
+  readonly input: "never" | "nonText" | "emptyComposer" | "always";
   readonly label: Readonly<Record<Platform, string>>;
 }
 
@@ -182,6 +183,7 @@ function mod(keyValue: string, macos: string, other: string): Binding {
     key: keyValue,
     mod: true,
     scope: "global",
+    input: "nonText",
     label: { macos, other },
   };
 }
@@ -192,11 +194,22 @@ function altKey(
   other: string,
   scope: CommandScope,
 ): Binding {
-  return { key: keyValue, alt: true, scope, label: { macos, other } };
+  return {
+    key: keyValue,
+    alt: true,
+    scope,
+    input: "never",
+    label: { macos, other },
+  };
 }
 
 function key(keyValue: string, label: string, scope: CommandScope): Binding {
-  return { key: keyValue, scope, label: { macos: label, other: label } };
+  return {
+    key: keyValue,
+    scope,
+    input: "never",
+    label: { macos: label, other: label },
+  };
 }
 
 function findSpec(id: CommandId): CommandSpec {
@@ -222,16 +235,20 @@ function matches(event: KeyboardEvent, binding: Binding): boolean {
     (binding.code === undefined
       ? event.key.toLocaleLowerCase() === binding.key.toLocaleLowerCase()
       : event.code === binding.code) &&
-    !isTextInput(event.target, binding)
+    inputPolicyAllows(event.target, binding.input)
   );
 }
 
-function isTextInput(target: EventTarget | null, binding: Binding): boolean {
-  if (!(target instanceof Element)) return false;
-  if (binding.scope === "global") return false;
-  return (
-    target.closest(
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
-    ) !== null
+function inputPolicyAllows(
+  target: EventTarget | null,
+  policy: Binding["input"],
+): boolean {
+  if (policy === "always" || !(target instanceof Element)) return true;
+  const editable = target.closest(
+    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
   );
+  if (editable === null) return true;
+  if (policy === "never") return false;
+  if (policy === "nonText") return true;
+  return editable instanceof HTMLInputElement && editable.value.length === 0;
 }
