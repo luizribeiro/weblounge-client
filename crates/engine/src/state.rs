@@ -201,11 +201,7 @@ impl NetworkModel {
                     changed = true;
                 }
             } else {
-                let mut buffer = self.add_buffer(key, BufferKind::Channel, None);
-                buffer.topic.clone_from(&topic);
-                if let Some(state) = self.buffers.get_mut(&buffer.id) {
-                    state.projection.topic = topic;
-                }
+                let buffer = self.add_buffer(key, BufferKind::Channel, None, topic);
                 events.push(EngineToUi::BufferAdded { buffer });
             }
         }
@@ -587,7 +583,7 @@ impl NetworkModel {
             NameKey::Channel(_) => BufferKind::Channel,
             NameKey::Direct(_) => BufferKind::Direct,
         };
-        let projection = self.add_buffer(key, kind, direct_account);
+        let projection = self.add_buffer(key, kind, direct_account, None);
         (projection.id, Some(projection))
     }
 
@@ -596,6 +592,7 @@ impl NetworkModel {
         key: NameKey,
         kind: BufferKind,
         direct_account: Option<papo::AccountName>,
+        topic: Option<String>,
     ) -> BufferProjection {
         let id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
@@ -604,7 +601,7 @@ impl NetworkModel {
             network_id: self.network.id,
             kind,
             title: key.title(),
-            topic: None,
+            topic,
             unread: 0,
             mentions: 0,
             read_through: None,
@@ -804,7 +801,7 @@ mod tests {
     use super::{
         Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, nick_color_index, time_millis,
     };
-    use crate::{MessageAuthorship, NetworkId};
+    use crate::{BufferKind, MessageAuthorship, NetworkId};
 
     fn incoming(
         state: &papo::State,
@@ -890,6 +887,23 @@ mod tests {
         );
 
         assert_eq!(timeline(&model), ["earlier", "later"]);
+    }
+
+    #[test]
+    fn add_buffer_stores_its_initial_topic_atomically() {
+        let (mut model, state) = model(10);
+        let buffer = model.add_buffer(
+            NameKey::Channel(state.name_rules().channel("#room")),
+            BufferKind::Channel,
+            None,
+            Some("A quiet room".into()),
+        );
+
+        assert_eq!(buffer.topic.as_deref(), Some("A quiet room"));
+        assert_eq!(
+            model.buffers[&buffer.id].projection.topic.as_deref(),
+            Some("A quiet room")
+        );
     }
 
     #[test]
@@ -993,7 +1007,7 @@ mod tests {
     fn failed_send_updates_the_optimistic_timeline_row() {
         let (mut model, state) = model(10);
         let key = NameKey::Channel(state.name_rules().channel("#room"));
-        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None);
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
         let (pending, _) = model
             .begin_send(buffer.id, "will fail".into(), &state)
             .expect("channel is sendable");
@@ -1008,7 +1022,7 @@ mod tests {
     fn optimistic_send_uses_the_platform_wall_clock() {
         let (mut model, state) = model(10);
         let key = NameKey::Channel(state.name_rules().channel("#room"));
-        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None);
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
         let before = time_millis(papo::time::now());
 
         let (_, events) = model
