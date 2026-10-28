@@ -387,7 +387,7 @@ it("shows an optimistic message as failed when sending fails", async () => {
     type: "message_failed",
     buffer_id: 2,
     local_send_id: 7,
-    message_key: "engine.send_failed",
+    message_key: "engine.direct_target_gone",
   });
 
   const failed = await screen.findByText(/will fail/);
@@ -395,6 +395,9 @@ it("shows an optimistic message as failed when sending fails", async () => {
     "data-delivery",
     "failed",
   );
+  expect(
+    screen.getByText(/nickname now belongs to someone else/u),
+  ).toBeInTheDocument();
 });
 
 it("marks a visible live-edge buffer read only after a focused 500ms dwell", async () => {

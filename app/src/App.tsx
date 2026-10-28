@@ -79,6 +79,9 @@ export function App(props: AppProps) {
       if (message.type === "notice") {
         setEngineNotice(t(message.message_key));
       }
+      if (message.type === "message_failed") {
+        setComposerNotice(t(message.message_key));
+      }
       if (message.type === "command_specs_changed") {
         setCommandSpecs(message.specs);
       }

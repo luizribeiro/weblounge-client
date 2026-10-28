@@ -7,7 +7,6 @@ use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, commands,
-    direct_target::DirectTarget,
     name_key::{NameKey, channel as channel_name, nick as nick_name},
 };
 
@@ -50,7 +49,7 @@ struct BufferState {
     timeline: Vec<TimelineRecord>,
     memberships: Vec<MembershipProjection>,
     last_membership: Option<MessageId>,
-    direct_account: Option<papo::AccountName>,
+    direct: Option<papo::DirectRef>,
     read_at_ms: Option<i64>,
     history_requested: bool,
 }
@@ -59,14 +58,20 @@ struct BufferState {
 #[derive(Clone, Debug)]
 pub(crate) enum SendTarget {
     Channel(papo::ChannelName),
-    Direct(DirectTarget),
+    Direct {
+        nick: papo::Nick,
+        recipient: papo::DirectRef,
+    },
 }
 
 impl SendTarget {
-    fn from_name_key(key: NameKey, direct_account: Option<papo::AccountName>) -> Self {
+    fn from_buffer(key: NameKey, direct: Option<papo::DirectRef>) -> Option<Self> {
         match key {
-            NameKey::Channel(channel) => Self::Channel(channel),
-            NameKey::Direct(nick) => Self::Direct(DirectTarget::new(nick, direct_account)),
+            NameKey::Channel(channel) => Some(Self::Channel(channel)),
+            NameKey::Direct(nick) => Some(Self::Direct {
+                nick,
+                recipient: direct?,
+            }),
         }
     }
 
@@ -74,7 +79,7 @@ impl SendTarget {
     fn name_key(&self) -> NameKey {
         match self {
             Self::Channel(channel) => NameKey::Channel(channel.clone()),
-            Self::Direct(target) => NameKey::Direct(target.nick().clone()),
+            Self::Direct { nick, .. } => NameKey::Direct(nick.clone()),
         }
     }
 }
@@ -109,6 +114,7 @@ pub(crate) struct NetworkModel {
     buffer_order: Vec<BufferId>,
     buffers: HashMap<BufferId, BufferState>,
     names: HashMap<NameKey, BufferId>,
+    directs: HashMap<papo::Nick, papo::DirectRef>,
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     #[cfg(test)]
@@ -136,7 +142,7 @@ impl NetworkModel {
             timeline: Vec::new(),
             memberships: Vec::new(),
             last_membership: None,
-            direct_account: None,
+            direct: None,
             read_at_ms: None,
             history_requested: true,
         };
@@ -156,6 +162,7 @@ impl NetworkModel {
             buffer_order: vec![server_id],
             buffers: HashMap::from([(server_id, server)]),
             names: HashMap::new(),
+            directs: HashMap::new(),
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
             #[cfg(test)]
@@ -288,6 +295,9 @@ impl NetworkModel {
         old: &papo::Nick,
         new: papo::Nick,
     ) -> Option<EngineToUi> {
+        if let Some(direct) = self.directs.remove(old) {
+            self.directs.insert(new.clone(), direct);
+        }
         let id = self.names.remove(&NameKey::Direct(old.clone()))?;
         let buffer = self.buffers.get_mut(&id)?;
         let key = NameKey::Direct(new);
@@ -307,7 +317,12 @@ impl NetworkModel {
         message: &papo::Message,
         history: bool,
         state: &papo::State,
+        direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
+        if let Some(direct) = direct.as_ref() {
+            self.directs
+                .insert(message.actor.nick().clone(), direct.clone());
+        }
         let Some(conversation) = NameKey::from_conversation(&message.conversation) else {
             return vec![EngineToUi::Notice {
                 message_key: "engine.unsupported_conversation".into(),
@@ -327,10 +342,7 @@ impl NetworkModel {
             _ => None,
         };
         let incoming = Incoming {
-            direct_account: match &conversation {
-                NameKey::Direct(_) => message.actor.account().name().cloned(),
-                NameKey::Channel(_) => None,
-            },
+            direct,
             conversation,
             author: message.actor.nick().to_string(),
             text: message.text.clone(),
@@ -376,7 +388,7 @@ impl NetworkModel {
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
         let buffer = self.buffers.get(&buffer_id)?;
         let key = buffer.key.clone()?;
-        let direct_account = buffer.direct_account.clone();
+        let direct = buffer.direct.clone();
         let local_send_id = LocalSendId(self.next_local_send_id);
         self.next_local_send_id += 1;
         let message = MessageProjection {
@@ -397,7 +409,7 @@ impl NetworkModel {
         };
         self.insert(buffer_id, message.clone(), DedupReferences::default())
             .ok()?;
-        let target = SendTarget::from_name_key(key, direct_account);
+        let target = SendTarget::from_buffer(key, direct)?;
         Some((
             PendingSend {
                 buffer_id,
@@ -524,10 +536,7 @@ impl NetworkModel {
             .iter()
             .filter_map(|id| self.buffers.get(id))
             .filter_map(|buffer| {
-                Some(SendTarget::from_name_key(
-                    buffer.key.clone()?,
-                    buffer.direct_account.clone(),
-                ))
+                SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.clone())
             })
             .collect()
     }
@@ -537,7 +546,7 @@ impl NetworkModel {
         if buffer.history_requested {
             return None;
         }
-        let target = SendTarget::from_name_key(buffer.key.clone()?, buffer.direct_account.clone());
+        let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.clone())?;
         buffer.history_requested = true;
         Some(target)
     }
@@ -615,20 +624,20 @@ impl NetworkModel {
 
     pub(crate) fn open_direct(
         &mut self,
-        nick: String,
-        state: &papo::State,
+        nick: papo::Nick,
+        direct: papo::DirectRef,
     ) -> (BufferId, Vec<EngineToUi>) {
-        let nick = nick_name(state, nick);
-        let account = state
-            .user(&nick)
-            .and_then(|user| user.account().name().cloned());
-        let (buffer_id, added) = self.ensure_buffer(NameKey::Direct(nick), account);
+        let (buffer_id, added) = self.ensure_buffer(NameKey::Direct(nick), Some(direct));
         let mut events = Vec::new();
         if let Some(buffer) = added {
             events.push(EngineToUi::BufferAdded { buffer });
             events.push(self.buffers_event());
         }
         (buffer_id, events)
+    }
+
+    pub(crate) fn direct(&self, nick: &papo::Nick) -> Option<papo::DirectRef> {
+        self.directs.get(nick).cloned()
     }
 
     pub(crate) fn prepare_mark_read(
@@ -643,7 +652,7 @@ impl NetworkModel {
             .find(|record| record.projection.id == through && is_committed(&record.projection))?;
         Some(ReadAdvance {
             buffer_id,
-            target: SendTarget::from_name_key(buffer.key.clone()?, buffer.direct_account.clone()),
+            target: SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.clone())?,
             time: system_time_from_millis(message_time(&record.projection)),
         })
     }
@@ -751,10 +760,8 @@ impl NetworkModel {
             }
         };
 
-        let (buffer_id, added) = self.ensure_buffer(
-            incoming.conversation.clone(),
-            incoming.direct_account.clone(),
-        );
+        let (buffer_id, added) =
+            self.ensure_buffer(incoming.conversation.clone(), incoming.direct.clone());
         let mentioned = incoming.authorship != MessageAuthorship::Own
             && mentions_own_nick(&incoming.text, state);
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
@@ -811,16 +818,21 @@ impl NetworkModel {
     fn ensure_buffer(
         &mut self,
         key: NameKey,
-        direct_account: Option<papo::AccountName>,
+        direct: Option<papo::DirectRef>,
     ) -> (BufferId, Option<BufferProjection>) {
-        if let Some(id) = self.names.get(&key) {
-            return (*id, None);
+        if let Some(id) = self.names.get(&key).copied() {
+            if direct.is_some()
+                && let Some(buffer) = self.buffers.get_mut(&id)
+            {
+                buffer.direct = direct;
+            }
+            return (id, None);
         }
         let kind = match key {
             NameKey::Channel(_) => BufferKind::Channel,
             NameKey::Direct(_) => BufferKind::Direct,
         };
-        let projection = self.add_buffer(key, kind, direct_account, None);
+        let projection = self.add_buffer(key, kind, direct, None);
         (projection.id, Some(projection))
     }
 
@@ -828,7 +840,7 @@ impl NetworkModel {
         &mut self,
         key: NameKey,
         kind: BufferKind,
-        direct_account: Option<papo::AccountName>,
+        direct: Option<papo::DirectRef>,
         topic: Option<String>,
     ) -> BufferProjection {
         let id = BufferId(self.next_buffer_id);
@@ -853,7 +865,7 @@ impl NetworkModel {
                 timeline: Vec::new(),
                 memberships: Vec::new(),
                 last_membership: None,
-                direct_account,
+                direct,
                 read_at_ms: None,
                 history_requested: false,
             },
@@ -999,7 +1011,7 @@ fn decrement_or_remove(counts: &mut HashMap<String, usize>, key: &str) {
 #[derive(Clone, Debug)]
 struct Incoming {
     conversation: NameKey,
-    direct_account: Option<papo::AccountName>,
+    direct: Option<papo::DirectRef>,
     author: String,
     text: String,
     kind: MessageKind,
@@ -1073,7 +1085,7 @@ mod tests {
     ) -> Incoming {
         Incoming {
             conversation: NameKey::Channel(channel_name(state, "#room")),
-            direct_account: None,
+            direct: None,
             author: "alice".into(),
             text: text.into(),
             kind: crate::MessageKind::Text,
@@ -1459,7 +1471,7 @@ mod tests {
     #[test]
     fn closing_a_direct_buffer_removes_only_its_local_projection() {
         let (mut model, state) = model(10);
-        let (buffer_id, _) = model.open_direct("alice".into(), &state);
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Direct(nick_name(&state, "alice")), None);
         assert!(model.close_direct(buffer_id).is_some());
         assert!(!model.buffer_order.contains(&buffer_id));
         assert!(!model.buffers.contains_key(&buffer_id));
@@ -1506,12 +1518,8 @@ mod tests {
     fn send_targets_round_trip_through_name_keys() {
         let (_, state) = model(10);
         let channel = NameKey::Channel(channel_name(&state, "#room"));
-        let direct = NameKey::Direct(nick_name(&state, "alice"));
-
-        for key in [channel, direct] {
-            let target = SendTarget::from_name_key(key.clone(), None);
-            assert_eq!(target.name_key(), key);
-        }
+        let target = SendTarget::from_buffer(channel.clone(), None).expect("channel target");
+        assert_eq!(target.name_key(), channel);
     }
 
     #[test]

@@ -129,14 +129,14 @@ test.describe("desktop shell against local Ergo", () => {
         page.getByRole("heading", { name: "#another" }),
       ).toBeVisible();
 
-      await restoredAnother.fill("/q weblounge-bot hi");
+      await restoredAnother.fill("/q composer hi");
       await restoredAnother.press("Enter");
       await expect(
-        page.getByRole("heading", { name: "weblounge-bot" }),
+        page.getByRole("heading", { name: "composer" }),
       ).toBeVisible();
       await expect(page.getByText("hi", { exact: true })).toBeVisible();
       const direct = page.getByRole("textbox", {
-        name: "Message weblounge-bot",
+        name: "Message composer",
       });
       await direct.fill("/help join");
       await direct.press("Enter");
@@ -146,9 +146,9 @@ test.describe("desktop shell against local Ergo", () => {
 
       await direct.fill("/close");
       await direct.press("Enter");
-      await expect(
-        page.getByRole("button", { name: /^weblounge-bot/ }),
-      ).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^composer/ })).toHaveCount(
+        0,
+      );
     } finally {
       bot.close();
     }

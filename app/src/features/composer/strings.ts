@@ -12,7 +12,8 @@ export const messageKeys = [
   "engine.channel_required",
   "engine.command_refused",
   "engine.dedicated_worker_fallback",
-  "engine.direct_account_changed",
+  "engine.direct_target_gone",
+  "engine.direct_unavailable",
   "engine.invalid_endpoint",
   "engine.network_already_connected",
   "engine.network_not_found",
@@ -41,8 +42,10 @@ export function t(key: string, values: MessageValues = {}): string {
       return "The server refused that command.";
     case "engine.dedicated_worker_fallback":
       return "This browser uses one connection per tab because SharedWorker is unavailable.";
-    case "engine.direct_account_changed":
-      return "The recipient's account changed before the message was sent.";
+    case "engine.direct_target_gone":
+      return "That person left or the nickname now belongs to someone else. Your message was not sent.";
+    case "engine.direct_unavailable":
+      return "That person isn't available for a private message.";
     case "engine.invalid_endpoint":
       return "That server address isn't valid.";
     case "engine.network_already_connected":

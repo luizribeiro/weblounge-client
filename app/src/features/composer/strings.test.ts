@@ -20,4 +20,8 @@ describe("composer strings", () => {
       "Couldn't join #garden: you're banned.",
     );
   });
+
+  it("explains when a guarded direct recipient is gone", () => {
+    expect(t("engine.direct_target_gone")).toContain("nickname now belongs");
+  });
 });

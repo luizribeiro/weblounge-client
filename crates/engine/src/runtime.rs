@@ -9,7 +9,6 @@ use crate::{
     BufferId, EngineRequest, EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId,
     commands::{self, Command},
-    direct_target::DirectSendError,
     name_key::RequiredNameRules,
     state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
@@ -218,21 +217,19 @@ impl Runtime {
         network_id: NetworkId,
         nick: String,
     ) -> Vec<EngineToUi> {
-        let mut state = lock(&self.state);
+        let state = lock(&self.state);
         let Some(running) = state
             .network
-            .as_mut()
+            .as_ref()
             .filter(|running| running.model.id() == network_id)
         else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let (buffer_id, mut output) = running.model.open_direct(nick, &running.client.state());
-        output.push(EngineToUi::FocusBufferRequested {
-            command_id: command_id.clone(),
-            buffer_id,
-        });
-        output.push(EngineToUi::CommandResult { id: command_id });
-        output
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        self.capture_direct(command_id, client, instance, nick, None, true);
+        Vec::new()
     }
 
     fn request_members(
@@ -421,24 +418,7 @@ impl Runtime {
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
-            let result = send(&client, &pending).await;
-            let event = {
-                let mut state = lock(&state);
-                let Some(running) = state
-                    .network
-                    .as_mut()
-                    .filter(|running| running.instance == instance)
-                else {
-                    return;
-                };
-                match result {
-                    Ok(sent) => running.model.confirm_send(&pending, &sent),
-                    Err(error) => Some(running.model.fail_send(&pending, error.message_key())),
-                }
-            };
-            if let Some(event) = event {
-                let _ = outbound.send(event);
-            }
+            finish_send(&state, &outbound, &client, instance, &pending).await;
             let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
         output
@@ -544,21 +524,84 @@ impl Runtime {
         text: String,
         focus: bool,
     ) -> Vec<EngineToUi> {
-        let mut state = lock(&self.state);
-        let Some(running) = state.network.as_mut() else {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let snapshot = running.client.state();
-        let (buffer_id, mut output) = running.model.open_direct(nick, &snapshot);
-        if focus {
-            output.push(EngineToUi::FocusBufferRequested {
-                command_id: command_id.clone(),
-                buffer_id,
-            });
-        }
+        let client = running.client.clone();
+        let instance = running.instance;
         drop(state);
-        output.extend(self.send_input(command_id, buffer_id, text, crate::MessageKind::Text));
-        output
+        self.capture_direct(command_id, client, instance, nick, Some(text), focus);
+        Vec::new()
+    }
+
+    fn capture_direct(
+        &self,
+        command_id: String,
+        client: papo::Client,
+        instance: u64,
+        nick: String,
+        text: Option<String>,
+        focus: bool,
+    ) {
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let snapshot = client.state();
+            let nick = snapshot.required_name_rules().nick(nick);
+            let known = lock(&state)
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .and_then(|running| running.model.direct(&nick));
+            let direct = match known {
+                Some(direct) => direct,
+                None => {
+                    if let Ok(direct) = client.direct(&nick).await {
+                        direct
+                    } else {
+                        let _ = outbound.send(EngineToUi::CommandRejected {
+                            id: command_id,
+                            message_key: "engine.direct_unavailable".into(),
+                        });
+                        return;
+                    }
+                }
+            };
+            let (pending, output) = {
+                let mut state = lock(&state);
+                let Some(running) = state
+                    .network
+                    .as_mut()
+                    .filter(|running| running.instance == instance)
+                else {
+                    return;
+                };
+                let (buffer_id, mut output) = running.model.open_direct(nick, direct);
+                if focus {
+                    output.push(EngineToUi::FocusBufferRequested {
+                        command_id: command_id.clone(),
+                        buffer_id,
+                    });
+                }
+                let pending = text.and_then(|text| {
+                    let (pending, events) =
+                        running
+                            .model
+                            .begin_send(buffer_id, text, &running.client.state())?;
+                    output.extend(events);
+                    Some(pending)
+                });
+                (pending, output)
+            };
+            for event in output {
+                let _ = outbound.send(event);
+            }
+            if let Some(pending) = pending {
+                finish_send(&state, &outbound, &client, instance, &pending).await;
+            }
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
     }
 
     fn part(
@@ -763,9 +806,7 @@ fn spawn_read_advances(
         for advance in advances {
             let result = match advance.target.clone() {
                 SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
-                SendTarget::Direct(target) => {
-                    client.mark_read(target.nick().clone(), advance.time).await
-                }
+                SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
             };
             if result.is_err() {
                 let _ = outbound.send(EngineToUi::CommandRejected {
@@ -808,14 +849,14 @@ struct ConnectConfig {
 #[derive(Debug)]
 enum SendError {
     Protocol,
-    DirectAccountChanged,
+    DirectTargetGone,
 }
 
 impl SendError {
     const fn message_key(&self) -> &'static str {
         match self {
             Self::Protocol => "engine.send_failed",
-            Self::DirectAccountChanged => "engine.direct_account_changed",
+            Self::DirectTargetGone => "engine.direct_target_gone",
         }
     }
 }
@@ -829,13 +870,45 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
             client.privmsg(channel, pending.text.clone()).await
         }
         .map_err(|_| SendError::Protocol),
-        SendTarget::Direct(target) => target
-            .send(client, pending.text.clone(), action)
-            .await
-            .map_err(|error| match error {
-                DirectSendError::AccountChanged => SendError::DirectAccountChanged,
-                DirectSendError::Protocol => SendError::Protocol,
-            }),
+        SendTarget::Direct { recipient, .. } => if action {
+            client.action(recipient, pending.text.clone()).await
+        } else {
+            client.privmsg(recipient, pending.text.clone()).await
+        }
+        .map_err(|error| {
+            if matches!(error, papo::Error::TargetGone) {
+                SendError::DirectTargetGone
+            } else {
+                SendError::Protocol
+            }
+        }),
+    }
+}
+
+async fn finish_send(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    pending: &PendingSend,
+) {
+    let result = send(client, pending).await;
+    let event = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        match result {
+            Ok(sent) => running.model.confirm_send(pending, &sent),
+            Err(error) => Some(running.model.fail_send(pending, error.message_key())),
+        }
+    };
+    if let Some(event) = event {
+        let _ = outbound.send(event);
     }
 }
 
@@ -848,8 +921,19 @@ async fn drain_events(
 ) {
     let member_changes = Arc::new(Mutex::new(crate::members::Changes::default()));
     while let Some(event) = events.next().await {
+        if let papo::Event::History(page) = event {
+            process_history(&state, &outbound, &client, instance, page).await;
+            continue;
+        }
         let schedule_members = lock(&member_changes).record(&event, &client.state());
-        let history_targets = process_event(&state, &outbound, &client, instance, event);
+        let direct = match &event {
+            papo::Event::Message(message) if message.authorship != papo::Authorship::Own => {
+                client.direct_to(message).await.ok()
+            }
+            _ => None,
+        };
+        let history_targets =
+            process_event_with_direct(&state, &outbound, &client, instance, event, direct);
         for target in history_targets {
             spawn_history_fetch(
                 Arc::clone(&state),
@@ -929,7 +1013,7 @@ fn spawn_history_fetch(
 ) {
     spawn_task(async move {
         if let Ok(page) = fetch_latest(&client, target).await {
-            process_history(&state, &outbound, &client, instance, page);
+            process_history(&state, &outbound, &client, instance, page).await;
         }
     });
 }
@@ -946,16 +1030,13 @@ async fn fetch_latest(
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
-        SendTarget::Direct(target) => {
-            client
-                .history(target.nick().clone())
-                .latest()
-                .limit(HISTORY_PAGE_SIZE)
-                .await
+        SendTarget::Direct { nick, .. } => {
+            client.history(nick).latest().limit(HISTORY_PAGE_SIZE).await
         }
     }
 }
 
+#[cfg(test)]
 fn process_event(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
@@ -963,10 +1044,17 @@ fn process_event(
     instance: u64,
     event: papo::Event,
 ) -> Vec<SendTarget> {
-    if let papo::Event::History(page) = event {
-        process_history(state, outbound, client, instance, page);
-        return Vec::new();
-    }
+    process_event_with_direct(state, outbound, client, instance, event, None)
+}
+
+fn process_event_with_direct(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    event: papo::Event,
+    direct: Option<papo::DirectRef>,
+) -> Vec<SendTarget> {
     let snapshot = client.state();
     let mut state = lock(state);
     let Some(running) = state
@@ -1017,7 +1105,7 @@ fn process_event(
             Vec::new()
         }
         papo::Event::Message(message) => {
-            output.extend(running.model.receive(&message, false, &snapshot));
+            output.extend(running.model.receive(&message, false, &snapshot, direct));
             Vec::new()
         }
         papo::Event::ReadMarkerChanged(marker) => {
@@ -1141,13 +1229,15 @@ fn process_join(
     }
 }
 
-fn process_history(
+async fn process_history(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     client: &papo::Client,
     instance: u64,
     page: papo::HistoryPage,
 ) {
+    let prepend = page.reason == papo::HistoryReason::Requested;
+    let items = guard_history_senders(client, page.items).await;
     let snapshot = client.state();
     let mut state = lock(state);
     let Some(running) = state
@@ -1157,14 +1247,13 @@ fn process_history(
     else {
         return;
     };
-    let prepend = page.reason == papo::HistoryReason::Requested;
     let mut output = Vec::new();
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut unread = None;
-    for item in page.items {
+    for (item, direct) in items {
         match item {
             papo::Event::Message(message) => {
-                for event in running.model.receive(&message, true, &snapshot) {
+                for event in running.model.receive(&message, true, &snapshot, direct) {
                     match event {
                         EngineToUi::MessagesAppended {
                             buffer_id,
@@ -1245,6 +1334,23 @@ fn process_history(
     }
 }
 
+async fn guard_history_senders(
+    client: &papo::Client,
+    events: Vec<papo::Event>,
+) -> Vec<(papo::Event, Option<papo::DirectRef>)> {
+    let mut guarded = Vec::with_capacity(events.len());
+    for event in events {
+        let direct = match &event {
+            papo::Event::Message(message) if message.authorship != papo::Authorship::Own => {
+                client.direct_to(message).await.ok()
+            }
+            _ => None,
+        };
+        guarded.push((event, direct));
+    }
+    guarded
+}
+
 fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
     endpoint.starts_with("wss://") || (allow_insecure && endpoint.starts_with("ws://"))
 }
@@ -1318,7 +1424,7 @@ mod tests {
         BufferId, BufferKind, EngineRequest, EngineRequestEnvelope, EngineToUi, NetworkId,
         SaslCredentials,
         name_key::RequiredNameRules,
-        state::{NetworkModel, SendTarget},
+        state::{NetworkModel, PendingSend, SendTarget},
     };
 
     #[test]
@@ -1552,9 +1658,19 @@ mod tests {
 
     #[tokio::test]
     async fn open_direct_adds_and_focuses_the_engine_buffer() {
-        let (client, _events, _wire) =
+        let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        let (outbound, _receiver) = mpsc::unbounded_channel();
+        wire.register(&["extended-join"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room * :WebLounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":mel!m@host JOIN #room mel :Mel").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 2,
@@ -1569,13 +1685,23 @@ mod tests {
             outbound,
         };
 
-        let output = runtime.request(EngineRequestEnvelope {
+        let immediate = runtime.request(EngineRequestEnvelope {
             id: "open-mel".into(),
             request: EngineRequest::OpenDirect {
                 network_id: NetworkId(1),
                 nick: "mel".into(),
             },
         });
+        assert!(immediate.is_empty());
+        let mut output = Vec::new();
+        loop {
+            let event = receiver.recv().await.expect("direct capture completes");
+            let complete = matches!(event, EngineToUi::CommandResult { .. });
+            output.push(event);
+            if complete {
+                break;
+            }
+        }
         assert!(matches!(output.as_slice(), [
             EngineToUi::BufferAdded { buffer },
             EngineToUi::BuffersChanged { .. },
@@ -1770,8 +1896,9 @@ mod tests {
                 input: "/msg alice hello".into(),
             },
         });
-        assert_unfocused_direct(&output, "alice");
+        assert!(output.is_empty());
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
+        assert_unfocused_direct(&collect(&mut receiver), "alice");
 
         runtime.request(EngineRequestEnvelope {
             id: "part".into(),
@@ -1782,6 +1909,95 @@ mod tests {
         });
         assert_eq!(wire.next_sent().await, "PART #new later");
         wire.server(":lounge2!u@host PART #new :later").await;
+    }
+
+    #[tokio::test]
+    async fn guarded_direct_follows_a_nick_change() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room * :WebLounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":alice!a@host JOIN #room alice-one :Alice")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let direct = client.direct("alice").await.expect("shared user is direct");
+
+        wire.server(":alice!a@host NICK bob").await;
+        let changed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::NickChanged(_))
+        })
+        .await;
+        let papo::Event::NickChanged(changed) = changed else {
+            panic!("nick change expected")
+        };
+        let pending = PendingSend {
+            buffer_id: BufferId(2),
+            local_send_id: crate::LocalSendId(1),
+            target: SendTarget::Direct {
+                nick: changed.new,
+                recipient: direct,
+            },
+            text: "still you".into(),
+            kind: crate::MessageKind::Text,
+        };
+
+        let sender = client.clone();
+        let send = tokio::spawn(async move { super::send(&sender, &pending).await });
+        assert_eq!(wire.next_sent().await, "PRIVMSG bob :still you");
+        send.await
+            .expect("send task completes")
+            .expect("send follows user");
+    }
+
+    #[tokio::test]
+    async fn guarded_direct_refuses_a_reused_nick() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room * :WebLounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":alice!a@host JOIN #room alice-one :Alice")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let direct = client.direct("alice").await.expect("shared user is direct");
+        let nick = client.state().required_name_rules().nick("alice");
+
+        wire.server(":alice!a@host QUIT :gone").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Quit(_))).await;
+        wire.server(":alice!other@host JOIN #room alice-two :Other Alice")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let pending = PendingSend {
+            buffer_id: BufferId(2),
+            local_send_id: crate::LocalSendId(1),
+            target: SendTarget::Direct {
+                nick,
+                recipient: direct,
+            },
+            text: "not for you".into(),
+            kind: crate::MessageKind::Text,
+        };
+
+        assert!(matches!(
+            super::send(&client, &pending).await,
+            Err(super::SendError::DirectTargetGone)
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -2070,7 +2286,7 @@ mod tests {
             .await
             .expect("history task completes")
             .expect("history request succeeds");
-        process_history(&state, &outbound, &client, 1, page);
+        process_history(&state, &outbound, &client, 1, page).await;
 
         let prepended = collect(&mut receiver)
             .into_iter()
@@ -2114,7 +2330,7 @@ mod tests {
             .await
             .expect("history task completes")
             .expect("empty history is successful");
-        process_history(&state, &outbound, &client, 1, page);
+        process_history(&state, &outbound, &client, 1, page).await;
 
         assert!(collect(&mut receiver).is_empty());
         let buffers = lock(&state)
@@ -2567,7 +2783,10 @@ mod tests {
             &history,
             papo::Event::History(page) if page.reason == papo::HistoryReason::Catchup
         ));
-        process_event(&state, &outbound, &client, 1, history);
+        let papo::Event::History(page) = history else {
+            panic!("history page expected")
+        };
+        process_history(&state, &outbound, &client, 1, page).await;
         let appended = collect(&mut receiver)
             .into_iter()
             .filter_map(|event| match event {

@@ -2,7 +2,6 @@
 
 /// Runtime slash-command metadata and registration.
 pub mod commands;
-mod direct_target;
 mod members;
 mod name_key;
 mod protocol;
