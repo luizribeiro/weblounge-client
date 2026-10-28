@@ -51,6 +51,23 @@ pub(crate) enum SendTarget {
     Direct(DirectTarget),
 }
 
+impl SendTarget {
+    fn from_name_key(key: NameKey, direct_account: Option<papo::AccountName>) -> Self {
+        match key {
+            NameKey::Channel(channel) => Self::Channel(channel),
+            NameKey::Direct(nick) => Self::Direct(DirectTarget::new(nick, direct_account)),
+        }
+    }
+
+    #[cfg(test)]
+    fn name_key(&self) -> NameKey {
+        match self {
+            Self::Channel(channel) => NameKey::Channel(channel.clone()),
+            Self::Direct(target) => NameKey::Direct(target.nick().clone()),
+        }
+    }
+}
+
 /// Pending optimistic row and its send destination.
 #[derive(Clone, Debug)]
 pub(crate) struct PendingSend {
@@ -280,10 +297,7 @@ impl NetworkModel {
             received_at_ms: time_millis(SystemTime::now()),
         };
         self.insert(buffer_id, message.clone(), DedupReferences::default());
-        let target = match key {
-            NameKey::Channel(channel) => SendTarget::Channel(channel),
-            NameKey::Direct(nick) => SendTarget::Direct(DirectTarget::new(nick, direct_account)),
-        };
+        let target = SendTarget::from_name_key(key, direct_account);
         Some((
             PendingSend {
                 buffer_id,
@@ -348,22 +362,18 @@ impl NetworkModel {
         self.buffer_order
             .iter()
             .filter_map(|id| self.buffers.get(id))
-            .filter_map(|buffer| match buffer.key.as_ref()? {
-                NameKey::Channel(channel) => Some(SendTarget::Channel(channel.clone())),
-                NameKey::Direct(nick) => Some(SendTarget::Direct(DirectTarget::new(
-                    nick.clone(),
+            .filter_map(|buffer| {
+                Some(SendTarget::from_name_key(
+                    buffer.key.clone()?,
                     buffer.direct_account.clone(),
-                ))),
+                ))
             })
             .collect()
     }
 
     #[cfg(test)]
     pub(crate) fn buffer_id_for_target(&self, target: &SendTarget) -> Option<BufferId> {
-        let key = match target {
-            SendTarget::Channel(channel) => NameKey::Channel(channel.clone()),
-            SendTarget::Direct(target) => NameKey::Direct(target.nick().clone()),
-        };
+        let key = target.name_key();
         self.names.get(&key).copied()
     }
 
@@ -592,7 +602,7 @@ fn time_millis(time: SystemTime) -> i64 {
 mod tests {
     use papo_testing::StateBuilder;
 
-    use super::{Incoming, NameKey, NetworkModel, TimelineOrigin};
+    use super::{Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin};
     use crate::{MessageAuthorship, NetworkId};
 
     fn incoming(
@@ -801,5 +811,17 @@ mod tests {
         let id = *model.names.values().next().expect("buffer exists");
 
         assert_eq!(model.buffers[&id].projection.mentions, 1);
+    }
+
+    #[test]
+    fn send_targets_round_trip_through_name_keys() {
+        let (_, state) = model(10);
+        let channel = NameKey::Channel(state.name_rules().channel("#room"));
+        let direct = NameKey::Direct(state.name_rules().nick("alice"));
+
+        for key in [channel, direct] {
+            let target = SendTarget::from_name_key(key.clone(), None);
+            assert_eq!(target.name_key(), key);
+        }
     }
 }
