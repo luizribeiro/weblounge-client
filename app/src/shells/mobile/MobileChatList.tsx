@@ -77,7 +77,9 @@ export function MobileChatList(props: MobileChatListProps) {
         class={styles.list}
         onScroll={(event) => props.onScroll(event.currentTarget.scrollTop)}
         ref={(element) => {
-          element.scrollTop = props.scrollTop;
+          queueMicrotask(() => {
+            element.scrollTop = props.scrollTop;
+          });
         }}
       >
         <For each={chats()}>

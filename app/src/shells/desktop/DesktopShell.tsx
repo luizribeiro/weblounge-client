@@ -63,7 +63,7 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
-  let navigationCommitted = false;
+  let navigationCommitted = props.activeBufferId !== undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
