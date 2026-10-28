@@ -1,0 +1,78 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import { expect, test } from "@playwright/test";
+import { IrcClient } from "./irc-client";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
+
+const channel = "#weblounge-test";
+const screenshots = path.join(process.cwd(), "e2e", "screenshots");
+
+test.describe("desktop members against local Ergo", () => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+
+  test("updates groups, toggles, and opens a DM", async ({ page }) => {
+    const bot = await IrcClient.connect(
+      "member-bot",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    try {
+      await bot.mode("member-bot", "+B");
+      await installNativeFeelInstrumentation(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+
+      const toggle = page.getByRole("button", { name: "Toggle member list" });
+      await toggle.click();
+      const panel = page.getByRole("complementary", { name: "Members" });
+      await expect(panel).toHaveCSS("width", "232px");
+      await expect(panel.getByText("Online — 1")).toBeVisible();
+      await expect(panel.getByText("Bots — 1")).toBeVisible();
+      await expect(
+        panel.getByRole("button", {
+          name: "Open direct message with member-bot",
+        }),
+      ).toBeVisible();
+
+      await bot.mode(channel, "+o", "weblounge");
+      await expect(panel.getByText("Operators — 1")).toBeVisible();
+      await bot.mode(channel, "-o", "weblounge");
+      await expect(panel.getByText("Online — 1")).toBeVisible();
+
+      await page.keyboard.press("Control+Period");
+      await expect(panel).toHaveCount(0);
+      await page.keyboard.press("Control+Period");
+      await expect(panel).toBeVisible();
+      await page.waitForTimeout(250);
+      await nativeFeelAudit(page);
+
+      await mkdir(screenshots, { recursive: true });
+      await page.screenshot({
+        path: path.join(screenshots, "member-panel-light.png"),
+      });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.screenshot({
+        path: path.join(screenshots, "member-panel-dark.png"),
+      });
+
+      await panel
+        .getByRole("button", { name: "Open direct message with member-bot" })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: "member-bot" }),
+      ).toBeVisible();
+      await expect(panel).toHaveCount(0);
+    } finally {
+      bot.close();
+    }
+  });
+});

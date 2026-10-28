@@ -72,6 +72,14 @@ export class IrcClient {
     await this.privmsgConfirmed(channel, `\u0001ACTION ${text}\u0001`);
   }
 
+  async mode(target: string, change: string, nick?: string): Promise<void> {
+    const argument = nick === undefined ? "" : ` ${nick}`;
+    this.send(`MODE ${target} ${change}${argument}`);
+    await this.waitFor((line) =>
+      line.includes(` MODE ${target} ${change}${argument}`),
+    );
+  }
+
   async part(channel: string): Promise<void> {
     this.send(`PART ${channel} :screenshot seed complete`);
     await this.waitFor((line) => line.includes(` PART ${channel} `));
