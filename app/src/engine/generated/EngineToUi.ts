@@ -83,7 +83,11 @@ buffers: Array<BufferProjection>, } | { "type": "buffer_added",
 /**
  * New buffer projection.
  */
-buffer: BufferProjection, } | { "type": "messages_appended",
+buffer: BufferProjection, } | { "type": "focus_buffer_requested",
+/**
+ * Buffer to focus.
+ */
+buffer_id: BufferId, } | { "type": "messages_appended",
 /**
  * Destination buffer.
  */

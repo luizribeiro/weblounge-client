@@ -334,6 +334,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "focus_buffer_requested":
+      if (typeof value.buffer_id === "number") {
+        return { type: "focus_buffer_requested", buffer_id: value.buffer_id };
+      }
+      break;
     case "network_state_changed": {
       const network = decodeNetwork(value.network);
       if (network !== undefined) return { type: messageType, network };
@@ -451,6 +456,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "network_state_changed" ||
     value === "buffers_changed" ||
     value === "buffer_added" ||
+    value === "focus_buffer_requested" ||
     value === "messages_appended" ||
     value === "messages_prepended" ||
     value === "membership_changed" ||

@@ -367,6 +367,11 @@ pub enum EngineToUi {
         /// New buffer projection.
         buffer: BufferProjection,
     },
+    /// Ask the active shell to focus a buffer selected by engine-owned input semantics.
+    FocusBufferRequested {
+        /// Buffer to focus.
+        buffer_id: BufferId,
+    },
     /// Append received messages in established timeline order.
     MessagesAppended {
         /// Destination buffer.

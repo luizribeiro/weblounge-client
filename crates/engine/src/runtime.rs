@@ -323,6 +323,7 @@ impl Runtime {
         };
         let snapshot = running.client.state();
         let (buffer_id, mut output) = running.model.open_direct(nick, &snapshot);
+        output.push(EngineToUi::FocusBufferRequested { buffer_id });
         drop(state);
         output.extend(self.send_input(command_id, buffer_id, text, crate::MessageKind::Text));
         output
@@ -774,6 +775,9 @@ fn process_join(
 ) -> Vec<SendTarget> {
     output.extend(model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
+        if let Some(buffer_id) = model.buffer_id_for_channel(&joined.channel) {
+            output.push(EngineToUi::FocusBufferRequested { buffer_id });
+        }
         model
             .request_latest_channel(&joined.channel)
             .into_iter()
@@ -1366,7 +1370,10 @@ mod tests {
         let (state, outbound, mut receiver) = harness(client.clone());
         let targets = process_event(&state, &outbound, &client, 1, joined);
         assert_eq!(targets.len(), 1);
-        _ = collect(&mut receiver);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::FocusBufferRequested { buffer_id } if buffer_id.0 > 1
+        )));
 
         wire.server(
             "@time=2026-10-27T12:00:02.000Z;msgid=live :alice!a@host PRIVMSG #room :live overlap",

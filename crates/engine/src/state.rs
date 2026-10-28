@@ -524,6 +524,10 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn buffer_id_for_channel(&self, channel: &papo::ChannelName) -> Option<BufferId> {
+        self.names.get(&NameKey::Channel(channel.clone())).copied()
+    }
+
     pub(crate) fn completion_candidates(
         &self,
         buffer_id: BufferId,
