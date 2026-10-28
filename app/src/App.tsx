@@ -196,7 +196,7 @@ export function App(props: AppProps) {
             },
           });
         }}
-        onRequestMembers={(bufferId, offset, limit) => {
+        onRequestMembers={(bufferId, offset, limit, filter = "") => {
           if (client === undefined) return;
           void client.send({
             id: crypto.randomUUID(),
@@ -205,6 +205,7 @@ export function App(props: AppProps) {
               buffer_id: bufferId,
               offset,
               limit,
+              filter,
             },
           });
         }}

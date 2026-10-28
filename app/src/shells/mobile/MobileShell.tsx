@@ -1,4 +1,13 @@
-import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+} from "solid-js";
+import type { MemberWindow } from "../../features/members/MemberPanel";
+import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
 import type { ChatFilter } from "./mobile-chats";
@@ -16,6 +25,18 @@ interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
+  readonly memberWindows?: ReadonlyMap<number, MemberWindow> | undefined;
+  readonly onOpenDirect?:
+    | ((networkId: number, nick: string) => void)
+    | undefined;
+  readonly onRequestMembers?:
+    | ((
+        bufferId: number,
+        offset: number,
+        limit: number,
+        filter?: string,
+      ) => void)
+    | undefined;
 }
 
 export function MobileShell(props: MobileShellProps) {
@@ -33,7 +54,13 @@ export function MobileShell(props: MobileShellProps) {
   const [swipeProgress, setSwipeProgress] = createSignal<number>();
   const [swipeReturning, setSwipeReturning] = createSignal(false);
   const [viewport, setViewport] = createSignal<MobileViewport>();
+  const [drawerBufferId, setDrawerBufferId] = createSignal<number>();
+  const [memberFilter, setMemberFilter] = createSignal("");
+  const drawerBuffer = createMemo(() =>
+    props.buffers.find((buffer) => buffer.id === drawerBufferId()),
+  );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
+  let pendingDirect: { networkId: number; nick: string } | undefined;
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
     | undefined;
@@ -47,12 +74,34 @@ export function MobileShell(props: MobileShellProps) {
   };
   const dispatchBack = () =>
     setStack((current) => popChat(current, reducedMotion()));
+  const finishDrawerClose = () => {
+    setDrawerBufferId(undefined);
+    if (pendingDirect !== undefined) {
+      props.onOpenDirect?.(pendingDirect.networkId, pendingDirect.nick);
+      pendingDirect = undefined;
+    }
+  };
+  const closeDrawer = () => {
+    if (window.history.state?.webloungeMobileDrawer === true)
+      window.history.back();
+    else finishDrawerClose();
+  };
   const requestBack = () => {
+    if (drawerBufferId() !== undefined) return closeDrawer();
     if (window.history.state?.webloungeMobileChat === true) {
       window.history.back();
     } else {
       dispatchBack();
     }
+  };
+  const openMembers = (bufferId: number) => {
+    setMemberFilter("");
+    setDrawerBufferId(bufferId);
+    props.onRequestMembers?.(bufferId, 0, 256, "");
+    window.history.pushState(
+      { ...historyState(), webloungeMobileDrawer: true },
+      "",
+    );
   };
 
   createEffect(() => {
@@ -124,7 +173,8 @@ export function MobileShell(props: MobileShellProps) {
       : [{ kind: "chats" } as const, stack().active];
 
   onMount(() => {
-    const handlePopState = () => dispatchBack();
+    const handlePopState = () =>
+      drawerBufferId() === undefined ? dispatchBack() : finishDrawerClose();
     window.addEventListener("popstate", handlePopState);
     const stopViewport = observeMobileViewport(window, setViewport);
     onCleanup(() => {
@@ -165,6 +215,7 @@ export function MobileShell(props: MobileShellProps) {
               onLoadHistory={props.onLoadHistory}
               onMarkRead={props.onMarkRead}
               onOpen={open}
+              onOpenMembers={openMembers}
               onQuery={setQuery}
               onRequestCompletion={props.onRequestCompletion}
               onScroll={setScrollTop}
@@ -198,6 +249,33 @@ export function MobileShell(props: MobileShellProps) {
           );
         }}
       </For>
+      {drawerBuffer() !== undefined && (
+        <MobileMemberDrawer
+          bufferTitle={drawerBuffer()?.title ?? ""}
+          filter={memberFilter()}
+          onClose={closeDrawer}
+          onFilter={(filter) => {
+            setMemberFilter(filter);
+            props.onRequestMembers?.(drawerBufferId() ?? 0, 0, 256, filter);
+          }}
+          onOpenDirect={(nick) => {
+            pendingDirect = {
+              networkId: drawerBuffer()?.network_id ?? 0,
+              nick,
+            };
+            closeDrawer();
+          }}
+          onRequestRange={(offset, limit) =>
+            props.onRequestMembers?.(
+              drawerBufferId() ?? 0,
+              offset,
+              limit,
+              memberFilter(),
+            )
+          }
+          window={props.memberWindows?.get(drawerBufferId() ?? -1)}
+        />
+      )}
     </main>
   );
 }

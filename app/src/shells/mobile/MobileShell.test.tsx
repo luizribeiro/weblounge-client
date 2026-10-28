@@ -50,3 +50,43 @@ it("commits reduced-motion stack changes without transition neighbours", () => {
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
   expect(document.querySelectorAll("[data-mobile-chat]")).toHaveLength(0);
 });
+
+it("closes the member drawer before popping the chat", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: true }) as MediaQueryList),
+  );
+  const channel = {
+    ...buffer,
+    id: 3,
+    kind: "channel" as const,
+    title: "#room",
+  };
+  const requestMembers = vi.fn();
+  render(() => (
+    <MobileShell
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={3}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onRequestMembers={requestMembers}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+  expect(screen.getByRole("dialog", { name: "Members" })).toBeVisible();
+  expect(requestMembers).toHaveBeenCalledWith(3, 0, 256, "");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "#room" })).toBeVisible();
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+});

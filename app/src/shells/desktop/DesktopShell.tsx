@@ -57,7 +57,12 @@ export interface DesktopShellProps {
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
   readonly onRequestMembers?:
-    | ((bufferId: number, offset: number, limit: number) => void)
+    | ((
+        bufferId: number,
+        offset: number,
+        limit: number,
+        filter?: string,
+      ) => void)
     | undefined;
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
