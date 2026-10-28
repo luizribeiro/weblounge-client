@@ -21,13 +21,12 @@ Slash descriptors use command-registry IDs from 14 where semantics match: `/join
 engine descriptor IDs until registry actions exist. Parsing is ASCII case-insensitive, preserves
 message/reason text after required arguments, and never exposes a raw-command escape hatch.
 
-`CompleteInput { buffer_id, input, cursor }` returns a replace range and ordered
-`CompletionCandidate { kind, value, suffix }` values. Candidates are commands at a leading slash,
-channels for channel-shaped tokens, and channel nicks otherwise. Nicks are ordered by most recent
-message activity, then papo casemapping; channels and commands use the same name rules and stable
-lexical order. The UI requests candidates only when a completion session starts or its token
-changes, caches that result for Tab cycling, and applies selection locally, avoiding a worker
-round trip for every cycle or paint.
+`CompleteInput { buffer_id, prefix }` returns a correlated `CompletionResult` with ordered string
+values. Candidates are commands at a leading slash, open channels for channel-shaped tokens, and
+channel nicks otherwise. Nicks are ordered by most recent message activity, followed by quiet
+members from papo's channel state. The UI identifies the token's replace range, requests candidates
+when a completion session starts, caches that result for Tab cycling, and applies selection locally,
+avoiding a worker round trip for every cycle or paint.
 
 ## Boundaries
 
@@ -46,16 +45,15 @@ composer shortcuts ignore `isComposing`, key code 229, `Dead`, and `Process`; co
 close completion. Mobile textarea text is at least 16px. Up in an empty composer invokes
 `message.select-last` from 14 and never copies a prior message into the draft.
 
-Server refusals, standard replies, and relevant numerics become typed notice projections in the
-affected buffer (or server buffer when no chat buffer exists). UI code does not classify protocol
-lines.
+Server refusals, standard replies, and relevant numerics become typed command rejections rendered
+as a notice beside the affected buffer's composer. UI code does not classify protocol lines.
 
 ## Testing
 
 Parser tables cover every command, missing arguments, unknown commands, whitespace, and multiline
 text. Scripted papo wire tests cover command lines, `Sent` confirmation, splitting, and correlated
-standard-reply/numeric refusals. Completion tests cover activity order, casemapping, and replace
-ranges. Component tests cover Enter/Shift+Enter, Tab cycling, drafts, empty-Up, and IME. Playwright
+standard-reply/numeric refusals. Completion tests cover activity order and channel membership;
+component tests cover replace ranges, Enter/Shift+Enter, Tab cycling, drafts, empty-Up, and IME. Playwright
 uses local Ergo for plain send, `/me`, `/join`, `/msg`, nick completion, reload/switch drafts, and
 the native-feel idle/hidden audits; light and dark completion screenshots are inspected.
 
