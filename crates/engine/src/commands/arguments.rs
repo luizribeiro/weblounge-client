@@ -27,10 +27,14 @@ impl<'a> Tokens<'a> {
         Some(word)
     }
 
-    fn text(&mut self) -> Option<&'a str> {
+    pub(crate) fn text(&mut self) -> Option<&'a str> {
         let text = (!self.remaining.is_empty()).then_some(self.remaining);
         self.remaining = "";
         text
+    }
+
+    pub(crate) fn peek(&self) -> Option<&'a str> {
+        self.remaining.split_whitespace().next()
     }
 
     pub(crate) fn finish(&self) -> Result<(), InputError> {

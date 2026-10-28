@@ -1,6 +1,8 @@
 #[allow(dead_code, reason = "consumed by the command declaration next")]
 mod arguments;
 mod spec;
+#[allow(dead_code, reason = "consumed by the command declaration next")]
+mod values;
 
 pub use spec::{
     CommandArgumentKind, CommandArgumentSpec, CommandPermission, CommandRegistry,
