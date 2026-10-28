@@ -52,3 +52,17 @@ it("filters slash completion by the current token", () => {
   fireEvent.keyDown(input, { key: "Tab" });
   expect(input).toHaveValue("/join ");
 });
+
+it("routes Up from an empty composer to message navigation", () => {
+  const onSelectLast = vi.fn();
+  render(() => (
+    <Composer
+      bufferId={5}
+      bufferTitle="#rust"
+      onSelectLast={onSelectLast}
+      onSend={() => {}}
+    />
+  ));
+  fireEvent.keyDown(screen.getByRole("textbox"), { key: "ArrowUp" });
+  expect(onSelectLast).toHaveBeenCalledOnce();
+});

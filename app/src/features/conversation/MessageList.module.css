@@ -35,6 +35,10 @@
   line-height: var(--wl-density-message-line-height);
   padding: var(--wl-density-message-one-line-row-padding) 8px;
 }
+.virtualRow[data-selected="true"] .row {
+  outline: 2px solid var(--wl-color-focus-ring);
+  outline-offset: -2px;
+}
 .row:hover {
   background: var(--wl-color-panel-alt);
 }

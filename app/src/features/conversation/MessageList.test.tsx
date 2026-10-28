@@ -5,7 +5,7 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import { MessageList } from "./MessageList";
+import { MessageList, type MessageListController } from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
 
 vi.mock("./nick-lookup", async (importOriginal) => {
@@ -210,4 +210,20 @@ it("keeps the full nick accessible when its visual start truncates", () => {
   expect(screen.getByTitle("an-extremely-long-nickname")).toHaveTextContent(
     "an-extremely-long-nickname",
   );
+});
+
+it("selects the latest own message for empty-composer Up", async () => {
+  let controller: MessageListController | undefined;
+  const { container } = render(() => (
+    <MessageList
+      messages={[message, { ...message, id: 2, authorship: "own" }]}
+      registerController={(value) => {
+        controller = value;
+      }}
+    />
+  ));
+  controller?.selectLastOwn();
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(container.querySelector('[data-selected="true"]')).not.toBeNull();
+  expect(screen.getByRole("list", { name: "Messages" })).toHaveFocus();
 });

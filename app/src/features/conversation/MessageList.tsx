@@ -34,6 +34,7 @@ interface MessageListProps {
 
 export interface MessageListController {
   readonly jumpBottom: () => void;
+  readonly selectLastOwn: () => void;
 }
 
 type TimelineRow =
@@ -65,6 +66,7 @@ export function MessageList(props: MessageListProps) {
   );
   const [atLiveEdge, setAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
+  const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const rows = createMemo(() =>
     timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
   );
@@ -101,7 +103,20 @@ export function MessageList(props: MessageListProps) {
     virtualizer.scrollToIndex(rows().length - 1, { align: "end" });
     queueMicrotask(reportLiveEdge);
   };
-  props.registerController?.({ jumpBottom: jumpToBottom });
+  const selectLastOwn = () => {
+    const message = [...props.messages]
+      .reverse()
+      .find((item) => item.authorship === "own");
+    if (message === undefined) return;
+    const index = rows().findIndex(
+      (row) => row.kind === "message" && row.message.id === message.id,
+    );
+    if (index < 0) return;
+    setSelectedMessage(message.id);
+    virtualizer.scrollToIndex(index, { align: "auto" });
+    queueMicrotask(() => list?.focus());
+  };
+  props.registerController?.({ jumpBottom: jumpToBottom, selectLastOwn });
 
   createEffect(() => {
     if (props.bufferId !== currentBuffer) {
@@ -178,11 +193,19 @@ export function MessageList(props: MessageListProps) {
         <For each={virtualizer.getVirtualItems()}>
           {(virtualRow) => {
             const row = () => rows()[virtualRow.index];
+            const selected = () => {
+              const item = row();
+              return (
+                item?.kind === "message" &&
+                item.message.id === selectedMessage()
+              );
+            };
             return (
               <li
                 class={styles.virtualRow}
                 data-copy-row-index={virtualRow.index}
                 data-index={virtualRow.index}
+                data-selected={selected()}
                 style={{
                   transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
                 }}

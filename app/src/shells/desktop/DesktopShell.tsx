@@ -226,6 +226,7 @@ export function DesktopShell(props: DesktopShellProps) {
                   props.buffers,
                 )}
                 disabled={activeBuffer()?.kind === "server"}
+                onSelectLast={() => messageListController?.selectLastOwn()}
                 onSend={(text) => {
                   const buffer = activeBuffer();
                   if (buffer !== undefined) {
