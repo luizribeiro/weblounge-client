@@ -83,7 +83,12 @@ test.describe("mobile shell against local Ergo", () => {
       await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
       await page.getByRole("button", { name: targetNick }).click();
       await expect(
-        page.getByText(`preview from ${targetNick}`, { exact: true }),
+        page.getByRole("heading", { name: targetNick }),
+      ).toBeVisible();
+      await expect(
+        page
+          .locator("[data-mobile-chat]")
+          .getByText(`preview from ${targetNick}`, { exact: true }),
       ).toBeVisible();
       const wrappingText =
         "A deliberately long mobile message wraps beneath itself instead of reserving desktop columns on this narrow screen.";

@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
+import { t } from "../../features/composer/strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
@@ -47,7 +48,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
         </span>
         <span class={styles.detail}>
           {props.previews && message() !== undefined && (
-            <Line class={styles.preview}>{preview(message())}</Line>
+            <Line class={styles.preview}>{preview(props.buffer)}</Line>
           )}
           {badge() > 0 && (
             <span
@@ -64,8 +65,15 @@ export function MobileChatRow(props: MobileChatRowProps) {
   );
 }
 
-function preview(message: BufferProjection["last_message"]): string {
+function preview(buffer: BufferProjection): string {
+  const message = buffer.last_message;
   if (message === undefined) return "";
+  if (buffer.kind === "direct" && message.authorship === "own") {
+    return t("mobile.preview.own", { text: message.text });
+  }
+  if (buffer.kind === "direct" && message.author === buffer.title) {
+    return message.kind === "action" ? `* ${message.text}` : message.text;
+  }
   return message.kind === "action"
     ? `* ${message.author} ${message.text}`
     : `${message.author}: ${message.text}`;

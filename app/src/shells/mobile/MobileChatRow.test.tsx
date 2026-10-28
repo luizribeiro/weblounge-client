@@ -83,3 +83,25 @@ it("uses the same locale time in chat previews and message rows", () => {
   expect(times).toHaveLength(2);
   expect(times[0]).toBe(times[1]);
 });
+
+it("omits the peer name from direct previews and labels own messages", () => {
+  const direct = buffer({ kind: "direct", title: "mel" });
+  const { unmount } = render(() => (
+    <MobileChatRow buffer={direct} onOpen={vi.fn()} previews={true} />
+  ));
+
+  expect(screen.getByText("See you there")).toBeVisible();
+  expect(screen.queryByText("mel: See you there")).not.toBeInTheDocument();
+  unmount();
+  render(() => (
+    <MobileChatRow
+      buffer={{
+        ...direct,
+        last_message: { ...lastMessage, author: "me", authorship: "own" },
+      }}
+      onOpen={vi.fn()}
+      previews={true}
+    />
+  ));
+  expect(screen.getByText("You: See you there")).toBeVisible();
+});

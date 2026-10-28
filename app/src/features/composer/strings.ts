@@ -1,5 +1,6 @@
 interface MessageValues {
   readonly input?: string;
+  readonly text?: string;
 }
 
 export const messageKeys = [
@@ -57,6 +58,8 @@ export function t(key: string, values: MessageValues = {}): string {
     case "engine.worker_failed":
     case "engine.command_failed":
       return "Something went wrong. Try again.";
+    case "mobile.preview.own":
+      return `You: ${values.text ?? ""}`;
     default:
       return "Something went wrong. Try again.";
   }
