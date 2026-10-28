@@ -1,11 +1,17 @@
 import { render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
 import { MessageList } from "./MessageList";
+import { createNickLookup } from "./nick-lookup";
+
+vi.mock("./nick-lookup", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./nick-lookup")>();
+  return { ...original, createNickLookup: vi.fn(original.createNickLookup) };
+});
 
 const message: MessageProjection = {
   id: 1,
@@ -141,6 +147,27 @@ it("keeps a bounded DOM for ten thousand rows", async () => {
 
   expect(container.querySelectorAll("[data-message-row]").length).toBeLessThan(
     80,
+  );
+});
+
+it("builds one distinct-nick lookup for all rendered rows", () => {
+  vi.mocked(createNickLookup).mockClear();
+  render(() => (
+    <MessageList
+      messages={[
+        message,
+        { ...message, id: 2, author: "bob", text: "hello alice" },
+        { ...message, id: 3, text: "hello bob" },
+      ]}
+    />
+  ));
+
+  expect(createNickLookup).toHaveBeenCalledOnce();
+  expect(createNickLookup).toHaveReturnedWith(
+    new Map([
+      ["alice", message],
+      ["bob", { ...message, id: 2, author: "bob", text: "hello alice" }],
+    ]),
   );
 });
 

@@ -19,6 +19,7 @@ import { copySelectedRows } from "../../ui/copy-selection";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MessageList.module.css";
+import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
@@ -67,6 +68,7 @@ export function MessageList(props: MessageListProps) {
   const rows = createMemo(() =>
     timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
   );
+  const nickLookup = createMemo(() => createNickLookup(props.messages));
   const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
     get count() {
       return rows().length;
@@ -185,8 +187,8 @@ export function MessageList(props: MessageListProps) {
               >
                 <TimelineRowView
                   index={virtualRow.index}
+                  nickLookup={nickLookup()}
                   row={row()}
-                  messages={props.messages}
                 />
               </li>
             );
@@ -204,8 +206,8 @@ export function MessageList(props: MessageListProps) {
 
 function TimelineRowView(props: {
   readonly index: number;
+  readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly row: TimelineRow | undefined;
-  readonly messages: readonly MessageProjection[];
 }) {
   return (
     <Show when={props.row} keyed>
@@ -226,7 +228,7 @@ function TimelineRowView(props: {
               <MessageRow
                 index={props.index}
                 message={row.message}
-                messages={props.messages}
+                nickLookup={props.nickLookup}
               />
             )}
           </Match>
@@ -248,7 +250,7 @@ function TimelineRowView(props: {
 function MessageRow(props: {
   readonly index: number;
   readonly message: MessageProjection;
-  readonly messages: readonly MessageProjection[];
+  readonly nickLookup: ReadonlyMap<string, NickDisplay>;
 }) {
   const message = props.message;
   const nickStyle =
@@ -274,7 +276,7 @@ function MessageRow(props: {
             <span class={styles.actionNick} style={nickStyle}>
               {message.author}
             </span>{" "}
-            {renderText(message.text, props.messages)}
+            {renderText(message.text, props.nickLookup)}
           </Selectable>
           <Delivery message={message} />
         </>
@@ -301,7 +303,7 @@ function MessageRow(props: {
             {message.bot && <span class={styles.bot}>BOT</span>}
           </Line>
           <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
-            {renderText(message.text, props.messages)}
+            {renderText(message.text, props.nickLookup)}
           </Selectable>
           <Delivery message={message} />
         </>
@@ -318,10 +320,7 @@ function Delivery(props: { readonly message: MessageProjection }) {
   return null;
 }
 
-function renderText(text: string, messages: readonly MessageProjection[]) {
-  const authors = new Map(
-    messages.map((message) => [message.author.toLocaleLowerCase(), message]),
-  );
+function renderText(text: string, authors: ReadonlyMap<string, NickDisplay>) {
   return text.split(/([\p{L}\p{N}_\-[\]{}\\`^|]+)/gu).map((part) => {
     const author = authors.get(part.toLocaleLowerCase());
     if (author === undefined) return part;
