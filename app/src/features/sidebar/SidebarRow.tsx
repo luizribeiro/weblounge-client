@@ -10,6 +10,7 @@ export interface SidebarRowProps {
   readonly tabIndex: number;
   readonly onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
   readonly onFocus?: JSX.EventHandler<HTMLButtonElement, FocusEvent>;
+  readonly ref?: (element: HTMLButtonElement) => void;
 }
 
 export function SidebarRow(props: SidebarRowProps) {
@@ -24,6 +25,7 @@ export function SidebarRow(props: SidebarRowProps) {
       data-muted={props.muted === true ? "true" : undefined}
       onClick={props.onClick}
       onFocus={props.onFocus}
+      ref={props.ref}
       tabIndex={props.tabIndex}
       type="button"
     >
