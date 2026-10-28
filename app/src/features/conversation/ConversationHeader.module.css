@@ -1,0 +1,51 @@
+.header {
+  align-items: center;
+  background: var(--wl-color-surface);
+  border-bottom: 1px solid var(--wl-color-border);
+  display: grid;
+  flex: 0 0 48px;
+  gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  height: 48px;
+  padding-inline: 10px;
+}
+
+.identity {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.title {
+  flex: 0 0 auto;
+  font-size: 15px;
+  margin: 0;
+  max-width: 42%;
+}
+
+.topic {
+  color: var(--wl-color-muted);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.iconButton {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-muted);
+  display: flex;
+  font: inherit;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.iconButton:hover {
+  background: var(--wl-color-chip);
+  color: var(--wl-color-fg);
+}
