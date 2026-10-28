@@ -25,9 +25,14 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 7. [x] Mobile shell: chats list and pushed chat screen.
 7b. [x] Mobile shell fixes (inline rows, compact previews, history, swipe cancellation, consistent times, DM previews, and routing/read tests).
 7c. [ ] Mobile members drawer.
-8. [ ] End-to-end check against weblounge over `wss://`.
+7d. [ ] Mobile and PWA polish, iPhone 16 Pro as the reference device (Android first-class too): manifest, icons and iOS launch images, standalone display, status-bar colour per theme under the Dynamic Island (`theme-color` per light/dark, translucent iOS status bar), safe areas from `env()` only (Dynamic Island, home indicator, landscape), `100dvh` fixed root, composer above the keyboard on iOS and Android, no input zoom/double-tap zoom/rubber-band/pull-to-refresh/callouts on chrome, swipe-back not fighting Safari's edge swipe, Android back via the stack, Dynamic Type/font scaling, minimal app-shell service worker. Tested with Playwright WebKit (iPhone 16 Pro profile) and an Android profile; Luiz's phone is the final check once beta.weblounge.org exists.
+7e. [ ] Perf scenarios run several times and report the median (single runs quantise to whole frames and are noisy under throttling).
+8. [ ] Local Ergo configured like weblounge (from `~/weblounge/services/ergo.nix`: SASL required, always-on, persistent channel history, DM history disabled, read markers) reached over `wss://` through a local TLS proxy, as an end-to-end check. Testing against the real server waits for beta.weblounge.org (milestone 4).
 
-Next after milestone 2 (brought forward by Luiz): split view and the core keyboard shortcuts.
+## After milestone 2
+
+- **Milestone 2.5 (brought forward by Luiz):** split view and the core keyboard shortcuts.
+- **Milestone 4 (Luiz, 2026-10-28): hosted mode at beta.weblounge.org first** — concierge OAuth as gamja does, deployed from the weblounge NixOS config, `https://beta.weblounge.org` added to Ergo's `allowed-origins`. Luiz and friends try it there (including on phones, installed as a PWA); replacing gamja at irc.weblounge.org is the last step once the beta has proven itself.
 
 ## External dependencies
 
