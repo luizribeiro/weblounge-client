@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::InputError;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandArgumentKind {
@@ -79,6 +81,11 @@ pub struct CommandRegistry {
     specs: Vec<CommandSpec>,
 }
 
+pub(crate) struct RegisteredCommand<'registry, 'input> {
+    pub(crate) spec: &'registry CommandSpec,
+    pub(crate) arguments: &'input str,
+}
+
 impl CommandRegistry {
     #[must_use]
     pub fn new(specs: Vec<CommandSpec>) -> Self {
@@ -105,6 +112,46 @@ impl CommandRegistry {
     pub fn specs(&self) -> &[CommandSpec] {
         &self.specs
     }
+
+    pub(crate) fn parse<'registry, 'input>(
+        &'registry self,
+        input: &'input str,
+    ) -> Result<RegisteredCommand<'registry, 'input>, InputError> {
+        let input = input.trim_start();
+        let end = input.find(char::is_whitespace).unwrap_or(input.len());
+        let name = input
+            .get(..end)
+            .filter(|name| !name.is_empty())
+            .ok_or(InputError::MissingArgument)?;
+        let spec = self
+            .specs
+            .iter()
+            .find(|spec| {
+                spec.name.eq_ignore_ascii_case(name)
+                    || spec
+                        .aliases
+                        .iter()
+                        .any(|alias| alias.eq_ignore_ascii_case(name))
+            })
+            .ok_or_else(|| InputError::UnknownCommand(name.into()))?;
+        Ok(RegisteredCommand {
+            spec,
+            arguments: input.get(end..).unwrap_or_default().trim_start(),
+        })
+    }
+
+    pub(crate) fn completion_candidates(&self, prefix: &str) -> Vec<String> {
+        let prefix = prefix.trim_start_matches('/');
+        self.specs
+            .iter()
+            .flat_map(|spec| std::iter::once(&spec.name).chain(&spec.aliases))
+            .filter(|name| {
+                name.get(..prefix.len())
+                    .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
+            })
+            .map(|name| format!("/{name}"))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -112,7 +159,7 @@ mod tests {
     use super::{CommandPermission, CommandRegistry, CommandSpec, ConfirmPolicy};
 
     #[test]
-    fn runtime_registry_accepts_new_unique_specs() {
+    fn runtime_registry_parses_completes_and_lists_new_specs() {
         let spec = CommandSpec {
             name: "later".into(),
             aliases: vec!["l".into()],
@@ -129,5 +176,9 @@ mod tests {
         assert!(registry.register(spec.clone()));
         assert!(!registry.register(spec));
         assert_eq!(registry.specs().len(), 1);
+        let parsed = registry.parse("  Later argument").expect("command parses");
+        assert_eq!(parsed.spec.name, "later");
+        assert_eq!(parsed.arguments, "argument");
+        assert_eq!(registry.completion_candidates("/L"), ["/later", "/l"]);
     }
 }

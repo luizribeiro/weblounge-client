@@ -5,6 +5,8 @@ mod spec;
 #[allow(dead_code, reason = "consumed by the command declaration next")]
 mod values;
 
+use std::sync::OnceLock;
+
 pub(crate) use declaration::Command;
 pub use spec::{
     CommandArgumentKind, CommandArgumentSpec, CommandPermission, CommandRegistry,
@@ -34,7 +36,16 @@ impl InputError {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(input: &str, chantypes: &str) -> Result<Command, InputError> {
+    parse_with_registry(&built_in_registry(), input, chantypes)
+}
+
+pub(crate) fn parse_with_registry(
+    registry: &CommandRegistry,
+    input: &str,
+    chantypes: &str,
+) -> Result<Command, InputError> {
     if input.is_empty() {
         return Err(InputError::Empty);
     }
@@ -48,9 +59,19 @@ pub(crate) fn parse(input: &str, chantypes: &str) -> Result<Command, InputError>
             text: values::Text(input.into()),
         });
     };
-    Command::parse_slash(command, &arguments::ParseContext { chantypes })
+    let registered = registry.parse(command)?;
+    Command::parse_registered(
+        &registered.spec.name,
+        registered.arguments,
+        &arguments::ParseContext { chantypes },
+    )
 }
 
-pub(crate) fn built_in_specs() -> Vec<CommandSpec> {
-    Command::specs()
+pub(crate) fn built_in_registry() -> CommandRegistry {
+    CommandRegistry::new(Command::specs())
+}
+
+pub(crate) fn registry() -> &'static CommandRegistry {
+    static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(built_in_registry)
 }

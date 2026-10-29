@@ -617,12 +617,10 @@ impl NetworkModel {
         buffer_id: BufferId,
         prefix: &str,
         state: &papo::State,
+        registry: &commands::CommandRegistry,
     ) -> Vec<String> {
         let values: Vec<String> = if prefix.starts_with('/') {
-            commands::built_in_specs()
-                .into_iter()
-                .map(|spec| format!("/{}", spec.name))
-                .collect()
+            registry.completion_candidates(prefix)
         } else if prefix
             .chars()
             .next()
@@ -1103,7 +1101,7 @@ mod tests {
         Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, draft_key, nick_color_index,
         time_millis,
     };
-    use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
+    use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId, commands};
 
     fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
         papo_testing::channel(state.casemapping(), name)
@@ -1470,6 +1468,7 @@ mod tests {
     #[test]
     fn completion_candidates_follow_command_channel_and_recent_nick_order() {
         let (mut model, state) = model(10);
+        let registry = commands::built_in_registry();
         let mut first = incoming(&state, "first", Some("one"), None, 1, TimelineOrigin::Live);
         first.author = "Alice[".into();
         model.receive_incoming(first, &state);
@@ -1485,23 +1484,23 @@ mod tests {
             .expect("message buffer exists");
 
         assert_eq!(
-            model.completion_candidates(buffer_id, "", &state),
+            model.completion_candidates(buffer_id, "", &state, &registry),
             ["bob", "Alice["]
         );
         assert_eq!(
-            model.completion_candidates(buffer_id, "/j", &state),
-            ["/join"]
+            model.completion_candidates(buffer_id, "/j", &state, &registry),
+            ["/join", "/j"]
         );
         assert_eq!(
-            model.completion_candidates(buffer_id, "#r", &state),
+            model.completion_candidates(buffer_id, "#r", &state, &registry),
             ["#room"]
         );
         assert_eq!(
-            model.completion_candidates(buffer_id, "BOB", &state),
+            model.completion_candidates(buffer_id, "BOB", &state, &registry),
             ["bob"]
         );
         assert_eq!(
-            model.completion_candidates(buffer_id, "alice{", &state),
+            model.completion_candidates(buffer_id, "alice{", &state, &registry),
             ["Alice["]
         );
     }

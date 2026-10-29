@@ -70,7 +70,7 @@ impl Engine {
                     revision: 0,
                 },
                 EngineToUi::CommandSpecsChanged {
-                    specs: commands::built_in_specs(),
+                    specs: commands::registry().specs().to_vec(),
                 },
             ]
         } else {

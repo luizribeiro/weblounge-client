@@ -181,7 +181,7 @@ impl Runtime {
             || "#&".to_owned(),
             |running| running.client.state().isupport().chantypes().to_owned(),
         );
-        match commands::parse(input, &chantypes) {
+        match commands::parse_with_registry(commands::registry(), input, &chantypes) {
             Ok(Command::Say { text }) => {
                 self.send_input(id, buffer_id, text.0, crate::MessageKind::Text)
             }
@@ -302,9 +302,12 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let snapshot = running.client.state();
-        let mut candidates = running
-            .model
-            .completion_candidates(buffer_id, &prefix, &snapshot);
+        let mut candidates = running.model.completion_candidates(
+            buffer_id,
+            &prefix,
+            &snapshot,
+            commands::registry(),
+        );
         if !prefix.starts_with('/') && !snapshot.isupport().is_channel(&prefix) {
             let folded_prefix = snapshot.casemapping().fold(&prefix);
             let mut members = running
@@ -1940,7 +1943,7 @@ mod tests {
             ] if command_id == "complete"
                 && id == "complete"
                 && prefix == "/j"
-                && candidates == &["/join"]
+                && candidates == &["/join", "/j"]
         ));
     }
 
