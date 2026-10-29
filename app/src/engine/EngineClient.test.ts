@@ -139,6 +139,37 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes local notice messages", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const notice = {
+      id: 9,
+      author: "weblounge",
+      text: "A quiet place",
+      kind: "notice",
+      bot: false,
+      mode_symbol: null,
+      authorship: "own",
+      nick_color_index: 0,
+      mentioned: false,
+      delivery: "received",
+      local_send_id: null,
+      server_ids: [],
+      server_time_ms: 20,
+      received_at_ms: 30,
+    };
+
+    port.emit({ type: "messages_appended", buffer_id: 2, messages: [notice] });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "messages_appended",
+      buffer_id: 2,
+      messages: [notice],
+    });
+  });
+
   it("decodes the engine runtime command registry", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();

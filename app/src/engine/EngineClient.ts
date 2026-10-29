@@ -649,7 +649,7 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.author !== "string" ||
     typeof value.text !== "string" ||
-    !isOneOf(value.kind, ["text", "action"]) ||
+    !isOneOf(value.kind, ["text", "action", "notice"]) ||
     typeof value.bot !== "boolean" ||
     !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
