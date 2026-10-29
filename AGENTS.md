@@ -29,5 +29,5 @@ Every UI task must also keep the Playwright `nativeFeelAudit` and its idle/hidde
 - One commit = one idea. If the message needs "and", split it.
 - Commit after each small unit (a function with its tests, a single doc, a single fix). Aim for < ~5 files and < ~100 changed lines per commit (design docs may be longer, but one doc per commit).
 - Tests go in the **same** commit as the code they test.
-- All tests and linters pass before every commit.
+- Before each commit, run the fast checks that cover the change: the pre-commit hook (formatting, lint, clippy, typecheck, generated protocol types), unit tests for the touched code, and the Playwright specs for the touched feature. The full suites run in GitHub Actions on every push; a red CI is fixed before any new work.
 - Never push, never rewrite history.

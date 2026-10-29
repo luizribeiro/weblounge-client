@@ -322,7 +322,6 @@
           clippy-check = cargoHook "clippy-check" (
             "cargo clippy --workspace --all-targets --locked -- -D warnings"
           );
-          cargo-test = cargoHook "cargo-test" "cargo test --workspace --locked";
           tsc = {
             enable = true;
             entry = "${
@@ -335,21 +334,6 @@
                 text = "pnpm typecheck";
               }
             }/bin/tsc-hook";
-            files = "(^|/)(app/.*\\.tsx?|package\\.json|pnpm-lock\\.yaml)$";
-            pass_filenames = false;
-          };
-          vitest = {
-            enable = true;
-            entry = "${
-              pkgs.writeShellApplication {
-                name = "vitest-hook";
-                runtimeInputs = [
-                  pkgs.nodejs
-                  pkgs.pnpm
-                ];
-                text = vitestCommand "pnpm test";
-              }
-            }/bin/vitest-hook";
             files = "(^|/)(app/.*\\.tsx?|package\\.json|pnpm-lock\\.yaml)$";
             pass_filenames = false;
           };
