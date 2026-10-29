@@ -1,4 +1,8 @@
-import { createVirtualizer, observeElementRect } from "@tanstack/solid-virtual";
+import {
+  createVirtualizer,
+  measureElement,
+  observeElementRect,
+} from "@tanstack/solid-virtual";
 import {
   createEffect,
   createMemo,
@@ -62,6 +66,7 @@ export function MessageList(props: MessageListProps) {
   let renderedCount = 0;
   let autoScrollPending = false;
   let correctingLiveEdge = false;
+  let bottomCorrectionPending = false;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
   let boundaryFrozen =
@@ -87,10 +92,33 @@ export function MessageList(props: MessageListProps) {
       observeElementRect(instance, (rect) =>
         callback(rect.height === 0 ? { width: 1024, height: 768 } : rect),
       ),
-    estimateSize: (index) => (rows()[index]?.kind === "message" ? 26 : 34),
+    estimateSize: (index) => (rows()[index]?.kind === "message" ? 28 : 34),
     getItemKey: (index) => rows()[index]?.key ?? index,
-    overscan: 12,
+    measureElement: (element, entry, instance) => {
+      const preserveLiveEdge = atLiveEdge() || autoScrollPending;
+      const index = Number(element.dataset.index);
+      const measured =
+        entry === undefined
+          ? instance.options.estimateSize(index)
+          : measureElement(element, entry, instance);
+      const size =
+        measured > 0 ? measured : instance.options.estimateSize(index);
+      if (preserveLiveEdge) scheduleBottomCorrection();
+      return size;
+    },
+    overscan: 6,
   });
+  const scheduleBottomCorrection = () => {
+    if (bottomCorrectionPending) return;
+    bottomCorrectionPending = true;
+    requestAnimationFrame(() => {
+      bottomCorrectionPending = false;
+      if (list?.isConnected !== true) return;
+      if (!atLiveEdge() && !autoScrollPending) return;
+      list.scrollTop = list.scrollHeight;
+      reportLiveEdge();
+    });
+  };
   createEffect(() => {
     rows();
     void (document.fonts?.ready ?? Promise.resolve()).then(() => {
@@ -100,12 +128,13 @@ export function MessageList(props: MessageListProps) {
         "li[data-index]",
       )) {
         virtualizer.measureElement(element);
+        const index = Number(element.dataset.index);
         virtualizer.resizeItem(
-          Number(element.dataset.index),
-          element.offsetHeight,
+          index,
+          element.offsetHeight || virtualizer.options.estimateSize(index),
         );
       }
-      if (preserveLiveEdge) jumpToBottom();
+      if (preserveLiveEdge) scheduleBottomCorrection();
     });
   });
   const reportLiveEdge = () => {
@@ -137,8 +166,9 @@ export function MessageList(props: MessageListProps) {
     props.onLiveEdgeChange?.(live);
   };
   const jumpToBottom = () => {
+    if (list === undefined || rows().length === 0) return;
     autoScrollPending = true;
-    virtualizer.scrollToIndex(rows().length - 1, { align: "end" });
+    list.scrollTop = list.scrollHeight;
     queueMicrotask(reportLiveEdge);
   };
   const selectLastOwn = () => {
@@ -245,7 +275,11 @@ export function MessageList(props: MessageListProps) {
                 class={styles.virtualRow}
                 data-copy-row-index={virtualRow.index}
                 data-index={virtualRow.index}
+                data-row-key={String(virtualRow.key)}
                 data-selected={selected()}
+                ref={(element) =>
+                  queueMicrotask(() => virtualizer.measureElement(element))
+                }
                 style={{
                   transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
                 }}

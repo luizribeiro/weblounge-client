@@ -94,6 +94,62 @@ test.describe("local Ergo user flow", () => {
     expect(text).not.toContain("\n");
   });
 
+  test("measures received history and live wrapped messages", async ({
+    page,
+  }) => {
+    test.slow();
+    const prose = `wrapped dogfood ${"several words need a real measured row ".repeat(10)}${Date.now()}`;
+    const url = `https://example.com/${"unbroken-segment".repeat(20)}?${Date.now()}`;
+    const live = `live wrapped dogfood ${"incoming words must resize their row ".repeat(10)}${Date.now()}`;
+    expect(prose.length).toBeGreaterThan(350);
+    const bot = await IrcClient.connect(
+      "wrapped-bot",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    try {
+      await bot.privmsgConfirmed("#weblounge-test", prose);
+      await bot.privmsgConfirmed("#weblounge-test", url);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: /#weblounge-test/ }),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.locator("[data-message-row]").filter({ hasText: prose }),
+      ).toBeVisible();
+      await expect(
+        page.locator("[data-message-row]").filter({ hasText: url }),
+      ).toBeVisible();
+      await expectMeasuredTimeline(page);
+
+      await bot.privmsgConfirmed("#weblounge-test", live);
+      await expect(
+        page.locator("[data-message-row]").filter({ hasText: live }),
+      ).toBeVisible();
+      await expectMeasuredTimeline(page);
+
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: /#weblounge-test/ }),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.locator("[data-message-row]").filter({ hasText: live }),
+      ).toBeVisible();
+      await expectMeasuredTimeline(page);
+
+      await page.setViewportSize({ width: 800, height: 900 });
+      await expectMeasuredTimeline(page);
+
+      await page.setViewportSize({ width: 402, height: 874 });
+      await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+      await expectMeasuredTimeline(page);
+    } finally {
+      bot.close();
+    }
+  });
+
   test("confirms typed quit before desktop execution", async ({ page }) => {
     await page.goto("/?irc-password=weblounge-test");
     const composer = page.getByRole("textbox", { name: "Message" });
@@ -316,6 +372,30 @@ async function observeDeliveries(
     });
     record();
   }, text);
+}
+
+async function expectMeasuredTimeline(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  const list = page.locator("[data-message-list]");
+  await expect(list).toBeVisible();
+  await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
+  await expect
+    .poll(() =>
+      list.locator("li[data-index]").evaluateAll((elements) => {
+        const boxes = elements
+          .map((element) => element.getBoundingClientRect())
+          .filter((box) => box.height > 0)
+          .sort((left, right) => left.top - right.top);
+        return boxes.every(
+          (box, index) =>
+            index === 0 ||
+            (boxes[index - 1]?.bottom ?? Number.NEGATIVE_INFINITY) <=
+              box.top + 0.5,
+        );
+      }),
+    )
+    .toBe(true);
 }
 
 async function observedDeliveries(

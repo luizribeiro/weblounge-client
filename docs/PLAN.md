@@ -21,6 +21,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 4c. [x] Member window fixes (per-view live ranges, bounded delta delivery, shell-correct virtualization, and scrolling performance).
 5. [x] Message list (virtualised one-line timeline, read state, latest history, and membership runs).
 5b. [x] Message list fixes (scrolling, logo, bottom anchor, real screenshots, and copy coverage).
+5c. [x] Wrapped-message virtualization fixes (measured row heights, live-edge and prepend anchoring, and received history/live coverage).
 6. [x] Composer with optimistic send (`Sent`-based confirmation).
 6b. [x] Composer fixes (engine-owned navigation and completion, human errors, stable guarded drafts, and refreshed screenshots).
 6c. [x] One `Command` table (derive macro producing `CommandSpec`s, from `docs/design/commands-catalog.md`, M2 subset), renames (`EngineRequest`, action registry), action registry fed by UI actions + engine `CommandSpec`s.

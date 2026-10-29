@@ -50,13 +50,159 @@ it("anchors the viewport when history rows are prepended", async () => {
     configurable: true,
     get: () => messages().length * 20,
   });
-  list.scrollTop = 10;
+  Object.defineProperty(list, "clientHeight", {
+    configurable: true,
+    value: 5,
+  });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  list.scrollTop = 10;
+  list.dispatchEvent(new Event("scroll"));
 
   setMessages([{ ...message, id: 0, text: "older" }, message]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(list.scrollTop).toBe(30);
+});
+
+it("measures wrapped rows without overlap and preserves the live edge", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  const messages = [
+    { ...message, id: 1, text: "short" },
+    { ...message, id: 2, text: "x".repeat(2_000) },
+    {
+      ...message,
+      id: 3,
+      text: `https://example.com/${"unbroken".repeat(160)}`,
+    },
+  ];
+  const { container } = render(() => <MessageList messages={messages} />);
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
+  if (list === null || spacer === null)
+    throw new Error("message list is missing");
+  let scrollTop = 0;
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 300 },
+    scrollHeight: {
+      configurable: true,
+      get: () => Number.parseFloat(spacer.style.height) || 0,
+    },
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = Math.max(0, Math.min(value, list.scrollHeight - 300));
+      },
+    },
+  });
+
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  for (const observer of observers) observer.flush(measuredRowHeight);
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  const boxes = [...container.querySelectorAll<HTMLElement>("li[data-index]")]
+    .map((element) => {
+      const start = translateY(element.style.transform);
+      return { start, end: start + measuredRowHeight(element) };
+    })
+    .sort((left, right) => left.start - right.start);
+  for (let index = 1; index < boxes.length; index += 1) {
+    expect(boxes[index - 1]?.end).toBeLessThanOrEqual(boxes[index]?.start ?? 0);
+  }
+  expect(Math.max(...boxes.map((box) => box.end - box.start))).toBeGreaterThan(
+    500,
+  );
+  expect(list.scrollHeight - list.scrollTop - list.clientHeight).toBe(0);
+});
+
+it("anchors visible content when an overscanned row above it grows", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  const messages = Array.from({ length: 80 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    text: `message ${index + 1}`,
+  }));
+  const { container } = render(() => <MessageList messages={messages} />);
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
+  if (list === null || spacer === null)
+    throw new Error("message list is missing");
+  let scrollTop = 0;
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 120 },
+    scrollHeight: {
+      configurable: true,
+      get: () => Number.parseFloat(spacer.style.height) || 0,
+    },
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = Math.max(0, Math.min(value, list.scrollHeight - 120));
+      },
+    },
+    scrollTo: {
+      configurable: true,
+      value: (options: ScrollToOptions) => {
+        if (typeof options.top === "number") list.scrollTop = options.top;
+      },
+    },
+  });
+
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  for (const observer of observers) observer.flushTarget(list, 120);
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  list.scrollTop = 600;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const rendered = [
+    ...container.querySelectorAll<HTMLLIElement>("li[data-index]"),
+  ]
+    .map((element) => ({
+      element,
+      start: translateY(element.style.transform),
+    }))
+    .sort((left, right) => left.start - right.start);
+  const above = rendered.find(({ start }) => start + 28 < list.scrollTop);
+  const anchor = rendered.find(({ start }) => start >= list.scrollTop);
+  if (above === undefined || anchor === undefined)
+    throw new Error("expected rows around the viewport");
+  const anchorKey = anchor.element.dataset.rowKey;
+  const relativeTop = anchor.start - list.scrollTop;
+
+  for (const observer of observers) observer.flushTarget(above.element, 228);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const movedAnchor = container.querySelector<HTMLLIElement>(
+    `li[data-row-key="${anchorKey}"]`,
+  );
+  if (movedAnchor === null) throw new Error("visible anchor row is missing");
+  expect(translateY(movedAnchor.style.transform) - list.scrollTop).toBe(
+    relativeTop,
+  );
 });
 
 it("renders action, own, pending, bot, mode, divider, New, and membership variants", async () => {
@@ -267,3 +413,64 @@ it("selects the latest own message for empty-composer Up", async () => {
   expect(container.querySelector('[data-selected="true"]')).not.toBeNull();
   expect(screen.getByRole("list", { name: "Messages" })).toHaveFocus();
 });
+
+class ControlledResizeObserver {
+  readonly #callback: ResizeObserverCallback;
+  readonly #targets = new Set<Element>();
+
+  constructor(callback: ResizeObserverCallback) {
+    this.#callback = callback;
+  }
+
+  observe(target: Element): void {
+    this.#targets.add(target);
+  }
+
+  unobserve(target: Element): void {
+    this.#targets.delete(target);
+  }
+
+  disconnect(): void {
+    this.#targets.clear();
+  }
+
+  flush(size: (target: Element) => number): void {
+    const entries = [...this.#targets].map(
+      (target) =>
+        ({
+          target,
+          borderBoxSize: [
+            { blockSize: size(target), inlineSize: 800 } as ResizeObserverSize,
+          ],
+        }) as unknown as ResizeObserverEntry,
+    );
+    this.#callback(entries, this as unknown as ResizeObserver);
+  }
+
+  flushTarget(target: Element, blockSize: number): void {
+    if (!this.#targets.has(target)) return;
+    this.#callback(
+      [
+        {
+          target,
+          borderBoxSize: [{ blockSize, inlineSize: 800 } as ResizeObserverSize],
+        } as unknown as ResizeObserverEntry,
+      ],
+      this as unknown as ResizeObserver,
+    );
+  }
+}
+
+function measuredRowHeight(target: Element): number {
+  const messageRow = target.querySelector("[data-message-row]");
+  if (messageRow === null) return 34;
+  return Math.max(
+    26,
+    Math.ceil((messageRow.textContent?.length ?? 0) / 50) * 20,
+  );
+}
+
+function translateY(transform: string): number {
+  const match = /translateY\(([-\d.]+)px\)/.exec(transform);
+  return Number(match?.[1] ?? 0);
+}
