@@ -75,6 +75,10 @@
           };
         };
         cargoArtifacts = craneLib.buildDepsOnly cargoArgs;
+        checkCargoArgs = cargoArgs // {
+          CARGO_PROFILE = "dev";
+        };
+        checkCargoArtifacts = craneLib.buildDepsOnly checkCargoArgs;
         protocolSource = pkgs.lib.fileset.toSource {
           root = ./.;
           fileset = pkgs.lib.fileset.unions [
@@ -382,10 +386,10 @@
         localErgo = import ./nix/ergo.nix { inherit pkgs; };
         webloungeErgo = import ./nix/ergo-weblounge.nix { inherit pkgs; };
         ergoIntegration = craneLib.mkCargoDerivation (
-          cargoArgs
+          checkCargoArgs
           // {
             pname = "weblounge-ergo-integration";
-            inherit cargoArtifacts;
+            cargoArtifacts = checkCargoArtifacts;
             doInstallCargoArtifacts = false;
             nativeBuildInputs = [ localErgo ];
             buildPhaseCargoCommand = ''
@@ -421,16 +425,16 @@
           pre-commit = preCommitCheck;
           rustfmt = craneLib.cargoFmt cargoArgs;
           clippy = craneLib.cargoClippy (
-            cargoArgs
+            checkCargoArgs
             // {
-              inherit cargoArtifacts;
+              cargoArtifacts = checkCargoArtifacts;
               cargoClippyExtraArgs = "--workspace --all-targets -- -D warnings";
             }
           );
           cargo-test = craneLib.cargoTest (
-            cargoArgs
+            checkCargoArgs
             // {
-              inherit cargoArtifacts;
+              cargoArtifacts = checkCargoArtifacts;
               cargoTestExtraArgs = "--workspace";
             }
           );
