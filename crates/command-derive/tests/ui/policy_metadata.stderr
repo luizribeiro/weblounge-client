@@ -1,0 +1,35 @@
+error: duplicate command attribute `confirm`
+  --> tests/ui/policy_metadata.rs:17:42
+   |
+17 | command!(DuplicateKey, confirm = "Menu", confirm = "Always");
+   |                                          ^^^^^^^
+
+error: command name must be lowercase
+  --> tests/ui/policy_metadata.rs:22:16
+   |
+22 |         name = "Test", aliases = [], usage = "cmd.test.usage",
+   |                ^^^^^^
+
+error: command aliases must be lowercase
+  --> tests/ui/policy_metadata.rs:31:35
+   |
+31 |         name = "test", aliases = ["T"], usage = "cmd.test.usage",
+   |                                   ^^^
+
+error: unknown permission `Founder`
+  --> tests/ui/policy_metadata.rs:37:38
+   |
+37 | command!(BadPermission, permission = "Founder");
+   |                                      ^^^^^^^^^
+
+error: unknown confirm policy `Sometimes`
+  --> tests/ui/policy_metadata.rs:38:32
+   |
+38 | command!(BadConfirm, confirm = "Sometimes");
+   |                                ^^^^^^^^^^^
+
+error: unknown surface `Dialog`
+  --> tests/ui/policy_metadata.rs:44:59
+   |
+44 |         description = "cmd.test.description", surfaces = ["Dialog"]
+   |                                                           ^^^^^^^^
