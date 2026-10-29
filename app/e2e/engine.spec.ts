@@ -73,6 +73,25 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("confirms typed quit before desktop execution", async ({ page }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill("/quit later");
+    await composer.press("Enter");
+
+    const confirmation = page.getByRole("alertdialog", {
+      name: "Confirm /quit",
+    });
+    await expect(confirmation).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toHaveCount(0);
+    await expect(composer).toHaveValue("/quit later");
+    await expect(
+      page.getByRole("heading", { name: /#weblounge-test/ }),
+    ).toBeVisible();
+  });
+
   test("shows existing channel history in a fresh browser", async ({
     page,
   }) => {

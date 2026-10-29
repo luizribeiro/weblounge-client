@@ -17,6 +17,27 @@ test.describe("mobile shell against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
+  test("confirms typed quit before mobile execution", async ({ page }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    await composer.fill("/quit later");
+    await composer.press("Enter");
+
+    const confirmation = page.getByRole("alertdialog", {
+      name: "Confirm /quit",
+    });
+    await expect(confirmation).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmation).toHaveCount(0);
+    await expect(composer).toHaveValue("/quit later");
+    await expect(
+      page.getByRole("heading", { name: "#weblounge-test" }),
+    ).toBeVisible();
+  });
+
   test("navigates, swipes, and keeps state across shells", async ({ page }) => {
     await installNativeFeelInstrumentation(page);
     await page.setViewportSize({ width: 402, height: 874 });
