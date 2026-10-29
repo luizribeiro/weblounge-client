@@ -88,6 +88,32 @@ Motion is a global semantic token layer owned by subsystem 08, not by individual
 Components may transition only `transform` and `opacity`. Under `prefers-reduced-motion: reduce`,
 all duration tokens become `0ms`; components do not add independent media queries or timers.
 
+## Focus policy (Luiz, 2026-10-29)
+
+**Desktop: typing almost always reaches the composer.**
+- A printable key with no modifier pressed while focus is on app chrome (sidebar, message list, header buttons) goes to the composer and isn't lost. Not when another text input is focused (switcher, search, settings, member filter) or a dialog is open, and never for navigation keys (arrows, Tab, Space/Enter on a focused control), so keyboard and screen-reader users aren't hijacked.
+- Focus returns to the composer after: switching buffers (click, Alt+↑/↓, switcher), closing a popup, the switcher, settings or a confirmation, sending or cancelling, and opening a DM from the member list.
+- Selecting and copying text in the message list stays possible; typing afterwards still goes to the composer.
+
+**Mobile: never open the keyboard unless the user asked.**
+- Opening a chat doesn't focus the composer (iOS Messages behaviour); tapping the composer does.
+- Once open, the keyboard stays open across composer interactions: tapping a suggestion, Send, the inline confirmation, inserting a newline. Their controls must not take focus from the composer.
+- Scrolling the conversation keeps the keyboard up; dragging down past the composer dismisses it interactively where the platform allows it smoothly, otherwise tapping the conversation dismisses it.
+- Leaving the chat (back, swipe-back, opening the members drawer) closes the keyboard; coming back doesn't reopen it.
+
+## Transient surfaces
+
+| Surface | Appears | Leaves | Keeps focus | Must not move |
+|---|---|---|---|---|
+| Suggestions popup | fade + 4px rise, ≤120ms | fade ≤120ms | composer | message list, composer |
+| On-screen keyboard | platform animation; composer follows via `transform` (VirtualKeyboard API on Chromium, `visualViewport` on iOS) | same | composer while open | header, message list bottom anchor |
+| Member drawer | 220ms slide (transform) | slide back | drawer filter while open; composer not refocused on mobile | conversation underneath |
+| Inline confirmation | fade ≤120ms above the composer | fade | its primary button; composer afterwards | message list |
+| Swipe-back | follows the finger; completes or eases back | | — | — |
+| New-messages button | fade | fade | — | message list scroll position |
+
+All of them: opaque surfaces from theme tokens with the overlay shadow, transform/opacity only, nothing under reduced motion, no layout shift, no empty-state flicker while results update.
+
 ## Primitives
 
 `app/src/ui/Selectable.tsx` is the only content-selection opt-in. It renders a semantic wrapper,
