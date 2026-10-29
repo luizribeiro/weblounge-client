@@ -52,11 +52,12 @@ textarea.input {
 
 .candidate[data-selected="true"] {
   background: var(--wl-color-selection);
+  box-shadow: inset 3px 0 var(--wl-color-accent);
   color: var(--wl-color-selection-fg);
 }
 
 .popup {
-  animation: suggestion-in var(--wl-motion-suggestions)
+  animation: suggestion-rise var(--wl-motion-suggestions)
     var(--wl-motion-standard-curve);
   background: var(--wl-color-surface);
   border: 1px solid var(--wl-color-border);
@@ -71,6 +72,8 @@ textarea.input {
 }
 
 .hint {
+  animation: suggestion-content-in var(--wl-motion-suggestions)
+    var(--wl-motion-standard-curve);
   border-bottom: 1px solid var(--wl-color-border);
   color: var(--wl-color-muted);
   padding: 6px 9px;
@@ -81,6 +84,11 @@ textarea.input {
   color: var(--wl-color-fg);
   display: flex;
   gap: 5px;
+}
+
+.candidates {
+  animation: suggestion-content-in var(--wl-motion-suggestions)
+    var(--wl-motion-standard-curve);
 }
 
 .secondary {
@@ -96,7 +104,13 @@ textarea.input {
   padding-inline: 3px;
 }
 
-@keyframes suggestion-in {
+@keyframes suggestion-rise {
+  from {
+    transform: translateY(4px);
+  }
+}
+
+@keyframes suggestion-content-in {
   from {
     opacity: 0;
   }

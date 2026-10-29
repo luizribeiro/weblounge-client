@@ -57,6 +57,7 @@ export function App(props: AppProps) {
   >(new Map());
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
+  let latestCompletionRequest: string | undefined;
 
   onMount(() => {
     const removeContextMenuHandler = installContextMenuHandler(document);
@@ -86,7 +87,9 @@ export function App(props: AppProps) {
         setComposerNotice(commandHelp(commandSpecs() ?? [], message.command));
       }
       if (message.type === "completion_result") {
-        setCompletion(message);
+        if (message.command_id === latestCompletionRequest) {
+          setCompletion(message);
+        }
       }
       if (message.type === "focus_buffer_requested") {
         const request = { bufferId: message.buffer_id };
@@ -207,17 +210,30 @@ export function App(props: AppProps) {
         }}
         onRequestCompletion={(bufferId, input, cursor, explicit) => {
           if (client === undefined) return;
-          setCompletion(undefined);
-          void client.send({
-            id: crypto.randomUUID(),
-            request: {
-              type: "complete_input",
-              buffer_id: bufferId,
-              input,
-              cursor,
-              explicit,
-            },
-          });
+          const id = crypto.randomUUID();
+          latestCompletionRequest = id;
+          void client
+            .send({
+              id,
+              request: {
+                type: "complete_input",
+                buffer_id: bufferId,
+                input,
+                cursor,
+                explicit,
+              },
+            })
+            .then(() => {
+              if (
+                latestCompletionRequest === id &&
+                completion()?.command_id !== id
+              ) {
+                setCompletion(undefined);
+              }
+            })
+            .catch(() => {
+              if (latestCompletionRequest === id) setCompletion(undefined);
+            });
         }}
         onRequestMembers={(viewId, bufferId, offset, filter = "") => {
           if (client === undefined) return;

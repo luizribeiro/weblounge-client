@@ -21,8 +21,16 @@ it("renders rich options and routes pointer selection", () => {
           away: true,
           bot: true,
         },
+        {
+          type: "person",
+          nick: "mel",
+          nick_color_index: 3,
+          away: false,
+          bot: false,
+        },
         { type: "channel", name: "#papo" },
       ]}
+      completionInput="/"
       hint="cmd.join.usage"
       listId="suggestions"
       onAccept={accept}
@@ -33,7 +41,16 @@ it("renders rich options and routes pointer selection", () => {
   ));
 
   expect(screen.getByRole("listbox")).toHaveAttribute("id", "suggestions");
-  expect(screen.getAllByRole("option")).toHaveLength(3);
+  expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
+    "data-completion-input",
+    "/",
+  );
+  expect(screen.getAllByRole("option")).toHaveLength(4);
+  expect(
+    screen.getByText("<channels> [keys] · Join one or more channels"),
+  ).toBeVisible();
+  expect(screen.queryByText(/\/join \/join/u)).not.toBeInTheDocument();
+  expect(screen.queryByText("Member")).not.toBeInTheDocument();
   expect(screen.getByRole("option", { name: /ana/u })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -41,6 +58,6 @@ it("renders rich options and routes pointer selection", () => {
   expect(screen.getByText("BOT")).toBeVisible();
   fireEvent.mouseEnter(screen.getByRole("option", { name: /#papo/u }));
   fireEvent.click(screen.getByRole("option", { name: /#papo/u }));
-  expect(select).toHaveBeenCalledWith(2);
-  expect(accept).toHaveBeenCalledWith(2);
+  expect(select).toHaveBeenCalledWith(3);
+  expect(accept).toHaveBeenCalledWith(3);
 });

@@ -36,9 +36,11 @@ test.describe("mobile shell against local Ergo", () => {
     await expect(
       confirmation.getByRole("button", { name: "Disconnect" }),
     ).toBeVisible();
+    await expect(composer).toBeFocused();
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmation).toHaveCount(0);
     await expect(composer).toHaveValue("/quit later");
+    await expect(composer).toBeFocused();
     await expect(
       page.getByRole("heading", { name: "#weblounge-test" }),
     ).toBeVisible();

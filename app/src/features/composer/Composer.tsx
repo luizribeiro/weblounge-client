@@ -38,6 +38,7 @@ export function Composer(props: ComposerProps) {
   let currentDraftKey = props.draftKey;
   const [text, setText] = createSignal(readDraft(currentDraftKey));
   const [selected, setSelected] = createSignal(-1);
+  const [completionCursor, setCompletionCursor] = createSignal(text().length);
   const [dismissedInput, setDismissedInput] = createSignal<string>();
   const [pendingConfirmation, setPendingConfirmation] =
     createSignal<CommandSpec>();
@@ -46,8 +47,7 @@ export function Composer(props: ComposerProps) {
   const suggestions = createMemo(() => {
     const result = props.completion;
     return result?.buffer_id === props.bufferId &&
-      result.input === text() &&
-      result.input !== dismissedInput() &&
+      text() !== dismissedInput() &&
       result.candidates.length > 0
       ? result
       : undefined;
@@ -98,10 +98,11 @@ export function Composer(props: ComposerProps) {
     const command = commandForInput(submitted, props.commandSpecs ?? []);
     if (!confirmed && command?.confirm === "always") {
       setPendingConfirmation(command);
-      queueMicrotask(() => confirmButton?.focus());
+      if (!isCoarsePointer()) queueMicrotask(() => confirmButton?.focus());
       return;
     }
     setPendingConfirmation(undefined);
+    if (confirmed) queueMicrotask(() => textarea?.focus());
     void Promise.resolve(props.onSend(submitted))
       .then((accepted) => {
         if (accepted === false) return;
@@ -118,17 +119,26 @@ export function Composer(props: ComposerProps) {
   createEffect(() => {
     setSelected(suggestions() === undefined ? -1 : 0);
   });
-  const request = (value: string, cursor: number, explicit: boolean) =>
+  const request = (value: string, cursor: number, explicit: boolean) => {
+    setCompletionCursor(cursor);
     props.onRequestCandidates?.(value, cursor, explicit);
+  };
   const accept = (index = selected() >= 0 ? selected() : 0) => {
     const result = suggestions();
     const candidate = result?.candidates[index];
     if (result === undefined || candidate === undefined) return false;
-    const replacement = replacementFor(candidate, result);
-    const next = `${text().slice(0, result.replace_start)}${replacement}${text().slice(result.replace_end)}`;
+    const currentText = text();
+    const replacement = replacementFor(candidate, {
+      ...result,
+      input: currentText,
+    });
+    const replaceEnd =
+      result.input === currentText ? result.replace_end : completionCursor();
+    const next = `${currentText.slice(0, result.replace_start)}${replacement}${currentText.slice(replaceEnd)}`;
     const cursor = result.replace_start + replacement.length;
     update(next);
     queueMicrotask(() => {
+      textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
       request(next, cursor, false);
     });
@@ -190,6 +200,7 @@ export function Composer(props: ComposerProps) {
       {suggestions() !== undefined && (
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}
+          completionInput={suggestions()?.input ?? ""}
           hint={suggestions()?.argument_hint ?? null}
           listId={listId()}
           onAccept={accept}
@@ -213,6 +224,7 @@ export function Composer(props: ComposerProps) {
           <button
             class={styles.confirm}
             onClick={() => submit(true)}
+            onPointerDown={(event) => event.preventDefault()}
             ref={confirmButton}
             type="button"
           >
@@ -224,6 +236,7 @@ export function Composer(props: ComposerProps) {
               setPendingConfirmation(undefined);
               textarea?.focus();
             }}
+            onPointerDown={(event) => event.preventDefault()}
             type="button"
           >
             Cancel
@@ -275,7 +288,11 @@ export function Composer(props: ComposerProps) {
         <button
           class={styles.send}
           disabled={props.disabled}
-          onClick={() => submit()}
+          onClick={() => {
+            submit();
+            textarea?.focus();
+          }}
+          onPointerDown={(event) => event.preventDefault()}
           type="button"
         >
           Send
@@ -311,4 +328,8 @@ export function replacementFor(
 
 function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad/u.test(navigator.platform);
+}
+
+function isCoarsePointer(): boolean {
+  return window.matchMedia?.("(pointer: coarse)").matches ?? false;
 }

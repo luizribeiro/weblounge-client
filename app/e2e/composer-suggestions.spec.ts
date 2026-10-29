@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { installNativeFeelInstrumentation } from "./native-feel-audit";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
 
@@ -18,6 +19,7 @@ test.describe("composer suggestions against local Ergo", () => {
     }) => {
       const ana = await connectAna("suggestions-desktop");
       try {
+        await installNativeFeelInstrumentation(page);
         await page.emulateMedia({ colorScheme: "light" });
         await page.goto("/?irc-password=weblounge-test");
         const composer = page.getByRole("textbox", {
@@ -27,21 +29,36 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(
           page.getByRole("button", { name: "Toggle member list" }),
         ).toContainText("2");
-        const listBefore = await page
-          .locator("[data-message-list]")
-          .boundingBox();
+        const geometryBefore = await conversationGeometry(page, composer);
+        await resetLayoutShift(page);
 
         await composer.fill("/");
         await expect(
           page.getByRole("option", { name: /\/join/u }),
         ).toBeVisible();
         await expect(page.getByText("Join one or more channels")).toBeVisible();
-        await assertGeometry(page, composer, 6, listBefore);
+        await expect(page.getByRole("option").first()).toHaveAccessibleName(
+          /\/join/u,
+        );
+        await expect(page.getByText(/\/join <channels>/u)).toHaveCount(0);
+        await assertOpaquePopup(page);
+        await settlePopup(page);
+        await assertSelectedContrast(page);
+        await assertGeometry(page, composer, 6, geometryBefore);
         await capture(page, "composer-suggestions-desktop-slash-light.png");
         await page.emulateMedia({ colorScheme: "dark" });
+        await assertSelectedContrast(page);
         await capture(page, "composer-suggestions-desktop-slash-dark.png");
 
+        await composer.fill("");
+        await expect(page.locator("[data-composer-suggestions]")).toHaveCount(
+          0,
+        );
+        await assertConversationGeometry(page, composer, geometryBefore);
+        await assertNoLayoutShift(page);
+
         await composer.fill("/jo");
+        await expectMatchingCompletion(page, "/jo");
         await expect(
           page.getByRole("option", { name: /\/join/u }),
         ).toBeVisible();
@@ -49,23 +66,33 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(composer).toHaveValue("/join ");
         await expect(page.getByText("/join <channels> [keys]")).toBeVisible();
         await composer.fill("@an");
-        await expect(page.getByRole("option", { name: /ana/u })).toBeVisible();
+        const mention = page.getByRole("option", { name: /ana/u });
+        await expect(mention).toBeVisible();
         await capture(page, "composer-suggestions-desktop-mention-dark.png");
         await page.emulateMedia({ colorScheme: "light" });
         await capture(page, "composer-suggestions-desktop-mention-light.png");
-        await composer.press("Enter");
+        await mention.click();
         await expect(composer).toHaveValue("ana: ");
+        await assertComposerCaret(composer);
 
         await composer.fill("hello @an");
+        await expectMatchingCompletion(page, "hello @an");
         await expect(page.getByRole("option", { name: /ana/u })).toBeVisible();
         await composer.press("Enter");
         await expect(composer).toHaveValue("hello ana");
         await composer.fill("#we");
+        await expectMatchingCompletion(page, "#we");
         await expect(
           page.getByRole("option", { name: /#weblounge-test/u }),
         ).toBeVisible();
         await composer.press("Enter");
         await expect(composer).toHaveValue("#weblounge-test");
+        await composer.fill("focus stays after desktop send");
+        await page.getByRole("button", { name: "Send" }).click();
+        await expect(composer).toBeFocused();
+        await expect(
+          page.getByText("focus stays after desktop send", { exact: true }),
+        ).toBeVisible();
       } finally {
         ana.close();
       }
@@ -81,6 +108,7 @@ test.describe("composer suggestions against local Ergo", () => {
     test("suggests with touch-sized bounded rows", async ({ page }) => {
       const ana = await connectAna("suggestions-mobile");
       try {
+        await installNativeFeelInstrumentation(page);
         await page.emulateMedia({ colorScheme: "light" });
         await page.goto("/?irc-password=weblounge-test");
         await page.getByRole("button", { name: "#weblounge-test" }).click();
@@ -94,21 +122,36 @@ test.describe("composer suggestions against local Ergo", () => {
               (await page.locator("[data-message-list]").boundingBox())?.x,
           )
           .toBe(0);
-        const listBefore = await page
-          .locator("[data-message-list]")
-          .boundingBox();
+        const geometryBefore = await conversationGeometry(page, composer);
+        await resetLayoutShift(page);
 
         await composer.fill("/");
         await expect(
           page.getByRole("option", { name: /\/join/u }),
         ).toBeVisible();
         await expect(page.getByText("Join one or more channels")).toBeVisible();
-        await assertGeometry(page, composer, 4.5, listBefore);
+        await expect(page.getByRole("option").first()).toHaveAccessibleName(
+          /\/join/u,
+        );
+        await expect(page.getByText(/\/join <channels>/u)).toHaveCount(0);
+        await assertOpaquePopup(page);
+        await settlePopup(page);
+        await assertSelectedContrast(page);
+        await assertGeometry(page, composer, 4.5, geometryBefore);
         await capture(page, "composer-suggestions-mobile-slash-light.png");
         await page.emulateMedia({ colorScheme: "dark" });
+        await assertSelectedContrast(page);
         await capture(page, "composer-suggestions-mobile-slash-dark.png");
 
+        await composer.fill("");
+        await expect(page.locator("[data-composer-suggestions]")).toHaveCount(
+          0,
+        );
+        await assertConversationGeometry(page, composer, geometryBefore);
+        await assertNoLayoutShift(page);
+
         await composer.fill("/jo");
+        await expectMatchingCompletion(page, "/jo");
         await expect(
           page.getByRole("option", { name: /\/join/u }),
         ).toBeVisible();
@@ -116,22 +159,32 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(composer).toHaveValue("/join ");
         await expect(page.getByText("/join <channels> [keys]")).toBeVisible();
         await composer.fill("@an");
-        await expect(page.getByRole("option", { name: /ana/u })).toBeVisible();
+        const mention = page.getByRole("option", { name: /ana/u });
+        await expect(mention).toBeVisible();
         await capture(page, "composer-suggestions-mobile-mention-dark.png");
         await page.emulateMedia({ colorScheme: "light" });
         await capture(page, "composer-suggestions-mobile-mention-light.png");
-        await composer.press("Enter");
+        await mention.tap();
         await expect(composer).toHaveValue("ana: ");
+        await assertComposerCaret(composer);
         await composer.fill("hello @an");
+        await expectMatchingCompletion(page, "hello @an");
         await expect(page.getByRole("option", { name: /ana/u })).toBeVisible();
         await composer.press("Enter");
         await expect(composer).toHaveValue("hello ana");
         await composer.fill("#we");
+        await expectMatchingCompletion(page, "#we");
         await expect(
           page.getByRole("option", { name: /#weblounge-test/u }),
         ).toBeVisible();
         await composer.press("Enter");
         await expect(composer).toHaveValue("#weblounge-test");
+        await composer.fill("focus stays after mobile send");
+        await page.getByRole("button", { name: "Send" }).tap();
+        await expect(composer).toBeFocused();
+        await expect(
+          page.getByText("focus stays after mobile send", { exact: true }),
+        ).toBeVisible();
       } finally {
         ana.close();
       }
@@ -151,15 +204,32 @@ async function connectAna(id: string): Promise<IrcClient> {
 }
 
 async function capture(page: Page, name: string): Promise<void> {
+  await settlePopup(page);
   await mkdir(screenshotDirectory, { recursive: true });
   await page.screenshot({ path: path.join(screenshotDirectory, name) });
+}
+
+interface ConversationGeometry {
+  readonly composer: Awaited<ReturnType<Locator["boundingBox"]>>;
+  readonly list: Awaited<ReturnType<Locator["boundingBox"]>>;
+}
+
+async function conversationGeometry(
+  page: Page,
+  composer: Locator,
+): Promise<ConversationGeometry> {
+  const [composerBox, list] = await Promise.all([
+    composer.boundingBox(),
+    page.locator("[data-message-list]").boundingBox(),
+  ]);
+  return { composer: composerBox, list };
 }
 
 async function assertGeometry(
   page: Page,
   composer: Locator,
   visibleRows: number,
-  listBefore: { x: number; y: number; width: number; height: number } | null,
+  before: ConversationGeometry,
 ): Promise<void> {
   const popup = page.locator("[data-composer-suggestions]");
   const [popupBox, composerBox, rowBox, listAfter] = await Promise.all([
@@ -184,5 +254,108 @@ async function assertGeometry(
   expect(popupBox?.height ?? 0).toBeLessThanOrEqual(
     (rowBox?.height ?? 0) * visibleRows + 3,
   );
-  expect(listAfter).toEqual(listBefore);
+  expect(listAfter).toEqual(before.list);
+  expect(composerBox).toEqual(before.composer);
+}
+
+async function assertConversationGeometry(
+  page: Page,
+  composer: Locator,
+  before: ConversationGeometry,
+): Promise<void> {
+  expect(await conversationGeometry(page, composer)).toEqual(before);
+}
+
+async function assertOpaquePopup(page: Page): Promise<void> {
+  const surface = await page
+    .locator("[data-composer-suggestions]")
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      const channels = style.backgroundColor.match(/[\d.]+/gu)?.map(Number);
+      return {
+        alpha: channels?.[3] ?? 1,
+        opacity: style.opacity,
+        shadow: style.boxShadow,
+      };
+    });
+  expect(surface.alpha).toBe(1);
+  expect(surface.opacity).toBe("1");
+  expect(surface.shadow).not.toBe("none");
+}
+
+async function assertSelectedContrast(page: Page): Promise<void> {
+  const colors = await page
+    .locator('[data-composer-suggestions] [data-selected="true"]')
+    .evaluate((element) => {
+      const selected = getComputedStyle(element);
+      const popup = getComputedStyle(
+        element.closest("[data-composer-suggestions]") as Element,
+      );
+      return {
+        popup: popup.backgroundColor,
+        selected: selected.backgroundColor,
+        marker: selected.boxShadow,
+      };
+    });
+  expect(colors.selected).not.toBe(colors.popup);
+  expect(colors.marker).not.toBe("none");
+}
+
+async function assertComposerCaret(composer: Locator): Promise<void> {
+  await expect(composer).toBeFocused();
+  await expect
+    .poll(() =>
+      composer.evaluate(
+        (element) =>
+          element instanceof HTMLTextAreaElement &&
+          element.selectionStart === element.value.length &&
+          element.selectionEnd === element.value.length,
+      ),
+    )
+    .toBe(true);
+}
+
+async function expectMatchingCompletion(
+  page: Page,
+  input: string,
+): Promise<void> {
+  await expect(page.locator("[data-composer-suggestions]")).toHaveAttribute(
+    "data-completion-input",
+    input,
+  );
+}
+
+async function settlePopup(page: Page): Promise<void> {
+  await page
+    .locator("[data-composer-suggestions]")
+    .evaluate(async (element) => {
+      await Promise.all(
+        element.getAnimations({ subtree: true }).map((item) => item.finished),
+      );
+    });
+}
+
+async function resetLayoutShift(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const metrics = (
+      window as Window & {
+        __nativeFeelMetrics?: { layoutShift: number };
+      }
+    ).__nativeFeelMetrics;
+    if (metrics === undefined)
+      throw new Error("native-feel metrics are missing");
+    metrics.layoutShift = 0;
+  });
+}
+
+async function assertNoLayoutShift(page: Page): Promise<void> {
+  const shift = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __nativeFeelMetrics?: { readonly layoutShift: number };
+        }
+      ).__nativeFeelMetrics?.layoutShift,
+  );
+  expect(shift).toBe(0);
 }

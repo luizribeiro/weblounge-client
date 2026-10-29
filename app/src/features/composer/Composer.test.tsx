@@ -242,6 +242,57 @@ it("hides completion when the engine returns no candidates", () => {
   );
 });
 
+it("keeps previous suggestions visible while the next result is pending", () => {
+  const [result, setResult] = createSignal<CompletionResult>();
+  const join: CompletionCandidate = {
+    type: "command",
+    name: "join",
+    usage: "cmd.join.usage",
+    description: "cmd.join.description",
+  };
+  const me: CompletionCandidate = {
+    type: "command",
+    name: "me",
+    usage: "cmd.me.usage",
+    description: "cmd.me.description",
+  };
+  render(() => (
+    <Composer
+      bufferId={9}
+      bufferTitle="#rust"
+      completion={result()}
+      draftKey="test:stable-completion"
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/" } });
+  setResult({
+    ...completion("/", [join, me]),
+    buffer_id: 9,
+    trigger: "command",
+  });
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+
+  fireEvent.input(input, { target: { value: "/j" } });
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
+    "data-completion-input",
+    "/",
+  );
+
+  setResult({
+    ...completion("/j", [join]),
+    buffer_id: 9,
+    trigger: "command",
+  });
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
+    "data-completion-input",
+    "/j",
+  );
+});
+
 it("requests as input changes, accepts Tab, and ignores IME composition", async () => {
   const [result, setResult] = createSignal<CompletionResult>();
   const request = vi.fn((value: string, _cursor: number, explicit: boolean) => {

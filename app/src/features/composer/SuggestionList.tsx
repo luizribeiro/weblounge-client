@@ -7,6 +7,7 @@ import { t } from "./strings";
 
 interface SuggestionListProps {
   readonly candidates: readonly CompletionCandidate[];
+  readonly completionInput: string;
   readonly hint: string | null;
   readonly listId: string;
   readonly optionId: (index: number) => string;
@@ -17,7 +18,11 @@ interface SuggestionListProps {
 
 export function SuggestionList(props: SuggestionListProps) {
   return (
-    <div class={styles.popup} data-composer-suggestions="true">
+    <div
+      class={styles.popup}
+      data-completion-input={props.completionInput}
+      data-composer-suggestions="true"
+    >
       {props.hint !== null && <Line class={styles.hint}>{t(props.hint)}</Line>}
       <div class={styles.candidates} id={props.listId} role="listbox">
         <For each={props.candidates}>
@@ -35,9 +40,7 @@ export function SuggestionList(props: SuggestionListProps) {
                 }
               }}
               onMouseEnter={() => props.onSelect(index())}
-              onPointerDown={(event) => {
-                if (event.pointerType === "mouse") event.preventDefault();
-              }}
+              onPointerDown={(event) => event.preventDefault()}
               role="option"
               tabIndex={-1}
             >
@@ -49,7 +52,11 @@ export function SuggestionList(props: SuggestionListProps) {
                   <span class={styles.bot}>BOT</span>
                 )}
               </Line>
-              <Line class={styles.secondary}>{candidateDetail(candidate)}</Line>
+              {candidateDetail(candidate) !== null && (
+                <Line class={styles.secondary}>
+                  {candidateDetail(candidate)}
+                </Line>
+              )}
             </div>
           )}
         </For>
@@ -69,12 +76,20 @@ function candidateLabel(candidate: CompletionCandidate): string {
   }
 }
 
-function candidateDetail(candidate: CompletionCandidate): string {
+function candidateDetail(candidate: CompletionCandidate): string | null {
   switch (candidate.type) {
-    case "command":
-      return `${t(candidate.usage)} · ${t(candidate.description)}`;
+    case "command": {
+      const invocation = `/${candidate.name}`;
+      const usage = t(candidate.usage);
+      const argumentsOnly = usage.startsWith(invocation)
+        ? usage.slice(invocation.length).trimStart()
+        : usage;
+      return argumentsOnly === ""
+        ? t(candidate.description)
+        : `${argumentsOnly} · ${t(candidate.description)}`;
+    }
     case "person":
-      return candidate.away ? "Away" : candidate.bot ? "Bot" : "Member";
+      return candidate.away ? "Away" : null;
     case "channel":
       return "Channel";
   }
