@@ -47,9 +47,9 @@ describe("deployment config", () => {
     expect(() => decodeDeploymentConfig(value)).toThrow(message);
   });
 
-  it("uses app mode only when config.json is absent", async () => {
+  it("allows a missing config only outside production", async () => {
     const missing = vi.fn(async () => new Response(null, { status: 404 }));
-    await expect(loadDeploymentConfig(missing)).resolves.toEqual({
+    await expect(loadDeploymentConfig(missing, false)).resolves.toEqual({
       mode: "app",
     });
     expect(missing).toHaveBeenCalledWith(
@@ -63,10 +63,31 @@ describe("deployment config", () => {
     const spaFallback = vi.fn(async () =>
       Response.json({}, { headers: { "Content-Type": "text/html" } }),
     );
-    await expect(loadDeploymentConfig(spaFallback)).resolves.toEqual({
+    await expect(loadDeploymentConfig(spaFallback, false)).resolves.toEqual({
       mode: "app",
     });
+  });
 
+  it("requires an explicit config in production", async () => {
+    for (const response of [
+      new Response(null, { status: 404 }),
+      Response.json({}, { headers: { "Content-Type": "text/html" } }),
+    ]) {
+      await expect(
+        loadDeploymentConfig(
+          vi.fn(async () => response),
+          true,
+        ),
+      ).rejects.toThrow("This deployment is misconfigured");
+    }
+
+    const appMode = vi.fn(async () => Response.json({ mode: "app" }));
+    await expect(loadDeploymentConfig(appMode, true)).resolves.toEqual({
+      mode: "app",
+    });
+  });
+
+  it("reports config loading failures", async () => {
     const unavailable = vi.fn(async () => new Response(null, { status: 503 }));
     await expect(loadDeploymentConfig(unavailable)).rejects.toBeInstanceOf(
       DeploymentConfigError,
@@ -76,7 +97,7 @@ describe("deployment config", () => {
       throw new TypeError("Failed to fetch");
     });
     await expect(loadDeploymentConfig(unreachable)).rejects.toThrow(
-      "Invalid /config.json: could not be loaded",
+      "This deployment is misconfigured. Invalid /config.json: could not be loaded",
     );
   });
 });

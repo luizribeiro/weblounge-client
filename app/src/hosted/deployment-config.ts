@@ -2,13 +2,14 @@ import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
 
 export class DeploymentConfigError extends Error {
   constructor(message: string) {
-    super(`Invalid /config.json: ${message}`);
+    super(`This deployment is misconfigured. Invalid /config.json: ${message}`);
     this.name = "DeploymentConfigError";
   }
 }
 
 export async function loadDeploymentConfig(
   fetchConfig: typeof fetch = fetch,
+  requireExplicitConfig = import.meta.env.PROD,
 ): Promise<DeploymentConfig> {
   let response: Response;
   try {
@@ -20,8 +21,15 @@ export async function loadDeploymentConfig(
   } catch {
     throw new DeploymentConfigError("could not be loaded");
   }
-  if (response.status === 404) return { mode: "app" };
-  if (response.headers.get("Content-Type")?.includes("text/html")) {
+  const missingConfig =
+    response.status === 404 ||
+    response.headers.get("Content-Type")?.includes("text/html");
+  if (missingConfig && requireExplicitConfig) {
+    throw new DeploymentConfigError(
+      'expected an explicit {"mode":"app"} or hosted configuration',
+    );
+  }
+  if (missingConfig) {
     return { mode: "app" };
   }
   if (!response.ok) {

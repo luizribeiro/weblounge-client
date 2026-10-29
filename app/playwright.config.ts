@@ -5,8 +5,8 @@ const outDir = builtApp === undefined ? "" : ` --outDir ${builtApp}`;
 const devServer = process.env.WEBLOUNGE_E2E_DEV === "1";
 const port = devServer ? 5173 : 4173;
 const serverCommand = devServer
-  ? `WEBLOUNGE_E2E_CSP=1 vite --host 127.0.0.1 --port ${port}`
-  : `WEBLOUNGE_E2E_CSP=1 vite preview --host 127.0.0.1 --port ${port}${outDir}`;
+  ? `WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite --host 127.0.0.1 --port ${port}`
+  : `WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite preview --host 127.0.0.1 --port ${port}${outDir}`;
 
 export default defineConfig({
   testDir: "./e2e",

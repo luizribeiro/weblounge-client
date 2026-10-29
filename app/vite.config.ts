@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import type { ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
@@ -8,6 +9,7 @@ import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
 
 export default defineConfig(({ mode }) => {
   const performanceHarness = process.env.WEBLOUNGE_E2E_HARNESS === "1";
+  const appConfigHarness = process.env.WEBLOUNGE_E2E_APP_CONFIG === "1";
   const maxWorkers = process.env.WEBLOUNGE_VITEST_MAX_WORKERS;
   const testTimeout = process.env.WEBLOUNGE_VITEST_TEST_TIMEOUT;
   const cspHeaders =
@@ -59,7 +61,11 @@ export default defineConfig(({ mode }) => {
           }
         : {}),
     },
-    plugins: [solid(), engineWasmAsset(wasmPath)],
+    plugins: [
+      solid(),
+      engineWasmAsset(wasmPath),
+      ...(appConfigHarness ? [testAppConfig()] : []),
+    ],
     ...(cspHeaders === undefined
       ? {}
       : { server: { headers: cspHeaders }, preview: { headers: cspHeaders } }),
@@ -107,6 +113,22 @@ function engineWasmAsset(wasmPath: string): Plugin {
         fileName: "engine_bg.wasm",
         source: readFileSync(wasmPath),
       });
+    },
+  };
+}
+
+function testAppConfig(): Plugin {
+  const serve = (_request: unknown, response: ServerResponse) => {
+    response.setHeader("Content-Type", "application/json");
+    response.end('{"mode":"app"}');
+  };
+  return {
+    name: "weblounge-test-app-config",
+    configureServer(server) {
+      server.middlewares.use("/config.json", serve);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use("/config.json", serve);
     },
   };
 }

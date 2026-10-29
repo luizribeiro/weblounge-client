@@ -1,7 +1,9 @@
 # Hosted web deployment
 
-The single `packages.<system>.app` output runs in app mode when `/config.json` is absent or contains
-`{"mode":"app"}`, and in hosted mode when the server supplies the preset below. Build it with:
+The single `packages.<system>.app` output runs in app mode only when `/config.json` explicitly
+contains `{"mode":"app"}`, and in hosted mode when the server supplies the preset below. A missing
+file or HTML fallback is a visible deployment error in production; development and test builds may
+still default to app mode. Build it with:
 
 ```sh
 nix build --no-link .#app

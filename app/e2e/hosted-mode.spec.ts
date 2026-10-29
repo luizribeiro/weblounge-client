@@ -1,5 +1,21 @@
 import { expect, test } from "@playwright/test";
 
+test("shows a clear error when production config is missing", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_DEV === "1",
+    "development intentionally permits missing config",
+  );
+  await page.route("**/config.json", (route) => route.fulfill({ status: 404 }));
+
+  await page.goto("/");
+
+  await expect(
+    page.getByText("This deployment is misconfigured"),
+  ).toBeVisible();
+});
+
 test("authorizes with PKCE and hands the bearer token once to the engine", async ({
   page,
 }) => {
