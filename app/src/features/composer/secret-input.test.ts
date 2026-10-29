@@ -18,6 +18,7 @@ const identify: CommandSpec = {
 it("recognizes secret command names and aliases without hiding literal text", () => {
   expect(isSecretInput("/identify hunter2", [identify])).toBe(true);
   expect(isSecretInput("/ID hunter2", [identify])).toBe(true);
+  expect(isSecretInput("  / identify hunter2", [identify])).toBe(true);
   expect(isSecretInput("//identify hunter2", [identify])).toBe(false);
   expect(isSecretInput("/say hunter2", [identify])).toBe(false);
 });

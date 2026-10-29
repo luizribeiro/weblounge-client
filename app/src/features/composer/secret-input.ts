@@ -4,9 +4,14 @@ export function isSecretInput(
   input: string,
   commands: readonly CommandSpec[],
 ): boolean {
-  const slash = input.startsWith("/") && !input.startsWith("//");
+  const normalized = input.trimStart();
+  const slash = normalized.startsWith("/") && !normalized.startsWith("//");
   if (!slash) return false;
-  const name = input.slice(1).split(/\s/, 1)[0]?.toLocaleLowerCase();
+  const name = normalized
+    .slice(1)
+    .trimStart()
+    .split(/\s/, 1)[0]
+    ?.toLocaleLowerCase();
   if (name === undefined || name === "") return false;
   return commands.some(
     (command) =>
