@@ -6,10 +6,10 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 
 | # | Reported | Issue | Status |
 |---|---|---|---|
-| 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. Also in scrollback: rows overlap until rendered, then the page jumps as they're corrected; new overlaps when scrolling back down (screenshot of #bots). | fixed in 72a71c2 (not deployed yet); re-verify the scrollback case after deploy, research on the approach running |
-| 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | fixed |
+| 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. Also in scrollback: rows overlap until rendered, then the page jumps as they're corrected; new overlaps when scrolling back down (screenshot of #bots). | partly fixed in 72a71c2, live 2026-10-29 ~20:10; scrollback jumps addressed by the message-list rework (queued) |
+| 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | fixed, live |
 | 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | queued |
-| 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | fixed |
+| 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | fixed, live |
 | 5 | 2026-10-29 | Mobile: the chats list flashes when going back to it, as if reloading. | queued |
 | 6 | 2026-10-29 | Desktop: with the member list open, switching channels leaves it empty (zero members). | queued |
 | 7 | 2026-10-29 | Mobile: focusing "Search channels and people" zooms the page. | queued |
@@ -31,7 +31,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 23 | 2026-10-29 | The auto-complete popup flashes on each keystroke before updating. | queued |
 | 24 | 2026-10-29 | Desktop: after collapsing the sidebar with the hamburger, the conversation and composer don't widen to fill the window. | queued |
 | 25 | 2026-10-29 | Server buffer says "Channel" under its name, shows nothing, and can't be reached on mobile. (Lower priority.) | queued, last |
-| 26 | 2026-10-29 | iPhone PWA: content needs space for the home indicator (the Dynamic Island is fine). Device tweaks need one organised place. | queued |
+| 26 | 2026-10-29 | iPhone PWA: content needs space for the home indicator (the Dynamic Island is fine). Device tweaks need one organised place. | fixed, live (home indicator spacing; the rest of device adaptation queued) |
 | 27 | 2026-10-29 | Messages you just sent show no mode prefix ("luiz" instead of "~luiz") until reloaded from history. | queued |
 | 28 | 2026-10-29 | Beta console noise from our code: wasm-bindgen "deprecated parameters" warning, TanStack "Failed to get offset for index: 0", unused Inter preload, Firefox "scroll-linked positioning effect". (The webserial and CSP-eval errors come from browser extensions, not the app.) | queued (task 37, message-list rework, splash) |
 | 29 | 2026-10-29 | A Shift+Enter multiline message shows as one message live, but after reload as separate rows (blank lines as empty rows) with your nick in the wrong colour. Same papo history bug as #3. | blocked on papo |
