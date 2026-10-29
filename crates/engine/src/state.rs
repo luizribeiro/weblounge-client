@@ -658,6 +658,34 @@ impl NetworkModel {
         Some(self.buffers_event())
     }
 
+    pub(crate) fn recent_speakers(
+        &self,
+        buffer_id: BufferId,
+        prefix: &str,
+        state: &papo::State,
+    ) -> Vec<String> {
+        let folded_prefix = state.casemapping().fold(prefix);
+        let mut seen = std::collections::HashSet::new();
+        self.buffers
+            .get(&buffer_id)
+            .into_iter()
+            .flat_map(|buffer| buffer.timeline.iter().rev())
+            .map(|record| record.projection.author.clone())
+            .filter(|nick| state.casemapping().fold(nick) != state.nick().as_ref())
+            .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
+            .filter(|value| seen.insert(state.casemapping().fold(value).into_owned()))
+            .collect()
+    }
+
+    pub(crate) fn channel_names(&self) -> Vec<String> {
+        self.buffer_order
+            .iter()
+            .filter_map(|id| self.buffers.get(id))
+            .filter(|buffer| buffer.projection.kind == BufferKind::Channel)
+            .map(|buffer| buffer.projection.title.clone())
+            .collect()
+    }
+
     pub(crate) fn completion_candidates(
         &self,
         buffer_id: BufferId,
@@ -665,34 +693,21 @@ impl NetworkModel {
         state: &papo::State,
         registry: &commands::CommandRegistry,
     ) -> Vec<String> {
-        let values: Vec<String> = if prefix.starts_with('/') {
+        let values = if prefix.starts_with('/') {
             registry.completion_candidates(prefix)
         } else if prefix
             .chars()
             .next()
             .is_some_and(|first| state.isupport().chantypes().contains(first))
         {
-            self.buffer_order
-                .iter()
-                .filter_map(|id| self.buffers.get(id))
-                .filter(|buffer| buffer.projection.kind == BufferKind::Channel)
-                .map(|buffer| buffer.projection.title.clone())
-                .collect()
+            self.channel_names()
         } else {
-            self.buffers
-                .get(&buffer_id)
-                .into_iter()
-                .flat_map(|buffer| buffer.timeline.iter().rev())
-                .map(|record| record.projection.author.clone())
-                .filter(|nick| state.casemapping().fold(nick) != state.nick().as_ref())
-                .collect()
+            self.recent_speakers(buffer_id, "", state)
         };
         let folded_prefix = state.casemapping().fold(prefix);
-        let mut seen = std::collections::HashSet::new();
         values
             .into_iter()
             .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
-            .filter(|value| seen.insert(state.casemapping().fold(value).into_owned()))
             .collect()
     }
 
@@ -1570,7 +1585,6 @@ mod tests {
     #[test]
     fn completion_candidates_follow_command_channel_and_recent_nick_order() {
         let (mut model, state) = model(10);
-        let registry = commands::built_in_registry();
         let mut first = incoming(&state, "first", Some("one"), None, 1, TimelineOrigin::Live);
         first.author = "Alice[".into();
         model.receive_incoming(first, &state);
@@ -1586,9 +1600,16 @@ mod tests {
             .expect("message buffer exists");
 
         assert_eq!(
-            model.completion_candidates(buffer_id, "", &state, &registry),
+            model.recent_speakers(buffer_id, "", &state),
             ["bob", "Alice["]
         );
+        assert_eq!(model.channel_names(), ["#room"]);
+        assert_eq!(model.recent_speakers(buffer_id, "BOB", &state), ["bob"]);
+        assert_eq!(
+            model.recent_speakers(buffer_id, "alice{", &state),
+            ["Alice["]
+        );
+        let registry = commands::built_in_registry();
         assert_eq!(
             model.completion_candidates(buffer_id, "/j", &state, &registry),
             ["/join", "/j"]
@@ -1596,14 +1617,6 @@ mod tests {
         assert_eq!(
             model.completion_candidates(buffer_id, "#r", &state, &registry),
             ["#room"]
-        );
-        assert_eq!(
-            model.completion_candidates(buffer_id, "BOB", &state, &registry),
-            ["bob"]
-        );
-        assert_eq!(
-            model.completion_candidates(buffer_id, "alice{", &state, &registry),
-            ["Alice["]
         );
     }
 
