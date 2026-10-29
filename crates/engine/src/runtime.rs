@@ -710,17 +710,7 @@ impl Runtime {
                     }
                 }
             };
-            let Some(nick) = client
-                .state()
-                .name_rules()
-                .map(|rules| rules.nick(direct.to_string()))
-            else {
-                let _ = outbound.send(EngineToUi::CommandRejected {
-                    id: command_id,
-                    message_key: "engine.command_refused".into(),
-                });
-                return;
-            };
+            let nick = direct.nick();
             let (pending, output) = {
                 let mut state = lock(&state);
                 let Some(running) = state
@@ -2813,6 +2803,7 @@ mod tests {
         let papo::Event::NickChanged(changed) = changed else {
             panic!("nick change expected")
         };
+        assert_eq!(direct.nick(), changed.new);
         let pending = PendingSend {
             buffer_id: BufferId(2),
             local_send_id: crate::LocalSendId(1),
