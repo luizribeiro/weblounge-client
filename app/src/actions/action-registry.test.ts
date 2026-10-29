@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { ActionRegistry, detectPlatform } from "./action-registry";
 
-const context = { bufferCount: 3, listActive: false };
+const context = {
+  bufferCount: 3,
+  connected: true,
+  features: [] as string[],
+  listActive: false,
+  permission: "anyone" as const,
+};
 
 describe("ActionRegistry", () => {
   it("dispatches platform-aware global and desktop bindings", () => {
@@ -108,10 +114,12 @@ describe("ActionRegistry", () => {
   });
 
   it("merges UI actions and runtime commands for palette and help", () => {
-    const registry = new ActionRegistry({ "settings.open": vi.fn() }, "other", [
-      command("join", ["slash", "palette"]),
-      command("say", ["slash"]),
-    ]);
+    const registry = new ActionRegistry(
+      { "settings.open": vi.fn() },
+      "other",
+      [command("join", ["slash", "palette"]), command("say", ["slash"])],
+      vi.fn(),
+    );
 
     expect(registry.palette(context).map(({ id }) => id)).toEqual([
       "settings.open",
@@ -125,6 +133,35 @@ describe("ActionRegistry", () => {
     expect(registry.palette(context)[1]?.title).toBe(
       "Join one or more channels",
     );
+  });
+
+  it("gates and runs commands through derived policy", () => {
+    const run = vi.fn();
+    const oper = {
+      ...command("join", ["palette"]),
+      permission: "oper" as const,
+    };
+    const registry = new ActionRegistry({}, "other", [oper], run);
+
+    expect(registry.palette(context)).toEqual([]);
+    const operContext = { ...context, permission: "oper" as const };
+    expect(registry.run("command.join", operContext, "menu")).toBe("ran");
+    expect(run).toHaveBeenCalledWith(oper, operContext);
+  });
+
+  it("applies always and menu confirmation by invocation source", () => {
+    const run = vi.fn();
+    const menu = {
+      ...command("join", ["palette"]),
+      confirm: "menu" as const,
+    };
+    const registry = new ActionRegistry({}, "other", [menu], run);
+
+    expect(registry.run("command.join", context, "menu")).toBe(
+      "confirmation_required",
+    );
+    expect(registry.run("command.join", context, "typed")).toBe("ran");
+    expect(registry.run("command.join", context, "menu", true)).toBe("ran");
   });
 
   it("detects Apple shortcut labels", () => {

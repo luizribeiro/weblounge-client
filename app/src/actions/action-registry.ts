@@ -1,3 +1,4 @@
+import type { CommandPermission } from "../engine/generated/CommandPermission";
 import type { CommandSpec } from "../engine/protocol";
 import { t } from "../features/composer/strings";
 
@@ -24,7 +25,10 @@ export type Platform = "macos" | "other";
 
 export interface ActionContext {
   readonly bufferCount: number;
+  readonly connected?: boolean;
+  readonly features?: readonly string[];
   readonly listActive: boolean;
+  readonly permission?: CommandPermission;
   readonly targetBufferId?: number;
   readonly targetNetworkId?: number;
 }
@@ -34,6 +38,12 @@ export interface ActionAvailability {
 }
 
 export type ActionHandler = (context: ActionContext) => void;
+export type CommandSource = "typed" | "menu";
+export type ActionRunResult = "ran" | "unavailable" | "confirmation_required";
+export type EngineActionHandler = (
+  command: CommandSpec,
+  context: ActionContext,
+) => void;
 
 export interface ActionEntry {
   readonly id: ActionId;
@@ -128,28 +138,54 @@ const specs: readonly ActionSpec[] = [
 export class ActionRegistry {
   readonly #handlers: Readonly<Partial<Record<UiActionId, ActionHandler>>>;
   readonly #platform: Platform;
+  readonly #engineHandler: EngineActionHandler | undefined;
   #commands: readonly CommandSpec[];
 
   constructor(
     handlers: Readonly<Partial<Record<UiActionId, ActionHandler>>>,
     platform: Platform,
     commands: readonly CommandSpec[] = [],
+    engineHandler?: EngineActionHandler,
   ) {
     this.#handlers = handlers;
     this.#platform = platform;
     this.#commands = commands;
+    this.#engineHandler = engineHandler;
   }
 
-  availability(id: UiActionId, context: ActionContext): ActionAvailability {
-    const spec = findSpec(id);
-    if (this.#handlers[id] === undefined) return { state: "unavailable" };
+  availability(id: ActionId, context: ActionContext): ActionAvailability {
+    if (id.startsWith("command.")) {
+      const command = this.#command(id);
+      return command !== undefined &&
+        this.#engineHandler !== undefined &&
+        allowed(command, context)
+        ? { state: "available" }
+        : { state: "unavailable" };
+    }
+    const uiId = id as UiActionId;
+    const spec = findSpec(uiId);
+    if (this.#handlers[uiId] === undefined) return { state: "unavailable" };
     return spec.availability(context);
   }
 
-  run(id: UiActionId, context: ActionContext): boolean {
-    if (this.availability(id, context).state !== "available") return false;
-    this.#handlers[id]?.(context);
-    return true;
+  run(
+    id: ActionId,
+    context: ActionContext,
+    source: CommandSource = "menu",
+    confirmed = false,
+  ): ActionRunResult {
+    if (this.availability(id, context).state !== "available")
+      return "unavailable";
+    if (id.startsWith("command.")) {
+      const command = this.#command(id);
+      if (command === undefined) return "unavailable";
+      if (!confirmed && needsConfirmation(command, source))
+        return "confirmation_required";
+      this.#engineHandler?.(command, context);
+      return "ran";
+    }
+    this.#handlers[id as UiActionId]?.(context);
+    return "ran";
   }
 
   title(id: UiActionId): string {
@@ -180,7 +216,7 @@ export class ActionRegistry {
     if (spec === undefined) return false;
     event.preventDefault();
     event.stopPropagation();
-    return this.run(spec.id, context);
+    return this.run(spec.id, context) === "ran";
   }
 
   updateCommands(commands: readonly CommandSpec[]): void {
@@ -208,7 +244,9 @@ export class ActionRegistry {
       .map(({ id, title }) => ({ id, title }));
     const commands = this.#commands
       .filter(
-        (command) => surface === "help" || command.surfaces.includes("palette"),
+        (command) =>
+          allowed(command, context) &&
+          (surface === "help" || command.surfaces.includes("palette")),
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
@@ -217,6 +255,51 @@ export class ActionRegistry {
       }));
     return [...ui, ...commands];
   }
+
+  #command(id: ActionId): CommandSpec | undefined {
+    const name = id.slice("command.".length);
+    return this.#commands.find((command) => command.name === name);
+  }
+}
+
+function allowed(command: CommandSpec, context: ActionContext): boolean {
+  const features = context.features ?? [];
+  return (
+    command.requirements.every((requirement) =>
+      requirement.type === "connected"
+        ? context.connected === true
+        : features.includes(requirement.value),
+    ) &&
+    permissionRank(context.permission ?? "anyone") >=
+      permissionRank(command.permission)
+  );
+}
+
+function permissionRank(permission: CommandPermission): number {
+  switch (permission) {
+    case "anyone":
+      return 0;
+    case "half_op":
+      return 1;
+    case "op":
+      return 2;
+    case "oper":
+      return 3;
+    default: {
+      const exhaustive: never = permission;
+      return exhaustive;
+    }
+  }
+}
+
+function needsConfirmation(
+  command: CommandSpec,
+  source: CommandSource,
+): boolean {
+  return (
+    command.confirm === "always" ||
+    (command.confirm === "menu" && source === "menu")
+  );
 }
 
 export function detectPlatform(navigator: Navigator): Platform {
