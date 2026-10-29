@@ -83,7 +83,7 @@ not exposed in the first release.
 ### Hosted concierge handover
 
 Hosted mode copies the deployed gamja flow, not a concierge session-cookie shortcut. Deploy-time
-configuration supplies concierge's issuer URL, public client ID `gamja`, the exact webchat root as
+configuration supplies concierge's issuer URL, a public client ID, the exact webchat root as
 redirect URI, the preconfigured WebSocket endpoint, and `#lounge`; no hostname sniffing or
 onboarding chooses these values.
 
@@ -92,7 +92,7 @@ and a PKCE verifier, keeps both in `sessionStorage`, and redirects to the author
 with an S256 challenge. Concierge uses its existing member session (or asks the member to sign in),
 then returns a one-minute authorization code and the state to the exact root redirect URI. The
 client rejects a state mismatch, removes the pending verifier, and posts the code, verifier,
-redirect URI, and `client_id=gamja` to the token endpoint without a client secret. Redirect URIs
+redirect URI, and the configured `client_id` to the token endpoint without a client secret. Redirect URIs
 never include the page fragment.
 
 Concierge returns a bearer access token whose lifetime matches the approving member session. The
@@ -241,6 +241,8 @@ certificate-management UI, and gateway deployment are separate designs.
 - Use `ws://` only for explicit loopback test fixtures.
 - Luiz, 2026-10-27: hosted auth uses concierge's authorization-code flow with state and PKCE, then
   maps the bearer token to papo's `Sasl::oauth_bearer`; Ergo introspects it against concierge.
+- Luiz, 2026-10-29: beta's public client ID is `weblounge-client`; it is runtime deployment data,
+  replacing gamja's old client registration without creating a separate build.
 - Luiz, 2026-10-27: use native `papo_testing::wire()` and the repository's small local Ergo
   fixture; do not depend on a packaged papo test server.
 
