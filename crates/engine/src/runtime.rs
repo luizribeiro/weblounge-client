@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
@@ -33,6 +33,8 @@ struct RunningNetwork {
     model: NetworkModel,
     connection_attempt: u32,
     device_online: bool,
+    pending_sends: VecDeque<PendingSend>,
+    flushing_sends: bool,
 }
 
 struct JoinTarget {
@@ -461,6 +463,8 @@ impl Runtime {
             model,
             connection_attempt: 1,
             device_online: true,
+            pending_sends: VecDeque::new(),
+            flushing_sends: false,
         });
         drop(state);
 
@@ -650,19 +654,27 @@ impl Runtime {
             }
             crate::MessageKind::Notice => None,
         };
-        let Some((pending, output)) = pending else {
+        let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, "engine.buffer_not_sendable");
         };
+        running.pending_sends.push_back(pending);
+        let should_flush = running.model.is_online() && !running.flushing_sends;
+        if should_flush {
+            running.flushing_sends = true;
+        }
         let client = running.client.clone();
         let instance = running.instance;
+        output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
 
-        let state = Arc::clone(&self.state);
-        let outbound = self.outbound.clone();
-        spawn_task(async move {
-            finish_send(&state, &outbound, &client, instance, &pending).await;
-            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
-        });
+        if should_flush {
+            spawn_send_flush(
+                Arc::clone(&self.state),
+                self.outbound.clone(),
+                client,
+                instance,
+            );
+        }
         output
     }
 
@@ -1180,12 +1192,13 @@ enum AuthenticationKind {
 enum SendError {
     Protocol,
     DirectTargetGone,
+    Offline,
 }
 
 impl SendError {
     const fn message_key(&self) -> &'static str {
         match self {
-            Self::Protocol => "engine.send_failed",
+            Self::Protocol | Self::Offline => "engine.send_failed",
             Self::DirectTargetGone => "engine.direct_target_gone",
         }
     }
@@ -1199,19 +1212,84 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
         } else {
             client.privmsg(channel, pending.text.clone()).await
         }
-        .map_err(|_| SendError::Protocol),
+        .map_err(|error| classify_send_error(&error)),
         SendTarget::Direct { recipient, .. } => if action {
             client.action(recipient, pending.text.clone()).await
         } else {
             client.privmsg(recipient, pending.text.clone()).await
         }
-        .map_err(|error| {
-            if matches!(error, papo::Error::TargetGone) {
-                SendError::DirectTargetGone
-            } else {
-                SendError::Protocol
+        .map_err(|error| classify_send_error(&error)),
+    }
+}
+
+fn classify_send_error(error: &papo::Error) -> SendError {
+    match error {
+        papo::Error::Disconnected(_) => SendError::Offline,
+        papo::Error::TargetGone => SendError::DirectTargetGone,
+        _ => SendError::Protocol,
+    }
+}
+
+fn spawn_send_flush(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+) {
+    spawn_task(async move {
+        flush_pending_sends(&state, &outbound, &client, instance).await;
+    });
+}
+
+async fn flush_pending_sends(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+) {
+    loop {
+        let pending = {
+            let mut state = lock(state);
+            let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            else {
+                return;
+            };
+            if !running.model.is_online() {
+                running.flushing_sends = false;
+                return;
             }
-        }),
+            let Some(pending) = running.pending_sends.pop_front() else {
+                running.flushing_sends = false;
+                return;
+            };
+            pending
+        };
+        let result = send(client, &pending).await;
+        let events = {
+            let mut state = lock(state);
+            let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            else {
+                return;
+            };
+            match result {
+                Ok(sent) => running.model.confirm_send(&pending, &sent),
+                Err(SendError::Offline) => {
+                    running.pending_sends.push_front(pending);
+                    running.flushing_sends = false;
+                    return;
+                }
+                Err(error) => Some(vec![running.model.fail_send(&pending, error.message_key())]),
+            }
+        };
+        for event in events.into_iter().flatten() {
+            let _ = outbound.send(event);
+        }
     }
 }
 
@@ -1665,6 +1743,7 @@ fn process_event_with_direct(
     direct: Option<papo::DirectRef>,
 ) -> Vec<SendTarget> {
     let snapshot = client.state();
+    let shared_state = Arc::clone(state);
     let mut state = lock(state);
     let Some(running) = state
         .network
@@ -1675,6 +1754,7 @@ fn process_event_with_direct(
     };
     let mut output = Vec::new();
     let mut clear_hosted_authentication = false;
+    let mut flush_pending = false;
     let history_targets = match event {
         papo::Event::Connecting(connecting) => {
             process_connecting(running, &connecting, &mut output);
@@ -1682,6 +1762,10 @@ fn process_event_with_direct(
         }
         papo::Event::Connected(connected) => {
             process_connected(running, &snapshot, &connected, &mut output);
+            if !running.pending_sends.is_empty() && !running.flushing_sends {
+                running.flushing_sends = true;
+                flush_pending = true;
+            }
             Vec::new()
         }
         papo::Event::Lagged(lagged) => {
@@ -1747,6 +1831,9 @@ fn process_event_with_direct(
     drop(state);
     for event in output {
         let _ = outbound.send(event);
+    }
+    if flush_pending {
+        spawn_send_flush(shared_state, outbound.clone(), client.clone(), instance);
     }
     history_targets
 }
@@ -2275,6 +2362,7 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::VecDeque,
         sync::{Arc, Mutex},
         time::Duration,
     };
@@ -2758,6 +2846,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2805,6 +2895,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -2861,6 +2953,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::HostedOAuth,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -2924,6 +3018,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3050,6 +3146,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3162,6 +3260,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3302,6 +3402,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3363,6 +3465,8 @@ mod tests {
                     authentication_kind: AuthenticationKind::SaslPlain,
                     connection_attempt: 1,
                     device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3488,6 +3592,8 @@ mod tests {
                 authentication_kind: AuthenticationKind::SaslPlain,
                 connection_attempt: 1,
                 device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
                 client,
                 model,
             }),
@@ -3998,6 +4104,56 @@ mod tests {
             EngineToUi::NetworkStateChanged { network }
                 if network.state == crate::NetworkConnectionState::Online
         )));
+    }
+
+    #[tokio::test]
+    async fn offline_messages_flush_in_submission_order_after_connected() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        let buffer_id = collect(&mut receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferAdded { buffer } => Some(buffer.id),
+                _ => None,
+            })
+            .expect("join adds the room buffer");
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        };
+
+        for (id, text) in [("first", "queued one"), ("second", "queued two")] {
+            let output = runtime.request(EngineRequestEnvelope {
+                id: id.into(),
+                request: EngineRequest::SendMessage {
+                    buffer_id,
+                    text: text.into(),
+                },
+            });
+            assert!(output.iter().any(|event| matches!(
+                event,
+                EngineToUi::MessagesAppended { messages, .. }
+                    if messages[0].delivery == crate::MessageDelivery::Optimistic
+            )));
+            assert!(output.iter().any(|event| matches!(
+                event,
+                EngineToUi::CommandResult { id: result_id } if result_id == id
+            )));
+        }
+
+        process_event(&state, &outbound, &client, 1, connected);
+        assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued one");
+        assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued two");
     }
 
     #[tokio::test]
