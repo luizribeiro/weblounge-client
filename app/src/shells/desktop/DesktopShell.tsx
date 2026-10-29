@@ -43,6 +43,9 @@ export interface DesktopShellProps {
   readonly composerNotice: string | undefined;
   readonly completion: CompletionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
+  readonly onFocusRequestHandled?:
+    | ((request: { readonly bufferId: number }) => void)
+    | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
@@ -171,7 +174,9 @@ export function DesktopShell(props: DesktopShellProps) {
 
   createEffect(() => {
     const request = props.focusRequest;
-    if (request !== undefined) showBuffer(request.bufferId, true);
+    if (request === undefined) return;
+    showBuffer(request.bufferId, true);
+    props.onFocusRequestHandled?.(request);
   });
 
   createEffect(() => {

@@ -261,6 +261,62 @@ it("focuses command-created buffers only from engine buffer ids", async () => {
   ).toBeInTheDocument();
 });
 
+it("retains engine focus until a delayed shell can consume it", async () => {
+  const client = new FakeEngineClient();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: ["#home"],
+        },
+        token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
+      }}
+    />
+  ));
+  for (const [id, kind, title] of [
+    [2, "channel", "#home"],
+    [3, "direct", "composer"],
+  ] as const) {
+    client.emit({
+      type: "buffer_added",
+      buffer: {
+        id,
+        network_id: 1,
+        kind,
+        title,
+        draft_key: `test:${title}`,
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    });
+  }
+  client.emit({
+    type: "focus_buffer_requested",
+    command_id: "query-1",
+    buffer_id: 3,
+  });
+  await Promise.resolve();
+
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: "online",
+    },
+  });
+
+  expect(
+    await screen.findByRole("heading", { name: "composer" }),
+  ).toBeVisible();
+});
+
 it("renders command error and engine notice keys as human text", async () => {
   const client = new FakeEngineClient("composer.unknown_command");
   render(() => <App engineClient={client} />);

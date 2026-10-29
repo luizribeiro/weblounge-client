@@ -102,13 +102,7 @@ export function App(props: AppProps) {
         }
       }
       if (message.type === "focus_buffer_requested") {
-        const request = { bufferId: message.buffer_id };
-        setFocusRequest(request);
-        queueMicrotask(() =>
-          setFocusRequest((current) =>
-            current === request ? undefined : current,
-          ),
-        );
+        setFocusRequest({ bufferId: message.buffer_id });
       }
       if (
         message.type === "network_state_changed" &&

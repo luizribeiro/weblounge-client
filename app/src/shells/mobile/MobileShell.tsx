@@ -24,6 +24,9 @@ import { type MobileViewport, observeMobileViewport } from "./mobile-viewport";
 
 interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
+  readonly onFocusRequestHandled?:
+    | ((request: { readonly bufferId: number }) => void)
+    | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
@@ -132,6 +135,7 @@ export function MobileShell(props: MobileShellProps) {
       open(requested, pushNextFocus);
     }
     pushNextFocus = false;
+    props.onFocusRequestHandled?.(request);
   });
 
   const beginSwipe = (event: PointerEvent) => {
