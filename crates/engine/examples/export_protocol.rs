@@ -3,7 +3,7 @@
 use std::{env, error::Error, fs, path::Path};
 
 use ts_rs::TS;
-use weblounge_engine::{EngineToUi, UiToEngine};
+use weblounge_engine::{DeploymentConfig, EngineToUi, UiToEngine};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let output = env::args_os()
@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     EngineToUi::export_all_to(&output)?;
     UiToEngine::export_all_to(&output)?;
+    DeploymentConfig::export_all_to(&output)?;
     trim_trailing_whitespace(Path::new(&output))?;
     Ok(())
 }

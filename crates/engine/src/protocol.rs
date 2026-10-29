@@ -26,6 +26,43 @@ pub struct SaslCredentials {
     pub password: String,
 }
 
+/// Runtime deployment configuration served by the web host.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum DeploymentConfig {
+    /// User-managed application mode.
+    App,
+    /// One preconfigured network authenticated by the deployment's OAuth issuer.
+    Hosted {
+        /// Network shown in the shell.
+        network: HostedNetworkConfig,
+        /// Public OAuth authorization-code client configuration.
+        oauth: HostedOAuthConfig,
+    },
+}
+
+/// Hosted network preset supplied by the deployment.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct HostedNetworkConfig {
+    /// Display name for the preconfigured network.
+    pub name: String,
+    /// Secure browser WebSocket endpoint.
+    pub endpoint: String,
+    /// Channels joined after registration.
+    pub autojoin: Vec<String>,
+}
+
+/// Public OAuth client preset supplied by the deployment.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct HostedOAuthConfig {
+    /// RFC 8414 issuer URL.
+    pub issuer: String,
+    /// Public OAuth client identifier.
+    pub client_id: String,
+    /// Exact authorization callback URL, without a fragment.
+    pub redirect_uri: String,
+}
+
 /// Connection state projected for the temporary debug shell.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
