@@ -122,7 +122,19 @@ buffer_id: BufferId,
 /**
  * Older rows in established timeline order.
  */
-messages: Array<MessageProjection>, } | { "type": "membership_changed",
+messages: Array<MessageProjection>, } | { "type": "history_state_changed",
+/**
+ * Conversation whose history state changed.
+ */
+buffer_id: BufferId,
+/**
+ * Whether a page request is currently in flight.
+ */
+loading: boolean,
+/**
+ * Whether the server reported that no older page exists.
+ */
+at_start: boolean, } | { "type": "membership_changed",
 /**
  * Destination channel buffer.
  */

@@ -407,6 +407,20 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "history_state_changed":
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.loading === "boolean" &&
+        typeof value.at_start === "boolean"
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          loading: value.loading,
+          at_start: value.at_start,
+        };
+      }
+      break;
     case "membership_changed": {
       const membership = decodeMembership(value.membership);
       if (typeof value.buffer_id === "number" && membership !== undefined) {
@@ -524,6 +538,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "focus_buffer_requested" ||
     value === "messages_appended" ||
     value === "messages_prepended" ||
+    value === "history_state_changed" ||
     value === "membership_changed" ||
     value === "members_changed" ||
     value === "message_confirmed" ||

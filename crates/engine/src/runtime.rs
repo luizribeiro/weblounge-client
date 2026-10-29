@@ -9,7 +9,7 @@ use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, EngineRequest, EngineRequestEnvelope,
     EngineToUi, MembershipKind, MessageId, NetworkConnectionState, NetworkId,
     commands::{self, Command},
-    state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
+    state::{HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
@@ -962,7 +962,7 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
-        let Some(target) = running.model.request_latest(buffer_id) else {
+        let Some(fetch) = running.model.request_history(buffer_id) else {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
         spawn_history_fetch(
@@ -970,9 +970,16 @@ impl Runtime {
             self.outbound.clone(),
             running.client.clone(),
             running.instance,
-            target,
+            fetch,
         );
-        vec![EngineToUi::CommandResult { id: command_id }]
+        vec![
+            EngineToUi::HistoryStateChanged {
+                buffer_id,
+                loading: true,
+                at_start: false,
+            },
+            EngineToUi::CommandResult { id: command_id },
+        ]
     }
 }
 
@@ -1381,7 +1388,7 @@ async fn drain_events(
                 outbound.clone(),
                 client.clone(),
                 instance,
-                target,
+                HistoryFetch::Latest(target),
             );
         }
         if schedule_members {
@@ -1457,31 +1464,75 @@ fn spawn_history_fetch(
     outbound: mpsc::UnboundedSender<EngineToUi>,
     client: papo::Client,
     instance: u64,
-    target: SendTarget,
+    fetch: HistoryFetch,
 ) {
     spawn_task(async move {
-        if let Ok(page) = fetch_latest(&client, target).await {
+        if let Ok(page) = fetch_history(&client, fetch.clone()).await {
             process_history(&state, &outbound, &client, instance, page).await;
+            return;
+        }
+        let buffer_id = {
+            let mut state = lock(&state);
+            state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+                .and_then(|running| running.model.fail_history(&fetch))
+        };
+        if let Some(buffer_id) = buffer_id {
+            let _ = outbound.send(EngineToUi::HistoryStateChanged {
+                buffer_id,
+                loading: false,
+                at_start: false,
+            });
         }
     });
 }
 
-async fn fetch_latest(
+async fn fetch_history(
     client: &papo::Client,
-    target: SendTarget,
+    fetch: HistoryFetch,
 ) -> Result<papo::HistoryPage, papo::Error> {
-    match target {
-        SendTarget::Channel(channel) => {
+    match fetch {
+        HistoryFetch::Latest(SendTarget::Channel(channel)) => {
             client
                 .history(channel)
                 .latest()
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
-        SendTarget::Direct { nick, .. } => {
+        HistoryFetch::Latest(SendTarget::Direct { nick, .. }) => {
             client.history(nick).latest().limit(HISTORY_PAGE_SIZE).await
         }
+        HistoryFetch::Before {
+            target: SendTarget::Channel(channel),
+            oldest,
+        } => {
+            client
+                .history(channel)
+                .before(oldest)
+                .limit(HISTORY_PAGE_SIZE)
+                .await
+        }
+        HistoryFetch::Before {
+            target: SendTarget::Direct { nick, .. },
+            oldest,
+        } => {
+            client
+                .history(nick)
+                .before(oldest)
+                .limit(HISTORY_PAGE_SIZE)
+                .await
+        }
     }
+}
+
+#[cfg(test)]
+async fn fetch_latest(
+    client: &papo::Client,
+    target: SendTarget,
+) -> Result<papo::HistoryPage, papo::Error> {
+    fetch_history(client, HistoryFetch::Latest(target)).await
 }
 
 #[cfg(test)]
@@ -1748,6 +1799,7 @@ async fn process_history(
     page: papo::HistoryPage,
 ) {
     let prepend = page.reason == papo::HistoryReason::Requested;
+    let requested = requested_history_boundary(&page);
     let items = guard_history_senders(client, page.items).await;
     let snapshot = client.state();
     let mut state = lock(state);
@@ -1817,31 +1869,61 @@ async fn process_history(
         }
     }
     if let Some((buffer_id, mut messages)) = timeline {
-        messages.sort_by_key(|message| {
-            (
-                message.server_time_ms.unwrap_or(message.received_at_ms),
-                message.received_at_ms,
-                message.id.0,
-            )
-        });
-        output.push(if prepend {
-            EngineToUi::MessagesPrepended {
-                buffer_id,
-                messages,
-            }
-        } else {
-            EngineToUi::MessagesAppended {
-                buffer_id,
-                messages,
-            }
-        });
+        output.push(history_timeline_event(prepend, buffer_id, &mut messages));
     }
     if let Some(unread) = unread {
         output.push(unread);
     }
+    if let Some((conversation, oldest, end)) = requested
+        && let Some((buffer_id, at_start)) =
+            running.model.finish_history(&conversation, oldest, end)
+    {
+        output.push(EngineToUi::HistoryStateChanged {
+            buffer_id,
+            loading: false,
+            at_start,
+        });
+    }
     drop(state);
     for event in output {
         let _ = outbound.send(event);
+    }
+}
+
+fn requested_history_boundary(
+    page: &papo::HistoryPage,
+) -> Option<(papo::Conversation, Option<papo::MessageId>, bool)> {
+    (page.reason == papo::HistoryReason::Requested).then(|| {
+        let oldest = page
+            .chat_messages()
+            .min_by_key(|message| message.server_time.unwrap_or(message.received_at))
+            .and_then(|message| message.msgid.clone());
+        (page.conversation.clone(), oldest, page.end)
+    })
+}
+
+fn history_timeline_event(
+    prepend: bool,
+    buffer_id: BufferId,
+    messages: &mut [crate::MessageProjection],
+) -> EngineToUi {
+    messages.sort_by_key(|message| {
+        (
+            message.server_time_ms.unwrap_or(message.received_at_ms),
+            message.received_at_ms,
+            message.id.0,
+        )
+    });
+    if prepend {
+        EngineToUi::MessagesPrepended {
+            buffer_id,
+            messages: messages.to_vec(),
+        }
+    } else {
+        EngineToUi::MessagesAppended {
+            buffer_id,
+            messages: messages.to_vec(),
+        }
     }
 }
 
@@ -1968,8 +2050,8 @@ mod tests {
 
     use super::{
         AuthenticationKind, ConnectionAuthentication, MemberViews, RunningNetwork, Runtime,
-        RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_latest,
-        lock, process_event, process_history, utf16_len,
+        RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_history,
+        fetch_latest, lock, process_event, process_history, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -3093,6 +3175,24 @@ mod tests {
         output
     }
 
+    fn take_prepended(
+        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
+    ) -> (BufferId, Vec<String>) {
+        collect(receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesPrepended {
+                    buffer_id,
+                    messages,
+                } => Some((
+                    buffer_id,
+                    messages.into_iter().map(|message| message.text).collect(),
+                )),
+                _ => None,
+            })
+            .expect("requested history is prepended")
+    }
+
     async fn register_for_history(wire: &mut papo_testing::Wire) {
         assert_eq!(wire.next_sent().await, "CAP LS 302");
         assert_eq!(wire.next_sent().await, "NICK weblounge");
@@ -3144,8 +3244,26 @@ mod tests {
         wire.server(format!(":offline.test BATCH -{reply}")).await;
     }
 
+    async fn fetch_requested_page(
+        client: &papo::Client,
+        wire: &mut papo_testing::Wire,
+        fetch: crate::state::HistoryFetch,
+        expected_suffix: &str,
+        items: &[&str],
+    ) -> papo::HistoryPage {
+        let fetch_client = client.clone();
+        let task = tokio::spawn(async move { fetch_history(&fetch_client, fetch).await });
+        let request = wire.next_sent().await;
+        assert!(request.ends_with(expected_suffix));
+        let label = request_label(&request);
+        send_history_page(wire, label, items).await;
+        task.await
+            .expect("history task completes")
+            .expect("history request succeeds")
+    }
+
     #[tokio::test]
-    async fn latest_history_on_join_is_sorted_and_deduplicates_live_overlap() {
+    async fn history_pages_before_oldest_msgid_sort_deduplicate_and_stop_at_start() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
         register_for_history(&mut wire).await;
@@ -3199,19 +3317,58 @@ mod tests {
             .expect("history request succeeds");
         process_history(&state, &outbound, &client, 1, page).await;
 
-        let prepended = collect(&mut receiver)
-            .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesPrepended { messages, .. } => Some(
-                    messages
-                        .into_iter()
-                        .map(|message| message.text)
-                        .collect::<Vec<_>>(),
-                ),
-                _ => None,
-            })
-            .expect("requested history is prepended");
+        let (buffer_id, prepended) = take_prepended(&mut receiver);
         assert_eq!(prepended, ["older", "middle"]);
+
+        let older_fetch = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .request_history(buffer_id)
+            .expect("an older page is available");
+        let page = fetch_requested_page(
+            &client,
+            &mut wire,
+            older_fetch,
+            "CHATHISTORY BEFORE #room msgid=older 100",
+            &[
+                "time=2026-10-27T11:59:58.000Z;msgid=first :alice!a@host PRIVMSG #room :first",
+                "time=2026-10-27T12:00:00.000Z;msgid=older :alice!a@host PRIVMSG #room :older",
+                "time=2026-10-27T11:59:59.000Z;msgid=second :alice!a@host PRIVMSG #room :second",
+            ],
+        )
+        .await;
+        process_history(&state, &outbound, &client, 1, page).await;
+        let (_, prepended) = take_prepended(&mut receiver);
+        assert_eq!(prepended, ["first", "second"]);
+
+        let final_fetch = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .request_history(buffer_id)
+            .expect("the server boundary has not been reached yet");
+        let page = fetch_requested_page(
+            &client,
+            &mut wire,
+            final_fetch,
+            "CHATHISTORY BEFORE #room msgid=first 100",
+            &[],
+        )
+        .await;
+        process_history(&state, &outbound, &client, 1, page).await;
+
+        assert!(
+            lock(&state)
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model
+                .request_history(buffer_id)
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -3243,7 +3400,14 @@ mod tests {
             .expect("empty history is successful");
         process_history(&state, &outbound, &client, 1, page).await;
 
-        assert!(collect(&mut receiver).is_empty());
+        assert!(matches!(
+            collect(&mut receiver).as_slice(),
+            [EngineToUi::HistoryStateChanged {
+                loading: false,
+                at_start: true,
+                ..
+            }]
+        ));
         let buffers = lock(&state)
             .network
             .as_ref()

@@ -593,6 +593,15 @@ pub enum EngineToUi {
         /// Older rows in established timeline order.
         messages: Vec<MessageProjection>,
     },
+    /// Report one buffer's older-history request and terminal boundary.
+    HistoryStateChanged {
+        /// Conversation whose history state changed.
+        buffer_id: BufferId,
+        /// Whether a page request is currently in flight.
+        loading: bool,
+        /// Whether the server reported that no older page exists.
+        at_start: bool,
+    },
     /// Insert or replace an engine-collapsed membership run.
     MembershipChanged {
         /// Destination channel buffer.

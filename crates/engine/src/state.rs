@@ -50,7 +50,29 @@ struct BufferState {
     last_membership: Option<MessageId>,
     direct: Option<papo::DirectRef>,
     read_at_ms: Option<i64>,
-    history_requested: bool,
+    history: HistoryState,
+}
+
+#[derive(Clone, Debug)]
+enum HistoryState {
+    Unrequested,
+    LoadingLatest,
+    Ready {
+        oldest: Option<papo::MessageId>,
+        at_start: bool,
+    },
+    LoadingOlder {
+        oldest: papo::MessageId,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum HistoryFetch {
+    Latest(SendTarget),
+    Before {
+        target: SendTarget,
+        oldest: papo::MessageId,
+    },
 }
 
 /// Information needed to perform an outgoing send without exposing papo targets to the UI.
@@ -145,7 +167,10 @@ impl NetworkModel {
             last_membership: None,
             direct: None,
             read_at_ms: None,
-            history_requested: true,
+            history: HistoryState::Ready {
+                oldest: None,
+                at_start: true,
+            },
         };
         Self {
             network: NetworkProjection {
@@ -616,14 +641,28 @@ impl NetworkModel {
             .collect()
     }
 
-    pub(crate) fn request_latest(&mut self, buffer_id: BufferId) -> Option<SendTarget> {
+    pub(crate) fn request_history(&mut self, buffer_id: BufferId) -> Option<HistoryFetch> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        if buffer.history_requested {
-            return None;
-        }
         let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.clone())?;
-        buffer.history_requested = true;
-        Some(target)
+        match &buffer.history {
+            HistoryState::Unrequested => {
+                buffer.history = HistoryState::LoadingLatest;
+                Some(HistoryFetch::Latest(target))
+            }
+            HistoryState::Ready {
+                oldest: Some(oldest),
+                at_start: false,
+            } => {
+                let oldest = oldest.clone();
+                buffer.history = HistoryState::LoadingOlder {
+                    oldest: oldest.clone(),
+                };
+                Some(HistoryFetch::Before { target, oldest })
+            }
+            HistoryState::LoadingLatest
+            | HistoryState::LoadingOlder { .. }
+            | HistoryState::Ready { .. } => None,
+        }
     }
 
     pub(crate) fn request_latest_channel(
@@ -634,7 +673,52 @@ impl NetworkModel {
             .names
             .get(&NameKey::Channel(channel.clone()))
             .copied()?;
-        self.request_latest(buffer_id)
+        match self.request_history(buffer_id) {
+            Some(HistoryFetch::Latest(target)) => Some(target),
+            Some(HistoryFetch::Before { .. }) | None => None,
+        }
+    }
+
+    pub(crate) fn finish_history(
+        &mut self,
+        conversation: &papo::Conversation,
+        oldest: Option<papo::MessageId>,
+        end: bool,
+    ) -> Option<(BufferId, bool)> {
+        let key = NameKey::from_conversation(conversation)?;
+        let buffer_id = self.names.get(&key).copied()?;
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let previous = match &buffer.history {
+            HistoryState::LoadingOlder { oldest } => Some(oldest.clone()),
+            HistoryState::LoadingLatest => None,
+            _ => return None,
+        };
+        let made_progress = match (&previous, &oldest) {
+            (Some(previous), Some(oldest)) => previous != oldest,
+            (None, Some(_)) => true,
+            _ => false,
+        };
+        let oldest = oldest.or(previous);
+        let at_start = end || !made_progress || oldest.is_none();
+        buffer.history = HistoryState::Ready { oldest, at_start };
+        Some((buffer_id, at_start))
+    }
+
+    pub(crate) fn fail_history(&mut self, fetch: &HistoryFetch) -> Option<BufferId> {
+        let target = match fetch {
+            HistoryFetch::Latest(target) | HistoryFetch::Before { target, .. } => target,
+        };
+        let buffer_id = self.buffer_id_for_send_target(target)?;
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        buffer.history = match &buffer.history {
+            HistoryState::LoadingLatest => HistoryState::Unrequested,
+            HistoryState::LoadingOlder { oldest } => HistoryState::Ready {
+                oldest: Some(oldest.clone()),
+                at_start: false,
+            },
+            state => state.clone(),
+        };
+        Some(buffer_id)
     }
 
     pub(crate) fn channel_for_buffer(&self, buffer_id: BufferId) -> Option<papo::ChannelName> {
@@ -945,7 +1029,7 @@ impl NetworkModel {
                 last_membership: None,
                 direct,
                 read_at_ms: None,
-                history_requested: false,
+                history: HistoryState::Unrequested,
             },
         );
         self.names.insert(key, id);
@@ -957,6 +1041,14 @@ impl NetworkModel {
         let id = MessageId(self.next_message_id);
         self.next_message_id += 1;
         id
+    }
+
+    fn buffer_id_for_send_target(&self, target: &SendTarget) -> Option<BufferId> {
+        let key = match target {
+            SendTarget::Channel(channel) => NameKey::Channel(channel.clone()),
+            SendTarget::Direct { nick, .. } => NameKey::Direct(nick.clone()),
+        };
+        self.names.get(&key).copied()
     }
 
     fn insert(
