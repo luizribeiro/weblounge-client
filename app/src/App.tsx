@@ -15,6 +15,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  SuggestionResult,
 } from "./engine/protocol";
 import { t } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
@@ -41,11 +42,7 @@ export function App(props: AppProps) {
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
-  const [completion, setCompletion] = createSignal<{
-    bufferId: number;
-    prefix: string;
-    candidates: readonly string[];
-  }>();
+  const [completion, setCompletion] = createSignal<SuggestionResult>();
   const [focusRequest, setFocusRequest] = createSignal<{ bufferId: number }>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
@@ -88,12 +85,8 @@ export function App(props: AppProps) {
       if (message.type === "command_help_requested") {
         setComposerNotice(commandHelp(commandSpecs() ?? [], message.command));
       }
-      if (message.type === "completion_result") {
-        setCompletion({
-          bufferId: message.buffer_id,
-          prefix: message.prefix,
-          candidates: message.candidates,
-        });
+      if (message.type === "suggestion_result") {
+        setCompletion(message);
       }
       if (message.type === "focus_buffer_requested") {
         const request = { bufferId: message.buffer_id };
@@ -212,15 +205,17 @@ export function App(props: AppProps) {
               return false;
             });
         }}
-        onRequestCompletion={(bufferId, prefix) => {
+        onRequestCompletion={(bufferId, input, cursor, explicit) => {
           if (client === undefined) return;
           setCompletion(undefined);
           void client.send({
             id: crypto.randomUUID(),
             request: {
-              type: "complete_input",
+              type: "suggest_input",
               buffer_id: bufferId,
-              prefix,
+              input,
+              cursor,
+              explicit,
             },
           });
         }}

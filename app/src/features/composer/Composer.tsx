@@ -1,8 +1,13 @@
-import { createEffect, createSignal, For, type JSX } from "solid-js";
-import type { CommandSpec } from "../../engine/protocol";
+import { createEffect, createMemo, createSignal, type JSX } from "solid-js";
+import type {
+  CommandSpec,
+  CompletionCandidate,
+  SuggestionResult,
+} from "../../engine/protocol";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
+import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { t } from "./strings";
 
@@ -11,34 +16,42 @@ interface ComposerProps {
   readonly draftKey: string;
   readonly bufferTitle: string;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
-  readonly candidatePrefix?: string | undefined;
-  readonly candidates?: readonly string[] | undefined;
+  readonly completion?: SuggestionResult | undefined;
   readonly disabled?: boolean;
-  readonly onRequestCandidates?: (prefix: string) => void;
+  readonly onRequestCandidates?: (
+    input: string,
+    cursor: number,
+    explicit: boolean,
+  ) => void;
   readonly onSelectLast?: () => void;
-  readonly onSend: (text: string) => boolean | void | Promise<boolean | void>;
+  readonly onSend: (
+    text: string,
+  ) => boolean | undefined | Promise<boolean | undefined>;
 }
 
 export function Composer(props: ComposerProps) {
   let textarea: HTMLTextAreaElement | undefined;
   let confirmButton: HTMLButtonElement | undefined;
-  let completion:
-    | { start: number; end: number; candidates: readonly string[] }
-    | undefined;
-  const [pendingCompletion, setPendingCompletion] = createSignal<
-    { start: number; end: number; prefix: string; offset: number } | undefined
-  >();
+  let composing = false;
+  let pendingTabInput: string | undefined;
   let currentBuffer = props.bufferId;
   let currentDraftKey = props.draftKey;
   const [text, setText] = createSignal(readDraft(currentDraftKey));
   const [selected, setSelected] = createSignal(-1);
-  const [shownCandidates, setShownCandidates] = createSignal<readonly string[]>(
-    [],
-  );
+  const [dismissedInput, setDismissedInput] = createSignal<string>();
   const [pendingConfirmation, setPendingConfirmation] =
     createSignal<CommandSpec>();
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
+  const suggestions = createMemo(() => {
+    const result = props.completion;
+    return result?.buffer_id === props.bufferId &&
+      result.input === text() &&
+      result.input !== dismissedInput() &&
+      result.candidates.length > 0
+      ? result
+      : undefined;
+  });
   const confirmationText = () => {
     const command = pendingConfirmation();
     const prompt = command?.confirmation_prompt;
@@ -66,22 +79,16 @@ export function Composer(props: ComposerProps) {
     currentBuffer = props.bufferId;
     currentDraftKey = props.draftKey;
     setText(readDraft(currentDraftKey));
-    completion = undefined;
-    setPendingCompletion(undefined);
     setSelected(-1);
-    setShownCandidates([]);
+    setDismissedInput(undefined);
     setPendingConfirmation(undefined);
   });
 
-  const update = (value: string, resetCompletion = true) => {
+  const update = (value: string) => {
     setText(value);
     setPendingConfirmation(undefined);
-    if (resetCompletion) {
-      completion = undefined;
-      setPendingCompletion(undefined);
-      setSelected(-1);
-      setShownCandidates([]);
-    }
+    setSelected(-1);
+    if (dismissedInput() !== value) setDismissedInput(undefined);
   };
   const submit = (confirmed = false) => {
     const submitted = text();
@@ -108,56 +115,37 @@ export function Composer(props: ComposerProps) {
       })
       .catch(() => undefined);
   };
-  const complete = (offset: number) => {
-    if (completion === undefined) {
-      const end = textarea?.selectionStart ?? text().length;
-      const start = text().slice(0, end).search(/\S*$/);
-      const prefix = text().slice(start, end);
-      if (
-        props.onRequestCandidates !== undefined &&
-        props.candidatePrefix !== prefix
-      ) {
-        setPendingCompletion({ start, end, prefix, offset });
-        props.onRequestCandidates(prefix);
-        return true;
-      }
-      completion = {
-        start,
-        end,
-        candidates: props.candidates ?? [],
-      };
-      setShownCandidates(completion.candidates);
-    }
-    if (completion.candidates.length === 0) return false;
-    const next =
-      (selected() + offset + completion.candidates.length) %
-      completion.candidates.length;
-    setSelected(next);
-    const candidate = completion.candidates[next] ?? "";
-    update(
-      `${text().slice(0, completion.start)}${candidate} ${text().slice(completion.end)}`,
-      false,
-    );
-    completion.end = completion.start + candidate.length + 1;
-    queueMicrotask(() =>
-      textarea?.setSelectionRange(completion?.end ?? 0, completion?.end ?? 0),
-    );
+  createEffect(() => {
+    setSelected(suggestions() === undefined ? -1 : 0);
+  });
+  const request = (value: string, cursor: number, explicit: boolean) =>
+    props.onRequestCandidates?.(value, cursor, explicit);
+  const accept = (index = selected() >= 0 ? selected() : 0) => {
+    const result = suggestions();
+    const candidate = result?.candidates[index];
+    if (result === undefined || candidate === undefined) return false;
+    const replacement = replacementFor(candidate, result);
+    const next = `${text().slice(0, result.replace_start)}${replacement}${text().slice(result.replace_end)}`;
+    const cursor = result.replace_start + replacement.length;
+    update(next);
+    queueMicrotask(() => {
+      textarea?.setSelectionRange(cursor, cursor);
+      request(next, cursor, false);
+    });
     return true;
   };
   createEffect(() => {
-    const prefix = props.candidatePrefix;
-    const candidates = props.candidates;
-    const pending = pendingCompletion();
-    if (pending === undefined || prefix !== pending.prefix) return;
-    completion = {
-      start: pending.start,
-      end: pending.end,
-      candidates: candidates ?? [],
-    };
-    setShownCandidates(completion.candidates);
-    setPendingCompletion(undefined);
-    complete(pending.offset);
+    const result = suggestions();
+    if (result === undefined || result.input !== pendingTabInput) return;
+    pendingTabInput = undefined;
+    queueMicrotask(() => accept(0));
   });
+  const move = (offset: -1 | 1) => {
+    const count = suggestions()?.candidates.length ?? 0;
+    if (count === 0) return false;
+    setSelected((selected() + offset + count) % count);
+    return true;
+  };
   const keydown: JSX.EventHandler<HTMLTextAreaElement, KeyboardEvent> = (
     event,
   ) => {
@@ -168,10 +156,29 @@ export function Composer(props: ComposerProps) {
       event.key === "Process"
     )
       return;
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Escape" && suggestions() !== undefined) {
       event.preventDefault();
-      submit();
-    } else if (event.key === "Tab" && complete(event.shiftKey ? -1 : 1)) {
+      setDismissedInput(text());
+      setSelected(-1);
+    } else if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (!accept()) submit();
+    } else if (event.key === "Tab") {
+      event.preventDefault();
+      if (!accept()) {
+        pendingTabInput = text();
+        request(text(), textarea?.selectionStart ?? text().length, true);
+      }
+    } else if (event.key === "ArrowUp" && move(-1)) {
+      event.preventDefault();
+    } else if (event.key === "ArrowDown" && move(1)) {
+      event.preventDefault();
+    } else if (
+      isApplePlatform() &&
+      event.ctrlKey &&
+      ((event.key.toLowerCase() === "p" && move(-1)) ||
+        (event.key.toLowerCase() === "n" && move(1)))
+    ) {
       event.preventDefault();
     } else if (event.key === "ArrowUp" && text() === "") {
       props.onSelectLast?.();
@@ -180,23 +187,16 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div class={styles.wrap}>
-      {shownCandidates().length > 0 && selected() >= 0 && (
-        <div class={styles.candidates} id={listId()} role="listbox">
-          <For each={shownCandidates()}>
-            {(candidate, index) => (
-              <div
-                aria-selected={index() === selected()}
-                class={styles.candidate}
-                data-selected={index() === selected()}
-                id={optionId(index())}
-                role="option"
-                tabIndex={-1}
-              >
-                {candidate}
-              </div>
-            )}
-          </For>
-        </div>
+      {suggestions() !== undefined && (
+        <SuggestionList
+          candidates={suggestions()?.candidates ?? []}
+          hint={suggestions()?.argument_hint ?? null}
+          listId={listId()}
+          onAccept={accept}
+          onSelect={setSelected}
+          optionId={optionId}
+          selected={selected()}
+        />
       )}
       {pendingConfirmation() !== undefined && (
         <div
@@ -230,18 +230,42 @@ export function Composer(props: ComposerProps) {
           </button>
         </div>
       )}
-      <div class={styles.form}>
+      <div
+        aria-activedescendant={
+          suggestions() !== undefined && selected() >= 0
+            ? optionId(selected())
+            : undefined
+        }
+        aria-controls={suggestions() !== undefined ? listId() : undefined}
+        aria-expanded={suggestions() !== undefined}
+        aria-haspopup="listbox"
+        aria-label={`Suggestions for ${props.bufferTitle}`}
+        class={styles.form}
+        role="combobox"
+        tabIndex={-1}
+      >
         <textarea
-          aria-activedescendant={
-            selected() >= 0 ? optionId(selected()) : undefined
-          }
-          aria-controls={shownCandidates().length > 0 ? listId() : undefined}
           aria-label={`Message ${props.bufferTitle}`}
           autocomplete="off"
           class={styles.input}
           disabled={props.disabled}
-          onCompositionStart={() => update(text())}
-          onInput={(event) => update(event.currentTarget.value)}
+          onCompositionEnd={(event) => {
+            composing = false;
+            const value = event.currentTarget.value;
+            update(value);
+            request(value, event.currentTarget.selectionStart, false);
+          }}
+          onCompositionStart={() => {
+            composing = true;
+            setDismissedInput(text());
+            setSelected(-1);
+          }}
+          onInput={(event) => {
+            const value = event.currentTarget.value;
+            update(value);
+            if (!composing)
+              request(value, event.currentTarget.selectionStart, false);
+          }}
           onKeyDown={keydown}
           placeholder={`Message ${props.bufferTitle}`}
           ref={textarea}
@@ -257,6 +281,34 @@ export function Composer(props: ComposerProps) {
           Send
         </button>
       </div>
+      <p aria-live="polite" class="visually-hidden">
+        {suggestions() === undefined
+          ? ""
+          : `${suggestions()?.candidates.length ?? 0} suggestions available`}
+      </p>
     </div>
   );
+}
+
+export function replacementFor(
+  candidate: CompletionCandidate,
+  result: Pick<SuggestionResult, "argument_hint" | "input" | "replace_start">,
+): string {
+  switch (candidate.type) {
+    case "command":
+      return `/${candidate.name} `;
+    case "person":
+      if (
+        result.replace_start === 0 &&
+        result.input.startsWith("@", result.replace_start)
+      )
+        return `${candidate.nick}: `;
+      return `${candidate.nick}${result.input.startsWith("@", result.replace_start) && result.argument_hint === null ? "" : " "}`;
+    case "channel":
+      return `${candidate.name}${result.argument_hint === null ? "" : " "}`;
+  }
+}
+
+function isApplePlatform(): boolean {
+  return /Mac|iPhone|iPad/u.test(navigator.platform);
 }

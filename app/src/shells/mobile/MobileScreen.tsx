@@ -4,6 +4,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  SuggestionResult,
 } from "../../engine/protocol";
 import { MobileChatList } from "./MobileChatList";
 import { MobileConversation } from "./MobileConversation";
@@ -19,19 +20,18 @@ export interface MobileShellData {
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
-  readonly completion:
-    | {
-        readonly bufferId: number;
-        readonly prefix: string;
-        readonly candidates: readonly string[];
-      }
-    | undefined;
+  readonly completion: SuggestionResult | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onOpenMembers?: ((bufferId: number) => void) | undefined;
-  readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
+  readonly onRequestCompletion: (
+    bufferId: number,
+    input: string,
+    cursor: number,
+    explicit: boolean,
+  ) => void;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
 }
 

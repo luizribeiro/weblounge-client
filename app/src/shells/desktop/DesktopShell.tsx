@@ -17,6 +17,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  SuggestionResult,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
@@ -40,13 +41,7 @@ export interface DesktopShellProps {
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
-  readonly completion:
-    | {
-        readonly bufferId: number;
-        readonly prefix: string;
-        readonly candidates: readonly string[];
-      }
-    | undefined;
+  readonly completion: SuggestionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
@@ -58,7 +53,12 @@ export interface DesktopShellProps {
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
-  readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
+  readonly onRequestCompletion: (
+    bufferId: number,
+    input: string,
+    cursor: number,
+    explicit: boolean,
+  ) => void;
   readonly onRequestMembers?:
     | ((
         viewId: string,
@@ -276,21 +276,21 @@ export function DesktopShell(props: DesktopShellProps) {
                 bufferTitle={activeBuffer()?.title ?? ""}
                 commandSpecs={props.commandSpecs}
                 draftKey={activeBuffer()?.draft_key ?? ""}
-                candidatePrefix={
-                  props.completion?.bufferId === activeBuffer()?.id
-                    ? props.completion?.prefix
+                completion={
+                  props.completion?.buffer_id === activeBuffer()?.id
+                    ? props.completion
                     : undefined
                 }
-                candidates={
-                  props.completion?.bufferId === activeBuffer()?.id
-                    ? props.completion?.candidates
-                    : []
-                }
                 disabled={activeBuffer()?.kind === "server"}
-                onRequestCandidates={(prefix) => {
+                onRequestCandidates={(input, cursor, explicit) => {
                   const buffer = activeBuffer();
                   if (buffer !== undefined) {
-                    props.onRequestCompletion(buffer.id, prefix);
+                    props.onRequestCompletion(
+                      buffer.id,
+                      input,
+                      cursor,
+                      explicit,
+                    );
                   }
                 }}
                 onSelectLast={() => messageListController?.selectLastOwn()}

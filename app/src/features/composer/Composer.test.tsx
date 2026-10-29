@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
-import { Composer } from "./Composer";
+import type {
+  CompletionCandidate,
+  SuggestionResult,
+} from "../../engine/protocol";
+import { Composer, replacementFor } from "./Composer";
 import { readDraft } from "./draft-storage";
 
 const identify = {
@@ -26,6 +30,58 @@ const quit = {
   confirmation_action: "cmd.quit.confirmation_action",
   secret_arguments: false,
 };
+
+const person = (nick: string): CompletionCandidate => ({
+  type: "person",
+  nick,
+  nick_color_index: 1,
+  away: false,
+  bot: false,
+});
+
+function completion(
+  input: string,
+  candidates: readonly CompletionCandidate[],
+  replaceStart = 0,
+  argumentHint: string | null = null,
+): SuggestionResult {
+  return {
+    type: "suggestion_result",
+    command_id: `complete:${input}`,
+    buffer_id: 2,
+    input,
+    trigger: "person",
+    replace_start: replaceStart,
+    replace_end: input.length,
+    argument_hint: argumentHint,
+    candidates: [...candidates],
+  };
+}
+
+it("uses IRC insertion rules for mentions and plain Tab completion", () => {
+  const candidate = person("ana");
+  expect(
+    replacementFor(candidate, {
+      input: "@an",
+      replace_start: 0,
+      argument_hint: null,
+    }),
+  ).toBe("ana: ");
+  expect(
+    replacementFor(candidate, {
+      input: "hello @an",
+      replace_start: 6,
+      argument_hint: null,
+    }),
+  ).toBe("ana");
+  expect(
+    replacementFor(candidate, {
+      input: "an",
+      replace_start: 0,
+      argument_hint: null,
+    }),
+  ).toBe("ana ");
+});
 
 it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   const onSend = vi.fn();
@@ -95,13 +151,14 @@ it("cancels inline confirmation with Escape and keeps the draft", async () => {
   expect(onSend).not.toHaveBeenCalled();
 });
 
-it("cycles completion and restores drafts by buffer", () => {
+it("navigates suggestions, inserts a mention, and restores drafts", () => {
   const [bufferId, setBufferId] = createSignal(2);
+  const [result, setResult] = createSignal<SuggestionResult>();
   render(() => (
     <Composer
       bufferId={bufferId()}
       bufferTitle="#rust"
-      candidates={["alice", "alex"]}
+      completion={result()}
       commandSpecs={[]}
       draftKey={`test:${bufferId()}`}
       onSend={() => {}}
@@ -109,20 +166,23 @@ it("cycles completion and restores drafts by buffer", () => {
   ));
   const input = screen.getByRole("textbox");
   fireEvent.input(input, { target: { value: "al" } });
-  fireEvent.keyDown(input, { key: "Tab" });
-  expect(input).toHaveValue("alice ");
+  setResult(completion("al", [person("alice"), person("alex")]));
   const listbox = screen.getByRole("listbox");
   expect(screen.getAllByRole("option")).toHaveLength(2);
-  expect(screen.getByRole("option", { name: "alice" })).toHaveAttribute(
+  expect(screen.getByRole("option", { name: /alice/u })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  expect(input).toHaveAttribute(
+  expect(screen.getByRole("combobox")).toHaveAttribute(
     "aria-activedescendant",
-    screen.getByRole("option", { name: "alice" }).id,
+    screen.getByRole("option", { name: /alice/u }).id,
   );
-  expect(input).toHaveAttribute("aria-controls", listbox.id);
-  fireEvent.keyDown(input, { key: "Tab" });
+  expect(screen.getByRole("combobox")).toHaveAttribute(
+    "aria-controls",
+    listbox.id,
+  );
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter" });
   expect(input).toHaveValue("alex ");
   setBufferId(3);
   expect(input).toHaveValue("");
@@ -131,21 +191,35 @@ it("cycles completion and restores drafts by buffer", () => {
   expect(input).toHaveValue("alex ");
 });
 
-it("filters slash completion by the current token", () => {
+it("accepts command suggestions and requests their argument context", async () => {
+  const request = vi.fn();
   render(() => (
     <Composer
       bufferId={4}
       bufferTitle="#rust"
-      candidates={["/join"]}
+      completion={{
+        ...completion("/jo", [
+          {
+            type: "command",
+            name: "join",
+            usage: "cmd.join.usage",
+            description: "cmd.join.description",
+          },
+        ]),
+        buffer_id: 4,
+        trigger: "command",
+      }}
       draftKey="test:slash"
+      onRequestCandidates={request}
       onSend={() => {}}
     />
   ));
   const input = screen.getByRole("textbox");
-  fireEvent.input(input, { target: { value: "/j" } });
-  fireEvent.keyDown(input, { key: "Tab" });
+  fireEvent.input(input, { target: { value: "/jo" } });
+  fireEvent.keyDown(input, { key: "Enter" });
   expect(input).toHaveValue("/join ");
-  expect(screen.getAllByRole("option")).toHaveLength(1);
+  await Promise.resolve();
+  expect(request).toHaveBeenLastCalledWith("/join ", 6, false);
 });
 
 it("hides completion when the engine returns no candidates", () => {
@@ -153,7 +227,7 @@ it("hides completion when the engine returns no candidates", () => {
     <Composer
       bufferId={9}
       bufferTitle="#rust"
-      candidates={[]}
+      completion={{ ...completion("nobody", []), buffer_id: 9 }}
       draftKey="test:empty-completion"
       onSend={() => {}}
     />
@@ -162,34 +236,43 @@ it("hides completion when the engine returns no candidates", () => {
   fireEvent.input(input, { target: { value: "nobody" } });
   fireEvent.keyDown(input, { key: "Tab" });
   expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-  expect(input).not.toHaveAttribute("aria-activedescendant");
+  expect(screen.getByRole("combobox")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
 });
 
-it("requests engine candidates once and applies the asynchronous result", async () => {
-  const [result, setResult] = createSignal<{
-    prefix: string;
-    candidates: readonly string[];
-  }>();
-  const request = vi.fn((value: string) => {
-    setResult({ prefix: value, candidates: ["weblounge"] });
+it("requests as input changes, accepts Tab, and ignores IME composition", async () => {
+  const [result, setResult] = createSignal<SuggestionResult>();
+  const request = vi.fn((value: string, _cursor: number, explicit: boolean) => {
+    setResult({
+      ...completion(value, [person("weblounge")]),
+      buffer_id: 6,
+      replace_start: value.indexOf("weblo"),
+    });
+    expect(explicit).toBe(false);
   });
   render(() => (
     <Composer
       bufferId={6}
       bufferTitle="#rust"
-      candidatePrefix={result()?.prefix}
-      candidates={result()?.candidates}
+      completion={result()}
       draftKey="test:async-completion"
       onRequestCandidates={request}
       onSend={() => {}}
     />
   ));
   const input = screen.getByRole("textbox");
-  fireEvent.input(input, { target: { value: "weblo" } });
+  fireEvent.input(input, { target: { value: "hello weblo" } });
+  await waitFor(() => expect(screen.getByRole("listbox")).toBeVisible());
   fireEvent.keyDown(input, { key: "Tab" });
 
-  expect(request).toHaveBeenCalledWith("weblo");
-  await waitFor(() => expect(input).toHaveValue("weblounge "));
+  expect(request).toHaveBeenCalledWith("hello weblo", 11, false);
+  await waitFor(() => expect(input).toHaveValue("hello weblounge "));
+  request.mockClear();
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, { target: { value: "@あ" } });
+  expect(request).not.toHaveBeenCalled();
 });
 
 it("routes Up from an empty composer to message navigation", () => {

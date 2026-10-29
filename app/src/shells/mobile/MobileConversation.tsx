@@ -4,6 +4,7 @@ import type {
   CommandSpec,
   MembershipProjection,
   MessageProjection,
+  SuggestionResult,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import {
@@ -18,18 +19,19 @@ export interface MobileConversationProps {
   readonly buffer: BufferProjection;
   readonly composerNotice?: string | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
-  readonly completion?: {
-    readonly bufferId: number;
-    readonly prefix: string;
-    readonly candidates: readonly string[];
-  };
+  readonly completion?: SuggestionResult;
   readonly messages: readonly MessageProjection[];
   readonly memberships: readonly MembershipProjection[];
   readonly onBack: () => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onOpenMembers: () => void;
-  readonly onRequestCompletion: (bufferId: number, prefix: string) => void;
+  readonly onRequestCompletion: (
+    bufferId: number,
+    input: string,
+    cursor: number,
+    explicit: boolean,
+  ) => void;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
 }
 
@@ -152,18 +154,13 @@ export function MobileConversation(props: MobileConversationProps) {
           bufferTitle={props.buffer.title}
           commandSpecs={props.commandSpecs}
           draftKey={props.buffer.draft_key}
-          candidatePrefix={
-            props.completion?.bufferId === props.buffer.id
-              ? props.completion.prefix
+          completion={
+            props.completion?.buffer_id === props.buffer.id
+              ? props.completion
               : undefined
           }
-          candidates={
-            props.completion?.bufferId === props.buffer.id
-              ? props.completion.candidates
-              : []
-          }
-          onRequestCandidates={(prefix) =>
-            props.onRequestCompletion(props.buffer.id, prefix)
+          onRequestCandidates={(input, cursor, explicit) =>
+            props.onRequestCompletion(props.buffer.id, input, cursor, explicit)
           }
           onSelectLast={() => listController?.selectLastOwn()}
           onSend={(text) => props.onSend(props.buffer.id, text)}
