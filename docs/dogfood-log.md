@@ -33,3 +33,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 25 | 2026-10-29 | Server buffer says "Channel" under its name, shows nothing, and can't be reached on mobile. (Lower priority.) | queued, last |
 | 26 | 2026-10-29 | iPhone PWA: content needs space for the home indicator (the Dynamic Island is fine). Device tweaks need one organised place. | queued |
 | 27 | 2026-10-29 | Messages you just sent show no mode prefix ("luiz" instead of "~luiz") until reloaded from history. | queued |
+| 28 | 2026-10-29 | Beta console noise from our code: wasm-bindgen "deprecated parameters" warning, TanStack "Failed to get offset for index: 0", unused Inter preload. (The webserial and CSP-eval errors come from browser extensions, not the app.) | queued (task 37, message-list rework, splash) |
