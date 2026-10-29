@@ -9,3 +9,4 @@ A running list of visual and interaction quirks to fix in the polish pass before
 - Send, confirmation and members-toggle buttons each have a slightly different weight and style.
 - Desktop member panel still shows the old "Following #channel" chip (goes away with per-pane member lists in M2.5).
 - Nick colours on the selected suggestion row (e.g. red "ana" on the green selection) have low contrast; selected rows may need the selection foreground or a contrast-checked nick colour.
+- Mode symbols break nick alignment (Luiz): in the desktop member list "@ana" puts the "@" inline, so "ana" starts further right than "bruno"/"cyd". Give mode symbols a fixed-width (mono) slot so every nick starts at the same x with or without @/+, as the prototype does (Main.dc.html member rows: prefix span with a min-width in the mono stack). Same for the message list's nick column.
