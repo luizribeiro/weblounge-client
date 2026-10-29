@@ -205,6 +205,10 @@ impl NetworkModel {
         self.network.state == NetworkConnectionState::Online
     }
 
+    pub(crate) const fn connection(&self) -> &NetworkConnectionState {
+        &self.network.state
+    }
+
     pub(crate) fn remember_command(&mut self, name: String) {
         self.recent_commands.retain(|recent| recent != &name);
         self.recent_commands.push_front(name);

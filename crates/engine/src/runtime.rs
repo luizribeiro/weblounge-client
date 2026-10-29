@@ -503,12 +503,25 @@ impl Runtime {
     }
 
     fn reconnect(&self, command_id: String, network_id: NetworkId) -> Vec<EngineToUi> {
-        let Some((client, online)) = lock(&self.state).network.as_ref().and_then(|running| {
-            (running.model.id() == network_id)
-                .then(|| (running.client.clone(), running.model.is_online()))
-        }) else {
+        let mut state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.model.id() == network_id)
+        else {
             return rejected_command(command_id, "engine.network_not_found");
         };
+        let client = running.client.clone();
+        let online = running.model.is_online();
+        let state_event = (!online).then(|| {
+            let next = next_connection_state(
+                running.model.connection(),
+                ConnectionTransition::ManualRetry,
+                papo::time::now(),
+            );
+            running.model.set_connection(next, None)
+        });
+        drop(state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let alive = online
@@ -530,7 +543,7 @@ impl Runtime {
             };
             let _ = outbound.send(event);
         });
-        Vec::new()
+        state_event.into_iter().collect()
     }
 
     fn set_device_online(
@@ -565,13 +578,13 @@ impl Runtime {
             });
             Vec::new()
         } else {
+            let next = next_connection_state(
+                running.model.connection(),
+                ConnectionTransition::DeviceOffline,
+                papo::time::now(),
+            );
             vec![
-                running.model.set_connection(
-                    NetworkConnectionState::Offline {
-                        reason: OfflineReason::DeviceOffline,
-                    },
-                    None,
-                ),
+                running.model.set_connection(next, None),
                 EngineToUi::CommandResult { id: command_id },
             ]
         }
@@ -592,12 +605,12 @@ impl Runtime {
             state.network = Some(running);
             return rejected_command(command_id, "engine.network_not_found");
         }
-        let event = running.model.set_connection(
-            NetworkConnectionState::Offline {
-                reason: OfflineReason::Requested,
-            },
-            None,
+        let next = next_connection_state(
+            running.model.connection(),
+            ConnectionTransition::AuthenticationExpired,
+            papo::time::now(),
         );
+        let event = running.model.set_connection(next, None);
         let client = running.client;
         drop(state);
         spawn_task(async move {
@@ -1663,24 +1676,11 @@ fn process_event_with_direct(
     let mut clear_hosted_authentication = false;
     let history_targets = match event {
         papo::Event::Connecting(connecting) => {
-            running.connection_attempt = u32::try_from(connecting.attempt).unwrap_or(u32::MAX);
-            let state = if running.device_online {
-                connecting_state(&connecting)
-            } else {
-                NetworkConnectionState::Offline {
-                    reason: OfflineReason::DeviceOffline,
-                }
-            };
-            output.push(running.model.set_connection(state, None));
+            process_connecting(running, &connecting, &mut output);
             Vec::new()
         }
         papo::Event::Connected(connected) => {
-            running.model.rebuild_name_keys(&snapshot);
-            output.push(running.model.set_connection(
-                NetworkConnectionState::Online,
-                Some(connected.nick.to_string()),
-            ));
-            output.extend(running.model.sync_channels(&snapshot));
+            process_connected(running, &snapshot, &connected, &mut output);
             Vec::new()
         }
         papo::Event::Lagged(lagged) => {
@@ -1750,6 +1750,46 @@ fn process_event_with_direct(
     history_targets
 }
 
+fn process_connecting(
+    running: &mut RunningNetwork,
+    connecting: &papo::event::Connecting,
+    output: &mut Vec<EngineToUi>,
+) {
+    running.connection_attempt = u32::try_from(connecting.attempt).unwrap_or(u32::MAX);
+    let state = if running.device_online {
+        next_connection_state(
+            running.model.connection(),
+            connecting_transition(connecting),
+            papo::time::now(),
+        )
+    } else {
+        NetworkConnectionState::Offline {
+            reason: OfflineReason::DeviceOffline,
+        }
+    };
+    output.push(running.model.set_connection(state, None));
+}
+
+fn process_connected(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    connected: &papo::event::Connected,
+    output: &mut Vec<EngineToUi>,
+) {
+    running.model.rebuild_name_keys(snapshot);
+    let next = next_connection_state(
+        running.model.connection(),
+        ConnectionTransition::Connected,
+        papo::time::now(),
+    );
+    output.push(
+        running
+            .model
+            .set_connection(next, Some(connected.nick.to_string())),
+    );
+    output.extend(running.model.sync_channels(snapshot));
+}
+
 fn process_disconnect(
     running: &mut RunningNetwork,
     disconnected: &papo::Disconnected,
@@ -1759,11 +1799,14 @@ fn process_disconnect(
         == AuthenticationKind::HostedOAuth
         && is_sasl_failure(disconnected);
     output.push(running.model.set_connection(
-        disconnected_state(
-            disconnected,
-            running.connection_attempt,
-            hosted_authentication_failed,
-            running.device_online,
+        next_connection_state(
+            running.model.connection(),
+            ConnectionTransition::Disconnected {
+                event: disconnected.clone(),
+                attempt: running.connection_attempt,
+                hosted_authentication_failed,
+                device_online: running.device_online,
+            },
             papo::time::now(),
         ),
         None,
@@ -1805,12 +1848,70 @@ fn process_nick_change(
     }
 }
 
-fn connecting_state(connecting: &papo::event::Connecting) -> NetworkConnectionState {
-    match connecting.phase {
-        papo::event::ConnectPhase::Transport | papo::event::ConnectPhase::Tls => {
-            NetworkConnectionState::Connecting
+enum ConnectionTransition {
+    Connecting {
+        registering: bool,
+    },
+    Connected,
+    Disconnected {
+        event: papo::Disconnected,
+        attempt: u32,
+        hosted_authentication_failed: bool,
+        device_online: bool,
+    },
+    DeviceOffline,
+    AuthenticationExpired,
+    ManualRetry,
+}
+
+fn next_connection_state(
+    current: &NetworkConnectionState,
+    transition: ConnectionTransition,
+    now: std::time::SystemTime,
+) -> NetworkConnectionState {
+    match transition {
+        ConnectionTransition::Connecting { registering } => {
+            if registering {
+                NetworkConnectionState::Registering
+            } else {
+                NetworkConnectionState::Connecting
+            }
         }
-        _ => NetworkConnectionState::Registering,
+        ConnectionTransition::Connected => NetworkConnectionState::Online,
+        ConnectionTransition::Disconnected {
+            event,
+            attempt,
+            hosted_authentication_failed,
+            device_online,
+        } => disconnected_state(
+            &event,
+            attempt,
+            hosted_authentication_failed,
+            device_online,
+            now,
+        ),
+        ConnectionTransition::DeviceOffline => NetworkConnectionState::Offline {
+            reason: OfflineReason::DeviceOffline,
+        },
+        ConnectionTransition::AuthenticationExpired => NetworkConnectionState::Failed {
+            reason: ConnectionFailureReason::Authentication,
+            message_key: "engine.hosted_auth_failed".into(),
+        },
+        ConnectionTransition::ManualRetry => match current {
+            NetworkConnectionState::Failed { .. }
+            | NetworkConnectionState::Offline { .. }
+            | NetworkConnectionState::Reconnecting { .. } => NetworkConnectionState::Connecting,
+            _ => current.clone(),
+        },
+    }
+}
+
+fn connecting_transition(connecting: &papo::event::Connecting) -> ConnectionTransition {
+    ConnectionTransition::Connecting {
+        registering: !matches!(
+            connecting.phase,
+            papo::event::ConnectPhase::Transport | papo::event::ConnectPhase::Tls
+        ),
     }
 }
 
@@ -2181,9 +2282,9 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        AuthenticationKind, ConnectionAuthentication, MemberViews, RunningNetwork, Runtime,
-        RuntimeState, completion_context, disconnected_state, drain_events, fetch_history,
-        fetch_latest, lock, process_event, process_history, utf16_len,
+        AuthenticationKind, ConnectionAuthentication, ConnectionTransition, MemberViews,
+        RunningNetwork, Runtime, RuntimeState, completion_context, drain_events, fetch_history,
+        fetch_latest, lock, next_connection_state, process_event, process_history, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -2193,28 +2294,87 @@ mod tests {
     };
 
     #[test]
-    fn disconnect_state_projects_retry_deadline_and_permanent_failure() {
+    fn connection_state_table_covers_resilient_transitions() {
         let now = std::time::UNIX_EPOCH + Duration::from_secs(100);
-        let retrying = papo::Disconnected::new(
-            papo::DisconnectCause::PingTimeout,
-            Some(Duration::from_secs(2)),
-        );
-        assert_eq!(
-            disconnected_state(&retrying, 3, false, true, now),
-            crate::NetworkConnectionState::Reconnecting {
-                attempt: 3,
-                next_retry_at_ms: 102_000,
-            }
-        );
+        let failed_auth = crate::NetworkConnectionState::Failed {
+            reason: crate::ConnectionFailureReason::Authentication,
+            message_key: "engine.hosted_auth_failed".into(),
+        };
+        let cases = [
+            (
+                "transport starts connecting",
+                crate::NetworkConnectionState::Offline {
+                    reason: crate::OfflineReason::Requested,
+                },
+                ConnectionTransition::Connecting { registering: false },
+                crate::NetworkConnectionState::Connecting,
+            ),
+            (
+                "registration follows transport",
+                crate::NetworkConnectionState::Connecting,
+                ConnectionTransition::Connecting { registering: true },
+                crate::NetworkConnectionState::Registering,
+            ),
+            (
+                "registration becomes online",
+                crate::NetworkConnectionState::Registering,
+                ConnectionTransition::Connected,
+                crate::NetworkConnectionState::Online,
+            ),
+            (
+                "ping timeout schedules papo retry",
+                crate::NetworkConnectionState::Online,
+                ConnectionTransition::Disconnected {
+                    event: papo::Disconnected::new(
+                        papo::DisconnectCause::PingTimeout,
+                        Some(Duration::from_secs(2)),
+                    ),
+                    attempt: 3,
+                    hosted_authentication_failed: false,
+                    device_online: true,
+                },
+                crate::NetworkConnectionState::Reconnecting {
+                    attempt: 3,
+                    next_retry_at_ms: 102_000,
+                },
+            ),
+            (
+                "device loss becomes offline",
+                crate::NetworkConnectionState::Online,
+                ConnectionTransition::DeviceOffline,
+                crate::NetworkConnectionState::Offline {
+                    reason: crate::OfflineReason::DeviceOffline,
+                },
+            ),
+            (
+                "device recovery retries immediately",
+                crate::NetworkConnectionState::Offline {
+                    reason: crate::OfflineReason::DeviceOffline,
+                },
+                ConnectionTransition::ManualRetry,
+                crate::NetworkConnectionState::Connecting,
+            ),
+            (
+                "authentication expiry requires sign-in",
+                crate::NetworkConnectionState::Online,
+                ConnectionTransition::AuthenticationExpired,
+                failed_auth.clone(),
+            ),
+            (
+                "manual retry leaves failure",
+                failed_auth,
+                ConnectionTransition::ManualRetry,
+                crate::NetworkConnectionState::Connecting,
+            ),
+        ];
 
-        let failed = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
-        assert_eq!(
-            disconnected_state(&failed, 3, false, true, now),
-            crate::NetworkConnectionState::Failed {
-                reason: crate::ConnectionFailureReason::Protocol,
-                message_key: "engine.connection_failed".into(),
-            }
-        );
+        for (name, current, transition, expected) in cases {
+            assert_eq!(
+                next_connection_state(&current, transition, now),
+                expected,
+                "{name}"
+            );
+        }
     }
 
     #[tokio::test]
