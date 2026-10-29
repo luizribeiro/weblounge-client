@@ -1,0 +1,11 @@
+error: Command requires an enum
+ --> tests/ui/shapes.rs:4:8
+  |
+4 | struct NotAnEnum;
+  |        ^^^^^^^^^
+
+error: command variants require named fields
+  --> tests/ui/shapes.rs:15:5
+   |
+15 |     Tuple(String),
+   |     ^^^^^
