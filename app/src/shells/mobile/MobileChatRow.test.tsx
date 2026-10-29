@@ -105,3 +105,28 @@ it("omits the peer name from direct previews and labels own messages", () => {
   ));
   expect(screen.getByText("You: See you there")).toBeVisible();
 });
+
+it("keeps a long message's full text unique to the conversation", () => {
+  const text =
+    "A deliberately long mobile message wraps beneath itself instead of reserving desktop columns on this narrow screen.";
+  const message = { ...lastMessage, text };
+  render(() => (
+    <>
+      <MobileChatRow
+        buffer={buffer({
+          kind: "direct",
+          title: "mel",
+          last_message: message,
+        })}
+        onOpen={vi.fn()}
+        previews={true}
+      />
+      <MessageList messages={[message]} />
+    </>
+  ));
+
+  expect(screen.getAllByText(text, { exact: true })).toHaveLength(1);
+  expect(
+    screen.getByText(/A deliberately long mobile message.*…/u),
+  ).toBeVisible();
+});

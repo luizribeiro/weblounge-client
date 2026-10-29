@@ -5,6 +5,8 @@ import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
 
+const previewLength = 80;
+
 interface MobileChatRowProps {
   readonly buffer: BufferProjection;
   readonly networkLabel?: string | undefined;
@@ -68,15 +70,23 @@ export function MobileChatRow(props: MobileChatRowProps) {
 function preview(buffer: BufferProjection): string {
   const message = buffer.last_message;
   if (message === undefined) return "";
+  const text = excerpt(message.text);
   if (buffer.kind === "direct" && message.authorship === "own") {
-    return t("mobile.preview.own", { text: message.text });
+    return t("mobile.preview.own", { text });
   }
   if (buffer.kind === "direct" && message.author === buffer.title) {
-    return message.kind === "action" ? `* ${message.text}` : message.text;
+    return message.kind === "action" ? `* ${text}` : text;
   }
   return message.kind === "action"
-    ? `* ${message.author} ${message.text}`
-    : `${message.author}: ${message.text}`;
+    ? `* ${message.author} ${text}`
+    : `${message.author}: ${text}`;
+}
+
+function excerpt(text: string): string {
+  const characters = [...text];
+  return characters.length > previewLength
+    ? `${characters.slice(0, previewLength).join("")}…`
+    : text;
 }
 
 function dateTime(milliseconds = 0): string {

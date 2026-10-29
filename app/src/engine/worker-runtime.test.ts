@@ -64,7 +64,7 @@ it("routes asynchronous buffer focus requests only to the submitting port", asyn
   expect(second.sent).toEqual([]);
 });
 
-it("broadcasts asynchronous member patches to every shared port", async () => {
+it("broadcasts asynchronous buffer and member patches to every shared port", async () => {
   const first = new FakePort();
   const second = new FakePort();
   let emit: ((encoded: string) => void) | undefined;
@@ -75,10 +75,14 @@ it("broadcasts asynchronous member patches to every shared port", async () => {
   runtime.attach(first);
   runtime.attach(second);
 
-  emit?.(JSON.stringify({ type: "members_changed", buffer_id: 2 }));
+  const patches = [
+    { type: "buffer_updated", buffer: { id: 2, member_count: 2 } },
+    { type: "members_changed", buffer_id: 2 },
+  ];
+  for (const patch of patches) emit?.(JSON.stringify(patch));
 
-  expect(first.sent).toContainEqual({ type: "members_changed", buffer_id: 2 });
-  expect(second.sent).toContainEqual({ type: "members_changed", buffer_id: 2 });
+  expect(first.sent).toEqual(patches);
+  expect(second.sent).toEqual(patches);
 });
 
 class FakePort implements WorkerHostPort {
