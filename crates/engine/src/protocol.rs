@@ -586,6 +586,13 @@ pub enum EngineToUi {
         /// Newly visible rows.
         messages: Vec<MessageProjection>,
     },
+    /// Replace one visible message after authoritative metadata arrives.
+    MessageUpdated {
+        /// Destination buffer.
+        buffer_id: BufferId,
+        /// Complete current message projection.
+        message: MessageProjection,
+    },
     /// Insert a requested history page before already rendered live rows.
     MessagesPrepended {
         /// Destination buffer.

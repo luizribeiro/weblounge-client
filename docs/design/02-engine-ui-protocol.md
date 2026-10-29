@@ -86,8 +86,9 @@ snapshots and patches.
 
 Before the normalized snapshot/patch store lands, the vertical slice emits the same domain changes
 as named generated events: `NetworkStateChanged`, `BuffersChanged`, `BufferAdded`,
-`MessagesAppended`, `MessageConfirmed`, `MessageFailed`, and `UnreadChanged`. These are a narrow
-transport representation of the signed-off projection model, not a second state model.
+`MessagesAppended`, `MessageUpdated`, `MessageConfirmed`, `MessageFailed`, and `UnreadChanged`.
+These are a narrow transport representation of the signed-off projection model, not a second
+state model.
 
 ## Snapshot and patches
 

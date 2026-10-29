@@ -151,6 +151,26 @@ it("lists projected networks, buffers, and messages", async () => {
       },
     ],
   });
+  client.emit({
+    type: "message_updated",
+    buffer_id: 2,
+    message: {
+      id: 1,
+      author: "alice",
+      text: "hello",
+      kind: "text",
+      bot: false,
+      mode_symbol: null,
+      authorship: "other",
+      nick_color_index: 0,
+      mentioned: false,
+      delivery: "received",
+      local_send_id: null,
+      server_ids: ["msg-1"],
+      server_time_ms: 1,
+      received_at_ms: 1,
+    },
+  });
 
   expect(await screen.findByText("1 network · connected")).toBeInTheDocument();
   expect(

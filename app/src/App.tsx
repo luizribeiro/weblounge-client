@@ -460,6 +460,17 @@ function applyDebugEvent(
       ]);
       return next;
     });
+  } else if (message.type === "message_updated") {
+    setMessages((current) => {
+      const next = new Map(current);
+      next.set(
+        message.buffer_id,
+        (current.get(message.buffer_id) ?? []).map((item) =>
+          item.id === message.message.id ? message.message : item,
+        ),
+      );
+      return next;
+    });
   } else if (message.type === "messages_prepended") {
     setMessages((current) => {
       const next = new Map(current);

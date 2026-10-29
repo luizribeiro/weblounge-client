@@ -114,7 +114,15 @@ buffer_id: BufferId,
 /**
  * Newly visible rows.
  */
-messages: Array<MessageProjection>, } | { "type": "messages_prepended",
+messages: Array<MessageProjection>, } | { "type": "message_updated",
+/**
+ * Destination buffer.
+ */
+buffer_id: BufferId,
+/**
+ * Complete current message projection.
+ */
+message: MessageProjection, } | { "type": "messages_prepended",
 /**
  * Destination buffer.
  */

@@ -400,6 +400,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "message_updated": {
+      const message = decodeMessage(value.message);
+      if (typeof value.buffer_id === "number" && message !== undefined) {
+        return { type: messageType, buffer_id: value.buffer_id, message };
+      }
+      break;
+    }
     case "messages_prepended": {
       const messages = decodeArray(value.messages, decodeMessage);
       if (typeof value.buffer_id === "number" && messages !== undefined) {
@@ -537,6 +544,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "buffer_updated" ||
     value === "focus_buffer_requested" ||
     value === "messages_appended" ||
+    value === "message_updated" ||
     value === "messages_prepended" ||
     value === "history_state_changed" ||
     value === "membership_changed" ||

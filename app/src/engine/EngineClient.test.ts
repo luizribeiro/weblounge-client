@@ -183,13 +183,21 @@ describe("WorkerEngineClient", () => {
     };
 
     port.emit({ type: "messages_appended", buffer_id: 2, messages: [notice] });
+    port.emit({
+      type: "message_updated",
+      buffer_id: 2,
+      message: { ...notice, server_time_ms: 10 },
+    });
     frames[0]?.(0);
 
-    expect(listener).toHaveBeenCalledWith({
-      type: "messages_appended",
-      buffer_id: 2,
-      messages: [notice],
-    });
+    expect(listener.mock.calls.map(([message]) => message)).toEqual([
+      { type: "messages_appended", buffer_id: 2, messages: [notice] },
+      {
+        type: "message_updated",
+        buffer_id: 2,
+        message: { ...notice, server_time_ms: 10 },
+      },
+    ]);
   });
 
   it("decodes the engine runtime command registry", () => {
