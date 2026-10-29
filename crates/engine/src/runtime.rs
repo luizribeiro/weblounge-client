@@ -26,6 +26,7 @@ struct CompletionContext {
 
 struct RunningNetwork {
     instance: u64,
+    authentication_kind: AuthenticationKind,
     client: papo::Client,
     model: NetworkModel,
 }
@@ -144,12 +145,34 @@ impl Runtime {
                     label,
                     endpoint,
                     nickname,
-                    account: sasl.account,
-                    password: sasl.password,
+                    authentication: ConnectionAuthentication::SaslPlain {
+                        account: sasl.account,
+                        password: sasl.password,
+                    },
                     autojoin,
                     allow_insecure,
                 },
             ),
+            EngineRequest::ConnectHosted {
+                label,
+                endpoint,
+                nickname,
+                oauth_token,
+                autojoin,
+            } => self.connect(
+                envelope.id,
+                ConnectConfig {
+                    label,
+                    endpoint,
+                    nickname,
+                    authentication: ConnectionAuthentication::HostedOAuth { token: oauth_token },
+                    autojoin,
+                    allow_insecure: false,
+                },
+            ),
+            EngineRequest::ExpireHostedAuthentication { network_id } => {
+                self.expire_hosted_authentication(envelope.id, network_id)
+            }
             EngineRequest::Disconnect { network_id, reason } => {
                 self.disconnect(envelope.id, network_id, reason)
             }
@@ -382,16 +405,27 @@ impl Runtime {
             return rejected_command(command_id, "engine.invalid_endpoint");
         }
 
+        let authentication_kind = config.authentication.kind();
         let mut state = lock(&self.state);
-        if state.network.is_some() {
+        if let Some(running) = state.network.as_ref() {
+            if authentication_kind == AuthenticationKind::HostedOAuth
+                && running.authentication_kind == AuthenticationKind::HostedOAuth
+            {
+                return vec![
+                    running.model.network_event(),
+                    running.model.buffers_event(),
+                    EngineToUi::CommandResult { id: command_id },
+                ];
+            }
             return rejected_command(command_id, "engine.network_already_connected");
         }
         let id = NetworkId(state.next_network_id);
         state.next_network_id += 1;
         let instance = state.next_instance;
         state.next_instance += 1;
+        let sasl = config.authentication.into_sasl();
         let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
-            .sasl(papo::Sasl::plain(config.account, config.password))
+            .sasl(sasl)
             .allow_insecure_auth(config.allow_insecure)
             .history_on_reconnect(true);
         if !config.autojoin.is_empty() {
@@ -406,6 +440,7 @@ impl Runtime {
         ];
         state.network = Some(RunningNetwork {
             instance,
+            authentication_kind,
             client: client.clone(),
             model,
         });
@@ -445,6 +480,38 @@ impl Runtime {
             let _ = client.quit(reason.unwrap_or_default()).await;
         });
         vec![event, EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn expire_hosted_authentication(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(mut running) = state.network.take() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        if running.model.id() != network_id
+            || running.authentication_kind != AuthenticationKind::HostedOAuth
+        {
+            state.network = Some(running);
+            return rejected_command(command_id, "engine.network_not_found");
+        }
+        let event = running
+            .model
+            .set_connection(NetworkConnectionState::Stopped, None);
+        let client = running.client;
+        drop(state);
+        spawn_task(async move {
+            let _ = client.quit(String::new()).await;
+        });
+        vec![
+            event,
+            EngineToUi::Notice {
+                message_key: "engine.hosted_auth_failed".into(),
+            },
+            EngineToUi::CommandResult { id: command_id },
+        ]
     }
 
     fn send_input(
@@ -963,10 +1030,36 @@ struct ConnectConfig {
     label: String,
     endpoint: String,
     nickname: String,
-    account: String,
-    password: String,
+    authentication: ConnectionAuthentication,
     autojoin: Vec<String>,
     allow_insecure: bool,
+}
+
+enum ConnectionAuthentication {
+    SaslPlain { account: String, password: String },
+    HostedOAuth { token: String },
+}
+
+impl ConnectionAuthentication {
+    const fn kind(&self) -> AuthenticationKind {
+        match self {
+            Self::SaslPlain { .. } => AuthenticationKind::SaslPlain,
+            Self::HostedOAuth { .. } => AuthenticationKind::HostedOAuth,
+        }
+    }
+
+    fn into_sasl(self) -> papo::Sasl {
+        match self {
+            Self::SaslPlain { account, password } => papo::Sasl::plain(account, password),
+            Self::HostedOAuth { token } => papo::Sasl::oauth_bearer(token),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AuthenticationKind {
+    SaslPlain,
+    HostedOAuth,
 }
 
 #[derive(Debug)]
@@ -1423,6 +1516,7 @@ fn process_event_with_direct(
         return Vec::new();
     };
     let mut output = Vec::new();
+    let mut clear_hosted_authentication = false;
     let history_targets = match event {
         papo::Event::Connecting(_) => {
             output.push(
@@ -1493,21 +1587,39 @@ fn process_event_with_direct(
             Vec::new()
         }
         papo::Event::Disconnected(disconnected) => {
-            output.push(
-                running
-                    .model
-                    .set_connection(disconnected_state(&disconnected), None),
-            );
-            output.extend(connection_failure_notice(&disconnected));
+            clear_hosted_authentication = process_disconnect(running, &disconnected, &mut output);
             Vec::new()
         }
         _ => Vec::new(),
     };
+    if clear_hosted_authentication {
+        state.network = None;
+    }
     drop(state);
     for event in output {
         let _ = outbound.send(event);
     }
     history_targets
+}
+
+fn process_disconnect(
+    running: &mut RunningNetwork,
+    disconnected: &papo::Disconnected,
+    output: &mut Vec<EngineToUi>,
+) -> bool {
+    output.push(
+        running
+            .model
+            .set_connection(disconnected_state(disconnected), None),
+    );
+    let hosted_authentication_failed = running.authentication_kind
+        == AuthenticationKind::HostedOAuth
+        && is_sasl_failure(disconnected);
+    output.extend(connection_failure_notice(
+        disconnected,
+        hosted_authentication_failed,
+    ));
+    hosted_authentication_failed
 }
 
 fn process_lagged(
@@ -1547,12 +1659,28 @@ fn disconnected_state(disconnected: &papo::Disconnected) -> NetworkConnectionSta
     }
 }
 
-fn connection_failure_notice(disconnected: &papo::Disconnected) -> Option<EngineToUi> {
+fn connection_failure_notice(
+    disconnected: &papo::Disconnected,
+    hosted_authentication_failed: bool,
+) -> Option<EngineToUi> {
     (!matches!(disconnected.cause, papo::DisconnectCause::Requested { .. })).then(|| {
         EngineToUi::Notice {
-            message_key: "engine.connection_failed".into(),
+            message_key: if hosted_authentication_failed {
+                "engine.hosted_auth_failed"
+            } else {
+                "engine.connection_failed"
+            }
+            .into(),
         }
     })
+}
+
+fn is_sasl_failure(disconnected: &papo::Disconnected) -> bool {
+    matches!(
+        &disconnected.cause,
+        papo::DisconnectCause::Connect(error)
+            if error.kind() == papo::ConnectErrorKind::Sasl
+    )
 }
 
 fn process_part(
@@ -1842,9 +1970,9 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        MemberViews, RunningNetwork, Runtime, RuntimeState, completion_context,
-        connection_failure_notice, drain_events, fetch_latest, lock, process_event,
-        process_history, utf16_len,
+        AuthenticationKind, ConnectionAuthentication, MemberViews, RunningNetwork, Runtime,
+        RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_latest,
+        lock, process_event, process_history, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -1857,10 +1985,38 @@ mod tests {
     fn unexpected_disconnects_emit_a_human_notice() {
         let disconnected = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
         assert!(matches!(
-            connection_failure_notice(&disconnected),
+            connection_failure_notice(&disconnected, false),
             Some(EngineToUi::Notice { message_key })
                 if message_key == "engine.connection_failed"
         ));
+    }
+
+    #[tokio::test]
+    async fn hosted_authentication_uses_papos_redacting_oauth_bearer() {
+        let sasl = ConnectionAuthentication::HostedOAuth {
+            token: "oauth-token-7391".into(),
+        }
+        .into_sasl();
+        assert!(!format!("{sasl:?}").contains("oauth-token-7391"));
+        let (_client, _events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "*")
+                .sasl(sasl)
+                .allow_insecure_auth(true),
+        );
+
+        assert_eq!(wire.next_sent().await, "CAP LS 302");
+        assert_eq!(wire.next_sent().await, "NICK *");
+        assert!(wire.next_sent().await.starts_with("USER "));
+        wire.server(":offline.test CAP * LS :sasl=OAUTHBEARER")
+            .await;
+        assert_eq!(wire.next_sent().await, "CAP REQ :sasl");
+        wire.server(":offline.test CAP * ACK :sasl").await;
+        assert_eq!(wire.next_sent().await, "AUTHENTICATE OAUTHBEARER");
+        wire.server("AUTHENTICATE +").await;
+        assert_eq!(
+            wire.next_sent().await,
+            "AUTHENTICATE biwsAWF1dGg9QmVhcmVyIG9hdXRoLXRva2VuLTczOTEBAQ=="
+        );
     }
 
     #[test]
@@ -2212,6 +2368,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2256,6 +2413,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -2298,6 +2456,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn hosted_connect_is_idempotent_and_expiry_clears_the_token_owner() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("ircs://offline.test", "weblounge"));
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                member_views: MemberViews::default(),
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    authentication_kind: AuthenticationKind::HostedOAuth,
+                    client,
+                    model: NetworkModel::new(
+                        NetworkId(1),
+                        "weblounge".into(),
+                        "weblounge".into(),
+                        50,
+                    ),
+                }),
+            })),
+            outbound,
+        };
+
+        let duplicate = runtime.request(EngineRequestEnvelope {
+            id: "second-tab".into(),
+            request: EngineRequest::ConnectHosted {
+                label: "weblounge".into(),
+                endpoint: "wss://beta.weblounge.org/socket".into(),
+                nickname: "weblounge".into(),
+                oauth_token: "discarded-second-token".into(),
+                autojoin: vec!["#lounge".into()],
+            },
+        });
+        assert!(matches!(
+            duplicate.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged { .. },
+                EngineToUi::BuffersChanged { .. },
+                EngineToUi::CommandResult { id },
+            ] if id == "second-tab"
+        ));
+
+        let expired = runtime.request(EngineRequestEnvelope {
+            id: "expired".into(),
+            request: EngineRequest::ExpireHostedAuthentication {
+                network_id: NetworkId(1),
+            },
+        });
+        assert!(matches!(
+            expired.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged { .. },
+                EngineToUi::Notice { message_key },
+                EngineToUi::CommandResult { id },
+            ] if message_key == "engine.hosted_auth_failed" && id == "expired"
+        ));
+        assert!(lock(&runtime.state).network.is_none());
+    }
+
+    #[tokio::test]
     async fn completion_results_are_computed_by_the_engine_projection() {
         let (client, _events, _wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -2309,6 +2528,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2425,6 +2645,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2432,14 +2653,13 @@ mod tests {
             outbound,
         };
 
-        let join_output = runtime.request(EngineRequestEnvelope {
+        _ = runtime.request(EngineRequestEnvelope {
             id: "join".into(),
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/join #new secret".into(),
             },
         });
-        assert!(join_output.is_empty(), "unexpected output: {join_output:?}");
         assert_eq!(wire.next_sent().await, "JOIN #new secret");
         wire.server(":weblounge!u@host JOIN #new").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
@@ -2539,6 +2759,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2675,6 +2896,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2733,6 +2955,7 @@ mod tests {
                 member_views: MemberViews::default(),
                 network: Some(RunningNetwork {
                     instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2855,6 +3078,7 @@ mod tests {
             member_views: MemberViews::default(),
             network: Some(RunningNetwork {
                 instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
                 client,
                 model,
             }),

@@ -13,6 +13,7 @@ export const messageKeys = [
   "engine.channel_required",
   "engine.command_refused",
   "engine.connection_failed",
+  "engine.hosted_auth_failed",
   "engine.dedicated_worker_fallback",
   "engine.direct_target_gone",
   "engine.direct_unavailable",
@@ -88,6 +89,8 @@ export function t(key: string, values: MessageValues = {}): string {
       return "The server refused that command.";
     case "engine.connection_failed":
       return "Couldn't connect to the server. Check the address, certificate, and whether this site is allowed.";
+    case "engine.hosted_auth_failed":
+      return "Your session expired. Signing in again.";
     case "engine.dedicated_worker_fallback":
       return "This browser uses one connection per tab because SharedWorker is unavailable.";
     case "engine.direct_target_gone":

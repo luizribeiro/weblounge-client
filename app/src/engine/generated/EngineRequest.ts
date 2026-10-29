@@ -35,7 +35,31 @@ autojoin: Array<string>,
 /**
  * Explicit permission for local `ws://` test endpoints.
  */
-allow_insecure: boolean, } | { "type": "disconnect",
+allow_insecure: boolean, } | { "type": "connect_hosted",
+/**
+ * Display label for the network.
+ */
+label: string,
+/**
+ * Secure WebSocket endpoint accepted by papo.
+ */
+endpoint: string,
+/**
+ * Initial nickname, replaced by the authenticated account when applicable.
+ */
+nickname: string,
+/**
+ * One-shot bearer token moved into papo's redacting secret store.
+ */
+oauth_token: string,
+/**
+ * Channels joined after registration.
+ */
+autojoin: Array<string>, } | { "type": "expire_hosted_authentication",
+/**
+ * Hosted network whose token expired.
+ */
+network_id: NetworkId, } | { "type": "disconnect",
 /**
  * Network to stop.
  */

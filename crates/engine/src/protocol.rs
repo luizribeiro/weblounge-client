@@ -353,6 +353,24 @@ pub enum EngineRequest {
         /// Explicit permission for local `ws://` test endpoints.
         allow_insecure: bool,
     },
+    /// Consume one OAuth bearer token and connect the hosted network.
+    ConnectHosted {
+        /// Display label for the network.
+        label: String,
+        /// Secure WebSocket endpoint accepted by papo.
+        endpoint: String,
+        /// Initial nickname, replaced by the authenticated account when applicable.
+        nickname: String,
+        /// One-shot bearer token moved into papo's redacting secret store.
+        oauth_token: String,
+        /// Channels joined after registration.
+        autojoin: Vec<String>,
+    },
+    /// Clear a hosted token at its known expiry and ask every UI tab to authorize again.
+    ExpireHostedAuthentication {
+        /// Hosted network whose token expired.
+        network_id: NetworkId,
+    },
     /// Deliberately stop one network connection.
     Disconnect {
         /// Network to stop.
