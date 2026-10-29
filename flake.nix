@@ -380,6 +380,7 @@
           hooks = offlineHooks;
         };
         localErgo = import ./nix/ergo.nix { inherit pkgs; };
+        webloungeErgo = import ./nix/ergo-weblounge.nix { inherit pkgs; };
         ergoIntegration = craneLib.mkCargoDerivation (
           cargoArgs
           // {
@@ -447,10 +448,15 @@
         packages = {
           inherit app;
           engine-wasm = engineWasm;
+          ergo-weblounge = webloungeErgo;
         };
         apps.ergo = {
           type = "app";
           program = pkgs.lib.getExe localErgo;
+        };
+        apps.ergo-weblounge = {
+          type = "app";
+          program = pkgs.lib.getExe webloungeErgo;
         };
         devShells.default = pkgs.mkShell {
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
