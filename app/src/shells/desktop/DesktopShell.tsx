@@ -242,7 +242,7 @@ export function DesktopShell(props: DesktopShellProps) {
             <ConversationHeader
               memberCount={
                 activeBuffer()?.kind === "channel"
-                  ? (memberWindow()?.total ?? 0)
+                  ? (activeBuffer()?.member_count ?? 0)
                   : undefined
               }
               membersPressed={membersVisible()}

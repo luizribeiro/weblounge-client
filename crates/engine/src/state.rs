@@ -133,6 +133,7 @@ impl NetworkModel {
                 title: label.clone(),
                 draft_key: draft_key(&label, &label, casemapping),
                 topic: None,
+                member_count: None,
                 unread: 0,
                 mentions: 0,
                 read_through: None,
@@ -634,6 +635,20 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    pub(crate) fn set_member_count(
+        &mut self,
+        buffer_id: BufferId,
+        count: u32,
+    ) -> Option<EngineToUi> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        (buffer.projection.member_count != Some(count)).then(|| {
+            buffer.projection.member_count = Some(count);
+            EngineToUi::BufferUpdated {
+                buffer: buffer.projection.clone(),
+            }
+        })
+    }
+
     pub(crate) fn close_direct(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
         let buffer = self.buffers.get(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
@@ -911,6 +926,7 @@ impl NetworkModel {
             title: key.title(),
             draft_key: draft_key(&self.network.label, &key.title(), self.casemapping),
             topic,
+            member_count: (kind == BufferKind::Channel).then_some(0),
             unread: 0,
             mentions: 0,
             read_through: None,

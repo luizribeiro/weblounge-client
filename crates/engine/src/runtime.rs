@@ -1089,16 +1089,23 @@ fn member_windows(
         .into_iter()
         .filter_map(|channel| {
             let buffer_id = running.model.buffer_id_for_channel(&channel)?;
-            Some((channel, buffer_id))
+            let total = snapshot
+                .channel(&channel)
+                .map(|channel| u32::try_from(channel.members().count()).unwrap_or(u32::MAX))?;
+            Some((channel, buffer_id, total))
         })
         .collect::<Vec<_>>();
     buffers
         .into_iter()
-        .flat_map(|(channel, buffer_id)| {
+        .flat_map(|(channel, buffer_id, total)| {
+            let count = state
+                .network
+                .as_mut()
+                .and_then(|running| running.model.set_member_count(buffer_id, total));
             let (version, views) = state.member_views.changed(buffer_id);
-            views
+            count
                 .into_iter()
-                .filter_map(|(view_id, view)| {
+                .chain(views.into_iter().filter_map(|(view_id, view)| {
                     crate::members::project(
                         &snapshot,
                         &channel,
@@ -1108,7 +1115,7 @@ fn member_windows(
                         view.offset,
                         &view.filter,
                     )
-                })
+                }))
                 .collect::<Vec<_>>()
         })
         .collect()

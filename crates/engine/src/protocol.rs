@@ -80,6 +80,10 @@ pub struct BufferProjection {
     pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.
     pub topic: Option<String>,
+    /// Current channel member total, independent of any requested member window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub member_count: Option<u32>,
     /// Messages after the local read position.
     #[ts(type = "number")]
     pub unread: u64,

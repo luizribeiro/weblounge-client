@@ -622,6 +622,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.title !== "string" ||
     typeof value.draft_key !== "string" ||
     !(value.topic === null || typeof value.topic === "string") ||
+    !(
+      value.member_count === undefined || typeof value.member_count === "number"
+    ) ||
     typeof value.unread !== "number" ||
     typeof value.mentions !== "number" ||
     !(value.read_through === null || typeof value.read_through === "number") ||
@@ -636,6 +639,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     title: value.title,
     draft_key: value.draft_key,
     topic: value.topic,
+    ...(value.member_count === undefined
+      ? {}
+      : { member_count: value.member_count }),
     unread: value.unread,
     mentions: value.mentions,
     read_through: value.read_through,

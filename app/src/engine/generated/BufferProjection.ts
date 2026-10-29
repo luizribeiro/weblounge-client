@@ -34,6 +34,10 @@ draft_key: string,
  */
 topic: string | null,
 /**
+ * Current channel member total, independent of any requested member window.
+ */
+member_count?: number,
+/**
  * Messages after the local read position.
  */
 unread: number,

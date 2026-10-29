@@ -11,6 +11,7 @@ const channel: BufferProjection = {
   title: "#room",
   draft_key: "1:#room",
   topic: "Room topic",
+  member_count: 7,
   unread: 0,
   mentions: 0,
   read_through: null,
@@ -74,4 +75,28 @@ it("toggles the channel member panel and routes direct messages", () => {
   fireEvent.click(screen.getByRole("button", { name: "Hide members" }));
   expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
   expect(requestMembers).toHaveBeenCalledWith("test-port:desktop:pane-1", 2, 0);
+});
+
+it("shows the projected member total while the panel is closed", () => {
+  render(() => (
+    <DesktopShell
+      activeBufferId={2}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(
+    screen.getByRole("button", { name: "Toggle member list" }),
+  ).toHaveTextContent("7");
+  expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
 });
