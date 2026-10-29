@@ -26,3 +26,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 18 | 2026-10-29 | Beta loaded unstyled: the server CSP blocked the runtime-injected theme styles. | stopgap on the server; client fix queued |
 | 19 | 2026-10-29 | Mobile: the members drawer's overlay lightens the content in dark mode; it must respect light/dark. | queued |
 | 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | queued |
+| 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | queued |
