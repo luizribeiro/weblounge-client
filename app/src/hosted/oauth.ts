@@ -63,13 +63,17 @@ export async function discoverOAuthMetadata(
       "The sign-in service doesn't support secure PKCE.",
     );
   }
+  const authorizationEndpoint = secureUrl(
+    value.authorization_endpoint,
+    "authorization endpoint",
+  );
+  const tokenEndpoint = secureUrl(value.token_endpoint, "token endpoint");
+  requireIssuerOrigin(issuer, authorizationEndpoint, "authorization endpoint");
+  requireIssuerOrigin(issuer, tokenEndpoint, "token endpoint");
   return {
     issuer,
-    authorizationEndpoint: secureUrl(
-      value.authorization_endpoint,
-      "authorization endpoint",
-    ),
-    tokenEndpoint: secureUrl(value.token_endpoint, "token endpoint"),
+    authorizationEndpoint,
+    tokenEndpoint,
   };
 }
 
@@ -269,6 +273,18 @@ function secureUrl(value: unknown, field: string): string {
 
 function normalizeIssuer(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function requireIssuerOrigin(
+  issuer: string,
+  endpoint: string,
+  field: string,
+): void {
+  if (new URL(endpoint).origin !== new URL(issuer).origin) {
+    throw new HostedAuthorizationError(
+      `The sign-in ${field} must use the issuer's origin.`,
+    );
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

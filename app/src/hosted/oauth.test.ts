@@ -50,6 +50,59 @@ describe("OAuth authorization code with PKCE", () => {
     );
   });
 
+  it.each([
+    [
+      "authorization endpoint",
+      "https://login.example.test/oauth/authorize",
+      metadata.tokenEndpoint,
+    ],
+    [
+      "token endpoint",
+      metadata.authorizationEndpoint,
+      "https://tokens.example.test/oauth/token",
+    ],
+  ])(
+    "rejects a cross-origin %s",
+    async (field, authorizationEndpoint, tokenEndpoint) => {
+      const fetchMetadata = vi.fn(async () =>
+        Response.json({
+          issuer: config.issuer,
+          authorization_endpoint: authorizationEndpoint,
+          token_endpoint: tokenEndpoint,
+        }),
+      );
+
+      await expect(
+        discoverOAuthMetadata(config, fetchMetadata),
+      ).rejects.toThrow(`The sign-in ${field} must use the issuer's origin.`);
+    },
+  );
+
+  it.each([
+    ["https://members.weblounge.org", "https://members.weblounge.org/"],
+    ["https://members.weblounge.org/", "https://members.weblounge.org"],
+  ])(
+    "accepts equivalent issuer trailing slashes",
+    async (configuredIssuer, discoveredIssuer) => {
+      const fetchMetadata = vi.fn(async () =>
+        Response.json({
+          issuer: discoveredIssuer,
+          authorization_endpoint: metadata.authorizationEndpoint,
+          token_endpoint: metadata.tokenEndpoint,
+        }),
+      );
+
+      await expect(
+        discoverOAuthMetadata(
+          { ...config, issuer: configuredIssuer },
+          fetchMetadata,
+        ),
+      ).resolves.toMatchObject({
+        issuer: configuredIssuer.replace(/\/$/u, ""),
+      });
+    },
+  );
+
   it("reports an unreachable sign-in service in human terms", async () => {
     const unreachable = vi.fn(async () => {
       throw new TypeError("Failed to fetch");
