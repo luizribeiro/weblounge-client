@@ -148,11 +148,39 @@ test.describe("local Ergo user flow", () => {
       "weblounge-bot-test",
       "#weblounge-test",
     );
-    const text = `existing history ${Date.now()}`;
+    const suffix = Date.now();
+    const older = `existing history older ${suffix}`;
+    const newer = `existing history newer ${suffix}`;
     try {
-      await seed.privmsgConfirmed("#weblounge-test", text);
+      await seed.privmsgConfirmed("#weblounge-test", older);
+      await seed.privmsgConfirmed("#weblounge-test", newer);
+      const resumedAt = Date.now() + 24 * 60 * 60 * 1_000;
+      await page.clock.setFixedTime(resumedAt);
       await page.goto("/?irc-password=weblounge-test");
-      await expect(page.getByText(text, { exact: true })).toBeVisible();
+      const olderRow = page
+        .getByText(older, { exact: true })
+        .locator("xpath=ancestor::*[@data-message-row]");
+      const newerRow = page
+        .getByText(newer, { exact: true })
+        .locator("xpath=ancestor::*[@data-message-row]");
+      await expect(olderRow).toBeVisible();
+      await expect(newerRow).toBeVisible();
+      await expect(page.getByText("Yesterday", { exact: true })).toBeVisible();
+      const renderedOrder = await page
+        .locator("[data-message-row]")
+        .evaluateAll((rows) =>
+          rows.map((row) => (row as HTMLElement).dataset.messageText),
+        );
+      expect(renderedOrder.indexOf(older)).toBeLessThan(
+        renderedOrder.indexOf(newer),
+      );
+      for (const row of [olderRow, newerRow]) {
+        const dateTime = await row.locator("time").getAttribute("datetime");
+        expect(dateTime).not.toBeNull();
+        expect(new Date(dateTime ?? 0).getTime()).toBeLessThan(
+          resumedAt - 12 * 60 * 60 * 1_000,
+        );
+      }
     } finally {
       seed.close();
     }

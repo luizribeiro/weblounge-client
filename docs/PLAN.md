@@ -41,6 +41,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then beta.weblounge.org. Luiz dogfoods it and gives feedback; split view and the core shortcuts come after, informed by real use.
 
 - **Dogfood slice** (minimal milestone 3):
+  - [x] Verify joined-channel history keeps Ergo server timestamps and chronological order through papo, the engine, and the rendered day divider.
   - D1. [ ] Load older history on scroll-up (`CHATHISTORY BEFORE` with msgid cursors; scroll anchoring already exists).
   - D2. [ ] Rebuild the DM list from `CHATHISTORY TARGETS` on connect.
   - D3. [ ] Clean resume after reconnect: papo catch-up gap fill, `Lagged` resync, a quiet "reconnecting" state, the composer queues sends while offline.

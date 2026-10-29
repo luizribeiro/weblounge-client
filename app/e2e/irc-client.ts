@@ -36,12 +36,13 @@ export class IrcClient {
     client.send(`NICK ${nickname}`);
     client.send(`USER ${nickname} 0 * :${nickname}`);
     await client.waitFor((line) => line.includes(" CAP * LS "));
-    client.send("CAP REQ :sasl echo-message");
+    client.send("CAP REQ :sasl echo-message server-time");
     await client.waitFor(
       (line) =>
         line.includes(" CAP * ACK ") &&
         line.includes("sasl") &&
-        line.includes("echo-message"),
+        line.includes("echo-message") &&
+        line.includes("server-time"),
     );
     client.send("AUTHENTICATE PLAIN");
     await client.waitFor((line) => line === "AUTHENTICATE +");
@@ -63,9 +64,11 @@ export class IrcClient {
     this.send(`PRIVMSG ${channel} :${text}`);
   }
 
-  async privmsgConfirmed(channel: string, text: string): Promise<void> {
+  async privmsgConfirmed(channel: string, text: string): Promise<string> {
     this.privmsg(channel, text);
-    await this.waitFor((line) => line.includes(` PRIVMSG ${channel} :${text}`));
+    return this.waitFor((line) =>
+      line.includes(` PRIVMSG ${channel} :${text}`),
+    );
   }
 
   async actionConfirmed(channel: string, text: string): Promise<void> {

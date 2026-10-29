@@ -3177,20 +3177,34 @@ mod tests {
 
     fn take_prepended(
         receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
-    ) -> (BufferId, Vec<String>) {
+    ) -> (BufferId, Vec<crate::MessageProjection>) {
         collect(receiver)
             .into_iter()
             .find_map(|event| match event {
                 EngineToUi::MessagesPrepended {
                     buffer_id,
                     messages,
-                } => Some((
-                    buffer_id,
-                    messages.into_iter().map(|message| message.text).collect(),
-                )),
+                } => Some((buffer_id, messages)),
                 _ => None,
             })
             .expect("requested history is prepended")
+    }
+
+    fn assert_history(messages: &[crate::MessageProjection], texts: &[&str], timestamped: &[bool]) {
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.text.as_str())
+                .collect::<Vec<_>>(),
+            texts
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.server_time_ms.is_some())
+                .collect::<Vec<_>>(),
+            timestamped
+        );
     }
 
     async fn register_for_history(wire: &mut papo_testing::Wire) {
@@ -3318,7 +3332,7 @@ mod tests {
         process_history(&state, &outbound, &client, 1, page).await;
 
         let (buffer_id, prepended) = take_prepended(&mut receiver);
-        assert_eq!(prepended, ["older", "middle"]);
+        assert_history(&prepended, &["older", "middle"], &[true, true]);
 
         let older_fetch = lock(&state)
             .network
@@ -3341,7 +3355,7 @@ mod tests {
         .await;
         process_history(&state, &outbound, &client, 1, page).await;
         let (_, prepended) = take_prepended(&mut receiver);
-        assert_eq!(prepended, ["first", "second"]);
+        assert_history(&prepended, &["first", "second"], &[true, true]);
 
         let final_fetch = lock(&state)
             .network
