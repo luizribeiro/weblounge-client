@@ -122,8 +122,9 @@ describe("ActionRegistry", () => {
       "command.join",
       "command.say",
     ]);
-    expect(registry.commandHelp(null)).toBe("/join, /say");
-    expect(registry.commandHelp("j")).toBe("/join — cmd.join.usage");
+    expect(registry.palette(context)[1]?.title).toBe(
+      "Join one or more channels",
+    );
   });
 
   it("detects Apple shortcut labels", () => {

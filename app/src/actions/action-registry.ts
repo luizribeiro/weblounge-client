@@ -1,4 +1,5 @@
 import type { CommandSpec } from "../engine/protocol";
+import { t } from "../features/composer/strings";
 
 export type UiActionId =
   | "buffer.next"
@@ -194,18 +195,6 @@ export class ActionRegistry {
     return this.#entries(context, "help");
   }
 
-  commandHelp(requested: string | null): string {
-    if (requested === null) {
-      return this.#commands.map(({ name }) => `/${name}`).join(", ");
-    }
-    const command = this.#commands.find(
-      ({ name, aliases }) => name === requested || aliases.includes(requested),
-    );
-    return command === undefined
-      ? `Unknown command /${requested}`
-      : `/${command.name} — ${command.usage}`;
-  }
-
   #entries(
     context: ActionContext,
     surface: "palette" | "help",
@@ -223,7 +212,7 @@ export class ActionRegistry {
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
-        title: command.description,
+        title: t(command.description),
         command,
       }));
     return [...ui, ...commands];

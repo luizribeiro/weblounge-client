@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
-import { ActionRegistry, detectPlatform } from "./actions/action-registry";
+import { commandHelp } from "./actions/command-help";
 import { consumeDebugPassword } from "./debug-irc-config";
 import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
@@ -86,12 +86,7 @@ export function App(props: AppProps) {
         setCommandSpecs(message.specs);
       }
       if (message.type === "command_help_requested") {
-        const registry = new ActionRegistry(
-          {},
-          detectPlatform(navigator),
-          commandSpecs(),
-        );
-        setComposerNotice(registry.commandHelp(message.command));
+        setComposerNotice(commandHelp(commandSpecs() ?? [], message.command));
       }
       if (message.type === "completion_result") {
         setCompletion({
