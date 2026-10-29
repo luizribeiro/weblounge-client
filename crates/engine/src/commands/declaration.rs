@@ -85,6 +85,11 @@ pub(crate) enum Command {
         description = "cmd.help.description", surfaces = ["Slash", "Palette"]
     )]
     Help { command: Option<CommandName> },
+    #[command(
+        name = "identify", aliases = ["id"], usage = "cmd.identify.usage",
+        description = "cmd.identify.description", surfaces = ["Slash"], secret
+    )]
+    Identify { password: Text },
 }
 
 #[cfg(test)]
@@ -106,7 +111,13 @@ mod tests {
             .expect("join exists");
         assert_eq!(join.aliases, ["j"]);
         assert_eq!(join.arguments[0].kind, CommandArgumentKind::ChannelList);
-        assert_eq!(specs.len(), 13);
+        assert_eq!(specs.len(), 14);
+        assert!(
+            specs
+                .iter()
+                .find(|spec| spec.name == "identify")
+                .is_some_and(|spec| spec.secret_arguments)
+        );
     }
 
     #[test]
@@ -148,6 +159,7 @@ mod tests {
             "/nick new-name",
             "/exit later",
             "/help join",
+            "/id hunter2",
         ] {
             assert!(commands::parse(input, "#&").is_ok(), "input: {input}");
         }

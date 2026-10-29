@@ -234,8 +234,24 @@ impl Runtime {
                 },
                 EngineToUi::CommandResult { id },
             ],
+            Ok(Command::Identify { password }) => self.identify(id, &password.0),
             Err(error) => rejected_command(id, error.message_key()),
         }
+    }
+
+    fn identify(&self, command_id: String, password: &str) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let client = running.client.clone();
+        drop(state);
+        spawn_request(
+            self.outbound.clone(),
+            command_id,
+            client.send_raw(identify_line(password)),
+        );
+        Vec::new()
     }
 
     fn open_direct(
@@ -1473,6 +1489,12 @@ fn join_error_key(error: &papo::Error) -> &'static str {
     }
 }
 
+fn identify_line(password: &str) -> papo::Line {
+    papo::Line::new("PRIVMSG")
+        .param("NickServ")
+        .param(papo::Secret::new(format!("IDENTIFY {password}")))
+}
+
 fn spawn_request<T: Send + 'static>(
     outbound: mpsc::UnboundedSender<EngineToUi>,
     command_id: String,
@@ -2049,6 +2071,56 @@ mod tests {
         });
         assert_eq!(wire.next_sent().await, "PART #new later");
         wire.server(":lounge2!u@host PART #new :later").await;
+    }
+
+    #[test]
+    fn identify_line_redacts_the_password_from_diagnostics() {
+        let line = super::identify_line("unique-password");
+
+        assert!(!format!("{line:?}").contains("unique-password"));
+    }
+
+    #[tokio::test]
+    async fn identify_sends_a_secret_service_parameter() {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                member_views: MemberViews::default(),
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "identify".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/identify hunter2".into(),
+            },
+        });
+
+        assert!(output.is_empty());
+        let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("command finishes")
+            .expect("command completes");
+        assert!(
+            matches!(result, EngineToUi::CommandResult { .. }),
+            "{result:?}"
+        );
+        assert_eq!(wire.next_sent().await, "PRIVMSG NickServ :IDENTIFY hunter2");
+        assert!(!format!("{result:?}").contains("hunter2"));
     }
 
     #[tokio::test]
