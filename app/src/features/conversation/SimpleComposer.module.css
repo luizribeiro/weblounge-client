@@ -9,6 +9,7 @@
 .wrap {
   border-top: 1px solid var(--wl-color-border);
   padding: 8px 14px 14px;
+  position: relative;
 }
 
 .wrap .form {
@@ -34,22 +35,71 @@ textarea.input {
 }
 
 .candidates {
-  display: flex;
-  gap: 4px;
-  margin: 0;
-  overflow-x: auto;
-  padding: 0 4px 6px;
-  white-space: nowrap;
+  max-height: calc(6 * var(--wl-density-sidebar-row-height));
+  overscroll-behavior: contain;
+  overflow-y: auto;
+  touch-action: pan-y;
 }
 
 .candidate {
-  color: var(--wl-color-muted);
-  padding: 2px 5px;
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  height: var(--wl-density-sidebar-row-height);
+  padding-inline: 9px;
 }
 
 .candidate[data-selected="true"] {
   background: var(--wl-color-selection);
   color: var(--wl-color-selection-fg);
+}
+
+.popup {
+  animation: suggestion-in var(--wl-motion-suggestions)
+    var(--wl-motion-standard-curve);
+  background: var(--wl-color-surface);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-palette);
+  bottom: 100%;
+  box-shadow: var(--wl-effect-overlay-shadow);
+  inline-size: min(calc(100% - 28px), var(--wl-size-suggestions-max-width));
+  inset-inline-start: 14px;
+  overflow: hidden;
+  position: absolute;
+  z-index: 2;
+}
+
+.hint {
+  border-bottom: 1px solid var(--wl-color-border);
+  color: var(--wl-color-muted);
+  padding: 6px 9px;
+}
+
+.primary {
+  align-items: center;
+  color: var(--wl-color-fg);
+  display: flex;
+  gap: 5px;
+}
+
+.secondary {
+  color: var(--wl-color-muted);
+}
+
+.bot {
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-pill);
+  color: var(--wl-color-muted);
+  font-family: var(--wl-font-mono);
+  font-size: var(--wl-font-section-size);
+  padding-inline: 3px;
+}
+
+@keyframes suggestion-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .confirmation {
@@ -109,5 +159,17 @@ textarea.input {
 @media (max-width: 600px), (pointer: coarse) {
   .input {
     font-size: 16px;
+  }
+
+  .popup {
+    inline-size: calc(100% - 28px);
+  }
+
+  .candidates {
+    max-height: calc(4.5 * var(--wl-size-touch-target));
+  }
+
+  .candidate {
+    height: var(--wl-size-touch-target);
   }
 }

@@ -39,8 +39,10 @@ describe("theme registry", () => {
 
   it("owns motion tokens and their reduced-motion override", () => {
     expect(motionTokens.pushIn).toBe("280ms");
+    expect(motionTokens.suggestions).toBe("120ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:280ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:0ms");
+    expect(themeStyleSheet()).toContain("--wl-motion-suggestions:0ms");
   });
 });
 

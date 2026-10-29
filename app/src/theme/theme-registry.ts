@@ -86,6 +86,7 @@ export const motionTokens = {
   previewFade: "420ms",
   pushIn: "280ms",
   pushOut: "230ms",
+  suggestions: "120ms",
   standardCurve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
 } as const;
 
@@ -110,7 +111,7 @@ export function themeStyleSheet(registry = themes): string {
       return `:root[data-theme="${theme.id}"]{${values.join(";")}}`;
     })
     .join("");
-  return `:root{${motion}}${themeRules}@media(prefers-reduced-motion:reduce){:root{--wl-motion-push-in:0ms;--wl-motion-push-out:0ms;--wl-motion-members:0ms;--wl-motion-fade:0ms;--wl-motion-preview-fade:0ms}}`;
+  return `:root{${motion}}${themeRules}@media(prefers-reduced-motion:reduce){:root{--wl-motion-push-in:0ms;--wl-motion-push-out:0ms;--wl-motion-members:0ms;--wl-motion-fade:0ms;--wl-motion-preview-fade:0ms;--wl-motion-suggestions:0ms}}`;
 }
 
 function buildRegistry(
