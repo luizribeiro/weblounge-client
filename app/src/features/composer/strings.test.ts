@@ -28,4 +28,24 @@ describe("composer strings", () => {
   it("explains when a channel identity changed while disconnected", () => {
     expect(t("engine.channel_recreated")).toContain("channel was recreated");
   });
+
+  it.each([
+    "close",
+    "cycle",
+    "help",
+    "identify",
+    "join",
+    "me",
+    "msg",
+    "nick",
+    "notice",
+    "part",
+    "query",
+    "quit",
+    "say",
+    "topic",
+  ])("renders human usage and description for %s", (command) => {
+    expect(t(`cmd.${command}.usage`)).toMatch(/^\//u);
+    expect(t(`cmd.${command}.description`)).not.toContain("cmd.");
+  });
 });

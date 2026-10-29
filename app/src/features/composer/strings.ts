@@ -25,7 +25,40 @@ export const messageKeys = [
   "engine.command_failed",
 ] as const;
 
+const commandStrings: Readonly<Record<string, string>> = {
+  "cmd.close.description": "Close this conversation",
+  "cmd.close.usage": "/close",
+  "cmd.cycle.description": "Leave and rejoin a channel",
+  "cmd.cycle.usage": "/cycle [channel] [reason]",
+  "cmd.help.description": "Show available commands or command help",
+  "cmd.help.usage": "/help [command]",
+  "cmd.identify.description": "Identify with NickServ",
+  "cmd.identify.usage": "/identify <password>",
+  "cmd.join.description": "Join one or more channels",
+  "cmd.join.usage": "/join <channels> [keys]",
+  "cmd.me.description": "Send an action message",
+  "cmd.me.usage": "/me <text>",
+  "cmd.msg.description": "Send a private message",
+  "cmd.msg.usage": "/msg <target> <text>",
+  "cmd.nick.description": "Change your nickname",
+  "cmd.nick.usage": "/nick <nickname>",
+  "cmd.notice.description": "Send a notice",
+  "cmd.notice.usage": "/notice <target> <text>",
+  "cmd.part.description": "Leave a channel",
+  "cmd.part.usage": "/part [channel] [reason]",
+  "cmd.query.description": "Open a private conversation",
+  "cmd.query.usage": "/query <nickname> [text]",
+  "cmd.quit.description": "Disconnect from the network",
+  "cmd.quit.usage": "/quit [reason]",
+  "cmd.say.description": "Send text without treating it as a command",
+  "cmd.say.usage": "/say <text>",
+  "cmd.topic.description": "Show or change the channel topic",
+  "cmd.topic.usage": "/topic [channel] [text]",
+};
+
 export function t(key: string, values: MessageValues = {}): string {
+  const commandString = commandStrings[key];
+  if (commandString !== undefined) return commandString;
   switch (key) {
     case "composer.empty_input":
       return "Enter a message or command.";
