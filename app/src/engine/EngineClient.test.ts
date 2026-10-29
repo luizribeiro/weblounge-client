@@ -74,6 +74,35 @@ describe("WorkerEngineClient", () => {
     await expect(started).resolves.toBeUndefined();
   });
 
+  it("pings only after a hidden client becomes visible", async () => {
+    const { client, port } = fixture();
+    const started = client.start({
+      build_id: "build-1",
+      client_id: "tab-1",
+      last_revision: null,
+      shell: "web",
+    });
+    port.emit({ type: "ready", engine_instance: "engine-1", revision: 0 });
+    await started;
+    port.sent.length = 0;
+
+    client.setVisibility("hidden");
+    client.checkLiveness();
+    expect(port.sent).toEqual([]);
+    client.setVisibility("visible");
+
+    expect(port.sent).toHaveLength(1);
+    const heartbeat = port.sent[0];
+    expect(heartbeat).toMatchObject({
+      type: "request",
+      payload: { request: { type: "ping" } },
+    });
+    if (heartbeat?.type !== "request")
+      throw new Error("heartbeat is a request");
+    port.emit({ type: "pong", id: heartbeat.payload.id });
+    await client.close();
+  });
+
   it("respawns a failed worker and repeats the handshake", async () => {
     const first = new FakePort();
     const second = new FakePort();

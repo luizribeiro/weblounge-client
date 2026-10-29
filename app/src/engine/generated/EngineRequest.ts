@@ -7,7 +7,7 @@ import type { SaslCredentials } from "./SaslCredentials";
 /**
  * Engine requests implemented by the current vertical slice.
  */
-export type EngineRequest = { "type": "diagnostic",
+export type EngineRequest = { "type": "ping" } | { "type": "diagnostic",
 /**
  * Opaque non-secret diagnostic text.
  */

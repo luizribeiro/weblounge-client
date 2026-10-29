@@ -22,7 +22,11 @@ engine_instance: string,
 /**
  * Current engine projection revision.
  */
-revision: number, } | { "type": "command_specs_changed",
+revision: number, } | { "type": "pong",
+/**
+ * Correlation identifier from the ping envelope.
+ */
+id: string, } | { "type": "command_specs_changed",
 /**
  * Complete current runtime registry, including later user-defined commands.
  */

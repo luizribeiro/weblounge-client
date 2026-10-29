@@ -129,6 +129,7 @@ impl Runtime {
 
     pub(crate) fn request(&self, envelope: EngineRequestEnvelope) -> Vec<EngineToUi> {
         match envelope.request {
+            EngineRequest::Ping => vec![EngineToUi::Pong { id: envelope.id }],
             EngineRequest::Diagnostic { message } => vec![
                 EngineToUi::Diagnostic {
                     command_id: envelope.id.clone(),

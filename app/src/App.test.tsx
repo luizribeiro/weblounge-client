@@ -38,6 +38,17 @@ it("reports document visibility to the engine", () => {
   expect(client.visibility).toEqual(["visible", "hidden"]);
 });
 
+it("checks worker liveness on a persisted page restore", () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  const event = new Event("pageshow");
+  Object.defineProperty(event, "persisted", { value: true });
+
+  window.dispatchEvent(event);
+
+  expect(client.livenessChecks).toBe(1);
+});
+
 it("hands a hosted token to the engine once and reauthorizes on rejection", async () => {
   const client = new FakeEngineClient();
   const authorize = vi.fn();
@@ -582,6 +593,7 @@ it("reloads only once for the same stale build", () => {
 class FakeEngineClient implements EngineClient {
   readonly visibility: Parameters<EngineClient["setVisibility"]>[0][] = [];
   readonly requests: EngineRequestEnvelope[] = [];
+  livenessChecks = 0;
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
   constructor(private readonly rejection?: string) {}
@@ -615,6 +627,10 @@ class FakeEngineClient implements EngineClient {
   }
 
   requestSnapshot(): void {}
+
+  checkLiveness(): void {
+    this.livenessChecks += 1;
+  }
 
   setVisibility(state: Parameters<EngineClient["setVisibility"]>[0]): void {
     this.visibility.push(state);

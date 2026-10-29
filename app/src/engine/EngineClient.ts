@@ -22,6 +22,7 @@ import type {
 export interface EngineClient {
   start(hello: Hello): Promise<void>;
   send(request: EngineRequestEnvelope): Promise<CommandResult>;
+  checkLiveness(): void;
   requestSnapshot(reason: ResyncReason): void;
   setVisibility(state: VisibilityState): void;
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe;
@@ -147,6 +148,10 @@ export class WorkerEngineClient implements EngineClient {
     return result;
   }
 
+  checkLiveness(): void {
+    if (this.#visibility === "visible") this.#probeWorker();
+  }
+
   requestSnapshot(_reason: ResyncReason): void {}
 
   setVisibility(state: VisibilityState): void {
@@ -185,14 +190,14 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
+    if (message.type === "pong") {
+      if (message.id === this.#heartbeatId) this.#clearHeartbeat();
+      return;
+    }
     if (message.type === "command_result") {
       const waiter = this.#requests.get(message.id);
       this.#requests.delete(message.id);
       waiter?.resolve(message);
-      if (message.id === this.#heartbeatId) {
-        this.#clearHeartbeat();
-        return;
-      }
       this.#enqueueForFrame(message);
       return;
     }
@@ -207,12 +212,6 @@ export class WorkerEngineClient implements EngineClient {
       this.#startWaiter?.resolve();
       this.#startWaiter = undefined;
       this.#publish(message);
-      return;
-    }
-    if (
-      message.type === "diagnostic" &&
-      message.command_id === this.#heartbeatId
-    ) {
       return;
     }
     if (message.type === "incompatible_build") {
@@ -280,10 +279,10 @@ export class WorkerEngineClient implements EngineClient {
       return;
     const id = `worker-heartbeat-${crypto.randomUUID()}`;
     this.#heartbeatId = id;
-    void this.send({
-      id,
-      request: { type: "diagnostic", message: "worker heartbeat" },
-    }).catch(() => undefined);
+    this.#connection.port.postMessage({
+      type: "request",
+      payload: { id, request: { type: "ping" } },
+    });
     this.#heartbeatTimeout = setTimeout(() => this.#recover(), 5_000);
   }
 
@@ -380,6 +379,9 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           revision: value.revision,
         };
       }
+      break;
+    case "pong":
+      if (typeof value.id === "string") return { type: "pong", id: value.id };
       break;
     case "command_specs_changed": {
       const specs = decodeCommandSpecs(value.specs);
@@ -634,6 +636,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
 function isEngineMessageType(value: string): value is EngineToUi["type"] {
   return (
     value === "ready" ||
+    value === "pong" ||
     value === "command_specs_changed" ||
     value === "incompatible_build" ||
     value === "diagnostic" ||

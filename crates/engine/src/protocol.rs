@@ -404,6 +404,8 @@ pub struct EngineRequestEnvelope {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EngineRequest {
+    /// Check that the worker host and engine event loop are responsive.
+    Ping,
     /// Round-trip diagnostic proving the worker boundary.
     Diagnostic {
         /// Opaque non-secret diagnostic text.
@@ -543,6 +545,11 @@ pub enum EngineToUi {
         /// Current engine projection revision.
         #[ts(type = "number")]
         revision: u64,
+    },
+    /// Typed worker-liveness acknowledgement.
+    Pong {
+        /// Correlation identifier from the ping envelope.
+        id: String,
     },
     /// Replace the runtime slash-command specifications.
     CommandSpecsChanged {
@@ -733,8 +740,8 @@ pub enum EngineToUi {
 #[cfg(test)]
 mod tests {
     use super::{
-        BufferId, CompletionCandidate, EngineRequest, EngineToUi, Hello, MemberGroup,
-        MemberProjection, SaslCredentials, ShellKind, UiToEngine,
+        BufferId, CompletionCandidate, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
+        MemberGroup, MemberProjection, SaslCredentials, ShellKind, UiToEngine,
     };
 
     #[test]
@@ -749,6 +756,25 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&message).expect("hello serializes"),
             r#"{"type":"hello","payload":{"build_id":"build-1","client_id":"tab-1","last_revision":7,"shell":"web"}}"#
+        );
+    }
+
+    #[test]
+    fn ping_and_pong_are_typed_liveness_messages() {
+        let request = EngineRequestEnvelope {
+            id: "heartbeat-1".into(),
+            request: EngineRequest::Ping,
+        };
+        assert_eq!(
+            serde_json::to_string(&request).expect("ping serializes"),
+            r#"{"id":"heartbeat-1","request":{"type":"ping"}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&EngineToUi::Pong {
+                id: "heartbeat-1".into(),
+            })
+            .expect("pong serializes"),
+            r#"{"type":"pong","id":"heartbeat-1"}"#
         );
     }
 

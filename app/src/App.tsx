@@ -206,7 +206,10 @@ export function App(props: AppProps) {
       }
     };
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) reconnectNetworks();
+      if (event.persisted) {
+        mountedClient.checkLiveness();
+        reconnectNetworks();
+      }
     };
     const updateConnectivity = () => {
       for (const network of networks()) {
