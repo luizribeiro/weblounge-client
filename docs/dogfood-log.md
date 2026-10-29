@@ -9,7 +9,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. Also in scrollback: rows overlap until rendered, then the page jumps as they're corrected; new overlaps when scrolling back down (screenshot of #bots). | fixed in 72a71c2 (not deployed yet); re-verify the scrollback case after deploy, research on the approach running |
 | 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | fixed |
 | 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | queued |
-| 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | queued |
+| 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | fixed |
 | 5 | 2026-10-29 | Mobile: the chats list flashes when going back to it, as if reloading. | queued |
 | 6 | 2026-10-29 | Desktop: with the member list open, switching channels leaves it empty (zero members). | queued |
 | 7 | 2026-10-29 | Mobile: focusing "Search channels and people" zooms the page. | queued |
@@ -27,3 +27,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 19 | 2026-10-29 | Mobile: the members drawer's overlay lightens the content in dark mode; it must respect light/dark. | queued |
 | 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | queued |
 | 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | queued |
+| 22 | 2026-10-29 | Resizing the window doesn't keep the newest message at the bottom when you were at the live edge (also mobile keyboard, panels, composer growth). | queued |
