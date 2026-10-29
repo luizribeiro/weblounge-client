@@ -92,6 +92,27 @@ test.describe("local Ergo user flow", () => {
     ).toBeVisible();
   });
 
+  test("shows the cached topic as a notice", async ({ page }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await expect(
+      page.getByRole("heading", { name: /#weblounge-test/ }),
+    ).toBeVisible();
+    const composer = page.getByRole("textbox", { name: "Message" });
+    const topic = `browser topic ${Date.now()}`;
+
+    await composer.fill(`/topic ${topic}`);
+    await composer.press("Enter");
+    await expect(page.getByText(topic, { exact: true })).toBeVisible();
+
+    await composer.fill("/topic");
+    await composer.press("Enter");
+    const notice = page.locator("[data-notice-row]").filter({
+      hasText: `Topic: ${topic}`,
+    });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(/set by weblounge/);
+  });
+
   test("shows existing channel history in a fresh browser", async ({
     page,
   }) => {
