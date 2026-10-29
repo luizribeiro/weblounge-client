@@ -123,6 +123,15 @@
   line-height: 34px;
   padding-left: 58px;
 }
+.notice {
+  color: var(--wl-color-muted);
+  font-size: 12px;
+  min-height: 34px;
+  padding: 8px 0 8px 58px;
+}
+.noticeTopic {
+  color: var(--wl-color-fg);
+}
 .divider,
 .newLine {
   align-items: center;
@@ -196,6 +205,7 @@
   margin-inline-start: 6px;
 }
 .list[data-presentation="mobile"] .actionText,
-.list[data-presentation="mobile"] .membership {
+.list[data-presentation="mobile"] .membership,
+.list[data-presentation="mobile"] .notice {
   padding-inline-start: 0;
 }

@@ -102,6 +102,18 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           text: "welcome",
           received_at_ms: 4,
         },
+        {
+          ...message,
+          id: 4,
+          author: "mel",
+          authorship: "own",
+          delivery: "received",
+          kind: "notice",
+          mentioned: false,
+          server_time_ms: Date.UTC(2026, 9, 28, 12),
+          text: "A quiet room",
+          received_at_ms: 5,
+        },
       ]}
       readThrough={1}
     />
@@ -116,6 +128,10 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
   expect(screen.getByText("Sending…")).toBeInTheDocument();
   expect(screen.getByText("BOT")).toBeInTheDocument();
   expect(screen.getByText("@")).toBeInTheDocument();
+  expect(screen.getByText("A quiet room")).toBeInTheDocument();
+  expect(
+    screen.getByText(/set by mel/).closest("[data-notice-row]"),
+  ).toHaveTextContent("Topic: A quiet room");
 });
 
 it("keeps the New boundary frozen while the live marker advances", async () => {

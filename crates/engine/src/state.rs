@@ -1109,11 +1109,16 @@ pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u3
 }
 
 fn order_key(record: &TimelineRecord) -> (i64, i64, u64) {
-    (
+    let primary_time = if record.projection.kind == MessageKind::Notice {
+        record.projection.received_at_ms
+    } else {
         record
             .projection
             .server_time_ms
-            .unwrap_or(record.projection.received_at_ms),
+            .unwrap_or(record.projection.received_at_ms)
+    };
+    (
+        primary_time,
         record.projection.received_at_ms,
         record.sequence,
     )
@@ -1336,8 +1341,18 @@ mod tests {
             Some("A quiet room".into()),
         );
 
+        model.receive_incoming(
+            incoming(&state, "hello", Some("m1"), None, 1, TimelineOrigin::Live),
+            &state,
+        );
+        let unread_before = model.buffers[&buffer.id].projection.unread;
         let event = model
-            .append_notice(buffer.id, "A quiet room".into(), "mel".into(), None)
+            .append_notice(
+                buffer.id,
+                "A quiet room".into(),
+                "mel".into(),
+                Some(std::time::UNIX_EPOCH),
+            )
             .expect("notice row");
 
         assert!(matches!(
@@ -1346,8 +1361,22 @@ mod tests {
                 if messages[0].kind == crate::MessageKind::Notice
                     && messages[0].author == "mel"
         ));
-        assert_eq!(model.buffers[&buffer.id].projection.last_message, None);
-        assert_eq!(model.buffers[&buffer.id].projection.unread, 0);
+        assert_eq!(
+            model.buffers[&buffer.id]
+                .projection
+                .last_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("hello")
+        );
+        assert_eq!(
+            model.buffers[&buffer.id]
+                .timeline
+                .last()
+                .map(|record| record.projection.kind),
+            Some(crate::MessageKind::Notice)
+        );
+        assert_eq!(model.buffers[&buffer.id].projection.unread, unread_before);
     }
 
     #[test]

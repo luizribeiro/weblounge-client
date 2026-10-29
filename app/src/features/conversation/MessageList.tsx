@@ -123,7 +123,7 @@ export function MessageList(props: MessageListProps) {
   const selectLastOwn = () => {
     const message = [...props.messages]
       .reverse()
-      .find((item) => item.authorship === "own");
+      .find((item) => item.authorship === "own" && item.kind !== "notice");
     if (message === undefined) return;
     const index = rows().findIndex(
       (row) => row.kind === "message" && row.message.id === message.id,
@@ -296,6 +296,7 @@ function MessageRow(props: {
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
 }) {
   const message = props.message;
+  if (message.kind === "notice") return <NoticeRow message={message} />;
   const nickStyle =
     message.authorship === "own"
       ? undefined
@@ -350,6 +351,33 @@ function MessageRow(props: {
           </Selectable>
           <Delivery message={message} />
         </>
+      )}
+    </div>
+  );
+}
+
+function NoticeRow(props: { readonly message: MessageProjection }) {
+  const message = props.message;
+  return (
+    <div
+      class={styles.notice}
+      data-message-row="true"
+      data-message-text={message.text}
+      data-notice-row="true"
+    >
+      <span>Topic: </span>
+      <Selectable
+        class={styles.noticeTopic}
+        surfaceId={`message-${message.id}`}
+      >
+        {message.text || "No topic is set."}
+      </Selectable>
+      {message.author !== "" && <span> — set by {message.author}</span>}
+      {message.server_time_ms !== null && (
+        <time dateTime={new Date(message.server_time_ms).toISOString()}>
+          {" ·"}
+          {formatNoticeTime(message.server_time_ms)}
+        </time>
       )}
     </div>
   );
@@ -448,7 +476,15 @@ function formatDay(time: Date): string {
 }
 
 function messageTime(message: MessageProjection): number {
+  if (message.kind === "notice") return message.received_at_ms;
   return message.server_time_ms ?? message.received_at_ms;
+}
+
+function formatNoticeTime(milliseconds: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(milliseconds);
 }
 function nickColor(index: number): string {
   return `var(--wl-nick-${index % nickPaletteSize})`;
@@ -497,6 +533,18 @@ function toCopyRows(rows: readonly TimelineRow[]): CopyRow[] {
         author: row.message.author,
         text: row.message.text,
       });
+    if (row.kind === "message" && row.message.kind === "notice")
+      result.push({ kind: "membership", text: topicNoticeText(row.message) });
   }
   return result;
+}
+
+function topicNoticeText(message: MessageProjection): string {
+  const topic = message.text || "No topic is set.";
+  const setter = message.author === "" ? "" : ` — set by ${message.author}`;
+  const time =
+    message.server_time_ms === null
+      ? ""
+      : ` · ${formatNoticeTime(message.server_time_ms)}`;
+  return `Topic: ${topic}${setter}${time}`;
 }

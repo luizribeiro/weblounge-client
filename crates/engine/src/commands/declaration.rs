@@ -201,7 +201,10 @@ mod tests {
                 "notice",
             ) | ("app/src/actions/action-registry.ts", "help")
                 | ("app/src/engine/EngineClient.ts", "notice" | "part" | "quit")
-                | ("app/src/features/conversation/MessageList.tsx", "quit")
+                | (
+                    "app/src/features/conversation/MessageList.tsx",
+                    "notice" | "quit",
+                )
         )
     }
 
