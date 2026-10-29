@@ -1,13 +1,15 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, MutexGuard},
+    time::Duration,
 };
 
 use tokio::sync::mpsc;
 
 use crate::{
-    BufferId, CompletionCandidate, CompletionTrigger, EngineRequest, EngineRequestEnvelope,
-    EngineToUi, MembershipKind, MessageId, NetworkConnectionState, NetworkId,
+    BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineRequest,
+    EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId, NetworkConnectionState,
+    NetworkId, OfflineReason,
     commands::{self, Command},
     state::{HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
@@ -29,6 +31,8 @@ struct RunningNetwork {
     authentication_kind: AuthenticationKind,
     client: papo::Client,
     model: NetworkModel,
+    connection_attempt: u32,
+    device_online: bool,
 }
 
 struct JoinTarget {
@@ -177,6 +181,10 @@ impl Runtime {
             }
             EngineRequest::Disconnect { network_id, reason } => {
                 self.disconnect(envelope.id, network_id, reason)
+            }
+            EngineRequest::Reconnect { network_id } => self.reconnect(envelope.id, network_id),
+            EngineRequest::SetDeviceOnline { network_id, online } => {
+                self.set_device_online(envelope.id, network_id, online)
             }
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
@@ -429,6 +437,11 @@ impl Runtime {
         let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
             .sasl(sasl)
             .allow_insecure_auth(config.allow_insecure)
+            .reconnect(
+                papo::Reconnect::exponential()
+                    .max_delay(Duration::from_secs(30))
+                    .refused_delay(Duration::from_secs(30)),
+            )
             .history_on_reconnect(true);
         if !config.autojoin.is_empty() {
             builder = builder.autojoin(config.autojoin);
@@ -445,6 +458,8 @@ impl Runtime {
             authentication_kind,
             client: client.clone(),
             model,
+            connection_attempt: 1,
+            device_online: true,
         });
         drop(state);
 
@@ -473,15 +488,93 @@ impl Runtime {
             state.network = Some(running);
             return rejected_command(command_id, "engine.network_not_found");
         }
-        let event = running
-            .model
-            .set_connection(NetworkConnectionState::Stopped, None);
+        let event = running.model.set_connection(
+            NetworkConnectionState::Offline {
+                reason: OfflineReason::Requested,
+            },
+            None,
+        );
         let client = running.client;
         drop(state);
         spawn_task(async move {
             let _ = client.quit(reason.unwrap_or_default()).await;
         });
         vec![event, EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn reconnect(&self, command_id: String, network_id: NetworkId) -> Vec<EngineToUi> {
+        let Some((client, online)) = lock(&self.state).network.as_ref().and_then(|running| {
+            (running.model.id() == network_id)
+                .then(|| (running.client.clone(), running.model.is_online()))
+        }) else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let alive = online
+                && tokio::time::timeout(Duration::from_secs(5), client.ping())
+                    .await
+                    .is_ok_and(|result| result.is_ok());
+            let result = if alive {
+                Ok(())
+            } else {
+                client.reconnect().await
+            };
+            let event = if result.is_ok() {
+                EngineToUi::CommandResult { id: command_id }
+            } else {
+                EngineToUi::CommandRejected {
+                    id: command_id,
+                    message_key: "engine.connection_failed".into(),
+                }
+            };
+            let _ = outbound.send(event);
+        });
+        Vec::new()
+    }
+
+    fn set_device_online(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        online: bool,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.model.id() == network_id)
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        running.device_online = online;
+        if online {
+            let client = running.client.clone();
+            drop(state);
+            let outbound = self.outbound.clone();
+            spawn_task(async move {
+                let event = if client.reconnect().await.is_ok() {
+                    EngineToUi::CommandResult { id: command_id }
+                } else {
+                    EngineToUi::CommandRejected {
+                        id: command_id,
+                        message_key: "engine.connection_failed".into(),
+                    }
+                };
+                let _ = outbound.send(event);
+            });
+            Vec::new()
+        } else {
+            vec![
+                running.model.set_connection(
+                    NetworkConnectionState::Offline {
+                        reason: OfflineReason::DeviceOffline,
+                    },
+                    None,
+                ),
+                EngineToUi::CommandResult { id: command_id },
+            ]
+        }
     }
 
     fn expire_hosted_authentication(
@@ -499,9 +592,12 @@ impl Runtime {
             state.network = Some(running);
             return rejected_command(command_id, "engine.network_not_found");
         }
-        let event = running
-            .model
-            .set_connection(NetworkConnectionState::Stopped, None);
+        let event = running.model.set_connection(
+            NetworkConnectionState::Offline {
+                reason: OfflineReason::Requested,
+            },
+            None,
+        );
         let client = running.client;
         drop(state);
         spawn_task(async move {
@@ -1566,12 +1662,16 @@ fn process_event_with_direct(
     let mut output = Vec::new();
     let mut clear_hosted_authentication = false;
     let history_targets = match event {
-        papo::Event::Connecting(_) => {
-            output.push(
-                running
-                    .model
-                    .set_connection(NetworkConnectionState::Connecting, None),
-            );
+        papo::Event::Connecting(connecting) => {
+            running.connection_attempt = u32::try_from(connecting.attempt).unwrap_or(u32::MAX);
+            let state = if running.device_online {
+                connecting_state(&connecting)
+            } else {
+                NetworkConnectionState::Offline {
+                    reason: OfflineReason::DeviceOffline,
+                }
+            };
+            output.push(running.model.set_connection(state, None));
             Vec::new()
         }
         papo::Event::Connected(connected) => {
@@ -1655,18 +1755,24 @@ fn process_disconnect(
     disconnected: &papo::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
-    output.push(
-        running
-            .model
-            .set_connection(disconnected_state(disconnected), None),
-    );
     let hosted_authentication_failed = running.authentication_kind
         == AuthenticationKind::HostedOAuth
         && is_sasl_failure(disconnected);
-    output.extend(connection_failure_notice(
-        disconnected,
-        hosted_authentication_failed,
+    output.push(running.model.set_connection(
+        disconnected_state(
+            disconnected,
+            running.connection_attempt,
+            hosted_authentication_failed,
+            running.device_online,
+            papo::time::now(),
+        ),
+        None,
     ));
+    if hosted_authentication_failed {
+        output.push(EngineToUi::Notice {
+            message_key: "engine.hosted_auth_failed".into(),
+        });
+    }
     hosted_authentication_failed
 }
 
@@ -1699,28 +1805,54 @@ fn process_nick_change(
     }
 }
 
-fn disconnected_state(disconnected: &papo::Disconnected) -> NetworkConnectionState {
-    if disconnected.is_reconnecting() {
-        NetworkConnectionState::Reconnecting
-    } else {
-        NetworkConnectionState::Stopped
+fn connecting_state(connecting: &papo::event::Connecting) -> NetworkConnectionState {
+    match connecting.phase {
+        papo::event::ConnectPhase::Transport | papo::event::ConnectPhase::Tls => {
+            NetworkConnectionState::Connecting
+        }
+        _ => NetworkConnectionState::Registering,
     }
 }
 
-fn connection_failure_notice(
+fn disconnected_state(
     disconnected: &papo::Disconnected,
+    attempt: u32,
     hosted_authentication_failed: bool,
-) -> Option<EngineToUi> {
-    (!matches!(disconnected.cause, papo::DisconnectCause::Requested { .. })).then(|| {
-        EngineToUi::Notice {
-            message_key: if hosted_authentication_failed {
-                "engine.hosted_auth_failed"
-            } else {
-                "engine.connection_failed"
-            }
-            .into(),
+    device_online: bool,
+    now: std::time::SystemTime,
+) -> NetworkConnectionState {
+    if !device_online {
+        return NetworkConnectionState::Offline {
+            reason: OfflineReason::DeviceOffline,
+        };
+    }
+    if let Some(reconnect_in) = disconnected.reconnect_in {
+        return NetworkConnectionState::Reconnecting {
+            attempt,
+            next_retry_at_ms: time_millis(now + reconnect_in),
+        };
+    }
+    if matches!(disconnected.cause, papo::DisconnectCause::Requested { .. }) {
+        return NetworkConnectionState::Offline {
+            reason: OfflineReason::Requested,
+        };
+    }
+    let reason = if hosted_authentication_failed || is_sasl_failure(disconnected) {
+        ConnectionFailureReason::Authentication
+    } else if matches!(disconnected.cause, papo::DisconnectCause::Connect(_)) {
+        ConnectionFailureReason::Transport
+    } else {
+        ConnectionFailureReason::Protocol
+    };
+    NetworkConnectionState::Failed {
+        reason,
+        message_key: if hosted_authentication_failed {
+            "engine.hosted_auth_failed"
+        } else {
+            "engine.connection_failed"
         }
-    })
+        .into(),
+    }
 }
 
 fn is_sasl_failure(disconnected: &papo::Disconnected) -> bool {
@@ -2050,7 +2182,7 @@ mod tests {
 
     use super::{
         AuthenticationKind, ConnectionAuthentication, MemberViews, RunningNetwork, Runtime,
-        RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_history,
+        RuntimeState, completion_context, disconnected_state, drain_events, fetch_history,
         fetch_latest, lock, process_event, process_history, utf16_len,
     };
     use crate::{
@@ -2061,13 +2193,28 @@ mod tests {
     };
 
     #[test]
-    fn unexpected_disconnects_emit_a_human_notice() {
-        let disconnected = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
-        assert!(matches!(
-            connection_failure_notice(&disconnected, false),
-            Some(EngineToUi::Notice { message_key })
-                if message_key == "engine.connection_failed"
-        ));
+    fn disconnect_state_projects_retry_deadline_and_permanent_failure() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(100);
+        let retrying = papo::Disconnected::new(
+            papo::DisconnectCause::PingTimeout,
+            Some(Duration::from_secs(2)),
+        );
+        assert_eq!(
+            disconnected_state(&retrying, 3, false, true, now),
+            crate::NetworkConnectionState::Reconnecting {
+                attempt: 3,
+                next_retry_at_ms: 102_000,
+            }
+        );
+
+        let failed = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
+        assert_eq!(
+            disconnected_state(&failed, 3, false, true, now),
+            crate::NetworkConnectionState::Failed {
+                reason: crate::ConnectionFailureReason::Protocol,
+                message_key: "engine.connection_failed".into(),
+            }
+        );
     }
 
     #[tokio::test]
@@ -2448,6 +2595,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2493,6 +2642,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -2547,6 +2698,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::HostedOAuth,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -2608,6 +2761,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2709,6 +2864,13 @@ mod tests {
             .collect()
     }
 
+    fn assert_empty_completion(events: &[EngineToUi]) {
+        assert!(matches!(
+            events.first(),
+            Some(EngineToUi::CompletionResult { candidates, .. }) if candidates.is_empty()
+        ));
+    }
+
     #[tokio::test]
     async fn submit_join_and_msg_use_typed_papo_commands() {
         let (client, mut events, mut wire) = wire(
@@ -2725,6 +2887,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2761,11 +2925,7 @@ mod tests {
                 explicit: true,
             },
         });
-        assert!(matches!(
-            completion.first(),
-            Some(EngineToUi::CompletionResult { candidates, .. })
-                if candidates.is_empty()
-        ));
+        assert_empty_completion(&completion);
 
         runtime.request(EngineRequestEnvelope {
             id: "topic".into(),
@@ -2839,6 +2999,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -2977,6 +3139,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3036,6 +3200,8 @@ mod tests {
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3159,6 +3325,8 @@ mod tests {
             network: Some(RunningNetwork {
                 instance: 1,
                 authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
                 client,
                 model,
             }),

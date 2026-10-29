@@ -93,18 +93,59 @@ pub struct HostedOAuthConfig {
     pub redirect_uri: String,
 }
 
-/// Connection state projected for the temporary debug shell.
+/// Why a network is intentionally offline.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
+pub enum OfflineReason {
+    /// The user or authentication owner stopped the connection.
+    Requested,
+    /// The browser reports that the device has no network path.
+    DeviceOffline,
+}
+
+/// Why papo stopped retrying a failed connection.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionFailureReason {
+    /// Authentication was rejected.
+    Authentication,
+    /// The transport could not be established or recovered.
+    Transport,
+    /// An established connection ended permanently.
+    Protocol,
+}
+
+/// Authoritative connection lifecycle projected by the engine.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
 pub enum NetworkConnectionState {
-    /// A papo client is registering or reconnecting.
+    /// The transport is being opened.
     Connecting,
+    /// IRC capabilities, authentication, or registration are in progress.
+    Registering,
     /// Registration completed.
     Online,
     /// The connection is waiting for papo's reconnect attempt.
-    Reconnecting,
-    /// No papo client is running.
-    Stopped,
+    Reconnecting {
+        /// One-based papo connection attempt.
+        #[ts(type = "number")]
+        attempt: u32,
+        /// Wall-clock deadline for the scheduled retry.
+        #[ts(type = "number")]
+        next_retry_at_ms: i64,
+    },
+    /// No connection attempt is scheduled.
+    Offline {
+        /// Stable offline classification.
+        reason: OfflineReason,
+    },
+    /// A permanent error needs user action.
+    Failed {
+        /// Stable failure classification.
+        reason: ConnectionFailureReason,
+        /// Localization key for the human explanation.
+        message_key: String,
+    },
 }
 
 /// UI projection of one configured network.
@@ -408,6 +449,18 @@ pub enum EngineRequest {
         network_id: NetworkId,
         /// Optional IRC quit reason.
         reason: Option<String>,
+    },
+    /// Retry a network immediately using papo's reconnect machinery.
+    Reconnect {
+        /// Network to reconnect.
+        network_id: NetworkId,
+    },
+    /// Reflect whether the browser currently has a network path.
+    SetDeviceOnline {
+        /// Network whose lifecycle projection should be updated.
+        network_id: NetworkId,
+        /// Browser connectivity hint; papo remains authoritative for the socket.
+        online: bool,
     },
     /// Send plain chat text to a channel or direct buffer.
     SendMessage {

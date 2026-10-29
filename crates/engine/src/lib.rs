@@ -12,11 +12,11 @@ use tokio::sync::mpsc;
 
 pub use protocol::{
     BufferId, BufferKind, BufferProjection, CompletionCandidate, CompletionTrigger,
-    DeploymentConfig, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig,
-    HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
-    MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, RedactedSecret,
-    SaslCredentials, ShellKind, UiToEngine,
+    ConnectionFailureReason, DeploymentConfig, EngineRequest, EngineRequestEnvelope, EngineToUi,
+    Hello, HostedNetworkConfig, HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection,
+    MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
+    MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
+    OfflineReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.
