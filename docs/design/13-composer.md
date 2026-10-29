@@ -24,10 +24,11 @@ current-target and comma-list conventions, treats `//text` and `/say text` as li
 and never exposes a raw-command escape hatch. The runtime registry is open to later user-defined
 specs even though only built-ins are executable now.
 
-`CompleteInput { buffer_id, input, cursor }` returns a correlated `CompletionResult` with a trigger,
-replace range, optional argument hint, and ordered typed candidates. The engine recognizes `/` only
-at message start and `@` or `#` only at word start. Command candidates come directly from the
-runtime `CommandSpec` registry and carry name, usage, and description keys. Selecting a command
+`CompleteInput { buffer_id, input, cursor, explicit }` returns a correlated `CompletionResult` with
+a trigger, replace range, optional argument hint, and ordered typed candidates. `explicit` marks a
+Tab request that may complete a nick outside the normal trigger positions. The engine recognizes
+`/` only at message start and `@` or `#` only at word start. Command candidates come directly from
+the runtime `CommandSpec` registry and carry name, usage, and description keys. Selecting a command
 keeps its argument hint visible and uses the spec's argument kinds to offer people or channels.
 People carry nick colour, away, and bot presentation; recent speakers precede a bounded member
 window. Channels already joined precede a bounded set seen during this connection. Requirements

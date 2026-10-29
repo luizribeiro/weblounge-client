@@ -24,7 +24,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 6. [x] Composer with optimistic send (`Sent`-based confirmation).
 6b. [x] Composer fixes (engine-owned navigation and completion, human errors, stable guarded drafts, and refreshed screenshots).
 6c. [x] One `Command` table (derive macro producing `CommandSpec`s, from `docs/design/commands-catalog.md`, M2 subset), renames (`EngineRequest`, action registry), action registry fed by UI actions + engine `CommandSpec`s.
-6d. [ ] Composer suggestions popup for `/`, `@`, `#` (Luiz's UI rules: compact, consistent on desktop and mobile).
+6d. [x] Composer suggestions popup for `/`, `@`, `#` (engine-backed, compact, and consistent on desktop and mobile).
 6e. [x] Command policy fixes (runtime-owned parsing, aliases, completion and help; secret redaction; derived gating; inline confirmation in both shells; cached topic notices).
 7. [x] Mobile shell: chats list and pushed chat screen.
 7b. [x] Mobile shell fixes (inline rows, compact previews, history, swipe cancellation, consistent times, DM previews, and routing/read tests).
