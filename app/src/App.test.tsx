@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
 import { type EngineClient, EngineCommandError } from "./engine/EngineClient";
@@ -7,6 +7,7 @@ import type {
   EngineClientMessage,
   EngineRequestEnvelope,
 } from "./engine/protocol";
+import { OneShotAccessToken } from "./hosted/HostedSession";
 
 it("keeps synthetic timelines out of the production app", () => {
   const source = readFileSync("src/App.tsx", "utf8");
@@ -35,6 +36,57 @@ it("reports document visibility to the engine", () => {
   document.dispatchEvent(new Event("visibilitychange"));
 
   expect(client.visibility).toEqual(["visible", "hidden"]);
+});
+
+it("hands a hosted token to the engine once and reauthorizes on rejection", async () => {
+  const client = new FakeEngineClient();
+  const authorize = vi.fn();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: ["#lounge"],
+        },
+        token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
+      }}
+      onHostedAuthorizationRequired={authorize}
+    />
+  ));
+
+  expect(await screen.findByText("Signing in…")).toBeVisible();
+  await waitFor(() =>
+    expect(client.requests).toContainEqual({
+      id: expect.any(String),
+      request: {
+        type: "connect_hosted",
+        label: "weblounge",
+        endpoint: "wss://beta.weblounge.org/socket",
+        nickname: "*",
+        oauth_token: "hosted-secret",
+        autojoin: ["#lounge"],
+      },
+    }),
+  );
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: "online",
+    },
+  });
+  expect(await screen.findByText("1 network · connected")).toBeVisible();
+
+  client.emit({ type: "notice", message_key: "engine.hosted_auth_failed" });
+  await waitFor(() => expect(authorize).toHaveBeenCalledWith("revoked"));
+  expect(client.requests).toContainEqual({
+    id: expect.any(String),
+    request: { type: "expire_hosted_authentication", network_id: 1 },
+  });
 });
 
 it("lists projected networks, buffers, and messages", async () => {

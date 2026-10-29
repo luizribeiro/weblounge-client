@@ -1,7 +1,6 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { commandHelp } from "./actions/command-help";
 import { consumeDebugPassword } from "./debug-irc-config";
-import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import {
@@ -19,8 +18,9 @@ import type {
 } from "./engine/protocol";
 import { t } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
+import type { HostedSession } from "./hosted/HostedSession";
+import { HostedStatus } from "./hosted/HostedStatus";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
-import { installSystemTheme } from "./theme/theme-controller";
 import {
   contextMenuRegistry,
   installContextMenuHandler,
@@ -30,16 +30,15 @@ const reloadMarker = "weblounge-build-reload";
 
 interface AppProps {
   engineClient?: EngineClient;
+  hostedSession?: HostedSession;
+  onHostedAuthorizationRequired?: (reason: "expired" | "revoked") => void;
 }
 
 export function App(props: AppProps) {
   const clientId = crypto.randomUUID();
-  const theme = installSystemTheme(document, window);
-  const removeDensity = installDensity(document);
-  onCleanup(() => theme.dispose());
-  onCleanup(removeDensity);
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
+  const [hostedError, setHostedError] = createSignal<string>();
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
@@ -58,6 +57,8 @@ export function App(props: AppProps) {
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
+  let cancelTokenExpiry = () => {};
+  let restartingHostedAuthorization = false;
 
   onMount(() => {
     const removeContextMenuHandler = installContextMenuHandler(document);
@@ -75,10 +76,15 @@ export function App(props: AppProps) {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
       if (message.type === "notice") {
+        if (message.message_key === "engine.hosted_auth_failed") {
+          void restartHostedAuthorization("revoked");
+          return;
+        }
         const notice = t(message.message_key);
         setEngineNotice(notice);
         if (message.message_key === "engine.connection_failed") {
           setComposerNotice(notice);
+          if (props.hostedSession !== undefined) setHostedError(notice);
         }
       }
       if (message.type === "message_failed") {
@@ -103,6 +109,12 @@ export function App(props: AppProps) {
             current === request ? undefined : current,
           ),
         );
+      }
+      if (
+        message.type === "network_state_changed" &&
+        message.network.state === "online"
+      ) {
+        setHostedError(undefined);
       }
       if (message.type === "members_changed") {
         const viewId = message.view_id;
@@ -136,19 +148,61 @@ export function App(props: AppProps) {
     document.addEventListener("visibilitychange", updateVisibility);
     updateVisibility();
 
-    const debugPassword = consumeDebugPassword(
-      new URL(window.location.href),
-      (path) => window.history.replaceState(window.history.state, "", path),
-    );
-    void startEngine(mountedClient, setEngineStatus, debugPassword, clientId);
+    const debugPassword =
+      __DEBUG_IRC_CONFIG__ === null
+        ? null
+        : consumeDebugPassword(new URL(window.location.href), (path) =>
+            window.history.replaceState(window.history.state, "", path),
+          );
+    void startEngine(
+      mountedClient,
+      setEngineStatus,
+      setHostedError,
+      debugPassword,
+      props.hostedSession,
+      clientId,
+    ).then(() => {
+      if (props.hostedSession === undefined) return;
+      cancelTokenExpiry = scheduleExpiry(
+        props.hostedSession.token.expiresAt,
+        () => void restartHostedAuthorization("expired"),
+      );
+    });
     onCleanup(() => {
+      cancelTokenExpiry();
       unregisterContextSurface();
       removeContextMenuHandler();
       document.removeEventListener("visibilitychange", updateVisibility);
       unsubscribe();
       void mountedClient.close();
     });
+
+    async function restartHostedAuthorization(
+      reason: "expired" | "revoked",
+    ): Promise<void> {
+      if (restartingHostedAuthorization) return;
+      restartingHostedAuthorization = true;
+      cancelTokenExpiry();
+      setHostedError("Your session expired. Signing in again…");
+      const network = networks()[0];
+      if (network !== undefined) {
+        await mountedClient
+          .send({
+            id: crypto.randomUUID(),
+            request: {
+              type: "expire_hosted_authentication",
+              network_id: network.id,
+            },
+          })
+          .catch(() => undefined);
+      }
+      props.onHostedAuthorizationRequired?.(reason);
+    }
   });
+
+  const hostedReady = () =>
+    props.hostedSession === undefined ||
+    networks().some((network) => network.state === "online");
 
   return (
     <div
@@ -165,101 +219,108 @@ export function App(props: AppProps) {
           {engineNotice()}
         </p>
       )}
-      <ResponsiveShell
-        memberViewScope={clientId}
-        networks={networks()}
-        buffers={buffers()}
-        commandSpecs={commandSpecs()}
-        composerNotice={composerNotice()}
-        completion={completion()}
-        focusRequest={focusRequest()}
-        messages={messages()}
-        memberships={memberships()}
-        memberWindows={memberWindows()}
-        onMarkRead={(bufferId, through) => {
-          if (client === undefined) return;
-          void client.send({
-            id: crypto.randomUUID(),
-            request: { type: "mark_read", buffer_id: bufferId, through },
-          });
-        }}
-        onLoadHistory={(bufferId) => {
-          if (client === undefined) return;
-          void client.send({
-            id: crypto.randomUUID(),
-            request: { type: "load_history", buffer_id: bufferId },
-          });
-        }}
-        onSend={(bufferId, text) => {
-          if (client === undefined) return Promise.resolve(false);
-          setComposerNotice(undefined);
-          return client
-            .send({
+      {!hostedReady() ? (
+        <HostedStatus
+          message={hostedError() ?? "Signing in…"}
+          error={hostedError() !== undefined}
+        />
+      ) : (
+        <ResponsiveShell
+          memberViewScope={clientId}
+          networks={networks()}
+          buffers={buffers()}
+          commandSpecs={commandSpecs()}
+          composerNotice={composerNotice()}
+          completion={completion()}
+          focusRequest={focusRequest()}
+          messages={messages()}
+          memberships={memberships()}
+          memberWindows={memberWindows()}
+          onMarkRead={(bufferId, through) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: { type: "mark_read", buffer_id: bufferId, through },
+            });
+          }}
+          onLoadHistory={(bufferId) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: { type: "load_history", buffer_id: bufferId },
+            });
+          }}
+          onSend={(bufferId, text) => {
+            if (client === undefined) return Promise.resolve(false);
+            setComposerNotice(undefined);
+            return client
+              .send({
+                id: crypto.randomUUID(),
+                request: {
+                  type: "submit_input",
+                  buffer_id: bufferId,
+                  input: text,
+                },
+              })
+              .then(() => true)
+              .catch((error: unknown) => {
+                setComposerNotice(
+                  error instanceof EngineCommandError
+                    ? t(error.messageKey, { input: text })
+                    : t("engine.command_failed"),
+                );
+                return false;
+              });
+          }}
+          onRequestCompletion={(bufferId, input, cursor, explicit) => {
+            if (client === undefined) return;
+            const id = crypto.randomUUID();
+            latestCompletionRequest = id;
+            void client
+              .send({
+                id,
+                request: {
+                  type: "complete_input",
+                  buffer_id: bufferId,
+                  input,
+                  cursor,
+                  explicit,
+                },
+              })
+              .then(() => {
+                if (
+                  latestCompletionRequest === id &&
+                  completion()?.command_id !== id
+                ) {
+                  setCompletion(undefined);
+                }
+              })
+              .catch(() => {
+                if (latestCompletionRequest === id) setCompletion(undefined);
+              });
+          }}
+          onRequestMembers={(viewId, bufferId, offset, filter = "") => {
+            if (client === undefined) return;
+            void client.send({
               id: crypto.randomUUID(),
               request: {
-                type: "submit_input",
+                type: "request_members",
                 buffer_id: bufferId,
-                input: text,
+                view_id: viewId,
+                offset,
+                filter,
               },
-            })
-            .then(() => true)
-            .catch((error: unknown) => {
-              setComposerNotice(
-                error instanceof EngineCommandError
-                  ? t(error.messageKey, { input: text })
-                  : t("engine.command_failed"),
-              );
-              return false;
             });
-        }}
-        onRequestCompletion={(bufferId, input, cursor, explicit) => {
-          if (client === undefined) return;
-          const id = crypto.randomUUID();
-          latestCompletionRequest = id;
-          void client
-            .send({
-              id,
-              request: {
-                type: "complete_input",
-                buffer_id: bufferId,
-                input,
-                cursor,
-                explicit,
-              },
-            })
-            .then(() => {
-              if (
-                latestCompletionRequest === id &&
-                completion()?.command_id !== id
-              ) {
-                setCompletion(undefined);
-              }
-            })
-            .catch(() => {
-              if (latestCompletionRequest === id) setCompletion(undefined);
+          }}
+          onOpenDirect={(networkId, nick) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: { type: "open_direct", network_id: networkId, nick },
             });
-        }}
-        onRequestMembers={(viewId, bufferId, offset, filter = "") => {
-          if (client === undefined) return;
-          void client.send({
-            id: crypto.randomUUID(),
-            request: {
-              type: "request_members",
-              buffer_id: bufferId,
-              view_id: viewId,
-              offset,
-              filter,
-            },
-          });
-        }}
-        onOpenDirect={(networkId, nick) => {
-          if (client === undefined) return;
-          void client.send({
-            id: crypto.randomUUID(),
-            request: { type: "open_direct", network_id: networkId, nick },
-          });
-        }}
-      />
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -267,7 +328,9 @@ export function App(props: AppProps) {
 async function startEngine(
   client: EngineClient,
   setStatus: (status: string) => void,
+  setHostedError: (message: string) => void,
   debugPassword: string | null,
+  hostedSession: HostedSession | undefined,
   clientId: string,
 ): Promise<void> {
   try {
@@ -285,7 +348,19 @@ async function startEngine(
         message: "wasm worker round trip complete",
       },
     });
-    if (__DEBUG_IRC_CONFIG__ !== null && debugPassword !== null) {
+    if (hostedSession !== undefined) {
+      await client.send({
+        id: crypto.randomUUID(),
+        request: {
+          type: "connect_hosted",
+          label: hostedSession.network.name,
+          endpoint: hostedSession.network.endpoint,
+          nickname: "*",
+          oauth_token: hostedSession.token.take(),
+          autojoin: hostedSession.network.autojoin,
+        },
+      });
+    } else if (__DEBUG_IRC_CONFIG__ !== null && debugPassword !== null) {
       await client.send({
         id: crypto.randomUUID(),
         request: {
@@ -308,7 +383,26 @@ async function startEngine(
       return;
     }
     setStatus("Engine failed to start");
+    if (hostedSession !== undefined) {
+      setHostedError("Couldn't start the chat. Reload the app to try again.");
+    }
   }
+}
+
+function scheduleExpiry(expiresAt: number, expire: () => void): () => void {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      expire();
+      return;
+    }
+    timeout = setTimeout(arm, Math.min(remaining, 2_147_000_000));
+  };
+  arm();
+  return () => {
+    if (timeout !== undefined) clearTimeout(timeout);
+  };
 }
 
 function applyDebugEvent(

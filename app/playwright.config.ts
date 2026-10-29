@@ -14,9 +14,16 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}`,
   },
-  webServer: {
-    command: serverCommand,
-    reuseExistingServer: false,
-    url: `http://127.0.0.1:${port}`,
-  },
+  webServer: [
+    {
+      command: serverCommand,
+      reuseExistingServer: false,
+      url: `http://127.0.0.1:${port}`,
+    },
+    {
+      command: "node e2e/fake-oauth-server.mjs",
+      reuseExistingServer: false,
+      url: "http://127.0.0.1:4174/health",
+    },
+  ],
 });

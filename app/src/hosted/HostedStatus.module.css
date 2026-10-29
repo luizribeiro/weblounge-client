@@ -1,0 +1,27 @@
+.root {
+  align-items: center;
+  background: var(--wl-color-bg);
+  block-size: 100%;
+  color: var(--wl-color-muted);
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--wl-font-ui);
+  gap: 16px;
+  inline-size: 100%;
+  justify-content: center;
+  user-select: none;
+}
+
+.root p {
+  font-size: 13px;
+  margin: 0;
+  max-inline-size: min(32rem, calc(100% - 48px));
+  text-align: center;
+}
+
+.mark {
+  block-size: 7rem;
+  inline-size: 7rem;
+  opacity: 0.72;
+}
