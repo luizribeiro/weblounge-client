@@ -30,3 +30,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 22 | 2026-10-29 | Resizing the window doesn't keep the newest message at the bottom when you were at the live edge (also mobile keyboard, panels, composer growth). | queued |
 | 23 | 2026-10-29 | The auto-complete popup flashes on each keystroke before updating. | queued |
 | 24 | 2026-10-29 | Desktop: after collapsing the sidebar with the hamburger, the conversation and composer don't widen to fill the window. | queued |
+| 25 | 2026-10-29 | Server buffer says "Channel" under its name, shows nothing, and can't be reached on mobile. (Lower priority.) | queued, last |
