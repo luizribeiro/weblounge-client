@@ -94,6 +94,8 @@ pub(crate) enum Command {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     use super::Command;
     use crate::commands::{self, CommandArgumentKind};
 
@@ -131,6 +133,76 @@ mod tests {
             Ok(Command::Join { channels, keys: Some(keys) })
                 if channels.0 == ["#room"] && keys.0 == ["other"]
         ));
+    }
+
+    #[test]
+    fn command_names_have_no_second_source_list() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = Vec::new();
+        source_files(&root.join("crates"), &mut files);
+        source_files(&root.join("app/src"), &mut files);
+        let mut stray = Vec::new();
+        for path in files {
+            let relative = path.strip_prefix(&root).expect("source is in repository");
+            if ignored_source(relative) {
+                continue;
+            }
+            let source = fs::read_to_string(&path).expect("source is readable");
+            let production = source.split("\n#[cfg(test)]").next().unwrap_or_default();
+            for spec in Command::specs() {
+                if allowed_incidental(relative, &spec.name) {
+                    continue;
+                }
+                let quoted = format!("\"{}\"", spec.name);
+                let single_quoted = format!("'{}'", spec.name);
+                if production.contains(&quoted) || production.contains(&single_quoted) {
+                    stray.push(format!("{}: {}", relative.display(), spec.name));
+                }
+            }
+        }
+        assert!(
+            stray.is_empty(),
+            "command-name literals outside declaration.rs: {stray:#?}"
+        );
+    }
+
+    fn source_files(directory: &Path, files: &mut Vec<std::path::PathBuf>) {
+        if !directory.exists() {
+            return;
+        }
+        for entry in fs::read_dir(directory).expect("source directory is readable") {
+            let path = entry.expect("source entry is readable").path();
+            if path.is_dir() {
+                source_files(&path, files);
+            } else if matches!(
+                path.extension().and_then(std::ffi::OsStr::to_str),
+                Some("rs" | "ts" | "tsx")
+            ) {
+                files.push(path);
+            }
+        }
+    }
+
+    fn ignored_source(path: &Path) -> bool {
+        let path = path.to_string_lossy();
+        path.ends_with("commands/declaration.rs")
+            || path.contains("/tests/")
+            || path.contains("/generated/")
+            || path.contains(".test.")
+            || path.ends_with("features/composer/strings.ts")
+    }
+
+    fn allowed_incidental(path: &Path, name: &str) -> bool {
+        let path = path.to_string_lossy();
+        matches!(
+            (path.as_ref(), name),
+            (
+                "app/src/App.tsx" | "app/src/engine/createEngineClient.ts",
+                "notice",
+            ) | ("app/src/actions/action-registry.ts", "help")
+                | ("app/src/engine/EngineClient.ts", "notice" | "part" | "quit")
+                | ("app/src/features/conversation/MessageList.tsx", "quit")
+        )
     }
 
     #[test]
