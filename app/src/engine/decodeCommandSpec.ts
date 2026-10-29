@@ -1,24 +1,37 @@
+import type { CommandArgumentKind } from "./generated/CommandArgumentKind";
+import type { CommandPermission } from "./generated/CommandPermission";
 import type { CommandSpec } from "./generated/CommandSpec";
+import type { CommandSurface } from "./generated/CommandSurface";
+import type { ConfirmPolicy } from "./generated/ConfirmPolicy";
 
-const argumentKinds = [
-  "nick",
-  "channel",
-  "channel_list",
-  "key_list",
-  "target",
-  "text",
-  "command_name",
-] as const;
-const permissions = ["anyone", "half_op", "op", "oper"] as const;
-const surfaces = [
-  "slash",
-  "palette",
-  "user_menu",
-  "message_menu",
-  "channel_menu",
-  "network_menu",
-] as const;
-const confirmPolicies = ["none", "menu", "always"] as const;
+const argumentKinds = enumValues<CommandArgumentKind>({
+  nick: true,
+  channel: true,
+  channel_list: true,
+  key_list: true,
+  target: true,
+  text: true,
+  command_name: true,
+});
+const permissions = enumValues<CommandPermission>({
+  anyone: true,
+  half_op: true,
+  op: true,
+  oper: true,
+});
+const surfaces = enumValues<CommandSurface>({
+  slash: true,
+  palette: true,
+  user_menu: true,
+  message_menu: true,
+  channel_menu: true,
+  network_menu: true,
+});
+const confirmPolicies = enumValues<ConfirmPolicy>({
+  none: true,
+  menu: true,
+  always: true,
+});
 
 export function decodeCommandSpecs(value: unknown): CommandSpec[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -116,4 +129,10 @@ function isOneOf<const Values extends readonly string[]>(
   values: Values,
 ): value is Values[number] {
   return typeof value === "string" && values.some((item) => item === value);
+}
+
+function enumValues<Value extends string>(
+  values: Readonly<Record<Value, true>>,
+): readonly Value[] {
+  return Object.keys(values) as Value[];
 }
