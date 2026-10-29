@@ -28,3 +28,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | queued |
 | 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | queued |
 | 22 | 2026-10-29 | Resizing the window doesn't keep the newest message at the bottom when you were at the live edge (also mobile keyboard, panels, composer growth). | queued |
+| 23 | 2026-10-29 | The auto-complete popup flashes on each keystroke before updating. | queued |
