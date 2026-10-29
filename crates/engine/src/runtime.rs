@@ -1172,6 +1172,7 @@ fn command_candidates(prefix: &str, state: &papo::State) -> Vec<CompletionCandid
                 .get(..prefix.len())
                 .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
         })
+        .filter(|spec| !spec.name.eq_ignore_ascii_case(prefix))
         .filter(|spec| command_requirements_met(spec, state))
         .map(|spec| CompletionCandidate::Command {
             name: spec.name.clone(),
@@ -2351,6 +2352,20 @@ mod tests {
                 && input == "/j"
                 && matches!(candidates.as_slice(), [CompletionCandidate::Command { name, .. }]
                     if name == "join")
+        ));
+
+        let exact = runtime.request(EngineRequestEnvelope {
+            id: "complete-exact".into(),
+            request: EngineRequest::SuggestInput {
+                buffer_id: BufferId(1),
+                input: "/join".into(),
+                cursor: 5,
+                explicit: false,
+            },
+        });
+        assert!(matches!(
+            exact.first(),
+            Some(EngineToUi::SuggestionResult { candidates, .. }) if candidates.is_empty()
         ));
     }
 
