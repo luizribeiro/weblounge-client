@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
   const performanceHarness = process.env.WEBLOUNGE_E2E_HARNESS === "1";
   const maxWorkers = process.env.WEBLOUNGE_VITEST_MAX_WORKERS;
   const testTimeout = process.env.WEBLOUNGE_VITEST_TEST_TIMEOUT;
+  const cspHeaders =
+    process.env.WEBLOUNGE_E2E_CSP === "1"
+      ? { "Content-Security-Policy": testContentSecurityPolicy() }
+      : undefined;
   const wasmDirectory =
     process.env.WEBLOUNGE_ENGINE_WASM_DIR ??
     resolve(import.meta.dirname, "../result/dist");
@@ -27,13 +31,14 @@ export default defineConfig(({ mode }) => {
     define: {
       __BUILD_ID__: JSON.stringify(buildId(wasmPath)),
       __DEBUG_IRC_CONFIG__: JSON.stringify(
-        buildDebugIrcConfig(mode, process.env),
+        buildDebugIrcConfig(mode, process.env, performanceHarness),
       ),
     },
-    plugins: [solid(), engineWasmAsset(wasmPath)],
-    ...(performanceHarness
-      ? {
-          build: {
+    base: "/",
+    build: {
+      sourcemap: false,
+      ...(performanceHarness
+        ? {
             rollupOptions: {
               input: {
                 app: resolve(import.meta.dirname, "index.html"),
@@ -51,9 +56,13 @@ export default defineConfig(({ mode }) => {
                 ),
               },
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
+    },
+    plugins: [solid(), engineWasmAsset(wasmPath)],
+    ...(cspHeaders === undefined
+      ? {}
+      : { server: { headers: cspHeaders }, preview: { headers: cspHeaders } }),
     resolve: {
       alias: {
         "@weblounge-engine": wasmModulePath,
@@ -72,6 +81,16 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+function testContentSecurityPolicy(): string {
+  return [
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "worker-src 'self'",
+    "font-src 'self'",
+    "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",
+    "img-src 'self'",
+  ].join("; ");
+}
 
 function engineWasmAsset(wasmPath: string): Plugin {
   return {

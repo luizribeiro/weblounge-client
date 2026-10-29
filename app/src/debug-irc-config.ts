@@ -11,14 +11,14 @@ type DebugEnvironment = Readonly<Record<string, string | undefined>>;
 export function buildDebugIrcConfig(
   mode: string,
   environment: DebugEnvironment,
+  allowProductionTestHarness = false,
 ): DebugIrcConfig | null {
   if (
     mode === "production" &&
-    environment.WEBLOUNGE_IRC_PASSWORD !== undefined
+    !allowProductionTestHarness &&
+    hasDebugValue(environment)
   ) {
-    throw new Error(
-      "WEBLOUNGE_IRC_PASSWORD must not be set for production builds",
-    );
+    throw new Error("WEBLOUNGE_IRC_* is unavailable in production builds");
   }
   const endpoint = environment.WEBLOUNGE_IRC_ENDPOINT;
   if (endpoint === undefined) return null;
@@ -29,6 +29,12 @@ export function buildDebugIrcConfig(
     channel: environment.WEBLOUNGE_IRC_CHANNEL ?? "#weblounge-test",
     allowInsecure: endpoint.startsWith("ws://127.0.0.1"),
   };
+}
+
+function hasDebugValue(environment: DebugEnvironment): boolean {
+  return Object.entries(environment).some(
+    ([key, value]) => key.startsWith("WEBLOUNGE_IRC_") && value !== undefined,
+  );
 }
 
 export function consumeDebugPassword(

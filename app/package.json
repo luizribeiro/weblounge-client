@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/verify-production-build.mjs",
     "dev": "vite",
     "e2e": "playwright test",
     "test": "vitest run",

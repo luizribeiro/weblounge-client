@@ -1,13 +1,28 @@
 import { expect, it, vi } from "vitest";
 import { buildDebugIrcConfig, consumeDebugPassword } from "./debug-irc-config";
 
-it("rejects a production build that receives a SASL password", () => {
+it.each([
+  "WEBLOUNGE_IRC_ENDPOINT",
+  "WEBLOUNGE_IRC_NICKNAME",
+  "WEBLOUNGE_IRC_ACCOUNT",
+  "WEBLOUNGE_IRC_CHANNEL",
+  "WEBLOUNGE_IRC_PASSWORD",
+])("rejects %s in a production build", (name) => {
   expect(() =>
     buildDebugIrcConfig("production", {
-      WEBLOUNGE_IRC_ENDPOINT: "ws://127.0.0.1:8067",
-      WEBLOUNGE_IRC_PASSWORD: "must-not-ship",
+      [name]: "must-not-ship",
     }),
-  ).toThrow("WEBLOUNGE_IRC_PASSWORD must not be set for production builds");
+  ).toThrow("WEBLOUNGE_IRC_* is unavailable in production builds");
+});
+
+it("allows the explicit production-shaped browser test harness", () => {
+  expect(
+    buildDebugIrcConfig(
+      "production",
+      { WEBLOUNGE_IRC_ENDPOINT: "ws://127.0.0.1:8067" },
+      true,
+    ),
+  ).toMatchObject({ endpoint: "ws://127.0.0.1:8067" });
 });
 
 it("keeps the runtime password out of build-time debug config", () => {
