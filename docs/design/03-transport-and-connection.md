@@ -113,11 +113,12 @@ pub struct RunningConnection {
 }
 
 pub enum ConnectionState {
-    Stopped { reason: OfflineReason },
     Connecting { attempt: u32, phase: ConnectPhase },
+    Registering { attempt: u32, phase: RegistrationPhase },
     Online { since: Timestamp, actions: NetworkActions },
-    Reconnecting { retry_at: Timestamp },
-    Suspended { since: Timestamp },
+    Reconnecting { attempt: u32, next_retry_at: Timestamp },
+    Offline { reason: OfflineReason },
+    Failed { reason: FailureReason, message_key: MessageKey },
 }
 ```
 
@@ -142,16 +143,18 @@ events are observable and cannot fill the queue.
 ## Lifecycle
 
 ```text
-Stopped → Connecting → Online → Reconnecting → Online
-   ↑          │           │           │
-   └──────── failure/user disconnect ─┘
-              Online → Suspended → Connecting
+Connecting → Registering → Online → Reconnecting → Online
+     │             │          │            │
+     └─────────────┴──────────┴──────→ Offline / Failed
 ```
 
-Papo's exponential reconnect policy owns delay, jitter, and attempt count. The engine reflects
-`Connecting`, `Connected`, and `Disconnected.reconnect_in`; it does not run another retry timer.
-“Reconnect now” calls `Client::reconnect()`. Authentication/permanent failures remain stopped until
-the user or configuration changes.
+Papo's exponential reconnect policy owns delay and jitter: immediate, then approximately 1s, 2s,
+5s, up to 30s. The engine reflects `Connecting.attempt`, `Connecting.phase`, and
+`Disconnected.reconnect_in`; it does not run another retry timer. “Reconnect now” calls
+`Client::reconnect()` on browser `online`, visible `visibilitychange`, and persisted `pageshow`.
+Papo's keepalive detects a dead resumed socket; if measurements show its deadline is too slow,
+weblounge will request a public short-timeout liveness operation instead of implementing IRC PING.
+Authentication and permanent failures enter `Failed`; device-offline conditions enter `Offline`.
 
 On every `Connected`, the engine increments the connection epoch and reads `Client::state()` before
 publishing `Online`. `ChannelSynced` marks autojoins ready. On `Event::Lagged`, it re-reads papo
@@ -164,9 +167,22 @@ occurs, the engine surfaces it in diagnostics, enters papo's normal reconnect pa
 projections from the fresh snapshot after `Connected`.
 
 Deliberate disconnect stops command intake, awaits `Client::quit()` within a bounded shutdown, and
-drops the task. Mobile backgrounding uses the same bounded quit/drop path; foreground creates a
-new client instance and history later repairs the gap. Hidden browser tabs and minimized desktop
-windows remain connected.
+drops the task. Mobile backgrounding does not replace the shell or deliberately quit: the worker
+and papo connection remain authoritative for as long as the platform keeps them alive. Foreground
+requests an immediate reconnect/liveness check, and papo history catch-up repairs the gap.
+
+Once the UI has rendered a usable shell, connection changes never replace it with startup or error
+UI. The last projection, navigation, scroll position, and drafts stay mounted. `Reconnecting` and
+`Offline` render quiet shell indicators; only `Failed` offers retry. Transient disconnects never
+become buffer notices. Hosted authentication failure is distinct: an expired or revoked token
+clears its owner and restarts sign-in, while transport failure remains in the shell.
+
+Sends submitted outside `Online` become ordered pending records owned by the engine and flush in
+order after `Connected`. Server-dependent commands reject with a short offline reason. A worker
+host uses `messageerror`, a heartbeat, and a bounded request timeout to detect termination, rebuild
+the worker, repeat `Hello`, and request a snapshot. Persisting queued sends across that new engine
+instance waits for the storage subsystem; the UI must state this limitation rather than duplicate
+the queue.
 
 The milestone-2 single-network runtime rejects a second `Connect` while a client exists with the
 typed `engine.network_already_connected` command error. It never replaces a live client implicitly;
@@ -216,7 +232,11 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
   smoke test; there is no packaged papo test-server dependency.
 - OAuth state, PKCE, callback, one-shot secret transfer, expiry, and redaction have pure or mocked
   HTTP tests. The existing weblounge VM remains the manual end-to-end concierge/Ergo check.
-- Mobile lifecycle tests simulate the bounded background deadline and fresh-instance resume.
+- State-machine table tests cover every transition, papo-projected retry timing, and hosted token
+  expiry versus transient transport failure.
+- Playwright desktop and mobile WebKit tests preserve the mounted shell through offline/online,
+  visibility, socket loss, Ergo restart, and worker replacement; they also cover ordered pending
+  sends and hosted reauthorization.
 
 ## Out of scope
 
@@ -236,7 +256,9 @@ certificate-management UI, and gateway deployment are separate designs.
   browser endpoint type excludes TCP.
 - Drain papo `Events` immediately from `build()`, including during connect, until connect-time
   slow-consumer disconnects are removed upstream.
-- Use `Client::reconnect()` for reconnect-now; bounded quit/drop/rebuild for mobile suspend.
+- Use `Client::reconnect()` for reconnect-now and keep the last usable shell mounted.
+- Queue sends in the engine while not online and flush them in submission order after reconnect.
+- Treat hosted token rejection as reauthorization, never as a transient transport failure.
 - Expose only TLS TCP and secure WebSocket in production onboarding.
 - Use `ws://` only for explicit loopback test fixtures.
 - Luiz, 2026-10-27: hosted auth uses concierge's authorization-code flow with state and PKCE, then
