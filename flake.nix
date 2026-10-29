@@ -228,7 +228,9 @@
             localErgo
           ];
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
           WEBLOUNGE_APP_DIR = "${e2eApp}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
@@ -271,7 +273,9 @@
             pkgs.fontconfig
           ];
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_DEV = "1";
@@ -464,7 +468,9 @@
         };
         devShells.default = pkgs.mkShell {
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           packages = [
             rustToolchain
             wasmBindgenCli

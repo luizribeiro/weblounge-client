@@ -9,6 +9,22 @@ const serverCommand = devServer
   : `WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite preview --host 127.0.0.1 --port ${port}${outDir}`;
 
 export default defineConfig({
+  projects: [
+    {
+      name: "chromium",
+      use: { browserName: "chromium" },
+    },
+    {
+      name: "firefox-timestamps",
+      testMatch: "**/timestamps.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
+      name: "webkit-timestamps",
+      testMatch: "**/timestamps.spec.ts",
+      use: { browserName: "webkit" },
+    },
+  ],
   testDir: "./e2e",
   workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
   use: {
