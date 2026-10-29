@@ -40,7 +40,7 @@ export function App(props: AppProps) {
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [composerNotice, setComposerNotice] = createSignal<string>();
-  const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>([]);
+  const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<{
     bufferId: number;
     prefix: string;

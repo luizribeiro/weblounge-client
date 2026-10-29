@@ -41,7 +41,13 @@ export function Composer(props: ComposerProps) {
   };
 
   createEffect(() => {
-    text();
+    const value = text();
+    const specs = props.commandSpecs;
+    if (specs === undefined || isSecretInput(value, specs)) {
+      removeDraft(currentDraftKey);
+    } else {
+      writeDraft(currentDraftKey, value);
+    }
     queueMicrotask(resize);
   });
 
@@ -58,11 +64,6 @@ export function Composer(props: ComposerProps) {
 
   const update = (value: string, resetCompletion = true) => {
     setText(value);
-    if (isSecretInput(value, props.commandSpecs ?? [])) {
-      removeDraft(currentDraftKey);
-    } else {
-      writeDraft(currentDraftKey, value);
-    }
     if (resetCompletion) {
       completion = undefined;
       setPendingCompletion(undefined);

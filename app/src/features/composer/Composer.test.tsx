@@ -4,6 +4,19 @@ import { expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
 import { readDraft } from "./draft-storage";
 
+const identify = {
+  name: "identify",
+  aliases: ["id"],
+  arguments: [],
+  usage: "cmd.identify.usage",
+  description: "cmd.identify.description",
+  requirements: [{ type: "connected" as const }],
+  permission: "anyone" as const,
+  surfaces: ["slash" as const],
+  confirm: "none" as const,
+  secret_arguments: true,
+};
+
 it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   const onSend = vi.fn();
   render(() => (
@@ -30,6 +43,7 @@ it("cycles completion and restores drafts by buffer", () => {
       bufferId={bufferId()}
       bufferTitle="#rust"
       candidates={["alice", "alex"]}
+      commandSpecs={[]}
       draftKey={`test:${bufferId()}`}
       onSend={() => {}}
     />
@@ -157,6 +171,7 @@ it("keeps a draft when the engine rejects submission", async () => {
     <Composer
       bufferId={8}
       bufferTitle="#rust"
+      commandSpecs={[]}
       draftKey="test:rejected"
       onSend={() => Promise.resolve(false)}
     />
@@ -175,20 +190,7 @@ it("does not persist secret command arguments", () => {
     <Composer
       bufferId={1}
       bufferTitle="#lounge"
-      commandSpecs={[
-        {
-          name: "identify",
-          aliases: ["id"],
-          arguments: [],
-          usage: "cmd.identify.usage",
-          description: "cmd.identify.description",
-          requirements: [{ type: "connected" }],
-          permission: "anyone",
-          surfaces: ["slash"],
-          confirm: "none",
-          secret_arguments: true,
-        },
-      ]}
+      commandSpecs={[identify]}
       draftKey="test:secret"
       onSend={() => true}
     />
@@ -206,6 +208,7 @@ it("restores a non-autojoined buffer draft after reload with a new buffer id", (
     <Composer
       bufferId={40}
       bufferTitle="#later"
+      commandSpecs={[]}
       draftKey="5:Local:rfc1459:#later"
       onSend={() => {}}
     />
@@ -219,10 +222,49 @@ it("restores a non-autojoined buffer draft after reload with a new buffer id", (
     <Composer
       bufferId={93}
       bufferTitle="#later"
+      commandSpecs={[]}
       draftKey="5:Local:rfc1459:#later"
       onSend={() => {}}
     />
   ));
 
   expect(screen.getByRole("textbox")).toHaveValue("survives reload");
+});
+
+it("persists nothing until command specs arrive", () => {
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      draftKey="test:pending-specs"
+      onSend={() => true}
+    />
+  ));
+
+  fireEvent.input(screen.getByRole("textbox"), {
+    target: { value: "could be secret" },
+  });
+
+  expect(readDraft("test:pending-specs")).toBe("");
+});
+
+it("clears a draft when arriving specs classify it as secret", () => {
+  const [specs, setSpecs] = createSignal<readonly (typeof identify)[]>([]);
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      commandSpecs={specs()}
+      draftKey="test:late-secret"
+      onSend={() => true}
+    />
+  ));
+  fireEvent.input(screen.getByRole("textbox"), {
+    target: { value: "/id hunter2" },
+  });
+  expect(readDraft("test:late-secret")).toBe("/id hunter2");
+
+  setSpecs([identify]);
+
+  expect(readDraft("test:late-secret")).toBe("");
 });
