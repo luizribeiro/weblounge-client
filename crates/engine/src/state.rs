@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -116,6 +116,7 @@ pub(crate) struct NetworkModel {
     directs: HashMap<papo::Nick, papo::DirectRef>,
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
+    recent_commands: VecDeque<String>,
     #[cfg(test)]
     name_rebuilds: usize,
 }
@@ -165,6 +166,7 @@ impl NetworkModel {
             directs: HashMap::new(),
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
+            recent_commands: VecDeque::new(),
             #[cfg(test)]
             name_rebuilds: 0,
         }
@@ -172,6 +174,18 @@ impl NetworkModel {
 
     pub(crate) const fn id(&self) -> NetworkId {
         self.network.id
+    }
+
+    pub(crate) fn remember_command(&mut self, name: String) {
+        self.recent_commands.retain(|recent| recent != &name);
+        self.recent_commands.push_front(name);
+        self.recent_commands.truncate(20);
+    }
+
+    pub(crate) fn command_recency(&self, name: &str) -> Option<usize> {
+        self.recent_commands
+            .iter()
+            .position(|recent| recent == name)
     }
 
     pub(crate) fn network_event(&self) -> EngineToUi {

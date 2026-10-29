@@ -62,6 +62,13 @@ pub enum ConfirmPolicy {
     Always,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) enum CompletionPriority {
+    Everyday,
+    #[default]
+    Other,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, TS)]
 pub struct CommandSpec {
     pub name: String,
@@ -73,6 +80,9 @@ pub struct CommandSpec {
     pub permission: CommandPermission,
     pub surfaces: Vec<CommandSurface>,
     pub confirm: ConfirmPolicy,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub(crate) completion_priority: CompletionPriority,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub confirmation_prompt: Option<String>,
@@ -163,6 +173,7 @@ mod tests {
             permission: CommandPermission::Anyone,
             surfaces: Vec::new(),
             confirm: ConfirmPolicy::None,
+            completion_priority: super::CompletionPriority::Other,
             confirmation_prompt: None,
             confirmation_action: None,
             secret_arguments: false,

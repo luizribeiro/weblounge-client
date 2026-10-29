@@ -10,6 +10,7 @@ pub(crate) struct Metadata {
     pub(crate) requirements: Vec<String>,
     pub(crate) permission: String,
     pub(crate) surfaces: Vec<String>,
+    pub(crate) completion: String,
     pub(crate) confirm: String,
     pub(crate) secret: bool,
 }
@@ -24,6 +25,7 @@ impl Metadata {
             requirements: vec!["Connected".into()],
             permission: "Anyone".into(),
             surfaces: Vec::new(),
+            completion: "Other".into(),
             confirm: "None".into(),
             secret: false,
         };
@@ -91,6 +93,10 @@ impl Metadata {
                             result.confirm =
                                 known_value(value, CONFIRM_POLICIES, "confirm policy")?;
                         }
+                        "completion" => {
+                            result.completion =
+                                known_value(value, COMPLETION_PRIORITIES, "completion priority")?;
+                        }
                         _ => return Err(meta.error("unknown command attribute")),
                     }
                 }
@@ -114,6 +120,7 @@ impl Metadata {
 
 const PERMISSIONS: &[&str] = &["Anyone", "HalfOp", "Op", "Oper"];
 const CONFIRM_POLICIES: &[&str] = &["None", "Menu", "Always"];
+const COMPLETION_PRIORITIES: &[&str] = &["Everyday", "Other"];
 const SURFACES: &[&str] = &[
     "Slash",
     "Palette",
@@ -178,6 +185,7 @@ mod tests {
         assert_eq!(metadata.aliases, ["j"]);
         assert_eq!(metadata.permission, "Anyone");
         assert_eq!(metadata.confirm, "None");
+        assert_eq!(metadata.completion, "Other");
         assert_eq!(metadata.requirements, ["Feature:multi-prefix"]);
         assert!(metadata.secret);
     }

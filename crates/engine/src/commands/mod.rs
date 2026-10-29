@@ -8,6 +8,7 @@ mod values;
 use std::sync::OnceLock;
 
 pub(crate) use declaration::Command;
+pub(crate) use spec::CompletionPriority;
 pub use spec::{
     CommandArgumentKind, CommandArgumentSpec, CommandPermission, CommandRegistry,
     CommandRequirement, CommandSpec, CommandSurface, ConfirmPolicy,
@@ -74,4 +75,15 @@ pub(crate) fn built_in_registry() -> CommandRegistry {
 pub(crate) fn registry() -> &'static CommandRegistry {
     static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
     REGISTRY.get_or_init(built_in_registry)
+}
+
+pub(crate) fn explicit_command_name(input: &str) -> Option<String> {
+    let command = input.strip_prefix('/')?;
+    if command.starts_with('/') {
+        return None;
+    }
+    registry()
+        .parse(command)
+        .ok()
+        .map(|registered| registered.spec.name.clone())
 }

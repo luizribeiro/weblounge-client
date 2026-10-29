@@ -116,11 +116,13 @@ fn spec(
         requirements,
         permission,
         surfaces,
+        completion,
         confirm,
         secret,
     } = metadata;
     let permission = format_ident!("{permission}");
     let confirm = format_ident!("{confirm}");
+    let completion = format_ident!("{completion}");
     let confirmation = if confirm == "None" {
         quote! { confirmation_prompt: None, confirmation_action: None }
     } else {
@@ -149,6 +151,7 @@ fn spec(
             usage: #usage.into(), description: #description.into(),
             requirements: vec![#(#requirements),*], permission: CommandPermission::#permission,
             surfaces: vec![#(CommandSurface::#surfaces),*], confirm: ConfirmPolicy::#confirm,
+            completion_priority: CompletionPriority::#completion,
             #confirmation,
             secret_arguments: #secret,
         }

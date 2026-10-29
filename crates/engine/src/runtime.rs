@@ -193,7 +193,14 @@ impl Runtime {
             || "#&".to_owned(),
             |running| running.client.state().isupport().chantypes().to_owned(),
         );
-        match commands::parse_with_registry(commands::registry(), input, &chantypes) {
+        let parsed = commands::parse_with_registry(commands::registry(), input, &chantypes);
+        if parsed.is_ok()
+            && let Some(name) = commands::explicit_command_name(input)
+            && let Some(running) = lock(&self.state).network.as_mut()
+        {
+            running.model.remember_command(name);
+        }
+        match parsed {
             Ok(Command::Say { text }) => {
                 self.send_input(id, buffer_id, text.0, crate::MessageKind::Text)
             }
@@ -345,7 +352,9 @@ impl Runtime {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
         let candidates = match context.trigger {
-            CompletionTrigger::Command => command_candidates(&context.prefix, &snapshot),
+            CompletionTrigger::Command => {
+                command_candidates(&context.prefix, &running.model, &snapshot)
+            }
             CompletionTrigger::Person => {
                 person_candidates(&running.model, buffer_id, &context.prefix, &snapshot)
             }
@@ -1107,8 +1116,12 @@ fn command_argument_context(
     })
 }
 
-fn command_candidates(prefix: &str, state: &papo::State) -> Vec<CompletionCandidate> {
-    commands::registry()
+fn command_candidates(
+    prefix: &str,
+    model: &NetworkModel,
+    state: &papo::State,
+) -> Vec<CompletionCandidate> {
+    let mut specs = commands::registry()
         .specs()
         .iter()
         .filter(|spec| spec.surfaces.contains(&commands::CommandSurface::Slash))
@@ -1119,6 +1132,16 @@ fn command_candidates(prefix: &str, state: &papo::State) -> Vec<CompletionCandid
         })
         .filter(|spec| !spec.name.eq_ignore_ascii_case(prefix))
         .filter(|spec| command_requirements_met(spec, state))
+        .collect::<Vec<_>>();
+    specs.sort_by_key(|spec| {
+        (
+            spec.completion_priority,
+            model.command_recency(&spec.name).unwrap_or(usize::MAX),
+            spec.name.to_ascii_lowercase(),
+        )
+    });
+    specs
+        .into_iter()
         .map(|spec| CompletionCandidate::Command {
             name: spec.name.clone(),
             usage: spec.usage.clone(),
@@ -1869,6 +1892,7 @@ mod tests {
             permission: CommandPermission::Anyone,
             surfaces: Vec::new(),
             confirm: ConfirmPolicy::None,
+            completion_priority: commands::CompletionPriority::Other,
             confirmation_prompt: None,
             confirmation_action: None,
             secret_arguments: false,
@@ -2312,6 +2336,58 @@ mod tests {
             exact.first(),
             Some(EngineToUi::CompletionResult { candidates, .. }) if candidates.is_empty()
         ));
+
+        let initial = runtime.request(EngineRequestEnvelope {
+            id: "complete-all".into(),
+            request: EngineRequest::CompleteInput {
+                buffer_id: BufferId(1),
+                input: "/".into(),
+                cursor: 1,
+                explicit: false,
+            },
+        });
+        assert_eq!(
+            command_candidate_names(&initial)[..7],
+            ["join", "me", "msg", "nick", "part", "query", "topic"]
+        );
+
+        let help = runtime.request(EngineRequestEnvelope {
+            id: "help".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/?".into(),
+            },
+        });
+        assert!(matches!(
+            help.as_slice(),
+            [
+                EngineToUi::CommandHelpRequested { command: None },
+                EngineToUi::CommandResult { .. }
+            ]
+        ));
+        let recent = runtime.request(EngineRequestEnvelope {
+            id: "complete-recent".into(),
+            request: EngineRequest::CompleteInput {
+                buffer_id: BufferId(1),
+                input: "/".into(),
+                cursor: 1,
+                explicit: false,
+            },
+        });
+        assert_eq!(command_candidate_names(&recent).get(7), Some(&"help"));
+    }
+
+    fn command_candidate_names(events: &[EngineToUi]) -> Vec<&str> {
+        let Some(EngineToUi::CompletionResult { candidates, .. }) = events.first() else {
+            panic!("completion result is first");
+        };
+        candidates
+            .iter()
+            .filter_map(|candidate| match candidate {
+                CompletionCandidate::Command { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 
     #[tokio::test]

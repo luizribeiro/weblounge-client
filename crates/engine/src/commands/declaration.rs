@@ -1,5 +1,6 @@
 use super::{
-    CommandPermission, CommandRequirement, CommandSpec, CommandSurface, ConfirmPolicy, InputError,
+    CommandPermission, CommandRequirement, CommandSpec, CommandSurface, CompletionPriority,
+    ConfirmPolicy, InputError,
     arguments::{CommandArg, ParseContext, Tokens},
     values::{Channel, ChannelList, CommandName, KeyList, Nick, Target, Text},
 };
@@ -13,12 +14,14 @@ pub(crate) enum Command {
     Say { text: Text },
     #[command(
         name = "msg", aliases = ["m", "privmsg"], usage = "cmd.msg.usage",
-        description = "cmd.msg.description", surfaces = ["Slash", "Palette"]
+        description = "cmd.msg.description", surfaces = ["Slash", "Palette"],
+        completion = "Everyday"
     )]
     Msg { target: Target, text: Text },
     #[command(
         name = "query", aliases = ["q"], usage = "cmd.query.usage",
-        description = "cmd.query.description", surfaces = ["Slash", "Palette", "UserMenu"]
+        description = "cmd.query.description", surfaces = ["Slash", "Palette", "UserMenu"],
+        completion = "Everyday"
     )]
     Query { nick: Nick, text: Option<Text> },
     #[command(
@@ -28,12 +31,13 @@ pub(crate) enum Command {
     Notice { target: Target, text: Text },
     #[command(
         name = "me", aliases = [], usage = "cmd.me.usage", description = "cmd.me.description",
-        surfaces = ["Slash"]
+        surfaces = ["Slash"], completion = "Everyday"
     )]
     Me { text: Text },
     #[command(
         name = "join", aliases = ["j"], usage = "cmd.join.usage",
-        description = "cmd.join.description", surfaces = ["Slash", "Palette", "NetworkMenu"]
+        description = "cmd.join.description", surfaces = ["Slash", "Palette", "NetworkMenu"],
+        completion = "Everyday"
     )]
     Join {
         channels: ChannelList,
@@ -42,7 +46,7 @@ pub(crate) enum Command {
     #[command(
         name = "part", aliases = ["leave"], usage = "cmd.part.usage",
         description = "cmd.part.description", surfaces = ["Slash", "Palette", "ChannelMenu"],
-        confirm = "Menu"
+        confirm = "Menu", completion = "Everyday"
     )]
     Part {
         channel: Channel,
@@ -64,7 +68,8 @@ pub(crate) enum Command {
     },
     #[command(
         name = "topic", aliases = ["t"], usage = "cmd.topic.usage",
-        description = "cmd.topic.description", surfaces = ["Slash", "Palette", "ChannelMenu"]
+        description = "cmd.topic.description", surfaces = ["Slash", "Palette", "ChannelMenu"],
+        completion = "Everyday"
     )]
     Topic {
         channel: Channel,
@@ -72,7 +77,7 @@ pub(crate) enum Command {
     },
     #[command(
         name = "nick", aliases = [], usage = "cmd.nick.usage", description = "cmd.nick.description",
-        surfaces = ["Slash", "Palette", "NetworkMenu"]
+        surfaces = ["Slash", "Palette", "NetworkMenu"], completion = "Everyday"
     )]
     Nick { nick: Nick },
     #[command(
