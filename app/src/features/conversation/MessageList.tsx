@@ -20,7 +20,7 @@ import type {
 import { nickPaletteSize } from "../../theme/theme-registry";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
-import { formatTime } from "../../ui/format-time";
+import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MessageList.module.css";
@@ -250,6 +250,7 @@ export function MessageList(props: MessageListProps) {
         ref={(element) => {
           list = element;
         }}
+        style={{ "--wl-message-time-column": formattedTimeColumnWidth() }}
         tabindex="0"
         onCopy={(event) =>
           copySelectedRows(event, event.currentTarget, toCopyRows(rows()))

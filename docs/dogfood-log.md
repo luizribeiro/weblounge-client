@@ -6,8 +6,8 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 
 | # | Reported | Issue | Status |
 |---|---|---|---|
-| 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. | in progress |
-| 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | queued |
+| 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. | fixed |
+| 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | fixed |
 | 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | queued |
 | 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | queued |
 | 5 | 2026-10-29 | Mobile: the chats list flashes when going back to it, as if reloading. | queued |

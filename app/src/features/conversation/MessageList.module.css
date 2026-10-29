@@ -31,7 +31,9 @@
   display: grid;
   font-size: calc(var(--wl-font-base) + var(--wl-density-message-font-delta));
   gap: 10px;
-  grid-template-columns: 48px 112px minmax(0, 1fr) auto;
+  grid-template-columns:
+    var(--wl-message-time-column, 9ch) 112px minmax(0, 1fr)
+    auto;
   line-height: var(--wl-density-message-line-height);
   padding: var(--wl-density-message-one-line-row-padding) 8px;
 }
@@ -49,6 +51,11 @@
   color: var(--wl-color-muted);
   font-family: var(--wl-font-mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.time [data-line] {
+  overflow: visible;
+  text-overflow: clip;
 }
 .nickColumn {
   align-items: baseline;
