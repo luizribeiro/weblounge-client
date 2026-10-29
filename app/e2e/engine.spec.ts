@@ -142,20 +142,36 @@ test.describe("local Ergo user flow", () => {
   }) => {
     test.slow();
     await page.goto("/?irc-password=weblounge-test");
-    await expect(
-      page.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
+    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    const channel = `#timeline-${Date.now()}`;
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     const bot = await IrcClient.connect(
       "timeline-bot",
       "weblounge-bot",
       "weblounge-bot-test",
-      "#weblounge-test",
+      channel,
     );
     const list = page.locator("[data-message-list]");
     const active = page.locator('[data-buffer-id][aria-current="page"]');
     try {
+      await expect(
+        page.getByRole("button", { name: "Toggle member list" }),
+      ).toContainText("2");
+      const liveEdgeReady = `live edge ready ${Date.now()}`;
+      await bot.privmsgConfirmed(channel, liveEdgeReady);
+      await list.press("End");
+      await expect(
+        page.getByText(liveEdgeReady, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: /new message/ }),
+      ).toHaveCount(0);
+      await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
       for (let index = 0; index < 40; index += 1) {
-        await bot.privmsgConfirmed("#weblounge-test", `timeline seed ${index}`);
+        await bot.privmsgConfirmed(channel, `timeline seed ${index}`);
       }
       await expect(
         page.getByText("timeline seed 39", { exact: true }),
@@ -173,7 +189,7 @@ test.describe("local Ergo user flow", () => {
       });
       await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
       const away = `while away ${Date.now()}`;
-      await bot.privmsgConfirmed("#weblounge-test", away);
+      await bot.privmsgConfirmed(channel, away);
       await expect(
         page.getByRole("button", { name: /new message/ }),
       ).toBeVisible();

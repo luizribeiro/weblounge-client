@@ -202,7 +202,9 @@ mod tests {
         matches!(
             (path.as_ref(), name),
             (
-                "app/src/App.tsx" | "app/src/engine/createEngineClient.ts",
+                "app/src/App.tsx"
+                    | "app/src/engine/createEngineClient.ts"
+                    | "app/src/engine/worker-runtime.ts",
                 "notice",
             ) | ("app/src/actions/action-registry.ts", "help")
                 | ("app/src/engine/EngineClient.ts", "notice" | "part" | "quit")

@@ -75,7 +75,11 @@ export function App(props: AppProps) {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
       if (message.type === "notice") {
-        setEngineNotice(t(message.message_key));
+        const notice = t(message.message_key);
+        setEngineNotice(notice);
+        if (message.message_key === "engine.connection_failed") {
+          setComposerNotice(notice);
+        }
       }
       if (message.type === "message_failed") {
         setComposerNotice(t(message.message_key));

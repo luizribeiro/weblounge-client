@@ -95,6 +95,7 @@ export function MessageList(props: MessageListProps) {
     rows();
     void (document.fonts?.ready ?? Promise.resolve()).then(() => {
       if (list?.isConnected !== true) return;
+      const preserveLiveEdge = atLiveEdge() || autoScrollPending;
       for (const element of list.querySelectorAll<HTMLLIElement>(
         "li[data-index]",
       )) {
@@ -104,6 +105,7 @@ export function MessageList(props: MessageListProps) {
           element.offsetHeight,
         );
       }
+      if (preserveLiveEdge) jumpToBottom();
     });
   });
   const reportLiveEdge = () => {

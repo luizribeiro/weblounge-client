@@ -78,6 +78,7 @@ it("broadcasts asynchronous buffer and member patches to every shared port", asy
   const patches = [
     { type: "buffer_updated", buffer: { id: 2, member_count: 2 } },
     { type: "members_changed", buffer_id: 2 },
+    { type: "notice", message_key: "engine.connection_failed" },
   ];
   for (const patch of patches) emit?.(JSON.stringify(patch));
 

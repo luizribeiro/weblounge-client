@@ -235,6 +235,12 @@ it("renders command error and engine notice keys as human text", async () => {
   expect(screen.getByRole("note")).toHaveTextContent(
     "The conversation changed unexpectedly. Try again.",
   );
+
+  client.emit({ type: "notice", message_key: "engine.connection_failed" });
+  const visibleConnectionNotice = screen
+    .getAllByText(/Couldn't connect to the server/u)
+    .find((element) => !element.classList.contains("visually-hidden"));
+  expect(visibleConnectionNotice).toBeVisible();
 });
 
 it("prepends requested history before live rows", async () => {

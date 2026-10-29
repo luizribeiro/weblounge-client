@@ -1498,6 +1498,7 @@ fn process_event_with_direct(
                     .model
                     .set_connection(disconnected_state(&disconnected), None),
             );
+            output.extend(connection_failure_notice(&disconnected));
             Vec::new()
         }
         _ => Vec::new(),
@@ -1544,6 +1545,14 @@ fn disconnected_state(disconnected: &papo::Disconnected) -> NetworkConnectionSta
     } else {
         NetworkConnectionState::Stopped
     }
+}
+
+fn connection_failure_notice(disconnected: &papo::Disconnected) -> Option<EngineToUi> {
+    (!matches!(disconnected.cause, papo::DisconnectCause::Requested { .. })).then(|| {
+        EngineToUi::Notice {
+            message_key: "engine.connection_failed".into(),
+        }
+    })
 }
 
 fn process_part(
@@ -1833,8 +1842,9 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        MemberViews, RunningNetwork, Runtime, RuntimeState, completion_context, drain_events,
-        fetch_latest, lock, process_event, process_history, utf16_len,
+        MemberViews, RunningNetwork, Runtime, RuntimeState, completion_context,
+        connection_failure_notice, drain_events, fetch_latest, lock, process_event,
+        process_history, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -1842,6 +1852,16 @@ mod tests {
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         state::{NetworkModel, PendingSend, SendTarget},
     };
+
+    #[test]
+    fn unexpected_disconnects_emit_a_human_notice() {
+        let disconnected = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
+        assert!(matches!(
+            connection_failure_notice(&disconnected),
+            Some(EngineToUi::Notice { message_key })
+                if message_key == "engine.connection_failed"
+        ));
+    }
 
     #[test]
     fn completion_context_recognizes_triggers_and_command_arguments() {

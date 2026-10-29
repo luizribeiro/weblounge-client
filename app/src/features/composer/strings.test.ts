@@ -29,6 +29,11 @@ describe("composer strings", () => {
     expect(t("engine.channel_recreated")).toContain("channel was recreated");
   });
 
+  it("gives connection failures actionable checks", () => {
+    expect(t("engine.connection_failed")).toContain("certificate");
+    expect(t("engine.connection_failed")).toContain("site is allowed");
+  });
+
   it.each([
     "close",
     "cycle",
