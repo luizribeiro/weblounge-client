@@ -73,6 +73,27 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("preserves a long single-line message when confirmed", async ({
+    page,
+  }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await expect(
+      page.getByRole("heading", { name: /#weblounge-test/ }),
+    ).toBeVisible();
+    const text = `${"deployment update crossed every regional queue without changing the submitted text. ".repeat(8)}${Date.now()}`;
+    expect(text.length).toBeGreaterThan(512);
+
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill(text);
+    await composer.press("Enter");
+    const confirmed = page
+      .locator('[data-message-row][data-delivery="confirmed"]')
+      .filter({ has: page.getByText(text, { exact: true }) });
+    await expect(confirmed).toHaveCount(1);
+    await expect(confirmed).toHaveAttribute("data-message-text", text);
+    expect(text).not.toContain("\n");
+  });
+
   test("confirms typed quit before desktop execution", async ({ page }) => {
     await page.goto("/?irc-password=weblounge-test");
     const composer = page.getByRole("textbox", { name: "Message" });

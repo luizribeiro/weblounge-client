@@ -3816,6 +3816,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn labelled_multiline_send_preserves_the_confirmed_text() {
+        let caps = [
+            "batch",
+            "draft/multiline=max-bytes=4096,max-lines=100",
+            "echo-message",
+            "labeled-response",
+            "message-tags",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = known_channel(&client, "#room");
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(channel))
+            .expect("joined channel is projected");
+        let text = "deployment update ".repeat(40);
+        let (pending, _) = model
+            .begin_send(buffer_id, text.clone(), &client.state())
+            .expect("channel is sendable");
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move {
+            super::send(&sender, &pending)
+                .await
+                .map(|sent| (pending, sent))
+        });
+        assert_eq!(
+            wire.next_sent().await,
+            "@label=0 BATCH +b0-0 draft/multiline #room"
+        );
+        let first = wire
+            .next_sent()
+            .await
+            .strip_prefix("@batch=b0-0 PRIVMSG #room :")
+            .expect("first multiline component")
+            .to_owned();
+        let second = wire
+            .next_sent()
+            .await
+            .strip_prefix("@batch=b0-0;draft/multiline-concat PRIVMSG #room :")
+            .expect("automatic split is concatenated")
+            .to_owned();
+        assert_eq!(format!("{first}{second}"), text);
+        assert_eq!(wire.next_sent().await, "BATCH -b0-0");
+        wire.server("@label=0;msgid=whole :weblounge!u@host BATCH +echo draft/multiline #room")
+            .await;
+        wire.server(&format!(
+            "@batch=echo :weblounge!u@host PRIVMSG #room :{first}"
+        ))
+        .await;
+        wire.server(&format!(
+            "@batch=echo;draft/multiline-concat :weblounge!u@host PRIVMSG #room :{second}"
+        ))
+        .await;
+        wire.server(":weblounge!u@host BATCH -echo").await;
+        let (pending, metadata) = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+        let confirmation_events = model
+            .confirm_send(&pending, &metadata)
+            .expect("optimistic row exists");
+
+        assert!(matches!(
+            confirmation_events.as_slice(),
+            [EngineToUi::MessageConfirmed { message, .. }]
+                if message.server_ids == ["whole"]
+                    && message.text == text
+                    && !message.text.contains('\n')
+        ));
+    }
+
+    #[tokio::test]
     async fn labelled_split_send_preserves_every_msgid_without_an_echo_row() {
         let caps = ["echo-message", "labeled-response", "message-tags"];
         let (client, mut events, mut wire) =
