@@ -84,9 +84,11 @@ describe("OAuth authorization code with PKCE", () => {
   it("checks state once and clears a mismatched verifier", async () => {
     await createAuthorizationUrl(metadata, config);
     const callback = new URL(`${config.redirect_uri}?code=x&state=wrong`);
-    expect(() => consumeAuthorizationCallback(callback)).toThrow(
-      "did not match this tab",
-    );
+    const replace = vi.fn();
+    expect(() =>
+      consumeAuthorizationCallback(callback, sessionStorage, replace),
+    ).toThrow("did not match this tab");
+    expect(replace).toHaveBeenCalledWith("/");
     expect(sessionStorage.length).toBe(0);
     expect(() => consumeAuthorizationCallback(callback)).toThrow(
       HostedAuthorizationError,

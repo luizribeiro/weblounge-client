@@ -95,22 +95,28 @@ export async function createAuthorizationUrl(
 export function consumeAuthorizationCallback(
   url: URL,
   storage: Storage = sessionStorage,
+  replace: (path: string) => void = (path) =>
+    history.replaceState(history.state, "", path),
 ): AuthorizationCode | null {
   const code = url.searchParams.get("code");
   const oauthError = url.searchParams.get("error");
   if (code === null && oauthError === null) return null;
-  const verifier = consumePending(url.searchParams.get("state"), storage);
-  if (oauthError !== null) {
-    if (oauthError === "access_denied") {
+  try {
+    const verifier = consumePending(url.searchParams.get("state"), storage);
+    if (oauthError !== null) {
+      if (oauthError === "access_denied") {
+        throw new HostedAuthorizationError(
+          "Authorization was denied. Sign in again to continue.",
+        );
+      }
       throw new HostedAuthorizationError(
-        "Authorization was denied. Sign in again to continue.",
+        "Sign-in could not be completed. Please try again.",
       );
     }
-    throw new HostedAuthorizationError(
-      "Sign-in could not be completed. Please try again.",
-    );
+    return { code: code ?? "", verifier };
+  } finally {
+    replace(clearAuthorizationParameters(url));
   }
-  return { code: code ?? "", verifier };
 }
 
 export async function exchangeAuthorizationCode(

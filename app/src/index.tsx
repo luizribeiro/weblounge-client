@@ -7,7 +7,6 @@ import { loadDeploymentConfig } from "./hosted/deployment-config";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
 import {
-  clearAuthorizationParameters,
   consumeAuthorizationCallback,
   createAuthorizationUrl,
   discoverOAuthMetadata,
@@ -45,10 +44,10 @@ function Bootstrap() {
         return;
       }
       requireCurrentRedirect(config);
-      const metadata = await discoverOAuthMetadata(config.oauth);
       const authorization = consumeAuthorizationCallback(
         new URL(window.location.href),
       );
+      const metadata = await discoverOAuthMetadata(config.oauth);
       if (authorization === null) {
         setState({ type: "starting", message: "Opening sign in…" });
         window.location.assign(
@@ -60,11 +59,6 @@ function Bootstrap() {
         metadata,
         config.oauth,
         authorization,
-      );
-      window.history.replaceState(
-        window.history.state,
-        "",
-        clearAuthorizationParameters(new URL(window.location.href)),
       );
       setState({
         type: "hosted",
