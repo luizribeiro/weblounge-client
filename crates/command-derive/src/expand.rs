@@ -121,6 +121,15 @@ fn spec(
     } = metadata;
     let permission = format_ident!("{permission}");
     let confirm = format_ident!("{confirm}");
+    let confirmation = if confirm == "None" {
+        quote! { confirmation_prompt: None, confirmation_action: None }
+    } else {
+        let prompt = format!("cmd.{name}.confirmation_prompt");
+        let action = format!("cmd.{name}.confirmation_action");
+        quote! {
+            confirmation_prompt: Some(#prompt.into()), confirmation_action: Some(#action.into())
+        }
+    };
     let surfaces = surfaces.iter().map(|surface| format_ident!("{surface}"));
     let arguments = field_names.iter().zip(field_types).map(|(name, ty)| {
         let name = name.to_string();
@@ -140,6 +149,7 @@ fn spec(
             usage: #usage.into(), description: #description.into(),
             requirements: vec![#(#requirements),*], permission: CommandPermission::#permission,
             surfaces: vec![#(CommandSurface::#surfaces),*], confirm: ConfirmPolicy::#confirm,
+            #confirmation,
             secret_arguments: #secret,
         }
     }

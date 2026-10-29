@@ -77,7 +77,7 @@ textarea.input {
 }
 
 .confirm {
-  background: var(--wl-color-accent);
+  background: var(--wl-color-error);
   color: var(--wl-color-accent-fg);
 }
 

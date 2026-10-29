@@ -26,6 +26,7 @@ export const messageKeys = [
 ] as const;
 
 const commandStrings: Readonly<Record<string, string>> = {
+  "cmd.close.confirmation_action": "Leave",
   "cmd.close.description": "Close this conversation",
   "cmd.close.usage": "/close",
   "cmd.cycle.description": "Leave and rejoin a channel",
@@ -45,10 +46,13 @@ const commandStrings: Readonly<Record<string, string>> = {
   "cmd.notice.description": "Send a notice",
   "cmd.notice.usage": "/notice <target> <text>",
   "cmd.part.description": "Leave a channel",
+  "cmd.part.confirmation_action": "Leave",
   "cmd.part.usage": "/part [channel] [reason]",
   "cmd.query.description": "Open a private conversation",
   "cmd.query.usage": "/query <nickname> [text]",
   "cmd.quit.description": "Disconnect from the network",
+  "cmd.quit.confirmation_action": "Disconnect",
+  "cmd.quit.confirmation_prompt": "Disconnect from this network?",
   "cmd.quit.usage": "/quit [reason]",
   "cmd.say.description": "Send text without treating it as a command",
   "cmd.say.usage": "/say <text>",
@@ -57,6 +61,11 @@ const commandStrings: Readonly<Record<string, string>> = {
 };
 
 export function t(key: string, values: MessageValues = {}): string {
+  if (
+    key === "cmd.close.confirmation_prompt" ||
+    key === "cmd.part.confirmation_prompt"
+  )
+    return `Leave ${values.text ?? "this channel"}?`;
   const commandString = commandStrings[key];
   if (commandString !== undefined) return commandString;
   switch (key) {

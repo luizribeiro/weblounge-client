@@ -4,6 +4,7 @@ import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import { isSecretInput } from "./secret-input";
+import { t } from "./strings";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -38,6 +39,11 @@ export function Composer(props: ComposerProps) {
     createSignal<CommandSpec>();
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
+  const confirmationText = () => {
+    const command = pendingConfirmation();
+    const prompt = command?.confirmation_prompt;
+    return prompt === undefined ? "" : t(prompt, { text: props.bufferTitle });
+  };
   const resize = () => {
     if (textarea === undefined) return;
     textarea.style.height = "0";
@@ -203,14 +209,14 @@ export function Composer(props: ComposerProps) {
           }}
           role="alertdialog"
         >
-          <span>Run /{pendingConfirmation()?.name}?</span>
+          <span>{confirmationText()}</span>
           <button
             class={styles.confirm}
             onClick={() => submit(true)}
             ref={confirmButton}
             type="button"
           >
-            Confirm
+            {t(pendingConfirmation()?.confirmation_action ?? "")}
           </button>
           <button
             class={styles.cancel}

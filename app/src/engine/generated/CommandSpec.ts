@@ -5,4 +5,4 @@ import type { CommandRequirement } from "./CommandRequirement";
 import type { CommandSurface } from "./CommandSurface";
 import type { ConfirmPolicy } from "./ConfirmPolicy";
 
-export type CommandSpec = { name: string, aliases: Array<string>, arguments: Array<CommandArgumentSpec>, usage: string, description: string, requirements: Array<CommandRequirement>, permission: CommandPermission, surfaces: Array<CommandSurface>, confirm: ConfirmPolicy, secret_arguments: boolean, };
+export type CommandSpec = { name: string, aliases: Array<string>, arguments: Array<CommandArgumentSpec>, usage: string, description: string, requirements: Array<CommandRequirement>, permission: CommandPermission, surfaces: Array<CommandSurface>, confirm: ConfirmPolicy, confirmation_prompt?: string, confirmation_action?: string, secret_arguments: boolean, };

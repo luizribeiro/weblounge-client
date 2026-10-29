@@ -22,6 +22,8 @@ const quit = {
   name: "quit",
   aliases: ["exit"],
   confirm: "always" as const,
+  confirmation_prompt: "cmd.quit.confirmation_prompt",
+  confirmation_action: "cmd.quit.confirmation_action",
   secret_arguments: false,
 };
 
@@ -64,8 +66,9 @@ it("confirms always-policy commands typed by name or alias", async () => {
   expect(
     screen.getByRole("alertdialog", { name: "Confirm /quit" }),
   ).toBeVisible();
-  expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
-  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect(screen.getByText("Disconnect from this network?")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Disconnect" })).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
   expect(onSend).toHaveBeenCalledWith("  /EXIT later");
 });
 

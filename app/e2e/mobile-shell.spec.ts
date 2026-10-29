@@ -30,6 +30,12 @@ test.describe("mobile shell against local Ergo", () => {
       name: "Confirm /quit",
     });
     await expect(confirmation).toBeVisible();
+    await expect(
+      confirmation.getByText("Disconnect from this network?"),
+    ).toBeVisible();
+    await expect(
+      confirmation.getByRole("button", { name: "Disconnect" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmation).toHaveCount(0);
     await expect(composer).toHaveValue("/quit later");

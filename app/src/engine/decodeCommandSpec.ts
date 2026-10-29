@@ -63,6 +63,8 @@ function decodeCommandSpec(value: unknown): CommandSpec | undefined {
     !isOneOf(value.permission, permissions) ||
     decodedSurfaces === undefined ||
     !isOneOf(value.confirm, confirmPolicies) ||
+    !isOptionalString(value.confirmation_prompt) ||
+    !isOptionalString(value.confirmation_action) ||
     typeof value.secret_arguments !== "boolean"
   )
     return undefined;
@@ -78,8 +80,18 @@ function decodeCommandSpec(value: unknown): CommandSpec | undefined {
     permission: value.permission,
     surfaces: decodedSurfaces,
     confirm: value.confirm,
+    ...(value.confirmation_prompt === undefined
+      ? {}
+      : { confirmation_prompt: value.confirmation_prompt }),
+    ...(value.confirmation_action === undefined
+      ? {}
+      : { confirmation_action: value.confirmation_action }),
     secret_arguments: value.secret_arguments,
   };
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
 }
 
 function decodeArgument(

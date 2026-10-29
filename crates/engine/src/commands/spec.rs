@@ -73,6 +73,12 @@ pub struct CommandSpec {
     pub permission: CommandPermission,
     pub surfaces: Vec<CommandSurface>,
     pub confirm: ConfirmPolicy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub confirmation_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub confirmation_action: Option<String>,
     pub secret_arguments: bool,
 }
 
@@ -170,6 +176,8 @@ mod tests {
             permission: CommandPermission::Anyone,
             surfaces: Vec::new(),
             confirm: ConfirmPolicy::None,
+            confirmation_prompt: None,
+            confirmation_action: None,
             secret_arguments: false,
         };
         let mut registry = CommandRegistry::default();

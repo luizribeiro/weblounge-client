@@ -83,7 +83,12 @@ test.describe("local Ergo user flow", () => {
       name: "Confirm /quit",
     });
     await expect(confirmation).toBeVisible();
-    await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
+    await expect(
+      confirmation.getByText("Disconnect from this network?"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Disconnect" }),
+    ).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(confirmation).toHaveCount(0);
     await expect(composer).toHaveValue("/quit later");
