@@ -43,6 +43,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - D1. [ ] Load older history on scroll-up (`CHATHISTORY BEFORE` with msgid cursors; scroll anchoring already exists).
   - D2. [ ] Rebuild the DM list from `CHATHISTORY TARGETS` on connect.
   - D3. [ ] Clean resume after reconnect: papo catch-up gap fill, `Lagged` resync, a quiet "reconnecting" state, the composer queues sends while offline.
+- **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [ ] Hosted-mode build configuration and the concierge OAuth handover (design 03).
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
