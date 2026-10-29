@@ -2,6 +2,8 @@
 import type { BufferId } from "./BufferId";
 import type { BufferProjection } from "./BufferProjection";
 import type { CommandSpec } from "./CommandSpec";
+import type { CompletionCandidate } from "./CompletionCandidate";
+import type { CompletionTrigger } from "./CompletionTrigger";
 import type { LocalSendId } from "./LocalSendId";
 import type { MembershipProjection } from "./MembershipProjection";
 import type { MessageId } from "./MessageId";
@@ -76,7 +78,23 @@ prefix: string,
 /**
  * Ordered candidates, with the most recently active nick first.
  */
-candidates: Array<string>, } | { "type": "network_state_changed",
+candidates: Array<string>, } | { "type": "suggestion_result",
+/**
+ * `EngineRequest` that requested these candidates.
+ */
+command_id: string,
+/**
+ * Buffer whose projection supplied the candidates.
+ */
+buffer_id: BufferId,
+/**
+ * Input echoed to discard stale worker responses.
+ */
+input: string, replace_start: number, replace_end: number, trigger: CompletionTrigger, argument_hint: string | null,
+/**
+ * Ordered, bounded rich candidates.
+ */
+candidates: Array<CompletionCandidate>, } | { "type": "network_state_changed",
 /**
  * Complete current network projection.
  */

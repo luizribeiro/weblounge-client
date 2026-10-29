@@ -6,14 +6,23 @@ use std::{
 use tokio::sync::mpsc;
 
 use crate::{
-    BufferId, EngineRequest, EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId,
-    NetworkConnectionState, NetworkId,
+    BufferId, CompletionCandidate, CompletionTrigger, EngineRequest, EngineRequestEnvelope,
+    EngineToUi, MembershipKind, MessageId, NetworkConnectionState, NetworkId,
     commands::{self, Command},
     state::{NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
 const HISTORY_PAGE_SIZE: usize = 100;
+const COMPLETION_LIMIT: usize = 100;
+
+struct CompletionContext {
+    trigger: CompletionTrigger,
+    replace_start: u32,
+    replace_end: u32,
+    prefix: String,
+    argument_hint: Option<String>,
+}
 
 struct RunningNetwork {
     instance: u64,
@@ -153,6 +162,12 @@ impl Runtime {
             EngineRequest::CompleteInput { buffer_id, prefix } => {
                 self.complete_input(envelope.id, buffer_id, prefix)
             }
+            EngineRequest::SuggestInput {
+                buffer_id,
+                input,
+                cursor,
+                explicit,
+            } => self.suggest_input(envelope.id, buffer_id, input, cursor, explicit),
             EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }
@@ -329,10 +344,10 @@ impl Runtime {
         );
         if !prefix.starts_with('/') && !snapshot.isupport().is_channel(&prefix) {
             let folded_prefix = snapshot.casemapping().fold(&prefix);
-            let mut members = running
+            let members = running
                 .model
                 .channel_for_buffer(buffer_id)
-                .and_then(|channel| snapshot.channel(channel))
+                .and_then(|channel| snapshot.channel(&channel))
                 .into_iter()
                 .flat_map(papo::Channel::members)
                 .map(|member| member.nick().to_string())
@@ -342,9 +357,7 @@ impl Runtime {
                         .casemapping()
                         .fold(nick)
                         .starts_with(&*folded_prefix)
-                })
-                .collect::<Vec<_>>();
-            members.sort_by_key(|nick| snapshot.casemapping().fold(nick).into_owned());
+                });
             for member in members {
                 if !candidates.iter().any(|candidate| {
                     snapshot.casemapping().fold(candidate) == snapshot.casemapping().fold(&member)
@@ -358,6 +371,52 @@ impl Runtime {
                 command_id: command_id.clone(),
                 buffer_id,
                 prefix,
+                candidates,
+            },
+            EngineToUi::CommandResult { id: command_id },
+        ]
+    }
+
+    fn suggest_input(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        input: String,
+        cursor: u32,
+        explicit: bool,
+    ) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let snapshot = running.client.state();
+        let Some(context) = completion_context(
+            &input,
+            cursor,
+            explicit,
+            snapshot.isupport().chantypes(),
+            commands::registry(),
+        ) else {
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        };
+        let candidates = match context.trigger {
+            CompletionTrigger::Command => command_candidates(&context.prefix, &snapshot),
+            CompletionTrigger::Person => {
+                person_candidates(&running.model, buffer_id, &context.prefix, &snapshot)
+            }
+            CompletionTrigger::Channel => {
+                channel_candidates(&running.model, &context.prefix, &snapshot)
+            }
+        };
+        vec![
+            EngineToUi::SuggestionResult {
+                command_id: command_id.clone(),
+                buffer_id,
+                input,
+                trigger: context.trigger,
+                replace_start: context.replace_start,
+                replace_end: context.replace_end,
+                argument_hint: context.argument_hint,
                 candidates,
             },
             EngineToUi::CommandResult { id: command_id },
@@ -1022,6 +1081,219 @@ async fn finish_send(
     }
 }
 
+fn completion_context(
+    input: &str,
+    cursor: u32,
+    explicit: bool,
+    chantypes: &str,
+    registry: &commands::CommandRegistry,
+) -> Option<CompletionContext> {
+    let end = byte_offset(input, cursor);
+    let before = input.get(..end)?;
+    let replace_end = utf16_len(before);
+    let word_start = before.rfind(char::is_whitespace).map_or(0, |index| {
+        index + before[index..].chars().next().map_or(0, char::len_utf8)
+    });
+    let word = before.get(word_start..)?;
+    if before.starts_with('/') && !before.contains(char::is_whitespace) {
+        return Some(CompletionContext {
+            trigger: CompletionTrigger::Command,
+            replace_start: 0,
+            replace_end,
+            prefix: word.trim_start_matches('/').to_owned(),
+            argument_hint: None,
+        });
+    }
+    if let Some(context) = command_argument_context(before, word_start, replace_end, registry) {
+        return Some(context);
+    }
+    let (trigger, prefix) = match word.chars().next() {
+        Some('@') => (CompletionTrigger::Person, word.get(1..)?.to_owned()),
+        Some(first) if chantypes.contains(first) => (CompletionTrigger::Channel, word.to_owned()),
+        _ if explicit => (CompletionTrigger::Person, word.to_owned()),
+        _ => return None,
+    };
+    Some(CompletionContext {
+        trigger,
+        replace_start: utf16_len(input.get(..word_start)?),
+        replace_end,
+        prefix,
+        argument_hint: None,
+    })
+}
+
+fn command_argument_context(
+    before: &str,
+    word_start: usize,
+    replace_end: u32,
+    registry: &commands::CommandRegistry,
+) -> Option<CompletionContext> {
+    let command_end = before.find(char::is_whitespace)?;
+    let command = before.get(1..command_end)?;
+    let spec = registry.specs().iter().find(|spec| {
+        spec.name.eq_ignore_ascii_case(command)
+            || spec
+                .aliases
+                .iter()
+                .any(|alias| alias.eq_ignore_ascii_case(command))
+    })?;
+    let argument_index = before
+        .get(command_end..word_start)?
+        .split_whitespace()
+        .count();
+    let argument = spec.arguments.get(argument_index)?;
+    let word = before.get(word_start..)?;
+    let (trigger, prefix) = match argument.kind {
+        commands::CommandArgumentKind::Channel | commands::CommandArgumentKind::ChannelList => {
+            (CompletionTrigger::Channel, word.to_owned())
+        }
+        commands::CommandArgumentKind::Nick | commands::CommandArgumentKind::Target => (
+            CompletionTrigger::Person,
+            word.strip_prefix('@').unwrap_or(word).to_owned(),
+        ),
+        _ => return None,
+    };
+    Some(CompletionContext {
+        trigger,
+        replace_start: utf16_len(before.get(..word_start)?),
+        replace_end,
+        prefix,
+        argument_hint: Some(spec.usage.clone()),
+    })
+}
+
+fn command_candidates(prefix: &str, state: &papo::State) -> Vec<CompletionCandidate> {
+    commands::registry()
+        .specs()
+        .iter()
+        .filter(|spec| spec.surfaces.contains(&commands::CommandSurface::Slash))
+        .filter(|spec| {
+            spec.name
+                .get(..prefix.len())
+                .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
+        })
+        .filter(|spec| command_requirements_met(spec, state))
+        .map(|spec| CompletionCandidate::Command {
+            name: spec.name.clone(),
+            usage: spec.usage.clone(),
+            description: spec.description.clone(),
+        })
+        .collect()
+}
+
+fn command_requirements_met(spec: &commands::CommandSpec, state: &papo::State) -> bool {
+    spec.requirements
+        .iter()
+        .all(|requirement| match requirement {
+            commands::CommandRequirement::Connected => true,
+            commands::CommandRequirement::Feature(name) => papo::Feature::ALL
+                .iter()
+                .find(|feature| {
+                    feature.__variant_name().eq_ignore_ascii_case(name)
+                        || feature.name().eq_ignore_ascii_case(name)
+                })
+                .is_some_and(|feature| state.supports(*feature)),
+        })
+}
+
+fn person_candidates(
+    model: &NetworkModel,
+    buffer_id: BufferId,
+    prefix: &str,
+    state: &papo::State,
+) -> Vec<CompletionCandidate> {
+    let mut nicks = model.recent_speakers(buffer_id, prefix, state);
+    let members = model
+        .channel_for_buffer(buffer_id)
+        .and_then(|channel| {
+            crate::members::project(
+                state,
+                &channel,
+                buffer_id,
+                "composer-suggestions",
+                0,
+                0,
+                prefix,
+            )
+        })
+        .and_then(|event| match event {
+            EngineToUi::MembersChanged { members, .. } => Some(members),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let folded_prefix = state.casemapping().fold(prefix);
+    nicks.extend(
+        members
+            .iter()
+            .filter(|member| {
+                state
+                    .casemapping()
+                    .fold(&member.nick)
+                    .starts_with(&*folded_prefix)
+            })
+            .map(|member| member.nick.clone()),
+    );
+    let mut seen = std::collections::HashSet::new();
+    nicks
+        .into_iter()
+        .filter(|nick| state.casemapping().fold(nick) != state.nick().as_ref())
+        .filter(|nick| seen.insert(state.casemapping().fold(nick).into_owned()))
+        .take(COMPLETION_LIMIT)
+        .map(|nick| {
+            let member = members.iter().find(|member| {
+                state.casemapping().fold(&member.nick) == state.casemapping().fold(&nick)
+            });
+            let user = state.user(state.casemapping().nick(&nick));
+            CompletionCandidate::Person {
+                nick_color_index: crate::state::nick_color_index(state.casemapping(), &nick),
+                away: member.map_or_else(
+                    || user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. })),
+                    |member| member.away,
+                ),
+                bot: member.map_or_else(
+                    || user.and_then(papo::User::is_bot) == Some(true),
+                    |member| member.bot,
+                ),
+                nick,
+            }
+        })
+        .collect()
+}
+
+fn channel_candidates(
+    model: &NetworkModel,
+    prefix: &str,
+    state: &papo::State,
+) -> Vec<CompletionCandidate> {
+    let folded_prefix = state.casemapping().fold(prefix);
+    let mut names = model.channel_names();
+    names.sort_by_key(|name| {
+        let joined = state.channel(state.casemapping().channel(name)).is_some();
+        (!joined, state.casemapping().fold(name).into_owned())
+    });
+    names
+        .into_iter()
+        .filter(|name| state.casemapping().fold(name).starts_with(&*folded_prefix))
+        .take(COMPLETION_LIMIT)
+        .map(|name| CompletionCandidate::Channel { name })
+        .collect()
+}
+
+fn byte_offset(input: &str, utf16_offset: u32) -> usize {
+    let mut units = 0_u32;
+    for (index, character) in input.char_indices() {
+        if units >= utf16_offset {
+            return index;
+        }
+        units = units.saturating_add(u32::try_from(character.len_utf16()).unwrap_or(u32::MAX));
+    }
+    input.len()
+}
+
+fn utf16_len(value: &str) -> u32 {
+    u32::try_from(value.encode_utf16().count()).unwrap_or(u32::MAX)
+}
+
 async fn drain_events(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
@@ -1592,14 +1864,71 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        MemberViews, RunningNetwork, Runtime, RuntimeState, drain_events, fetch_latest, lock,
-        process_event, process_history,
+        MemberViews, RunningNetwork, Runtime, RuntimeState, completion_context, drain_events,
+        fetch_latest, lock, process_event, process_history, utf16_len,
     };
     use crate::{
-        BufferId, BufferKind, EngineRequest, EngineRequestEnvelope, EngineToUi, NetworkId,
-        SaslCredentials,
+        BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
+        EngineRequestEnvelope, EngineToUi, NetworkId, SaslCredentials,
+        commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         state::{NetworkModel, PendingSend, SendTarget},
     };
+
+    #[test]
+    fn completion_context_recognizes_triggers_and_command_arguments() {
+        let registry = commands::built_in_registry();
+        for (input, trigger, prefix, start, hint) in [
+            ("/jo", CompletionTrigger::Command, "jo", 0, None),
+            ("@an", CompletionTrigger::Person, "an", 0, None),
+            ("hello @an", CompletionTrigger::Person, "an", 6, None),
+            ("#we", CompletionTrigger::Channel, "#we", 0, None),
+            (
+                "/msg ",
+                CompletionTrigger::Person,
+                "",
+                5,
+                Some("cmd.msg.usage"),
+            ),
+            (
+                "/join ",
+                CompletionTrigger::Channel,
+                "",
+                6,
+                Some("cmd.join.usage"),
+            ),
+        ] {
+            let context = completion_context(input, utf16_len(input), false, "#&", &registry)
+                .expect("context");
+            assert_eq!(context.trigger, trigger);
+            assert_eq!(context.prefix, prefix);
+            assert_eq!(context.replace_start, start);
+            assert_eq!(context.argument_hint.as_deref(), hint);
+        }
+        assert!(completion_context("mail@an", 7, false, "#&", &registry).is_none());
+        assert!(completion_context("hello /jo", 9, false, "#&", &registry).is_none());
+        assert!(completion_context("hello al", 8, true, "#&", &registry).is_some());
+    }
+
+    #[tokio::test]
+    async fn completion_requirements_gate_unavailable_features() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let spec = CommandSpec {
+            name: "react".into(),
+            aliases: Vec::new(),
+            arguments: Vec::new(),
+            usage: "cmd.react.usage".into(),
+            description: "cmd.react.description".into(),
+            requirements: vec![CommandRequirement::Feature("Reactions".into())],
+            permission: CommandPermission::Anyone,
+            surfaces: Vec::new(),
+            confirm: ConfirmPolicy::None,
+            confirmation_prompt: None,
+            confirmation_action: None,
+            secret_arguments: false,
+        };
+        assert!(!super::command_requirements_met(&spec, &client.state()));
+    }
 
     #[test]
     fn member_views_keep_independent_ranges_and_advance_together() {
@@ -1999,26 +2328,29 @@ mod tests {
 
         let output = runtime.request(EngineRequestEnvelope {
             id: "complete".into(),
-            request: EngineRequest::CompleteInput {
+            request: EngineRequest::SuggestInput {
                 buffer_id: BufferId(1),
-                prefix: "/j".into(),
+                input: "/j".into(),
+                cursor: 2,
+                explicit: false,
             },
         });
 
         assert!(matches!(
             output.as_slice(),
             [
-                EngineToUi::CompletionResult {
+                EngineToUi::SuggestionResult {
                     command_id,
-                    prefix,
+                    input,
                     candidates,
                     ..
                 },
                 EngineToUi::CommandResult { id }
             ] if command_id == "complete"
                 && id == "complete"
-                && prefix == "/j"
-                && candidates == &["/join", "/j"]
+                && input == "/j"
+                && matches!(candidates.as_slice(), [CompletionCandidate::Command { name, .. }]
+                    if name == "join")
         ));
     }
 
@@ -2067,14 +2399,16 @@ mod tests {
         };
         let completion = runtime.request(EngineRequestEnvelope {
             id: "complete-member".into(),
-            request: EngineRequest::CompleteInput {
+            request: EngineRequest::SuggestInput {
                 buffer_id,
-                prefix: "web".into(),
+                input: "web".into(),
+                cursor: 3,
+                explicit: true,
             },
         });
         assert!(matches!(
             completion.first(),
-            Some(EngineToUi::CompletionResult { candidates, .. })
+            Some(EngineToUi::SuggestionResult { candidates, .. })
                 if candidates.is_empty()
         ));
 

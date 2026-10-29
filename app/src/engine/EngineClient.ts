@@ -3,6 +3,7 @@ import type {
   BufferProjection,
   CommandRejected,
   CommandResult,
+  CompletionCandidate,
   EngineClientMessage,
   EngineRequestEnvelope,
   EngineToUi,
@@ -345,6 +346,36 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "suggestion_result": {
+      const candidates = decodeArray(
+        value.candidates,
+        decodeCompletionCandidate,
+      );
+      if (
+        typeof value.command_id === "string" &&
+        typeof value.buffer_id === "number" &&
+        typeof value.input === "string" &&
+        isOneOf(value.trigger, ["command", "person", "channel"]) &&
+        typeof value.replace_start === "number" &&
+        typeof value.replace_end === "number" &&
+        (value.argument_hint === null ||
+          typeof value.argument_hint === "string") &&
+        candidates !== undefined
+      ) {
+        return {
+          type: "suggestion_result",
+          command_id: value.command_id,
+          buffer_id: value.buffer_id,
+          input: value.input,
+          trigger: value.trigger,
+          replace_start: value.replace_start,
+          replace_end: value.replace_end,
+          argument_hint: value.argument_hint,
+          candidates,
+        };
+      }
+      break;
+    }
     case "focus_buffer_requested":
       if (
         typeof value.command_id === "string" &&
@@ -503,6 +534,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "command_result" ||
     value === "command_rejected" ||
     value === "completion_result" ||
+    value === "suggestion_result" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
     value === "buffer_added" ||
@@ -523,6 +555,41 @@ type MemberProjection = Extract<
   EngineToUi,
   { type: "members_changed" }
 >["members"][number];
+
+function decodeCompletionCandidate(
+  value: unknown,
+): CompletionCandidate | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    value.type === "command" &&
+    typeof value.name === "string" &&
+    typeof value.usage === "string" &&
+    typeof value.description === "string"
+  )
+    return {
+      type: "command",
+      name: value.name,
+      usage: value.usage,
+      description: value.description,
+    };
+  if (
+    value.type === "person" &&
+    typeof value.nick === "string" &&
+    typeof value.nick_color_index === "number" &&
+    typeof value.away === "boolean" &&
+    typeof value.bot === "boolean"
+  )
+    return {
+      type: "person",
+      nick: value.nick,
+      nick_color_index: value.nick_color_index,
+      away: value.away,
+      bot: value.bot,
+    };
+  if (value.type === "channel" && typeof value.name === "string")
+    return { type: "channel", name: value.name };
+  return undefined;
+}
 
 function decodeMember(value: unknown): MemberProjection | undefined {
   if (

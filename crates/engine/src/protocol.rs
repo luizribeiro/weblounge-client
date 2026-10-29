@@ -344,6 +344,18 @@ pub enum EngineRequest {
         /// Current token prefix at the caret.
         prefix: String,
     },
+    /// Resolve rich composer suggestions from input around the caret.
+    SuggestInput {
+        /// Buffer whose composer owns the suggestion session.
+        buffer_id: BufferId,
+        /// Complete composer input used to resolve trigger and argument context.
+        input: String,
+        /// UTF-16 caret offset, matching textarea selection APIs.
+        #[ts(type = "number")]
+        cursor: u32,
+        /// Whether Tab explicitly requested IRC-style completion at any word.
+        explicit: bool,
+    },
     /// Advance one buffer's marker through a committed timeline row.
     MarkRead {
         /// Buffer being viewed.
@@ -441,7 +453,7 @@ pub enum EngineToUi {
         /// Stable localization key describing the rejection.
         message_key: String,
     },
-    /// Candidate values for one composer completion request.
+    /// Candidate values for one legacy completion request.
     CompletionResult {
         /// `EngineRequest` that requested these candidates.
         command_id: String,
@@ -451,6 +463,24 @@ pub enum EngineToUi {
         prefix: String,
         /// Ordered candidates, with the most recently active nick first.
         candidates: Vec<String>,
+    },
+    /// Rich candidates for input around the composer caret.
+    #[allow(missing_docs)]
+    SuggestionResult {
+        /// `EngineRequest` that requested these candidates.
+        command_id: String,
+        /// Buffer whose projection supplied the candidates.
+        buffer_id: BufferId,
+        /// Input echoed to discard stale worker responses.
+        input: String,
+        #[ts(type = "number")]
+        replace_start: u32,
+        #[ts(type = "number")]
+        replace_end: u32,
+        trigger: CompletionTrigger,
+        argument_hint: Option<String>,
+        /// Ordered, bounded rich candidates.
+        candidates: Vec<CompletionCandidate>,
     },
     /// A network's connection projection changed.
     NetworkStateChanged {

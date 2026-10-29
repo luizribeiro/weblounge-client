@@ -122,20 +122,42 @@ describe("WorkerEngineClient", () => {
     client.subscribe(listener);
 
     port.emit({
-      type: "completion_result",
+      type: "suggestion_result",
       command_id: "complete-1",
       buffer_id: 4,
-      prefix: "/j",
-      candidates: ["/join"],
+      input: "/j",
+      replace_start: 0,
+      replace_end: 2,
+      trigger: "command",
+      argument_hint: null,
+      candidates: [
+        {
+          type: "command",
+          name: "join",
+          usage: "cmd.join.usage",
+          description: "cmd.join.description",
+        },
+      ],
     });
     frames[0]?.(0);
 
     expect(listener).toHaveBeenCalledWith({
-      type: "completion_result",
+      type: "suggestion_result",
       command_id: "complete-1",
       buffer_id: 4,
-      prefix: "/j",
-      candidates: ["/join"],
+      input: "/j",
+      replace_start: 0,
+      replace_end: 2,
+      trigger: "command",
+      argument_hint: null,
+      candidates: [
+        {
+          type: "command",
+          name: "join",
+          usage: "cmd.join.usage",
+          description: "cmd.join.description",
+        },
+      ],
     });
   });
 

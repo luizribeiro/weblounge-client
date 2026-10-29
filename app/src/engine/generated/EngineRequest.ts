@@ -67,7 +67,23 @@ buffer_id: BufferId,
 /**
  * Current token prefix at the caret.
  */
-prefix: string, } | { "type": "mark_read",
+prefix: string, } | { "type": "suggest_input",
+/**
+ * Buffer whose composer owns the suggestion session.
+ */
+buffer_id: BufferId,
+/**
+ * Complete composer input used to resolve trigger and argument context.
+ */
+input: string,
+/**
+ * UTF-16 caret offset, matching textarea selection APIs.
+ */
+cursor: number,
+/**
+ * Whether Tab explicitly requested IRC-style completion at any word.
+ */
+explicit: boolean, } | { "type": "mark_read",
 /**
  * Buffer being viewed.
  */

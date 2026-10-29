@@ -1,5 +1,7 @@
 import type { BufferProjection } from "./generated/BufferProjection";
 import type { CommandSpec } from "./generated/CommandSpec";
+import type { CompletionCandidate } from "./generated/CompletionCandidate";
+import type { CompletionTrigger } from "./generated/CompletionTrigger";
 import type { EngineRequestEnvelope } from "./generated/EngineRequestEnvelope";
 import type { EngineToUi } from "./generated/EngineToUi";
 import type { Hello } from "./generated/Hello";
@@ -11,6 +13,8 @@ import type { UiToEngine } from "./generated/UiToEngine";
 export type {
   BufferProjection,
   CommandSpec,
+  CompletionCandidate,
+  CompletionTrigger,
   EngineRequestEnvelope,
   EngineToUi,
   Hello,
@@ -22,6 +26,10 @@ export type {
 
 export type CommandResult = Extract<EngineToUi, { type: "command_result" }>;
 export type CommandRejected = Extract<EngineToUi, { type: "command_rejected" }>;
+export type CompletionResult = Extract<
+  EngineToUi,
+  { type: "completion_result" }
+>;
 export type IncompatibleBuild = Extract<
   EngineToUi,
   { type: "incompatible_build" }
