@@ -26,6 +26,7 @@ interface SidebarProps {
   readonly registerListController: (
     controller: SidebarListController | undefined,
   ) => void;
+  readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -140,6 +141,7 @@ export function Sidebar(props: SidebarProps) {
       <SidebarFooter
         networks={props.networks}
         onOpenSettings={() => run("settings.open")}
+        onRetryNetwork={props.onRetryNetwork}
         settingsTooltip={tooltip(props.registry, "settings.open")}
       />
     </aside>
@@ -166,7 +168,9 @@ function kindOrder(buffer: SidebarBuffer): number {
 
 function networkSummary(networks: readonly NetworkProjection[]): string {
   const count = networks.length;
-  return `${count} ${count === 1 ? "network" : "networks"} · ${footerStatus(networks)}`;
+  const countLabel = `${count} ${count === 1 ? "network" : "networks"}`;
+  const status = footerStatus(networks);
+  return status === "" ? countLabel : `${countLabel} · ${status}`;
 }
 
 function tooltip(registry: ActionRegistry, id: UiActionId): string {

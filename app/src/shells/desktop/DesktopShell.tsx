@@ -70,6 +70,7 @@ export interface DesktopShellProps {
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
     | undefined;
+  readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -221,6 +222,7 @@ export function DesktopShell(props: DesktopShellProps) {
           buffers={props.buffers}
           commandContext={context()}
           networks={props.networks}
+          onRetryNetwork={props.onRetryNetwork}
           registerListController={(controller) => {
             listController = controller;
           }}

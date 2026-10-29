@@ -187,6 +187,20 @@
   font-weight: 700;
 }
 
+.retry {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-panel-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 0;
+}
+
+.retry:hover {
+  color: var(--wl-color-panel-fg);
+}
+
 .settings {
   appearance: none;
   background: transparent;

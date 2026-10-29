@@ -1,6 +1,10 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { commandHelp } from "./actions/command-help";
 import { consumeDebugPassword } from "./debug-irc-config";
+import {
+  connectionFailureMessage,
+  connectionStateKind,
+} from "./engine/connection-state";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import {
@@ -31,7 +35,9 @@ const reloadMarker = "weblounge-build-reload";
 interface AppProps {
   engineClient?: EngineClient;
   hostedSession?: HostedSession;
-  onHostedAuthorizationRequired?: (reason: "expired" | "revoked") => void;
+  onHostedAuthorizationRequired?: (
+    reason: "expired" | "revoked" | "worker_restarted",
+  ) => void;
 }
 
 export function App(props: AppProps) {
@@ -39,6 +45,9 @@ export function App(props: AppProps) {
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [hostedError, setHostedError] = createSignal<string>();
+  const [shellReady, setShellReady] = createSignal(
+    props.hostedSession === undefined,
+  );
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
@@ -59,6 +68,7 @@ export function App(props: AppProps) {
   let latestCompletionRequest: string | undefined;
   let cancelTokenExpiry = () => {};
   let restartingHostedAuthorization = false;
+  let engineInstance: string | undefined;
 
   onMount(() => {
     const removeContextMenuHandler = installContextMenuHandler(document);
@@ -71,7 +81,26 @@ export function App(props: AppProps) {
           });
     const mountedClient = props.engineClient ?? createEngineClient();
     client = mountedClient;
+    const debugPassword =
+      __DEBUG_IRC_CONFIG__ === null
+        ? null
+        : consumeDebugPassword(new URL(window.location.href), (path) =>
+            window.history.replaceState(window.history.state, "", path),
+          );
     const unsubscribe = mountedClient.subscribe((message) => {
+      if (message.type === "ready") {
+        const restarted =
+          engineInstance !== undefined &&
+          engineInstance !== message.engine_instance;
+        engineInstance = message.engine_instance;
+        if (restarted) {
+          if (props.hostedSession !== undefined) {
+            void restartHostedAuthorization("worker_restarted");
+          } else if (debugPassword !== null) {
+            void connectDebugNetwork(mountedClient, debugPassword);
+          }
+        }
+      }
       if (message.type === "diagnostic") {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
@@ -82,10 +111,6 @@ export function App(props: AppProps) {
         }
         const notice = t(message.message_key);
         setEngineNotice(notice);
-        if (message.message_key === "engine.connection_failed") {
-          setComposerNotice(notice);
-          if (props.hostedSession !== undefined) setHostedError(notice);
-        }
       }
       if (message.type === "message_failed") {
         setComposerNotice(t(message.message_key));
@@ -110,11 +135,35 @@ export function App(props: AppProps) {
           ),
         );
       }
-      if (
-        message.type === "network_state_changed" &&
-        message.network.state === "online"
-      ) {
-        setHostedError(undefined);
+      if (message.type === "network_state_changed") {
+        if (connectionStateKind(message.network.state) === "online") {
+          setShellReady(true);
+          setHostedError(undefined);
+        } else {
+          const messageKey = connectionFailureMessage(message.network.state);
+          if (!shellReady() && messageKey !== undefined) {
+            setHostedError(t(messageKey));
+          }
+        }
+        if (
+          !navigator.onLine &&
+          !(
+            typeof message.network.state === "object" &&
+            "offline" in message.network.state &&
+            message.network.state.offline.reason === "device_offline"
+          )
+        ) {
+          void mountedClient
+            .send({
+              id: crypto.randomUUID(),
+              request: {
+                type: "set_device_online",
+                network_id: message.network.id,
+                online: false,
+              },
+            })
+            .catch(() => undefined);
+        }
       }
       if (message.type === "members_changed") {
         const viewId = message.view_id;
@@ -144,16 +193,41 @@ export function App(props: AppProps) {
     });
     const updateVisibility = () => {
       mountedClient.setVisibility(document.hidden ? "hidden" : "visible");
+      if (!document.hidden) reconnectNetworks();
+    };
+    const reconnectNetworks = () => {
+      for (const network of networks()) {
+        void mountedClient
+          .send({
+            id: crypto.randomUUID(),
+            request: { type: "reconnect", network_id: network.id },
+          })
+          .catch(() => undefined);
+      }
+    };
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) reconnectNetworks();
+    };
+    const updateConnectivity = () => {
+      for (const network of networks()) {
+        void mountedClient
+          .send({
+            id: crypto.randomUUID(),
+            request: {
+              type: "set_device_online",
+              network_id: network.id,
+              online: navigator.onLine,
+            },
+          })
+          .catch(() => undefined);
+      }
     };
     document.addEventListener("visibilitychange", updateVisibility);
+    window.addEventListener("online", updateConnectivity);
+    window.addEventListener("offline", updateConnectivity);
+    window.addEventListener("pageshow", handlePageShow);
     updateVisibility();
 
-    const debugPassword =
-      __DEBUG_IRC_CONFIG__ === null
-        ? null
-        : consumeDebugPassword(new URL(window.location.href), (path) =>
-            window.history.replaceState(window.history.state, "", path),
-          );
     void startEngine(
       mountedClient,
       setEngineStatus,
@@ -173,17 +247,24 @@ export function App(props: AppProps) {
       unregisterContextSurface();
       removeContextMenuHandler();
       document.removeEventListener("visibilitychange", updateVisibility);
+      window.removeEventListener("online", updateConnectivity);
+      window.removeEventListener("offline", updateConnectivity);
+      window.removeEventListener("pageshow", handlePageShow);
       unsubscribe();
       void mountedClient.close();
     });
 
     async function restartHostedAuthorization(
-      reason: "expired" | "revoked",
+      reason: "expired" | "revoked" | "worker_restarted",
     ): Promise<void> {
       if (restartingHostedAuthorization) return;
       restartingHostedAuthorization = true;
       cancelTokenExpiry();
-      setHostedError("Your session expired. Signing in again…");
+      setHostedError(
+        reason === "worker_restarted"
+          ? "Restoring the chat…"
+          : "Your session expired. Signing in again…",
+      );
       const network = networks()[0];
       if (network !== undefined) {
         await mountedClient
@@ -200,10 +281,6 @@ export function App(props: AppProps) {
     }
   });
 
-  const hostedReady = () =>
-    props.hostedSession === undefined ||
-    networks().some((network) => network.state === "online");
-
   return (
     <div
       data-app-root="true"
@@ -219,7 +296,7 @@ export function App(props: AppProps) {
           {engineNotice()}
         </p>
       )}
-      {!hostedReady() ? (
+      {!shellReady() ? (
         <HostedStatus
           message={hostedError() ?? "Signing in…"}
           error={hostedError() !== undefined}
@@ -319,6 +396,13 @@ export function App(props: AppProps) {
               request: { type: "open_direct", network_id: networkId, nick },
             });
           }}
+          onRetryNetwork={(networkId) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: { type: "reconnect", network_id: networkId },
+            });
+          }}
         />
       )}
     </div>
@@ -360,22 +444,8 @@ async function startEngine(
           autojoin: hostedSession.network.autojoin,
         },
       });
-    } else if (__DEBUG_IRC_CONFIG__ !== null && debugPassword !== null) {
-      await client.send({
-        id: crypto.randomUUID(),
-        request: {
-          type: "connect",
-          label: "Local Ergo",
-          endpoint: __DEBUG_IRC_CONFIG__.endpoint,
-          nickname: __DEBUG_IRC_CONFIG__.nickname,
-          sasl: {
-            account: __DEBUG_IRC_CONFIG__.account,
-            password: debugPassword,
-          },
-          autojoin: [__DEBUG_IRC_CONFIG__.channel],
-          allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
-        },
-      });
+    } else if (debugPassword !== null) {
+      await connectDebugNetwork(client, debugPassword);
     }
   } catch (error: unknown) {
     if (error instanceof IncompatibleBuildError) {
@@ -387,6 +457,28 @@ async function startEngine(
       setHostedError("Couldn't start the chat. Reload the app to try again.");
     }
   }
+}
+
+async function connectDebugNetwork(
+  client: EngineClient,
+  password: string,
+): Promise<void> {
+  if (__DEBUG_IRC_CONFIG__ === null) return;
+  await client.send({
+    id: crypto.randomUUID(),
+    request: {
+      type: "connect",
+      label: "Local Ergo",
+      endpoint: __DEBUG_IRC_CONFIG__.endpoint,
+      nickname: __DEBUG_IRC_CONFIG__.nickname,
+      sasl: {
+        account: __DEBUG_IRC_CONFIG__.account,
+        password,
+      },
+      autojoin: [__DEBUG_IRC_CONFIG__.channel],
+      allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
+    },
+  });
 }
 
 function scheduleExpiry(expiresAt: number, expire: () => void): () => void {

@@ -1,4 +1,5 @@
 import { For, type JSX } from "solid-js";
+import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
   MessageProjection,
@@ -36,7 +37,8 @@ export function DebugView(props: DebugViewProps) {
           {(network) => (
             <li>
               <Line>
-                {network.label}: {network.nickname} ({network.state})
+                {network.label}: {network.nickname} (
+                {connectionStateKind(network.state)})
               </Line>
             </li>
           )}

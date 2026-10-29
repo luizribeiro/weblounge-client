@@ -1,4 +1,5 @@
 import { For } from "solid-js";
+import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -35,7 +36,7 @@ export function NetworkSection(props: NetworkSectionProps) {
           aria-current={
             props.activeBufferId === server()?.id ? "page" : undefined
           }
-          aria-label={`${props.network.label}, ${props.network.state}`}
+          aria-label={`${props.network.label}, ${connectionStateKind(props.network.state)}`}
           class={styles.networkHeader}
           onClick={() => {
             const buffer = server();
@@ -53,7 +54,7 @@ export function NetworkSection(props: NetworkSectionProps) {
           <span
             aria-hidden="true"
             class={styles.statusDot}
-            data-network-state={props.network.state}
+            data-network-state={connectionStateKind(props.network.state)}
           />
         </button>
       )}

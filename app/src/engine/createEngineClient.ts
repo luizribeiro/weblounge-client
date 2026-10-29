@@ -37,21 +37,22 @@ export function createEngineClient(
 
 function createBrowserEngineClient(): WorkerEngineClient {
   if (typeof SharedWorker !== "undefined") {
-    const sharedUrl = new URL("./engine.shared-worker.ts", import.meta.url);
     const open = () =>
       sharedConnection(
-        new SharedWorker(sharedUrl, {
-          name: "weblounge-engine",
-          type: "module",
-        }),
+        new SharedWorker(
+          new URL("./engine.shared-worker.ts", import.meta.url),
+          {
+            name: "weblounge-engine",
+            type: "module",
+          },
+        ),
       );
     return new WorkerEngineClient(open(), undefined, [], open);
   }
 
-  const dedicatedUrl = new URL("./engine.dedicated-worker.ts", import.meta.url);
   const open = () =>
     dedicatedConnection(
-      new Worker(dedicatedUrl, {
+      new Worker(new URL("./engine.dedicated-worker.ts", import.meta.url), {
         name: "weblounge-engine",
         type: "module",
       }),

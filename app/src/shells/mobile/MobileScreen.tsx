@@ -25,6 +25,7 @@ export interface MobileShellData {
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onOpenMembers?: ((bufferId: number) => void) | undefined;
   readonly onRequestCompletion: (
     bufferId: number,
@@ -80,6 +81,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onFilter={props.onFilter}
           onOpen={props.onOpen}
           onQuery={props.onQuery}
+          onRetryNetwork={props.onRetryNetwork}
           onScroll={props.onScroll}
           query={props.query}
           scrollTop={props.scrollTop}
@@ -96,11 +98,15 @@ export function MobileScreen(props: MobileScreenProps) {
             : { completion: props.completion })}
           memberships={props.memberships.get(buffer()?.id ?? -1) ?? []}
           messages={props.messages.get(buffer()?.id ?? -1) ?? []}
+          network={props.networks.find(
+            (network) => network.id === buffer()?.network_id,
+          )}
           onBack={props.onBack}
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}
           onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
           onRequestCompletion={props.onRequestCompletion}
+          onRetryNetwork={props.onRetryNetwork}
           onSend={props.onSend}
         />
       ) : null}

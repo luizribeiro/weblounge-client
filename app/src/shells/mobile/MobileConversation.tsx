@@ -1,10 +1,12 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
   CommandSpec,
   CompletionResult,
   MembershipProjection,
   MessageProjection,
+  NetworkProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import {
@@ -14,6 +16,7 @@ import {
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MobileShell.module.css";
+import { connectionSummary } from "./mobile-chats";
 
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;
@@ -22,6 +25,7 @@ export interface MobileConversationProps {
   readonly completion?: CompletionResult;
   readonly messages: readonly MessageProjection[];
   readonly memberships: readonly MembershipProjection[];
+  readonly network?: NetworkProjection | undefined;
   readonly onBack: () => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
@@ -32,6 +36,7 @@ export interface MobileConversationProps {
     cursor: number,
     explicit: boolean,
   ) => void;
+  readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
 }
 
@@ -41,6 +46,11 @@ export function MobileConversation(props: MobileConversationProps) {
     document.visibilityState === "visible" && document.hasFocus(),
   );
   let listController: MessageListController | undefined;
+  const connection = () =>
+    props.network === undefined ? "" : connectionSummary([props.network]);
+  const failed = () =>
+    props.network !== undefined &&
+    connectionStateKind(props.network.state) === "failed";
 
   createEffect(() => {
     const latest = [...props.messages]
@@ -96,7 +106,17 @@ export function MobileConversation(props: MobileConversationProps) {
             <Line>{props.buffer.title}</Line>
           </h2>
           <Line class={styles.subtitle}>
-            {props.buffer.kind === "direct" ? (
+            {failed() ? (
+              <button
+                class={styles.retry}
+                onClick={() => props.onRetryNetwork?.(props.network?.id ?? 0)}
+                type="button"
+              >
+                Offline · Retry
+              </button>
+            ) : connection() !== "" ? (
+              connection()
+            ) : props.buffer.kind === "direct" ? (
               "Direct message"
             ) : (
               <Selectable surfaceId="mobile-conversation-topic">

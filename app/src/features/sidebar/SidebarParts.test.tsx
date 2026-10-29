@@ -66,5 +66,5 @@ it("keeps network rows and account chrome in focused components", () => {
   expect(openServer).toHaveBeenCalledOnce();
   expect(openBuffer).toHaveBeenCalledOnce();
   expect(settings).toHaveBeenCalledOnce();
-  expect(screen.getByText("connecting")).toBeInTheDocument();
+  expect(screen.getByText("Connecting…")).toBeInTheDocument();
 });

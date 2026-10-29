@@ -79,7 +79,20 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
       state: "online",
     },
   });
-  expect(await screen.findByText("1 network · connected")).toBeVisible();
+  expect(await screen.findByText("1 network")).toBeVisible();
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: {
+        reconnecting: { attempt: 2, next_retry_at_ms: Date.now() + 1_000 },
+      },
+    },
+  });
+  expect(screen.queryByText("Signing in…")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "weblounge" })).toBeVisible();
 
   client.emit({ type: "notice", message_key: "engine.hosted_auth_failed" });
   await waitFor(() => expect(authorize).toHaveBeenCalledWith("revoked"));
@@ -172,7 +185,7 @@ it("lists projected networks, buffers, and messages", async () => {
     },
   });
 
-  expect(await screen.findByText("1 network · connected")).toBeInTheDocument();
+  expect(await screen.findByText("1 network")).toBeInTheDocument();
   expect(
     screen.getByRole("region", { name: "Local Ergo" }),
   ).toBeInTheDocument();
@@ -312,7 +325,7 @@ it("renders command error and engine notice keys as human text", async () => {
   const visibleConnectionNotice = screen
     .getAllByText(/Couldn't connect to the server/u)
     .find((element) => !element.classList.contains("visually-hidden"));
-  expect(visibleConnectionNotice).toBeVisible();
+  expect(visibleConnectionNotice).toBeUndefined();
 });
 
 it("prepends requested history before live rows", async () => {

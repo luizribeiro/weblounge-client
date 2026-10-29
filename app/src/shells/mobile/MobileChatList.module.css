@@ -43,6 +43,15 @@
   color: var(--wl-color-muted);
   font-size: 12px;
 }
+.retry {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+}
 .statusDot {
   background: var(--wl-color-online);
   border-radius: 50%;

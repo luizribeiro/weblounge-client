@@ -4,6 +4,7 @@ import {
   densityDefaults,
   densityPresets,
 } from "../../density/density";
+import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -28,6 +29,7 @@ interface MobileChatListProps {
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number) => void;
   readonly onQuery: (query: string) => void;
+  readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onScroll: (scrollTop: number) => void;
 }
 
@@ -35,6 +37,10 @@ export function MobileChatList(props: MobileChatListProps) {
   const chats = createMemo(() =>
     filterChats(props.buffers, props.filter, props.query),
   );
+  const failedNetwork = () =>
+    props.networks.find(
+      (network) => connectionStateKind(network.state) === "failed",
+    );
   return (
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
       <header class={styles.header}>
@@ -45,10 +51,20 @@ export function MobileChatList(props: MobileChatListProps) {
           <h1>
             <Line>weblounge</Line>
           </h1>
-          <Line class={styles.status}>
-            <span aria-hidden="true" class={styles.statusDot} />
-            {connectionSummary(props.networks)}
-          </Line>
+          {failedNetwork() !== undefined ? (
+            <button
+              class={styles.retry}
+              onClick={() => props.onRetryNetwork?.(failedNetwork()?.id ?? 0)}
+              type="button"
+            >
+              Offline · Retry
+            </button>
+          ) : connectionSummary(props.networks) !== "" ? (
+            <Line class={styles.status}>
+              <span aria-hidden="true" class={styles.statusDot} />
+              {connectionSummary(props.networks)}
+            </Line>
+          ) : null}
         </span>
       </header>
       <label class={styles.search}>

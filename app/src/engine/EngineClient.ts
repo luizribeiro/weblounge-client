@@ -48,7 +48,7 @@ export interface EngineConnection {
 
 type EngineConnectionFactory = () => EngineConnection;
 
-interface FailureAwarePort extends EnginePort {
+interface FailureEventTarget {
   addEventListener(
     type: "error" | "messageerror",
     listener: (event: Event) => void,
@@ -229,7 +229,7 @@ export class WorkerEngineClient implements EngineClient {
 
   #attach(connection: EngineConnection): void {
     connection.port.addEventListener("message", this.#onMessage);
-    const port = connection.port as FailureAwarePort;
+    const port = connection.port as EnginePort & FailureEventTarget;
     port.addEventListener("messageerror", this.#onWorkerFailure);
     port.addEventListener("error", this.#onWorkerFailure);
     connection.port.start?.();
@@ -237,7 +237,7 @@ export class WorkerEngineClient implements EngineClient {
 
   #detach(connection: EngineConnection): void {
     connection.port.removeEventListener("message", this.#onMessage);
-    const port = connection.port as FailureAwarePort;
+    const port = connection.port as EnginePort & FailureEventTarget;
     port.removeEventListener("messageerror", this.#onWorkerFailure);
     port.removeEventListener("error", this.#onWorkerFailure);
   }

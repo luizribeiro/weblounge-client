@@ -53,7 +53,7 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
     />
   ));
 
-  expect(screen.getByText("1 network · connected")).toBeInTheDocument();
+  expect(screen.getByText("1 network")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "#lounge" }));
   fireEvent.click(screen.getByRole("button", { name: "Local Ergo, online" }));
   expect(show).toHaveBeenCalledWith(
