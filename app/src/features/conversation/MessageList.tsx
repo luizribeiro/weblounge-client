@@ -53,11 +53,15 @@ type TimelineRow =
       readonly message: MessageProjection;
     };
 
+const liveEdgeTolerance = 2;
+
 export function MessageList(props: MessageListProps) {
   let list: HTMLOListElement | undefined;
   let renderedFirst: number | undefined;
   let renderedHeight = 0;
   let renderedCount = 0;
+  let autoScrollPending = false;
+  let correctingLiveEdge = false;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
   let boundaryFrozen =
@@ -104,7 +108,21 @@ export function MessageList(props: MessageListProps) {
   });
   const reportLiveEdge = () => {
     if (list === undefined) return;
-    const live = list.scrollHeight - list.scrollTop - list.clientHeight <= 2;
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
+    const live = distance <= liveEdgeTolerance;
+    if (!live && autoScrollPending) {
+      if (!correctingLiveEdge) {
+        correctingLiveEdge = true;
+        requestAnimationFrame(() => {
+          correctingLiveEdge = false;
+          if (list?.isConnected !== true) return;
+          list.scrollTop = list.scrollHeight;
+          reportLiveEdge();
+        });
+      }
+      return;
+    }
+    autoScrollPending = false;
     if (!live && atLiveEdge() && !boundaryFrozen) {
       const lastSeen = props.messages.at(-1)?.id;
       if (lastSeen !== undefined) {
@@ -117,6 +135,7 @@ export function MessageList(props: MessageListProps) {
     props.onLiveEdgeChange?.(live);
   };
   const jumpToBottom = () => {
+    autoScrollPending = true;
     virtualizer.scrollToIndex(rows().length - 1, { align: "end" });
     queueMicrotask(reportLiveEdge);
   };
@@ -164,6 +183,7 @@ export function MessageList(props: MessageListProps) {
     const previousHeight = renderedHeight;
     const previousCount = renderedCount;
     const wasLive = atLiveEdge();
+    if (messages.length > previousCount && wasLive) autoScrollPending = true;
     queueMicrotask(() => {
       if (list === undefined) return;
       if (
@@ -172,7 +192,7 @@ export function MessageList(props: MessageListProps) {
       ) {
         list.scrollTop += list.scrollHeight - previousHeight;
       } else if (messages.length > previousCount) {
-        if (wasLive) jumpToBottom();
+        if (wasLive || autoScrollPending) jumpToBottom();
         else setUnseen((count) => count + messages.length - previousCount);
       }
       renderedFirst = currentFirst;

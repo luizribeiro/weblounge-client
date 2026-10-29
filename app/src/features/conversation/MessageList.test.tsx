@@ -202,6 +202,7 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
     clientHeight: { configurable: true, value: 500 },
     scrollHeight: { configurable: true, value: 1_300 },
   });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
 
@@ -214,6 +215,29 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
 
   expect(screen.getByRole("button", { name: /1 new message/ })).toBeVisible();
   expect(list.scrollTop).toBe(0);
+});
+
+it("keeps following through a transient one-row render gap", async () => {
+  const [messages, setMessages] = createSignal([message]);
+  const { container } = render(() => <MessageList messages={messages()} />);
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 1_300 },
+  });
+  setMessages([
+    message,
+    { ...message, id: 2, text: "burst arrival", received_at_ms: 2 },
+  ]);
+  list.scrollTop = 784;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(
+    screen.queryByRole("button", { name: /new message/ }),
+  ).not.toBeInTheDocument();
 });
 
 it("keeps the full nick accessible when its visual start truncates", () => {
