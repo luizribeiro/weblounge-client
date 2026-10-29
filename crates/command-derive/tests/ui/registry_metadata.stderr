@@ -1,0 +1,11 @@
+error: duplicate command name or alias
+  --> tests/ui/registry_metadata.rs:20:5
+   |
+20 |     Second {},
+   |     ^^^^^^
+
+error: requires values must be Connected or Feature:<name>
+  --> tests/ui/registry_metadata.rs:30:21
+   |
+30 |         requires = ["Capability:account-tag"],
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^
