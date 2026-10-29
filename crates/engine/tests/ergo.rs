@@ -102,6 +102,150 @@ async fn connects_joins_and_confirms_a_message_against_ergo() {
         .expect("second client quits cleanly");
 }
 
+#[tokio::test]
+async fn production_profile_pages_always_on_history_paths() {
+    let Ok(endpoint) = env::var("WEBLOUNGE_ERGO_PRODUCTION_URL") else {
+        return;
+    };
+    let (first, mut first_events) = connect_account(
+        &endpoint,
+        "weblounge",
+        "weblounge",
+        "weblounge-test",
+        "#lounge",
+    )
+    .await;
+    wait_for_own_join(&mut first_events, "weblounge", "#lounge").await;
+    first
+        .quit("always-on history setup")
+        .await
+        .expect("first device quits cleanly");
+
+    let (bot, mut bot_events) = connect_account(
+        &endpoint,
+        "history-bot",
+        "weblounge-bot",
+        "weblounge-bot-test",
+        "#lounge",
+    )
+    .await;
+    wait_for_own_join(&mut bot_events, "history-bot", "#lounge").await;
+    let suffix = time_suffix();
+    let first_text = format!("missed first {suffix}");
+    let second_text = format!("missed second {suffix}");
+    let multiline = format!("missed multiline {suffix} {}", "x".repeat(600));
+    let notice_text = format!("missed notice {suffix}");
+    for text in [&first_text, &second_text, &multiline] {
+        bot.privmsg("#lounge", text)
+            .await
+            .expect("bot message is confirmed");
+    }
+    bot.notice("#lounge", &notice_text)
+        .await
+        .expect("bot notice is confirmed");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let latest = bot
+        .history("#lounge")
+        .latest()
+        .limit(3)
+        .await
+        .expect("latest history is available");
+    let oldest = latest
+        .oldest_reference()
+        .expect("latest history has a paging cursor");
+    let before = bot
+        .history("#lounge")
+        .before(oldest)
+        .limit(100)
+        .await
+        .expect("older history is available");
+    let messages = before
+        .chat_messages()
+        .chain(latest.chat_messages())
+        .filter(|message| message.text.contains(&suffix))
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[0].text, first_text);
+    assert_eq!(messages[1].text, second_text);
+    assert!(
+        messages[2]
+            .text
+            .starts_with(&format!("missed multiline {suffix} "))
+    );
+    assert!(
+        messages[..2]
+            .iter()
+            .all(|message| message.server_time.is_some())
+    );
+    assert!(latest.items.iter().any(|item| matches!(
+        item,
+        papo::Event::Notice(notice)
+            if notice.text == notice_text && notice.server_time.is_some()
+    )));
+    bot.quit("history seeded").await.expect("bot quits cleanly");
+
+    let (fresh, mut fresh_events) = connect_account(
+        &endpoint,
+        "weblounge",
+        "weblounge",
+        "weblounge-test",
+        "#lounge",
+    )
+    .await;
+    wait_for_own_join(&mut fresh_events, "weblounge", "#lounge").await;
+    fresh
+        .quit("fresh profile verified")
+        .await
+        .expect("fresh device quits cleanly");
+}
+
+fn time_suffix() -> String {
+    papo::time::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock is after Unix epoch")
+        .as_nanos()
+        .to_string()
+}
+
+async fn connect_account(
+    endpoint: &str,
+    nickname: &str,
+    account: &str,
+    password: &str,
+    channel: &str,
+) -> (papo::Client, papo::Events) {
+    papo::Client::builder(endpoint, nickname)
+        .allow_insecure_auth(true)
+        .sasl(papo::Sasl::plain(account, password))
+        .autojoin([channel])
+        .connect()
+        .await
+        .expect("papo client connects")
+}
+
+async fn wait_for_own_join(events: &mut papo::Events, nickname: &str, channel: &str) {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match events.next().await {
+                Some(papo::Event::Joined(joined))
+                    if joined.actor.nick() == nickname && joined.channel == channel =>
+                {
+                    break;
+                }
+                Some(papo::Event::ChannelSynced(synced)) if synced.channel == channel => break,
+                Some(papo::Event::Disconnected(disconnected)) => {
+                    panic!("client disconnected before join: {disconnected}");
+                }
+                Some(_) => {}
+                None => panic!("client stopped before join"),
+            }
+        }
+    })
+    .await
+    .expect("client joins the channel");
+}
+
 async fn connect_reader(endpoint: &str) -> (papo::Client, papo::Events) {
     let (reader, mut events) = papo::Client::builder(endpoint, "multiline-reader")
         .allow_insecure_auth(true)

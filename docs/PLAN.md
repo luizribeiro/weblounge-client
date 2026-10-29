@@ -41,7 +41,11 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then beta.weblounge.org. Luiz dogfoods it and gives feedback; split view and the core shortcuts come after, informed by real use.
 
 - **Dogfood slice** (minimal milestone 3):
-  - [x] Verify joined-channel history keeps Ergo server timestamps and chronological order through papo, the engine, and the rendered day divider.
+  - [ ] Fix joined-channel history timestamps/order. The production profile reproduced the beta
+    bug: papo drops the continuation text and opening `server-time` from a
+    `draft/multiline-concat` batch nested in `CHATHISTORY`, so the engine can only fall back to
+    receipt time. Same-msgid live/history overlap now enriches an untimed row instead of dropping
+    the history metadata; ordinary PRIVMSG and NOTICE replay preserves server time.
   - D1. [ ] Load older history on scroll-up (`CHATHISTORY BEFORE` with msgid cursors; scroll anchoring already exists).
   - D2. [ ] Rebuild the DM list from `CHATHISTORY TARGETS` on connect.
   - D3. [ ] Clean resume after reconnect: papo catch-up gap fill, `Lagged` resync, a quiet "reconnecting" state, the composer queues sends while offline.
@@ -57,3 +61,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 ## External dependencies
 
 - **papo:** papo 0.1 pinned at `949bd5d`. Guarded directs, split-send reconciliation, exact multiline concatenation, server name rules, lag diagnostics, and channel-recreation warnings are integrated.
+  - Question for Luiz: the production-profile Ergo test shows papo dropping replayed
+    `draft/multiline-concat` continuation segments and the opening batch's `server-time` when the
+    multiline batch is nested in a `CHATHISTORY` batch. The server sends and stores every segment
+    with the timestamp; should this be fixed in papo before WebLounge relies on replaying long
+    logical lines?
