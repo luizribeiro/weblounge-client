@@ -17,13 +17,43 @@ numeric_id!(BufferId, "Stable engine identity for one buffer.");
 numeric_id!(MessageId, "Stable engine identity for one timeline row.");
 numeric_id!(LocalSendId, "Stable identity for one optimistic send.");
 
+/// Secret text that keeps its serialized wire value but redacts diagnostics.
+#[derive(Clone, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct RedactedSecret(String);
+
+impl RedactedSecret {
+    pub(crate) fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for RedactedSecret {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for RedactedSecret {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl std::fmt::Debug for RedactedSecret {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
 /// SASL PLAIN credentials used only while constructing a papo client.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct SaslCredentials {
     /// SASL account name.
     pub account: String,
     /// SASL password; never included in projections or errors.
-    pub password: String,
+    #[ts(type = "string")]
+    pub password: RedactedSecret,
 }
 
 /// Runtime deployment configuration served by the web host.
@@ -362,7 +392,8 @@ pub enum EngineRequest {
         /// Initial nickname, replaced by the authenticated account when applicable.
         nickname: String,
         /// One-shot bearer token moved into papo's redacting secret store.
-        oauth_token: String,
+        #[ts(type = "string")]
+        oauth_token: RedactedSecret,
         /// Channels joined after registration.
         autojoin: Vec<String>,
     },
@@ -633,8 +664,8 @@ pub enum EngineToUi {
 #[cfg(test)]
 mod tests {
     use super::{
-        BufferId, CompletionCandidate, EngineToUi, Hello, MemberGroup, MemberProjection, ShellKind,
-        UiToEngine,
+        BufferId, CompletionCandidate, EngineRequest, EngineToUi, Hello, MemberGroup,
+        MemberProjection, SaslCredentials, ShellKind, UiToEngine,
     };
 
     #[test]
@@ -699,6 +730,35 @@ mod tests {
                 "nick_color_index": 4,
                 "away": true,
                 "bot": false,
+            })
+        );
+    }
+
+    #[test]
+    fn request_debug_redacts_connection_secrets_without_changing_json() {
+        let request = EngineRequest::ConnectHosted {
+            label: "weblounge".into(),
+            endpoint: "wss://beta.weblounge.org/socket".into(),
+            nickname: "*".into(),
+            oauth_token: "unique-oauth-token".into(),
+            autojoin: vec!["#lounge".into()],
+        };
+        let credentials = SaslCredentials {
+            account: "luiz".into(),
+            password: "unique-sasl-password".into(),
+        };
+
+        assert!(!format!("{request:?}").contains("unique-oauth-token"));
+        assert!(!format!("{credentials:?}").contains("unique-sasl-password"));
+        assert_eq!(
+            serde_json::to_value(request).expect("request serializes"),
+            serde_json::json!({
+                "type": "connect_hosted",
+                "label": "weblounge",
+                "endpoint": "wss://beta.weblounge.org/socket",
+                "nickname": "*",
+                "oauth_token": "unique-oauth-token",
+                "autojoin": ["#lounge"],
             })
         );
     }

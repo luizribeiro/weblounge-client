@@ -147,7 +147,7 @@ impl Runtime {
                     nickname,
                     authentication: ConnectionAuthentication::SaslPlain {
                         account: sasl.account,
-                        password: sasl.password,
+                        password: papo::Secret::from(sasl.password.into_inner()),
                     },
                     autojoin,
                     allow_insecure,
@@ -165,7 +165,9 @@ impl Runtime {
                     label,
                     endpoint,
                     nickname,
-                    authentication: ConnectionAuthentication::HostedOAuth { token: oauth_token },
+                    authentication: ConnectionAuthentication::HostedOAuth {
+                        token: papo::Secret::from(oauth_token.into_inner()),
+                    },
                     autojoin,
                     allow_insecure: false,
                 },
@@ -1026,8 +1028,13 @@ struct ConnectConfig {
 }
 
 enum ConnectionAuthentication {
-    SaslPlain { account: String, password: String },
-    HostedOAuth { token: String },
+    SaslPlain {
+        account: String,
+        password: papo::Secret,
+    },
+    HostedOAuth {
+        token: papo::Secret,
+    },
 }
 
 impl ConnectionAuthentication {

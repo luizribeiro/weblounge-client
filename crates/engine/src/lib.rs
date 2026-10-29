@@ -15,8 +15,8 @@ pub use protocol::{
     DeploymentConfig, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig,
     HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials,
-    ShellKind, UiToEngine,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, RedactedSecret,
+    SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.
