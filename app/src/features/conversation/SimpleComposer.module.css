@@ -52,6 +52,40 @@ textarea.input {
   color: var(--wl-color-selection-fg);
 }
 
+.confirmation {
+  align-items: center;
+  background: var(--wl-color-input-bg);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-control);
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 7px 9px;
+}
+
+.confirmation span {
+  flex: 1;
+}
+
+.confirm,
+.cancel {
+  appearance: none;
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  font: inherit;
+  padding: 5px 9px;
+}
+
+.confirm {
+  background: var(--wl-color-accent);
+  color: var(--wl-color-accent-fg);
+}
+
+.cancel {
+  background: transparent;
+  color: var(--wl-color-fg);
+}
+
 .input::placeholder {
   color: var(--wl-color-muted);
 }

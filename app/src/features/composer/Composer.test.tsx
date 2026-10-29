@@ -17,6 +17,14 @@ const identify = {
   secret_arguments: true,
 };
 
+const quit = {
+  ...identify,
+  name: "quit",
+  aliases: ["exit"],
+  confirm: "always" as const,
+  secret_arguments: false,
+};
+
 it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   const onSend = vi.fn();
   render(() => (
@@ -34,6 +42,54 @@ it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   expect(onSend).toHaveBeenCalledWith("hello");
+});
+
+it("confirms always-policy commands typed by name or alias", async () => {
+  const onSend = vi.fn();
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      commandSpecs={[quit]}
+      draftKey="test:confirm"
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "  /EXIT later" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await Promise.resolve();
+
+  expect(onSend).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("alertdialog", { name: "Confirm /quit" }),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect(onSend).toHaveBeenCalledWith("  /EXIT later");
+});
+
+it("cancels inline confirmation with Escape and keeps the draft", async () => {
+  const onSend = vi.fn();
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      commandSpecs={[quit]}
+      draftKey="test:cancel-confirm"
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/quit" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+  await Promise.resolve();
+
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  expect(input).toHaveValue("/quit");
+  expect(input).toHaveFocus();
+  expect(onSend).not.toHaveBeenCalled();
 });
 
 it("cycles completion and restores drafts by buffer", () => {

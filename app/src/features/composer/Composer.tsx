@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, type JSX } from "solid-js";
 import type { CommandSpec } from "../../engine/protocol";
 import styles from "../conversation/SimpleComposer.module.css";
+import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import { isSecretInput } from "./secret-input";
 
@@ -19,6 +20,7 @@ interface ComposerProps {
 
 export function Composer(props: ComposerProps) {
   let textarea: HTMLTextAreaElement | undefined;
+  let confirmButton: HTMLButtonElement | undefined;
   let completion:
     | { start: number; end: number; candidates: readonly string[] }
     | undefined;
@@ -32,6 +34,8 @@ export function Composer(props: ComposerProps) {
   const [shownCandidates, setShownCandidates] = createSignal<readonly string[]>(
     [],
   );
+  const [pendingConfirmation, setPendingConfirmation] =
+    createSignal<CommandSpec>();
   const listId = () => `composer-completions-${props.bufferId}`;
   const optionId = (index: number) => `${listId()}-${index}`;
   const resize = () => {
@@ -60,10 +64,12 @@ export function Composer(props: ComposerProps) {
     setPendingCompletion(undefined);
     setSelected(-1);
     setShownCandidates([]);
+    setPendingConfirmation(undefined);
   });
 
   const update = (value: string, resetCompletion = true) => {
     setText(value);
+    setPendingConfirmation(undefined);
     if (resetCompletion) {
       completion = undefined;
       setPendingCompletion(undefined);
@@ -71,11 +77,18 @@ export function Composer(props: ComposerProps) {
       setShownCandidates([]);
     }
   };
-  const submit = () => {
+  const submit = (confirmed = false) => {
     const submitted = text();
     const submittedBuffer = currentBuffer;
     const submittedDraftKey = currentDraftKey;
     if (submitted.trim() === "") return;
+    const command = commandForInput(submitted, props.commandSpecs ?? []);
+    if (!confirmed && command?.confirm === "always") {
+      setPendingConfirmation(command);
+      queueMicrotask(() => confirmButton?.focus());
+      return;
+    }
+    setPendingConfirmation(undefined);
     void Promise.resolve(props.onSend(submitted))
       .then((accepted) => {
         if (accepted === false) return;
@@ -179,6 +192,38 @@ export function Composer(props: ComposerProps) {
           </For>
         </div>
       )}
+      {pendingConfirmation() !== undefined && (
+        <div
+          aria-label={`Confirm /${pendingConfirmation()?.name}`}
+          class={styles.confirmation}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            setPendingConfirmation(undefined);
+            queueMicrotask(() => textarea?.focus());
+          }}
+          role="alertdialog"
+        >
+          <span>Run /{pendingConfirmation()?.name}?</span>
+          <button
+            class={styles.confirm}
+            onClick={() => submit(true)}
+            ref={confirmButton}
+            type="button"
+          >
+            Confirm
+          </button>
+          <button
+            class={styles.cancel}
+            onClick={() => {
+              setPendingConfirmation(undefined);
+              textarea?.focus();
+            }}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <div class={styles.form}>
         <textarea
           aria-activedescendant={
@@ -200,7 +245,7 @@ export function Composer(props: ComposerProps) {
         <button
           class={styles.send}
           disabled={props.disabled}
-          onClick={submit}
+          onClick={() => submit()}
           type="button"
         >
           Send
