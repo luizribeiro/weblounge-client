@@ -43,11 +43,12 @@ pub struct Network {
 }
 
 pub enum ConnectionState {
-    Stopped { reason: OfflineReason },
     Connecting { attempt: u32, phase: ConnectPhase },
+    Registering { attempt: u32, phase: RegistrationPhase },
     Online { since: Timestamp, actions: NetworkActions },
-    Reconnecting { retry_at: Timestamp },
-    Suspended { since: Timestamp },
+    Reconnecting { attempt: u32, next_retry_at: Timestamp },
+    Offline { reason: OfflineReason },
+    Failed { reason: FailureReason, message_key: MessageKey },
 }
 ```
 
