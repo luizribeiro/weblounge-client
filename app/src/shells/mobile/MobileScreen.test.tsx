@@ -83,6 +83,7 @@ function renderRoute(
       onScroll={() => {}}
       onSend={async () => true}
       onSwipeReturnEnd={() => {}}
+      onTransitionCancel={() => {}}
       onTransitionEnd={() => {}}
       query=""
       screen={route}

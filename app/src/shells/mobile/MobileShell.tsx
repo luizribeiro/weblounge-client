@@ -64,6 +64,7 @@ export function MobileShell(props: MobileShellProps) {
   );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let pendingDirect: { networkId: number; nick: string } | undefined;
+  let pendingHistoryPopInstant = false;
   let pushNextFocus = false;
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
@@ -79,8 +80,17 @@ export function MobileShell(props: MobileShellProps) {
       pushChat(current, bufferId, reducedMotion(), preserveCurrent),
     );
   };
-  const dispatchBack = () =>
-    setStack((current) => popChat(current, reducedMotion()));
+  const dispatchBack = (instant = reducedMotion()) =>
+    setStack((current) => popChat(current, instant));
+  const resetSwipe = () => {
+    gesture = undefined;
+    setSwipeReturning(false);
+    setSwipeProgress(undefined);
+  };
+  const resetMotion = () => {
+    resetSwipe();
+    setStack(finishTransition);
+  };
   const finishDrawerClose = () => {
     setDrawerBufferId(undefined);
     if (pendingDirect !== undefined) {
@@ -94,12 +104,13 @@ export function MobileShell(props: MobileShellProps) {
       window.history.back();
     else finishDrawerClose();
   };
-  const requestBack = () => {
+  const requestBack = (instant = false) => {
     if (drawerBufferId() !== undefined) return closeDrawer();
     if (window.history.state?.webloungeMobileChat === true) {
+      pendingHistoryPopInstant = instant;
       window.history.back();
     } else {
-      dispatchBack();
+      dispatchBack(instant || reducedMotion());
     }
   };
   const openMembers = (bufferId: number) => {
@@ -167,7 +178,7 @@ export function MobileShell(props: MobileShellProps) {
     gesture = undefined;
     if (completes) {
       setSwipeProgress(undefined);
-      requestBack();
+      requestBack(true);
     } else returnSwipe();
   };
   const cancelSwipe = (event: PointerEvent) => {
@@ -181,13 +192,25 @@ export function MobileShell(props: MobileShellProps) {
       : [previousScreen(stack()), stack().active];
 
   onMount(() => {
-    const handlePopState = () =>
-      drawerBufferId() === undefined ? dispatchBack() : finishDrawerClose();
+    const handlePopState = () => {
+      const browserHandledSwipe =
+        pendingHistoryPopInstant ||
+        gesture !== undefined ||
+        swipeProgress() !== undefined;
+      pendingHistoryPopInstant = false;
+      resetSwipe();
+      if (drawerBufferId() === undefined)
+        dispatchBack(browserHandledSwipe || reducedMotion());
+      else finishDrawerClose();
+    };
+    const handleVisibilityChange = () => resetMotion();
     window.addEventListener("popstate", handlePopState);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     const stopViewport = observeMobileViewport(window, setViewport);
     onCleanup(() => {
       stopViewport();
       window.removeEventListener("popstate", handlePopState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     });
   });
 
@@ -230,6 +253,7 @@ export function MobileShell(props: MobileShellProps) {
               onScroll={setScrollTop}
               onSend={props.onSend}
               onTransitionEnd={() => setStack(finishTransition)}
+              onTransitionCancel={resetMotion}
               position={
                 transition() === undefined
                   ? undefined
@@ -251,8 +275,7 @@ export function MobileShell(props: MobileShellProps) {
               swipeProgress={swipeProgress()}
               transition={transition()?.direction}
               onSwipeReturnEnd={() => {
-                setSwipeReturning(false);
-                setSwipeProgress(undefined);
+                resetSwipe();
               }}
             />
           );

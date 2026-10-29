@@ -97,3 +97,48 @@ it("closes the member drawer before popping the chat", () => {
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
 });
+
+it("clears an in-flight swipe when browser history or visibility wins", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={2}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
+  if (shell === null) throw new Error("mobile shell is missing");
+
+  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
+  fireEvent.pointerMove(shell, { clientX: 100, pointerId: 7 });
+  expect(document.querySelector("[data-swipe]")).not.toBeNull();
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  fireEvent.pointerUp(shell, { clientX: 100, pointerId: 7 });
+  expect(document.querySelector("[data-swipe]")).toBeNull();
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "mel" }));
+  const chat = document.querySelector("[data-mobile-chat]");
+  if (chat === null) throw new Error("mobile chat is missing");
+  const chatScreen = chat.parentElement;
+  if (chatScreen === null) throw new Error("mobile chat screen is missing");
+  fireEvent.animationEnd(chatScreen);
+  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 8 });
+  fireEvent.pointerMove(shell, { clientX: 100, pointerId: 8 });
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(document.querySelector("[data-swipe]")).toBeNull();
+  expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
+});

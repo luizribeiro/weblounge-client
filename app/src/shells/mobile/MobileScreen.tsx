@@ -51,6 +51,7 @@ interface MobileScreenProps extends MobileShellData {
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onSwipeReturnEnd: () => void;
+  readonly onTransitionCancel: () => void;
   readonly onTransitionEnd: () => void;
 }
 
@@ -68,7 +69,9 @@ export function MobileScreen(props: MobileScreenProps) {
       data-swipe={props.swipe}
       data-swipe-returning={props.swipeReturning}
       data-transition={props.transition}
+      onAnimationCancel={props.onTransitionCancel}
       onAnimationEnd={props.onTransitionEnd}
+      onTransitionCancel={props.onTransitionCancel}
       onTransitionEnd={props.onSwipeReturnEnd}
       style={{ "--wl-swipe-progress": props.swipeProgress }}
     >
