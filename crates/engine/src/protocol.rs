@@ -124,6 +124,38 @@ pub enum MessageDelivery {
     Failed,
 }
 
+/// Composer suggestion family selected from the input around the caret.
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionTrigger {
+    Command,
+    Person,
+    Channel,
+}
+
+/// One engine-ranked composer suggestion with presentation facts.
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CompletionCandidate {
+    Command {
+        name: String,
+        usage: String,
+        description: String,
+    },
+    Person {
+        nick: String,
+        #[ts(type = "number")]
+        nick_color_index: u32,
+        away: bool,
+        bot: bool,
+    },
+    Channel {
+        name: String,
+    },
+}
+
 /// Semantic presentation of a chat message.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -534,7 +566,8 @@ pub enum EngineToUi {
 #[cfg(test)]
 mod tests {
     use super::{
-        BufferId, EngineToUi, Hello, MemberGroup, MemberProjection, ShellKind, UiToEngine,
+        BufferId, CompletionCandidate, EngineToUi, Hello, MemberGroup, MemberProjection, ShellKind,
+        UiToEngine,
     };
 
     #[test]
@@ -579,6 +612,27 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<EngineToUi>(&json).expect("event deserializes"),
             event
+        );
+    }
+
+    #[test]
+    fn completion_candidates_keep_their_presentation_facts() {
+        let candidate = CompletionCandidate::Person {
+            nick: "ana".into(),
+            nick_color_index: 4,
+            away: true,
+            bot: false,
+        };
+
+        assert_eq!(
+            serde_json::to_value(candidate).expect("candidate serializes"),
+            serde_json::json!({
+                "type": "person",
+                "nick": "ana",
+                "nick_color_index": 4,
+                "away": true,
+                "bot": false,
+            })
         );
     }
 }

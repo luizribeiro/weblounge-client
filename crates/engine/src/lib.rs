@@ -11,10 +11,11 @@ mod state;
 use tokio::sync::mpsc;
 
 pub use protocol::{
-    BufferId, BufferKind, BufferProjection, EngineRequest, EngineRequestEnvelope, EngineToUi,
-    Hello, LocalSendId, MemberGroup, MemberProjection, MembershipKind, MembershipProjection,
-    MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection,
-    NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials, ShellKind, UiToEngine,
+    BufferId, BufferKind, BufferProjection, CompletionCandidate, CompletionTrigger, EngineRequest,
+    EngineRequestEnvelope, EngineToUi, Hello, LocalSendId, MemberGroup, MemberProjection,
+    MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
+    MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
+    SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.
