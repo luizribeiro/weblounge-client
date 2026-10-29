@@ -329,24 +329,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
-    case "completion_result":
-      if (
-        typeof value.command_id === "string" &&
-        typeof value.buffer_id === "number" &&
-        typeof value.prefix === "string" &&
-        Array.isArray(value.candidates) &&
-        value.candidates.every((candidate) => typeof candidate === "string")
-      ) {
-        return {
-          type: "completion_result",
-          command_id: value.command_id,
-          buffer_id: value.buffer_id,
-          prefix: value.prefix,
-          candidates: value.candidates,
-        };
-      }
-      break;
-    case "suggestion_result": {
+    case "completion_result": {
       const candidates = decodeArray(
         value.candidates,
         decodeCompletionCandidate,
@@ -363,7 +346,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         candidates !== undefined
       ) {
         return {
-          type: "suggestion_result",
+          type: "completion_result",
           command_id: value.command_id,
           buffer_id: value.buffer_id,
           input: value.input,
@@ -534,7 +517,6 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "command_result" ||
     value === "command_rejected" ||
     value === "completion_result" ||
-    value === "suggestion_result" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
     value === "buffer_added" ||

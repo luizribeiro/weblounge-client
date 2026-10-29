@@ -3,7 +3,7 @@ import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type {
   CompletionCandidate,
-  SuggestionResult,
+  CompletionResult,
 } from "../../engine/protocol";
 import { Composer, replacementFor } from "./Composer";
 import { readDraft } from "./draft-storage";
@@ -44,9 +44,9 @@ function completion(
   candidates: readonly CompletionCandidate[],
   replaceStart = 0,
   argumentHint: string | null = null,
-): SuggestionResult {
+): CompletionResult {
   return {
-    type: "suggestion_result",
+    type: "completion_result",
     command_id: `complete:${input}`,
     buffer_id: 2,
     input,
@@ -153,7 +153,7 @@ it("cancels inline confirmation with Escape and keeps the draft", async () => {
 
 it("navigates suggestions, inserts a mention, and restores drafts", () => {
   const [bufferId, setBufferId] = createSignal(2);
-  const [result, setResult] = createSignal<SuggestionResult>();
+  const [result, setResult] = createSignal<CompletionResult>();
   render(() => (
     <Composer
       bufferId={bufferId()}
@@ -243,7 +243,7 @@ it("hides completion when the engine returns no candidates", () => {
 });
 
 it("requests as input changes, accepts Tab, and ignores IME composition", async () => {
-  const [result, setResult] = createSignal<SuggestionResult>();
+  const [result, setResult] = createSignal<CompletionResult>();
   const request = vi.fn((value: string, _cursor: number, explicit: boolean) => {
     setResult({
       ...completion(value, [person("weblounge")]),

@@ -145,19 +145,6 @@ impl CommandRegistry {
             arguments: input.get(end..).unwrap_or_default().trim_start(),
         })
     }
-
-    pub(crate) fn completion_candidates(&self, prefix: &str) -> Vec<String> {
-        let prefix = prefix.trim_start_matches('/');
-        self.specs
-            .iter()
-            .flat_map(|spec| std::iter::once(&spec.name).chain(&spec.aliases))
-            .filter(|name| {
-                name.get(..prefix.len())
-                    .is_some_and(|start| start.eq_ignore_ascii_case(prefix))
-            })
-            .map(|name| format!("/{name}"))
-            .collect()
-    }
 }
 
 #[cfg(test)]
@@ -165,7 +152,7 @@ mod tests {
     use super::{CommandPermission, CommandRegistry, CommandSpec, ConfirmPolicy};
 
     #[test]
-    fn runtime_registry_parses_completes_and_lists_new_specs() {
+    fn runtime_registry_parses_and_lists_new_specs() {
         let spec = CommandSpec {
             name: "later".into(),
             aliases: vec!["l".into()],
@@ -187,6 +174,5 @@ mod tests {
         let parsed = registry.parse("  Later argument").expect("command parses");
         assert_eq!(parsed.spec.name, "later");
         assert_eq!(parsed.arguments, "argument");
-        assert_eq!(registry.completion_candidates("/L"), ["/later", "/l"]);
     }
 }

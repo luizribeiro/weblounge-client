@@ -30,10 +30,6 @@ export type CompletionResult = Extract<
   EngineToUi,
   { type: "completion_result" }
 >;
-export type SuggestionResult = Extract<
-  EngineToUi,
-  { type: "suggestion_result" }
->;
 export type IncompatibleBuild = Extract<
   EngineToUi,
   { type: "incompatible_build" }

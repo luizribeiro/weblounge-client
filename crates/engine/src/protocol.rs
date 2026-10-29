@@ -337,16 +337,9 @@ pub enum EngineRequest {
         /// Nonempty composer contents.
         input: String,
     },
-    /// Compute completion candidates from the engine's current IRC projection.
+    /// Resolve composer completion candidates from input around the caret.
     CompleteInput {
         /// Buffer whose composer owns the completion session.
-        buffer_id: BufferId,
-        /// Current token prefix at the caret.
-        prefix: String,
-    },
-    /// Resolve rich composer suggestions from input around the caret.
-    SuggestInput {
-        /// Buffer whose composer owns the suggestion session.
         buffer_id: BufferId,
         /// Complete composer input used to resolve trigger and argument context.
         input: String,
@@ -453,20 +446,9 @@ pub enum EngineToUi {
         /// Stable localization key describing the rejection.
         message_key: String,
     },
-    /// Candidate values for one legacy completion request.
-    CompletionResult {
-        /// `EngineRequest` that requested these candidates.
-        command_id: String,
-        /// Buffer whose projection supplied the candidates.
-        buffer_id: BufferId,
-        /// Prefix used to filter the candidates.
-        prefix: String,
-        /// Ordered candidates, with the most recently active nick first.
-        candidates: Vec<String>,
-    },
-    /// Rich candidates for input around the composer caret.
+    /// Typed candidates for input around the composer caret.
     #[allow(missing_docs)]
-    SuggestionResult {
+    CompletionResult {
         /// `EngineRequest` that requested these candidates.
         command_id: String,
         /// Buffer whose projection supplied the candidates.

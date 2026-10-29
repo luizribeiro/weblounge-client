@@ -11,11 +11,11 @@ import {
 import type {
   BufferProjection,
   CommandSpec,
+  CompletionResult,
   EngineClientMessage,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
-  SuggestionResult,
 } from "./engine/protocol";
 import { t } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
@@ -42,7 +42,7 @@ export function App(props: AppProps) {
   const [engineNotice, setEngineNotice] = createSignal<string>();
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
-  const [completion, setCompletion] = createSignal<SuggestionResult>();
+  const [completion, setCompletion] = createSignal<CompletionResult>();
   const [focusRequest, setFocusRequest] = createSignal<{ bufferId: number }>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
@@ -85,7 +85,7 @@ export function App(props: AppProps) {
       if (message.type === "command_help_requested") {
         setComposerNotice(commandHelp(commandSpecs() ?? [], message.command));
       }
-      if (message.type === "suggestion_result") {
+      if (message.type === "completion_result") {
         setCompletion(message);
       }
       if (message.type === "focus_buffer_requested") {
@@ -211,7 +211,7 @@ export function App(props: AppProps) {
           void client.send({
             id: crypto.randomUUID(),
             request: {
-              type: "suggest_input",
+              type: "complete_input",
               buffer_id: bufferId,
               input,
               cursor,

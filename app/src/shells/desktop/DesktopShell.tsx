@@ -14,10 +14,10 @@ import {
 import type {
   BufferProjection,
   CommandSpec,
+  CompletionResult,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
-  SuggestionResult,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
@@ -41,7 +41,7 @@ export interface DesktopShellProps {
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
-  readonly completion: SuggestionResult | undefined;
+  readonly completion: CompletionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;

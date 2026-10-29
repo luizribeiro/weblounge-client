@@ -159,15 +159,12 @@ impl Runtime {
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
             }
-            EngineRequest::CompleteInput { buffer_id, prefix } => {
-                self.complete_input(envelope.id, buffer_id, prefix)
-            }
-            EngineRequest::SuggestInput {
+            EngineRequest::CompleteInput {
                 buffer_id,
                 input,
                 cursor,
                 explicit,
-            } => self.suggest_input(envelope.id, buffer_id, input, cursor, explicit),
+            } => self.complete_input(envelope.id, buffer_id, input, cursor, explicit),
             EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }
@@ -329,58 +326,6 @@ impl Runtime {
         &self,
         command_id: String,
         buffer_id: BufferId,
-        prefix: String,
-    ) -> Vec<EngineToUi> {
-        let state = lock(&self.state);
-        let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
-        };
-        let snapshot = running.client.state();
-        let mut candidates = running.model.completion_candidates(
-            buffer_id,
-            &prefix,
-            &snapshot,
-            commands::registry(),
-        );
-        if !prefix.starts_with('/') && !snapshot.isupport().is_channel(&prefix) {
-            let folded_prefix = snapshot.casemapping().fold(&prefix);
-            let members = running
-                .model
-                .channel_for_buffer(buffer_id)
-                .and_then(|channel| snapshot.channel(&channel))
-                .into_iter()
-                .flat_map(papo::Channel::members)
-                .map(|member| member.nick().to_string())
-                .filter(|nick| snapshot.casemapping().fold(nick) != snapshot.nick().as_ref())
-                .filter(|nick| {
-                    snapshot
-                        .casemapping()
-                        .fold(nick)
-                        .starts_with(&*folded_prefix)
-                });
-            for member in members {
-                if !candidates.iter().any(|candidate| {
-                    snapshot.casemapping().fold(candidate) == snapshot.casemapping().fold(&member)
-                }) {
-                    candidates.push(member);
-                }
-            }
-        }
-        vec![
-            EngineToUi::CompletionResult {
-                command_id: command_id.clone(),
-                buffer_id,
-                prefix,
-                candidates,
-            },
-            EngineToUi::CommandResult { id: command_id },
-        ]
-    }
-
-    fn suggest_input(
-        &self,
-        command_id: String,
-        buffer_id: BufferId,
         input: String,
         cursor: u32,
         explicit: bool,
@@ -409,7 +354,7 @@ impl Runtime {
             }
         };
         vec![
-            EngineToUi::SuggestionResult {
+            EngineToUi::CompletionResult {
                 command_id: command_id.clone(),
                 buffer_id,
                 input,
@@ -2329,7 +2274,7 @@ mod tests {
 
         let output = runtime.request(EngineRequestEnvelope {
             id: "complete".into(),
-            request: EngineRequest::SuggestInput {
+            request: EngineRequest::CompleteInput {
                 buffer_id: BufferId(1),
                 input: "/j".into(),
                 cursor: 2,
@@ -2340,7 +2285,7 @@ mod tests {
         assert!(matches!(
             output.as_slice(),
             [
-                EngineToUi::SuggestionResult {
+                EngineToUi::CompletionResult {
                     command_id,
                     input,
                     candidates,
@@ -2356,7 +2301,7 @@ mod tests {
 
         let exact = runtime.request(EngineRequestEnvelope {
             id: "complete-exact".into(),
-            request: EngineRequest::SuggestInput {
+            request: EngineRequest::CompleteInput {
                 buffer_id: BufferId(1),
                 input: "/join".into(),
                 cursor: 5,
@@ -2365,7 +2310,7 @@ mod tests {
         });
         assert!(matches!(
             exact.first(),
-            Some(EngineToUi::SuggestionResult { candidates, .. }) if candidates.is_empty()
+            Some(EngineToUi::CompletionResult { candidates, .. }) if candidates.is_empty()
         ));
     }
 
@@ -2414,7 +2359,7 @@ mod tests {
         };
         let completion = runtime.request(EngineRequestEnvelope {
             id: "complete-member".into(),
-            request: EngineRequest::SuggestInput {
+            request: EngineRequest::CompleteInput {
                 buffer_id,
                 input: "web".into(),
                 cursor: 3,
@@ -2423,7 +2368,7 @@ mod tests {
         });
         assert!(matches!(
             completion.first(),
-            Some(EngineToUi::SuggestionResult { candidates, .. })
+            Some(EngineToUi::CompletionResult { candidates, .. })
                 if candidates.is_empty()
         ));
 

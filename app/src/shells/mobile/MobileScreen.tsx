@@ -1,10 +1,10 @@
 import type {
   BufferProjection,
   CommandSpec,
+  CompletionResult,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
-  SuggestionResult,
 } from "../../engine/protocol";
 import { MobileChatList } from "./MobileChatList";
 import { MobileConversation } from "./MobileConversation";
@@ -20,7 +20,7 @@ export interface MobileShellData {
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
-  readonly completion: SuggestionResult | undefined;
+  readonly completion: CompletionResult | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;

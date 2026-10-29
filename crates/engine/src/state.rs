@@ -6,8 +6,7 @@ use std::{
 use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, commands,
-    name_key::NameKey,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, name_key::NameKey,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -686,31 +685,6 @@ impl NetworkModel {
             .collect()
     }
 
-    pub(crate) fn completion_candidates(
-        &self,
-        buffer_id: BufferId,
-        prefix: &str,
-        state: &papo::State,
-        registry: &commands::CommandRegistry,
-    ) -> Vec<String> {
-        let values = if prefix.starts_with('/') {
-            registry.completion_candidates(prefix)
-        } else if prefix
-            .chars()
-            .next()
-            .is_some_and(|first| state.isupport().chantypes().contains(first))
-        {
-            self.channel_names()
-        } else {
-            self.recent_speakers(buffer_id, "", state)
-        };
-        let folded_prefix = state.casemapping().fold(prefix);
-        values
-            .into_iter()
-            .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
-            .collect()
-    }
-
     pub(crate) fn open_direct(
         &mut self,
         nick: papo::Nick,
@@ -1170,7 +1144,7 @@ mod tests {
         Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, draft_key, nick_color_index,
         time_millis,
     };
-    use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId, commands};
+    use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
 
     fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
         papo_testing::channel(state.casemapping(), name)
@@ -1608,15 +1582,6 @@ mod tests {
         assert_eq!(
             model.recent_speakers(buffer_id, "alice{", &state),
             ["Alice["]
-        );
-        let registry = commands::built_in_registry();
-        assert_eq!(
-            model.completion_candidates(buffer_id, "/j", &state, &registry),
-            ["/join", "/j"]
-        );
-        assert_eq!(
-            model.completion_candidates(buffer_id, "#r", &state, &registry),
-            ["#room"]
         );
     }
 

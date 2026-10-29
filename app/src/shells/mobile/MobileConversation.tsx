@@ -2,9 +2,9 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   BufferProjection,
   CommandSpec,
+  CompletionResult,
   MembershipProjection,
   MessageProjection,
-  SuggestionResult,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import {
@@ -19,7 +19,7 @@ export interface MobileConversationProps {
   readonly buffer: BufferProjection;
   readonly composerNotice?: string | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
-  readonly completion?: SuggestionResult;
+  readonly completion?: CompletionResult;
   readonly messages: readonly MessageProjection[];
   readonly memberships: readonly MembershipProjection[];
   readonly onBack: () => void;

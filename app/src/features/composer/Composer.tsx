@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, type JSX } from "solid-js";
 import type {
   CommandSpec,
   CompletionCandidate,
-  SuggestionResult,
+  CompletionResult,
 } from "../../engine/protocol";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
@@ -16,7 +16,7 @@ interface ComposerProps {
   readonly draftKey: string;
   readonly bufferTitle: string;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
-  readonly completion?: SuggestionResult | undefined;
+  readonly completion?: CompletionResult | undefined;
   readonly disabled?: boolean;
   readonly onRequestCandidates?: (
     input: string,
@@ -292,7 +292,7 @@ export function Composer(props: ComposerProps) {
 
 export function replacementFor(
   candidate: CompletionCandidate,
-  result: Pick<SuggestionResult, "argument_hint" | "input" | "replace_start">,
+  result: Pick<CompletionResult, "argument_hint" | "input" | "replace_start">,
 ): string {
   switch (candidate.type) {
     case "command":

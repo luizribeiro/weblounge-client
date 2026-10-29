@@ -72,22 +72,6 @@ command_id: string,
  */
 buffer_id: BufferId,
 /**
- * Prefix used to filter the candidates.
- */
-prefix: string,
-/**
- * Ordered candidates, with the most recently active nick first.
- */
-candidates: Array<string>, } | { "type": "suggestion_result",
-/**
- * `EngineRequest` that requested these candidates.
- */
-command_id: string,
-/**
- * Buffer whose projection supplied the candidates.
- */
-buffer_id: BufferId,
-/**
  * Input echoed to discard stale worker responses.
  */
 input: string, replace_start: number, replace_end: number, trigger: CompletionTrigger, argument_hint: string | null,

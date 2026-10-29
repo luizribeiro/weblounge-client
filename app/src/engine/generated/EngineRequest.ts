@@ -65,14 +65,6 @@ input: string, } | { "type": "complete_input",
  */
 buffer_id: BufferId,
 /**
- * Current token prefix at the caret.
- */
-prefix: string, } | { "type": "suggest_input",
-/**
- * Buffer whose composer owns the suggestion session.
- */
-buffer_id: BufferId,
-/**
  * Complete composer input used to resolve trigger and argument context.
  */
 input: string,

@@ -122,7 +122,7 @@ describe("WorkerEngineClient", () => {
     client.subscribe(listener);
 
     port.emit({
-      type: "suggestion_result",
+      type: "completion_result",
       command_id: "complete-1",
       buffer_id: 4,
       input: "/j",
@@ -142,7 +142,7 @@ describe("WorkerEngineClient", () => {
     frames[0]?.(0);
 
     expect(listener).toHaveBeenCalledWith({
-      type: "suggestion_result",
+      type: "completion_result",
       command_id: "complete-1",
       buffer_id: 4,
       input: "/j",
