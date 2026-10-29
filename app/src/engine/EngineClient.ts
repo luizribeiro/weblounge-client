@@ -46,6 +46,19 @@ export interface EngineConnection {
   close(): void;
 }
 
+type EngineConnectionFactory = () => EngineConnection;
+
+interface FailureAwarePort extends EnginePort {
+  addEventListener(
+    type: "error" | "messageerror",
+    listener: (event: Event) => void,
+  ): void;
+  removeEventListener(
+    type: "error" | "messageerror",
+    listener: (event: Event) => void,
+  ): void;
+}
+
 type FrameScheduler = (callback: FrameRequestCallback) => number;
 
 interface StartWaiter {
@@ -77,7 +90,8 @@ export class EngineCommandError extends Error {
 }
 
 export class WorkerEngineClient implements EngineClient {
-  readonly #connection: EngineConnection;
+  #connection: EngineConnection;
+  readonly #recoverConnection: EngineConnectionFactory | undefined;
   readonly #scheduleFrame: FrameScheduler;
   readonly #listeners = new Set<(message: EngineClientMessage) => void>();
   readonly #requests = new Map<string, RequestWaiter>();
@@ -87,18 +101,23 @@ export class WorkerEngineClient implements EngineClient {
   #framePending = false;
   #visibility: VisibilityState = "visible";
   #closed = false;
+  #hello: Hello | undefined;
+  #recovering = false;
+  #heartbeatId: string | undefined;
+  #heartbeatTimeout: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     connection: EngineConnection,
     scheduleFrame: FrameScheduler = (callback) =>
       requestAnimationFrame(callback),
     initialMessages: readonly EngineClientMessage[] = [],
+    recoverConnection?: EngineConnectionFactory,
   ) {
     this.#connection = connection;
+    this.#recoverConnection = recoverConnection;
     this.#scheduleFrame = scheduleFrame;
     this.#initialMessages = [...initialMessages];
-    connection.port.addEventListener("message", this.#onMessage);
-    connection.port.start?.();
+    this.#attach(connection);
   }
 
   start(hello: Hello): Promise<void> {
@@ -107,6 +126,7 @@ export class WorkerEngineClient implements EngineClient {
       return Promise.reject(new Error("engine handshake already pending"));
     }
 
+    this.#hello = hello;
     const started = new Promise<void>((resolve, reject) => {
       this.#startWaiter = { resolve, reject };
     });
@@ -130,10 +150,12 @@ export class WorkerEngineClient implements EngineClient {
   requestSnapshot(_reason: ResyncReason): void {}
 
   setVisibility(state: VisibilityState): void {
+    const resumed = this.#visibility === "hidden" && state === "visible";
     this.#visibility = state;
     if (state === "visible" && this.#renderQueue.length > 0) {
       this.#scheduleRenderFrame();
     }
+    if (resumed) this.#probeWorker();
   }
 
   subscribe(listener: (message: EngineClientMessage) => void): Unsubscribe {
@@ -147,7 +169,8 @@ export class WorkerEngineClient implements EngineClient {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
-    this.#connection.port.removeEventListener("message", this.#onMessage);
+    this.#clearHeartbeat();
+    this.#detach(this.#connection);
     this.#connection.close();
     const error = new Error("engine client closed");
     this.#startWaiter?.reject(error);
@@ -166,6 +189,10 @@ export class WorkerEngineClient implements EngineClient {
       const waiter = this.#requests.get(message.id);
       this.#requests.delete(message.id);
       waiter?.resolve(message);
+      if (message.id === this.#heartbeatId) {
+        this.#clearHeartbeat();
+        return;
+      }
       this.#enqueueForFrame(message);
       return;
     }
@@ -182,6 +209,12 @@ export class WorkerEngineClient implements EngineClient {
       this.#publish(message);
       return;
     }
+    if (
+      message.type === "diagnostic" &&
+      message.command_id === this.#heartbeatId
+    ) {
+      return;
+    }
     if (message.type === "incompatible_build") {
       this.#rejectIncompatibleBuild(message);
       this.#publish(message);
@@ -189,6 +222,77 @@ export class WorkerEngineClient implements EngineClient {
     }
     this.#enqueueForFrame(message);
   };
+
+  readonly #onWorkerFailure = (): void => {
+    this.#recover();
+  };
+
+  #attach(connection: EngineConnection): void {
+    connection.port.addEventListener("message", this.#onMessage);
+    const port = connection.port as FailureAwarePort;
+    port.addEventListener("messageerror", this.#onWorkerFailure);
+    port.addEventListener("error", this.#onWorkerFailure);
+    connection.port.start?.();
+  }
+
+  #detach(connection: EngineConnection): void {
+    connection.port.removeEventListener("message", this.#onMessage);
+    const port = connection.port as FailureAwarePort;
+    port.removeEventListener("messageerror", this.#onWorkerFailure);
+    port.removeEventListener("error", this.#onWorkerFailure);
+  }
+
+  #recover(): void {
+    if (this.#closed || this.#recovering) return;
+    const factory = this.#recoverConnection;
+    const hello = this.#hello;
+    if (factory === undefined || hello === undefined) {
+      this.#publish({ type: "fatal", message_key: "engine.worker_failed" });
+      return;
+    }
+    this.#recovering = true;
+    this.#clearHeartbeat();
+    const failed = this.#connection;
+    this.#detach(failed);
+    failed.close();
+    const error = new Error("engine worker restarted");
+    this.#startWaiter?.reject(error);
+    this.#startWaiter = undefined;
+    for (const waiter of this.#requests.values()) waiter.reject(error);
+    this.#requests.clear();
+    try {
+      this.#connection = factory();
+      this.#attach(this.#connection);
+      this.#connection.port.postMessage({ type: "hello", payload: hello });
+    } catch {
+      this.#publish({ type: "fatal", message_key: "engine.worker_failed" });
+    } finally {
+      this.#recovering = false;
+    }
+  }
+
+  #probeWorker(): void {
+    if (
+      this.#closed ||
+      this.#hello === undefined ||
+      this.#heartbeatId !== undefined
+    )
+      return;
+    const id = `worker-heartbeat-${crypto.randomUUID()}`;
+    this.#heartbeatId = id;
+    void this.send({
+      id,
+      request: { type: "diagnostic", message: "worker heartbeat" },
+    }).catch(() => undefined);
+    this.#heartbeatTimeout = setTimeout(() => this.#recover(), 5_000);
+  }
+
+  #clearHeartbeat(): void {
+    if (this.#heartbeatTimeout !== undefined)
+      clearTimeout(this.#heartbeatTimeout);
+    this.#heartbeatTimeout = undefined;
+    this.#heartbeatId = undefined;
+  }
 
   #enqueueForFrame(message: EngineToUi): void {
     this.#renderQueue.push(message);
@@ -664,12 +768,15 @@ function decodeMembership(value: unknown): MembershipProjection | undefined {
 }
 
 function decodeNetwork(value: unknown): NetworkProjection | undefined {
+  const state = isRecord(value)
+    ? decodeNetworkConnectionState(value.state)
+    : undefined;
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
     typeof value.label !== "string" ||
     typeof value.nickname !== "string" ||
-    !isOneOf(value.state, ["connecting", "online", "reconnecting", "stopped"])
+    state === undefined
   ) {
     return undefined;
   }
@@ -677,8 +784,46 @@ function decodeNetwork(value: unknown): NetworkProjection | undefined {
     id: value.id,
     label: value.label,
     nickname: value.nickname,
-    state: value.state,
+    state,
   };
+}
+
+function decodeNetworkConnectionState(
+  value: unknown,
+): NetworkProjection["state"] | undefined {
+  if (isOneOf(value, ["connecting", "registering", "online"])) return value;
+  if (!isRecord(value)) return undefined;
+  if (
+    isRecord(value.reconnecting) &&
+    typeof value.reconnecting.attempt === "number" &&
+    typeof value.reconnecting.next_retry_at_ms === "number"
+  ) {
+    return {
+      reconnecting: {
+        attempt: value.reconnecting.attempt,
+        next_retry_at_ms: value.reconnecting.next_retry_at_ms,
+      },
+    };
+  }
+  if (
+    isRecord(value.offline) &&
+    isOneOf(value.offline.reason, ["requested", "device_offline"])
+  ) {
+    return { offline: { reason: value.offline.reason } };
+  }
+  if (
+    isRecord(value.failed) &&
+    isOneOf(value.failed.reason, ["authentication", "transport", "protocol"]) &&
+    typeof value.failed.message_key === "string"
+  ) {
+    return {
+      failed: {
+        reason: value.failed.reason,
+        message_key: value.failed.message_key,
+      },
+    };
+  }
+  return undefined;
 }
 
 function decodeBuffer(value: unknown): BufferProjection | undefined {

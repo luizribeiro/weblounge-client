@@ -8,25 +8,31 @@ import type { UiToEngine } from "./protocol";
 
 class FakePort implements EnginePort {
   readonly sent: UiToEngine[] = [];
-  #listener: ((event: MessageEvent<unknown>) => void) | undefined;
+  readonly listeners = new Map<string, (event: Event) => void>();
 
   postMessage(message: UiToEngine): void {
     this.sent.push(message);
   }
 
   addEventListener(
-    _type: "message",
+    type: "message",
     listener: (event: MessageEvent<unknown>) => void,
   ): void {
-    this.#listener = listener;
+    this.listeners.set(type, listener as (event: Event) => void);
   }
 
-  removeEventListener(): void {
-    this.#listener = undefined;
+  removeEventListener(type: "message"): void {
+    this.listeners.delete(type);
   }
 
   emit(message: unknown): void {
-    this.#listener?.(new MessageEvent("message", { data: message }));
+    this.listeners.get("message")?.(
+      new MessageEvent("message", { data: message }),
+    );
+  }
+
+  fail(type: "error" | "messageerror" = "messageerror"): void {
+    this.listeners.get(type)?.(new Event(type));
   }
 }
 
@@ -66,6 +72,51 @@ describe("WorkerEngineClient", () => {
     port.emit({ type: "ready", engine_instance: "engine-1", revision: 0 });
 
     await expect(started).resolves.toBeUndefined();
+  });
+
+  it("respawns a failed worker and repeats the handshake", async () => {
+    const first = new FakePort();
+    const second = new FakePort();
+    const closeFirst = vi.fn();
+    const closeSecond = vi.fn();
+    const connections = [{ port: second, close: closeSecond }];
+    const client = new WorkerEngineClient(
+      { port: first, close: closeFirst },
+      (callback) => {
+        callback(0);
+        return 1;
+      },
+      [],
+      () => {
+        const connection = connections.shift();
+        if (connection === undefined) throw new Error("no replacement");
+        return connection;
+      },
+    );
+    const hello = {
+      build_id: "build-1",
+      client_id: "tab-1",
+      last_revision: null,
+      shell: "web" as const,
+    };
+    const started = client.start(hello);
+    first.emit({ type: "ready", engine_instance: "engine-1", revision: 0 });
+    await started;
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    first.fail();
+
+    expect(closeFirst).toHaveBeenCalledOnce();
+    expect(second.sent).toEqual([{ type: "hello", payload: hello }]);
+    second.emit({ type: "ready", engine_instance: "engine-2", revision: 0 });
+    expect(listener).toHaveBeenCalledWith({
+      type: "ready",
+      engine_instance: "engine-2",
+      revision: 0,
+    });
+    await client.close();
+    expect(closeSecond).toHaveBeenCalledOnce();
   });
 
   it("resolves a command while preserving subscriber emission order", async () => {

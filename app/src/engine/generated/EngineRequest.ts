@@ -67,7 +67,19 @@ network_id: NetworkId,
 /**
  * Optional IRC quit reason.
  */
-reason: string | null, } | { "type": "send_message",
+reason: string | null, } | { "type": "reconnect",
+/**
+ * Network to reconnect.
+ */
+network_id: NetworkId, } | { "type": "set_device_online",
+/**
+ * Network whose lifecycle projection should be updated.
+ */
+network_id: NetworkId,
+/**
+ * Browser connectivity hint; papo remains authoritative for the socket.
+ */
+online: boolean, } | { "type": "send_message",
 /**
  * Destination buffer.
  */

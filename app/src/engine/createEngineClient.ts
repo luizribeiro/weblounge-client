@@ -24,41 +24,56 @@ export function createEngineClient(
 
   const sharedUrl = new URL("./engine.shared-worker.ts", import.meta.url);
   if (constructors.openShared !== undefined) {
-    const worker = constructors.openShared(sharedUrl);
-    return new WorkerEngineClient(sharedConnection(worker));
+    const openShared = constructors.openShared;
+    const open = () => sharedConnection(openShared(sharedUrl));
+    return new WorkerEngineClient(open(), undefined, [], open);
   }
 
-  const worker = constructors.openDedicated(
-    new URL("./engine.dedicated-worker.ts", import.meta.url),
-  );
-  return dedicatedEngineClient(worker);
+  const dedicatedUrl = new URL("./engine.dedicated-worker.ts", import.meta.url);
+  const open = () =>
+    dedicatedConnection(constructors.openDedicated(dedicatedUrl));
+  return dedicatedEngineClient(open(), open);
 }
 
 function createBrowserEngineClient(): WorkerEngineClient {
   if (typeof SharedWorker !== "undefined") {
-    const worker = new SharedWorker(
-      new URL("./engine.shared-worker.ts", import.meta.url),
-      { name: "weblounge-engine", type: "module" },
-    );
-    return new WorkerEngineClient(sharedConnection(worker));
+    const sharedUrl = new URL("./engine.shared-worker.ts", import.meta.url);
+    const open = () =>
+      sharedConnection(
+        new SharedWorker(sharedUrl, {
+          name: "weblounge-engine",
+          type: "module",
+        }),
+      );
+    return new WorkerEngineClient(open(), undefined, [], open);
   }
 
-  const worker = new Worker(
-    new URL("./engine.dedicated-worker.ts", import.meta.url),
-    { name: "weblounge-engine", type: "module" },
-  );
-  return dedicatedEngineClient(worker);
+  const dedicatedUrl = new URL("./engine.dedicated-worker.ts", import.meta.url);
+  const open = () =>
+    dedicatedConnection(
+      new Worker(dedicatedUrl, {
+        name: "weblounge-engine",
+        type: "module",
+      }),
+    );
+  return dedicatedEngineClient(open(), open);
 }
 
 function dedicatedEngineClient(
-  worker: DedicatedWorkerHandle,
+  connection: EngineConnection,
+  recoverConnection: () => EngineConnection,
 ): WorkerEngineClient {
-  return new WorkerEngineClient(dedicatedConnection(worker), undefined, [
-    {
-      type: "notice",
-      message_key: "engine.dedicated_worker_fallback",
-    },
-  ]);
+  return new WorkerEngineClient(
+    connection,
+    undefined,
+    [
+      {
+        type: "notice",
+        message_key: "engine.dedicated_worker_fallback",
+      },
+    ],
+    recoverConnection,
+  );
 }
 
 function sharedConnection(worker: SharedWorkerHandle): EngineConnection {
