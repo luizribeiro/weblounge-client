@@ -216,7 +216,10 @@ impl Runtime {
                 channel,
                 text: Some(text),
             }) => self.set_topic(id, buffer_id, channel.0, text.0),
-            Ok(Command::Topic { text: None, .. }) => vec![EngineToUi::CommandResult { id }],
+            Ok(Command::Topic {
+                channel,
+                text: None,
+            }) => self.show_topic(id, buffer_id, channel.0.as_deref()),
             Ok(Command::Quit { reason }) => {
                 let network_id = lock(&self.state)
                     .network
@@ -453,6 +456,7 @@ impl Runtime {
                     .model
                     .begin_action(buffer_id, text, &running.client.state())
             }
+            crate::MessageKind::Notice => None,
         };
         let Some((pending, output)) = pending else {
             return rejected_command(command_id, "engine.buffer_not_sendable");
@@ -773,6 +777,48 @@ impl Runtime {
             channel.set_topic(&client, text).await
         });
         Vec::new()
+    }
+
+    fn show_topic(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        requested: Option<&str>,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let snapshot = running.client.state();
+        let channel = requested
+            .and_then(|name| snapshot.channel(name))
+            .or_else(|| {
+                running
+                    .model
+                    .channel_for_buffer(buffer_id)
+                    .and_then(|name| snapshot.channel(name))
+            });
+        let Some(channel) = channel else {
+            return rejected_command(command_id, "engine.channel_required");
+        };
+        let Some(buffer_id) = running.model.buffer_id_for_channel(channel.name()) else {
+            return rejected_command(command_id, "engine.channel_required");
+        };
+        let mut output = running
+            .model
+            .append_notice(
+                buffer_id,
+                channel.topic().unwrap_or_default().to_owned(),
+                channel
+                    .topic_set_by()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+                channel.topic_set_at(),
+            )
+            .into_iter()
+            .collect::<Vec<_>>();
+        output.push(EngineToUi::CommandResult { id: command_id });
+        output
     }
 
     fn mark_read(
@@ -2034,6 +2080,7 @@ mod tests {
         });
         assert_eq!(wire.next_sent().await, "TOPIC #new :new topic");
         wire.server(":weblounge!u@host TOPIC #new :new topic").await;
+        assert_topic_notice(&runtime, &mut events, buffer_id).await;
         runtime.request(EngineRequestEnvelope {
             id: "nick".into(),
             request: EngineRequest::SubmitInput {
@@ -2353,6 +2400,31 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, EngineToUi::FocusBufferRequested { .. }))
         );
+    }
+
+    async fn assert_topic_notice(
+        runtime: &Runtime,
+        events: &mut papo::Events,
+        buffer_id: BufferId,
+    ) {
+        _ = next_matching(events, |event| {
+            matches!(event, papo::Event::TopicChanged(_))
+        })
+        .await;
+        let shown = runtime.request(EngineRequestEnvelope {
+            id: "show-topic".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "/topic".into(),
+            },
+        });
+        assert!(shown.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].kind == crate::MessageKind::Notice
+                    && messages[0].text == "new topic"
+                    && messages[0].author == "weblounge"
+        )));
     }
 
     fn process_runtime_event(runtime: &Runtime, event: papo::Event) {

@@ -380,6 +380,37 @@ impl NetworkModel {
         self.begin_send_kind(buffer_id, text, MessageKind::Action, state)
     }
 
+    pub(crate) fn append_notice(
+        &mut self,
+        buffer_id: BufferId,
+        text: String,
+        author: String,
+        source_time: Option<SystemTime>,
+    ) -> Option<EngineToUi> {
+        let message = MessageProjection {
+            id: self.allocate_message_id(),
+            author,
+            text,
+            kind: MessageKind::Notice,
+            bot: false,
+            mode_symbol: None,
+            authorship: MessageAuthorship::Own,
+            nick_color_index: 0,
+            mentioned: false,
+            delivery: MessageDelivery::Received,
+            local_send_id: None,
+            server_ids: Vec::new(),
+            server_time_ms: source_time.map(time_millis),
+            received_at_ms: time_millis(papo::time::now()),
+        };
+        self.insert(buffer_id, message.clone(), DedupReferences::default())
+            .ok()?;
+        Some(EngineToUi::MessagesAppended {
+            buffer_id,
+            messages: vec![message],
+        })
+    }
+
     fn begin_send_kind(
         &mut self,
         buffer_id: BufferId,
@@ -961,7 +992,9 @@ impl NetworkModel {
 fn derive_read_projection(buffer: &mut BufferState) {
     buffer.projection.last_message = buffer
         .timeline
-        .last()
+        .iter()
+        .rev()
+        .find(|record| record.projection.kind != MessageKind::Notice)
         .map(|record| record.projection.clone());
     buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
         buffer
@@ -1291,6 +1324,30 @@ mod tests {
         assert_eq!(projection.kind, crate::MessageKind::Action);
         assert!(projection.bot);
         assert_eq!(projection.mode_symbol, Some('@'));
+    }
+
+    #[test]
+    fn local_notices_do_not_replace_chat_previews_or_create_unread() {
+        let (mut model, state) = model(10);
+        let buffer = model.add_buffer(
+            NameKey::Channel(channel_name(&state, "#room")),
+            BufferKind::Channel,
+            None,
+            Some("A quiet room".into()),
+        );
+
+        let event = model
+            .append_notice(buffer.id, "A quiet room".into(), "mel".into(), None)
+            .expect("notice row");
+
+        assert!(matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].kind == crate::MessageKind::Notice
+                    && messages[0].author == "mel"
+        ));
+        assert_eq!(model.buffers[&buffer.id].projection.last_message, None);
+        assert_eq!(model.buffers[&buffer.id].projection.unread, 0);
     }
 
     #[test]

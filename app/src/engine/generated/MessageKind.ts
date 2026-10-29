@@ -3,4 +3,4 @@
 /**
  * Semantic presentation of a chat message.
  */
-export type MessageKind = "text" | "action";
+export type MessageKind = "text" | "action" | "notice";

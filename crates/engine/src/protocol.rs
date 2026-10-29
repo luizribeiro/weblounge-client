@@ -128,6 +128,8 @@ pub enum MessageKind {
     Text,
     /// A CTCP ACTION displayed as `/me` prose.
     Action,
+    /// A local informational row generated from current engine state.
+    Notice,
 }
 
 /// UI projection of one chat message.
