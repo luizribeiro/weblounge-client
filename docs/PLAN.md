@@ -53,4 +53,4 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 adopted at `73be450`. Guarded directs, split-send reconciliation, server name rules, lag diagnostics, and channel-recreation warnings are integrated.
+- **papo:** papo 0.1 pinned at `949bd5d`. Guarded directs, split-send reconciliation, exact multiline concatenation, server name rules, lag diagnostics, and channel-recreation warnings are integrated.
