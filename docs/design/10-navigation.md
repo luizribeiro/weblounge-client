@@ -175,6 +175,15 @@ Back processing dismisses the top overlay, then pops a screen, then yields to th
 back, header controls, browser history, and the swipe gesture dispatch the same action. Browser
 history stores opaque route IDs rather than state snapshots.
 
+Browser history follows one platform policy owned outside the shell. Installed PWAs, including
+iOS standalone, and Android push opaque entries for screens and overlays so the system Back action
+walks the in-app stack. A touch-capable WebKit browser tab uses `replaceState` for every in-app
+screen and overlay change: Safari's edge gesture then has no in-app page snapshots to animate, and
+the app's leading-edge gesture is the only in-app swipe-back. Detection combines standalone display
+mode (`display-mode: standalone` or `navigator.standalone`) with a WebKit touch feature test; shell
+components never inspect a user-agent string. In both policies, selecting a buffer replaces the URL
+for the current route; URL synchronization never requires an extra history entry.
+
 Hardware-keyboard and accessible controls dispatch `mobile.tab-chats`, `mobile.tab-activity`, and
 `mobile.tab-settings`. Mobile Back dispatches `navigation.back`; overlay dismissal still uses
 `navigation.escape`. Activity's control dispatches `activity.mark-all-read`. Subsystem 14 owns
