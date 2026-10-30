@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build && node scripts/verify-production-build.mjs",
-    "dev": "vite",
+    "build": "pnpm icons && tsc --noEmit && vite build && node scripts/verify-production-build.mjs",
+    "dev": "pnpm icons && vite",
     "e2e": "playwright test",
+    "icons": "node scripts/generate-icons.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -189,6 +189,7 @@
           src = appSource;
           inherit pnpmDeps;
           nativeBuildInputs = [
+            pkgs.librsvg
             pkgs.nodejs
             pkgs.pnpm
             pkgs.pnpmConfigHook
@@ -261,6 +262,7 @@
           src = appSource;
           inherit pnpmDeps;
           nativeBuildInputs = [
+            pkgs.librsvg
             pkgs.nodejs
             pkgs.pnpm
             pkgs.pnpmConfigHook
@@ -454,6 +456,7 @@
             rustToolchain
             wasmBindgenCli
             pkgs.binaryen
+            pkgs.librsvg
             pkgs.nodejs
             pkgs.pnpm
             pkgs.biome
