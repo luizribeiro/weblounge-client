@@ -1,8 +1,6 @@
 import type { HostedOAuthConfig } from "../engine/generated/HostedOAuthConfig";
 
-const pendingStateKey = "weblounge.oauth.pending-state";
-const pendingKeyPrefix = "weblounge.oauth.pending.";
-const pendingLifetimeMs = 10 * 60 * 1000;
+const pendingKey = "weblounge.oauth.pending";
 
 export interface OAuthMetadata {
   issuer: string;
@@ -82,13 +80,12 @@ export async function discoverOAuthMetadata(
 export async function createAuthorizationUrl(
   metadata: OAuthMetadata,
   config: HostedOAuthConfig,
-  storage: Storage = localStorage,
-  now: () => number = Date.now,
+  storage: Storage = sessionStorage,
 ): Promise<string> {
   const state = randomBase64Url(32);
   const verifier = randomBase64Url(32);
   const challenge = await pkceChallenge(verifier);
-  storePending(storage, state, verifier, now());
+  storage.setItem(pendingKey, JSON.stringify({ state, verifier }));
   const url = new URL(metadata.authorizationEndpoint);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.client_id);
@@ -101,20 +98,15 @@ export async function createAuthorizationUrl(
 
 export function consumeAuthorizationCallback(
   url: URL,
-  storage: Storage = localStorage,
+  storage: Storage = sessionStorage,
   replace: (path: string) => void = (path) =>
     history.replaceState(history.state, "", path),
-  now: () => number = Date.now,
 ): AuthorizationCode | null {
   const code = url.searchParams.get("code");
   const oauthError = url.searchParams.get("error");
   if (code === null && oauthError === null) return null;
   try {
-    const verifier = consumePending(
-      url.searchParams.get("state"),
-      storage,
-      now(),
-    );
+    const verifier = consumePending(url.searchParams.get("state"), storage);
     if (oauthError !== null) {
       if (oauthError === "access_denied") {
         throw new HostedAuthorizationError(
@@ -216,40 +208,12 @@ export async function pkceChallenge(verifier: string): Promise<string> {
   return base64Url(new Uint8Array(digest));
 }
 
-function storePending(
-  storage: Storage,
-  state: string,
-  verifier: string,
-  createdAt: number,
-): void {
-  clearPending(storage);
-  const key = pendingKey(state);
-  storage.setItem(key, JSON.stringify({ createdAt, verifier }));
-  try {
-    storage.setItem(pendingStateKey, state);
-  } catch (error: unknown) {
-    storage.removeItem(key);
-    throw error;
-  }
-}
-
-function consumePending(
-  state: string | null,
-  storage: Storage,
-  now: number,
-): string {
-  const pendingState = storage.getItem(pendingStateKey);
-  const encoded =
-    pendingState === null ? null : storage.getItem(pendingKey(pendingState));
-  clearPending(storage);
-  if (encoded === null || pendingState === null || state === null) {
+function consumePending(state: string | null, storage: Storage): string {
+  const encoded = storage.getItem(pendingKey);
+  storage.removeItem(pendingKey);
+  if (encoded === null || state === null) {
     throw new HostedAuthorizationError(
-      "The sign-in response is no longer available. Sign in again.",
-    );
-  }
-  if (pendingState !== state) {
-    throw new HostedAuthorizationError(
-      "The sign-in response did not match this browser. Sign in again.",
+      "The sign-in response did not match this tab. Sign in again.",
     );
   }
   let pending: unknown;
@@ -257,40 +221,19 @@ function consumePending(
     pending = JSON.parse(encoded);
   } catch {
     throw new HostedAuthorizationError(
-      "The sign-in response is no longer available. Sign in again.",
+      "The sign-in response did not match this tab. Sign in again.",
     );
   }
   if (
     !isRecord(pending) ||
-    typeof pending.verifier !== "string" ||
-    pending.verifier === "" ||
-    typeof pending.createdAt !== "number" ||
-    !Number.isFinite(pending.createdAt)
+    pending.state !== state ||
+    typeof pending.verifier !== "string"
   ) {
     throw new HostedAuthorizationError(
-      "The sign-in response is no longer available. Sign in again.",
-    );
-  }
-  if (pending.createdAt > now || now - pending.createdAt > pendingLifetimeMs) {
-    throw new HostedAuthorizationError(
-      "The sign-in response expired. Sign in again.",
+      "The sign-in response did not match this tab. Sign in again.",
     );
   }
   return pending.verifier;
-}
-
-function clearPending(storage: Storage): void {
-  const keys: string[] = [];
-  for (let index = 0; index < storage.length; index += 1) {
-    const key = storage.key(index);
-    if (key?.startsWith(pendingKeyPrefix) === true) keys.push(key);
-  }
-  storage.removeItem(pendingStateKey);
-  for (const key of keys) storage.removeItem(key);
-}
-
-function pendingKey(state: string): string {
-  return `${pendingKeyPrefix}${state}`;
 }
 
 function randomBase64Url(length: number): string {

@@ -88,16 +88,12 @@ redirect URI, the preconfigured WebSocket endpoint, and `#lounge`; no hostname s
 onboarding chooses these values.
 
 On first load, the bootstrap fetches concierge's RFC 8414 metadata, generates random OAuth `state`
-and a PKCE verifier, and redirects to the authorization endpoint with an S256 challenge. One
-pending flow is stored in `localStorage`, under a key containing its state, so a callback can
-survive WebKit discarding the tab that began sign-in. Starting another flow deletes the previous
-one. A pending flow expires after ten minutes and is consumed exactly once: the callback removes
-the verifier before validating expiry, state, or the authorization result, so it is gone after
-success and every failure. Concierge uses its existing member session (or asks the member to sign
-in), then returns a one-minute authorization code and the state to the exact root redirect URI.
-The client rejects missing, expired, or mismatched state with a human retry screen, and posts a
-valid code, verifier, redirect URI, and the configured `client_id` to the token endpoint without a
-client secret. The verifier is never logged. Redirect URIs never include the page fragment.
+and a PKCE verifier, keeps both in `sessionStorage`, and redirects to the authorization endpoint
+with an S256 challenge. Concierge uses its existing member session (or asks the member to sign in),
+then returns a one-minute authorization code and the state to the exact root redirect URI. The
+client rejects a missing or mismatched state with a human sign-in retry, removes the pending
+verifier, and posts the code, verifier, redirect URI, and the configured `client_id` to the token
+endpoint without a client secret. Redirect URIs never include the page fragment.
 
 Concierge returns a bearer access token whose lifetime matches the approving member session. The
 bootstrap passes it once into the worker secret store; connection construction maps
@@ -235,8 +231,7 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
 - The same minimal Ergo fixture supplies manual verification and a small automated connection
   smoke test; there is no packaged papo test-server dependency.
 - OAuth state, PKCE, callback, one-shot secret transfer, expiry, and redaction have pure or mocked
-  HTTP tests. Browser coverage clears `sessionStorage` during the redirect, exercises stale and
-  mismatched callbacks, checks the retry screen, and proves the verifier is removed after use. The
+  HTTP tests. Browser coverage checks callback failures show an explicit sign-in retry. The
   existing weblounge VM remains the manual end-to-end concierge/Ergo check.
 - State-machine table tests cover every transition, papo-projected retry timing, and hosted token
   expiry versus transient transport failure.
