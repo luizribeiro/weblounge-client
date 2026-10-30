@@ -25,6 +25,12 @@ describe("composer strings", () => {
     expect(t("engine.direct_target_gone")).toContain("nickname now belongs");
   });
 
+  it("explains that a full presence list does not block direct messages", () => {
+    expect(t("engine.direct_presence_unavailable")).toContain(
+      "Private messages still work",
+    );
+  });
+
   it("explains when a channel identity changed while disconnected", () => {
     expect(t("engine.channel_recreated")).toContain("channel was recreated");
   });

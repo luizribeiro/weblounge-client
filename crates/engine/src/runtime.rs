@@ -12,7 +12,8 @@ use crate::{
     NetworkId, OfflineReason,
     commands::{self, Command},
     state::{
-        HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget, is_own_nick, time_millis,
+        DirectAvailability, HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget,
+        is_own_nick, time_millis,
     },
 };
 
@@ -830,21 +831,46 @@ impl Runtime {
                         .as_ref()
                         .and_then(|nick| running.model.direct(nick))
                 });
-            let direct = match known {
-                Some(direct) => direct,
-                None => {
-                    if let Ok(direct) = client.direct(&nick).await {
-                        direct
-                    } else {
+            let (nick, direct, degraded) = match known {
+                Some(DirectAvailability::Guarded(direct)) => {
+                    (direct.nick(), DirectAvailability::Guarded(direct), false)
+                }
+                Some(DirectAvailability::MonitorFull) => {
+                    let Some(nick) = known_nick else {
+                        let _ = outbound.send(EngineToUi::CommandRejected {
+                            id: command_id,
+                            message_key: "engine.direct_unavailable".into(),
+                        });
+                        return;
+                    };
+                    (nick, DirectAvailability::MonitorFull, false)
+                }
+                Some(
+                    DirectAvailability::Pending
+                    | DirectAvailability::Resolving
+                    | DirectAvailability::Failed,
+                )
+                | None => match client.direct(&nick).await {
+                    Ok(direct) => (direct.nick(), DirectAvailability::Guarded(direct), false),
+                    Err(papo::Error::MonitorFull { .. }) => {
+                        let Some(nick) = known_nick else {
+                            let _ = outbound.send(EngineToUi::CommandRejected {
+                                id: command_id,
+                                message_key: "engine.direct_unavailable".into(),
+                            });
+                            return;
+                        };
+                        (nick, DirectAvailability::MonitorFull, true)
+                    }
+                    Err(_) => {
                         let _ = outbound.send(EngineToUi::CommandRejected {
                             id: command_id,
                             message_key: "engine.direct_unavailable".into(),
                         });
                         return;
                     }
-                }
+                },
             };
-            let nick = direct.nick();
             let (pending, output) = {
                 let mut state = lock(&state);
                 let Some(running) = state
@@ -855,6 +881,11 @@ impl Runtime {
                     return;
                 };
                 let (buffer_id, mut output) = running.model.open_direct(nick, direct);
+                if degraded {
+                    output.push(EngineToUi::Notice {
+                        message_key: "engine.direct_presence_unavailable".into(),
+                    });
+                }
                 if focus {
                     output.push(EngineToUi::FocusBufferRequested {
                         command_id: command_id.clone(),
@@ -1230,13 +1261,43 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
             client.privmsg(channel, pending.text.clone()).await
         }
         .map_err(|error| classify_send_error(&error)),
-        SendTarget::Direct { recipient, .. } => if action {
-            client.action(recipient, pending.text.clone()).await
-        } else {
-            client.privmsg(recipient, pending.text.clone()).await
+        SendTarget::Direct { recipient, .. } => match recipient {
+            Some(recipient) => {
+                if action {
+                    client.action(recipient, pending.text.clone()).await
+                } else {
+                    client.privmsg(recipient, pending.text.clone()).await
+                }
+            }
+            None => return Err(SendError::Protocol),
         }
         .map_err(|error| classify_send_error(&error)),
     }
+}
+
+enum SendDelivery {
+    Typed(papo::Sent),
+    Unguarded,
+}
+
+async fn deliver(client: &papo::Client, pending: &PendingSend) -> Result<SendDelivery, SendError> {
+    let SendTarget::Direct {
+        nick,
+        recipient: None,
+    } = &pending.target
+    else {
+        return send(client, pending).await.map(SendDelivery::Typed);
+    };
+    let text = if pending.kind == crate::MessageKind::Action {
+        format!("\u{1}ACTION {}\u{1}", pending.text)
+    } else {
+        pending.text.clone()
+    };
+    client
+        .send_raw(papo::Line::new("PRIVMSG").with_params([nick.to_string(), text]))
+        .await
+        .map(|()| SendDelivery::Unguarded)
+        .map_err(|error| classify_send_error(&error))
 }
 
 fn classify_send_error(error: &papo::Error) -> SendError {
@@ -1284,7 +1345,7 @@ async fn flush_pending_sends(
             };
             pending
         };
-        let result = send(client, &pending).await;
+        let result = deliver(client, &pending).await;
         let events = {
             let mut state = lock(state);
             let Some(running) = state
@@ -1295,7 +1356,12 @@ async fn flush_pending_sends(
                 return;
             };
             match result {
-                Ok(sent) => running.model.confirm_send(&pending, &sent, &client.state()),
+                Ok(SendDelivery::Typed(sent)) => {
+                    running.model.confirm_send(&pending, &sent, &client.state())
+                }
+                Ok(SendDelivery::Unguarded) => running
+                    .model
+                    .confirm_unguarded_send(&pending, &client.state()),
                 Err(SendError::Offline) => {
                     running.pending_sends.push_front(pending);
                     running.flushing_sends = false;
@@ -1317,7 +1383,7 @@ async fn finish_send(
     instance: u64,
     pending: &PendingSend,
 ) {
-    let result = send(client, pending).await;
+    let result = deliver(client, pending).await;
     let events = {
         let mut state = lock(state);
         let Some(running) = state
@@ -1328,7 +1394,12 @@ async fn finish_send(
             return;
         };
         match result {
-            Ok(sent) => running.model.confirm_send(pending, &sent, &client.state()),
+            Ok(SendDelivery::Typed(sent)) => {
+                running.model.confirm_send(pending, &sent, &client.state())
+            }
+            Ok(SendDelivery::Unguarded) => running
+                .model
+                .confirm_unguarded_send(pending, &client.state()),
             Err(error) => Some(vec![running.model.fail_send(pending, error.message_key())]),
         }
     };
@@ -1575,18 +1646,30 @@ async fn drain_events(
     let member_changes = Arc::new(Mutex::new(crate::members::Changes::default()));
     while let Some(event) = events.next().await {
         if let papo::Event::History(page) = event {
-            process_history(&state, &outbound, &client, instance, page).await;
+            process_history(&state, &outbound, &client, instance, page);
             continue;
         }
         let schedule_members = lock(&member_changes).record(&event, &client.state());
-        let direct = match &event {
-            papo::Event::Message(message) if message.authorship != papo::Authorship::Own => {
-                client.direct_to(message).await.ok()
+        let direct_message = match &event {
+            papo::Event::Message(message)
+                if message.authorship != papo::Authorship::Own
+                    && matches!(message.conversation, papo::Conversation::Private(_)) =>
+            {
+                Some(message.clone())
             }
             _ => None,
         };
         let history_targets =
-            process_event_with_direct(&state, &outbound, &client, instance, event, direct);
+            process_event_with_direct(&state, &outbound, &client, instance, event, None);
+        if let Some(message) = direct_message {
+            spawn_direct_resolution(
+                Arc::clone(&state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                message,
+            );
+        }
         for target in history_targets {
             spawn_history_fetch(
                 Arc::clone(&state),
@@ -1611,6 +1694,46 @@ async fn drain_events(
             });
         }
     }
+}
+
+fn spawn_direct_resolution(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    message: papo::Message,
+) {
+    let nick = message.actor.nick().clone();
+    let should_resolve = lock(&state)
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+        .is_some_and(|running| running.model.begin_direct_resolution(&nick));
+    if !should_resolve {
+        return;
+    }
+    spawn_task(async move {
+        let (availability, degraded) = match client.direct_to(&message).await {
+            Ok(direct) => (DirectAvailability::Guarded(direct), false),
+            Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
+            Err(_) => (DirectAvailability::Failed, false),
+        };
+        let mut state = lock(&state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        running.model.resolve_direct(&nick, availability);
+        drop(state);
+        if degraded {
+            let _ = outbound.send(EngineToUi::Notice {
+                message_key: "engine.direct_presence_unavailable".into(),
+            });
+        }
+    });
 }
 
 fn member_windows(
@@ -1673,7 +1796,7 @@ fn spawn_history_fetch(
 ) {
     spawn_task(async move {
         if let Ok(page) = fetch_history(&client, fetch.clone()).await {
-            process_history(&state, &outbound, &client, instance, page).await;
+            process_history(&state, &outbound, &client, instance, page);
             return;
         }
         let buffer_id = {
@@ -2129,7 +2252,7 @@ fn process_join(
     }
 }
 
-async fn process_history(
+fn process_history(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     client: &papo::Client,
@@ -2138,7 +2261,6 @@ async fn process_history(
 ) {
     let prepend = page.reason == papo::HistoryReason::Requested;
     let requested = requested_history_boundary(&page);
-    let items = guard_history_senders(client, page.items).await;
     let snapshot = client.state();
     let mut state = lock(state);
     let Some(running) = state
@@ -2151,10 +2273,10 @@ async fn process_history(
     let mut output = Vec::new();
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut unread = None;
-    for (item, direct) in items {
+    for item in page.items {
         match item {
             papo::Event::Message(message) => {
-                for event in running.model.receive(&message, true, &snapshot, direct) {
+                for event in running.model.receive(&message, true, &snapshot, None) {
                     match event {
                         EngineToUi::MessagesAppended {
                             buffer_id,
@@ -2263,23 +2385,6 @@ fn history_timeline_event(
             messages: messages.to_vec(),
         }
     }
-}
-
-async fn guard_history_senders(
-    client: &papo::Client,
-    events: Vec<papo::Event>,
-) -> Vec<(papo::Event, Option<papo::DirectRef>)> {
-    let mut guarded = Vec::with_capacity(events.len());
-    for event in events {
-        let direct = match &event {
-            papo::Event::Message(message) if message.authorship != papo::Authorship::Own => {
-                client.direct_to(message).await.ok()
-            }
-            _ => None,
-        };
-        guarded.push((event, direct));
-    }
-    guarded
 }
 
 fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
@@ -2397,7 +2502,7 @@ mod tests {
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
         EngineRequestEnvelope, EngineToUi, NetworkId, SaslCredentials,
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
-        state::{NetworkModel, PendingSend, SendTarget},
+        state::{DirectAvailability, NetworkModel, PendingSend, SendTarget},
     };
 
     #[test]
@@ -2899,6 +3004,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn closing_a_direct_buffer_releases_its_monitor_entry() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 1).await;
+        let (state, outbound, mut receiver) = harness(client);
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .set_connection(crate::NetworkConnectionState::Online, None);
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "open-alice".into(),
+                    request: EngineRequest::OpenDirect {
+                        network_id: NetworkId(1),
+                        nick: "alice".into(),
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(wire.next_sent().await, "MONITOR + alice");
+        assert_eq!(wire.next_sent().await, "WHO alice %na");
+        wire.server(":offline.test 354 weblounge alice alice-account")
+            .await;
+        wire.server(":offline.test 315 weblounge alice :End of WHO list")
+            .await;
+        let buffer_id = loop {
+            if let EngineToUi::BufferAdded { buffer } = receiver.recv().await.expect("open output")
+            {
+                break buffer.id;
+            }
+        };
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "close-alice".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "/close".into(),
+            },
+        });
+        assert!(matches!(
+            output.last(),
+            Some(EngineToUi::CommandResult { .. })
+        ));
+        assert_eq!(wire.next_sent().await, "MONITOR - alice");
+    }
+
+    #[tokio::test]
+    async fn a_full_monitor_list_still_opens_and_sends_a_direct_message() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 1).await;
+        client.monitor().add(["bob"]).await.expect("monitor fills");
+        assert_eq!(wire.next_sent().await, "MONITOR + bob");
+        let (state, outbound, mut receiver) = harness(client);
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .set_connection(crate::NetworkConnectionState::Online, None);
+        let runtime = Runtime { state, outbound };
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "message-alice".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id: BufferId(1),
+                        input: "/msg alice hello".into(),
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
+        let output = collect(&mut receiver);
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::Notice { message_key }
+                if message_key == "engine.direct_presence_unavailable"
+        )));
+        assert!(
+            output
+                .iter()
+                .any(|event| matches!(event, EngineToUi::BufferAdded { buffer }
+                if buffer.kind == BufferKind::Direct && buffer.title == "alice"))
+        );
+    }
+
+    #[tokio::test]
     async fn second_connect_is_rejected_without_replacing_the_running_client() {
         let (client, _events, _wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -3358,7 +3570,7 @@ mod tests {
             local_send_id: crate::LocalSendId(1),
             target: SendTarget::Direct {
                 nick: changed.new,
-                recipient: direct,
+                recipient: Some(direct),
             },
             text: "still you".into(),
             kind: crate::MessageKind::Text,
@@ -3404,7 +3616,7 @@ mod tests {
             local_send_id: crate::LocalSendId(1),
             target: SendTarget::Direct {
                 nick,
-                recipient: direct,
+                recipient: Some(direct),
             },
             text: "not for you".into(),
             kind: crate::MessageKind::Text,
@@ -3682,6 +3894,21 @@ mod tests {
         (state, outbound, receiver)
     }
 
+    async fn enable_test_monitor(
+        events: &mut papo::Events,
+        wire: &mut papo_testing::Wire,
+        limit: usize,
+    ) {
+        wire.server(format!(
+            ":offline.test 005 weblounge MONITOR={limit} :supported"
+        ))
+        .await;
+        _ = next_matching(events, |event| {
+            matches!(event, papo::Event::FeaturesChanged { .. })
+        })
+        .await;
+    }
+
     fn collect(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>) -> Vec<EngineToUi> {
         let mut output = Vec::new();
         while let Ok(event) = receiver.try_recv() {
@@ -3792,6 +4019,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn channel_history_senders_do_not_allocate_monitor_entries() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        register_for_history(&mut wire).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 100).await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        let target = process_event(&state, &outbound, &client, 1, joined)
+            .pop()
+            .expect("joined channel requests history");
+        let fetch_client = client.clone();
+        let fetch = tokio::spawn(async move { fetch_latest(&fetch_client, target).await });
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        let items = (0..50)
+            .map(|index| {
+                format!(
+                    "time=2026-10-27T12:00:00.000Z;msgid=m{index} :user{index}!u@host PRIVMSG #room :line {index}"
+                )
+            })
+            .collect::<Vec<_>>();
+        let item_refs = items.iter().map(String::as_str).collect::<Vec<_>>();
+        send_history_page(&mut wire, label, &item_refs).await;
+        let page = fetch
+            .await
+            .expect("history task completes")
+            .expect("history request succeeds");
+
+        process_history(&state, &outbound, &client, 1, page);
+        // wait-ok: measures a fixed window in which MONITOR traffic must remain absent.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn history_pages_before_oldest_msgid_sort_deduplicate_and_stop_at_start() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
@@ -3844,7 +4116,7 @@ mod tests {
             .await
             .expect("history task completes")
             .expect("history request succeeds");
-        process_history(&state, &outbound, &client, 1, page).await;
+        process_history(&state, &outbound, &client, 1, page);
 
         let (buffer_id, prepended) = take_prepended(&mut receiver);
         assert_history(&prepended, &["older", "middle"], &[true, true]);
@@ -3868,7 +4140,7 @@ mod tests {
             ],
         )
         .await;
-        process_history(&state, &outbound, &client, 1, page).await;
+        process_history(&state, &outbound, &client, 1, page);
         let (_, prepended) = take_prepended(&mut receiver);
         assert_history(&prepended, &["first", "second"], &[true, true]);
 
@@ -3887,7 +4159,7 @@ mod tests {
             &[],
         )
         .await;
-        process_history(&state, &outbound, &client, 1, page).await;
+        process_history(&state, &outbound, &client, 1, page);
 
         assert!(
             lock(&state)
@@ -3927,7 +4199,7 @@ mod tests {
             .await
             .expect("history task completes")
             .expect("empty history is successful");
-        process_history(&state, &outbound, &client, 1, page).await;
+        process_history(&state, &outbound, &client, 1, page);
 
         assert!(matches!(
             collect(&mut receiver).as_slice(),
@@ -4523,7 +4795,7 @@ mod tests {
         let papo::Event::History(page) = history else {
             panic!("history page expected")
         };
-        process_history(&state, &outbound, &client, 1, page).await;
+        process_history(&state, &outbound, &client, 1, page);
         let appended = collect(&mut receiver)
             .into_iter()
             .filter_map(|event| match event {
@@ -4611,7 +4883,7 @@ mod tests {
             .expect("registered test client has name rules")
             .nick("alice");
         let direct = client.direct(&alice).await.expect("shared user is direct");
-        let (direct_id, _) = model.open_direct(alice, direct);
+        let (direct_id, _) = model.open_direct(alice, DirectAvailability::Guarded(direct));
         let (pending, sent) = begin_send_with_mode(
             &mut model,
             &client,
