@@ -114,6 +114,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.
   - [x] Keep joined-buffer snapshots from overriding committed desktop selection before command
     focus arrives.
+  - [x] Keep unresolved buffer routes above provisional startup fallbacks while explicit engine
+    focus and user navigation remain authoritative.
   - [x] Show the pointer cursor for clickable URL and channel tokens in messages.
   - [x] Keep composer suggestions mounted while Backspace shrinks a pending engine query.
   - [x] Apply engine-owned nick addressing to explicit Tab completion and preserve it while cycling.

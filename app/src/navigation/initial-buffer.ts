@@ -29,7 +29,13 @@ export function initialDestination(
 ): InitialDestination | undefined {
   if (loadedNetworkIds.size === 0) return undefined;
   const route = parseBufferRoute(pathname);
-  const fromUrl = routeDestination(route, networks, buffers, loadedNetworkIds);
+  const fromUrl = routeDestination(
+    route,
+    networks,
+    buffers,
+    loadedNetworkIds,
+    true,
+  );
   if (fromUrl === "waiting") return undefined;
   if (fromUrl !== undefined) return fromUrl;
   const storedRoute =
@@ -39,14 +45,14 @@ export function initialDestination(
     networks,
     buffers,
     loadedNetworkIds,
+    false,
   );
   if (fromStorage === "waiting") return undefined;
   if (fromStorage?.kind === "buffer") return fromStorage;
-  const fallback =
-    buffers.find(
-      (buffer) =>
-        loadedNetworkIds.has(buffer.network_id) && buffer.kind === "channel",
-    ) ?? buffers.find((buffer) => loadedNetworkIds.has(buffer.network_id));
+  const fallback = buffers.find(
+    (buffer) =>
+      loadedNetworkIds.has(buffer.network_id) && buffer.kind === "channel",
+  );
   if (fallback === undefined) return undefined;
   const network = networks.find(
     (candidate) => candidate.id === fallback.network_id,
@@ -87,6 +93,7 @@ function routeDestination(
   networks: readonly NetworkProjection[],
   buffers: readonly BufferProjection[],
   loadedNetworkIds: ReadonlySet<number>,
+  waitForUnknownChannel: boolean,
 ): InitialDestination | "waiting" | undefined {
   if (route === undefined) return undefined;
   const network = networks.find(
@@ -97,6 +104,7 @@ function routeDestination(
     return "waiting";
   const resolved = resolveBufferRoute(route, networks, buffers);
   if (resolved === undefined) return undefined;
+  if (waitForUnknownChannel && resolved.kind === "not_joined") return "waiting";
   return withPath(resolved, networks, buffers);
 }
 

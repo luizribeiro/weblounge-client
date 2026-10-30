@@ -42,6 +42,12 @@ it("restores the device-local buffer before falling back", () => {
   );
 });
 
+it("does not finalize a provisional server fallback", () => {
+  expect(
+    initialDestination("/", undefined, networks, buffers.slice(0, 1), loaded),
+  ).toBeUndefined();
+});
+
 it("waits for the target network snapshot", () => {
   expect(
     initialDestination(
@@ -54,10 +60,14 @@ it("waits for the target network snapshot", () => {
   ).toBeUndefined();
 });
 
-it("returns an inert destination for a channel that is not joined", () => {
+it("keeps an unknown routed channel pending until its buffer arrives", () => {
   expect(
     initialDestination("/weblounge/new", undefined, networks, buffers, loaded),
-  ).toEqual({ kind: "not_joined", networkId: 1, channel: "#new" });
+  ).toBeUndefined();
+  const joined = [...buffers, buffer(5, "channel", "#new")];
+  expect(
+    initialDestination("/weblounge/new", undefined, networks, joined, loaded),
+  ).toEqual({ kind: "buffer", bufferId: 5, path: "/weblounge/new" });
 });
 
 it("stores only syntactically valid buffer paths", () => {
