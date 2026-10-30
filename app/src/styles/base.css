@@ -126,10 +126,8 @@ textarea:focus-visible {
   color: var(--wl-color-selection-fg);
 }
 
-@media (hover: none), (pointer: coarse), (max-width: 759px) {
-  input,
-  textarea,
-  select {
-    font-size: max(16px, 1em);
-  }
+#root[data-input="touch"] input,
+#root[data-input="touch"] textarea,
+#root[data-input="touch"] select {
+  font-size: max(16px, 1em);
 }
