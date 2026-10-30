@@ -9,7 +9,7 @@
   border: 0;
   inset: 0;
   position: absolute;
-  width: 100%;
+  width: calc(100% - min(82%, 300px));
 }
 
 .drawer {
