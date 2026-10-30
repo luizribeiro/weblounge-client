@@ -46,6 +46,7 @@ export default defineConfig({
       testMatch: [
         "**/mobile-back-swipe.spec.ts",
         "**/mobile-member-drawer-gesture.spec.ts",
+        "**/mobile-member-drawer-motion.spec.ts",
       ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
