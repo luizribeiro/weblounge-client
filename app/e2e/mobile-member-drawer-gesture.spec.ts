@@ -296,7 +296,7 @@ async function sampleMotion(
 }
 
 function compact(value: string): string {
-  return value.replaceAll(" ", "");
+  return value.replaceAll(" ", "").replaceAll("0.", ".");
 }
 
 function monotonic(values: readonly number[], direction: "up" | "down") {
