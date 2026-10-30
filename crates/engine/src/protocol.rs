@@ -643,8 +643,12 @@ pub enum EngineToUi {
     },
     /// Mark one optimistic row as failed.
     MessageFailed {
+        /// Network that owns the failed target.
+        network_id: NetworkId,
         /// Destination buffer.
         buffer_id: BufferId,
+        /// Current channel or direct-message target label.
+        target: String,
         /// Optimistic send identity.
         local_send_id: LocalSendId,
         /// Stable localization key, never a secret-bearing error string.

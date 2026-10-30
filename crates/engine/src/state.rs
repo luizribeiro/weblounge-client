@@ -96,6 +96,13 @@ impl SendTarget {
         }
     }
 
+    fn title(&self) -> String {
+        match self {
+            Self::Channel(channel) => channel.to_string(),
+            Self::Direct { nick, .. } => nick.to_string(),
+        }
+    }
+
     #[cfg(test)]
     fn name_key(&self) -> NameKey {
         match self {
@@ -625,7 +632,9 @@ impl NetworkModel {
             record.projection.delivery = MessageDelivery::Failed;
         }
         EngineToUi::MessageFailed {
+            network_id: self.network.id,
             buffer_id: pending.buffer_id,
+            target: pending.target.title(),
             local_send_id: pending.local_send_id,
             message_key: message_key.into(),
         }
@@ -1646,10 +1655,19 @@ mod tests {
             .begin_send(buffer.id, "will fail".into(), &state)
             .expect("channel is sendable");
 
-        model.fail_send(&pending, "engine.send_failed");
+        let event = model.fail_send(&pending, "engine.send_failed");
 
         let record = &model.buffers[&buffer.id].timeline[0];
         assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
+        assert!(matches!(
+            event,
+            EngineToUi::MessageFailed {
+                network_id: NetworkId(1),
+                buffer_id,
+                target,
+                ..
+            } if buffer_id == buffer.id && target == "#room"
+        ));
     }
 
     #[test]

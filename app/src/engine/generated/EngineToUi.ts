@@ -156,9 +156,17 @@ local_send_id: LocalSendId,
  */
 message: MessageProjection, } | { "type": "message_failed",
 /**
+ * Network that owns the failed target.
+ */
+network_id: NetworkId,
+/**
  * Destination buffer.
  */
 buffer_id: BufferId,
+/**
+ * Current channel or direct-message target label.
+ */
+target: string,
 /**
  * Optimistic send identity.
  */

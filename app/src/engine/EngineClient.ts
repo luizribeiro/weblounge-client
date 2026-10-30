@@ -475,13 +475,17 @@ function decodeEngineMessage(value: unknown): EngineToUi {
     }
     case "message_failed":
       if (
+        typeof value.network_id === "number" &&
         typeof value.buffer_id === "number" &&
+        typeof value.target === "string" &&
         typeof value.local_send_id === "number" &&
         typeof value.message_key === "string"
       ) {
         return {
           type: messageType,
+          network_id: value.network_id,
           buffer_id: value.buffer_id,
+          target: value.target,
           local_send_id: value.local_send_id,
           message_key: value.message_key,
         };

@@ -561,7 +561,9 @@ it("shows an optimistic message as failed when sending fails", async () => {
   });
   client.emit({
     type: "message_failed",
+    network_id: 1,
     buffer_id: 2,
+    target: "#room",
     local_send_id: 7,
     message_key: "engine.direct_target_gone",
   });
