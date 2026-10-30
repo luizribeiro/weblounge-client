@@ -34,6 +34,12 @@ import {
 import type { MemberWindow } from "./features/members/MemberPanel";
 import type { HostedSession } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
+import { bufferPath } from "./navigation/buffer-route";
+import {
+  initialDestination,
+  readLastViewedPath,
+  writeLastViewedPath,
+} from "./navigation/initial-buffer";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
 import {
   contextMenuRegistry,
@@ -81,6 +87,10 @@ export function App(props: AppProps) {
   const [memberWindows, setMemberWindows] = createSignal<
     ReadonlyMap<string, MemberWindow>
   >(new Map());
+  const [loadedNetworkIds, setLoadedNetworkIds] = createSignal<
+    ReadonlySet<number>
+  >(new Set());
+  const [initialBufferId, setInitialBufferId] = createSignal<number>();
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
@@ -89,6 +99,8 @@ export function App(props: AppProps) {
   let engineInstance: string | undefined;
   let disposed = false;
   let revealingStartup = false;
+  let initialNavigationResolved = false;
+  const storedNavigationPath = readLastViewedPath();
   const noticeActions = new ActionRegistry(
     {
       "buffer.open-direct": (context) => {
@@ -122,6 +134,21 @@ export function App(props: AppProps) {
       return;
     }
     void revealStartup();
+  });
+
+  createEffect(() => {
+    if (initialNavigationResolved) return;
+    const currentBuffers = buffers();
+    const destination = initialDestination(
+      window.location.pathname,
+      storedNavigationPath,
+      networks(),
+      currentBuffers,
+      loadedNetworkIds(),
+    );
+    if (destination === undefined) return;
+    initialNavigationResolved = true;
+    if (destination.kind === "buffer") setInitialBufferId(destination.bufferId);
   });
 
   onMount(() => {
@@ -252,6 +279,11 @@ export function App(props: AppProps) {
               window_size: windowSize,
             }),
           );
+      }
+      if (message.type === "buffers_changed") {
+        setLoadedNetworkIds((current) =>
+          new Set(current).add(message.network_id),
+        );
       }
       applyDebugEvent(
         message,
@@ -402,6 +434,7 @@ export function App(props: AppProps) {
         ) : null
       ) : (
         <ResponsiveShell
+          activeBufferId={initialBufferId()}
           memberViewScope={clientId}
           networks={networks()}
           buffers={buffers()}
@@ -426,6 +459,11 @@ export function App(props: AppProps) {
               request: { type: "load_history", buffer_id: bufferId },
             });
           }}
+          onSelectBuffer={(bufferId) => {
+            const path = pathForBuffer(bufferId);
+            if (path !== undefined) writeLastViewedPath(path);
+          }}
+          pathForBuffer={pathForBuffer}
           onSend={(bufferId, text) => {
             if (client === undefined) return Promise.resolve(false);
             setComposerNotice(undefined);
@@ -516,6 +554,16 @@ export function App(props: AppProps) {
       </Show>
     </div>
   );
+
+  function pathForBuffer(bufferId: number): string | undefined {
+    const buffer = buffers().find((candidate) => candidate.id === bufferId);
+    const network = networks().find(
+      (candidate) => candidate.id === buffer?.network_id,
+    );
+    return buffer === undefined || network === undefined
+      ? undefined
+      : bufferPath(network, buffer);
+  }
 
   function runNoticeAction(action: ActionId): void {
     const values = notifier.notice()?.message.values;

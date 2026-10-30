@@ -42,7 +42,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 34 | 2026-10-30 | Links don't show the pointer (hand) cursor. | queued |
 | 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | queued |
 | 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | fixed, local |
-| 37 | 2026-10-30 | Firefox: the address bar doesn't follow the channel, so reload doesn't reopen it. | queued |
+| 37 | 2026-10-30 | Firefox: the address bar doesn't follow the channel, so reload doesn't reopen it. | fixed, local |
 | 38 | 2026-10-30 | History messages show no mode prefix (asked whether it can always be accurate). | queued |
 | 39 | 2026-10-30 | iPhone: home-screen icon not showing; the generated icons use the line-art chair instead of the brand favicon glyph. | queued |
 | 40 | 2026-10-30 | After the splash, a second 'Signing in…' screen shows a black-on-black chair (desktop too). Drop it. | fixed, local |

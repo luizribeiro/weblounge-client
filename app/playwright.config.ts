@@ -32,6 +32,11 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-routing",
+      testMatch: "**/routing.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "webkit" },
