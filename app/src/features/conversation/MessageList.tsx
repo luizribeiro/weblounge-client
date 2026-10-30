@@ -290,6 +290,7 @@ export function MessageList(props: MessageListProps) {
         <div
           aria-hidden="true"
           class={styles.liveEdge}
+          data-live-edge-sentinel="true"
           ref={(element) => {
             liveEdgeSentinel = element;
           }}
