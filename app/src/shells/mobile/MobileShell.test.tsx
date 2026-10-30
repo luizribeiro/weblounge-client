@@ -151,3 +151,64 @@ it("clears an in-flight swipe when browser history or visibility wins", () => {
   expect(document.querySelector("[data-swipe]")).toBeNull();
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
 });
+
+it("replaces chat and drawer state in touch WebKit browser tabs", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches:
+        query === "(prefers-reduced-motion: reduce)" ||
+        query === "(pointer: coarse)",
+    })) as unknown as typeof matchMedia,
+  );
+  vi.stubGlobal("WebKitPoint", class {});
+  const push = vi.spyOn(window.history, "pushState");
+  const replace = vi.spyOn(window.history, "replaceState");
+  const back = vi.spyOn(window.history, "back");
+  const channel = {
+    ...buffer,
+    id: 3,
+    kind: "channel" as const,
+    title: "#room",
+  };
+
+  try {
+    render(() => (
+      <MobileShell
+        buffers={[channel]}
+        composerNotice={undefined}
+        completion={undefined}
+        memberships={new Map()}
+        messages={new Map()}
+        networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+        onLoadHistory={() => {}}
+        onMarkRead={() => {}}
+        onRequestCompletion={() => {}}
+        onSelectBuffer={() => {}}
+        onSend={async () => true}
+      />
+    ));
+
+    expect(document.querySelector("[data-mobile-shell]")).toHaveAttribute(
+      "data-history-policy",
+      "replace",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "#room" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Close member list",
+      })[0] as Element,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
+
+    expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalled();
+    expect(back).not.toHaveBeenCalled();
+  } finally {
+    push.mockRestore();
+    replace.mockRestore();
+    back.mockRestore();
+  }
+});

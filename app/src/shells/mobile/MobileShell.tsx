@@ -7,6 +7,7 @@ import {
   onMount,
 } from "solid-js";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
@@ -46,6 +47,7 @@ interface MobileShellProps extends MobileShellData {
 }
 
 export function MobileShell(props: MobileShellProps) {
+  const historyPolicy = mobileHistoryPolicy();
   const memberViewId = `${props.memberViewScope ?? crypto.randomUUID()}:mobile:drawer`;
   const reducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -76,8 +78,11 @@ export function MobileShell(props: MobileShellProps) {
 
   const open = (bufferId: number, preserveCurrent = false) => {
     props.onSelectBuffer(bufferId);
-    const state = { ...historyState(), webloungeMobileChat: true };
-    if (stack().active.kind === "chats" || preserveCurrent)
+    const state = mobileHistoryState(true, false);
+    if (
+      historyPolicy === "stack" &&
+      (stack().active.kind === "chats" || preserveCurrent)
+    )
       window.history.pushState(state, "");
     else window.history.replaceState(state, "");
     setStack((current) =>
@@ -85,7 +90,16 @@ export function MobileShell(props: MobileShellProps) {
     );
   };
   const dispatchBack = (instant = reducedMotion()) =>
-    setStack((current) => popChat(current, instant));
+    setStack((current) => {
+      const next = popChat(current, instant);
+      if (historyPolicy === "replace") {
+        window.history.replaceState(
+          mobileHistoryState(next.active.kind === "chat", false),
+          "",
+        );
+      }
+      return next;
+    });
   const resetSwipe = () => {
     gesture = undefined;
     setSwipeReturning(false);
@@ -104,13 +118,22 @@ export function MobileShell(props: MobileShellProps) {
     }
   };
   const closeDrawer = () => {
-    if (window.history.state?.webloungeMobileDrawer === true)
+    if (
+      historyPolicy === "stack" &&
+      window.history.state?.webloungeMobileDrawer === true
+    )
       window.history.back();
-    else finishDrawerClose();
+    else {
+      window.history.replaceState(mobileHistoryState(true, false), "");
+      finishDrawerClose();
+    }
   };
   const requestBack = (instant = false) => {
     if (drawerBufferId() !== undefined) return closeDrawer();
-    if (window.history.state?.webloungeMobileChat === true) {
+    if (
+      historyPolicy === "stack" &&
+      window.history.state?.webloungeMobileChat === true
+    ) {
       pendingHistoryPopInstant = instant;
       window.history.back();
     } else {
@@ -120,10 +143,9 @@ export function MobileShell(props: MobileShellProps) {
   const openMembers = (bufferId: number) => {
     setMemberFilter("");
     setDrawerBufferId(bufferId);
-    window.history.pushState(
-      { ...historyState(), webloungeMobileDrawer: true },
-      "",
-    );
+    const state = mobileHistoryState(true, true);
+    if (historyPolicy === "stack") window.history.pushState(state, "");
+    else window.history.replaceState(state, "");
   };
 
   createEffect(() => {
@@ -211,6 +233,10 @@ export function MobileShell(props: MobileShellProps) {
 
   onMount(() => {
     const handlePopState = () => {
+      if (historyPolicy === "replace") {
+        resetMotion();
+        return;
+      }
       const browserHandledSwipe =
         pendingHistoryPopInstant ||
         gesture !== undefined ||
@@ -225,6 +251,12 @@ export function MobileShell(props: MobileShellProps) {
     window.addEventListener("popstate", handlePopState);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     const stopViewport = observeMobileViewport(window, setViewport);
+    if (historyPolicy === "replace") {
+      window.history.replaceState(
+        mobileHistoryState(stack().active.kind === "chat", false),
+        "",
+      );
+    }
     onCleanup(() => {
       stopViewport();
       window.removeEventListener("popstate", handlePopState);
@@ -235,6 +267,7 @@ export function MobileShell(props: MobileShellProps) {
   return (
     <main
       class={styles.shell}
+      data-history-policy={historyPolicy}
       data-mobile-shell="true"
       onPointerCancel={cancelSwipe}
       onPointerDown={beginSwipe}
@@ -348,4 +381,16 @@ function historyState(): Record<string, unknown> {
   return typeof state === "object" && state !== null
     ? (state as Record<string, unknown>)
     : {};
+}
+
+function mobileHistoryState(
+  chat: boolean,
+  drawer: boolean,
+): Record<string, unknown> {
+  const state = { ...historyState() };
+  delete state.webloungeMobileChat;
+  delete state.webloungeMobileDrawer;
+  if (chat) state.webloungeMobileChat = true;
+  if (drawer) state.webloungeMobileDrawer = true;
+  return state;
 }

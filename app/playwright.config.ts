@@ -49,6 +49,16 @@ export default defineConfig({
       testMatch: "**/splash.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
+    {
+      name: "webkit-mobile-history",
+      testMatch: "**/mobile-history.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-mobile-history",
+      testMatch: "**/mobile-history.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
   ],
   testDir: "./e2e",
   workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
