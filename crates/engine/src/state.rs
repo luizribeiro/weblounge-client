@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{HashMap, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -311,6 +312,7 @@ impl NetworkModel {
                 self.names.insert(key, *id);
             }
         }
+        self.sort_buffer_order();
     }
 
     #[cfg(test)]
@@ -334,6 +336,7 @@ impl NetworkModel {
         );
         buffer.key = Some(key.clone());
         self.names.insert(key, id);
+        self.sort_buffer_order();
         Some(self.buffers_event())
     }
 
@@ -356,6 +359,7 @@ impl NetworkModel {
         );
         buffer.key = Some(key.clone());
         self.names.insert(key, id);
+        self.sort_buffer_order();
         Some(self.buffers_event())
     }
 
@@ -478,9 +482,22 @@ impl NetworkModel {
             server_time_ms: None,
             received_at_ms: time_millis(papo::time::now()),
         };
-        self.insert(buffer_id, message.clone(), DedupReferences::default())
+        let order_changed = self
+            .insert(buffer_id, message.clone(), DedupReferences::default())
             .ok()?;
         let target = SendTarget::from_buffer(key, direct)?;
+        let mut events = vec![
+            EngineToUi::MessagesAppended {
+                buffer_id,
+                messages: vec![message],
+            },
+            EngineToUi::BufferUpdated {
+                buffer: self.buffers[&buffer_id].projection.clone(),
+            },
+        ];
+        if order_changed {
+            events.push(self.buffers_event());
+        }
         Some((
             PendingSend {
                 buffer_id,
@@ -489,15 +506,7 @@ impl NetworkModel {
                 text,
                 kind,
             },
-            vec![
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages: vec![message],
-                },
-                EngineToUi::BufferUpdated {
-                    buffer: self.buffers[&buffer_id].projection.clone(),
-                },
-            ],
+            events,
         ))
     }
 
@@ -591,19 +600,21 @@ impl NetworkModel {
             message.mode_symbol = mode_symbol;
             vec![message]
         };
+        let mut order_changed = false;
         for message in &messages {
             for msgid in &message.server_ids {
                 *self.msgids.entry(msgid.clone()).or_default() += 1;
             }
-            self.insert(
-                pending.buffer_id,
-                message.clone(),
-                DedupReferences {
-                    msgids: message.server_ids.clone(),
-                    fallback: None,
-                },
-            )
-            .ok()?;
+            order_changed |= self
+                .insert(
+                    pending.buffer_id,
+                    message.clone(),
+                    DedupReferences {
+                        msgids: message.server_ids.clone(),
+                        fallback: None,
+                    },
+                )
+                .ok()?;
         }
         let mut events = vec![EngineToUi::MessageConfirmed {
             buffer_id: pending.buffer_id,
@@ -615,6 +626,9 @@ impl NetworkModel {
                 buffer_id: pending.buffer_id,
                 messages: messages[1..].to_vec(),
             });
+        }
+        if order_changed {
+            events.push(self.buffers_event());
         }
         Some(events)
     }
@@ -946,9 +960,9 @@ impl NetworkModel {
             server_time_ms: incoming.server_time_ms,
             received_at_ms: incoming.received_at_ms,
         };
-        if self.insert(buffer_id, message.clone(), dedup).is_err() {
+        let Ok(order_changed) = self.insert(buffer_id, message.clone(), dedup) else {
             return inconsistent_state_notice();
-        }
+        };
         let (unread, mentions, added) = {
             let Some(buffer) = self.buffers.get(&buffer_id) else {
                 return inconsistent_state_notice();
@@ -961,8 +975,11 @@ impl NetworkModel {
         };
 
         let mut events = Vec::new();
+        let buffer_added = added.is_some();
         if let Some(buffer) = added {
             events.push(EngineToUi::BufferAdded { buffer });
+        }
+        if buffer_added || order_changed {
             events.push(self.buffers_event());
         }
         events.push(EngineToUi::MessagesAppended {
@@ -984,6 +1001,7 @@ impl NetworkModel {
         let Some(server_time_ms) = server_time_ms else {
             return Vec::new();
         };
+        let mut updated = None;
         for (buffer_id, buffer) in &mut self.buffers {
             let Some(record) = buffer
                 .timeline
@@ -999,22 +1017,32 @@ impl NetworkModel {
             let message = record.projection.clone();
             buffer.timeline.sort_by_key(order_key);
             derive_read_projection(buffer);
-            return vec![
-                EngineToUi::MessageUpdated {
-                    buffer_id: *buffer_id,
-                    message,
-                },
-                EngineToUi::BufferUpdated {
-                    buffer: buffer.projection.clone(),
-                },
-                EngineToUi::UnreadChanged {
-                    buffer_id: *buffer_id,
-                    unread: buffer.projection.unread,
-                    mentions: buffer.projection.mentions,
-                },
-            ];
+            updated = Some((
+                *buffer_id,
+                message,
+                buffer.projection.clone(),
+                buffer.projection.unread,
+                buffer.projection.mentions,
+            ));
+            break;
         }
-        Vec::new()
+        let Some((buffer_id, message, buffer, unread, mentions)) = updated else {
+            return Vec::new();
+        };
+        let order_changed = self.sort_buffer_order();
+        let mut events = vec![
+            EngineToUi::MessageUpdated { buffer_id, message },
+            EngineToUi::BufferUpdated { buffer },
+            EngineToUi::UnreadChanged {
+                buffer_id,
+                unread,
+                mentions,
+            },
+        ];
+        if order_changed {
+            events.push(self.buffers_event());
+        }
+        events
     }
 
     fn ensure_buffer(
@@ -1075,7 +1103,23 @@ impl NetworkModel {
         );
         self.names.insert(key, id);
         self.buffer_order.push(id);
+        self.sort_buffer_order();
         projection
+    }
+
+    fn sort_buffer_order(&mut self) -> bool {
+        let previous = self.buffer_order.clone();
+        let buffers = &self.buffers;
+        let casemapping = self.casemapping;
+        self.buffer_order.sort_by(|first, second| {
+            match (buffers.get(first), buffers.get(second)) {
+                (Some(first), Some(second)) => compare_buffers(first, second, casemapping),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            }
+        });
+        self.buffer_order != previous
     }
 
     fn allocate_message_id(&mut self) -> MessageId {
@@ -1097,7 +1141,7 @@ impl NetworkModel {
         buffer_id: BufferId,
         projection: MessageProjection,
         dedup: DedupReferences,
-    ) -> Result<(), StateError> {
+    ) -> Result<bool, StateError> {
         if !self.buffers.contains_key(&buffer_id) {
             self.release_dedup(dedup);
             return Err(StateError::MissingBuffer(buffer_id));
@@ -1122,7 +1166,7 @@ impl NetworkModel {
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             derive_read_projection(buffer);
         }
-        Ok(())
+        Ok(self.sort_buffer_order())
     }
 
     fn release_dedup(&mut self, dedup: DedupReferences) {
@@ -1266,6 +1310,59 @@ fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
         .any(|word| state.casemapping().fold(word) == state.nick().as_ref())
 }
 
+fn compare_buffers(
+    first: &BufferState,
+    second: &BufferState,
+    casemapping: papo::Casemapping,
+) -> Ordering {
+    let kind =
+        buffer_kind_order(first.projection.kind).cmp(&buffer_kind_order(second.projection.kind));
+    if kind != Ordering::Equal {
+        return kind;
+    }
+    match first.projection.kind {
+        BufferKind::Server => Ordering::Equal,
+        BufferKind::Channel => {
+            let first_title = first.projection.title.as_str();
+            let second_title = second.projection.title.as_str();
+            casemapping
+                .fold(trim_channel_prefix(first_title))
+                .cmp(&casemapping.fold(trim_channel_prefix(second_title)))
+                .then_with(|| {
+                    casemapping
+                        .fold(first_title)
+                        .cmp(&casemapping.fold(second_title))
+                })
+        }
+        BufferKind::Direct => second
+            .projection
+            .last_message
+            .as_ref()
+            .map(message_time)
+            .cmp(&first.projection.last_message.as_ref().map(message_time))
+            .then_with(|| {
+                casemapping
+                    .fold(&first.projection.title)
+                    .cmp(&casemapping.fold(&second.projection.title))
+            }),
+    }
+}
+
+const fn buffer_kind_order(kind: BufferKind) -> u8 {
+    match kind {
+        BufferKind::Server => 0,
+        BufferKind::Channel => 1,
+        BufferKind::Direct => 2,
+    }
+}
+
+fn trim_channel_prefix(channel: &str) -> &str {
+    channel
+        .strip_prefix('#')
+        .or_else(|| channel.strip_prefix('&'))
+        .unwrap_or(channel)
+}
+
 pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u32 {
     casemapping
         .fold(nick)
@@ -1359,6 +1456,74 @@ mod tests {
             .iter()
             .map(|record| record.projection.text.as_str())
             .collect()
+    }
+
+    fn ordered_titles(model: &NetworkModel) -> Vec<String> {
+        let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
+            panic!("buffer order event")
+        };
+        buffers.into_iter().map(|buffer| buffer.title).collect()
+    }
+
+    fn direct_incoming(
+        state: &papo::State,
+        nick: &str,
+        text: &str,
+        server_time_ms: i64,
+    ) -> Incoming {
+        Incoming {
+            conversation: NameKey::Direct(nick_name(state, nick)),
+            direct: None,
+            author: nick.into(),
+            text: text.into(),
+            kind: crate::MessageKind::Text,
+            bot: false,
+            mode_symbol: None,
+            authorship: MessageAuthorship::Other,
+            msgid: Some(format!("{nick}-{server_time_ms}")),
+            server_time_ms: Some(server_time_ms),
+            received_at_ms: server_time_ms,
+            origin: TimelineOrigin::Live,
+        }
+    }
+
+    #[test]
+    fn channel_order_is_independent_of_join_arrival() {
+        let orders = [
+            ["#Zoo", "&alpha", "#beta", "#alpha"],
+            ["#alpha", "#beta", "&alpha", "#Zoo"],
+        ];
+        let projected = orders.map(|order| {
+            let (mut model, state) = model(10);
+            for name in order {
+                model.ensure_buffer(NameKey::Channel(channel_name(&state, name)), None);
+            }
+            ordered_titles(&model)
+        });
+
+        assert_eq!(projected[0], projected[1]);
+        assert_eq!(projected[0], ["Test", "#alpha", "&alpha", "#beta", "#Zoo"]);
+    }
+
+    #[test]
+    fn direct_order_tracks_activity_with_a_casemapped_nick_tiebreaker() {
+        let (mut model, state) = model(10);
+        for incoming in [
+            direct_incoming(&state, "Bob", "same time", 100),
+            direct_incoming(&state, "alice", "same time", 100),
+            direct_incoming(&state, "carol", "newest", 200),
+        ] {
+            model.receive_incoming(incoming, &state);
+        }
+        assert_eq!(ordered_titles(&model), ["Test", "carol", "alice", "Bob"]);
+
+        let events =
+            model.receive_incoming(direct_incoming(&state, "alice", "new latest", 300), &state);
+        assert!(events.iter().any(|event| {
+            matches!(event, EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().map(|buffer| buffer.title.as_str()).collect::<Vec<_>>()
+                    == ["Test", "alice", "carol", "Bob"])
+        }));
     }
 
     #[test]
