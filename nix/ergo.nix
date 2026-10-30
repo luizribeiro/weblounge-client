@@ -42,6 +42,12 @@ pkgs.writeShellApplication {
   text = ''
     state_dir="$(mktemp -d -t weblounge-ergo.XXXXXXXX)"
     server_pid=""
+    restart_requested=false
+
+    start_server() {
+      ergo run --conf ${config} &
+      server_pid="$!"
+    }
 
     # The EXIT trap invokes this function indirectly.
     # shellcheck disable=SC2329
@@ -53,12 +59,18 @@ pkgs.writeShellApplication {
       fi
       rm -rf -- "$state_dir"
     }
+    request_restart() {
+      restart_requested=true
+      if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+        kill "$server_pid"
+      fi
+    }
     trap cleanup EXIT
     trap 'exit 130' INT TERM HUP
+    trap request_restart USR1
 
     cd "$state_dir"
-    ergo run --conf ${config} &
-    server_pid="$!"
+    start_server
 
     account_created=false
     bot_created=false
@@ -107,9 +119,36 @@ pkgs.writeShellApplication {
     printf '  bot user:  %s\n' '${botAccount}'
     printf '  password:  %s\n\n' '${botPassword}'
 
-    wait "$server_pid"
-    status="$?"
-    server_pid=""
-    exit "$status"
+    while true; do
+      set +e
+      wait "$server_pid"
+      status="$?"
+      set -e
+      if [[ "$restart_requested" == true ]]; then
+        restart_requested=false
+        sleep 5
+        start_server
+        ready=false
+        for _ in $(seq 1 100); do
+          if curl --silent --output /dev/null http://127.0.0.1:8089/; then
+            ready=true
+            break
+          fi
+          if ! kill -0 "$server_pid" 2>/dev/null; then
+            echo "Ergo exited while restarting" >&2
+            exit 1
+          fi
+          sleep 0.05
+        done
+        if [[ "$ready" != true ]]; then
+          echo "Ergo did not become ready after restart" >&2
+          exit 1
+        fi
+        echo "WebLounge local Ergo restarted"
+        continue
+      fi
+      server_pid=""
+      exit "$status"
+    done
   '';
 }

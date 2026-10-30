@@ -237,6 +237,7 @@
             runHook preBuild
             weblounge-ergo >ergo.log 2>&1 &
             ergo_pid=$!
+            export WEBLOUNGE_ERGO_CONTROL_PID="$ergo_pid"
             trap 'kill "$ergo_pid" 2>/dev/null || true; wait "$ergo_pid" 2>/dev/null || true' EXIT
             ready=false
             for _ in $(seq 1 200); do
