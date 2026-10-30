@@ -1293,7 +1293,7 @@ async fn flush_pending_sends(
                 return;
             };
             match result {
-                Ok(sent) => running.model.confirm_send(&pending, &sent),
+                Ok(sent) => running.model.confirm_send(&pending, &sent, &client.state()),
                 Err(SendError::Offline) => {
                     running.pending_sends.push_front(pending);
                     running.flushing_sends = false;
@@ -1326,7 +1326,7 @@ async fn finish_send(
             return;
         };
         match result {
-            Ok(sent) => running.model.confirm_send(pending, &sent),
+            Ok(sent) => running.model.confirm_send(pending, &sent, &client.state()),
             Err(error) => Some(vec![running.model.fail_send(pending, error.message_key())]),
         }
     };
@@ -2382,7 +2382,7 @@ mod tests {
         time::Duration,
     };
 
-    use papo_testing::wire;
+    use papo_testing::{Wire, wire};
     use tokio::sync::mpsc;
 
     use super::{
@@ -3537,6 +3537,49 @@ mod tests {
             .channel(name)
     }
 
+    fn projected_mode_symbol(events: &[EngineToUi]) -> Option<char> {
+        events
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended { messages, .. } => {
+                    messages.first().map(|message| message.mode_symbol)
+                }
+                EngineToUi::MessageConfirmed { message, .. } => Some(message.mode_symbol),
+                _ => None,
+            })
+            .expect("send projects a message")
+    }
+
+    async fn begin_send_with_mode(
+        model: &mut NetworkModel,
+        client: &papo::Client,
+        wire: &mut Wire,
+        buffer_id: BufferId,
+        text: &str,
+        expected_mode: Option<char>,
+        expected_line: &str,
+    ) -> (PendingSend, papo::Sent) {
+        let (pending, immediate) = model
+            .begin_send(buffer_id, text.into(), &client.state())
+            .expect("buffer is sendable");
+        assert_eq!(projected_mode_symbol(&immediate), expected_mode);
+        let sender = client.clone();
+        let send_pending = pending.clone();
+        let send_task = tokio::spawn(async move { super::send(&sender, &send_pending).await });
+        assert_eq!(wire.next_sent().await, expected_line);
+        let sent = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+        (pending, sent)
+    }
+
+    async fn apply_test_mode(wire: &mut Wire, events: &mut papo::Events, change: &str) {
+        wire.server(format!(":weblounge!u@host MODE #room {change}"))
+            .await;
+        _ = next_matching(events, |event| matches!(event, papo::Event::ModeChanged(_))).await;
+    }
+
     fn assert_unfocused_direct(output: &[EngineToUi], nick: &str) {
         assert!(output.iter().any(
             |event| matches!(event, EngineToUi::BufferAdded { buffer } if buffer.title == nick)
@@ -4473,6 +4516,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn own_sends_snapshot_the_highest_channel_prefix() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":offline.test 005 weblounge PREFIX=(qov)~@+ CHANMODES=b,k,l,imnst :supported")
+            .await;
+        _ = next_matching(&mut events, |_| true).await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        apply_test_mode(&mut wire, &mut events, "+q weblounge").await;
+
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = known_channel(&client, "#room");
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(channel.clone()))
+            .expect("joined channel is projected");
+        let cases = [
+            (None, Some('~'), "owner send 0"),
+            (Some("-q+o weblounge weblounge"), Some('@'), "owner send 1"),
+            (Some("-o+v weblounge weblounge"), Some('+'), "owner send 2"),
+            (Some("-v weblounge"), None, "owner send 3"),
+        ];
+        for (mode_change, expected_mode, text) in cases {
+            if let Some(mode_change) = mode_change {
+                apply_test_mode(&mut wire, &mut events, mode_change).await;
+            }
+            let expected_line = format!("PRIVMSG #room :{text}");
+            let (pending, sent) = begin_send_with_mode(
+                &mut model,
+                &client,
+                &mut wire,
+                buffer_id,
+                text,
+                expected_mode,
+                &expected_line,
+            )
+            .await;
+            let confirmed = model
+                .confirm_send(&pending, &sent, &client.state())
+                .expect("optimistic row exists");
+            assert_eq!(projected_mode_symbol(&confirmed), expected_mode);
+        }
+
+        apply_test_mode(&mut wire, &mut events, "+q weblounge").await;
+        let (pending, sent) = begin_send_with_mode(
+            &mut model,
+            &client,
+            &mut wire,
+            buffer_id,
+            "changing mode",
+            Some('~'),
+            "PRIVMSG #room :changing mode",
+        )
+        .await;
+        apply_test_mode(&mut wire, &mut events, "-q+o weblounge weblounge").await;
+        let confirmed = model
+            .confirm_send(&pending, &sent, &client.state())
+            .expect("optimistic row exists");
+        assert_eq!(projected_mode_symbol(&confirmed), Some('@'));
+
+        wire.server(":alice!a@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let alice = client
+            .state()
+            .name_rules()
+            .expect("registered test client has name rules")
+            .nick("alice");
+        let direct = client.direct(&alice).await.expect("shared user is direct");
+        let (direct_id, _) = model.open_direct(alice, direct);
+        let (pending, sent) = begin_send_with_mode(
+            &mut model,
+            &client,
+            &mut wire,
+            direct_id,
+            "direct send",
+            None,
+            "PRIVMSG alice :direct send",
+        )
+        .await;
+        let confirmed = model
+            .confirm_send(&pending, &sent, &client.state())
+            .expect("optimistic row exists");
+        assert_eq!(projected_mode_symbol(&confirmed), None);
+    }
+
+    #[tokio::test]
     async fn no_echo_action_confirms_without_server_metadata() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -4514,7 +4648,7 @@ mod tests {
             .expect("send task completes")
             .expect("send succeeds");
         let confirmation_events = model
-            .confirm_send(&pending, &metadata)
+            .confirm_send(&pending, &metadata, &client.state())
             .expect("optimistic row exists");
 
         assert!(matches!(
@@ -4592,7 +4726,7 @@ mod tests {
             .expect("send task completes")
             .expect("send succeeds");
         let confirmation_events = model
-            .confirm_send(&pending, &metadata)
+            .confirm_send(&pending, &metadata, &client.state())
             .expect("optimistic row exists");
 
         assert!(matches!(
@@ -4661,7 +4795,7 @@ mod tests {
             .expect("send task completes")
             .expect("send succeeds");
         let confirmation_events = model
-            .confirm_send(&pending, &metadata)
+            .confirm_send(&pending, &metadata, &client.state())
             .expect("optimistic row exists");
 
         assert!(matches!(

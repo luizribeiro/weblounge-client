@@ -96,7 +96,6 @@ impl SendTarget {
         }
     }
 
-    #[cfg(test)]
     fn name_key(&self) -> NameKey {
         match self {
             Self::Channel(channel) => NameKey::Channel(channel.clone()),
@@ -381,14 +380,7 @@ impl NetworkModel {
         } else {
             TimelineOrigin::Live
         };
-        let mode_symbol = match &message.conversation {
-            papo::Conversation::Channel(channel) => state
-                .channel(channel)
-                .and_then(|channel| channel.member(message.actor.nick()))
-                .and_then(|member| member.prefixes().first())
-                .map(|prefix| prefix.symbol()),
-            _ => None,
-        };
+        let mode_symbol = actor_mode_symbol(state, &conversation, message.actor.nick());
         let incoming = Incoming {
             direct,
             conversation,
@@ -476,7 +468,7 @@ impl NetworkModel {
             text: text.clone(),
             kind,
             bot: false,
-            mode_symbol: None,
+            mode_symbol: actor_mode_symbol(state, &key, state.nick()),
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
             mentioned: false,
@@ -559,7 +551,9 @@ impl NetworkModel {
         &mut self,
         pending: &PendingSend,
         sent: &papo::Sent,
+        state: &papo::State,
     ) -> Option<Vec<EngineToUi>> {
+        let mode_symbol = actor_mode_symbol(state, &pending.target.name_key(), state.nick());
         let buffer = self.buffers.get_mut(&pending.buffer_id)?;
         let index = buffer
             .timeline
@@ -586,6 +580,7 @@ impl NetworkModel {
                     message.server_time_ms = server_time;
                     message.delivery = MessageDelivery::Confirmed;
                     message.local_send_id = None;
+                    message.mode_symbol = mode_symbol;
                     message
                 })
                 .collect::<Vec<_>>()
@@ -593,6 +588,7 @@ impl NetworkModel {
             let mut message = record.projection;
             message.delivery = MessageDelivery::Confirmed;
             message.local_send_id = None;
+            message.mode_symbol = mode_symbol;
             vec![message]
         };
         for message in &messages {
@@ -1247,6 +1243,21 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
         papo::Authorship::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
     }
+}
+
+fn actor_mode_symbol(
+    state: &papo::State,
+    conversation: &NameKey,
+    actor: &papo::Nick,
+) -> Option<char> {
+    let NameKey::Channel(channel) = conversation else {
+        return None;
+    };
+    state
+        .channel(channel)
+        .and_then(|channel| channel.member(actor))
+        .and_then(|member| member.prefixes().first())
+        .map(|prefix| prefix.symbol())
 }
 
 fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
