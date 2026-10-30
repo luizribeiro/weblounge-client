@@ -27,12 +27,7 @@ it("renders a modal touch drawer with shared member contents", async () => {
     screen.getAllByRole("button", { name: "Close member list" })[0] as Element,
   );
   expect(close).not.toHaveBeenCalled();
-  fireEvent(
-    screen.getByRole("dialog", { name: "Members" }),
-    Object.assign(new Event("animationend", { bubbles: true }), {
-      animationName: "drawer-out-right",
-    }),
-  );
+  await Promise.resolve();
   expect(close).toHaveBeenCalledOnce();
 });
 

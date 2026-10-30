@@ -1,149 +1,63 @@
 .overlay {
+  --wl-overlay-drawer-duration: var(--wl-motion-drawer-open);
+  --wl-overlay-drawer-offset: 0;
   inset: 0;
   position: absolute;
   z-index: 30;
+}
+
+.overlay[data-phase="entering"],
+.overlay[data-phase="closing"] {
+  --wl-overlay-drawer-offset: 1;
+}
+
+.overlay[data-phase="closing"] {
+  --wl-overlay-drawer-duration: var(--wl-motion-drawer-close);
 }
 
 .backdrop {
   background: var(--wl-color-overlay-scrim);
   border: 0;
   inset: 0;
-  opacity: calc(1 - var(--wl-overlay-drawer-progress, 0));
+  opacity: calc(1 - var(--wl-overlay-drawer-offset));
   position: absolute;
+  transition: opacity var(--wl-overlay-drawer-duration)
+    var(--wl-motion-drawer-curve);
   width: 100%;
 }
 
 .drawer {
   bottom: 0;
-  isolation: isolate;
+  box-shadow: var(--wl-effect-overlay-shadow);
   position: absolute;
   top: 0;
-  will-change: transform;
+  transform: translateX(
+    calc(
+      var(--wl-overlay-drawer-direction) *
+      var(--wl-overlay-drawer-offset) *
+      100%
+    )
+  );
+  transition: transform var(--wl-overlay-drawer-duration)
+    var(--wl-motion-drawer-curve);
   width: var(--wl-overlay-drawer-width);
 }
 
-.drawer::before {
-  box-shadow: var(--wl-effect-overlay-shadow);
-  content: "";
-  inset: 0;
-  opacity: calc(1 - var(--wl-overlay-drawer-progress, 0));
-  pointer-events: none;
-  position: absolute;
-  z-index: -1;
-}
-
-.overlay[data-phase="opening"] .backdrop {
-  animation: backdrop-in var(--wl-motion-members) var(--wl-motion-drawer-curve)
-    both;
-}
-
-.overlay[data-phase="closing"] .backdrop {
-  animation: backdrop-out var(--wl-motion-members) var(--wl-motion-drawer-curve)
-    both;
-}
-
-.overlay[data-phase="opening"] .drawer,
-.overlay[data-phase="closing"] .drawer {
-  animation-duration: var(--wl-motion-members);
-  animation-fill-mode: both;
-  animation-timing-function: var(--wl-motion-drawer-curve);
-}
-
-.overlay[data-phase="opening"] .drawer::before {
-  animation: backdrop-in var(--wl-motion-members) var(--wl-motion-drawer-curve)
-    both;
-}
-
-.overlay[data-phase="closing"] .drawer::before {
-  animation: backdrop-out var(--wl-motion-members) var(--wl-motion-drawer-curve)
-    both;
+.overlay[data-moving="true"] .drawer {
+  will-change: transform;
 }
 
 .overlay[data-dragging="true"] .drawer,
-.overlay[data-dragging="true"] .drawer::before,
 .overlay[data-dragging="true"] .backdrop {
-  animation: none;
-}
-
-.overlay[data-drag-returning="true"] .drawer {
-  transition: transform var(--wl-motion-members) var(--wl-motion-drawer-curve);
-}
-
-.overlay[data-drag-returning="true"] .backdrop,
-.overlay[data-drag-returning="true"] .drawer::before {
-  transition: opacity var(--wl-motion-members) var(--wl-motion-drawer-curve);
+  transition: none;
 }
 
 .drawer[data-edge="left"] {
+  --wl-overlay-drawer-direction: -1;
   left: var(--wl-safe-left);
 }
 
-.overlay[data-phase="opening"] .drawer[data-edge="left"] {
-  animation-name: drawer-in-left;
-}
-
-.overlay[data-phase="closing"] .drawer[data-edge="left"] {
-  animation-name: drawer-out-left;
-}
-
-.overlay[data-dragging="true"] .drawer[data-edge="left"] {
-  transform: translateX(calc(var(--wl-overlay-drawer-progress) * -100%));
-}
-
 .drawer[data-edge="right"] {
+  --wl-overlay-drawer-direction: 1;
   right: var(--wl-safe-right);
-}
-
-.overlay[data-phase="opening"] .drawer[data-edge="right"] {
-  animation-name: drawer-in-right;
-}
-
-.overlay[data-phase="closing"] .drawer[data-edge="right"] {
-  animation-name: drawer-out-right;
-}
-
-.overlay[data-dragging="true"] .drawer[data-edge="right"] {
-  transform: translateX(calc(var(--wl-overlay-drawer-progress) * 100%));
-}
-
-@keyframes backdrop-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes backdrop-out {
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes drawer-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes drawer-in-right {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes drawer-out-left {
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes drawer-out-right {
-  to {
-    transform: translateX(100%);
-  }
 }
