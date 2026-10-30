@@ -24,7 +24,7 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
 
   await page.goto("/");
   // A cold CI browser completes two cross-origin OAuth navigations before returning.
-  await expect(page).toHaveURL(redirectUri(), { timeout: 15_000 });
+  await expect(page).toHaveURL(redirectUri());
   await expect(page.locator("[data-hosted-status]")).toHaveCount(0);
   await expect
     .poll(() =>
@@ -122,7 +122,7 @@ test("returns to sign-in when the hosted token expires", async ({ page }) => {
 
   await expect(
     page.getByText("Hosted sign-in requested after expiry"),
-  ).toBeVisible({ timeout: 15_000 });
+  ).toBeVisible();
   expect(authorizationCount).toBe(2);
 });
 
