@@ -54,6 +54,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     iPhone 16 Pro WebKit cover background/server loss, browser offline, worker termination, Ergo
     restart, hosted-token expiry, and preservation of the established shell, draft, and message
     viewport. The in-memory send queue cannot survive worker termination.
+  - [x] Preserve the sender's highest channel prefix on optimistic and confirmed own messages;
+    confirmation re-snapshots current membership, while DMs remain unprefixed. Engine coverage
+    spans owner, operator, voice, plain, mode changes during send, and DMs; local Ergo proves `@`
+    before and after browser confirmation.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
