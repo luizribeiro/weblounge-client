@@ -1,17 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
-import { emulateStandalone } from "./mobile-platform";
+import {
+  drawerPointer,
+  openDrawer,
+  openStandaloneChannel,
+  shellPointer,
+} from "./member-drawer";
 
 test.beforeEach(async ({ browserName, page }) => {
-  test.skip(
-    process.env.WEBLOUNGE_E2E_ERGO !== "1",
-    "requires the flake's local Ergo fixture",
-  );
-  test.skip(browserName !== "webkit", "requires WebKit touch events");
-  await emulateStandalone(page);
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto("/?irc-password=weblounge-test");
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await expect(page.locator("[data-position]")).toHaveCount(0);
+  await openStandaloneChannel(page, browserName);
 });
 
 test("member drawer pans, springs back, and closes before the chat", async ({
@@ -168,63 +164,6 @@ test("member drawer and scrim enter and leave as one motion", async ({
   );
   await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
 });
-
-async function openDrawer(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Show members" }).click();
-  await expect(page.getByRole("dialog", { name: "Members" })).toBeVisible();
-  await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
-    "data-phase",
-    "open",
-  );
-}
-
-async function drawerPointer(
-  page: Page,
-  type: "pointerdown" | "pointermove" | "pointerup",
-  clientX: number,
-  clientY: number,
-  timeStamp: number,
-  pointerId = 1,
-): Promise<void> {
-  await page.locator("[data-member-drawer]").evaluate(
-    (element, init) => {
-      const event = new PointerEvent(init.type, {
-        bubbles: true,
-        cancelable: true,
-        clientX: init.clientX,
-        clientY: init.clientY,
-        pointerId: init.pointerId,
-      });
-      Object.defineProperty(event, "timeStamp", { value: init.timeStamp });
-      element.dispatchEvent(event);
-    },
-    { clientX, clientY, pointerId, timeStamp, type },
-  );
-}
-
-async function shellPointer(
-  page: Page,
-  type: "pointerdown" | "pointermove" | "pointerup",
-  clientX: number,
-  clientY: number,
-  timeStamp: number,
-  pointerId: number,
-): Promise<void> {
-  await page.locator("[data-mobile-shell]").evaluate(
-    (element, init) => {
-      const event = new PointerEvent(init.type, {
-        bubbles: true,
-        cancelable: true,
-        clientX: init.clientX,
-        clientY: init.clientY,
-        pointerId: init.pointerId,
-      });
-      Object.defineProperty(event, "timeStamp", { value: init.timeStamp });
-      element.dispatchEvent(event);
-    },
-    { clientX, clientY, pointerId, timeStamp, type },
-  );
-}
 
 interface MotionFrame {
   readonly contentWidth: number;
