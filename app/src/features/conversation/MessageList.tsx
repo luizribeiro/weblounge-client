@@ -73,6 +73,8 @@ export function MessageList(props: MessageListProps) {
   let liveEdgeSentinel: HTMLDivElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
+  const estimatedDensity = currentMessageDensity(document.documentElement);
+  const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
@@ -116,6 +118,7 @@ export function MessageList(props: MessageListProps) {
           (observedWidth !== undefined && observedWidth !== next.width) ||
           (observedHeight !== undefined && observedHeight !== next.height);
         const followEnd = viewportChanged && atLiveEdge();
+        if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
         observedHeight = next.height;
         callback(next);
@@ -126,16 +129,16 @@ export function MessageList(props: MessageListProps) {
       const row = rows()[index];
       if (row?.kind !== "message") return 34;
       const width =
-        list !== undefined && list.clientWidth > 0
-          ? list.clientWidth
-          : props.presentation === "mobile"
-            ? 402
-            : 1024;
-      return estimateMessageHeight(
+        observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
+      const cached = estimatedSizes.get(row.key);
+      if (cached !== undefined) return cached;
+      const estimated = estimateMessageHeight(
         row.message,
         width,
-        currentMessageDensity(document.documentElement),
+        estimatedDensity,
       );
+      estimatedSizes.set(row.key, estimated);
+      return estimated;
     },
     getItemKey: (index) => rows()[index]?.key ?? index,
     measureElement: (element, entry, instance) => {
