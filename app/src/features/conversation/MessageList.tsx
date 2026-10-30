@@ -25,6 +25,10 @@ import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MessageList.module.css";
+import {
+  currentMessageDensity,
+  estimateMessageHeight,
+} from "./message-size-estimate";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
@@ -94,7 +98,21 @@ export function MessageList(props: MessageListProps) {
         callback(next);
         if (widthChanged) remeasure();
       }),
-    estimateSize: (index) => (rows()[index]?.kind === "message" ? 28 : 34),
+    estimateSize: (index) => {
+      const row = rows()[index];
+      if (row?.kind !== "message") return 34;
+      const width =
+        list !== undefined && list.clientWidth > 0
+          ? list.clientWidth
+          : props.presentation === "mobile"
+            ? 402
+            : 1024;
+      return estimateMessageHeight(
+        row.message,
+        width,
+        currentMessageDensity(document.documentElement),
+      );
+    },
     getItemKey: (index) => rows()[index]?.key ?? index,
     measureElement: (element, entry, instance) => {
       const index = Number(element.dataset.index);
