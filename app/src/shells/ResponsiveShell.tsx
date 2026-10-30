@@ -1,30 +1,14 @@
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
+import { platformEnvironment } from "../platform/environment";
 import { DesktopShell, type DesktopShellProps } from "./desktop/DesktopShell";
 import { MobileShell } from "./mobile/MobileShell";
-import {
-  observeContainerShell,
-  type Shell,
-  shellForWidth,
-} from "./shell-selection";
 
 export function ResponsiveShell(props: DesktopShellProps) {
-  const [shell, setShell] = createSignal<Shell>("desktop");
+  const platform = platformEnvironment();
   const [activeBufferId, setActiveBufferId] = createSignal<number>();
   const [mobileInitialBufferId, setMobileInitialBufferId] =
     createSignal<number>();
-  let measured = false;
-  let stopObserving = () => {};
-
-  const selectShell = (next: Shell) => {
-    setShell((current) => {
-      if (measured && current === "desktop" && next === "mobile") {
-        setMobileInitialBufferId(activeBufferId());
-      }
-      if (next === "desktop") setMobileInitialBufferId(undefined);
-      measured = true;
-      return next;
-    });
-  };
+  let previousShell = platform.environment().shell;
 
   createEffect(() => {
     const requested = props.focusRequest?.bufferId;
@@ -38,20 +22,19 @@ export function ResponsiveShell(props: DesktopShellProps) {
       props.buffers[0];
     if (preferred !== undefined) setActiveBufferId(preferred.id);
   });
-  onCleanup(() => stopObserving());
+  createEffect(() => {
+    const shell = platform.environment().shell;
+    if (previousShell === "desktop" && shell === "mobile") {
+      setMobileInitialBufferId(activeBufferId());
+    } else if (shell === "desktop") {
+      setMobileInitialBufferId(undefined);
+    }
+    previousShell = shell;
+  });
 
   return (
-    <div
-      data-shell-container="true"
-      ref={(element) => {
-        const width = element.getBoundingClientRect().width;
-        if (width > 0) selectShell(shellForWidth(width));
-        stopObserving();
-        stopObserving = observeContainerShell(element, selectShell);
-      }}
-      style={{ height: "100%" }}
-    >
-      {shell() === "mobile" ? (
+    <div data-shell-container="true" style={{ height: "100%" }}>
+      {platform.environment().shell === "mobile" ? (
         <MobileShell
           {...props}
           initialBufferId={mobileInitialBufferId()}
