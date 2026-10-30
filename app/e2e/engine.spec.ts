@@ -97,7 +97,7 @@ test.describe("local Ergo user flow", () => {
   test("measures received history and live wrapped messages", async ({
     page,
   }) => {
-    test.slow();
+    test.slow(); // wait-ok: measures history and live rows across four viewport states
     const prose = `wrapped dogfood ${"several words need a real measured row ".repeat(10)}${Date.now()}`;
     const url = `https://example.com/${"unbroken-segment".repeat(20)}?${Date.now()}`;
     const live = `live wrapped dogfood ${"incoming words must resize their row ".repeat(10)}${Date.now()}`;
@@ -115,7 +115,7 @@ test.describe("local Ergo user flow", () => {
       await page.goto("/?irc-password=weblounge-test");
       await expect(
         page.getByRole("heading", { name: /#weblounge-test/ }),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: 15_000 }); // wait-ok: local IRC history replay follows the asynchronous handshake
       await expect(
         page.locator("[data-message-row]").filter({ hasText: prose }),
       ).toBeVisible();
@@ -133,7 +133,7 @@ test.describe("local Ergo user flow", () => {
       await page.goto("/?irc-password=weblounge-test");
       await expect(
         page.getByRole("heading", { name: /#weblounge-test/ }),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: 15_000 }); // wait-ok: fresh browser replays local IRC history after connecting
       await expect(
         page.locator("[data-message-row]").filter({ hasText: live }),
       ).toBeVisible();
@@ -217,7 +217,7 @@ test.describe("local Ergo user flow", () => {
   test("anchors live messages and preserves the away boundary", async ({
     page,
   }) => {
-    test.slow();
+    test.slow(); // wait-ok: live IRC scenario sends 40 messages across away and live-edge states
     await page.goto("/?irc-password=weblounge-test");
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
     const channel = `#timeline-${Date.now()}`;
@@ -252,9 +252,9 @@ test.describe("local Ergo user flow", () => {
       }
       await expect(
         page.getByText("timeline seed 39", { exact: true }),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: 15_000 }); // wait-ok: last of 40 confirmed IRC deliveries
       await expect
-        .poll(() => distanceFromBottom(list), { timeout: 15_000 })
+        .poll(() => distanceFromBottom(list), { timeout: 15_000 }) // wait-ok: geometry settles after the 40-message delivery burst
         .toBeLessThanOrEqual(3);
       await expect(active).toHaveAttribute("data-unread", "0", {
         timeout: 3_000,
