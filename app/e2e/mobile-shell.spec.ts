@@ -337,6 +337,8 @@ test.describe("mobile shell against local Ergo", () => {
         page.getByRole("heading", { name: targetNick }),
       ).toBeVisible();
       await page.setViewportSize({ width: 402, height: 874 });
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await target.click();
       await expect(page.locator("[data-mobile-chat]")).toBeVisible();
       await page.getByRole("button", { name: "Back to chats" }).click();
       await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);

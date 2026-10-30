@@ -55,10 +55,12 @@ export function MobileShell(props: MobileShellProps) {
   const reducedMotion = () =>
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const initial = createMobileStack();
+  const initialBufferId =
+    window.location.pathname === "/" ? undefined : props.initialBufferId;
   const [stack, setStack] = createSignal(
-    props.initialBufferId === undefined
+    initialBufferId === undefined
       ? initial
-      : pushChat(initial, props.initialBufferId, true),
+      : pushChat(initial, initialBufferId, true),
   );
   const [filter, setFilter] = createSignal<ChatFilter>("all");
   const [query, setQuery] = createSignal("");

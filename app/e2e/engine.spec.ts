@@ -143,6 +143,8 @@ test.describe("local Ergo user flow", () => {
       await expectMeasuredTimeline(page);
 
       await page.setViewportSize({ width: 402, height: 874 });
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
       await expect(page.locator("[data-mobile-chat]")).toBeVisible();
       await expectMeasuredTimeline(page);
     } finally {

@@ -221,6 +221,9 @@ platform policy pushes or replaces the corresponding screen, so URL synchronizat
 additional entry. Initial selection resolves in this order: a valid URL target, the device-local
 last viewed buffer, then the first channel in engine order. A URL for a channel that is not joined
 renders a not-joined destination with an explicit Join action; loading a URL never joins by itself.
+Opening `/` on a mobile viewport always starts on the Chats list. A mobile buffer deep link pushes
+its chat above that list so Back returns to Chats. Device-local last-buffer restoration applies only
+to the focused desktop pane; mobile may restore list scroll position, but never opens a stored chat.
 
 Before an OAuth redirect, the shell stores a same-origin, syntactically valid buffer route. The
 callback remains `/`; after successful authorization the stored route is restored and removed.
