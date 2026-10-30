@@ -27,6 +27,27 @@ it("reports the wasm worker round trip", async () => {
   ).toBeInTheDocument();
 });
 
+it("keeps one app status region while a polite toast is shown", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  await screen.findByRole("status");
+
+  expect(screen.getAllByRole("status")).toHaveLength(1);
+  expect(screen.queryByRole("note")).toBeNull();
+  client.emit({
+    type: "notice",
+    key: "engine.dedicated_worker_fallback",
+    values: {},
+    tone: "neutral",
+    action: null,
+  });
+
+  expect(screen.getAllByRole("status")).toHaveLength(1);
+  expect(screen.getByRole("note")).toHaveTextContent(
+    "This browser uses one connection per tab",
+  );
+});
+
 it("renders the empty shell after the engine handshake before revealing it", async () => {
   let releaseEngine = () => {};
   let releaseVisuals = () => {};

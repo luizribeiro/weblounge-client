@@ -55,7 +55,9 @@ export function Toast(props: ToastProps) {
         onPointerEnter={pause}
         onPointerLeave={resume}
         ref={surface}
-        role="status"
+        aria-atomic="true"
+        aria-live="polite"
+        role="note"
       >
         <span>{t(props.notice.message.key, props.notice.message.values)}</span>
         {props.notice.action !== undefined && (

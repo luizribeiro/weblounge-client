@@ -48,7 +48,7 @@ it("pauses dismissal while hovered or focused", async () => {
       onDismiss={dismiss}
     />
   ));
-  const toast = screen.getByRole("status");
+  const toast = screen.getByRole("note");
   await vi.advanceTimersByTimeAsync(2_000);
   fireEvent.pointerEnter(toast);
   await vi.advanceTimersByTimeAsync(8_000);
