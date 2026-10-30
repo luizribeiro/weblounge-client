@@ -155,6 +155,11 @@
           fetcherVersion = 5;
           hash = "sha256-WOnLqtnVYDbMWWuIY0mTuQ9AbRhUIxqalLchfijXZq4=";
         };
+        appRuntimeInputs = [
+          pkgs.librsvg
+          pkgs.nodejs
+          pkgs.pnpm
+        ];
         vitestEnvironment = {
           maxWorkers = 4;
           testTimeout = 15000;
@@ -188,10 +193,7 @@
           version = "0.1.0";
           src = appSource;
           inherit pnpmDeps;
-          nativeBuildInputs = [
-            pkgs.librsvg
-            pkgs.nodejs
-            pkgs.pnpm
+          nativeBuildInputs = appRuntimeInputs ++ [
             pkgs.pnpmConfigHook
           ];
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
@@ -261,10 +263,7 @@
           version = "0.1.0";
           src = appSource;
           inherit pnpmDeps;
-          nativeBuildInputs = [
-            pkgs.librsvg
-            pkgs.nodejs
-            pkgs.pnpm
+          nativeBuildInputs = appRuntimeInputs ++ [
             pkgs.pnpmConfigHook
             pkgs.fontconfig
           ];
@@ -462,11 +461,9 @@
             rustToolchain
             wasmBindgenCli
             pkgs.binaryen
-            pkgs.librsvg
-            pkgs.nodejs
-            pkgs.pnpm
             pkgs.biome
           ]
+          ++ appRuntimeInputs
           ++ hooks.enabledPackages;
           inherit (hooks) shellHook;
         };
