@@ -208,6 +208,15 @@ export function DesktopShell(props: DesktopShellProps) {
     on(
       () => props.activeBufferId,
       (activeBufferId) => {
+        const requestedBuffer = props.buffers.find(
+          (buffer) => buffer.id === activeBufferId,
+        );
+        if (
+          activeBufferId !== undefined &&
+          requestedBuffer?.kind !== "server"
+        ) {
+          navigationCommitted = true;
+        }
         if (
           activeBufferId !== undefined &&
           activeBufferId !== activeBuffer()?.id

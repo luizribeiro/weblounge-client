@@ -217,6 +217,45 @@ it("does not reset a local selection to a stale external selection", () => {
   expect(screen.getByRole("textbox", { name: "Message #room" })).toBeVisible();
 });
 
+it("keeps the initial channel until a command focus request arrives", async () => {
+  const [activeBufferId, setActiveBufferId] = createSignal<number>();
+  const [buffers, setBuffers] = createSignal<readonly BufferProjection[]>([
+    channel,
+  ]);
+  const [focusRequest, setFocusRequest] = createSignal<
+    { readonly bufferId: number } | undefined
+  >();
+  render(() => (
+    <DesktopShell
+      activeBufferId={activeBufferId()}
+      buffers={buffers()}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={focusRequest()}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={setActiveBufferId}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(
+    await screen.findByRole("textbox", { name: "Message #room" }),
+  ).toBeVisible();
+
+  setBuffers([otherChannel, channel]);
+  expect(screen.getByRole("heading", { name: "#room" })).toBeVisible();
+
+  setFocusRequest({ bufferId: otherChannel.id });
+  expect(
+    await screen.findByRole("textbox", { name: "Message #other" }),
+  ).toBeVisible();
+});
+
 it("focuses the composer after buffer navigation and engine focus requests", async () => {
   const [focusRequest, setFocusRequest] = createSignal<
     { readonly bufferId: number } | undefined
