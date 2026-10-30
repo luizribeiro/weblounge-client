@@ -128,6 +128,8 @@ The milestone-2 worker boundary measured 719,127 bytes from rustc, 239,018 bytes
 shipping artifact plus 10% headroom, rounded up to the next hundred bytes. This gate covers the
 artifact the browser executes; the gzip figure remains reported for transfer-size tracking.
 
+Until the performance milestone, the wasm size is reported on every build but not enforced (Luiz, 2026-10-29: too early to optimise builds). The budget below is the baseline to re-derive when enforcement returns.
+
 The complete milestone-2 papo client slice measures 3,104,405 bytes from rustc, 2,986,655 bytes
 after `wasm-bindgen`, 1,224,614 bytes after `wasm-opt -Oz`, and 494,013 bytes with gzip level 9.
 The checked uncompressed budget is therefore 1,347,400 bytes, the measured shipping artifact plus
