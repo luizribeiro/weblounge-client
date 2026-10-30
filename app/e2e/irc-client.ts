@@ -8,7 +8,6 @@ export class IrcClient {
   readonly #socket: Socket;
   readonly #lines: string[] = [];
   #buffer = "";
-  #notify: (() => void) | undefined;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -18,8 +17,6 @@ export class IrcClient {
       const lines = this.#buffer.split("\r\n");
       this.#buffer = lines.pop() ?? "";
       this.#lines.push(...lines);
-      this.#notify?.();
-      this.#notify = undefined;
     });
   }
 
@@ -92,22 +89,21 @@ export class IrcClient {
     this.#socket.end("QUIT :test complete\r\n");
   }
 
+  async waitForDisconnect(): Promise<void> {
+    if (this.#socket.destroyed) return;
+    await once(this.#socket, "close");
+  }
+
   private send(line: string): void {
     this.#socket.write(`${line}\r\n`);
   }
 
   private async waitFor(predicate: (line: string) => boolean): Promise<string> {
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline) {
+    const signal = AbortSignal.timeout(5_000);
+    while (!signal.aborted) {
       const index = this.#lines.findIndex(predicate);
       if (index !== -1) return this.#lines.splice(index, 1)[0] ?? "";
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, 100);
-        this.#notify = () => {
-          clearTimeout(timeout);
-          resolve();
-        };
-      });
+      await once(this.#socket, "data", { signal });
     }
     throw new Error(
       `IRC response timed out; received ${this.#lines.join(" | ")}`,

@@ -43,6 +43,8 @@ pkgs.writeShellApplication {
     state_dir="$(mktemp -d -t weblounge-ergo.XXXXXXXX)"
     server_pid=""
     restart_requested=false
+    resume_requested=false
+    resume_wait_pid=""
 
     start_server() {
       ergo run --conf ${config} &
@@ -57,17 +59,29 @@ pkgs.writeShellApplication {
         kill "$server_pid"
         wait "$server_pid"
       fi
+      if [[ -n "$resume_wait_pid" ]] && kill -0 "$resume_wait_pid" 2>/dev/null; then
+        kill "$resume_wait_pid"
+        wait "$resume_wait_pid"
+      fi
       rm -rf -- "$state_dir"
     }
     request_restart() {
       restart_requested=true
+      resume_requested=false
       if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
         kill "$server_pid"
+      fi
+    }
+    resume_restart() {
+      resume_requested=true
+      if [[ -n "$resume_wait_pid" ]] && kill -0 "$resume_wait_pid" 2>/dev/null; then
+        kill "$resume_wait_pid"
       fi
     }
     trap cleanup EXIT
     trap 'exit 130' INT TERM HUP
     trap request_restart USR1
+    trap resume_restart USR2
 
     cd "$state_dir"
     start_server
@@ -125,8 +139,19 @@ pkgs.writeShellApplication {
       status="$?"
       set -e
       if [[ "$restart_requested" == true ]]; then
-        restart_requested=false
-        sleep 5
+        server_pid=""
+        tail --follow=name /dev/null &
+        resume_wait_pid="$!"
+        if [[ "$resume_requested" != true ]]; then
+          set +e
+          wait "$resume_wait_pid"
+          set -e
+        fi
+        if kill -0 "$resume_wait_pid" 2>/dev/null; then
+          kill "$resume_wait_pid"
+          wait "$resume_wait_pid" || true
+        fi
+        resume_wait_pid=""
         start_server
         ready=false
         for _ in $(seq 1 100); do
@@ -145,6 +170,8 @@ pkgs.writeShellApplication {
           exit 1
         fi
         echo "WebLounge local Ergo restarted"
+        restart_requested=false
+        resume_requested=false
         continue
       fi
       server_pid=""

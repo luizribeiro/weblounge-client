@@ -17,19 +17,22 @@ test.describe("connection resilience against local Ergo", () => {
       process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
       "requires the restartable Ergo fixture",
     );
-    test.slow();
     await installNativeFeelInstrumentation(page);
     let bot = await connectBot("resume");
+    let ergoStopped = false;
     try {
       const composer = await openChannel(page, testInfo.project.name);
       const list = page.locator("[data-message-list]");
-      for (let index = 0; index < 24; index += 1) {
-        const text = `resume seed ${index}`;
-        await bot.privmsgConfirmed(channel, text);
-        await expect(page.getByText(text, { exact: true })).toHaveCount(1, {
-          timeout: 10_000,
-        });
-      }
+      const mobile = isMobile(testInfo.project.name);
+      const seedCount = mobile ? 20 : 14;
+      const seedTail = mobile ? "" : " wrapped message".repeat(10);
+      for (let index = 0; index < seedCount; index += 1)
+        await bot.privmsgConfirmed(channel, `resume seed ${index}${seedTail}`);
+      await expect(
+        page.getByText(`resume seed ${seedCount - 1}${seedTail}`, {
+          exact: true,
+        }),
+      ).toHaveCount(1);
       const scrollTop = await list.evaluate((element) => {
         element.scrollTop = Math.floor(element.scrollHeight / 3);
         element.dispatchEvent(new Event("scroll"));
@@ -42,13 +45,14 @@ test.describe("connection resilience against local Ergo", () => {
 
       await setVisibility(page, true);
       process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
-      await page.waitForTimeout(250);
+      ergoStopped = true;
+      await bot.waitForDisconnect();
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
-      const reconnecting = page.locator(
-        '[data-connection-status="Reconnecting…"]',
-      );
-      await expect(reconnecting).toBeVisible({ timeout: 10_000 });
+      const reconnecting = isMobile(testInfo.project.name)
+        ? page.getByText("Reconnecting…", { exact: true })
+        : page.locator('[data-connection-status="Reconnecting…"]');
+      await expect(reconnecting).toBeVisible();
       await expect(reconnecting).toHaveCount(1);
       await expectShellToRemain(page, channel);
 
@@ -69,6 +73,10 @@ test.describe("connection resilience against local Ergo", () => {
         });
       }
 
+      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
+      await expectErgoReady();
+      await dispatchPersistedPageShow(page);
+      ergoStopped = false;
       await expectOnline(page, testInfo.project.name);
       await expect(composer).toHaveValue(draft);
       await expect(
@@ -87,6 +95,10 @@ test.describe("connection resilience against local Ergo", () => {
       await sendUntilReceived(page, bot, `after resume ${Date.now()}`);
       await expectShellToRemain(page, channel);
     } finally {
+      if (ergoStopped) {
+        process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
+        await expectErgoReady();
+      }
       bot.close();
     }
   });
@@ -95,14 +107,14 @@ test.describe("connection resilience against local Ergo", () => {
     context,
     page,
   }, testInfo) => {
-    test.slow();
     await installNativeFeelInstrumentation(page);
     const composer = await openChannel(page, testInfo.project.name);
 
     await context.setOffline(true);
-    await expect(
-      page.locator('[data-connection-status="Offline"]'),
-    ).toBeVisible();
+    const offline = isMobile(testInfo.project.name)
+      ? page.locator("[data-mobile-chat]").getByText("Offline", { exact: true })
+      : page.locator('[data-connection-status="Offline"]');
+    await expect(offline).toBeVisible();
     const texts = [`offline one ${Date.now()}`, `offline two ${Date.now()}`];
     for (const text of texts) {
       await composer.fill(text);
@@ -115,9 +127,7 @@ test.describe("connection resilience against local Ergo", () => {
     await setVisibility(page, false);
     await dispatchPersistedPageShow(page);
     for (const text of texts)
-      await expect(messageRow(page, text, "confirmed")).toHaveCount(1, {
-        timeout: 15_000,
-      });
+      await expect(messageRow(page, text, "confirmed")).toHaveCount(1);
     const order = await page
       .locator("[data-message-row]")
       .evaluateAll((rows) =>
@@ -126,9 +136,7 @@ test.describe("connection resilience against local Ergo", () => {
     expect(order.indexOf(texts[0] ?? "")).toBeLessThan(
       order.indexOf(texts[1] ?? ""),
     );
-    await expect(
-      page.locator('[data-connection-status="Offline"]'),
-    ).toHaveCount(0);
+    await expect(offline).toHaveCount(0);
     await expectShellToRemain(page, channel);
   });
 
@@ -136,7 +144,6 @@ test.describe("connection resilience against local Ergo", () => {
     page,
   }, testInfo) => {
     test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
-    test.slow();
     await installWorkerControl(page);
     await installNativeFeelInstrumentation(page);
     const bot = await connectBot("worker");
@@ -155,19 +162,14 @@ test.describe("connection resilience against local Ergo", () => {
       await setVisibility(page, true);
       await setVisibility(page, false);
       await expect
-        .poll(
-          () =>
-            page.evaluate(() =>
-              Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
-            ),
-          { timeout: 15_000 },
+        .poll(() =>
+          page.evaluate(() =>
+            Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
+          ),
         )
         .toBeGreaterThan(1);
       await expect(page.locator('[data-network-state="online"]')).toHaveCount(
         1,
-        {
-          timeout: 15_000,
-        },
       );
       await expect(composer).toHaveValue(draft);
 
@@ -186,20 +188,32 @@ test.describe("connection resilience against local Ergo", () => {
       process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
       "requires the restartable Ergo fixture",
     );
-    test.slow();
     await openChannel(page, testInfo.project.name);
 
-    process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
-    await expect(
-      page.locator('[data-connection-status="Reconnecting…"]'),
-    ).toBeVisible({ timeout: 10_000 });
-    await expectOnline(page, testInfo.project.name);
-    const bot = await connectBot("ergo");
+    let ergoStopped = false;
     try {
-      await sendUntilReceived(page, bot, `after Ergo restart ${Date.now()}`);
-      await expectShellToRemain(page, channel);
+      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
+      ergoStopped = true;
+      await expect(
+        page.locator('[data-connection-status="Reconnecting…"]'),
+      ).toBeVisible();
+      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
+      await expectErgoReady();
+      await dispatchPersistedPageShow(page);
+      ergoStopped = false;
+      await expectOnline(page, testInfo.project.name);
+      const bot = await connectBot("ergo");
+      try {
+        await sendUntilReceived(page, bot, `after Ergo restart ${Date.now()}`);
+        await expectShellToRemain(page, channel);
+      } finally {
+        bot.close();
+      }
     } finally {
-      bot.close();
+      if (ergoStopped) {
+        process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
+        await expectErgoReady();
+      }
     }
   });
 });
@@ -221,14 +235,31 @@ async function expectMutedIndicator(indicator: Locator) {
 }
 
 async function openChannel(page: Page, projectName: string) {
+  await expectErgoReady();
   await page.goto("/?irc-password=weblounge-test");
-  if (isMobile(projectName))
-    await page.getByRole("button", { name: channel }).click();
-  await expect(page.getByRole("heading", { name: channel })).toBeVisible({
-    timeout: 15_000,
-  });
-  if (!isMobile(projectName))
-    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+  if (isMobile(projectName)) {
+    const channelButton = page.getByRole("button", { name: channel });
+    await expect
+      .poll(
+        async () =>
+          (await channelButton.count()) +
+          (await page.getByText("Connecting…", { exact: true }).count()),
+      )
+      .toBeGreaterThan(0);
+    await expect(channelButton).toBeVisible();
+    await channelButton.click();
+  } else {
+    await expect
+      .poll(() =>
+        page
+          .locator("[data-network-state]")
+          .first()
+          .getAttribute("data-network-state"),
+      )
+      .toMatch(/registering|online/);
+  }
+  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+  await expectOnline(page, projectName);
   return page.getByRole("textbox", {
     name: isMobile(projectName) ? `Message ${channel}` : "Message",
   });
@@ -236,22 +267,12 @@ async function openChannel(page: Page, projectName: string) {
 
 async function connectBot(label: string): Promise<IrcClient> {
   const suffix = Date.now().toString().slice(-6);
-  const deadline = Date.now() + 15_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      return await IrcClient.connect(
-        `${label}${suffix}`,
-        "weblounge-bot",
-        "weblounge-bot-test",
-        channel,
-      );
-    } catch (error: unknown) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-  throw lastError;
+  return IrcClient.connect(
+    `${label}${suffix}`,
+    "weblounge-bot",
+    "weblounge-bot-test",
+    channel,
+  );
 }
 
 async function sendUntilReceived(
@@ -259,19 +280,8 @@ async function sendUntilReceived(
   bot: IrcClient,
   prefix: string,
 ): Promise<void> {
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
-    const text = `${prefix} ${attempt}`;
-    await bot.privmsgConfirmed(channel, text);
-    try {
-      await expect(page.getByText(text, { exact: true })).toHaveCount(1, {
-        timeout: 2_500,
-      });
-      return;
-    } catch {
-      // Autojoin follows protocol-online; retry until the channel is joined.
-    }
-  }
-  throw new Error("reconnected client did not receive a channel message");
+  await bot.privmsgConfirmed(channel, prefix);
+  await expect(page.getByText(prefix, { exact: true })).toHaveCount(1);
 }
 
 function messageRow(page: Page, text: string, delivery: string) {
@@ -303,7 +313,20 @@ async function expectOnline(page: Page, projectName: string): Promise<void> {
   const online = isMobile(projectName)
     ? page.locator('[data-mobile-chat][data-network-state="online"]')
     : page.locator('[data-network-state="online"]');
-  await expect(online).toHaveCount(1, { timeout: 20_000 });
+  await expect(online).toHaveCount(1);
+}
+
+async function expectErgoReady(): Promise<void> {
+  await expect
+    .poll(async () => {
+      try {
+        await fetch("http://127.0.0.1:8089/");
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .toBe(true);
 }
 
 async function setVisibility(page: Page, hidden: boolean): Promise<void> {
@@ -336,9 +359,10 @@ async function installWorkerControl(page: Page): Promise<void> {
         const generation =
           Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0) + 1;
         Reflect.set(globalThis, "engineWorkerGeneration", generation);
-        Reflect.set(globalThis, "terminateEngineWorker", () =>
-          this.terminate(),
-        );
+        Reflect.set(globalThis, "terminateEngineWorker", () => {
+          this.dispatchEvent(new Event("error"));
+          this.terminate();
+        });
       }
     }
     Object.defineProperty(globalThis, "Worker", {
