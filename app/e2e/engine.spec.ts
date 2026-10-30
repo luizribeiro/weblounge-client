@@ -241,7 +241,7 @@ test.describe("local Ergo user flow", () => {
       const seeds = Array.from(
         { length: 12 },
         (_, index) =>
-          `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(4)}`,
+          `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(12)}`,
       );
       for (const seed of seeds) {
         await bot.privmsgConfirmed(channel, seed);
