@@ -107,7 +107,7 @@ function testContentSecurityPolicy(devServer: boolean): string {
     `style-src 'self'${devServer ? " 'unsafe-inline'" : ""}`,
     "worker-src 'self'",
     "font-src 'self'",
-    "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",
+    "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://127.0.0.1:8068 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",
     "img-src 'self'",
   ].join("; ");
 }

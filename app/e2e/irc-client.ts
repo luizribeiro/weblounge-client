@@ -2,15 +2,17 @@ import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
 
 const host = "127.0.0.1";
-const port = 6667;
+const port = Number(process.env.WEBLOUNGE_E2E_IRC_PORT ?? 6667);
 
 export class IrcClient {
   readonly #socket: Socket;
   readonly #lines: string[] = [];
   #buffer = "";
+  #nickname: string;
 
-  private constructor(socket: Socket) {
+  private constructor(socket: Socket, nickname: string) {
     this.#socket = socket;
+    this.#nickname = nickname;
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => {
       this.#buffer += chunk;
@@ -28,7 +30,7 @@ export class IrcClient {
   ): Promise<IrcClient> {
     const socket = createConnection({ host, port });
     await once(socket, "connect");
-    const client = new IrcClient(socket);
+    const client = new IrcClient(socket, nickname);
     client.send("CAP LS 302");
     client.send(`NICK ${nickname}`);
     client.send(`USER ${nickname} 0 * :${nickname}`);
@@ -49,12 +51,17 @@ export class IrcClient {
     client.send(`AUTHENTICATE ${credentials}`);
     await client.waitFor((line) => line.includes(" 903 "));
     client.send("CAP END");
-    await client.waitFor((line) => line.includes(" 001 "));
+    const welcome = await client.waitFor((line) => line.includes(" 001 "));
+    client.#nickname = welcome.match(/ 001 (\S+) /u)?.[1] ?? nickname;
     client.send(`JOIN ${channel}`);
     await client.waitFor(
       (line) => line.includes(`!`) && line.includes(` JOIN ${channel}`),
     );
     return client;
+  }
+
+  get nickname(): string {
+    return this.#nickname;
   }
 
   privmsg(channel: string, text: string): void {

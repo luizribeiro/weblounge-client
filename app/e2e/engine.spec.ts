@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 
 const ready = "Engine ready: wasm worker round trip complete";
+const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 test("handshakes through the SharedWorker", async ({ page }) => {
   await page.goto("/");
@@ -271,6 +272,81 @@ test.describe("local Ergo user flow", () => {
       }
     } finally {
       seed.close();
+    }
+  });
+
+  test("restores an earlier direct conversation in fresh desktop and mobile sessions", async ({
+    baseURL,
+    browser,
+    context,
+    page,
+  }) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_PRODUCTION_ERGO !== "1",
+      "requires the production-shaped always-on Ergo profile",
+    );
+    const suffix = Date.now().toString().slice(-6);
+    const requestedNick = `dm-seed-${suffix}`;
+    const text = `earlier direct ${suffix}`;
+    const bot = await IrcClient.connect(
+      requestedNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      fixtureChannel,
+    );
+    const nick = bot.nickname;
+    await context.addInitScript(() => {
+      Object.defineProperty(globalThis, "SharedWorker", {
+        configurable: true,
+        value: undefined,
+      });
+    });
+    let mobileContext: import("@playwright/test").BrowserContext | undefined;
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        1,
+      );
+      await bot.privmsgConfirmed("weblounge", text);
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${nick}`) }),
+      ).toBeVisible();
+      await page.close();
+
+      const desktop = await context.newPage();
+      await desktop.goto("/?irc-password=weblounge-test");
+      const restoredDesktop = desktop.getByRole("button", {
+        name: new RegExp(`^${nick}`),
+      });
+      await expect(restoredDesktop).toBeVisible();
+      await restoredDesktop.click();
+      await expect(desktop.getByText(text, { exact: true })).toBeVisible();
+      await desktop.close();
+
+      mobileContext = await browser.newContext({
+        baseURL,
+        hasTouch: true,
+        isMobile: true,
+        ignoreHTTPSErrors: process.env.WEBLOUNGE_E2E_SECURE_ERGO === "1",
+        viewport: { width: 402, height: 874 },
+      });
+      await mobileContext.addInitScript(() => {
+        Object.defineProperty(globalThis, "SharedWorker", {
+          configurable: true,
+          value: undefined,
+        });
+      });
+      const mobile = await mobileContext.newPage();
+      await mobile.goto("/?irc-password=weblounge-test");
+      await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
+      const restoredMobile = mobile.getByRole("button", {
+        name: new RegExp(`^${nick}`),
+      });
+      await expect(restoredMobile).toBeVisible();
+      await expect(restoredMobile).toContainText(text);
+    } finally {
+      await mobileContext?.close();
+      bot.close();
     }
   });
 
