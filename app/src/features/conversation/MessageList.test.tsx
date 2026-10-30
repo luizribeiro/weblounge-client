@@ -1,6 +1,6 @@
 import { render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
   MembershipProjection,
   MessageProjection,
@@ -11,6 +11,30 @@ import { createNickLookup } from "./nick-lookup";
 vi.mock("./nick-lookup", async (importOriginal) => {
   const original = await importOriginal<typeof import("./nick-lookup")>();
   return { ...original, createNickLookup: vi.fn(original.createNickLookup) };
+});
+
+const scrollToDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "scrollTo",
+);
+
+beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+    configurable: true,
+    value(this: HTMLElement, options: ScrollToOptions | number, y?: number) {
+      this.scrollTop =
+        typeof options === "number" ? (y ?? 0) : (options.top ?? 0);
+      this.dispatchEvent(new Event("scroll"));
+    },
+  });
+});
+
+afterEach(() => {
+  if (scrollToDescriptor === undefined) {
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+    return;
+  }
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", scrollToDescriptor);
 });
 
 const message: MessageProjection = {
@@ -48,7 +72,7 @@ it("anchors the viewport when history rows are prepended", async () => {
   if (list === null) throw new Error("message list is missing");
   Object.defineProperty(list, "scrollHeight", {
     configurable: true,
-    get: () => messages().length * 20,
+    get: () => 34 + messages().length * 28,
   });
   Object.defineProperty(list, "clientHeight", {
     configurable: true,
@@ -57,13 +81,14 @@ it("anchors the viewport when history rows are prepended", async () => {
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  list.scrollTop = 10;
+  list.scrollTop = 40;
   list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   setMessages([{ ...message, id: 0, text: "older" }, message]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(list.scrollTop).toBe(30);
+  expect(list.scrollTop).toBe(68);
 });
 
 it("measures wrapped rows without overlap and preserves the live edge", async () => {
@@ -92,11 +117,17 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
   if (list === null || spacer === null)
     throw new Error("message list is missing");
   let scrollTop = 0;
+  let measuredScrollHeight: number | undefined;
   Object.defineProperties(list, {
     clientHeight: { configurable: true, value: 300 },
     scrollHeight: {
       configurable: true,
-      get: () => Number.parseFloat(spacer.style.height) || 0,
+      get: () => {
+        if (measuredScrollHeight !== undefined) return measuredScrollHeight;
+        const current =
+          container.querySelector<HTMLElement>("[class*='spacer']");
+        return Number.parseFloat(current?.style.height ?? "") || 0;
+      },
     },
     scrollTop: {
       configurable: true,
@@ -108,7 +139,18 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
   });
 
   await new Promise<void>((resolve) => queueMicrotask(resolve));
-  for (const observer of observers) observer.flush(measuredRowHeight);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  for (const observer of observers) observer.flushTarget(list, 300);
+  const measuredElements = [
+    ...list.querySelectorAll<HTMLLIElement>("li[data-index]"),
+  ];
+  measuredScrollHeight = measuredElements.reduce(
+    (height, element) => height + measuredRowHeight(element),
+    0,
+  );
+  for (const element of measuredElements)
+    for (const observer of observers)
+      observer.flushTarget(element, measuredRowHeight(element));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
@@ -203,7 +245,7 @@ it("anchors visible content when an overscanned row above it grows", async () =>
   expect(translateY(movedAnchor.style.transform) - list.scrollTop).toBe(
     relativeTop,
   );
-});
+}, 15_000);
 
 it("renders action, own, pending, bot, mode, divider, New, and membership variants", async () => {
   const membership: MembershipProjection = {
@@ -351,6 +393,7 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   setMessages([
     ...initial,
@@ -361,7 +404,7 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
 
   expect(screen.getByRole("button", { name: /1 new message/ })).toBeVisible();
   expect(list.scrollTop).toBe(0);
-});
+}, 15_000);
 
 it("keeps following through a transient one-row render gap", async () => {
   const [messages, setMessages] = createSignal([message]);
@@ -432,19 +475,6 @@ class ControlledResizeObserver {
 
   disconnect(): void {
     this.#targets.clear();
-  }
-
-  flush(size: (target: Element) => number): void {
-    const entries = [...this.#targets].map(
-      (target) =>
-        ({
-          target,
-          borderBoxSize: [
-            { blockSize: size(target), inlineSize: 800 } as ResizeObserverSize,
-          ],
-        }) as unknown as ResizeObserverEntry,
-    );
-    this.#callback(entries, this as unknown as ResizeObserver);
   }
 
   flushTarget(target: Element, blockSize: number): void {

@@ -61,12 +61,7 @@ const liveEdgeTolerance = 2;
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLOListElement | undefined;
-  let renderedFirst: number | undefined;
-  let renderedHeight = 0;
   let renderedCount = 0;
-  let autoScrollPending = false;
-  let correctingLiveEdge = false;
-  let bottomCorrectionPending = false;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
   let boundaryFrozen =
@@ -95,7 +90,6 @@ export function MessageList(props: MessageListProps) {
     estimateSize: (index) => (rows()[index]?.kind === "message" ? 28 : 34),
     getItemKey: (index) => rows()[index]?.key ?? index,
     measureElement: (element, entry, instance) => {
-      const preserveLiveEdge = atLiveEdge() || autoScrollPending;
       const index = Number(element.dataset.index);
       const measured =
         entry === undefined
@@ -103,27 +97,17 @@ export function MessageList(props: MessageListProps) {
           : measureElement(element, entry, instance);
       const size =
         measured > 0 ? measured : instance.options.estimateSize(index);
-      if (preserveLiveEdge) scheduleBottomCorrection();
       return size;
     },
+    anchorTo: "end",
+    followOnAppend: true,
+    scrollEndThreshold: liveEdgeTolerance,
     overscan: 6,
   });
-  const scheduleBottomCorrection = () => {
-    if (bottomCorrectionPending) return;
-    bottomCorrectionPending = true;
-    requestAnimationFrame(() => {
-      bottomCorrectionPending = false;
-      if (list?.isConnected !== true) return;
-      if (!atLiveEdge() && !autoScrollPending) return;
-      list.scrollTop = list.scrollHeight;
-      reportLiveEdge();
-    });
-  };
   createEffect(() => {
     rows();
     void (document.fonts?.ready ?? Promise.resolve()).then(() => {
       if (list?.isConnected !== true) return;
-      const preserveLiveEdge = atLiveEdge() || autoScrollPending;
       for (const element of list.querySelectorAll<HTMLLIElement>(
         "li[data-index]",
       )) {
@@ -134,26 +118,10 @@ export function MessageList(props: MessageListProps) {
           element.offsetHeight || virtualizer.options.estimateSize(index),
         );
       }
-      if (preserveLiveEdge) scheduleBottomCorrection();
     });
   });
   const reportLiveEdge = () => {
-    if (list === undefined) return;
-    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    const live = distance <= liveEdgeTolerance;
-    if (!live && autoScrollPending) {
-      if (!correctingLiveEdge) {
-        correctingLiveEdge = true;
-        requestAnimationFrame(() => {
-          correctingLiveEdge = false;
-          if (list?.isConnected !== true) return;
-          list.scrollTop = list.scrollHeight;
-          reportLiveEdge();
-        });
-      }
-      return;
-    }
-    autoScrollPending = false;
+    const live = virtualizer.isAtEnd();
     if (!live && atLiveEdge() && !boundaryFrozen) {
       const lastSeen = props.messages.at(-1)?.id;
       if (lastSeen !== undefined) {
@@ -167,9 +135,7 @@ export function MessageList(props: MessageListProps) {
   };
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
-    autoScrollPending = true;
-    list.scrollTop = list.scrollHeight;
-    queueMicrotask(reportLiveEdge);
+    virtualizer.scrollToEnd();
   };
   const selectLastOwn = () => {
     const message = [...props.messages]
@@ -210,27 +176,10 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const messages = props.messages;
-    const currentFirst = messages[0]?.id;
-    const previousFirst = renderedFirst;
-    const previousHeight = renderedHeight;
     const previousCount = renderedCount;
-    const wasLive = atLiveEdge();
-    if (messages.length > previousCount && wasLive) autoScrollPending = true;
-    queueMicrotask(() => {
-      if (list === undefined) return;
-      if (
-        previousFirst !== undefined &&
-        messages.findIndex((message) => message.id === previousFirst) > 0
-      ) {
-        list.scrollTop += list.scrollHeight - previousHeight;
-      } else if (messages.length > previousCount) {
-        if (wasLive || autoScrollPending) jumpToBottom();
-        else setUnseen((count) => count + messages.length - previousCount);
-      }
-      renderedFirst = currentFirst;
-      renderedHeight = list.scrollHeight;
-      renderedCount = messages.length;
-    });
+    if (messages.length > previousCount && !atLiveEdge())
+      setUnseen((count) => count + messages.length - previousCount);
+    renderedCount = messages.length;
   });
   onMount(() => queueMicrotask(jumpToBottom));
 
@@ -246,7 +195,7 @@ export function MessageList(props: MessageListProps) {
           event.preventDefault();
           jumpToBottom();
         }}
-        onScroll={reportLiveEdge}
+        onScroll={() => queueMicrotask(reportLiveEdge)}
         ref={(element) => {
           list = element;
         }}
