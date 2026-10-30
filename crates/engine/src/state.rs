@@ -1,12 +1,13 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, name_key::NameKey,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
+    NoticeTone, name_key::NameKey,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -620,7 +621,11 @@ impl NetworkModel {
         Some(events)
     }
 
-    pub(crate) fn fail_send(&mut self, pending: &PendingSend, message_key: &str) -> EngineToUi {
+    pub(crate) fn fail_send(
+        &mut self,
+        pending: &PendingSend,
+        message_key: &str,
+    ) -> Vec<EngineToUi> {
         if let Some(record) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
             buffer
                 .timeline
@@ -629,13 +634,34 @@ impl NetworkModel {
         }) {
             record.projection.delivery = MessageDelivery::Failed;
         }
-        EngineToUi::MessageFailed {
+        let target = pending.target.title();
+        let mut events = vec![EngineToUi::MessageFailed {
             network_id: self.network.id,
             buffer_id: pending.buffer_id,
-            target: pending.target.title(),
+            target: target.clone(),
             local_send_id: pending.local_send_id,
             message_key: message_key.into(),
+        }];
+        let hidden_direct = !self.buffer_order.contains(&pending.buffer_id)
+            && self
+                .buffers
+                .get(&pending.buffer_id)
+                .is_some_and(|buffer| buffer.projection.kind == BufferKind::Direct);
+        if hidden_direct {
+            events.push(EngineToUi::Notice {
+                key: "notice.message_not_delivered".into(),
+                values: BTreeMap::from([
+                    ("network_id".into(), self.network.id.0.to_string()),
+                    ("target".into(), target),
+                ]),
+                tone: NoticeTone::Error,
+                action: Some(NoticeAction {
+                    label: "action.open".into(),
+                    run: "buffer.open-direct".into(),
+                }),
+            });
         }
+        events
     }
 
     pub(crate) fn history_targets(&self) -> Vec<SendTarget> {
@@ -1651,18 +1677,18 @@ mod tests {
             .begin_send(buffer.id, "will fail".into(), &state)
             .expect("channel is sendable");
 
-        let event = model.fail_send(&pending, "engine.send_failed");
+        let events = model.fail_send(&pending, "engine.send_failed");
 
         let record = &model.buffers[&buffer.id].timeline[0];
         assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
         assert!(matches!(
-            event,
-            EngineToUi::MessageFailed {
+            events.as_slice(),
+            [EngineToUi::MessageFailed {
                 network_id: NetworkId(1),
                 buffer_id,
                 target,
                 ..
-            } if buffer_id == buffer.id && target == "#room"
+            }] if *buffer_id == buffer.id && target == "#room"
         ));
     }
 

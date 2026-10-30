@@ -1122,7 +1122,7 @@ async fn finish_send(
         };
         match result {
             Ok(sent) => running.model.confirm_send(pending, &sent),
-            Err(error) => Some(vec![running.model.fail_send(pending, error.message_key())]),
+            Err(error) => Some(running.model.fail_send(pending, error.message_key())),
         }
     };
     for event in events.into_iter().flatten() {
@@ -2990,26 +2990,39 @@ mod tests {
             .name_rules()
             .expect("registered test client has name rules")
             .nick("alice");
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (buffer_id, _) = model.open_direct(nick.clone(), direct.clone());
+        let (pending, _) = model
+            .begin_send(buffer_id, "not for you".into(), &client.state())
+            .expect("direct is sendable");
+        model.close_direct(buffer_id).expect("direct closes");
 
         wire.server(":alice!a@host QUIT :gone").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Quit(_))).await;
         wire.server(":alice!other@host JOIN #room alice-two :Other Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let pending = PendingSend {
-            buffer_id: BufferId(2),
-            local_send_id: crate::LocalSendId(1),
-            target: SendTarget::Direct {
-                nick,
-                recipient: direct,
-            },
-            text: "not for you".into(),
-            kind: crate::MessageKind::Text,
-        };
-
         assert!(matches!(
             super::send(&client, &pending).await,
             Err(super::SendError::DirectTargetGone)
+        ));
+        let failures = model.fail_send(&pending, "engine.direct_target_gone");
+        assert!(matches!(
+            failures.as_slice(),
+            [
+                EngineToUi::MessageFailed { buffer_id: failed, .. },
+                EngineToUi::Notice {
+                    key,
+                    values,
+                    tone: crate::NoticeTone::Error,
+                    action: Some(crate::NoticeAction { label, run }),
+                },
+            ] if *failed == buffer_id
+                && key == "notice.message_not_delivered"
+                && values.get("network_id").is_some_and(|value| value == "1")
+                && values.get("target").is_some_and(|value| value == "alice")
+                && label == "action.open"
+                && run == "buffer.open-direct"
         ));
         assert!(
             tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
