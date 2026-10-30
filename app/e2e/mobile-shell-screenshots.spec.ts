@@ -79,7 +79,7 @@ test.describe("mobile shell screenshots against local Ergo", () => {
           exact: true,
         }),
       ).toBeVisible();
-      await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      await expect(page.locator("[data-mobile-chats]")).not.toBeVisible();
       const composerBox = await page
         .getByRole("textbox", { name: "Message #weblounge-test" })
         .boundingBox();

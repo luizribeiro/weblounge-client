@@ -107,7 +107,7 @@ test.describe("native feel against local Ergo", () => {
     await expect(
       page.getByRole("heading", { name: /#weblounge-test/ }),
     ).toBeVisible();
-    await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+    await expect(page.locator("[data-mobile-chats]")).not.toBeVisible();
     const bot = await IrcClient.connect(
       "hidden-audit",
       "weblounge-bot",
@@ -183,7 +183,7 @@ test.describe("native feel against local Ergo", () => {
           }
         ).__setNativeVisibility?.(false),
       );
-      await expect(page.getByText(text, { exact: false })).toBeVisible();
+      await expect(page.getByText(text, { exact: true })).toBeVisible();
       expect(
         await page.evaluate(
           () =>

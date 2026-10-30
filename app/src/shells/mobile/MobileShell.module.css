@@ -19,6 +19,10 @@
   will-change: transform, opacity;
 }
 
+.screen[data-retained="true"] {
+  visibility: hidden;
+}
+
 .screen[data-transition="push"][data-position="from"] {
   animation: mobile-list-out var(--wl-motion-push-in)
     var(--wl-motion-standard-curve) both;
