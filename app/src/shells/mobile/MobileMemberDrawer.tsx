@@ -1,7 +1,9 @@
+import { createSignal } from "solid-js";
 import {
   MemberPanel,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
+import { createHorizontalPan, panCommits } from "../../ui/horizontal-pan";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./MobileMemberDrawer.module.css";
 
@@ -16,39 +18,57 @@ interface MobileMemberDrawerProps {
 }
 
 export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
-  let start: { x: number; time: number; width: number } | undefined;
+  const [dragProgress, setDragProgress] = createSignal<number>();
+  const [dragReturning, setDragReturning] = createSignal(false);
+  const returnDrawer = () => {
+    if ((dragProgress() ?? 0) === 0) {
+      setDragProgress(undefined);
+      return;
+    }
+    setDragReturning(true);
+    setDragProgress(0);
+  };
+  const gesture = createHorizontalPan({
+    commitRatio: 0.4,
+    commitVelocity: 0.5,
+    direction: "right",
+    onCancel: returnDrawer,
+    onCommit: props.onClose,
+    onProgress: (progress) => {
+      setDragReturning(false);
+      setDragProgress(progress);
+    },
+  });
   const begin = (event: PointerEvent) => {
     const target = event.target as Element;
     if (target.closest("input, [data-selectable], [data-horizontal-scroll]"))
       return;
-    start = {
-      x: event.clientX,
-      time: event.timeStamp,
-      width: (event.currentTarget as Element).getBoundingClientRect().width,
-    };
-  };
-  const finish = (event: PointerEvent) => {
-    if (start === undefined) return;
-    const distance = Math.max(0, event.clientX - start.x);
-    const velocity = distance / Math.max(1, event.timeStamp - start.time);
-    const closes = swipeClosesDrawer(distance, start.width, velocity);
-    start = undefined;
-    if (closes) props.onClose();
+    gesture.begin(
+      event,
+      (event.currentTarget as Element).getBoundingClientRect().width,
+    );
   };
   return (
     <OverlayDrawer
       closeLabel="Close member list"
+      dragProgress={dragProgress()}
+      dragReturning={dragReturning() || undefined}
       edge="right"
       label="Members"
       onClose={props.onClose}
+      onDragReturnEnd={() => {
+        setDragProgress(undefined);
+        setDragReturning(false);
+      }}
       width="min(300px, 82%)"
     >
       <div
         class={styles.content}
         data-member-drawer="true"
-        onPointerCancel={finish}
+        onPointerCancel={gesture.cancel}
         onPointerDown={begin}
-        onPointerUp={finish}
+        onPointerMove={gesture.move}
+        onPointerUp={gesture.end}
       >
         <MemberPanel
           bufferTitle={props.bufferTitle}
@@ -71,5 +91,5 @@ export function swipeClosesDrawer(
   width: number,
   velocity: number,
 ): boolean {
-  return distance >= width / 3 || velocity >= 0.5;
+  return panCommits(distance, width, velocity, 0.4, 0.5);
 }

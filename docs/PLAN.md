@@ -90,6 +90,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Submit exact composer completions on Enter and keep shell sizing CSP-safe.
   - [x] Let the desktop conversation reclaim the full width of collapsed side panels.
   - [x] Dim every overlay drawer with a theme-owned scrim in light and dark mode.
+  - [x] Share axis-locked pan handling between mobile Back and the drag-to-close members drawer.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).

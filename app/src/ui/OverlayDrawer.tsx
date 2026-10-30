@@ -7,6 +7,9 @@ interface OverlayDrawerProps {
   readonly edge: "left" | "right";
   readonly label: string;
   readonly onClose: () => void;
+  readonly dragProgress?: number | undefined;
+  readonly dragReturning?: boolean | undefined;
+  readonly onDragReturnEnd?: (() => void) | undefined;
   readonly width: string;
 }
 
@@ -49,11 +52,19 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
         aria-label={props.label}
         aria-modal="true"
         class={styles.drawer}
+        data-drag-returning={props.dragReturning}
+        data-dragging={props.dragProgress === undefined ? undefined : "true"}
         data-edge={props.edge}
         onKeyDown={keydown}
+        onTransitionEnd={(event) => {
+          if (event.propertyName === "transform") props.onDragReturnEnd?.();
+        }}
         ref={drawer}
         role="dialog"
-        style={{ "--wl-overlay-drawer-width": props.width }}
+        style={{
+          "--wl-overlay-drawer-progress": props.dragProgress,
+          "--wl-overlay-drawer-width": props.width,
+        }}
       >
         {props.children}
       </div>

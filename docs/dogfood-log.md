@@ -25,7 +25,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 17 | 2026-10-29 | Connection indicators are unreliable and untrustworthy in general. | fixed, deploying (42ab950) |
 | 18 | 2026-10-29 | Beta loaded unstyled: the server CSP blocked the runtime-injected theme styles. | stopgap on the server; client fix queued |
 | 19 | 2026-10-29 | Mobile: the members drawer's overlay lightens the content in dark mode; it must respect light/dark. | fixed, local |
-| 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | queued |
+| 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | fixed, local |
 | 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | queued |
 | 22 | 2026-10-29 | Resizing the window doesn't keep the newest message at the bottom when you were at the live edge (also mobile keyboard, panels, composer growth). | queued |
 | 23 | 2026-10-29 | The auto-complete popup flashes on each keystroke before updating. | fixed, deploying (a7211bd) |

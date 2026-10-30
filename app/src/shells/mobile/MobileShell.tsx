@@ -9,6 +9,7 @@ import {
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
+import { createHorizontalPan } from "../../ui/horizontal-pan";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
@@ -21,7 +22,6 @@ import {
   popChat,
   previousScreen,
   pushChat,
-  swipeBackCompletes,
 } from "./mobile-navigation";
 import { type MobileViewport, observeMobileViewport } from "./mobile-viewport";
 
@@ -82,9 +82,6 @@ export function MobileShell(props: MobileShellProps) {
   let shellElement: HTMLElement | undefined;
   let chatsStable = true;
   let returnScrollTop = 0;
-  let gesture:
-    | { pointerId: number; startX: number; startedAt: number; width: number }
-    | undefined;
 
   const open = (
     bufferId: number,
@@ -127,7 +124,7 @@ export function MobileShell(props: MobileShellProps) {
       return next;
     });
   const resetSwipe = () => {
-    gesture = undefined;
+    swipeGesture.reset();
     setSwipeReturning(false);
     setSwipeProgress(undefined);
   };
@@ -208,22 +205,12 @@ export function MobileShell(props: MobileShellProps) {
       ) !== null
     )
       return;
-    gesture = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startedAt: event.timeStamp,
-      width:
-        event.currentTarget instanceof Element
-          ? event.currentTarget.getBoundingClientRect().width
-          : window.innerWidth,
-    };
-    event.preventDefault();
-    setSwipeProgress(0);
-  };
-  const moveSwipe = (event: PointerEvent) => {
-    if (gesture?.pointerId !== event.pointerId) return;
-    const distance = Math.max(0, event.clientX - gesture.startX);
-    setSwipeProgress(Math.min(1, distance / gesture.width));
+    swipeGesture.begin(
+      event,
+      event.currentTarget instanceof Element
+        ? event.currentTarget.getBoundingClientRect().width
+        : window.innerWidth,
+    );
   };
   const returnSwipe = () => {
     if (platform.prefersReducedMotion() || swipeProgress() === 0) {
@@ -233,29 +220,24 @@ export function MobileShell(props: MobileShellProps) {
     setSwipeReturning(true);
     setSwipeProgress(0);
   };
-  const endSwipe = (event: PointerEvent) => {
-    if (gesture?.pointerId !== event.pointerId) return;
-    const distance = Math.max(0, event.clientX - gesture.startX);
-    const velocity =
-      distance / Math.max(1, event.timeStamp - gesture.startedAt);
-    const completes = swipeBackCompletes(distance, gesture.width, velocity);
-    gesture = undefined;
-    if (completes) {
+  const swipeGesture = createHorizontalPan({
+    commitRatio: 0.5,
+    commitVelocity: 0.5,
+    direction: "right",
+    preventDefaultOnStart: true,
+    onCancel: returnSwipe,
+    onCommit: () => {
       suppressCompletedSwipeClick = true;
       setSwipeProgress(undefined);
       requestBack(true);
-    } else returnSwipe();
-  };
+    },
+    onProgress: setSwipeProgress,
+  });
   const consumeCompletedSwipeClick = (event: MouseEvent) => {
     if (!suppressCompletedSwipeClick) return;
     suppressCompletedSwipeClick = false;
     event.preventDefault();
     event.stopImmediatePropagation();
-  };
-  const cancelSwipe = (event: PointerEvent) => {
-    if (gesture?.pointerId !== event.pointerId) return;
-    gesture = undefined;
-    returnSwipe();
   };
   const screens = () =>
     retainChatsScreen(
@@ -283,7 +265,7 @@ export function MobileShell(props: MobileShellProps) {
       }
       const browserHandledSwipe =
         pendingHistoryPopInstant ||
-        gesture !== undefined ||
+        swipeGesture.active() ||
         swipeProgress() !== undefined;
       pendingHistoryPopInstant = false;
       resetSwipe();
@@ -319,10 +301,10 @@ export function MobileShell(props: MobileShellProps) {
       class={styles.shell}
       data-history-policy={historyPolicy}
       data-mobile-shell="true"
-      onPointerCancel={cancelSwipe}
+      onPointerCancel={swipeGesture.cancel}
       onPointerDown={beginSwipe}
-      onPointerMove={moveSwipe}
-      onPointerUp={endSwipe}
+      onPointerMove={swipeGesture.move}
+      onPointerUp={swipeGesture.end}
       ref={shellElement}
       style={{
         "--wl-visual-height":

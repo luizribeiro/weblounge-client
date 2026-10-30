@@ -20,7 +20,16 @@
   box-shadow: var(--wl-effect-overlay-shadow);
   position: absolute;
   top: 0;
+  will-change: transform;
   width: var(--wl-overlay-drawer-width);
+}
+
+.drawer[data-dragging="true"] {
+  animation: none;
+}
+
+.drawer[data-drag-returning="true"] {
+  transition: transform var(--wl-motion-members) var(--wl-motion-standard-curve);
 }
 
 .drawer[data-edge="left"] {
@@ -28,9 +37,17 @@
   left: var(--wl-safe-left);
 }
 
+.drawer[data-edge="left"][data-dragging="true"] {
+  transform: translateX(calc(var(--wl-overlay-drawer-progress) * -100%));
+}
+
 .drawer[data-edge="right"] {
   animation-name: drawer-in-right;
   right: var(--wl-safe-right);
+}
+
+.drawer[data-edge="right"][data-dragging="true"] {
+  transform: translateX(calc(var(--wl-overlay-drawer-progress) * 100%));
 }
 
 @keyframes drawer-in-left {

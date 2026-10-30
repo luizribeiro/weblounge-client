@@ -1,3 +1,5 @@
+import { panCommits } from "../../ui/horizontal-pan";
+
 export type MobileScreen =
   | { readonly kind: "chats" }
   | { readonly kind: "chat"; readonly bufferId: number };
@@ -76,5 +78,5 @@ export function swipeBackCompletes(
   width: number,
   velocity: number,
 ): boolean {
-  return distance > 0 && (distance >= width / 2 || velocity >= 0.5);
+  return panCommits(distance, width, velocity, 0.5, 0.5);
 }

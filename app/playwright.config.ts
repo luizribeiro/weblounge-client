@@ -33,7 +33,10 @@ export default defineConfig({
     },
     {
       name: "webkit-mobile-back",
-      testMatch: "**/mobile-back-swipe.spec.ts",
+      testMatch: [
+        "**/mobile-back-swipe.spec.ts",
+        "**/mobile-member-drawer-gesture.spec.ts",
+      ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
