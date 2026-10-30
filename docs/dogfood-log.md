@@ -41,7 +41,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 33 | 2026-10-30 | Every restored DM shows a red badge: read state isn't synced with the server, so all DM messages count as unread mentions. (Two indicators by design: unread dot vs mention count.) | fixed, local |
 | 34 | 2026-10-30 | Links don't show the pointer (hand) cursor. | queued |
 | 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | queued |
-| 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | queued |
+| 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | fixed, local |
 | 37 | 2026-10-30 | Firefox: the address bar doesn't follow the channel, so reload doesn't reopen it. | queued |
 | 38 | 2026-10-30 | History messages show no mode prefix (asked whether it can always be accurate). | queued |
 | 39 | 2026-10-30 | iPhone: home-screen icon not showing; the generated icons use the line-art chair instead of the brand favicon glyph. | queued |
@@ -49,11 +49,11 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 41 | 2026-10-30 | iPhone: the home-indicator space applies to every screen (chats list, members) and is too big; it should only pad the composer. | fixed, local |
 | 42 | 2026-10-30 | Mobile: edge swipes still trigger browser history (e.g. back from the chats list to the splash), including in the installed PWA. | fixed, local |
 | 43 | 2026-10-30 | The 'Couldn't start weblounge. Reload to try again.' screen has no retry button; a PWA has no reload. | queued |
-| 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | fixed (648b548), not deployed yet |
-| 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | fixed (648b548), not deployed yet |
+| 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | fixed, live |
+| 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | fixed, live |
 | 46 | 2026-10-30 | Sometimes the buffer scrolls on its own shortly after opening a channel. Re-check after papo's history fix. | queued |
 | 47 | 2026-10-30 | Tab-completing a nick at the start of a message should add ": " (like the @ suggestion does). | queued |
-| 48 | 2026-10-30 | Two long live messages overlap each other, with the "New" divider drawn across the text (live on a7211bd). | fixed (f4c9dbd), not deployed yet |
+| 48 | 2026-10-30 | Two long live messages overlap each other, with the "New" divider drawn across the text (live on a7211bd). | fixed, live |
 | 49 | 2026-10-30 | Desktop: a long draft's text spills outside the composer box instead of the box growing. | not a bug (caused by a browser extension) |
 | 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | queued |
 | 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | fixed, local |
