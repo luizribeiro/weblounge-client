@@ -673,10 +673,13 @@ impl NetworkModel {
             .names
             .get(&NameKey::Channel(channel.clone()))
             .copied()?;
-        match self.request_history(buffer_id) {
-            Some(HistoryFetch::Latest(target)) => Some(target),
-            Some(HistoryFetch::Before { .. }) | None => None,
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        if !matches!(buffer.history, HistoryState::Unrequested) {
+            return None;
         }
+        let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.clone())?;
+        buffer.history = HistoryState::LoadingLatest;
+        Some(target)
     }
 
     pub(crate) fn finish_history(
@@ -1247,8 +1250,8 @@ mod tests {
     use papo_testing::StateBuilder;
 
     use super::{
-        Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin, draft_key, nick_color_index,
-        time_millis,
+        HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin,
+        draft_key, nick_color_index, time_millis,
     };
     use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
 
@@ -1546,6 +1549,24 @@ mod tests {
         assert!(model.receive_incoming(history, &state).is_empty());
 
         assert_eq!(timeline(&model), ["same", "same"]);
+    }
+
+    #[test]
+    fn latest_channel_request_preserves_an_older_page_request() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None);
+        let buffer = model.buffers.get_mut(&buffer_id).expect("buffer exists");
+        buffer.history = HistoryState::Ready {
+            oldest: Some(papo::MessageId::from("oldest")),
+            at_start: false,
+        };
+
+        assert!(model.request_latest_channel(&channel).is_none());
+        let Some(HistoryFetch::Before { oldest, .. }) = model.request_history(buffer_id) else {
+            panic!("older history remains requestable");
+        };
+        assert_eq!(oldest, papo::MessageId::from("oldest"));
     }
 
     #[test]
