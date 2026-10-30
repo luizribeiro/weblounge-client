@@ -69,8 +69,8 @@
           version = "0.1.0";
           cargoLock = ./Cargo.lock;
           outputHashes = {
-            "git+https://github.com/luizribeiro/papo?rev=949bd5d0f95561af5eacf540b874e4b5359c4f46#949bd5d0f95561af5eacf540b874e4b5359c4f46" =
-              "sha256-H5EyLpYLOdREYa8+8L2Mv88BrF1l1nyzFyWtW6eP+4o=";
+            "git+https://github.com/luizribeiro/papo?rev=f0672c08952a05378f991ccb3a2a9e6f6ff064d2#f0672c08952a05378f991ccb3a2a9e6f6ff064d2" =
+              "sha256-xsKxNYO7qh5nYp+42NomW/dVS6F0ejxFCkFMh+nDS/g=";
           };
         };
         cargoArtifacts = craneLib.buildDepsOnly cargoArgs;

@@ -61,6 +61,8 @@ close suggestions. Up/Down, plus Ctrl+P/N on macOS, move the active suggestion; 
 accepts; Escape closes without changing input. Enter sends only while the popup is closed. Mobile
 textarea text is at least 16px. Up in an empty composer invokes
 `message.select-last` from 14 and never copies a prior message into the draft.
+The engine projects consecutive blank lines as at most one empty line for rendering, while papo
+receives the exact submitted text and owns its multiline framing.
 
 The suggestion list is an unmounted overlay anchored immediately above the composer, so opening it
 does not reflow messages. It is at most 420px wide and six density-sized rows on desktop; on mobile

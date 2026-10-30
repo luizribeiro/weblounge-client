@@ -35,10 +35,12 @@ export class IrcClient {
     client.send(`NICK ${nickname}`);
     client.send(`USER ${nickname} 0 * :${nickname}`);
     await client.waitFor((line) => line.includes(" CAP * LS "));
-    client.send("CAP REQ :sasl echo-message server-time");
+    client.send("CAP REQ :batch draft/multiline echo-message sasl server-time");
     await client.waitFor(
       (line) =>
         line.includes(" CAP * ACK ") &&
+        line.includes("batch") &&
+        line.includes("draft/multiline") &&
         line.includes("sasl") &&
         line.includes("echo-message") &&
         line.includes("server-time"),
@@ -73,6 +75,39 @@ export class IrcClient {
     return this.waitFor((line) =>
       line.includes(` PRIVMSG ${channel} :${text}`),
     );
+  }
+
+  async privmsgSplitConfirmed(
+    channel: string,
+    text: string,
+    maxBytes = 320,
+  ): Promise<string[]> {
+    const parts: string[] = [];
+    let part = "";
+    for (const character of text) {
+      if (Buffer.byteLength(part + character) > maxBytes && part !== "") {
+        parts.push(part);
+        part = character;
+      } else {
+        part += character;
+      }
+    }
+    if (part !== "") parts.push(part);
+    for (const item of parts) await this.privmsgConfirmed(channel, item);
+    return parts;
+  }
+
+  async multilineConfirmed(channel: string, text: string): Promise<void> {
+    const reference = `playwright-${Date.now().toString(36)}`;
+    this.send(`BATCH +${reference} draft/multiline ${channel}`);
+    for (const segment of text.split("\n"))
+      this.send(`@batch=${reference} PRIVMSG ${channel} :${segment}`);
+    this.send(`BATCH -${reference}`);
+    const finalText = text.split("\n").findLast((segment) => segment !== "");
+    if (finalText !== undefined)
+      await this.waitFor((line) =>
+        line.includes(` PRIVMSG ${channel} :${finalText}`),
+      );
   }
 
   async actionConfirmed(channel: string, text: string): Promise<void> {

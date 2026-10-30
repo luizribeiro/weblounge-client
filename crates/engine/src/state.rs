@@ -28,6 +28,7 @@ struct FallbackKey {
 #[derive(Clone, Debug)]
 struct TimelineRecord {
     projection: MessageProjection,
+    send_text: Option<String>,
     sequence: u64,
     dedup: DedupReferences,
 }
@@ -483,7 +484,7 @@ impl NetworkModel {
         let message = MessageProjection {
             id: self.allocate_message_id(),
             author,
-            text,
+            text: collapse_blank_lines(text),
             kind: MessageKind::Notice,
             bot: false,
             mode_symbol: None,
@@ -496,7 +497,7 @@ impl NetworkModel {
             server_time_ms: source_time.map(time_millis),
             received_at_ms: time_millis(papo::time::now()),
         };
-        self.insert(buffer_id, message.clone(), DedupReferences::default())
+        self.insert(buffer_id, message.clone(), None, DedupReferences::default())
             .ok()?;
         Some(EngineToUi::MessagesAppended {
             buffer_id,
@@ -529,7 +530,7 @@ impl NetworkModel {
         let message = MessageProjection {
             id: self.allocate_message_id(),
             author: self.network.nickname.clone(),
-            text: text.clone(),
+            text: collapse_blank_lines(text.clone()),
             kind,
             bot: false,
             mode_symbol: actor_mode_symbol(state, &key, state.nick()),
@@ -543,7 +544,12 @@ impl NetworkModel {
             received_at_ms: time_millis(papo::time::now()),
         };
         let order_changed = self
-            .insert(buffer_id, message.clone(), DedupReferences::default())
+            .insert(
+                buffer_id,
+                message.clone(),
+                Some(text.clone()),
+                DedupReferences::default(),
+            )
             .ok()?;
         let mut events = vec![
             EngineToUi::MessagesAppended {
@@ -643,7 +649,7 @@ impl NetworkModel {
                     if index != 0 {
                         message.id = self.allocate_message_id();
                     }
-                    message.text.clone_from(text);
+                    message.text = collapse_blank_lines(text.clone());
                     message.server_ids = vec![msgid.to_string()];
                     message.server_time_ms = server_time;
                     message.delivery = MessageDelivery::Confirmed;
@@ -668,6 +674,7 @@ impl NetworkModel {
                 .insert(
                     pending.buffer_id,
                     message.clone(),
+                    None,
                     DedupReferences {
                         msgids: message.server_ids.clone(),
                         fallback: None,
@@ -747,11 +754,12 @@ impl NetworkModel {
                 && record.projection.delivery == MessageDelivery::Failed
         })?;
         message.projection.delivery = MessageDelivery::Optimistic;
+        let text = message.send_text.clone()?;
         let pending = PendingSend {
             buffer_id,
             local_send_id,
             target,
-            text: message.projection.text.clone(),
+            text,
             kind: message.projection.kind,
         };
         Some((
@@ -1097,7 +1105,7 @@ impl NetworkModel {
         };
         let dedup = if let Some(msgid) = &incoming.msgid {
             if self.msgids.contains_key(msgid) {
-                return self.enrich_duplicate(msgid, incoming.server_time_ms);
+                return Vec::new();
             }
             self.msgids.insert(msgid.clone(), 1);
             DedupReferences {
@@ -1134,7 +1142,7 @@ impl NetworkModel {
         let message = MessageProjection {
             id: self.allocate_message_id(),
             author: incoming.author,
-            text: incoming.text,
+            text: collapse_blank_lines(incoming.text),
             kind: incoming.kind,
             bot: incoming.bot,
             mode_symbol: incoming.mode_symbol,
@@ -1147,7 +1155,7 @@ impl NetworkModel {
             server_time_ms: incoming.server_time_ms,
             received_at_ms: incoming.received_at_ms,
         };
-        let Ok(order_changed) = self.insert(buffer_id, message.clone(), dedup) else {
+        let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
             return inconsistent_state_notice();
         };
         let (unread, mentions, added) = {
@@ -1181,54 +1189,6 @@ impl NetworkModel {
             unread,
             mentions,
         });
-        events
-    }
-
-    fn enrich_duplicate(&mut self, msgid: &str, server_time_ms: Option<i64>) -> Vec<EngineToUi> {
-        let Some(server_time_ms) = server_time_ms else {
-            return Vec::new();
-        };
-        let mut updated = None;
-        for (buffer_id, buffer) in &mut self.buffers {
-            let Some(record) = buffer
-                .timeline
-                .iter_mut()
-                .find(|record| record.projection.server_ids.iter().any(|id| id == msgid))
-            else {
-                continue;
-            };
-            if record.projection.server_time_ms.is_some() {
-                return Vec::new();
-            }
-            record.projection.server_time_ms = Some(server_time_ms);
-            let message = record.projection.clone();
-            buffer.timeline.sort_by_key(order_key);
-            derive_read_projection(buffer);
-            updated = Some((
-                *buffer_id,
-                message,
-                buffer.projection.clone(),
-                buffer.projection.unread,
-                buffer.projection.mentions,
-            ));
-            break;
-        }
-        let Some((buffer_id, message, buffer, unread, mentions)) = updated else {
-            return Vec::new();
-        };
-        let order_changed = self.sort_buffer_order();
-        let mut events = vec![
-            EngineToUi::MessageUpdated { buffer_id, message },
-            EngineToUi::BufferUpdated { buffer },
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread,
-                mentions,
-            },
-        ];
-        if order_changed {
-            events.push(self.buffers_event());
-        }
         events
     }
 
@@ -1330,6 +1290,7 @@ impl NetworkModel {
         &mut self,
         buffer_id: BufferId,
         projection: MessageProjection,
+        send_text: Option<String>,
         dedup: DedupReferences,
     ) -> Result<bool, StateError> {
         if !self.buffers.contains_key(&buffer_id) {
@@ -1338,6 +1299,7 @@ impl NetworkModel {
         }
         let record = TimelineRecord {
             projection,
+            send_text,
             sequence: self.next_sequence,
             dedup,
         };
@@ -1377,6 +1339,26 @@ impl NetworkModel {
             }
         }
     }
+}
+
+fn collapse_blank_lines(text: String) -> String {
+    if !text.contains("\n\n\n") {
+        return text;
+    }
+    let mut collapsed = String::with_capacity(text.len());
+    let mut newlines = 0;
+    for character in text.chars() {
+        if character == '\n' {
+            newlines += 1;
+            if newlines <= 2 {
+                collapsed.push(character);
+            }
+        } else {
+            newlines = 0;
+            collapsed.push(character);
+        }
+    }
+    collapsed
 }
 
 fn derive_read_projection(buffer: &mut BufferState) {
@@ -1594,9 +1576,21 @@ mod tests {
 
     use super::{
         HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin,
-        draft_key, nick_color_index, time_millis,
+        collapse_blank_lines, draft_key, nick_color_index, time_millis,
     };
     use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
+
+    #[test]
+    fn message_text_keeps_at_most_one_blank_line() {
+        assert_eq!(
+            collapse_blank_lines("first\n\n\nsecond\n\n\n\nthird".into()),
+            "first\n\nsecond\n\nthird"
+        );
+        assert_eq!(
+            collapse_blank_lines("first\n\nsecond".into()),
+            "first\n\nsecond"
+        );
+    }
 
     fn channel_name(state: &papo::State, name: &str) -> papo::ChannelName {
         papo_testing::channel(state.casemapping(), name)
@@ -1635,6 +1629,30 @@ mod tests {
             NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), limit),
             StateBuilder::new("weblounge").connected(true).build(),
         )
+    }
+
+    #[test]
+    fn received_message_projection_collapses_blank_lines() {
+        let (mut model, state) = model(10);
+
+        let events = model.receive_incoming(
+            incoming(
+                &state,
+                "first\n\n\n\nsecond",
+                Some("received-multiline"),
+                Some(1_000),
+                1_000,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].text == "first\n\nsecond"
+        )));
+        assert_eq!(timeline(&model), ["first\n\nsecond"]);
     }
 
     fn timeline(model: &NetworkModel) -> Vec<&str> {
@@ -1785,7 +1803,7 @@ mod tests {
     }
 
     #[test]
-    fn history_duplicate_enriches_an_untimed_live_row() {
+    fn history_duplicate_does_not_mutate_an_untimed_live_row() {
         let (mut model, state) = model(10);
         model.receive_incoming(
             incoming(
@@ -1810,24 +1828,32 @@ mod tests {
             &state,
         );
 
-        let events = model.receive_incoming(
-            incoming(
-                &state,
-                "older",
-                Some("older"),
-                Some(1_000),
-                4_000,
-                TimelineOrigin::History,
-            ),
-            &state,
+        assert!(
+            model
+                .receive_incoming(
+                    incoming(
+                        &state,
+                        "older",
+                        Some("older"),
+                        Some(1_000),
+                        4_000,
+                        TimelineOrigin::History,
+                    ),
+                    &state,
+                )
+                .is_empty()
         );
 
-        assert_eq!(timeline(&model), ["older", "current"]);
-        assert!(events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageUpdated { message, .. }
-                if message.text == "older" && message.server_time_ms == Some(1_000)
-        )));
+        assert_eq!(timeline(&model), ["current", "older"]);
+        assert_eq!(
+            model
+                .buffers
+                .values()
+                .flat_map(|buffer| &buffer.timeline)
+                .find(|record| record.projection.text == "older")
+                .and_then(|record| record.projection.server_time_ms),
+            None
+        );
     }
 
     #[test]
@@ -2130,15 +2156,17 @@ mod tests {
         let key = NameKey::Channel(channel_name(&state, "#room"));
         let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
         let (pending, _) = model
-            .begin_send(buffer.id, "try again".into(), &state)
+            .begin_send(buffer.id, "try\n\n\nagain".into(), &state)
             .expect("channel is sendable");
+        assert_eq!(pending.text, "try\n\n\nagain");
+        assert_eq!(timeline(&model), ["try\n\nagain"]);
         model.fail_send(&pending, "engine.send_failed");
 
         let (retried, event) = model
             .retry_send(buffer.id, pending.local_send_id)
             .expect("failed send retries");
 
-        assert_eq!(retried.text, "try again");
+        assert_eq!(retried.text, "try\n\n\nagain");
         assert_eq!(retried.local_send_id, pending.local_send_id);
         assert_eq!(
             model.buffers[&buffer.id].timeline[0].projection.delivery,
