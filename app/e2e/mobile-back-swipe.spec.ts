@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
 
 test.beforeEach(async ({ browserName, page }) => {
@@ -34,6 +35,53 @@ test("mobile back gesture midpoint completes aligned", async ({ page }) => {
   await drag(page, 4, 200, "pointerup");
   await expect(page.locator("[data-position]")).toHaveCount(0);
   await expectAligned(page);
+});
+
+test("mobile back swipe stays owned over selectable transcript content", async ({
+  page,
+}) => {
+  const bot = await IrcClient.connect(
+    "swipe-audit",
+    "weblounge-bot",
+    "weblounge-bot-test",
+    "#weblounge-test",
+  );
+  const text = `selectable swipe target ${Date.now()}`;
+  try {
+    bot.privmsg("#weblounge-test", text);
+    await openChat(page);
+    const message = page.getByText(text, { exact: true });
+    await expect(message).toBeVisible();
+    await expect(page.locator("[data-message-list]")).toHaveCSS(
+      "touch-action",
+      "pan-y",
+    );
+    await expect(message).toHaveCSS("user-select", "text");
+
+    const messageY = await message.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.top + bounds.height / 2;
+    });
+    await panOverTranscript(page, messageY, 80, 500);
+    await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+    await expect(page.locator("[data-swipe]")).toHaveCount(0);
+    await expectAligned(page);
+
+    const listY = await page.locator("[data-message-list]").evaluate((list) => {
+      const bounds = list.getBoundingClientRect();
+      return bounds.top + 4;
+    });
+    await panOverTranscript(page, listY, 220, 600);
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expectAligned(page);
+
+    await openChat(page);
+    await panOverTranscript(page, messageY, 80, 80);
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expectAligned(page);
+  } finally {
+    bot.close();
+  }
 });
 
 test("mobile history interrupts a gesture aligned", async ({ page }) => {
@@ -90,6 +138,36 @@ async function drag(
     clientY: 300,
     pointerId,
   });
+}
+
+async function panOverTranscript(
+  page: Page,
+  clientY: number,
+  endX: number,
+  duration: number,
+): Promise<void> {
+  await page.evaluate(
+    ({ clientY, duration, endX }) => {
+      const target = document.elementFromPoint(5, clientY);
+      if (target === null) throw new Error("swipe start target is missing");
+      const dispatch = (type: string, clientX: number, timeStamp: number) => {
+        const event = new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          pointerId: 41,
+          pointerType: "touch",
+        });
+        Object.defineProperty(event, "timeStamp", { value: timeStamp });
+        target.dispatchEvent(event);
+      };
+      dispatch("pointerdown", 5, 1_000);
+      dispatch("pointermove", endX, 1_000 + duration / 2);
+      dispatch("pointerup", endX, 1_000 + duration);
+    },
+    { clientY, duration, endX },
+  );
 }
 
 async function expectAligned(page: Page): Promise<void> {
