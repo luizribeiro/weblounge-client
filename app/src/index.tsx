@@ -1,4 +1,10 @@
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import { installDensity } from "./density/density";
@@ -13,10 +19,13 @@ import {
   exchangeAuthorizationCode,
   HostedAuthorizationError,
 } from "./hosted/oauth";
-import { installPlatformEnvironment } from "./platform/environment";
+import {
+  installPlatformEnvironment,
+  platformEnvironment,
+} from "./platform/environment";
 import "./platform/platform.css";
 import "./styles/base.css";
-import { installSystemTheme } from "./theme/theme-controller";
+import { installTheme } from "./theme/theme-controller";
 
 type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
 
@@ -27,8 +36,10 @@ type BootstrapState =
   | { type: "hosted"; config: HostedConfig; session: HostedSession };
 
 function Bootstrap() {
-  const theme = installSystemTheme(document, window);
+  const platform = platformEnvironment();
+  const theme = installTheme(document, platform.prefersDark());
   const removeDensity = installDensity(document);
+  createEffect(() => theme.setSystemDark(platform.prefersDark()));
   onCleanup(() => theme.dispose());
   onCleanup(removeDensity);
   const [state, setState] = createSignal<BootstrapState>({

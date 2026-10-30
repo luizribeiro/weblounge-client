@@ -7,6 +7,7 @@ import {
   onMount,
 } from "solid-js";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import { platformEnvironment } from "../../platform/environment";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
@@ -42,9 +43,8 @@ interface MobileShellProps extends MobileShellData {
 }
 
 export function MobileShell(props: MobileShellProps) {
+  const platform = platformEnvironment();
   const memberViewId = `${props.memberViewScope ?? crypto.randomUUID()}:mobile:drawer`;
-  const reducedMotion = () =>
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const initial = createMobileStack();
   const [stack, setStack] = createSignal(
     props.initialBufferId === undefined
@@ -76,11 +76,16 @@ export function MobileShell(props: MobileShellProps) {
       window.history.pushState(state, "");
     else window.history.replaceState(state, "");
     setStack((current) =>
-      pushChat(current, bufferId, reducedMotion(), preserveCurrent),
+      pushChat(
+        current,
+        bufferId,
+        platform.prefersReducedMotion(),
+        preserveCurrent,
+      ),
     );
   };
   const dispatchBack = () =>
-    setStack((current) => popChat(current, reducedMotion()));
+    setStack((current) => popChat(current, platform.prefersReducedMotion()));
   const finishDrawerClose = () => {
     setDrawerBufferId(undefined);
     if (pendingDirect !== undefined) {
@@ -151,7 +156,7 @@ export function MobileShell(props: MobileShellProps) {
     setSwipeProgress(Math.min(1, distance / gesture.width));
   };
   const returnSwipe = () => {
-    if (reducedMotion() || swipeProgress() === 0) {
+    if (platform.prefersReducedMotion() || swipeProgress() === 0) {
       setSwipeProgress(undefined);
       return;
     }
