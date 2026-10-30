@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import {
   type ActionId,
   ActionRegistry,
@@ -87,6 +87,7 @@ export function App(props: AppProps) {
   let restartingHostedAuthorization = false;
   let engineInstance: string | undefined;
   let disposed = false;
+  let revealingStartup = false;
   const noticeActions = new ActionRegistry(
     {
       "buffer.open-direct": (context) => {
@@ -109,6 +110,18 @@ export function App(props: AppProps) {
     },
     "other",
   );
+
+  createEffect(() => {
+    if (
+      !engineReady() ||
+      (startupError() === undefined &&
+        !shellReady() &&
+        hostedError() === undefined)
+    ) {
+      return;
+    }
+    void revealStartup();
+  });
 
   onMount(() => {
     const removeContextMenuHandler = installContextMenuHandler(document);
@@ -294,16 +307,12 @@ export function App(props: AppProps) {
       debugPassword,
       props.hostedSession,
       clientId,
-    ).then(async (outcome) => {
+    ).then((outcome) => {
       if (outcome === "reloading") return;
       if (outcome === "failed") {
         setStartupError("Couldn't start weblounge. Reload to try again.");
       }
       setEngineReady(true);
-      await props.beforeReveal?.();
-      if (disposed) return;
-      props.onReady?.();
-      setStartupRevealed(true);
       if (outcome === "ready" && props.hostedSession !== undefined) {
         cancelTokenExpiry = scheduleExpiry(
           props.hostedSession.token.expiresAt,
@@ -351,6 +360,15 @@ export function App(props: AppProps) {
     }
   });
 
+  async function revealStartup(): Promise<void> {
+    if (revealingStartup || startupRevealed()) return;
+    revealingStartup = true;
+    await props.beforeReveal?.();
+    if (disposed) return;
+    setStartupRevealed(true);
+    props.onReady?.();
+  }
+
   return (
     <div
       data-app-root="true"
@@ -366,12 +384,13 @@ export function App(props: AppProps) {
         {engineStatus()}
       </p>
       {!engineReady() ? null : startupError() !== undefined ? (
-        <HostedStatus message={startupError() ?? ""} error />
+        startupRevealed() ? (
+          <HostedStatus message={startupError() ?? ""} error />
+        ) : null
       ) : !shellReady() ? (
-        <HostedStatus
-          message={hostedError() ?? "Signing in…"}
-          error={hostedError() !== undefined}
-        />
+        startupRevealed() && hostedError() !== undefined ? (
+          <HostedStatus message={hostedError() ?? ""} error />
+        ) : null
       ) : (
         <ResponsiveShell
           memberViewScope={clientId}

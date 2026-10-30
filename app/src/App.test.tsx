@@ -108,6 +108,7 @@ it("checks worker liveness on a persisted page restore", () => {
 it("hands a hosted token to the engine once and reauthorizes on rejection", async () => {
   const client = new FakeEngineClient();
   const authorize = vi.fn();
+  const onReady = vi.fn();
   render(() => (
     <App
       engineClient={client}
@@ -120,10 +121,10 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
         token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
       }}
       onHostedAuthorizationRequired={authorize}
+      onReady={onReady}
     />
   ));
 
-  expect(await screen.findByText("Signing in…")).toBeVisible();
   await waitFor(() =>
     expect(client.requests).toContainEqual({
       id: expect.any(String),
@@ -137,6 +138,9 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
       },
     }),
   );
+  expect(screen.queryByText("Signing in…")).not.toBeInTheDocument();
+  expect(document.querySelector("[data-hosted-status]")).toBeNull();
+  expect(onReady).not.toHaveBeenCalled();
   client.emit({
     type: "network_state_changed",
     network: {
@@ -147,6 +151,7 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     },
   });
   expect(await screen.findByText("1 network")).toBeVisible();
+  expect(onReady).toHaveBeenCalledOnce();
   client.emit({
     type: "network_state_changed",
     network: {

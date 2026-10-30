@@ -19,7 +19,7 @@ test("shows a clear error when production config is missing", async ({
 test("authorizes with PKCE and hands the bearer token once to the engine", async ({
   page,
 }) => {
-  await installFakeEngine(page);
+  await installFakeEngine(page, true);
   const redirectUri = await installHostedConfig(page);
 
   await page.goto("http://127.0.0.1:4174/health");
@@ -27,6 +27,8 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   // A cold CI browser completes two cross-origin OAuth navigations before returning.
   await expect(page).toHaveURL(redirectUri());
   await expect(page.locator("[data-hosted-status]")).toHaveCount(0);
+  await expect(page.getByText("Signing in…")).toHaveCount(0);
+  await expect(page.locator("[data-initial-splash]")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -42,6 +44,13 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
         autojoin: ["#lounge"],
       }),
     );
+  await page.evaluate(() => {
+    const complete = Reflect.get(globalThis, "completeHostedConnection");
+    if (typeof complete !== "function")
+      throw new Error("hosted connection release is missing");
+    complete();
+  });
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
   await page.goBack();
   await expect(page).toHaveURL("http://127.0.0.1:4174/health");
@@ -166,8 +175,8 @@ async function expectHostedConnection(page: Page): Promise<void> {
     .toContainEqual(expect.objectContaining({ type: "connect_hosted" }));
 }
 
-async function installFakeEngine(page: Page) {
-  await page.addInitScript(() => {
+async function installFakeEngine(page: Page, holdConnection = false) {
+  await page.addInitScript((holdHostedConnection) => {
     Reflect.set(globalThis, "hostedEngineRequests", []);
     class FakePort extends EventTarget {
       postMessage(message: unknown) {
@@ -197,16 +206,23 @@ async function installFakeEngine(page: Page) {
         if (request?.type === "connect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);
-          this.emit({
-            type: "network_state_changed",
-            network: {
-              id: 1,
-              label: "weblounge",
-              nickname: "weblounge",
-              state: "online",
-            },
-          });
-          this.emit({ type: "buffers_changed", network_id: 1, buffers: [] });
+          const complete = () => {
+            this.emit({
+              type: "network_state_changed",
+              network: {
+                id: 1,
+                label: "weblounge",
+                nickname: "weblounge",
+                state: "online",
+              },
+            });
+            this.emit({ type: "buffers_changed", network_id: 1, buffers: [] });
+          };
+          if (holdHostedConnection) {
+            Reflect.set(globalThis, "completeHostedConnection", complete);
+          } else {
+            complete();
+          }
         }
         if (id !== undefined) this.emit({ type: "command_result", id });
       }
@@ -223,5 +239,5 @@ async function installFakeEngine(page: Page) {
       readonly port = new FakePort();
     }
     Reflect.set(globalThis, "SharedWorker", FakeSharedWorker);
-  });
+  }, holdConnection);
 }
