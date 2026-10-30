@@ -130,6 +130,26 @@ async fn production_profile_pages_always_on_history_paths() {
     )
     .await;
     wait_for_own_join(&mut bot_events, "history-bot", "#lounge").await;
+    verify_mixed_history(&bot).await;
+    verify_history_paging(&bot).await;
+    bot.quit("history seeded").await.expect("bot quits cleanly");
+
+    let (fresh, mut fresh_events) = connect_account(
+        &endpoint,
+        "weblounge",
+        "weblounge",
+        "weblounge-test",
+        "#lounge",
+    )
+    .await;
+    wait_for_own_join(&mut fresh_events, "weblounge", "#lounge").await;
+    fresh
+        .quit("fresh profile verified")
+        .await
+        .expect("fresh device quits cleanly");
+}
+
+async fn verify_mixed_history(bot: &papo::Client) {
     let suffix = time_suffix();
     let first_text = format!("missed first {suffix}");
     let second_text = format!("missed second {suffix}");
@@ -183,21 +203,61 @@ async fn production_profile_pages_always_on_history_paths() {
         papo::Event::Notice(notice)
             if notice.text == notice_text && notice.server_time.is_some()
     )));
-    bot.quit("history seeded").await.expect("bot quits cleanly");
+}
 
-    let (fresh, mut fresh_events) = connect_account(
-        &endpoint,
-        "weblounge",
-        "weblounge",
-        "weblounge-test",
-        "#lounge",
-    )
-    .await;
-    wait_for_own_join(&mut fresh_events, "weblounge", "#lounge").await;
-    fresh
-        .quit("fresh profile verified")
+async fn verify_history_paging(bot: &papo::Client) {
+    let paging_suffix = time_suffix();
+    let expected = (0..1_025)
+        .map(|index| format!("paging {paging_suffix} {index:04}"))
+        .collect::<Vec<_>>();
+    for text in &expected {
+        bot.privmsg("#lounge", text)
+            .await
+            .expect("paging message is confirmed");
+    }
+    let mut page = bot
+        .history("#lounge")
+        .latest()
+        .limit(100)
         .await
-        .expect("fresh device quits cleanly");
+        .expect("latest paging history is available");
+    let mut received = page
+        .chat_messages()
+        .filter(|message| message.text.contains(&paging_suffix))
+        .map(|message| (message.text.clone(), message.msgid.clone()))
+        .collect::<Vec<_>>();
+    loop {
+        let oldest = page
+            .oldest_reference()
+            .expect("a non-empty history page has a cursor");
+        page = bot
+            .history("#lounge")
+            .before(oldest)
+            .limit(100)
+            .await
+            .expect("older paging history is available");
+        if page.items.is_empty() {
+            break;
+        }
+        let older = page
+            .chat_messages()
+            .filter(|message| message.text.contains(&paging_suffix))
+            .map(|message| (message.text.clone(), message.msgid.clone()))
+            .collect::<Vec<_>>();
+        received.splice(0..0, older);
+    }
+    assert_eq!(
+        received.iter().map(|(text, _)| text).collect::<Vec<_>>(),
+        expected.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        received
+            .iter()
+            .filter_map(|(_, msgid)| msgid.as_ref())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        expected.len()
+    );
 }
 
 fn time_suffix() -> String {

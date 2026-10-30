@@ -2472,9 +2472,9 @@ fn process_history(
     if let Some(unread) = unread {
         output.push(unread);
     }
-    if let Some((conversation, oldest, end)) = requested
+    if let Some((conversation, oldest, empty)) = requested
         && let Some((buffer_id, at_start)) =
-            running.model.finish_history(&conversation, oldest, end)
+            running.model.finish_history(&conversation, oldest, empty)
     {
         output.push(EngineToUi::HistoryStateChanged {
             buffer_id,
@@ -2490,13 +2490,23 @@ fn process_history(
 
 fn requested_history_boundary(
     page: &papo::HistoryPage,
-) -> Option<(papo::Conversation, Option<papo::MessageId>, bool)> {
+) -> Option<(papo::Conversation, Option<papo::HistoryReference>, bool)> {
     (page.reason == papo::HistoryReason::Requested).then(|| {
         let oldest = page
-            .chat_messages()
-            .min_by_key(|message| message.server_time.unwrap_or(message.received_at))
-            .and_then(|message| message.msgid.clone());
-        (page.conversation.clone(), oldest, page.end)
+            .items
+            .iter()
+            .filter_map(|event| {
+                let time = event.server_time().or_else(|| event.received_at())?;
+                let reference = event
+                    .msgid()
+                    .cloned()
+                    .map(papo::HistoryReference::from)
+                    .or_else(|| event.server_time().map(papo::HistoryReference::from))?;
+                Some((time, reference))
+            })
+            .min_by_key(|(time, _)| *time)
+            .map(|(_, reference)| reference);
+        (page.conversation.clone(), oldest, page.items.is_empty())
     })
 }
 
@@ -4438,14 +4448,24 @@ mod tests {
     }
 
     async fn send_history_page(wire: &mut papo_testing::Wire, label: &str, items: &[&str]) {
+        send_history_page_with_end(wire, label, items, false).await;
+    }
+
+    async fn send_history_page_with_end(
+        wire: &mut papo_testing::Wire,
+        label: &str,
+        items: &[&str],
+        end: bool,
+    ) {
         let reply = format!("reply{label}");
         let history = format!("history{label}");
         wire.server(format!(
             "@label={label} :offline.test BATCH +{reply} labeled-response"
         ))
         .await;
+        let end_tag = if end { ";draft/chathistory-end" } else { "" };
         wire.server(format!(
-            "@batch={reply} :offline.test BATCH +{history} chathistory #room"
+            "@batch={reply}{end_tag} :offline.test BATCH +{history} chathistory #room"
         ))
         .await;
         for item in items {
@@ -4463,15 +4483,36 @@ mod tests {
         expected_suffix: &str,
         items: &[&str],
     ) -> papo::HistoryPage {
+        fetch_requested_page_with_end(client, wire, fetch, expected_suffix, items, false).await
+    }
+
+    async fn fetch_requested_page_with_end(
+        client: &papo::Client,
+        wire: &mut papo_testing::Wire,
+        fetch: crate::state::HistoryFetch,
+        expected_suffix: &str,
+        items: &[&str],
+        end: bool,
+    ) -> papo::HistoryPage {
         let fetch_client = client.clone();
         let task = tokio::spawn(async move { fetch_history(&fetch_client, fetch).await });
         let request = wire.next_sent().await;
         assert!(request.ends_with(expected_suffix));
         let label = request_label(&request);
-        send_history_page(wire, label, items).await;
+        send_history_page_with_end(wire, label, items, end).await;
         task.await
             .expect("history task completes")
             .expect("history request succeeds")
+    }
+
+    fn same_time_history_items(range: std::ops::Range<usize>) -> Vec<String> {
+        range
+            .map(|index| {
+                format!(
+                    "time=2026-10-27T12:00:00.000Z;msgid=m{index} :alice!a@host PRIVMSG #room :line {index}"
+                )
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -4677,6 +4718,107 @@ mod tests {
                 .model
                 .request_history(buffer_id)
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn pages_more_than_one_thousand_same_time_messages_exactly_once() {
+        const MESSAGE_COUNT: usize = 1_025;
+        const PAGE_SIZE: usize = 100;
+
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        register_for_history(&mut wire).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut event_rx) = harness(client.clone());
+        let target = process_event(&state, &outbound, &client, 1, joined)
+            .pop()
+            .expect("joined channel requests history");
+        _ = collect(&mut event_rx);
+
+        let latest_start = MESSAGE_COUNT - PAGE_SIZE;
+        let latest_items = same_time_history_items(latest_start..MESSAGE_COUNT);
+        let latest_refs = latest_items.iter().map(String::as_str).collect::<Vec<_>>();
+        let page = fetch_requested_page(
+            &client,
+            &mut wire,
+            crate::state::HistoryFetch::Latest(target),
+            "CHATHISTORY LATEST #room * 100",
+            &latest_refs,
+        )
+        .await;
+        process_history(&state, &outbound, &client, 1, page);
+        let (buffer_id, latest) = take_prepended(&mut event_rx);
+        let mut collected_messages = latest;
+
+        let mut page_end = latest_start;
+        while page_end > 0 {
+            let page_start = page_end.saturating_sub(PAGE_SIZE);
+            let fetch = lock(&state)
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model
+                .request_history(buffer_id)
+                .expect("an older page remains requestable");
+            let items = same_time_history_items(page_start..page_end);
+            let item_refs = items.iter().map(String::as_str).collect::<Vec<_>>();
+            let page = fetch_requested_page_with_end(
+                &client,
+                &mut wire,
+                fetch,
+                &format!("CHATHISTORY BEFORE #room msgid=m{page_end} 100"),
+                &item_refs,
+                page_start == 0,
+            )
+            .await;
+            process_history(&state, &outbound, &client, 1, page);
+            let (_, older) = take_prepended(&mut event_rx);
+            collected_messages.splice(0..0, older);
+            page_end = page_start;
+        }
+
+        let final_fetch = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .request_history(buffer_id)
+            .expect("only an empty older page is terminal");
+        let page = fetch_requested_page(
+            &client,
+            &mut wire,
+            final_fetch,
+            "CHATHISTORY BEFORE #room msgid=m0 100",
+            &[],
+        )
+        .await;
+        process_history(&state, &outbound, &client, 1, page);
+
+        assert_eq!(collected_messages.len(), MESSAGE_COUNT);
+        assert_eq!(
+            collected_messages
+                .iter()
+                .map(|message| message.text.as_str())
+                .collect::<Vec<_>>(),
+            (0..MESSAGE_COUNT)
+                .map(|index| format!("line {index}"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            collected_messages
+                .iter()
+                .flat_map(|message| message.server_ids.iter())
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            MESSAGE_COUNT
         );
     }
 

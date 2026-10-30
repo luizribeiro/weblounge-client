@@ -70,11 +70,11 @@ enum HistoryState {
     Unrequested,
     LoadingLatest,
     Ready {
-        oldest: Option<papo::MessageId>,
+        oldest: Option<papo::HistoryReference>,
         at_start: bool,
     },
     LoadingOlder {
-        oldest: papo::MessageId,
+        oldest: papo::HistoryReference,
     },
 }
 
@@ -83,7 +83,7 @@ pub(crate) enum HistoryFetch {
     Latest(HistoryTarget),
     Before {
         target: HistoryTarget,
-        oldest: papo::MessageId,
+        oldest: papo::HistoryReference,
     },
 }
 
@@ -808,8 +808,8 @@ impl NetworkModel {
     pub(crate) fn finish_history(
         &mut self,
         conversation: &papo::Conversation,
-        oldest: Option<papo::MessageId>,
-        end: bool,
+        oldest: Option<papo::HistoryReference>,
+        empty: bool,
     ) -> Option<(BufferId, bool)> {
         let key = NameKey::from_conversation(conversation)?;
         let buffer_id = self.names.get(&key).copied()?;
@@ -819,13 +819,8 @@ impl NetworkModel {
             HistoryState::LoadingLatest => None,
             _ => return None,
         };
-        let made_progress = match (&previous, &oldest) {
-            (Some(previous), Some(oldest)) => previous != oldest,
-            (None, Some(_)) => true,
-            _ => false,
-        };
         let oldest = oldest.or(previous);
-        let at_start = end || !made_progress || oldest.is_none();
+        let at_start = empty;
         buffer.history = HistoryState::Ready { oldest, at_start };
         Some((buffer_id, at_start))
     }
@@ -2025,7 +2020,9 @@ mod tests {
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None);
         let buffer = model.buffers.get_mut(&buffer_id).expect("buffer exists");
         buffer.history = HistoryState::Ready {
-            oldest: Some(papo::MessageId::from("oldest")),
+            oldest: Some(papo::HistoryReference::from(papo::MessageId::from(
+                "oldest",
+            ))),
             at_start: false,
         };
 
@@ -2033,7 +2030,10 @@ mod tests {
         let Some(HistoryFetch::Before { oldest, .. }) = model.request_history(buffer_id) else {
             panic!("older history remains requestable");
         };
-        assert_eq!(oldest, papo::MessageId::from("oldest"));
+        assert_eq!(
+            oldest,
+            papo::HistoryReference::from(papo::MessageId::from("oldest"))
+        );
     }
 
     #[test]
