@@ -37,3 +37,17 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 29 | 2026-10-29 | A Shift+Enter multiline message shows as one message live, but after reload as separate rows (blank lines as empty rows) with your nick in the wrong colour. Same papo history bug as #3. | blocked on papo |
 | 30 | 2026-10-30 | Mobile: the browser's back/forward swipe gestures still fight the in-app gestures. | queued |
 | 31 | 2026-10-30 | Desktop: a narrow window switches to the touch-first mobile layout. It should stay a small desktop UI, with the sidebar reachable as an overlay (like the members button). | fixed, live |
+| 32 | 2026-10-30 | Scrolling up loads older history but stops before the oldest message the server has. | queued |
+| 33 | 2026-10-30 | Every restored DM shows a red badge: read state isn't synced with the server, so all DM messages count as unread mentions. (Two indicators by design: unread dot vs mention count.) | queued |
+| 34 | 2026-10-30 | Links don't show the pointer (hand) cursor. | queued |
+| 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | queued |
+| 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | queued |
+| 37 | 2026-10-30 | Firefox: the address bar doesn't follow the channel, so reload doesn't reopen it. | queued |
+| 38 | 2026-10-30 | History messages show no mode prefix (asked whether it can always be accurate). | queued |
+| 39 | 2026-10-30 | iPhone: home-screen icon not showing; the generated icons use the line-art chair instead of the brand favicon glyph. | queued |
+| 40 | 2026-10-30 | After the splash, a second 'Signing in…' screen shows a black-on-black chair (desktop too). Drop it. | queued |
+| 41 | 2026-10-30 | iPhone: the home-indicator space applies to every screen (chats list, members) and is too big; it should only pad the composer. | queued |
+| 42 | 2026-10-30 | Mobile: edge swipes still trigger browser history (e.g. back from the chats list to the splash), including in the installed PWA. | queued |
+| 43 | 2026-10-30 | The 'Couldn't start weblounge. Reload to try again.' screen has no retry button; a PWA has no reload. | queued |
+| 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | queued |
+| 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | queued |
