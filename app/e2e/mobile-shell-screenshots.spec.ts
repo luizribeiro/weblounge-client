@@ -116,15 +116,10 @@ test.describe("mobile shell screenshots against local Ergo", () => {
           name: "Open direct message with mel-mobile",
         }),
       ).toBeVisible();
-      await page
-        .getByRole("dialog", { name: "Members" })
-        .evaluate(async (dialog) =>
-          Promise.all(
-            dialog
-              .getAnimations({ subtree: true })
-              .map((animation) => animation.finished),
-          ),
-        );
+      await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
+        "data-phase",
+        "open",
+      );
       await page.emulateMedia({ colorScheme: "light" });
       await expect(page.locator("html")).toHaveAttribute(
         "data-theme",

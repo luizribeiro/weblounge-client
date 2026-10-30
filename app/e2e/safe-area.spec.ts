@@ -33,15 +33,10 @@ test.describe("safe-area profiles against local Ergo", () => {
       await page.getByRole("button", { name: "Show members" }).click();
       const membersDialog = page.getByRole("dialog", { name: "Members" });
       await expect(membersDialog).toBeVisible();
-      await expect
-        .poll(() =>
-          membersDialog.evaluate((dialog) =>
-            dialog
-              .getAnimations({ subtree: true })
-              .every((animation) => animation.playState === "finished"),
-          ),
-        )
-        .toBe(true);
+      await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
+        "data-phase",
+        "open",
+      );
       await auditSafeArea(page);
     });
   });

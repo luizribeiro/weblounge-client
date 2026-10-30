@@ -23,6 +23,7 @@ interface MobileMemberDrawerProps {
 
 export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
   let requestClose = props.onClose;
+  let settledOpen = () => false;
   const [dragProgress, setDragProgress] = createSignal<number>();
   const [dragReturning, setDragReturning] = createSignal(false);
   const activeProgress = () => props.openProgress ?? dragProgress();
@@ -47,7 +48,10 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
   });
   const begin = (event: PointerEvent) => {
     const target = event.target as Element;
-    if (target.closest("input, [data-selectable], [data-horizontal-scroll]"))
+    if (
+      !settledOpen() ||
+      target.closest("input, [data-selectable], [data-horizontal-scroll]")
+    )
       return;
     gesture.begin(
       event,
@@ -73,8 +77,9 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
       }}
       width="min(300px, 82%)"
     >
-      {(close) => {
+      {(close, open) => {
         requestClose = close;
+        settledOpen = open;
         return (
           <div
             class={styles.content}
@@ -85,7 +90,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
             onPointerUp={gesture.end}
           >
             <MemberPanel
-              autofocusFilter={props.openProgress === undefined}
+              autofocusFilter={false}
               bufferTitle={props.bufferTitle}
               closeLabel="Close member list"
               filter={props.filter}

@@ -79,17 +79,26 @@ Motion is a global semantic token layer owned by subsystem 08, not by individual
 ```css
 --wl-motion-push-in: 280ms;
 --wl-motion-push-out: 230ms;
---wl-motion-members: 220ms;
+--wl-motion-drawer-open: 340ms;
+--wl-motion-drawer-close: 260ms;
 --wl-motion-fade: 200ms;
 --wl-motion-preview-fade: 420ms;
---wl-motion-drawer-curve: cubic-bezier(0.32, 0.72, 0, 1);
+--wl-motion-drawer-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
 --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
 ```
 
 Components may transition only `transform` and `opacity`. Under `prefers-reduced-motion: reduce`,
-all duration tokens become `0ms`; components do not add independent media queries or timers.
-Drawers use the faster-settling drawer curve for their panel, scrim, shadow, and drag return; other
-motion uses the standard curve.
+every duration token (any token whose value is in `ms`) becomes `0ms`; components do not add
+independent media queries or timers.
+Drawers use the drawer curve (fast start, soft settle) for their panel, scrim, and drag return;
+other motion uses the standard curve. Drawers move with state-driven CSS transitions:
+the panel mounts at its off-screen offset with the scrim transparent, the open state is set two
+animation frames later so the start state is painted, and closing transitions back to the same
+offset. One offset variable drives both the panel transform and the scrim opacity, so a drag and the
+transition that takes over on release share the same position. The panel's shadow is a static
+`box-shadow`, and `will-change: transform` applies only while it moves. A drawer moves focus into
+itself with `preventScroll`, because focusing an off-screen field scrolls the clipped shell and drags
+the conversation sideways; the mobile drawer focuses no field, so it never raises the keyboard.
 
 ## Focus policy (Luiz, 2026-10-29)
 
@@ -113,7 +122,7 @@ motion uses the standard curve.
 |---|---|---|---|---|
 | Suggestions popup | fade + 4px rise, ≤120ms | fade ≤120ms | composer | message list, composer |
 | On-screen keyboard | platform animation; composer follows via `transform` (VirtualKeyboard API on Chromium, `visualViewport` on iOS) | same | composer while open | header, message list bottom anchor |
-| Member/sidebar drawer | 220ms slide from its owned edge | slide back | drawer filter while open; composer on desktop dismissal, not on mobile | conversation underneath |
+| Member/sidebar drawer | `drawer-open` slide from its owned edge, scrim fading in as the same motion | `drawer-close` slide back; unmounts on the panel's `transitionend` | desktop: drawer filter while open, composer after dismissal; mobile: the drawer, no field | conversation underneath |
 | Inline confirmation | fade ≤120ms above the composer | fade | its primary button; composer afterwards | message list |
 | Swipe-back | follows the finger; completes or eases back | | — | — |
 | New-messages button | fade | fade | — | message list scroll position |

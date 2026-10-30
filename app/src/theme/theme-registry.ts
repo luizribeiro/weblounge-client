@@ -82,9 +82,10 @@ const themeFiles = import.meta.glob("../../themes/*.json", {
 });
 
 export const motionTokens = {
-  drawerCurve: "cubic-bezier(0.32, 0.72, 0, 1)",
+  drawerClose: "260ms",
+  drawerCurve: "cubic-bezier(0.2, 0.9, 0.25, 1)",
+  drawerOpen: "340ms",
   fade: "200ms",
-  members: "220ms",
   previewFade: "420ms",
   pushIn: "280ms",
   pushOut: "230ms",
@@ -96,9 +97,10 @@ export const themes = buildRegistry(themeFiles);
 export const nickPaletteSize = sharedNickPaletteSize(themes);
 
 export function themeStyleSheet(registry = themes): string {
-  const motion = Object.entries(motionTokens)
-    .map(([token, value]) => `${customProperty("motion", token)}:${value}`)
-    .join(";");
+  const motion = motionProperties((value) => value);
+  const reducedMotion = motionProperties((value) =>
+    value.endsWith("ms") ? "0ms" : undefined,
+  );
   const themeRules = registry
     .map((theme) => {
       const values = [
@@ -114,7 +116,20 @@ export function themeStyleSheet(registry = themes): string {
       return `:root[data-theme="${theme.id}"]{${values.join(";")}}`;
     })
     .join("");
-  return `:root{${motion}}${themeRules}@media(prefers-reduced-motion:reduce){:root{--wl-motion-push-in:0ms;--wl-motion-push-out:0ms;--wl-motion-members:0ms;--wl-motion-fade:0ms;--wl-motion-preview-fade:0ms;--wl-motion-suggestions:0ms}}`;
+  return `:root{${motion}}${themeRules}@media(prefers-reduced-motion:reduce){:root{${reducedMotion}}}`;
+}
+
+function motionProperties(
+  mapValue: (value: string) => string | undefined,
+): string {
+  return Object.entries(motionTokens)
+    .flatMap(([token, value]) => {
+      const property = mapValue(value);
+      return property === undefined
+        ? []
+        : [`${customProperty("motion", token)}:${property}`];
+    })
+    .join(";");
 }
 
 function buildRegistry(
