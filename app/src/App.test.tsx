@@ -666,6 +666,13 @@ it("reopens a hidden failed DM from its typed notice", async () => {
     "failed",
   );
   expect(screen.queryByText("Message to ana wasn't delivered")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Failed · Retry" }));
+  expect(client.requests).toContainEqual({
+    id: expect.any(String),
+    request: { type: "retry_message", buffer_id: 2, local_send_id: 7 },
+  });
+  client.emit({ type: "message_retrying", buffer_id: 2, local_send_id: 7 });
+  expect(screen.getByText("Sending…")).toBeVisible();
 });
 
 it("marks a visible live-edge buffer read only after a focused 500ms dwell", async () => {

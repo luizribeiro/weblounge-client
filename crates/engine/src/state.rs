@@ -664,6 +664,34 @@ impl NetworkModel {
         events
     }
 
+    pub(crate) fn retry_send(
+        &mut self,
+        buffer_id: BufferId,
+        local_send_id: LocalSendId,
+    ) -> Option<(PendingSend, EngineToUi)> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.clone())?;
+        let message = buffer.timeline.iter_mut().find(|record| {
+            record.projection.local_send_id == Some(local_send_id)
+                && record.projection.delivery == MessageDelivery::Failed
+        })?;
+        message.projection.delivery = MessageDelivery::Optimistic;
+        let pending = PendingSend {
+            buffer_id,
+            local_send_id,
+            target,
+            text: message.projection.text.clone(),
+            kind: message.projection.kind,
+        };
+        Some((
+            pending,
+            EngineToUi::MessageRetrying {
+                buffer_id,
+                local_send_id,
+            },
+        ))
+    }
+
     pub(crate) fn history_targets(&self) -> Vec<SendTarget> {
         self.buffer_order
             .iter()
@@ -1689,6 +1717,35 @@ mod tests {
                 target,
                 ..
             }] if *buffer_id == buffer.id && target == "#room"
+        ));
+    }
+
+    #[test]
+    fn retrying_a_failed_send_reuses_its_row_and_payload() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
+        let (pending, _) = model
+            .begin_send(buffer.id, "try again".into(), &state)
+            .expect("channel is sendable");
+        model.fail_send(&pending, "engine.send_failed");
+
+        let (retried, event) = model
+            .retry_send(buffer.id, pending.local_send_id)
+            .expect("failed send retries");
+
+        assert_eq!(retried.text, "try again");
+        assert_eq!(retried.local_send_id, pending.local_send_id);
+        assert_eq!(
+            model.buffers[&buffer.id].timeline[0].projection.delivery,
+            crate::MessageDelivery::Optimistic
+        );
+        assert!(matches!(
+            event,
+            EngineToUi::MessageRetrying {
+                buffer_id,
+                local_send_id,
+            } if buffer_id == buffer.id && local_send_id == pending.local_send_id
         ));
     }
 

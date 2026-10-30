@@ -41,6 +41,7 @@ interface MessageListProps {
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -310,6 +311,7 @@ export function MessageList(props: MessageListProps) {
                   nickLookup={nickLookup()}
                   onOpenChannel={props.onOpenChannel}
                   onOpenExternal={props.onOpenExternal}
+                  onRetry={props.onRetry}
                   row={row()}
                 />
               </li>
@@ -331,6 +333,7 @@ function TimelineRowView(props: {
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly row: TimelineRow | undefined;
 }) {
   return (
@@ -355,6 +358,7 @@ function TimelineRowView(props: {
                 nickLookup={props.nickLookup}
                 onOpenChannel={props.onOpenChannel}
                 onOpenExternal={props.onOpenExternal}
+                onRetry={props.onRetry}
               />
             )}
           </Match>
@@ -379,6 +383,7 @@ function MessageRow(props: {
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly onRetry?: ((localSendId: number) => void) | undefined;
 }) {
   const message = props.message;
   if (message.kind === "notice")
@@ -420,7 +425,7 @@ function MessageRow(props: {
               text={message.text}
             />
           </Selectable>
-          <Delivery message={message} />
+          <Delivery message={message} onRetry={props.onRetry} />
         </>
       ) : (
         <>
@@ -452,7 +457,7 @@ function MessageRow(props: {
               text={message.text}
             />
           </Selectable>
-          <Delivery message={message} />
+          <Delivery message={message} onRetry={props.onRetry} />
         </>
       )}
     </div>
@@ -500,11 +505,26 @@ function NoticeRow(props: {
   );
 }
 
-function Delivery(props: { readonly message: MessageProjection }) {
+function Delivery(props: {
+  readonly message: MessageProjection;
+  readonly onRetry?: ((localSendId: number) => void) | undefined;
+}) {
   if (props.message.delivery === "optimistic")
     return <Line class={styles.pending}>Sending…</Line>;
-  if (props.message.delivery === "failed")
-    return <Line class={styles.failed}>Failed</Line>;
+  if (props.message.delivery === "failed") {
+    const localSendId = props.message.local_send_id;
+    return localSendId === null || props.onRetry === undefined ? (
+      <Line class={styles.failed}>Failed</Line>
+    ) : (
+      <button
+        class={`${styles.failed} ${styles.retry}`}
+        onClick={() => props.onRetry?.(localSendId)}
+        type="button"
+      >
+        Failed · Retry
+      </button>
+    );
+  }
   return null;
 }
 

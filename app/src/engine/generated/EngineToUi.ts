@@ -188,7 +188,15 @@ local_send_id: LocalSendId,
 /**
  * Stable localization key, never a secret-bearing error string.
  */
-message_key: string, } | { "type": "unread_changed",
+message_key: string, } | { "type": "message_retrying",
+/**
+ * Destination buffer.
+ */
+buffer_id: BufferId,
+/**
+ * Retried optimistic send identity.
+ */
+local_send_id: LocalSendId, } | { "type": "unread_changed",
 /**
  * Buffer whose counters changed.
  */

@@ -505,6 +505,18 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "message_retrying":
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.local_send_id === "number"
+      ) {
+        return {
+          type: "message_retrying",
+          buffer_id: value.buffer_id,
+          local_send_id: value.local_send_id,
+        };
+      }
+      break;
     case "unread_changed":
       if (
         typeof value.buffer_id === "number" &&
@@ -561,6 +573,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "members_changed" ||
     value === "message_confirmed" ||
     value === "message_failed" ||
+    value === "message_retrying" ||
     value === "unread_changed" ||
     value === "read_marker_moved"
   );

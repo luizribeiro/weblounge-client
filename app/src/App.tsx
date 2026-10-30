@@ -377,6 +377,17 @@ export function App(props: AppProps) {
               request: { type: "open_direct", network_id: networkId, nick },
             });
           }}
+          onRetry={(bufferId, localSendId) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: {
+                type: "retry_message",
+                buffer_id: bufferId,
+                local_send_id: localSendId,
+              },
+            });
+          }}
         />
       )}
       <Show when={notifier.notice()}>
@@ -625,6 +636,19 @@ function applyDebugEvent(
         (current.get(message.buffer_id) ?? []).map((item) =>
           item.local_send_id === message.local_send_id
             ? { ...item, delivery: "failed" }
+            : item,
+        ),
+      );
+      return next;
+    });
+  } else if (message.type === "message_retrying") {
+    setMessages((current) => {
+      const next = new Map(current);
+      next.set(
+        message.buffer_id,
+        (current.get(message.buffer_id) ?? []).map((item) =>
+          item.local_send_id === message.local_send_id
+            ? { ...item, delivery: "optimistic" }
             : item,
         ),
       );

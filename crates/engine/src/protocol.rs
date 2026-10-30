@@ -436,6 +436,13 @@ pub enum EngineRequest {
         /// Message body.
         text: String,
     },
+    /// Retry one retained failed optimistic send.
+    RetryMessage {
+        /// Buffer containing the failed row.
+        buffer_id: BufferId,
+        /// Stable local send identity to retry in place.
+        local_send_id: LocalSendId,
+    },
     /// Parse and submit ordinary composer text or a supported slash command.
     SubmitInput {
         /// Buffer whose composer produced the input.
@@ -679,6 +686,13 @@ pub enum EngineToUi {
         local_send_id: LocalSendId,
         /// Stable localization key, never a secret-bearing error string.
         message_key: String,
+    },
+    /// Return one failed row to its optimistic state before retrying it.
+    MessageRetrying {
+        /// Destination buffer.
+        buffer_id: BufferId,
+        /// Retried optimistic send identity.
+        local_send_id: LocalSendId,
     },
     /// Update unread and mention counters.
     UnreadChanged {

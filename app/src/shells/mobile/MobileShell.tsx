@@ -328,6 +328,7 @@ export function MobileShell(props: MobileShellProps) {
               onOpenMembers={openMembers}
               onQuery={setQuery}
               onRequestCompletion={props.onRequestCompletion}
+              onRetry={props.onRetry}
               onScroll={setScrollTop}
               onSend={props.onSend}
               onTransitionEnd={() => setStack(finishTransition)}

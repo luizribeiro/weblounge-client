@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
@@ -70,6 +70,19 @@ it("renders mention, nick colour, and failed delivery presentation", () => {
     color: "var(--wl-nick-1)",
   });
   expect(screen.getByText("Failed")).toBeInTheDocument();
+});
+
+it("offers Retry for a failed local send", () => {
+  const retry = vi.fn();
+  render(() => (
+    <MessageList
+      messages={[{ ...message, local_send_id: 7 }]}
+      onRetry={retry}
+    />
+  ));
+
+  fireEvent.click(screen.getByRole("button", { name: "Failed · Retry" }));
+  expect(retry).toHaveBeenCalledWith(7);
 });
 
 it("anchors the viewport when history rows are prepended", async () => {

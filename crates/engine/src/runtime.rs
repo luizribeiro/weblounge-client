@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, EngineRequest, EngineRequestEnvelope,
-    EngineToUi, MembershipKind, MessageId, NetworkConnectionState, NetworkId,
+    EngineToUi, LocalSendId, MembershipKind, MessageId, NetworkConnectionState, NetworkId,
     commands::{self, Command},
     state::{HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
 };
@@ -181,6 +181,10 @@ impl Runtime {
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
             }
+            EngineRequest::RetryMessage {
+                buffer_id,
+                local_send_id,
+            } => self.retry_message(envelope.id, buffer_id, local_send_id),
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
             }
@@ -552,6 +556,31 @@ impl Runtime {
             let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
         output
+    }
+
+    fn retry_message(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        local_send_id: LocalSendId,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some((pending, event)) = running.model.retry_send(buffer_id, local_send_id) else {
+            return rejected_command(command_id, "engine.buffer_not_sendable");
+        };
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            finish_send(&state, &outbound, &client, instance, &pending).await;
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
+        vec![event]
     }
 
     fn join(&self, command_id: String, targets: Vec<JoinTarget>) -> Vec<EngineToUi> {

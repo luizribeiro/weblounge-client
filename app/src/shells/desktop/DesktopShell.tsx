@@ -77,6 +77,9 @@ export interface DesktopShellProps {
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
     | undefined;
+  readonly onRetry?:
+    | ((bufferId: number, localSendId: number) => void)
+    | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -277,6 +280,11 @@ export function DesktopShell(props: DesktopShellProps) {
                   const buffer = activeBuffer();
                   if (buffer !== undefined)
                     void props.onSend(buffer.id, `/join ${channel}`);
+                }}
+                onRetry={(localSendId) => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined)
+                    props.onRetry?.(buffer.id, localSendId);
                 }}
                 readThrough={activeBuffer()?.read_through}
                 registerController={(controller) => {
