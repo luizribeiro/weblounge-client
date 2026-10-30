@@ -82,7 +82,7 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   const [sidebarShown, setSidebarShown] = createSignal(true);
   const [memberPanelOpen, setMemberPanelOpen] = createSignal(false);
-  const [drawer, setDrawer] = createSignal<"sidebar" | "members">();
+  const [drawer, setDrawer] = createSignal<"sidebar" | "members" | null>(null);
   const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   const [foreground, setForeground] = createSignal(
@@ -122,7 +122,7 @@ export function DesktopShell(props: DesktopShellProps) {
         ?.focus({ preventScroll: true }),
     );
   const closeDrawer = (restoreFocus = true) => {
-    setDrawer(undefined);
+    setDrawer(null);
     if (restoreFocus) focusComposer();
   };
   const context = (): ActionContext => ({
@@ -156,7 +156,7 @@ export function DesktopShell(props: DesktopShellProps) {
         if (!membersAvailable()) return;
         if (membersInline()) {
           setMemberPanelOpen((open) => !open);
-          setDrawer(undefined);
+          setDrawer(null);
           return;
         }
         setMemberPanelOpen(true);
@@ -172,7 +172,7 @@ export function DesktopShell(props: DesktopShellProps) {
       "sidebar.toggle": () => {
         if (sidebarInline()) {
           setSidebarShown((shown) => !shown);
-          setDrawer(undefined);
+          setDrawer(null);
           return;
         }
         setSidebarShown(true);
