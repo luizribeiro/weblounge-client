@@ -49,8 +49,8 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 41 | 2026-10-30 | iPhone: the home-indicator space applies to every screen (chats list, members) and is too big; it should only pad the composer. | fixed, local |
 | 42 | 2026-10-30 | Mobile: edge swipes still trigger browser history (e.g. back from the chats list to the splash), including in the installed PWA. | fixed, local |
 | 43 | 2026-10-30 | The 'Couldn't start weblounge. Reload to try again.' screen has no retry button; a PWA has no reload. | queued |
-| 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | fixed, local |
-| 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | queued |
+| 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | fixed (648b548), not deployed yet |
+| 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | fixed (648b548), not deployed yet |
 | 46 | 2026-10-30 | Sometimes the buffer scrolls on its own shortly after opening a channel. Re-check after papo's history fix. | queued |
 | 47 | 2026-10-30 | Tab-completing a nick at the start of a message should add ": " (like the @ suggestion does). | queued |
 | 48 | 2026-10-30 | Two long live messages overlap each other, with the "New" divider drawn across the text (live on a7211bd). | fixed (f4c9dbd), not deployed yet |
