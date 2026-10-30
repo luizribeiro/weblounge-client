@@ -158,7 +158,7 @@
           version = "0.1.0";
           src = appSource;
           fetcherVersion = 5;
-          hash = "sha256-WOnLqtnVYDbMWWuIY0mTuQ9AbRhUIxqalLchfijXZq4=";
+          hash = "sha256-A7do6EnRr6W96nJj7xx43zlA7SbmYnclFIAMBxRtb4Y=";
         };
         vitestEnvironment = {
           maxWorkers = 4;
