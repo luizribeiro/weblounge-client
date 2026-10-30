@@ -372,15 +372,28 @@ export async function auditSafeArea(page: Page): Promise<void> {
       node = walker.nextNode();
     }
 
-    const headers = [...root.querySelectorAll("header")].filter(visible);
-    const headerTop = headers[0]?.getBoundingClientRect().top ?? inset.top;
+    const headerContent = [
+      ...root.querySelectorAll(
+        "header button, header input, header h1, header h2, header h3, header [data-selectable]",
+      ),
+    ].filter(visible);
+    const headerTop = Math.min(
+      ...headerContent.map((element) => element.getBoundingClientRect().top),
+      inset.top,
+    );
+    const dialog = [...root.querySelectorAll("[role='dialog']")].find(visible);
+    const drawerPanel = dialog?.querySelector("aside");
     const composer = [...root.querySelectorAll("[data-composer]")].find(
       visible,
     );
-    const composerBottom =
-      composer?.getBoundingClientRect().bottom ?? innerHeight - inset.bottom;
+    const activeBottom =
+      drawerPanel === null || drawerPanel === undefined
+        ? (composer?.getBoundingClientRect().bottom ??
+          innerHeight - inset.bottom)
+        : drawerPanel.getBoundingClientRect().bottom -
+          Number.parseFloat(getComputedStyle(drawerPanel).paddingBottom);
     return {
-      bottomError: Math.abs(composerBottom - (innerHeight - inset.bottom)),
+      bottomError: Math.abs(activeBottom - (innerHeight - inset.bottom)),
       headerError: Math.max(0, inset.top - headerTop),
       violations,
     };
