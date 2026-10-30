@@ -22,6 +22,7 @@ test.describe("composer suggestions against local Ergo", () => {
         await installNativeFeelInstrumentation(page);
         await page.emulateMedia({ colorScheme: "light" });
         await page.goto("/?irc-password=weblounge-test");
+        await page.getByRole("button", { name: /^#weblounge-test/ }).click();
         const composer = page.getByRole("textbox", {
           name: "Message #weblounge-test",
         });
