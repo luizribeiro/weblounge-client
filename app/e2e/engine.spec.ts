@@ -239,9 +239,9 @@ test.describe("local Ergo user flow", () => {
       ).toHaveCount(0);
       await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
       const seeds = Array.from(
-        { length: 12 },
+        { length: 30 },
         (_, index) =>
-          `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(12)}`,
+          `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(6)}`,
       );
       for (const seed of seeds) {
         await bot.privmsgConfirmed(channel, seed);
