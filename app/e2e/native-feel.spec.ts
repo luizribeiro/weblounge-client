@@ -96,103 +96,117 @@ test.describe("native feel against local Ergo", () => {
     await expect(page.locator(":focus")).toHaveCSS("outline-style", "solid");
   });
 
-  test("batches hidden message rendering into one visible catch-up", async ({
-    page,
-  }) => {
-    await installNativeFeelInstrumentation(page);
-    await page.setViewportSize({ width: 402, height: 874 });
-    await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
-    await expect(
-      page.getByRole("heading", { name: /#weblounge-test/ }),
-    ).toBeVisible();
-    await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
-    const bot = await IrcClient.connect(
-      "hidden-audit",
-      "weblounge-bot",
-      "weblounge-bot-test",
-      "#weblounge-test",
-    );
-    const text = `hidden message ${Date.now()}`;
-    try {
-      await page.getByRole("button", { name: "Show members" }).click();
-      await expect(page.getByRole("dialog", { name: "Members" })).toBeVisible();
+  test.describe("touch-primary rendering", () => {
+    test.use({
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 402, height: 874 },
+    });
+
+    test("batches hidden message rendering into one visible catch-up", async ({
+      page,
+    }) => {
+      await installNativeFeelInstrumentation(page);
+      await page.goto("/?irc-password=weblounge-test");
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
       await expect(
-        page.getByRole("button", {
-          name: "Open direct message with hidden-audit",
-        }),
+        page.getByRole("heading", { name: /#weblounge-test/ }),
       ).toBeVisible();
-      await page.waitForTimeout(100);
-      await page.evaluate(
-        () =>
-          new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-          ),
+      await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      const bot = await IrcClient.connect(
+        "hidden-audit",
+        "weblounge-bot",
+        "weblounge-bot-test",
+        "#weblounge-test",
       );
-      await page.evaluate(() => {
-        const state = window as Window & {
-          __hiddenMutations?: number;
-          __nativeFeelMetrics?: { enginePatches: number };
-          __setNativeVisibility?: (hidden: boolean) => void;
-        };
-        const list = document.querySelector("[data-message-list]");
-        if (list === null) throw new Error("channel message list is missing");
-        state.__hiddenMutations = 0;
-        let catchupPending = false;
-        new MutationObserver(() => {
-          if (catchupPending) return;
-          catchupPending = true;
-          state.__hiddenMutations = (state.__hiddenMutations ?? 0) + 1;
-          requestAnimationFrame(() => {
-            catchupPending = false;
-          });
-        }).observe(list, { attributes: true, childList: true, subtree: true });
-        if (state.__nativeFeelMetrics === undefined) {
-          throw new Error("native-feel metrics are missing");
-        }
-        state.__nativeFeelMetrics.enginePatches = 0;
-        state.__setNativeVisibility?.(true);
-      });
-
-      bot.privmsg("#weblounge-test", text);
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (
-                window as Window & {
-                  __nativeFeelMetrics?: { enginePatches: number };
-                }
-              ).__nativeFeelMetrics?.enginePatches ?? 0,
-          ),
-        )
-        .toBe(1);
-      expect(
+      const text = `hidden message ${Date.now()}`;
+      try {
+        await page.getByRole("button", { name: "Show members" }).click();
+        await expect(
+          page.getByRole("dialog", { name: "Members" }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", {
+            name: "Open direct message with hidden-audit",
+          }),
+        ).toBeVisible();
         await page.evaluate(
           () =>
-            (window as Window & { __hiddenMutations?: number })
-              .__hiddenMutations,
-        ),
-      ).toBe(0);
-      await expect(page.getByText(text, { exact: false })).toHaveCount(0);
-
-      await page.evaluate(() =>
-        (
-          window as Window & {
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        await page.evaluate(() => {
+          const state = window as Window & {
+            __hiddenMutations?: number;
+            __nativeFeelMetrics?: { enginePatches: number };
             __setNativeVisibility?: (hidden: boolean) => void;
+          };
+          const list = document.querySelector("[data-message-list]");
+          if (list === null) throw new Error("channel message list is missing");
+          state.__hiddenMutations = 0;
+          let catchupPending = false;
+          new MutationObserver(() => {
+            if (catchupPending) return;
+            catchupPending = true;
+            state.__hiddenMutations = (state.__hiddenMutations ?? 0) + 1;
+            requestAnimationFrame(() => {
+              catchupPending = false;
+            });
+          }).observe(list, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+          });
+          if (state.__nativeFeelMetrics === undefined) {
+            throw new Error("native-feel metrics are missing");
           }
-        ).__setNativeVisibility?.(false),
-      );
-      await expect(page.getByText(text, { exact: false })).toBeVisible();
-      expect(
-        await page.evaluate(
-          () =>
-            (window as Window & { __hiddenMutations?: number })
-              .__hiddenMutations,
-        ),
-      ).toBe(1);
-    } finally {
-      bot.close();
-    }
+          state.__nativeFeelMetrics.enginePatches = 0;
+          state.__setNativeVisibility?.(true);
+        });
+
+        bot.privmsg("#weblounge-test", text);
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                (
+                  window as Window & {
+                    __nativeFeelMetrics?: { enginePatches: number };
+                  }
+                ).__nativeFeelMetrics?.enginePatches ?? 0,
+            ),
+          )
+          .toBe(1);
+        expect(
+          await page.evaluate(
+            () =>
+              (window as Window & { __hiddenMutations?: number })
+                .__hiddenMutations,
+          ),
+        ).toBe(0);
+        await expect(page.getByText(text, { exact: false })).toHaveCount(0);
+
+        await page.evaluate(() =>
+          (
+            window as Window & {
+              __setNativeVisibility?: (hidden: boolean) => void;
+            }
+          ).__setNativeVisibility?.(false),
+        );
+        await expect(page.getByText(text, { exact: false })).toBeVisible();
+        expect(
+          await page.evaluate(
+            () =>
+              (window as Window & { __hiddenMutations?: number })
+                .__hiddenMutations,
+          ),
+        ).toBe(1);
+      } finally {
+        bot.close();
+      }
+    });
   });
 });

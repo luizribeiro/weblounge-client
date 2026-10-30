@@ -221,6 +221,8 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     );
   expect(draggableChrome).toBe(0);
 
+  await auditSafeArea(page);
+
   await page.evaluate(async () => {
     await document.fonts.ready;
     await new Promise<void>((resolve) =>
@@ -237,7 +239,6 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   );
   expect(layoutShift).toBeLessThanOrEqual(0.01);
 
-  await page.waitForTimeout(100);
   await page.evaluate(() => {
     const metrics = (
       window as Window & {
@@ -258,7 +259,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     metrics.timeouts = 0;
     metrics.trackingWaste = true;
   });
-  await page.waitForTimeout(idleObservationMilliseconds);
+  await page.waitForTimeout(idleObservationMilliseconds); // wait-ok: measures the fixed idle-waste window.
   const result = await page.evaluate(() => {
     const metrics = (
       window as Window & {
@@ -302,6 +303,92 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     intervals: 0,
     timeouts: 0,
   });
+}
+
+export async function auditSafeArea(page: Page): Promise<void> {
+  const result = await page.locator("[data-app-root]").evaluate((root) => {
+    const rootStyle = getComputedStyle(root);
+    const inset = {
+      top: Number.parseFloat(rootStyle.getPropertyValue("--wl-safe-top")) || 0,
+      right:
+        Number.parseFloat(rootStyle.getPropertyValue("--wl-safe-right")) || 0,
+      bottom:
+        Number.parseFloat(rootStyle.getPropertyValue("--wl-safe-bottom")) || 0,
+      left:
+        Number.parseFloat(rootStyle.getPropertyValue("--wl-safe-left")) || 0,
+    };
+    if (Object.values(inset).every((value) => value === 0)) {
+      return { bottomError: 0, headerError: 0, violations: [] as string[] };
+    }
+
+    const tolerance = 1;
+    const visible = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return (
+        box.width > 0 &&
+        box.height > 0 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.clipPath === "none" &&
+        Number.parseFloat(style.opacity) > 0 &&
+        box.bottom > 0 &&
+        box.top < innerHeight &&
+        box.right > 0 &&
+        box.left < innerWidth
+      );
+    };
+    const violations: string[] = [];
+    const checkRect = (rect: DOMRect, label: string) => {
+      if (rect.left < inset.left - tolerance)
+        violations.push(`${label} crosses the left safe area`);
+      if (rect.right > innerWidth - inset.right + tolerance)
+        violations.push(`${label} crosses the right safe area`);
+    };
+
+    const interactive = root.querySelectorAll(
+      "button, input, textarea, select, a[href], [role='button']",
+    );
+    for (const element of interactive) {
+      if (visible(element))
+        checkRect(element.getBoundingClientRect(), element.tagName);
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node !== null) {
+      const parent = node.parentElement;
+      if (
+        node.textContent?.trim() !== "" &&
+        parent !== null &&
+        parent.closest("[aria-hidden='true'], script, style") === null &&
+        visible(parent)
+      ) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const label = `${parent.tagName}: ${node.textContent.trim().slice(0, 32)}`;
+        for (const rect of range.getClientRects()) checkRect(rect, label);
+      }
+      node = walker.nextNode();
+    }
+
+    const headers = [...root.querySelectorAll("header")].filter(visible);
+    const headerTop = headers[0]?.getBoundingClientRect().top ?? inset.top;
+    const composer = [...root.querySelectorAll("[data-composer]")].find(
+      visible,
+    );
+    const composerBottom =
+      composer?.getBoundingClientRect().bottom ?? innerHeight - inset.bottom;
+    return {
+      bottomError: Math.abs(composerBottom - (innerHeight - inset.bottom)),
+      headerError: Math.max(0, inset.top - headerTop),
+      violations,
+    };
+  });
+
+  expect(result.violations).toEqual([]);
+  expect(result.headerError).toBeLessThanOrEqual(1);
+  expect(result.bottomError).toBeLessThanOrEqual(1);
 }
 
 export async function auditMessageSelection(
