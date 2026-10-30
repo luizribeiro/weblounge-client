@@ -44,6 +44,16 @@ it("labels only non-default networks and summarizes connection state", () => {
   expect(networkLabel(networks, 1)).toBeUndefined();
   expect(networkLabel(networks, 2)).toBe("Libera");
   expect(connectionSummary(networks)).toBe("");
+  expect(
+    connectionSummary([
+      {
+        id: 1,
+        label: "Local",
+        nickname: "me",
+        state: { offline: { reason: "device_offline" } },
+      },
+    ]),
+  ).toBe("Offline");
 });
 
 function buffer(

@@ -68,5 +68,9 @@ export function connectionSummary(
     networks.some((network) => connectionStateKind(network.state) === "failed")
   )
     return "Offline · Retry";
+  if (
+    networks.some((network) => connectionStateKind(network.state) === "offline")
+  )
+    return "Offline";
   return networks.length === 0 ? "Offline" : `${online} connected`;
 }
