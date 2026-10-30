@@ -6,6 +6,7 @@ import {
   densityPresets,
 } from "../../density/density";
 import type { EngineToUi } from "../../engine/protocol";
+import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import styles from "./MemberPanel.module.css";
 import { type Member, MemberRow } from "./MemberRow";
 import {
@@ -49,6 +50,7 @@ export function MemberPanel(props: MemberPanelProps) {
       return memberRowCount(counts());
     },
     getScrollElement: () => list ?? null,
+    observeElementOffset: observeVirtualizerOffset,
     initialRect: { width: 216, height: 600 },
     observeElementRect: (instance, callback) =>
       observeElementRect(instance, (rect) =>
@@ -59,6 +61,7 @@ export function MemberPanel(props: MemberPanelProps) {
         ? metrics.group
         : metrics.member,
     overscan: 10,
+    useAnimationFrameWithResizeObserver: true,
   });
   const virtualRows = createMemo(() => virtualizer.getVirtualItems());
   const renderedRows = createMemo(() => {

@@ -23,6 +23,7 @@ import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
+import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import styles from "./MessageList.module.css";
 import { MessageText } from "./MessageText";
 import {
@@ -114,6 +115,7 @@ export function MessageList(props: MessageListProps) {
       return rows().length;
     },
     getScrollElement: () => list ?? null,
+    observeElementOffset: observeVirtualizerOffset,
     initialRect: { width: 1024, height: 768 },
     observeElementRect: (instance, callback) =>
       observeElementRect(instance, (rect) => {

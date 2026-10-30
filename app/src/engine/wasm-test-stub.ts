@@ -1,4 +1,6 @@
-export default async function initialize(): Promise<never> {
+export default async function initialize(_input: {
+  module_or_path: string;
+}): Promise<never> {
   throw new Error("tests must inject an engine loader");
 }
 

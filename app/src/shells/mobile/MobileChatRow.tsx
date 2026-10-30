@@ -17,8 +17,6 @@ interface MobileChatRowProps {
 
 export function MobileChatRow(props: MobileChatRowProps) {
   const message = () => props.buffer.last_message;
-  const badge = () => props.buffer.mentions || props.buffer.unread;
-  const badgeKind = () => (props.buffer.mentions > 0 ? "mentions" : "unread");
   return (
     <button
       aria-label={props.buffer.title}
@@ -54,14 +52,22 @@ export function MobileChatRow(props: MobileChatRowProps) {
           {props.previews && message() !== undefined && (
             <Line class={styles.preview}>{preview(props.buffer)}</Line>
           )}
-          {badge() > 0 && (
+          {props.buffer.mentions > 0 ? (
             <span
-              aria-label={`${badge()} ${badgeKind()}`}
+              aria-label={`${props.buffer.mentions} mentions`}
               class={styles.badge}
               role="status"
             >
-              {badge()}
+              {props.buffer.mentions}
             </span>
+          ) : (
+            props.buffer.unread > 0 && (
+              <span
+                aria-label={`${props.buffer.unread} unread`}
+                class={styles.unreadDot}
+                role="status"
+              />
+            )
           )}
         </span>
       </span>

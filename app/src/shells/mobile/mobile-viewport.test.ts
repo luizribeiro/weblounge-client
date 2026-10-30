@@ -10,9 +10,10 @@ it("tracks the visual viewport until disposed", () => {
 
   Object.assign(viewport, { height: 516, offsetTop: 42 });
   viewport.dispatchEvent(new Event("resize"));
-  dispose();
   Object.assign(viewport, { height: 500 });
   viewport.dispatchEvent(new Event("scroll"));
+  dispose();
+  viewport.dispatchEvent(new Event("resize"));
 
   expect(onChange.mock.calls).toEqual([
     [{ height: 874, offsetTop: 0 }],

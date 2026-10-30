@@ -57,7 +57,7 @@ it("renders preview, non-default network, time, and mention badge", () => {
   expect(document.querySelector("time")).toBeInTheDocument();
 });
 
-it("omits the default network label and uses the unread badge", () => {
+it("omits the default network label and uses a subtle unread dot", () => {
   render(() => (
     <MobileChatRow
       buffer={buffer({ mentions: 0 })}
@@ -69,6 +69,7 @@ it("omits the default network label and uses the unread badge", () => {
 
   expect(screen.queryByText("Libera")).not.toBeInTheDocument();
   expect(screen.getByLabelText("3 unread")).toBeVisible();
+  expect(screen.queryByText("3")).not.toBeInTheDocument();
 });
 
 it("uses the same locale time in chat previews and message rows", () => {

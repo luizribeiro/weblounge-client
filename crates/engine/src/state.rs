@@ -70,11 +70,11 @@ enum HistoryState {
     Unrequested,
     LoadingLatest,
     Ready {
-        oldest: Option<papo::MessageId>,
+        oldest: Option<papo::HistoryReference>,
         at_start: bool,
     },
     LoadingOlder {
-        oldest: papo::MessageId,
+        oldest: papo::HistoryReference,
     },
 }
 
@@ -83,7 +83,7 @@ pub(crate) enum HistoryFetch {
     Latest(HistoryTarget),
     Before {
         target: HistoryTarget,
-        oldest: papo::MessageId,
+        oldest: papo::HistoryReference,
     },
 }
 
@@ -105,6 +105,13 @@ impl HistoryTarget {
         match self {
             Self::Channel(channel) => NameKey::Channel(channel.clone()),
             Self::Direct(nick) => NameKey::Direct(nick.clone()),
+        }
+    }
+
+    pub(crate) fn conversation(&self) -> papo::Conversation {
+        match self {
+            Self::Channel(channel) => papo::Conversation::Channel(channel.clone()),
+            Self::Direct(nick) => papo::Conversation::Private(nick.clone()),
         }
     }
 }
@@ -808,8 +815,8 @@ impl NetworkModel {
     pub(crate) fn finish_history(
         &mut self,
         conversation: &papo::Conversation,
-        oldest: Option<papo::MessageId>,
-        end: bool,
+        oldest: Option<papo::HistoryReference>,
+        empty: bool,
     ) -> Option<(BufferId, bool)> {
         let key = NameKey::from_conversation(conversation)?;
         let buffer_id = self.names.get(&key).copied()?;
@@ -819,13 +826,8 @@ impl NetworkModel {
             HistoryState::LoadingLatest => None,
             _ => return None,
         };
-        let made_progress = match (&previous, &oldest) {
-            (Some(previous), Some(oldest)) => previous != oldest,
-            (None, Some(_)) => true,
-            _ => false,
-        };
         let oldest = oldest.or(previous);
-        let at_start = end || !made_progress || oldest.is_none();
+        let at_start = empty;
         buffer.history = HistoryState::Ready { oldest, at_start };
         Some((buffer_id, at_start))
     }
@@ -1126,7 +1128,8 @@ impl NetworkModel {
                 .flatten()
         });
         let mentioned = incoming.authorship != MessageAuthorship::Own
-            && mentions_own_nick(&incoming.text, state);
+            && (matches!(incoming.conversation, NameKey::Direct(_))
+                || mentions_own_nick(&incoming.text, state));
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
         let message = MessageProjection {
             id: self.allocate_message_id(),
@@ -2025,7 +2028,9 @@ mod tests {
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None);
         let buffer = model.buffers.get_mut(&buffer_id).expect("buffer exists");
         buffer.history = HistoryState::Ready {
-            oldest: Some(papo::MessageId::from("oldest")),
+            oldest: Some(papo::HistoryReference::from(papo::MessageId::from(
+                "oldest",
+            ))),
             at_start: false,
         };
 
@@ -2033,7 +2038,10 @@ mod tests {
         let Some(HistoryFetch::Before { oldest, .. }) = model.request_history(buffer_id) else {
             panic!("older history remains requestable");
         };
-        assert_eq!(oldest, papo::MessageId::from("oldest"));
+        assert_eq!(
+            oldest,
+            papo::HistoryReference::from(papo::MessageId::from("oldest"))
+        );
     }
 
     #[test]
@@ -2299,6 +2307,16 @@ mod tests {
         }
         let id = *model.names.values().next().expect("buffer exists");
 
+        assert_eq!(model.buffers[&id].projection.mentions, 1);
+    }
+
+    #[test]
+    fn every_incoming_direct_message_is_a_mention() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(direct_incoming(&state, "alice", "hello", 1), &state);
+        let id = *model.names.values().next().expect("direct buffer exists");
+
+        assert_eq!(model.buffers[&id].projection.unread, 1);
         assert_eq!(model.buffers[&id].projection.mentions, 1);
     }
 

@@ -34,7 +34,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 7d. [ ] Mobile and PWA polish, iPhone 16 Pro as the reference device (Android first-class too): manifest, icons and iOS launch images, standalone display, status-bar colour per theme under the Dynamic Island (`theme-color` per light/dark, translucent iOS status bar), safe areas from `env()` only (Dynamic Island, home indicator, landscape), `100dvh` fixed root, composer above the keyboard on iOS and Android, no input zoom/double-tap zoom/rubber-band/pull-to-refresh/callouts on chrome, swipe-back not fighting Safari's edge swipe, Android back via the stack, Dynamic Type/font scaling, minimal app-shell service worker. Tested with Playwright WebKit (iPhone 16 Pro profile) and an Android profile; Luiz's phone is the final check once beta.weblounge.org exists.
 7e. [x] Perf scenarios run several times and report the median (single runs quantise to whole frames and are noisy under throttling).
 7f. [ ] First paint and loading: inline splash (theme background, large tinted chair mark), metrics-matched font fallback, ≤200ms cross-fade, CI filmstrip test (no blank/white frames, no font shift; light/dark, Chromium+WebKit, slow network).
-8. [ ] Production-shaped local Ergo profile and `wss://` TLS proxy are available through `nix run .#ergo-weblounge`; origin-refused connections now show a human error. The profile matches SASL-required registration, always-on, persistent channel and opt-out DM history, read markers, and the production command policy. Remaining scenarios: WSS/SASL/autojoin, always-on channel and DM catch-up, channel and DM history across an Ergo restart, read-marker sync between browser contexts, and the profile-level origin-refusal assertion. Redaction remains optional until client support exists. Testing against the real server waits for beta.weblounge.org (milestone 4).
+8. [ ] Production-shaped local Ergo profile and `wss://` TLS proxy are available through `nix run .#ergo-weblounge`; origin-refused connections now show a human error. The profile matches SASL-required registration, always-on, persistent channel and opt-out DM history, read markers, and the production command policy. Read-marker sync between independent browser contexts and paging through 1,000+ production-profile messages are covered. Remaining scenarios: WSS/SASL/autojoin, always-on channel and DM catch-up, channel and DM history across an Ergo restart, and the profile-level origin-refusal assertion. Redaction remains optional until client support exists. Testing against the real server waits for beta.weblounge.org (milestone 4).
 8b. [ ] End-to-end perf scenarios through the engine and worker: cold/warm start, buffer switch, 2,000-message burst, reconnect, typing latency (doc 21 budgets).
 
 ## After milestone 2: dogfood first (Luiz, 2026-10-28)
@@ -47,7 +47,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     `draft/multiline-concat` batch nested in `CHATHISTORY`, so the engine can only fall back to
     receipt time. Same-msgid live/history overlap now enriches an untimed row instead of dropping
     the history metadata; ordinary PRIVMSG and NOTICE replay preserves server time.
-  - D1. [ ] Load older history on scroll-up (`CHATHISTORY BEFORE` with msgid cursors; scroll anchoring already exists).
+  - D1. [x] Load older history on scroll-up through an empty `CHATHISTORY BEFORE` page, with
+    eviction-independent event cursors and exact ordering/deduplication across more than 1,000
+    messages (scroll anchoring already exists).
   - D2. [x] Rebuild the DM list from a 30-day `CHATHISTORY TARGETS` window on connect and
     reconnect, capped at 100 direct conversations and ordered by server-reported recent activity.
     Latest history hydrates desktop and mobile previews without disturbing older-page cursors.
@@ -90,6 +92,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Submit exact composer completions on Enter and keep shell sizing CSP-safe.
   - [x] Let the desktop conversation reclaim the full width of collapsed side panels.
   - [x] Dim every overlay drawer with a theme-owned scrim in light and dark mode.
+  - [x] Keep production consoles clean through desktop and mobile load, navigation, scrolling,
+    sending, and member-list flows in Chromium, Firefox, and WebKit. Wasm initializes through
+    the object API, and virtualizer offset and resize delivery avoid browser diagnostics.
+  - [x] Sync read markers through papo on restore, live remote advances, and a 500ms foreground
+    live-edge dwell. DMs count every peer message as a mention; unread-only rows keep the subtle
+    dot while mentions use the accent count badge on both shells.
   - [x] Share axis-locked pan handling between mobile Back and the drag-to-close members drawer.
   - [x] Animate overlay drawers, scrims, and shadows as one progress-linked entrance and exit.
   - [x] Open channel members with a protected mid-screen pan while keeping browser-edge and history gestures platform-owned.

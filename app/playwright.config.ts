@@ -27,8 +27,18 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-console",
+      testMatch: "**/console-clean.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-console",
+      testMatch: "**/console-clean.spec.ts",
       use: { browserName: "webkit" },
     },
     {
