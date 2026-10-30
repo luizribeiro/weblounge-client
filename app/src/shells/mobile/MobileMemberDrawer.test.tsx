@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import { MobileMemberDrawer, swipeClosesDrawer } from "./MobileMemberDrawer";
 
-it("renders a modal touch drawer with shared member contents", () => {
+it("renders a modal touch drawer with shared member contents", async () => {
   const close = vi.fn();
   render(() => (
     <MobileMemberDrawer
@@ -19,6 +19,10 @@ it("renders a modal touch drawer with shared member contents", () => {
     "aria-modal",
     "true",
   );
+  await Promise.resolve();
+  expect(
+    screen.getByRole("searchbox", { name: "Filter members" }),
+  ).not.toHaveFocus();
   fireEvent.click(
     screen.getAllByRole("button", { name: "Close member list" })[0] as Element,
   );

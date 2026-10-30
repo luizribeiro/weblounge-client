@@ -38,3 +38,24 @@ it("traps focus and closes a mirrored drawer with Escape", async () => {
     view.container.querySelector('[data-overlay-drawer="left"]'),
   ).not.toBeNull();
 });
+
+it("focuses its marked field without scrolling the shell behind it", async () => {
+  const focus = vi.spyOn(HTMLElement.prototype, "focus");
+  render(() => (
+    <OverlayDrawer
+      closeLabel="Close members"
+      edge="right"
+      label="Members"
+      onClose={() => {}}
+      width="300px"
+    >
+      <button type="button">Close</button>
+      <input aria-label="Filter" data-initial-focus="true" />
+    </OverlayDrawer>
+  ));
+  await Promise.resolve();
+
+  expect(screen.getByRole("textbox", { name: "Filter" })).toHaveFocus();
+  expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  focus.mockRestore();
+});

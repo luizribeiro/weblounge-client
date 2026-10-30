@@ -125,7 +125,9 @@ export function MemberPanel(props: MemberPanelProps) {
             <span class="visually-hidden">Filter members</span>
             <span aria-hidden="true">⌕</span>
             <input
-              autofocus={props.autofocusFilter !== false}
+              data-initial-focus={
+                props.autofocusFilter === false ? undefined : "true"
+              }
               onInput={(event) => props.onFilter?.(event.currentTarget.value)}
               placeholder="Filter members"
               type="search"

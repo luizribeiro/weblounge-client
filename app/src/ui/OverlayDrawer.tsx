@@ -27,7 +27,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
 
   createEffect(() => {
     if (props.dragProgress !== undefined) return;
-    queueMicrotask(() => focusable(drawer)[0]?.focus());
+    queueMicrotask(() => initialFocus(drawer)?.focus({ preventScroll: true }));
   });
 
   const keydown = (event: KeyboardEvent) => {
@@ -99,6 +99,13 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
           : props.children}
       </div>
     </div>
+  );
+}
+
+function initialFocus(root: HTMLElement | undefined): HTMLElement | undefined {
+  return (
+    root?.querySelector<HTMLElement>("[data-initial-focus]") ??
+    focusable(root)[0]
   );
 }
 
