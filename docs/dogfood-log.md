@@ -59,3 +59,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | fixed, local |
 | 52 | 2026-10-30 | iOS: members sign-in succeeds but never returns to the beta chat. | root cause: members CSP form-action; server fix built, deploys with your OK |
 | 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | queued |
+| 54 | 2026-10-30 | iPhone: swiping from the edge to close a chat sometimes cancels mid-gesture at certain speeds (transcript touch handling?). | queued |
