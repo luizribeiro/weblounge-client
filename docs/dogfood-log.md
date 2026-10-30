@@ -23,7 +23,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 15 | 2026-10-29 | Backgrounding the PWA and coming back shows the full-screen "couldn't connect" splash instead of the app with a reconnecting indicator. | fixed, live |
 | 16 | 2026-10-29 | After that, opening a channel shows the connection error inside the buffer, and the app never recovers. | fixed, live |
 | 17 | 2026-10-29 | Connection indicators are unreliable and untrustworthy in general. | fixed, live |
-| 18 | 2026-10-29 | Beta loaded unstyled: the server CSP blocked the runtime-injected theme styles. | client fixed and live (a7211bd); server stopgap removal requested |
+| 18 | 2026-10-29 | Beta loaded unstyled: the server CSP blocked the runtime-injected theme styles. | fixed: client live (a7211bd), server back to style-src 'self' (2a27ec4) |
 | 19 | 2026-10-29 | Mobile: the members drawer's overlay lightens the content in dark mode; it must respect light/dark. | fixed, local |
 | 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | fixed, local |
 | 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | fixed, local |
