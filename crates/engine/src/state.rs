@@ -1128,7 +1128,8 @@ impl NetworkModel {
                 .flatten()
         });
         let mentioned = incoming.authorship != MessageAuthorship::Own
-            && mentions_own_nick(&incoming.text, state);
+            && (matches!(incoming.conversation, NameKey::Direct(_))
+                || mentions_own_nick(&incoming.text, state));
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
         let message = MessageProjection {
             id: self.allocate_message_id(),
@@ -2306,6 +2307,16 @@ mod tests {
         }
         let id = *model.names.values().next().expect("buffer exists");
 
+        assert_eq!(model.buffers[&id].projection.mentions, 1);
+    }
+
+    #[test]
+    fn every_incoming_direct_message_is_a_mention() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(direct_incoming(&state, "alice", "hello", 1), &state);
+        let id = *model.names.values().next().expect("direct buffer exists");
+
+        assert_eq!(model.buffers[&id].projection.unread, 1);
         assert_eq!(model.buffers[&id].projection.mentions, 1);
     }
 

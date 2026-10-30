@@ -95,6 +95,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep production consoles clean through desktop and mobile load, navigation, scrolling,
     sending, and member-list flows in Chromium, Firefox, and WebKit. Wasm initializes through
     the object API, and virtualizer offset and resize delivery avoid browser diagnostics.
+  - [x] Sync read markers through papo on restore, live remote advances, and a 500ms foreground
+    live-edge dwell. DMs count every peer message as a mention; unread-only rows keep the subtle
+    dot while mentions use the accent count badge on both shells.
   - [x] Share axis-locked pan handling between mobile Back and the drag-to-close members drawer.
   - [x] Animate overlay drawers, scrims, and shadows as one progress-linked entrance and exit.
   - [x] Open channel members with a protected mid-screen pan while keeping browser-edge and history gestures platform-owned.
