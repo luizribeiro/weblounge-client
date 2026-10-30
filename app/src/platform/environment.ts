@@ -43,6 +43,7 @@ const touchQuery = "(hover: none) and (pointer: coarse)";
 const standaloneQuery = "(display-mode: standalone)";
 const darkQuery = "(prefers-color-scheme: dark)";
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+const keyboardInsetThreshold = 120;
 
 let installed: PlatformController | undefined;
 
@@ -208,11 +209,14 @@ export function resolveKeyboardGeometry(
   layoutHeight: number,
   viewport: Pick<VisualViewport, "height" | "offsetTop">,
 ): KeyboardGeometry {
-  const inset = Math.max(
+  const measuredInset = Math.max(
     0,
     layoutHeight - viewport.offsetTop - viewport.height,
   );
-  return { inset, state: inset > 0 ? "open" : "closed" };
+  if (measuredInset <= keyboardInsetThreshold) {
+    return { inset: 0, state: "closed" };
+  }
+  return { inset: measuredInset, state: "open" };
 }
 
 function mediaQuery(browserWindow: Window, query: string): MediaQueryList {

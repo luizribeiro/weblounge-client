@@ -23,7 +23,6 @@ import {
   previousScreen,
   pushChat,
 } from "./mobile-navigation";
-import { type MobileViewport, observeMobileViewport } from "./mobile-viewport";
 
 interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
@@ -68,7 +67,6 @@ export function MobileShell(props: MobileShellProps) {
   const [scrollRestoreVersion, setScrollRestoreVersion] = createSignal(0);
   const [swipeProgress, setSwipeProgress] = createSignal<number>();
   const [swipeReturning, setSwipeReturning] = createSignal(false);
-  const [viewport, setViewport] = createSignal<MobileViewport>();
   const [drawerBufferId, setDrawerBufferId] = createSignal<number>();
   const [memberFilter, setMemberFilter] = createSignal("");
   const [memberOpenProgress, setMemberOpenProgress] = createSignal<number>();
@@ -384,7 +382,6 @@ export function MobileShell(props: MobileShellProps) {
     window.addEventListener("popstate", handlePopState);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     shellElement?.addEventListener("click", consumeCompletedSwipeClick, true);
-    const stopViewport = observeMobileViewport(window, setViewport);
     if (historyPolicy === "replace") {
       window.history.replaceState(
         mobileHistoryState(stack().active.kind === "chat", false),
@@ -392,7 +389,6 @@ export function MobileShell(props: MobileShellProps) {
       );
     }
     onCleanup(() => {
-      stopViewport();
       window.removeEventListener("popstate", handlePopState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       shellElement?.removeEventListener(
@@ -422,12 +418,6 @@ export function MobileShell(props: MobileShellProps) {
         memberOpenGesture.end(event);
       }}
       ref={shellElement}
-      style={{
-        "--wl-visual-height":
-          viewport() === undefined ? undefined : `${viewport()?.height}px`,
-        "--wl-visual-top":
-          viewport() === undefined ? undefined : `${viewport()?.offsetTop}px`,
-      }}
     >
       <For each={screens()}>
         {(screen, index) => {

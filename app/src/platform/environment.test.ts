@@ -79,6 +79,9 @@ describe("platform environment", () => {
     expect(resolveKeyboardGeometry(874, { height: 874, offsetTop: 0 })).toEqual(
       { inset: 0, state: "closed" },
     );
+    expect(resolveKeyboardGeometry(874, { height: 812, offsetTop: 0 })).toEqual(
+      { inset: 0, state: "closed" },
+    );
     expect(
       resolveKeyboardGeometry(874, { height: 516, offsetTop: 42 }),
     ).toEqual({ inset: 316, state: "open" });

@@ -28,6 +28,25 @@ test.describe("mobile text field zoom", () => {
     await auditMobileTextFieldZoom(page);
   });
 
+  test("fills the layout viewport until a keyboard opens", async ({ page }) => {
+    await installVisualViewportHook(page, 62);
+    await openChannel(page);
+    const root = page.locator("#root");
+
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await expect(root).toHaveCSS("--wl-keyboard-inset", "0px");
+    await expect.poll(() => shellBottomError(page)).toBeLessThanOrEqual(1);
+
+    const layoutHeight = await page.evaluate(() => innerHeight);
+    await setVisualViewportHeight(page, layoutHeight - 358);
+
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect(root).toHaveCSS("--wl-keyboard-inset", "358px");
+    await expect
+      .poll(() => shellHeightError(page, layoutHeight - 358))
+      .toBeLessThanOrEqual(1);
+  });
+
   test("animates away the home-indicator inset with the keyboard", async ({
     page,
   }) => {
@@ -92,12 +111,15 @@ interface KeyboardFrame {
   readonly padding: number;
 }
 
-async function installVisualViewportHook(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installVisualViewportHook(
+  page: Page,
+  initialShortfall = 0,
+): Promise<void> {
+  await page.addInitScript((shortfall) => {
     const viewport = new EventTarget();
     const geometry: { height?: number; offsetTop: number } = { offsetTop: 0 };
     Object.defineProperties(viewport, {
-      height: { get: () => geometry.height ?? innerHeight },
+      height: { get: () => geometry.height ?? innerHeight - shortfall },
       offsetTop: { get: () => geometry.offsetTop },
       pageLeft: { get: () => 0 },
       pageTop: { get: () => 0 },
@@ -116,7 +138,43 @@ async function installVisualViewportHook(page: Page): Promise<void> {
       geometry.height = height;
       viewport.dispatchEvent(new Event("resize"));
     };
-  });
+  }, initialShortfall);
+}
+
+async function setVisualViewportHeight(
+  page: Page,
+  height: number,
+): Promise<void> {
+  await page.evaluate((nextHeight) => {
+    const setViewport = (
+      window as Window & {
+        __setVisualViewport?: (height: number) => void;
+      }
+    ).__setVisualViewport;
+    if (setViewport === undefined) throw new Error("viewport hook is missing");
+    setViewport(nextHeight);
+  }, height);
+}
+
+async function shellBottomError(page: Page): Promise<number> {
+  return page
+    .locator("[data-mobile-shell]")
+    .evaluate((shell) =>
+      Math.abs(shell.getBoundingClientRect().bottom - innerHeight),
+    );
+}
+
+async function shellHeightError(
+  page: Page,
+  expectedHeight: number,
+): Promise<number> {
+  return page
+    .locator("[data-mobile-shell]")
+    .evaluate(
+      (shell, height) =>
+        Math.abs(shell.getBoundingClientRect().height - height),
+      expectedHeight,
+    );
 }
 
 async function sampleKeyboardTransition(
