@@ -68,6 +68,7 @@ async function exerciseLinks(
     await expect(external).toHaveAttribute("href", url);
     await expect(external).toHaveAttribute("target", "_blank");
     await expect(external).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(external).toHaveCSS("cursor", "pointer");
     if (audit) {
       await expect(
         page.locator('[data-buffer-id][aria-current="page"]'),
@@ -95,7 +96,9 @@ async function exerciseLinks(
     await expect.poll(() => popup.url()).toBe(url);
     await popup.close();
 
-    await page.getByRole("link", { name: target }).click();
+    const channel = page.getByRole("link", { name: target });
+    await expect(channel).toHaveCSS("cursor", "pointer");
+    await channel.click();
     await expect(page.getByRole("heading", { name: target })).toBeVisible();
   } finally {
     source.close();

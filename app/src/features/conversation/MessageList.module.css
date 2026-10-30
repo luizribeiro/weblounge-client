@@ -126,6 +126,11 @@
   overflow-wrap: anywhere;
   text-decoration: underline;
 }
+.text a.messageLink,
+.actionText a.messageLink,
+.noticeTopic a.messageLink {
+  cursor: pointer;
+}
 .pending,
 .failed {
   font-size: 11px;

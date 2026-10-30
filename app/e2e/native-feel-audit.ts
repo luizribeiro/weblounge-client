@@ -165,9 +165,13 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     const editable =
       "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
     return [root, ...root.querySelectorAll("*")].flatMap((element) => {
+      const style = getComputedStyle(element);
+      if (element.matches("a[href]"))
+        return style.cursor === "pointer"
+          ? []
+          : [`${element.tagName}: link cursor is not pointer`];
       if (element.closest("[data-selectable='true']") !== null) return [];
       if (element.closest(editable) !== null) return [];
-      const style = getComputedStyle(element);
       const failures: string[] = [];
       if (style.userSelect !== "none") failures.push("selectable chrome");
       if (style.cursor === "text") failures.push("text cursor on chrome");
