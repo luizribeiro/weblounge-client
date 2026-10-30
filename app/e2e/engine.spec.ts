@@ -73,6 +73,40 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("keeps our operator prefix through send confirmation", async ({
+    page,
+  }) => {
+    const operator = await IrcClient.connect(
+      `operator${Date.now().toString().slice(-6)}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: /#weblounge-test/ }),
+      ).toBeVisible();
+      await operator.mode("#weblounge-test", "+o", "weblounge");
+      await page.getByRole("button", { name: "Toggle member list" }).click();
+      await expect(
+        page.getByRole("button", {
+          name: "Open direct message with weblounge",
+        }),
+      ).toContainText("@");
+
+      const text = `operator send ${Date.now()}`;
+      await observeDeliveries(page, text);
+      await page.getByRole("textbox", { name: "Message" }).fill(text);
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect
+        .poll(() => observedDeliveryModes(page))
+        .toEqual(expect.arrayContaining(["optimistic:@", "confirmed:@"]));
+    } finally {
+      operator.close();
+    }
+  });
+
   test("preserves a long single-line message when confirmed", async ({
     page,
   }) => {
@@ -322,8 +356,12 @@ async function observeDeliveries(
   text: string,
 ): Promise<void> {
   await page.evaluate((messageText) => {
-    const state = window as Window & { observedDeliveries?: string[] };
+    const state = window as Window & {
+      observedDeliveries?: string[];
+      observedDeliveryModes?: string[];
+    };
     state.observedDeliveries = [];
+    state.observedDeliveryModes = [];
     const record = () => {
       for (const row of document.querySelectorAll<HTMLElement>(
         `[data-message-text="${CSS.escape(messageText)}"]`,
@@ -335,6 +373,9 @@ async function observeDeliveries(
         ) {
           state.observedDeliveries?.push(delivery);
         }
+        const deliveryMode = `${delivery ?? ""}:${row.dataset.modeSymbol ?? ""}`;
+        if (!state.observedDeliveryModes?.includes(deliveryMode))
+          state.observedDeliveryModes?.push(deliveryMode);
       }
     };
     new MutationObserver(record).observe(document.body, {
@@ -344,6 +385,16 @@ async function observeDeliveries(
     });
     record();
   }, text);
+}
+
+async function observedDeliveryModes(
+  page: import("@playwright/test").Page,
+): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      (window as Window & { observedDeliveryModes?: string[] })
+        .observedDeliveryModes ?? [],
+  );
 }
 
 async function observedDeliveries(

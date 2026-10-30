@@ -128,6 +128,9 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
   expect(screen.getByText("Sending…")).toBeInTheDocument();
   expect(screen.getByText("BOT")).toBeInTheDocument();
   expect(screen.getByText("@")).toBeInTheDocument();
+  expect(
+    screen.getByText("welcome").closest("[data-message-row]"),
+  ).toHaveAttribute("data-mode-symbol", "@");
   expect(screen.getByText("A quiet room")).toBeInTheDocument();
   expect(
     screen.getByText(/set by mel/).closest("[data-notice-row]"),

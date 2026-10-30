@@ -329,6 +329,7 @@ function MessageRow(props: {
       data-delivery={message.delivery}
       data-message-row="true"
       data-message-text={message.text}
+      data-mode-symbol={message.mode_symbol ?? ""}
     >
       {message.kind === "action" ? (
         <>
