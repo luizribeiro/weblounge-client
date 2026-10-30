@@ -105,4 +105,80 @@ test.describe("desktop members against local Ergo", () => {
       bot.close();
     }
   });
+
+  test("resubscribes the open panel when switching channels", async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString().slice(-5);
+    const garden = `#members-${suffix}`;
+    const roomNick = `room${suffix}`;
+    const gardenNick = `garden${suffix}`;
+    const gardenExtraNick = `leaf${suffix}`;
+    const roomBot = await IrcClient.connect(
+      roomNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    const gardenBot = await IrcClient.connect(
+      gardenNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      garden,
+    );
+    const gardenExtraBot = await IrcClient.connect(
+      gardenExtraNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      garden,
+    );
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      const composer = page.getByRole("textbox", {
+        name: `Message ${channel}`,
+      });
+      await composer.fill(`/join ${garden}`);
+      await composer.press("Enter");
+      const gardenButton = page.getByRole("button", { name: garden });
+      await expect(gardenButton).toBeVisible();
+      await page.getByRole("button", { name: channel }).click();
+
+      await page.getByRole("button", { name: "Toggle member list" }).click();
+      const panel = page.getByRole("complementary", { name: "Members" });
+      await expect(
+        panel.getByRole("button", {
+          name: `Open direct message with ${roomNick}`,
+        }),
+      ).toBeVisible();
+      await expect(panel.getByText("2", { exact: true })).toBeVisible();
+      await gardenButton.click();
+      await expect(
+        panel.getByRole("button", {
+          name: `Open direct message with ${gardenNick}`,
+        }),
+      ).toBeVisible();
+      await expect(panel.getByText("3", { exact: true })).toBeVisible();
+      await expect(panel.getByText(roomNick, { exact: true })).toHaveCount(0);
+
+      await page.getByRole("button", { name: channel }).click();
+      await expect(
+        panel.getByRole("button", {
+          name: `Open direct message with ${roomNick}`,
+        }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Hide members" }).click();
+      await gardenButton.click();
+      await page.getByRole("button", { name: "Toggle member list" }).click();
+      await expect(
+        panel.getByRole("button", {
+          name: `Open direct message with ${gardenNick}`,
+        }),
+      ).toBeVisible();
+    } finally {
+      roomBot.close();
+      gardenBot.close();
+      gardenExtraBot.close();
+    }
+  });
 });

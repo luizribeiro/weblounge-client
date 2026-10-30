@@ -48,6 +48,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Size desktop timestamp columns from the active locale; never ellipsize times.
   - [x] Reset mobile back-swipe motion on cancellation, browser history, visibility, and interrupted transitions.
   - [x] Keep the mobile chat list mounted across back navigation without recreating rows or requesting history.
+  - [x] Resubscribe desktop member windows when the active channel changes.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).

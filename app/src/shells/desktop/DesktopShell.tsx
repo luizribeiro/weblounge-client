@@ -4,6 +4,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  Show,
 } from "solid-js";
 import {
   type ActionContext,
@@ -313,24 +314,26 @@ export function DesktopShell(props: DesktopShellProps) {
           </section>
         )}
       </main>
-      {membersVisible() && activeBuffer() !== undefined && (
-        <MemberPanel
-          bufferTitle={activeBuffer()?.title ?? ""}
-          onClose={() => setMemberPanelOpen(false)}
-          onOpenDirect={(nick) =>
-            props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick)
-          }
-          onRequestRange={(offset) =>
-            props.onRequestMembers?.(
-              memberViewId(),
-              activeBuffer()?.id ?? 0,
-              offset,
-            )
-          }
-          showModeSymbols={props.showMemberModeSymbols}
-          window={memberWindow()}
-        />
-      )}
+      <Show when={membersVisible() ? activeBuffer()?.id : undefined} keyed>
+        {(bufferId) => {
+          const buffer = () =>
+            props.buffers.find((candidate) => candidate.id === bufferId);
+          return (
+            <MemberPanel
+              bufferTitle={buffer()?.title ?? ""}
+              onClose={() => setMemberPanelOpen(false)}
+              onOpenDirect={(nick) =>
+                props.onOpenDirect?.(buffer()?.network_id ?? 0, nick)
+              }
+              onRequestRange={(offset) =>
+                props.onRequestMembers?.(memberViewId(), bufferId, offset)
+              }
+              showModeSymbols={props.showMemberModeSymbols}
+              window={memberWindow()}
+            />
+          );
+        }}
+      </Show>
     </div>
   );
 }
