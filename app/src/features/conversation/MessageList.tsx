@@ -90,6 +90,12 @@ export function MessageList(props: MessageListProps) {
   const rows = createMemo(() =>
     timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
   );
+  // TanStack rebuilds its index-keyed measurements only when the row count or
+  // the key extractor's identity changes, and a moving divider keeps the count.
+  const rowKey = createMemo(() => {
+    const current = rows();
+    return (index: number) => current[index]?.key ?? index;
+  });
   const nickLookup = createMemo(() => createNickLookup(props.messages));
   const setLiveEdge = (live: boolean) => {
     if (!live && atLiveEdge() && !boundaryFrozen) {
@@ -140,7 +146,9 @@ export function MessageList(props: MessageListProps) {
       estimatedSizes.set(row.key, estimated);
       return estimated;
     },
-    getItemKey: (index) => rows()[index]?.key ?? index,
+    get getItemKey() {
+      return rowKey();
+    },
     measureElement: (element, entry, instance) => {
       const index = Number(element.dataset.index);
       const measured = measureElement(element, entry, instance);

@@ -371,6 +371,57 @@ it("keeps the New boundary frozen while the live marker advances", async () => {
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("restacks measured rows when the New boundary moves past a long row", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  const longText = (label: string) =>
+    `${label} ${"the deploy health check failed again ".repeat(12)}`;
+  const [readThrough, setReadThrough] = createSignal<number | null>(1);
+  const { container } = render(() => (
+    <MessageList
+      bufferId={2}
+      messages={[
+        message,
+        { ...message, id: 2, text: longText("first") },
+        { ...message, id: 3, text: longText("second") },
+      ]}
+      readThrough={readThrough()}
+    />
+  ));
+  const flushRowSizes = async () => {
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    for (const row of container.querySelectorAll("li[data-index]"))
+      for (const observer of observers)
+        observer.flushTarget(row, measuredRowHeight(row));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+  };
+  await flushRowSizes();
+
+  setReadThrough(2);
+  await flushRowSizes();
+
+  const rows = renderedRowGeometry(container);
+  expect(rows.map((row) => row.newLine)).toEqual([
+    false,
+    false,
+    false,
+    true,
+    false,
+  ]);
+  expect(rows.slice(1).map((row) => row.start)).toEqual(
+    rows.slice(0, -1).map((row) => row.start + row.size),
+  );
+});
+
 it("keeps a bounded DOM for ten thousand rows", async () => {
   const messages = Array.from({ length: 10_000 }, (_, index) => ({
     ...message,
@@ -661,6 +712,17 @@ function measuredRowHeight(target: Element): number {
     26,
     Math.ceil((messageRow.textContent?.length ?? 0) / 50) * 20,
   );
+}
+
+function renderedRowGeometry(container: HTMLElement) {
+  return [...container.querySelectorAll<HTMLLIElement>("li[data-index]")]
+    .map((row) => ({
+      index: Number(row.dataset.index),
+      newLine: row.querySelector("[data-new-line]") !== null,
+      start: translateY(row.style.transform),
+      size: measuredRowHeight(row),
+    }))
+    .sort((left, right) => left.index - right.index);
 }
 
 function translateY(transform: string): number {
