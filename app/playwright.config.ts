@@ -29,6 +29,11 @@ export default defineConfig({
       testMatch: "**/mobile-back-swipe.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
+    {
+      name: "webkit-mobile-inputs",
+      testMatch: "**/mobile-input-zoom.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
   ],
   testDir: "./e2e",
   workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,

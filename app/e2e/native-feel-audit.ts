@@ -187,6 +187,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
       }),
     );
   expect(selectableViolations).toEqual([]);
+  await auditMobileTextFieldZoom(page);
 
   const chromeMenuPrevented = await page
     .locator("[data-app-root]")
@@ -310,6 +311,82 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     intervals: 0,
     timeouts: 0,
   });
+}
+
+const textFieldSelector = [
+  "input:not([type])",
+  'input:is([type="email"], [type="number"], [type="password"], [type="search"], [type="tel"], [type="text"], [type="url"])',
+  "textarea",
+  '[contenteditable]:not([contenteditable="false"])',
+].join(", ");
+
+export async function auditMobileTextFieldZoom(page: Page): Promise<void> {
+  const result = await page
+    .locator("[data-app-root]")
+    .evaluate((root, selector) => {
+      if (
+        !matchMedia("(hover: none), (pointer: coarse), (max-width: 759px)")
+          .matches
+      ) {
+        return { activeField: null, fields: [], violations: [] };
+      }
+      const fields = [...root.querySelectorAll<HTMLElement>(selector)].filter(
+        (field) => {
+          const disabled =
+            field instanceof HTMLInputElement ||
+            field instanceof HTMLTextAreaElement
+              ? field.disabled
+              : false;
+          return (
+            !disabled &&
+            field.closest("[inert], [aria-hidden='true']") === null &&
+            field.getClientRects().length > 0
+          );
+        },
+      );
+      return {
+        activeField: fields.includes(document.activeElement as HTMLElement)
+          ? `${fields.indexOf(document.activeElement as HTMLElement)}`
+          : null,
+        fields: fields.map((field, index) => {
+          const id = `${index}`;
+          field.dataset.nativeFeelTextField = id;
+          return id;
+        }),
+        violations: fields.flatMap((field) => {
+          const size = Number.parseFloat(getComputedStyle(field).fontSize);
+          return size >= 16
+            ? []
+            : [`${field.tagName}: ${size}px text field can trigger zoom`];
+        }),
+      };
+    }, textFieldSelector);
+  try {
+    expect(result.violations).toEqual([]);
+    for (const id of result.fields) {
+      await page.locator(`[data-native-feel-text-field="${id}"]`).focus();
+      await expect
+        .poll(() => page.evaluate(() => window.visualViewport?.scale ?? 1))
+        .toBe(1);
+    }
+  } finally {
+    if (result.activeField === null) {
+      await page.locator("[data-app-root]").evaluate(() => {
+        if (document.activeElement instanceof HTMLElement)
+          document.activeElement.blur();
+      });
+    } else {
+      await page
+        .locator(`[data-native-feel-text-field="${result.activeField}"]`)
+        .focus();
+    }
+    await page.locator("[data-app-root]").evaluate((root) => {
+      for (const field of root.querySelectorAll(
+        "[data-native-feel-text-field]",
+      ))
+        delete (field as HTMLElement).dataset.nativeFeelTextField;
+    });
+  }
 }
 
 export async function auditMessageSelection(

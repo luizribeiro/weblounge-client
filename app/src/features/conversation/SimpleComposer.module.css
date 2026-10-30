@@ -171,10 +171,6 @@ textarea.input {
 }
 
 @media (max-width: 600px), (pointer: coarse) {
-  .input {
-    font-size: 16px;
-  }
-
   .popup {
     inline-size: calc(100% - 28px);
   }

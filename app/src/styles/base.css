@@ -1,6 +1,7 @@
 :root {
   --wl-size-suggestions-max-width: 420px;
   --wl-size-touch-target: 44px;
+  --wl-font-touch-editable-min: 16px;
   background: var(--wl-color-bg);
   color: var(--wl-color-fg);
   font-family: var(--wl-font-ui);
@@ -127,9 +128,19 @@ textarea:focus-visible {
 }
 
 @media (hover: none), (pointer: coarse), (max-width: 759px) {
-  input,
-  textarea,
-  select {
-    font-size: max(16px, 1em);
+  [data-app-root] input:not([type]),
+  [data-app-root]
+    input:is(
+      [type="email"],
+      [type="number"],
+      [type="password"],
+      [type="search"],
+      [type="tel"],
+      [type="text"],
+      [type="url"]
+    ),
+  [data-app-root] textarea,
+  [data-app-root] [contenteditable]:not([contenteditable="false"]) {
+    font-size: max(var(--wl-font-touch-editable-min), 1em);
   }
 }
