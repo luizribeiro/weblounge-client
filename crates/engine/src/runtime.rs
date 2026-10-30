@@ -8,8 +8,8 @@ use tokio::sync::mpsc;
 
 use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineRequest,
-    EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId, NetworkConnectionState,
-    NetworkId, OfflineReason,
+    EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
+    NetworkConnectionState, NetworkId, OfflineReason,
     commands::{self, Command},
     state::{
         DirectAvailability, HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget,
@@ -195,6 +195,10 @@ impl Runtime {
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
             }
+            EngineRequest::RetryMessage {
+                buffer_id,
+                local_send_id,
+            } => self.retry_message(envelope.id, buffer_id, local_send_id),
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
             }
@@ -634,9 +638,7 @@ impl Runtime {
         });
         vec![
             event,
-            EngineToUi::Notice {
-                message_key: "engine.hosted_auth_failed".into(),
-            },
+            EngineToUi::notice("engine.hosted_auth_failed"),
             EngineToUi::CommandResult { id: command_id },
         ]
     }
@@ -687,6 +689,31 @@ impl Runtime {
             );
         }
         output
+    }
+
+    fn retry_message(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        local_send_id: LocalSendId,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some((pending, event)) = running.model.retry_send(buffer_id, local_send_id) else {
+            return rejected_command(command_id, "engine.buffer_not_sendable");
+        };
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            finish_send(&state, &outbound, &client, instance, &pending).await;
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
+        vec![event]
     }
 
     fn join(&self, command_id: String, targets: Vec<JoinTarget>) -> Vec<EngineToUi> {
@@ -882,9 +909,7 @@ impl Runtime {
                 };
                 let (buffer_id, mut output) = running.model.open_direct(nick, direct);
                 if degraded {
-                    output.push(EngineToUi::Notice {
-                        message_key: "engine.direct_presence_unavailable".into(),
-                    });
+                    output.push(EngineToUi::notice("engine.direct_presence_unavailable"));
                 }
                 if focus {
                     output.push(EngineToUi::FocusBufferRequested {
@@ -1342,7 +1367,7 @@ async fn flush_pending_sends(
                     running.flushing_sends = false;
                     return;
                 }
-                Err(error) => Some(vec![running.model.fail_send(&pending, error.message_key())]),
+                Err(error) => Some(running.model.fail_send(&pending, error.message_key())),
             }
         };
         for event in events.into_iter().flatten() {
@@ -1370,7 +1395,7 @@ async fn finish_send(
         };
         match result {
             Ok(sent) => running.model.confirm_send(pending, &sent, &client.state()),
-            Err(error) => Some(vec![running.model.fail_send(pending, error.message_key())]),
+            Err(error) => Some(running.model.fail_send(pending, error.message_key())),
         }
     };
     for event in events.into_iter().flatten() {
@@ -1699,9 +1724,7 @@ fn spawn_direct_resolution(
         running.model.resolve_direct(&nick, availability);
         drop(state);
         if degraded {
-            let _ = outbound.send(EngineToUi::Notice {
-                message_key: "engine.direct_presence_unavailable".into(),
-            });
+            let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
         }
     });
 }
@@ -1882,9 +1905,7 @@ fn process_event_with_direct(
             process_lagged(&mut running.model, &snapshot, &lagged, &mut output)
         }
         papo::Event::Warning(papo::event::Warning::ChannelRecreated { .. }) => {
-            output.push(EngineToUi::Notice {
-                message_key: "engine.channel_recreated".into(),
-            });
+            output.push(EngineToUi::notice("engine.channel_recreated"));
             Vec::new()
         }
         papo::Event::CasemappingChanged(_) => {
@@ -2009,11 +2030,10 @@ fn process_disconnect(
         ),
         None,
     ));
-    if hosted_authentication_failed {
-        output.push(EngineToUi::Notice {
-            message_key: "engine.hosted_auth_failed".into(),
-        });
-    }
+    output.extend(connection_failure_notice(
+        disconnected,
+        hosted_authentication_failed,
+    ));
     hosted_authentication_failed
 }
 
@@ -2152,6 +2172,19 @@ fn disconnected_state(
         }
         .into(),
     }
+}
+
+fn connection_failure_notice(
+    disconnected: &papo::Disconnected,
+    hosted_authentication_failed: bool,
+) -> Option<EngineToUi> {
+    (!matches!(disconnected.cause, papo::DisconnectCause::Requested { .. })).then(|| {
+        EngineToUi::notice(if hosted_authentication_failed {
+            "engine.hosted_auth_failed"
+        } else {
+            "engine.connection_failed"
+        })
+    })
 }
 
 fn is_sasl_failure(disconnected: &papo::Disconnected) -> bool {
@@ -2474,13 +2507,13 @@ mod tests {
 
     use super::{
         AuthenticationKind, ConnectionAuthentication, ConnectionTransition, MemberViews,
-        RunningNetwork, Runtime, RuntimeState, completion_context, drain_events, fetch_history,
-        fetch_latest, lock, next_connection_state, person_candidates, process_event,
-        process_history, utf16_len,
+        RunningNetwork, Runtime, RuntimeState, completion_context, connection_failure_notice,
+        drain_events, fetch_history, fetch_latest, lock, next_connection_state, person_candidates,
+        process_event, process_history, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
-        EngineRequestEnvelope, EngineToUi, NetworkId, SaslCredentials,
+        EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkId, SaslCredentials,
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         state::{DirectAvailability, NetworkModel, PendingSend, SendTarget},
     };
@@ -2567,6 +2600,16 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn unexpected_disconnects_emit_a_human_notice() {
+        let disconnected = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
+        assert!(matches!(
+            connection_failure_notice(&disconnected, false),
+            Some(EngineToUi::Notice { key, .. })
+                if key == "engine.connection_failed"
+        ));
     }
 
     #[tokio::test]
@@ -3084,8 +3127,8 @@ mod tests {
         }
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::Notice { message_key }
-                if message_key == "engine.direct_presence_unavailable"
+            EngineToUi::Notice { key, .. }
+                if key == "engine.direct_presence_unavailable"
         )));
         assert!(
             output
@@ -3216,9 +3259,9 @@ mod tests {
             expired.as_slice(),
             [
                 EngineToUi::NetworkStateChanged { .. },
-                EngineToUi::Notice { message_key },
+                EngineToUi::Notice { key, .. },
                 EngineToUi::CommandResult { id },
-            ] if message_key == "engine.hosted_auth_failed" && id == "expired"
+            ] if key == "engine.hosted_auth_failed" && id == "expired"
         ));
         assert!(lock(&runtime.state).network.is_none());
     }
@@ -3579,6 +3622,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn direct_confirmation_before_close_stays_confirmed() {
+        assert_direct_confirmation_survives_close(false).await;
+    }
+
+    #[tokio::test]
+    async fn direct_confirmation_after_close_stays_confirmed() {
+        assert_direct_confirmation_survives_close(true).await;
+    }
+
+    async fn assert_direct_confirmation_survives_close(close_first: bool) {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room * :WebLounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":alice!a@host JOIN #room alice-one :Alice")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let direct = client.direct("alice").await.expect("shared user is direct");
+        let nick = direct.nick();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (buffer_id, _) = model.open_direct(nick, DirectAvailability::Guarded(direct));
+        let (pending, _) = model
+            .begin_send(buffer_id, "hi".into(), &client.state())
+            .expect("direct is sendable");
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move {
+            super::send(&sender, &pending)
+                .await
+                .map(|sent| (pending, sent))
+        });
+        assert_eq!(wire.next_sent().await, "PRIVMSG alice hi");
+        if close_first {
+            model.close_direct(buffer_id).expect("direct closes");
+        }
+        let (pending, sent) = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+        let confirmation = model
+            .confirm_send(&pending, &sent, &client.state())
+            .expect("retained optimistic row confirms");
+        if !close_first {
+            model.close_direct(buffer_id).expect("direct closes");
+        }
+
+        assert!(matches!(
+            model.buffers_event(),
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().all(|buffer| buffer.id != buffer_id)
+        ));
+        assert!(matches!(
+            confirmation.as_slice(),
+            [EngineToUi::MessageConfirmed { message, .. }]
+                if message.delivery == MessageDelivery::Confirmed
+        ));
+    }
+
+    #[tokio::test]
     async fn guarded_direct_refuses_a_reused_nick() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -3599,26 +3706,40 @@ mod tests {
             .name_rules()
             .expect("registered test client has name rules")
             .nick("alice");
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (buffer_id, _) =
+            model.open_direct(nick.clone(), DirectAvailability::Guarded(direct.clone()));
+        let (pending, _) = model
+            .begin_send(buffer_id, "not for you".into(), &client.state())
+            .expect("direct is sendable");
+        model.close_direct(buffer_id).expect("direct closes");
 
         wire.server(":alice!a@host QUIT :gone").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Quit(_))).await;
         wire.server(":alice!other@host JOIN #room alice-two :Other Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let pending = PendingSend {
-            buffer_id: BufferId(2),
-            local_send_id: crate::LocalSendId(1),
-            target: SendTarget::Direct {
-                nick,
-                recipient: Some(direct),
-            },
-            text: "not for you".into(),
-            kind: crate::MessageKind::Text,
-        };
-
         assert!(matches!(
             super::send(&client, &pending).await,
             Err(super::SendError::DirectTargetGone)
+        ));
+        let failures = model.fail_send(&pending, "engine.direct_target_gone");
+        assert!(matches!(
+            failures.as_slice(),
+            [
+                EngineToUi::MessageFailed { buffer_id: failed, .. },
+                EngineToUi::Notice {
+                    key,
+                    values,
+                    tone: crate::NoticeTone::Error,
+                    action: Some(crate::NoticeAction { label, run }),
+                },
+            ] if *failed == buffer_id
+                && key == "notice.message_not_delivered"
+                && values.get("network_id").is_some_and(|value| value == "1")
+                && values.get("target").is_some_and(|value| value == "alice")
+                && label == "action.open"
+                && run == "buffer.open-direct"
         ));
         assert!(
             tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
@@ -4721,7 +4842,7 @@ mod tests {
         process_event(&state, &outbound, &client, 1, warning);
         assert!(matches!(
             collect(&mut receiver).as_slice(),
-            [EngineToUi::Notice { message_key }] if message_key == "engine.channel_recreated"
+            [EngineToUi::Notice { key, .. }] if key == "engine.channel_recreated"
         ));
     }
 

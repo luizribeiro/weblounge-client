@@ -122,6 +122,30 @@ typed edge (`"left" | "right"`), not separate transition or focus implementation
 capabilities, safe-area values, and reduced-motion state arrive through subsystem 09's root
 contract; transient surfaces never call media, viewport, user-agent, or safe-area APIs directly.
 
+### Notices
+
+The app owns one transient notice at a time. A newer notice replaces the current one; notices are
+never queued, persisted, or collected in a notification centre. The typed UI entry point accepts a
+localized message key and values, a `neutral` or `error` tone, and an optional action whose label is
+also a message key and whose behavior is an action-registry ID. Engine-originated notices use the
+same `Notice { key, values, tone, action? }` protocol event. Neither boundary accepts display text
+or callback functions.
+
+The toast is a polite live region and never steals focus. It appears above the focused pane's
+composer on desktop and above the composer or tab bar on mobile, inside safe-area insets. It uses
+theme, spacing, radius, shadow, and motion tokens only. It auto-dismisses after six seconds of
+unpaused time; pointer hover and focus within it pause the remaining duration. Its action runs once
+through the existing registry and dismisses it. Reduced motion removes the fade.
+
+A send that fails after its direct-message buffer was closed emits an error notice with the
+recipient as a localization value and an Open action. Open restores the retained buffer identity,
+where the failed row remains available for Retry. The engine still owns send state and hidden DM
+identity; the toast owns only presentation, timing, announcement, and action dispatch.
+
+Progress notices, priorities, stacking, queues, persistence, and a notification centre are out of
+scope. Persistent connection state, command replies, and inline composer validation keep their
+existing dedicated surfaces.
+
 ## Primitives
 
 `app/src/ui/Selectable.tsx` is the only content-selection opt-in. It renders a semantic wrapper,

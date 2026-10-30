@@ -138,6 +138,13 @@ state. A successful `papo::Sent` replaces the placeholder with confirmed content
 of `Sent.msgids`; one optimistic send may represent several wire messages after
 `Fallback::SplitIntoLines`. Reply, reaction, and redaction targets select a specific server ID.
 
+Closing a direct-message buffer hides it from the projected buffer order; it does not destroy the
+buffer while optimistic sends or failed rows still refer to it. A later `Sent` confirmation updates
+the hidden row without reopening the conversation. A failure updates the hidden row and emits the
+typed target metadata needed for a transient failure notice. Only a new live message authored by
+the other person, or an explicit open action, returns the DM to the projected order; this client's
+own confirmations and messages from another signed-in device do not resurrect a closed DM.
+
 Known event fields come from typed papo events. Formatting spans become an owned safe AST. Generic
 batch identity is not retained in milestone 1; known batch semantics arrive through typed events.
 Unknown `Event::Other` records are retained only in a bounded server-buffer diagnostics window.

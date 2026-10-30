@@ -21,19 +21,25 @@ export interface Violation {
   readonly text: string;
 }
 
-export function waitPolicyViolations(source: string): Violation[] {
-  return source.split("\n").flatMap((text, index) => {
-    const nextLine = source.split("\n")[index + 1] ?? "";
-    if (text.includes(exemption) || nextLine.includes(exemption)) return [];
-    const reason = lineViolation(text);
-    return reason === undefined
-      ? []
-      : [{ line: index + 1, reason, text: text.trim() }];
+const exemptibleReasons = new Set(["fixed sleep"]);
+
+export function waitPolicyViolations(source: string, file = ""): Violation[] {
+  const lines = source.split("\n");
+  return lines.flatMap((text, index) => {
+    const reason = lineViolation(text, file);
+    if (reason === undefined) return [];
+    const previous = lines[index - 1] ?? "";
+    const exempt =
+      exemptibleReasons.has(reason) &&
+      (text.includes(exemption) || previous.includes(exemption));
+    return exempt ? [] : [{ line: index + 1, reason, text: text.trim() }];
   });
 }
 
-function lineViolation(text: string): string | undefined {
+function lineViolation(text: string, file: string): string | undefined {
   const rule = rules.find(({ pattern }) => pattern.test(text));
+  if (rule?.reason === "slowed test timeout" && isPerformanceSpec(file))
+    return undefined;
   if (rule !== undefined) return rule.reason;
   const timeout = /\btimeout\s*:\s*([\d_]+)/.exec(text)?.[1];
   if (
@@ -44,10 +50,17 @@ function lineViolation(text: string): string | undefined {
   return undefined;
 }
 
+function isPerformanceSpec(file: string): boolean {
+  return /-performance\.spec\.ts$/.test(file);
+}
+
 function main(files: readonly string[]): number {
   let failures = 0;
   for (const file of files) {
-    for (const violation of waitPolicyViolations(readFileSync(file, "utf8"))) {
+    for (const violation of waitPolicyViolations(
+      readFileSync(file, "utf8"),
+      file,
+    )) {
       failures += 1;
       console.error(
         `${file}:${violation.line}: ${violation.reason}: ${violation.text}`,
@@ -56,7 +69,7 @@ function main(files: readonly string[]): number {
   }
   if (failures > 0)
     console.error(
-      `Wait for a condition instead (expect/poll, an event, page.clock). A wait that measures a fixed window needs a "// ${exemption} <why>" comment on that line or the line above.`,
+      `Wait for a condition instead (expect/poll, an event, page.clock). Only a fixed sleep that measures a window may carry "// ${exemption} <why>"; raised timeouts and test.slow() are never exempt (performance specs may use test.slow()).`,
     );
   return failures > 0 ? 1 : 0;
 }

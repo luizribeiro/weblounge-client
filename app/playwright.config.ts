@@ -15,6 +15,7 @@ export default defineConfig({
     {
       name: "chromium",
       testIgnore: [
+        "**/mobile-input-zoom.spec.ts",
         "**/mobile-page-zoom.spec.ts",
         "**/connection-resilience.spec.ts",
       ],

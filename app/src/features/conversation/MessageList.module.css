@@ -121,6 +121,14 @@
 .failed {
   color: var(--wl-color-error);
 }
+.retry {
+  appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
 .action {
   display: block;
   font-style: italic;

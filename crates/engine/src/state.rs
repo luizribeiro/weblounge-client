@@ -1,13 +1,14 @@
 use std::{
     cmp::Ordering,
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, name_key::NameKey,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
+    NoticeTone, name_key::NameKey,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,6 +113,13 @@ impl SendTarget {
                 | DirectAvailability::Resolving
                 | DirectAvailability::Failed => None,
             },
+        }
+    }
+
+    fn title(&self) -> String {
+        match self {
+            Self::Channel(channel) => channel.to_string(),
+            Self::Direct { nick, .. } => nick.to_string(),
         }
     }
 
@@ -384,9 +392,7 @@ impl NetworkModel {
         direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
         let Some(conversation) = NameKey::from_conversation(&message.conversation) else {
-            return vec![EngineToUi::Notice {
-                message_key: "engine.unsupported_conversation".into(),
-            }];
+            return vec![EngineToUi::notice("engine.unsupported_conversation")];
         };
         let origin = if history {
             TimelineOrigin::History
@@ -655,7 +661,11 @@ impl NetworkModel {
         Some(events)
     }
 
-    pub(crate) fn fail_send(&mut self, pending: &PendingSend, message_key: &str) -> EngineToUi {
+    pub(crate) fn fail_send(
+        &mut self,
+        pending: &PendingSend,
+        message_key: &str,
+    ) -> Vec<EngineToUi> {
         if let Some(record) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
             buffer
                 .timeline
@@ -664,11 +674,62 @@ impl NetworkModel {
         }) {
             record.projection.delivery = MessageDelivery::Failed;
         }
-        EngineToUi::MessageFailed {
+        let target = pending.target.title();
+        let mut events = vec![EngineToUi::MessageFailed {
+            network_id: self.network.id,
             buffer_id: pending.buffer_id,
+            target: target.clone(),
             local_send_id: pending.local_send_id,
             message_key: message_key.into(),
+        }];
+        let hidden_direct = !self.buffer_order.contains(&pending.buffer_id)
+            && self
+                .buffers
+                .get(&pending.buffer_id)
+                .is_some_and(|buffer| buffer.projection.kind == BufferKind::Direct);
+        if hidden_direct {
+            events.push(EngineToUi::Notice {
+                key: "notice.message_not_delivered".into(),
+                values: BTreeMap::from([
+                    ("network_id".into(), self.network.id.0.to_string()),
+                    ("target".into(), target),
+                ]),
+                tone: NoticeTone::Error,
+                action: Some(NoticeAction {
+                    label: "action.open".into(),
+                    run: "buffer.open-direct".into(),
+                }),
+            });
         }
+        events
+    }
+
+    pub(crate) fn retry_send(
+        &mut self,
+        buffer_id: BufferId,
+        local_send_id: LocalSendId,
+    ) -> Option<(PendingSend, EngineToUi)> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.as_ref())?;
+        let message = buffer.timeline.iter_mut().find(|record| {
+            record.projection.local_send_id == Some(local_send_id)
+                && record.projection.delivery == MessageDelivery::Failed
+        })?;
+        message.projection.delivery = MessageDelivery::Optimistic;
+        let pending = PendingSend {
+            buffer_id,
+            local_send_id,
+            target,
+            text: message.projection.text.clone(),
+            kind: message.projection.kind,
+        };
+        Some((
+            pending,
+            EngineToUi::MessageRetrying {
+                buffer_id,
+                local_send_id,
+            },
+        ))
     }
 
     pub(crate) fn history_targets(&self) -> Vec<SendTarget> {
@@ -790,10 +851,9 @@ impl NetworkModel {
     }
 
     pub(crate) fn close_direct(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
-        let buffer = self.buffers.get(&buffer_id)?;
+        let buffer = self.buffers.get_mut(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
-        self.names.remove(buffer.key.as_ref()?);
-        self.buffers.remove(&buffer_id);
+        buffer.direct = Some(DirectAvailability::Pending);
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
     }
@@ -833,7 +893,7 @@ impl NetworkModel {
     ) -> (BufferId, Vec<EngineToUi>) {
         let (buffer_id, added) = self.ensure_buffer(NameKey::Direct(nick), Some(direct));
         let mut events = Vec::new();
-        if let Some(buffer) = added {
+        if let Some(buffer) = added.or_else(|| self.reveal_buffer(buffer_id)) {
             events.push(EngineToUi::BufferAdded { buffer });
             events.push(self.buffers_event());
         }
@@ -1007,6 +1067,11 @@ impl NetworkModel {
 
         let (buffer_id, added) =
             self.ensure_buffer(incoming.conversation.clone(), incoming.direct.clone());
+        let added = added.or_else(|| {
+            (incoming.authorship != MessageAuthorship::Own)
+                .then(|| self.reveal_buffer(buffer_id))
+                .flatten()
+        });
         let mentioned = incoming.authorship != MessageAuthorship::Own
             && mentions_own_nick(&incoming.text, state);
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
@@ -1130,6 +1195,15 @@ impl NetworkModel {
         };
         let projection = self.add_buffer(key, kind, direct, None);
         (projection.id, Some(projection))
+    }
+
+    fn reveal_buffer(&mut self, buffer_id: BufferId) -> Option<BufferProjection> {
+        if self.buffer_order.contains(&buffer_id) {
+            return None;
+        }
+        let projection = self.buffers.get(&buffer_id)?.projection.clone();
+        self.buffer_order.push(buffer_id);
+        Some(projection)
     }
 
     fn add_buffer(
@@ -1308,9 +1382,7 @@ fn system_time_from_millis(milliseconds: i64) -> SystemTime {
 }
 
 fn inconsistent_state_notice() -> Vec<EngineToUi> {
-    vec![EngineToUi::Notice {
-        message_key: "engine.state_inconsistent".into(),
-    }]
+    vec![EngineToUi::notice("engine.state_inconsistent")]
 }
 
 fn draft_key(network: &str, buffer: &str, casemapping: papo::Casemapping) -> String {
@@ -1969,10 +2041,48 @@ mod tests {
             .begin_send(buffer.id, "will fail".into(), &state)
             .expect("channel is sendable");
 
-        model.fail_send(&pending, "engine.send_failed");
+        let events = model.fail_send(&pending, "engine.send_failed");
 
         let record = &model.buffers[&buffer.id].timeline[0];
         assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
+        assert!(matches!(
+            events.as_slice(),
+            [EngineToUi::MessageFailed {
+                network_id: NetworkId(1),
+                buffer_id,
+                target,
+                ..
+            }] if *buffer_id == buffer.id && target == "#room"
+        ));
+    }
+
+    #[test]
+    fn retrying_a_failed_send_reuses_its_row_and_payload() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None);
+        let (pending, _) = model
+            .begin_send(buffer.id, "try again".into(), &state)
+            .expect("channel is sendable");
+        model.fail_send(&pending, "engine.send_failed");
+
+        let (retried, event) = model
+            .retry_send(buffer.id, pending.local_send_id)
+            .expect("failed send retries");
+
+        assert_eq!(retried.text, "try again");
+        assert_eq!(retried.local_send_id, pending.local_send_id);
+        assert_eq!(
+            model.buffers[&buffer.id].timeline[0].projection.delivery,
+            crate::MessageDelivery::Optimistic
+        );
+        assert!(matches!(
+            event,
+            EngineToUi::MessageRetrying {
+                buffer_id,
+                local_send_id,
+            } if buffer_id == buffer.id && local_send_id == pending.local_send_id
+        ));
     }
 
     #[test]
@@ -2048,12 +2158,51 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_direct_buffer_removes_only_its_local_projection() {
+    fn closing_a_direct_buffer_hides_its_retained_state() {
         let (mut model, state) = model(10);
-        let (buffer_id, _) = model.ensure_buffer(NameKey::Direct(nick_name(&state, "alice")), None);
+        let key = NameKey::Direct(nick_name(&state, "alice"));
+        let (buffer_id, _) = model.ensure_buffer(key.clone(), None);
         assert!(model.close_direct(buffer_id).is_some());
         assert!(!model.buffer_order.contains(&buffer_id));
-        assert!(!model.buffers.contains_key(&buffer_id));
+        assert!(model.buffers.contains_key(&buffer_id));
+        assert_eq!(model.names.get(&key), Some(&buffer_id));
+    }
+
+    #[test]
+    fn closed_direct_reopens_only_for_peer_activity() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Direct(nick_name(&state, "alice"));
+        let (buffer_id, _) = model.ensure_buffer(key.clone(), None);
+        model.close_direct(buffer_id).expect("direct closes");
+
+        let mut own = incoming(
+            &state,
+            "from another device",
+            Some("own"),
+            None,
+            1,
+            TimelineOrigin::Live,
+        );
+        own.conversation = key.clone();
+        own.authorship = MessageAuthorship::Own;
+        model.receive_incoming(own, &state);
+        assert!(!model.buffer_order.contains(&buffer_id));
+
+        let mut peer = incoming(
+            &state,
+            "from alice",
+            Some("peer"),
+            None,
+            2,
+            TimelineOrigin::Live,
+        );
+        peer.conversation = key;
+        let events = model.receive_incoming(peer, &state);
+        assert!(model.buffer_order.contains(&buffer_id));
+        assert!(matches!(
+            events.first(),
+            Some(EngineToUi::BufferAdded { buffer }) if buffer.id == buffer_id
+        ));
     }
 
     #[test]
@@ -2121,8 +2270,8 @@ mod tests {
 
         assert!(matches!(
             events.as_slice(),
-            [crate::EngineToUi::Notice { message_key }]
-                if message_key == "engine.state_inconsistent"
+            [crate::EngineToUi::Notice { key, .. }]
+                if key == "engine.state_inconsistent"
         ));
     }
 }

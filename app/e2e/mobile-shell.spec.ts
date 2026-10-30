@@ -100,21 +100,23 @@ test.describe("mobile shell against local Ergo", () => {
       page.getByRole("button", { name: "#weblounge-test" }),
     ).toBeVisible();
 
-    const bots: IrcClient[] = [];
+    let bots: IrcClient[] = [];
     const suffix = Date.now().toString().slice(-4);
     const targetNick = `mobile09${suffix}`;
     try {
-      for (let index = 0; index < 11; index += 1) {
-        const nick = `mobile${index.toString().padStart(2, "0")}${suffix}`;
-        const bot = await IrcClient.connect(
-          nick,
-          "weblounge-bot",
-          "weblounge-bot-test",
-          "#weblounge-test",
-        );
-        bots.push(bot);
-        await bot.privmsgConfirmed("weblounge", `preview from ${nick}`);
-      }
+      bots = await Promise.all(
+        Array.from({ length: 11 }, async (_, index) => {
+          const nick = `mobile${index.toString().padStart(2, "0")}${suffix}`;
+          const bot = await IrcClient.connect(
+            nick,
+            "weblounge-bot",
+            "weblounge-bot-test",
+            "#weblounge-test",
+          );
+          await bot.privmsgConfirmed("weblounge", `preview from ${nick}`);
+          return bot;
+        }),
+      );
 
       const target = page.getByRole("button", { name: targetNick });
       await expect(target).toContainText(`preview from ${targetNick}`);

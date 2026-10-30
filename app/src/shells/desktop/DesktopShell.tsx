@@ -2,6 +2,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -79,6 +80,9 @@ export interface DesktopShellProps {
     | ((networkId: number, nick: string) => void)
     | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
+  readonly onRetry?:
+    | ((bufferId: number, localSendId: number) => void)
+    | undefined;
 }
 
 export function DesktopShell(props: DesktopShellProps) {
@@ -197,12 +201,20 @@ export function DesktopShell(props: DesktopShellProps) {
   createEffect(() => registry.updateCommands(props.commandSpecs ?? []));
   const run = (id: UiActionId) => registry.run(id, context());
 
-  createEffect(() => {
-    const activeBufferId = props.activeBufferId;
-    if (activeBufferId !== undefined && activeBufferId !== activeBuffer()?.id) {
-      setLayout((current) => showInFocusedPane(current, activeBufferId));
-    }
-  });
+  createEffect(
+    on(
+      () => props.activeBufferId,
+      (activeBufferId) => {
+        if (
+          activeBufferId !== undefined &&
+          activeBufferId !== activeBuffer()?.id
+        ) {
+          setLayout((current) => showInFocusedPane(current, activeBufferId));
+        }
+      },
+      { defer: true },
+    ),
+  );
 
   createEffect(() => {
     const current = drawer();
@@ -335,6 +347,11 @@ export function DesktopShell(props: DesktopShellProps) {
                   const buffer = activeBuffer();
                   if (buffer !== undefined)
                     void props.onSend(buffer.id, `/join ${channel}`);
+                }}
+                onRetry={(localSendId) => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined)
+                    props.onRetry?.(buffer.id, localSendId);
                 }}
                 readThrough={activeBuffer()?.read_through}
                 registerController={(controller) => {

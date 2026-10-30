@@ -112,10 +112,13 @@ test.describe("desktop shell against local Ergo", () => {
       await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(composer).toHaveValue("draft in home");
 
-      await page.goto("/?irc-password=weblounge-test");
+      await page.goto(
+        "/Local%20Ergo/weblounge-test?irc-password=weblounge-test",
+      );
       const reloadedHome = page.getByRole("textbox", {
         name: "Message #weblounge-test",
       });
+      await expect(reloadedHome).toHaveValue("draft in home");
       await reloadedHome.fill("/join #another");
       await reloadedHome.press("Enter");
       const restoredAnother = page.getByRole("textbox", {

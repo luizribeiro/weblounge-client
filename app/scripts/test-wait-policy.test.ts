@@ -30,3 +30,20 @@ it("allows condition waits, short timeouts and justified observation windows", (
 
   expect(waitPolicyViolations(source)).toEqual([]);
 });
+
+it("never exempts raised timeouts or slowed tests outside performance specs", () => {
+  const source = [
+    "test.slow(); // wait-ok: many messages",
+    "await expect(row).toBeVisible({ timeout: 15_000 }); // wait-ok: slow replay",
+  ].join("\n");
+
+  expect(
+    waitPolicyViolations(source, "e2e/engine.spec.ts").map((v) => v.reason),
+  ).toEqual(["slowed test timeout", "raised timeout"]);
+  expect(
+    waitPolicyViolations(
+      "test.slow();",
+      "e2e/message-list-performance.spec.ts",
+    ),
+  ).toEqual([]);
+});

@@ -1,5 +1,7 @@
-interface MessageValues {
+export interface MessageValues {
   readonly input?: string;
+  readonly network_id?: string;
+  readonly target?: string;
   readonly text?: string;
 }
 
@@ -29,6 +31,24 @@ export const messageKeys = [
   "engine.worker_failed",
   "engine.command_failed",
 ] as const;
+
+export const noticeKeys = ["notice.message_not_delivered"] as const;
+export const actionKeys = ["action.open"] as const;
+
+export type MessageKey =
+  | (typeof messageKeys)[number]
+  | (typeof noticeKeys)[number]
+  | (typeof actionKeys)[number];
+
+const knownMessageKeys: ReadonlySet<string> = new Set([
+  ...messageKeys,
+  ...noticeKeys,
+  ...actionKeys,
+]);
+
+export function isMessageKey(key: string): key is MessageKey {
+  return knownMessageKeys.has(key);
+}
 
 const commandStrings: Readonly<Record<string, string>> = {
   "cmd.close.confirmation_action": "Leave",
@@ -121,6 +141,10 @@ export function t(key: string, values: MessageValues = {}): string {
     case "engine.worker_failed":
     case "engine.command_failed":
       return "Something went wrong. Try again.";
+    case "notice.message_not_delivered":
+      return `Message to ${values.target ?? "that person"} wasn't delivered`;
+    case "action.open":
+      return "Open";
     case "mobile.preview.own":
       return `You: ${values.text ?? ""}`;
     default:

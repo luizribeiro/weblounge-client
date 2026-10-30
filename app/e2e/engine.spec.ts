@@ -171,7 +171,6 @@ test.describe("local Ergo user flow", () => {
         page.locator("[data-message-row]").filter({ hasText: live }),
       ).toBeVisible();
       await expectMeasuredTimeline(page);
-
       await page.setViewportSize({ width: 800, height: 900 });
       await expectMeasuredTimeline(page);
 
@@ -307,11 +306,16 @@ test.describe("local Ergo user flow", () => {
         page.getByRole("button", { name: /new message/ }),
       ).toHaveCount(0);
       await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
-      for (let index = 0; index < 40; index += 1) {
-        await bot.privmsgConfirmed(channel, `timeline seed ${index}`);
+      const seeds = Array.from(
+        { length: 30 },
+        (_, index) =>
+          `timeline seed ${index} ${"wrapped history makes the list scroll ".repeat(6)}`,
+      );
+      for (const seed of seeds) {
+        await bot.privmsgConfirmed(channel, seed);
       }
       await expect(
-        page.getByText("timeline seed 39", { exact: true }),
+        page.getByText(seeds.at(-1) ?? "", { exact: true }),
       ).toBeVisible();
       await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
       await expect(active).toHaveAttribute("data-unread", "0", {

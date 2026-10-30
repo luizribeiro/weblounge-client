@@ -17,6 +17,12 @@ const channel: BufferProjection = {
   mentions: 0,
   read_through: null,
 };
+const otherChannel: BufferProjection = {
+  ...channel,
+  id: 3,
+  title: "#other",
+  draft_key: "1:#other",
+};
 const members: MemberWindow = {
   type: "members_changed",
   buffer_id: 2,
@@ -184,4 +190,27 @@ it("replaces the URL when a buffer is selected", () => {
     replace.mockRestore();
     push.mockRestore();
   }
+});
+
+it("does not reset a local selection to a stale external selection", () => {
+  render(() => (
+    <DesktopShell
+      activeBufferId={otherChannel.id}
+      buffers={[channel, otherChannel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  fireEvent.click(screen.getByRole("button", { name: "#room" }));
+
+  expect(screen.getByRole("textbox", { name: "Message #room" })).toBeVisible();
 });

@@ -31,7 +31,17 @@ test.describe("safe-area profiles against local Ergo", () => {
         "iphone-portrait",
       );
       await page.getByRole("button", { name: "Show members" }).click();
-      await expect(page.getByRole("dialog", { name: "Members" })).toBeVisible();
+      const membersDialog = page.getByRole("dialog", { name: "Members" });
+      await expect(membersDialog).toBeVisible();
+      await expect
+        .poll(() =>
+          membersDialog.evaluate((dialog) =>
+            dialog
+              .getAnimations({ subtree: true })
+              .every((animation) => animation.playState === "finished"),
+          ),
+        )
+        .toBe(true);
       await auditSafeArea(page);
     });
   });

@@ -39,6 +39,9 @@ export interface MobileConversationProps {
     explicit: boolean,
   ) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
+  readonly onRetry?:
+    | ((bufferId: number, localSendId: number) => void)
+    | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
 }
 
@@ -171,6 +174,9 @@ export function MobileConversation(props: MobileConversationProps) {
           onOpenChannel={(channel) => {
             void props.onSend(props.buffer.id, `/join ${channel}`);
           }}
+          onRetry={(localSendId) =>
+            props.onRetry?.(props.buffer.id, localSendId)
+          }
           presentation="mobile"
           readThrough={props.buffer.read_through}
           registerController={(controller) => {

@@ -5,6 +5,16 @@ test("renders the chair glyph instead of a flat mask", async ({ page }) => {
   const mark = page.locator("[data-sidebar] span[aria-hidden='true']").first();
   const chip = mark.locator("..");
   await expect(chip).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document
+          .getAnimations()
+          .every((animation) => animation.playState === "finished"),
+      ),
+    )
+    .toBe(true);
   const screenshot = await chip.screenshot();
   const panel = await mark.evaluate(
     (element) => getComputedStyle(element).backgroundColor,

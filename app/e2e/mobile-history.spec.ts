@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { emulateStandalone } from "./mobile-platform";
 
 test.describe("mobile platform history against local Ergo", () => {
   test.skip(
@@ -108,28 +109,5 @@ async function swipeBack(page: import("@playwright/test").Page): Promise<void> {
     clientX: 360,
     clientY: 300,
     pointerId: 1,
-  });
-}
-
-async function emulateStandalone(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  await page.addInitScript(() => {
-    const nativeMatchMedia = window.matchMedia.bind(window);
-    window.matchMedia = (query: string) => {
-      if (query !== "(display-mode: standalone)") {
-        return nativeMatchMedia(query);
-      }
-      return {
-        matches: true,
-        media: query,
-        onchange: null,
-        addEventListener() {},
-        addListener() {},
-        dispatchEvent: () => true,
-        removeEventListener() {},
-        removeListener() {},
-      };
-    };
   });
 }

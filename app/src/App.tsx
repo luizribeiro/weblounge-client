@@ -1,4 +1,9 @@
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import {
+  type ActionId,
+  ActionRegistry,
+  isActionId,
+} from "./actions/action-registry";
 import { commandHelp } from "./actions/command-help";
 import { consumeDebugPassword } from "./debug-irc-config";
 import {
@@ -20,7 +25,12 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "./engine/protocol";
-import { t } from "./features/composer/strings";
+import {
+  isMessageKey,
+  type MessageKey,
+  type MessageValues,
+  t,
+} from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import type { HostedSession } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
@@ -29,6 +39,8 @@ import {
   contextMenuRegistry,
   installContextMenuHandler,
 } from "./ui/context-menu";
+import { createNotifier } from "./ui/notices";
+import { Toast } from "./ui/Toast";
 
 const reloadMarker = "weblounge-build-reload";
 
@@ -45,7 +57,7 @@ interface AppProps {
 export function App(props: AppProps) {
   const clientId = crypto.randomUUID();
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
-  const [engineNotice, setEngineNotice] = createSignal<string>();
+  const notifier = createNotifier();
   const [hostedError, setHostedError] = createSignal<string>();
   const [shellReady, setShellReady] = createSignal(
     props.hostedSession === undefined,
@@ -75,6 +87,28 @@ export function App(props: AppProps) {
   let restartingHostedAuthorization = false;
   let engineInstance: string | undefined;
   let disposed = false;
+  const noticeActions = new ActionRegistry(
+    {
+      "buffer.open-direct": (context) => {
+        if (
+          client === undefined ||
+          context.targetNetworkId === undefined ||
+          context.targetNick === undefined
+        ) {
+          return;
+        }
+        void client.send({
+          id: crypto.randomUUID(),
+          request: {
+            type: "open_direct",
+            network_id: context.targetNetworkId,
+            nick: context.targetNick,
+          },
+        });
+      },
+    },
+    "other",
+  );
 
   onMount(() => {
     const removeContextMenuHandler = installContextMenuHandler(document);
@@ -111,15 +145,31 @@ export function App(props: AppProps) {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
       if (message.type === "notice") {
-        if (message.message_key === "engine.hosted_auth_failed") {
+        if (isMessageKey(message.key)) {
+          const action = noticeAction(message.action);
+          notifier.notify({
+            message: {
+              key: message.key,
+              values: noticeValues(message.values),
+            },
+            tone: message.tone,
+            ...(action === undefined ? {} : { action }),
+          });
+        }
+        if (message.key === "engine.hosted_auth_failed") {
           void restartHostedAuthorization("revoked");
           return;
         }
-        const notice = t(message.message_key);
-        setEngineNotice(notice);
+        const notice = t(message.key, message.values);
+        if (message.key === "engine.connection_failed") {
+          setComposerNotice(notice);
+          if (props.hostedSession !== undefined) setHostedError(notice);
+        }
       }
       if (message.type === "message_failed") {
-        setComposerNotice(t(message.message_key));
+        if (buffers().some((buffer) => buffer.id === message.buffer_id)) {
+          setComposerNotice(t(message.message_key));
+        }
       }
       if (message.type === "command_specs_changed") {
         setCommandSpecs(message.specs);
@@ -309,11 +359,6 @@ export function App(props: AppProps) {
       >
         {engineStatus()}
       </p>
-      {engineNotice() !== undefined && (
-        <p class="visually-hidden" role="note">
-          {engineNotice()}
-        </p>
-      )}
       {!engineReady() ? null : startupError() !== undefined ? (
         <HostedStatus message={startupError() ?? ""} error />
       ) : !shellReady() ? (
@@ -423,10 +468,69 @@ export function App(props: AppProps) {
               request: { type: "reconnect", network_id: networkId },
             });
           }}
+          onRetry={(bufferId, localSendId) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: {
+                type: "retry_message",
+                buffer_id: bufferId,
+                local_send_id: localSendId,
+              },
+            });
+          }}
         />
       )}
+      <Show when={notifier.notice()}>
+        {(notice) => (
+          <Toast
+            notice={notice()}
+            onAction={runNoticeAction}
+            onDismiss={notifier.dismiss}
+          />
+        )}
+      </Show>
     </div>
   );
+
+  function runNoticeAction(action: ActionId): void {
+    const values = notifier.notice()?.message.values;
+    const networkId = Number(values?.network_id);
+    noticeActions.run(action, {
+      bufferCount: buffers().length,
+      listActive: false,
+      ...(Number.isSafeInteger(networkId)
+        ? { targetNetworkId: networkId }
+        : {}),
+      ...(values?.target === undefined ? {} : { targetNick: values.target }),
+    });
+  }
+}
+
+function noticeAction(
+  action: { readonly label: string; readonly run: string } | null,
+): { readonly label: MessageKey; readonly run: ActionId } | undefined {
+  if (
+    action === null ||
+    !isMessageKey(action.label) ||
+    !isActionId(action.run)
+  ) {
+    return undefined;
+  }
+  return { label: action.label, run: action.run };
+}
+
+function noticeValues(
+  values: Readonly<Record<string, string | undefined>>,
+): MessageValues {
+  return {
+    ...(values.input === undefined ? {} : { input: values.input }),
+    ...(values.network_id === undefined
+      ? {}
+      : { network_id: values.network_id }),
+    ...(values.target === undefined ? {} : { target: values.target }),
+    ...(values.text === undefined ? {} : { text: values.text }),
+  };
 }
 
 async function startEngine(
@@ -547,7 +651,11 @@ function applyDebugEvent(
   } else if (message.type === "buffer_added") {
     setBuffers((current) => upsert(current, message.buffer));
   } else if (message.type === "buffer_updated") {
-    setBuffers((current) => upsert(current, message.buffer));
+    setBuffers((current) =>
+      current.map((buffer) =>
+        buffer.id === message.buffer.id ? message.buffer : buffer,
+      ),
+    );
   } else if (message.type === "unread_changed") {
     setBuffers((current) =>
       current.map((buffer) =>
@@ -638,6 +746,19 @@ function applyDebugEvent(
         (current.get(message.buffer_id) ?? []).map((item) =>
           item.local_send_id === message.local_send_id
             ? { ...item, delivery: "failed" }
+            : item,
+        ),
+      );
+      return next;
+    });
+  } else if (message.type === "message_retrying") {
+    setMessages((current) => {
+      const next = new Map(current);
+      next.set(
+        message.buffer_id,
+        (current.get(message.buffer_id) ?? []).map((item) =>
+          item.local_send_id === message.local_send_id
+            ? { ...item, delivery: "optimistic" }
             : item,
         ),
       );

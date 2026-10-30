@@ -35,6 +35,9 @@ export interface MobileShellData {
     explicit: boolean,
   ) => void;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
+  readonly onRetry?:
+    | ((bufferId: number, localSendId: number) => void)
+    | undefined;
 }
 
 interface MobileScreenProps extends MobileShellData {
@@ -117,6 +120,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
           onRequestCompletion={props.onRequestCompletion}
           onRetryNetwork={props.onRetryNetwork}
+          onRetry={props.onRetry}
           onSend={props.onSend}
         />
       ) : null}

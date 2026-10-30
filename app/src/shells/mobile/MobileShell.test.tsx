@@ -17,6 +17,61 @@ const buffer: BufferProjection = {
 
 afterEach(() => window.history.replaceState({}, "", "/"));
 
+it("starts a root route on the chats list", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={2}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "mel" })).toBeNull();
+});
+
+it("opens a deep link above the chats list", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={2}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+});
+
 it("keeps the chat list mounted without reloading history", () => {
   vi.stubGlobal(
     "matchMedia",
@@ -52,7 +107,9 @@ it("keeps the chat list mounted without reloading history", () => {
   expect(loadHistory).toHaveBeenCalledTimes(1);
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
-  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
+  expect(fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 })).toBe(
+    false,
+  );
   fireEvent.pointerMove(shell, { clientX: 45, pointerId: 7 });
   fireEvent.pointerCancel(shell, { clientX: 45, pointerId: 7 });
   const returning = document.querySelector('[data-swipe-returning="true"]');
@@ -69,7 +126,7 @@ it("keeps the chat list mounted without reloading history", () => {
 });
 
 it("closes the member drawer before popping the chat", () => {
-  window.history.replaceState({}, "", "/chat/3");
+  history.replaceState(null, "", "/Local/room");
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({ matches: true }) as MediaQueryList),
@@ -117,7 +174,7 @@ it("closes the member drawer before popping the chat", () => {
 });
 
 it("clears an in-flight swipe when browser history or visibility wins", () => {
-  window.history.replaceState({}, "", "/chat/2");
+  history.replaceState(null, "", "/Local/mel");
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({ matches: false }) as MediaQueryList),

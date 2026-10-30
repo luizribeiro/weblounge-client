@@ -10,6 +10,8 @@ import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
+import type { NoticeAction } from "./NoticeAction";
+import type { NoticeTone } from "./NoticeTone";
 
 /**
  * Events emitted to a UI client.
@@ -50,7 +52,19 @@ message: string, } | { "type": "notice",
 /**
  * Localization key interpreted by the UI shell.
  */
-message_key: string, } | { "type": "command_help_requested",
+key: string,
+/**
+ * Named localization substitutions, never preformatted display text.
+ */
+values: { [key in string]?: string },
+/**
+ * Visual severity for the shared toast surface.
+ */
+tone: NoticeTone,
+/**
+ * Optional action dispatched by the UI registry.
+ */
+action: NoticeAction | null, } | { "type": "command_help_requested",
 /**
  * Optional command or alias selected by `/help`.
  */
@@ -168,9 +182,17 @@ local_send_id: LocalSendId,
  */
 message: MessageProjection, } | { "type": "message_failed",
 /**
+ * Network that owns the failed target.
+ */
+network_id: NetworkId,
+/**
  * Destination buffer.
  */
 buffer_id: BufferId,
+/**
+ * Current channel or direct-message target label.
+ */
+target: string,
 /**
  * Optimistic send identity.
  */
@@ -178,7 +200,15 @@ local_send_id: LocalSendId,
 /**
  * Stable localization key, never a secret-bearing error string.
  */
-message_key: string, } | { "type": "unread_changed",
+message_key: string, } | { "type": "message_retrying",
+/**
+ * Destination buffer.
+ */
+buffer_id: BufferId,
+/**
+ * Retried optimistic send identity.
+ */
+local_send_id: LocalSendId, } | { "type": "unread_changed",
 /**
  * Buffer whose counters changed.
  */

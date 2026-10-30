@@ -68,7 +68,12 @@ async function exerciseLinks(
     await expect(external).toHaveAttribute("href", url);
     await expect(external).toHaveAttribute("target", "_blank");
     await expect(external).toHaveAttribute("rel", "noopener noreferrer");
-    if (audit) await nativeFeelAudit(page);
+    if (audit) {
+      await expect(
+        page.locator('[data-buffer-id][aria-current="page"]'),
+      ).toHaveAttribute("data-unread", "0");
+      await nativeFeelAudit(page);
+    }
     if (longUrl) {
       const geometry = await external.evaluate((link) => {
         const list = link.closest<HTMLElement>("[data-message-list]");

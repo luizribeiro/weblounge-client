@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use ts_rs::TS;
 
 use crate::commands::CommandSpec;
@@ -146,6 +147,25 @@ pub enum NetworkConnectionState {
         /// Localization key for the human explanation.
         message_key: String,
     },
+}
+
+/// Visual severity for one transient app notice.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticeTone {
+    /// Informational feedback that does not indicate a failed operation.
+    Neutral,
+    /// An operation failed and may need user attention.
+    Error,
+}
+
+/// Action dispatched by a transient notice through the UI action registry.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct NoticeAction {
+    /// Localization key for the action label.
+    pub label: String,
+    /// Stable action-registry identifier.
+    pub run: String,
 }
 
 /// UI projection of one configured network.
@@ -471,6 +491,13 @@ pub enum EngineRequest {
         /// Message body.
         text: String,
     },
+    /// Retry one retained failed optimistic send.
+    RetryMessage {
+        /// Buffer containing the failed row.
+        buffer_id: BufferId,
+        /// Stable local send identity to retry in place.
+        local_send_id: LocalSendId,
+    },
     /// Parse and submit ordinary composer text or a supported slash command.
     SubmitInput {
         /// Buffer whose composer produced the input.
@@ -573,7 +600,13 @@ pub enum EngineToUi {
     /// Stable user-facing notice emitted by an engine adapter.
     Notice {
         /// Localization key interpreted by the UI shell.
-        message_key: String,
+        key: String,
+        /// Named localization substitutions, never preformatted display text.
+        values: BTreeMap<String, String>,
+        /// Visual severity for the shared toast surface.
+        tone: NoticeTone,
+        /// Optional action dispatched by the UI registry.
+        action: Option<NoticeAction>,
     },
     /// Ask the UI to present command help from its merged action registry.
     CommandHelpRequested {
@@ -710,12 +743,23 @@ pub enum EngineToUi {
     },
     /// Mark one optimistic row as failed.
     MessageFailed {
+        /// Network that owns the failed target.
+        network_id: NetworkId,
         /// Destination buffer.
         buffer_id: BufferId,
+        /// Current channel or direct-message target label.
+        target: String,
         /// Optimistic send identity.
         local_send_id: LocalSendId,
         /// Stable localization key, never a secret-bearing error string.
         message_key: String,
+    },
+    /// Return one failed row to its optimistic state before retrying it.
+    MessageRetrying {
+        /// Destination buffer.
+        buffer_id: BufferId,
+        /// Retried optimistic send identity.
+        local_send_id: LocalSendId,
     },
     /// Update unread and mention counters.
     UnreadChanged {
@@ -735,6 +779,17 @@ pub enum EngineToUi {
         /// Latest retained committed row covered by the marker.
         through: Option<MessageId>,
     },
+}
+
+impl EngineToUi {
+    pub(crate) fn notice(key: impl Into<String>) -> Self {
+        Self::Notice {
+            key: key.into(),
+            values: BTreeMap::new(),
+            tone: NoticeTone::Neutral,
+            action: None,
+        }
+    }
 }
 
 #[cfg(test)]

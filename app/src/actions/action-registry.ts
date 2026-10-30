@@ -5,6 +5,7 @@ import { t } from "../features/composer/strings";
 export type UiActionId =
   | "buffer.next"
   | "buffer.open"
+  | "buffer.open-direct"
   | "buffer.previous"
   | "list.next"
   | "list.open"
@@ -31,6 +32,7 @@ export interface ActionContext {
   readonly permission?: CommandPermission;
   readonly targetBufferId?: number;
   readonly targetNetworkId?: number;
+  readonly targetNick?: string;
 }
 
 export interface ActionAvailability {
@@ -104,6 +106,7 @@ const specs: readonly ActionSpec[] = [
     alwaysAvailable,
     { ...mod("k", "⇧⌘K", "Ctrl+Shift+K"), shift: true },
   ),
+  command("buffer.open-direct", "Open direct message", alwaysAvailable),
   command("network.add", "Add network", alwaysAvailable),
   command("network.open-server", "Open server messages", alwaysAvailable),
   command(
@@ -134,6 +137,10 @@ const specs: readonly ActionSpec[] = [
   command("list.next", "Next item", needsList, key("ArrowDown", "↓", "list")),
   command("list.open", "Open item", needsList, key("Enter", "↵", "list")),
 ];
+
+export function isActionId(id: string): id is ActionId {
+  return id.startsWith("command.") || specs.some((spec) => spec.id === id);
+}
 
 export class ActionRegistry {
   readonly #handlers: Readonly<Partial<Record<UiActionId, ActionHandler>>>;
