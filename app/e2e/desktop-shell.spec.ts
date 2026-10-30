@@ -22,6 +22,7 @@ test.describe("desktop shell against local Ergo", () => {
       await bot.privmsgConfirmed("#weblounge-test", "short line one");
       await bot.privmsgConfirmed("#weblounge-test", "short line two");
       await page.goto("/?irc-password=weblounge-test");
+      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(
         page.getByText("short line two", { exact: true }),
       ).toBeVisible();
