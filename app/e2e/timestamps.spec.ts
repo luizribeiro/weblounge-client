@@ -9,7 +9,6 @@ test("desktop timestamps fit in 12-hour and 24-hour locales", async ({
   baseURL,
   browser,
 }) => {
-  test.slow();
   if (baseURL === undefined) throw new Error("Playwright base URL is missing");
   for (const { hourMarker, locale } of locales) {
     const context = await browser.newContext({

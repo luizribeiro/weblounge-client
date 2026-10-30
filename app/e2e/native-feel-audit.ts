@@ -237,7 +237,15 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
   );
   expect(layoutShift).toBeLessThanOrEqual(0.01);
 
-  await page.waitForTimeout(100);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        document
+          .getAnimations()
+          .every((animation) => animation.playState === "finished"),
+      ),
+    )
+    .toBe(true);
   await page.evaluate(() => {
     const metrics = (
       window as Window & {
@@ -258,7 +266,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     metrics.timeouts = 0;
     metrics.trackingWaste = true;
   });
-  await page.waitForTimeout(idleObservationMilliseconds);
+  await page.waitForTimeout(idleObservationMilliseconds); // wait-ok: measures idle work over a fixed observation window
   const result = await page.evaluate(() => {
     const metrics = (
       window as Window & {

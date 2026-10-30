@@ -122,7 +122,6 @@ test.describe("native feel against local Ergo", () => {
           name: "Open direct message with hidden-audit",
         }),
       ).toBeVisible();
-      await page.waitForTimeout(100);
       await page.evaluate(
         () =>
           new Promise<void>((resolve) =>

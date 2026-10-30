@@ -252,7 +252,7 @@ test.describe("mobile shell against local Ergo", () => {
         clientY: 300,
         pointerId: 7,
       });
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(150); // wait-ok: holds the pointer to produce a low-velocity swipe
       await shell.dispatchEvent("pointerup", {
         clientX: 45,
         clientY: 300,
