@@ -11,7 +11,8 @@
 html,
 body,
 #root,
-[data-application-mount] {
+[data-application-mount],
+[data-shell-container] {
   block-size: 100%;
   inline-size: 100%;
   margin: 0;

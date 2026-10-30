@@ -56,6 +56,9 @@ test.describe("desktop shell against local Ergo", () => {
     page,
   }) => {
     const draftChannel = `#another-${Date.now().toString(36)}`;
+    const fixtureMessage = `hello from completion bot ${draftChannel}`;
+    const plainMessage = `plain composer message ${draftChannel}`;
+    const actionMessage = `waves hello ${draftChannel}`;
     const bot = await IrcClient.connect(
       "composer",
       "weblounge-bot",
@@ -63,28 +66,23 @@ test.describe("desktop shell against local Ergo", () => {
       "#weblounge-test",
     );
     try {
-      await bot.privmsgConfirmed(
-        "#weblounge-test",
-        "hello from completion bot",
-      );
+      await bot.privmsgConfirmed("#weblounge-test", fixtureMessage);
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto("/?irc-password=weblounge-test");
       await expect(
-        page.getByText("hello from completion bot", { exact: true }),
+        page.getByText(fixtureMessage, { exact: true }),
       ).toBeVisible();
       const composer = page.getByRole("textbox", {
         name: "Message #weblounge-test",
       });
 
-      await composer.fill("plain composer message");
+      await composer.fill(plainMessage);
+      await composer.press("Enter");
+      await expect(page.getByText(plainMessage, { exact: true })).toBeVisible();
+      await composer.fill(`/me ${actionMessage}`);
       await composer.press("Enter");
       await expect(
-        page.getByText("plain composer message", { exact: true }),
-      ).toBeVisible();
-      await composer.fill("/me waves hello");
-      await composer.press("Enter");
-      await expect(
-        page.locator("[data-message-row]").filter({ hasText: "waves hello" }),
+        page.locator("[data-message-row]").filter({ hasText: actionMessage }),
       ).toBeVisible();
 
       await composer.fill("comp");

@@ -21,7 +21,7 @@ test.describe("composer suggestions against local Ergo", () => {
       try {
         await installNativeFeelInstrumentation(page);
         await page.emulateMedia({ colorScheme: "light" });
-        await page.goto("/?irc-password=weblounge-test");
+        await page.goto("/?irc-password=weblounge-test&completion-delay=100");
         await page.getByRole("button", { name: /^#weblounge-test/ }).click();
         const composer = page.getByRole("textbox", {
           name: "Message #weblounge-test",
@@ -44,6 +44,8 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(page.getByText(/\/join <channels>/u)).toHaveCount(0);
         await assertOpaquePopup(page);
         await settlePopup(page);
+        await assertStableUpdates(page, composer);
+        await resetLayoutShift(page);
         await assertSelectedContrast(page);
         await assertGeometry(page, composer, 6, geometryBefore);
         await capture(page, "composer-suggestions-desktop-slash-light.png");
@@ -111,7 +113,7 @@ test.describe("composer suggestions against local Ergo", () => {
       try {
         await installNativeFeelInstrumentation(page);
         await page.emulateMedia({ colorScheme: "light" });
-        await page.goto("/?irc-password=weblounge-test");
+        await page.goto("/?irc-password=weblounge-test&completion-delay=100");
         await page.getByRole("button", { name: "#weblounge-test" }).click();
         const composer = page.getByRole("textbox", {
           name: "Message #weblounge-test",
@@ -137,6 +139,8 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(page.getByText(/\/join <channels>/u)).toHaveCount(0);
         await assertOpaquePopup(page);
         await settlePopup(page);
+        await assertStableUpdates(page, composer);
+        await resetLayoutShift(page);
         await assertSelectedContrast(page);
         await assertGeometry(page, composer, 4.5, geometryBefore);
         await capture(page, "composer-suggestions-mobile-slash-light.png");
@@ -334,6 +338,56 @@ async function settlePopup(page: Page): Promise<void> {
         element.getAnimations({ subtree: true }).map((item) => item.finished),
       );
     });
+}
+
+async function assertStableUpdates(
+  page: Page,
+  composer: Locator,
+): Promise<void> {
+  await composer.fill("/");
+  const join = page.getByRole("option", { name: /\/join/u });
+  await expect(join).toBeVisible();
+  await join.evaluate((element) => {
+    (
+      window as Window & { __webloungePersistentSuggestion?: Element }
+    ).__webloungePersistentSuggestion = element;
+  });
+  for (const input of ["/j", "/jo", "/joi"]) {
+    await composer.fill(input);
+    const samples = await page.locator("[data-composer-suggestions]").evaluate(
+      (popup) =>
+        new Promise<
+          readonly { readonly opacity: number; readonly rows: number }[]
+        >((resolve) => {
+          const values: { opacity: number; rows: number }[] = [];
+          const sample = () => {
+            values.push({
+              opacity: Number.parseFloat(getComputedStyle(popup).opacity),
+              rows: popup.querySelectorAll('[role="option"]').length,
+            });
+            if (values.length === 8) resolve(values);
+            else requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        }),
+    );
+    expect(
+      samples.every(({ opacity, rows }) => opacity === 1 && rows > 0),
+    ).toBe(true);
+    await expect(join).toBeVisible();
+    expect(
+      await join.evaluate(
+        (element) =>
+          (
+            window as Window & {
+              __webloungePersistentSuggestion?: Element;
+            }
+          ).__webloungePersistentSuggestion === element,
+      ),
+    ).toBe(true);
+  }
+  await composer.fill("/");
+  await expect(join).toBeVisible();
 }
 
 async function resetLayoutShift(page: Page): Promise<void> {

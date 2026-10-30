@@ -48,11 +48,19 @@ export function Composer(props: ComposerProps) {
   const optionId = (index: number) => `${listId()}-${index}`;
   const suggestions = createMemo(() => {
     const result = props.completion;
-    return result?.buffer_id === props.bufferId &&
-      text() !== dismissedInput() &&
-      result.candidates.length > 0
-      ? result
-      : undefined;
+    if (
+      result?.buffer_id !== props.bufferId ||
+      text() === dismissedInput() ||
+      result.candidates.length === 0
+    )
+      return undefined;
+    const input = text();
+    if (!input.startsWith(result.input)) return undefined;
+    const query = input.slice(result.replace_start, completionCursor());
+    const candidates = result.candidates.filter((candidate) =>
+      candidateMatches(candidate, query),
+    );
+    return candidates.length > 0 ? { ...result, candidates } : result;
   });
   const confirmationText = () => {
     const command = pendingConfirmation();
@@ -126,7 +134,10 @@ export function Composer(props: ComposerProps) {
     setCompletionCursor(cursor);
     props.onRequestCandidates?.(value, cursor, explicit);
   };
-  const accept = (index = selected() >= 0 ? selected() : 0) => {
+  const accept = (
+    index = selected() >= 0 ? selected() : 0,
+    acceptSeparatorOnly = true,
+  ) => {
     const result = suggestions();
     const candidate = result?.candidates[index];
     if (result === undefined || candidate === undefined) return false;
@@ -138,6 +149,8 @@ export function Composer(props: ComposerProps) {
     const replaceEnd =
       result.input === currentText ? result.replace_end : completionCursor();
     const next = `${currentText.slice(0, result.replace_start)}${replacement}${currentText.slice(replaceEnd)}`;
+    if (!acceptSeparatorOnly && next.trimEnd() === currentText.trimEnd())
+      return false;
     const cursor = result.replace_start + replacement.length;
     update(next);
     queueMicrotask(() => {
@@ -175,7 +188,7 @@ export function Composer(props: ComposerProps) {
       setSelected(-1);
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!accept()) submit();
+      if (!accept(undefined, false)) submit();
     } else if (event.key === "Tab") {
       event.preventDefault();
       if (!accept()) {
@@ -308,6 +321,25 @@ export function Composer(props: ComposerProps) {
       </p>
     </div>
   );
+}
+
+function candidateMatches(
+  candidate: CompletionCandidate,
+  query: string,
+): boolean {
+  const normalized = query.toLocaleLowerCase();
+  switch (candidate.type) {
+    case "command":
+      return `/${candidate.name.toLocaleLowerCase()}`.startsWith(normalized);
+    case "person":
+      return candidate.nick
+        .toLocaleLowerCase()
+        .startsWith(
+          normalized.startsWith("@") ? normalized.slice(1) : normalized,
+        );
+    case "channel":
+      return candidate.name.toLocaleLowerCase().startsWith(normalized);
+  }
 }
 
 export function replacementFor(

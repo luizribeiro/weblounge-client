@@ -98,6 +98,11 @@ export default defineConfig(({ mode }) => {
 
 function testContentSecurityPolicy(devServer: boolean): string {
   return [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "manifest-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval'",
     `style-src 'self'${devServer ? " 'unsafe-inline'" : ""}`,
     "worker-src 'self'",

@@ -56,7 +56,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
   };
 
   return (
-    <div data-shell-container="true" style={{ height: "100%" }}>
+    <div data-shell-container="true">
       {platform.environment().shell === "mobile" ? (
         <MobileShell
           {...sharedProps}

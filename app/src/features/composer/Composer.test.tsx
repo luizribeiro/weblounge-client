@@ -273,9 +273,11 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     trigger: "command",
   });
   expect(screen.getAllByRole("option")).toHaveLength(2);
+  const joinRow = screen.getByRole("option", { name: /\/join/u });
 
   fireEvent.input(input, { target: { value: "/j" } });
-  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
   expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
     "data-completion-input",
     "/",
@@ -287,10 +289,35 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     trigger: "command",
   });
   expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
   expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
     "data-completion-input",
     "/j",
   );
+});
+
+it("submits when Enter would only add a completion separator", async () => {
+  const onSend = vi.fn(() => true);
+  render(() => (
+    <Composer
+      bufferId={9}
+      bufferTitle="#rust"
+      completion={{
+        ...completion("/join #rust", [{ type: "channel", name: "#rust" }]),
+        argument_hint: "cmd.join.usage",
+        buffer_id: 9,
+        replace_start: 6,
+      }}
+      draftKey="test:exact-completion"
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/join #rust" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  expect(onSend).toHaveBeenCalledWith("/join #rust");
+  await waitFor(() => expect(input).toHaveValue(""));
 });
 
 it("requests as input changes, accepts Tab, and ignores IME composition", async () => {
