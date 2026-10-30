@@ -1,54 +1,44 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const appDirectory = resolve(import.meta.dirname, "..");
-const source = await readFile(
-  resolve(appDirectory, "assets/chair.svg"),
-  "utf8",
-);
+const faviconPath = resolve(appDirectory, "assets/favicon.svg");
+const favicon = await readFile(faviconPath, "utf8");
 const iconDirectory = resolve(appDirectory, "public/icons");
-const artwork = source.slice(
-  source.indexOf(">") + 1,
-  source.lastIndexOf("</svg>"),
+const mark = favicon.slice(
+  favicon.indexOf('<g id="mark">'),
+  favicon.lastIndexOf("</g>") + "</g>".length,
 );
 
-const colors = {
-  dark: "#15231c",
-  ink: "#1b2a22",
-  paper: "#efe8d8",
-  signal: "#e3b778",
-};
+export const brandColors = { felt: "#1B2A22", paper: "#EFE8D8" };
 
+// Platform icons are full-bleed and opaque because iOS and Android apply
+// their own corner masks; maskable icons keep the mark inside the 80% safe zone.
 await mkdir(iconDirectory, { recursive: true });
 await Promise.all([
-  writeFile(resolve(iconDirectory, "favicon.svg"), adaptiveSvg()),
-  renderPng("favicon-32.png", 32, colors.paper, colors.ink, 3),
-  renderPng("apple-touch-icon.png", 180, colors.paper, colors.ink, 18),
-  renderPng("icon-192.png", 192, colors.paper, colors.ink, 19),
-  renderPng("icon-512.png", 512, colors.paper, colors.ink, 51),
-  renderPng("icon-dark-512.png", 512, colors.dark, colors.signal, 51),
-  renderPng("icon-maskable-192.png", 192, colors.dark, colors.signal, 38),
-  renderPng("icon-maskable-512.png", 512, colors.dark, colors.signal, 102),
+  copyFile(faviconPath, resolve(iconDirectory, "favicon.svg")),
+  renderPng("favicon-32.png", 32, favicon),
+  renderPng("apple-touch-icon.png", 180, appIconSvg(180, 0.78)),
+  renderPng("icon-192.png", 192, appIconSvg(192, 0.78)),
+  renderPng("icon-512.png", 512, appIconSvg(512, 0.78)),
+  renderPng("icon-maskable-192.png", 192, appIconSvg(192, 0.6)),
+  renderPng("icon-maskable-512.png", 512, appIconSvg(512, 0.6)),
 ]);
 
-function adaptiveSvg() {
-  return iconSvg({
-    background: colors.paper,
-    foreground: colors.ink,
-    padding: 48,
-    size: 512,
-    style: `
-      @media (prefers-color-scheme: dark) {
-        .background { fill: ${colors.dark}; }
-        .artwork { color: ${colors.signal}; }
-      }
-    `,
-  });
+function appIconSvg(size, markScale) {
+  const markSize = size * markScale;
+  const offset = (size - markSize) / 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <rect width="${size}" height="${size}" fill="${brandColors.felt}"/>
+  <svg x="${offset}" y="${offset}" width="${markSize}" height="${markSize}" viewBox="0 0 16 16" color="${brandColors.paper}">
+    ${mark}
+  </svg>
+</svg>
+`;
 }
 
-async function renderPng(filename, size, background, foreground, padding) {
-  const svg = iconSvg({ background, foreground, padding, size });
+async function renderPng(filename, size, svg) {
   const result = spawnSync(
     "rsvg-convert",
     ["--format", "png", "--width", String(size), "--height", String(size)],
@@ -61,16 +51,4 @@ async function renderPng(filename, size, background, foreground, padding) {
     );
   }
   await writeFile(resolve(iconDirectory, filename), result.stdout);
-}
-
-function iconSvg({ background, foreground, padding, size, style = "" }) {
-  const artworkSize = size - 2 * padding;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <style>${style}</style>
-  <rect class="background" width="${size}" height="${size}" fill="${background}"/>
-  <svg class="artwork" x="${padding}" y="${padding}" width="${artworkSize}" height="${artworkSize}" viewBox="-21.5 -28 675 653" color="${foreground}">
-    ${artwork}
-  </svg>
-</svg>
-`;
 }

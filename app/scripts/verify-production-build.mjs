@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { inflateSync } from "node:zlib";
 
 const outputDirectory = resolve(import.meta.dirname, "../dist");
 
@@ -53,7 +54,6 @@ async function verifyIcons(directory) {
     ["apple-touch-icon.png", 180],
     ["icon-192.png", 192],
     ["icon-512.png", 512],
-    ["icon-dark-512.png", 512],
     ["icon-maskable-192.png", 192],
     ["icon-maskable-512.png", 512],
   ]);
@@ -68,6 +68,11 @@ async function verifyIcons(directory) {
     if (filename === "apple-touch-icon.png" && !image.opaque) {
       throw new Error("apple-touch-icon.png contains transparent pixels");
     }
+    if (filename !== "favicon-32.png" && image.firstPixel !== "1b2a22") {
+      throw new Error(
+        `${filename} background is #${image.firstPixel}, expected the brand felt green #1b2a22`,
+      );
+    }
   }
   await readFile(resolve(directory, "icons/favicon.svg"), "utf8");
 }
@@ -81,6 +86,7 @@ function pngMetadata(png) {
   let height = 0;
   let colorType = 0;
   let transparencyChunk = false;
+  const imageData = [];
   while (offset < png.length) {
     const length = png.readUInt32BE(offset);
     const type = png.subarray(offset + 4, offset + 8).toString("ascii");
@@ -90,9 +96,13 @@ function pngMetadata(png) {
       height = chunk.readUInt32BE(4);
       colorType = chunk[9];
     } else if (type === "tRNS") transparencyChunk = true;
+    else if (type === "IDAT") imageData.push(chunk);
     offset += length + 12;
   }
+  const pixels = inflateSync(Buffer.concat(imageData));
   return {
+    // Every PNG filter leaves the first pixel of the first row unchanged.
+    firstPixel: pixels.subarray(1, 4).toString("hex"),
     height,
     opaque: ![4, 6].includes(colorType) && !transparencyChunk,
     width,
