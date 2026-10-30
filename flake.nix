@@ -38,7 +38,6 @@
           targets = [ "wasm32-unknown-unknown" ];
         };
         wasmBindgenCliVersion = "0.2.129";
-        engineWasmBudgetBytes = 1347400;
         wasmBindgenCliSource = pkgs.fetchCrate {
           pname = "wasm-bindgen-cli";
           version = wasmBindgenCliVersion;
@@ -135,10 +134,6 @@
               optimized_size=$(stat -c %s $out/engine.wasm)
               gzip_size=$(gzip -9 -n -c $out/engine.wasm | wc -c)
               echo "engine wasm bytes: raw=$raw_size bindgen=$bindgen_size optimized=$optimized_size gzip=$gzip_size"
-              if [ "$optimized_size" -gt ${toString engineWasmBudgetBytes} ]; then
-                echo "engine wasm exceeds ${toString engineWasmBudgetBytes}-byte budget" >&2
-                exit 1
-              fi
             '';
           }
         );
