@@ -126,6 +126,7 @@
   overflow-anchor: none;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-bottom: var(--wl-safe-bottom);
 }
 
 .empty {

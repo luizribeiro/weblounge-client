@@ -3,12 +3,12 @@
   border-top: 1px solid var(--wl-color-border);
   display: flex;
   gap: 8px;
-  padding: 10px 14px 14px;
+  padding: 10px 14px max(14px, var(--wl-safe-bottom));
 }
 
 .wrap {
   border-top: 1px solid var(--wl-color-border);
-  padding: 8px 14px 14px;
+  padding: 8px 14px max(14px, var(--wl-safe-bottom));
   position: relative;
 }
 

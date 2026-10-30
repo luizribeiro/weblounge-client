@@ -240,12 +240,15 @@ through the status region while its content starts below `--wl-safe-top`. This i
 component that consumes the top inset. The shell frame consumes the left/right insets once so
 landscape children use an already-safe content box.
 
-The active bottom edge consumes `--wl-safe-bottom` once: the tab bar on a root tab, the composer on
-a conversation, or the bottom of an open drawer. Content may scroll under those opaque or
-translucent bars, but interactive controls and text never enter the inset. The keyboard adapter
-publishes `--wl-keyboard-inset`; the conversation bottom follows the larger effective obstruction
-without adding safe-area padding in both shell and component. No component reads raw `env()` or
-ships the prototype's iPhone measurements.
+The screen frame reaches the physical bottom edge. Its active bottom surface consumes
+`--wl-safe-bottom` once: the tab bar on a root tab, the composer on a conversation, or the bottom of
+an open drawer. A root list with no bottom bar scrolls beneath the home-indicator region and keeps
+its final content clear with bottom content padding. Composer padding is the larger of its ordinary
+spacing and the safe inset, never their sum. Content may scroll under opaque or translucent bars,
+but interactive controls and text never enter the inset. The keyboard adapter publishes
+`--wl-keyboard-inset`; the conversation bottom follows the larger effective obstruction without
+adding safe-area padding in both shell and component. No component reads raw `env()` or ships the
+prototype's iPhone measurements.
 
 ## Boundaries
 

@@ -81,17 +81,43 @@ async function verifyProfile(
 ): Promise<void> {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/?irc-password=weblounge-test");
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await expect(
-    page.getByRole("textbox", { name: "Message #weblounge-test" }),
-  ).toBeVisible();
-  await expect(page.locator("[data-position]")).toHaveCount(0);
   await page.locator("#root").evaluate((root, inset) => {
     root.style.setProperty("--wl-safe-top", `${inset.top}px`);
     root.style.setProperty("--wl-safe-right", `${inset.right}px`);
     root.style.setProperty("--wl-safe-bottom", `${inset.bottom}px`);
     root.style.setProperty("--wl-safe-left", `${inset.left}px`);
   }, profile);
+  await expect(page.locator("[data-mobile-chat-list]")).toHaveCSS(
+    "padding-bottom",
+    `${profile.bottom}px`,
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-mobile-chat-list]")
+        .evaluate((list) => Math.round(list.getBoundingClientRect().bottom)),
+    )
+    .toBe(page.viewportSize()?.height);
+
+  await page.getByRole("button", { name: "#weblounge-test" }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Message #weblounge-test" }),
+  ).toBeVisible();
+  await expect(page.locator("[data-position]")).toHaveCount(0);
+  const composerBottomPadding = Math.max(14, profile.bottom);
+  await expect(page.locator("[data-composer]")).toHaveCSS(
+    "padding-bottom",
+    `${composerBottomPadding}px`,
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator("[data-composer]")
+        .evaluate((composer) =>
+          Math.round(composer.getBoundingClientRect().bottom),
+        ),
+    )
+    .toBe(page.viewportSize()?.height);
   await auditSafeArea(page);
 
   await mkdir(screenshotDirectory, { recursive: true });

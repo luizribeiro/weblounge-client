@@ -11,8 +11,7 @@
   background: var(--wl-color-surface);
   display: flex;
   flex-direction: column;
-  inset: var(--wl-safe-top) var(--wl-safe-right) var(--wl-safe-bottom)
-    var(--wl-safe-left);
+  inset: var(--wl-safe-top) var(--wl-safe-right) 0 var(--wl-safe-left);
   min-height: 0;
   position: absolute;
   will-change: transform, opacity;

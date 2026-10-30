@@ -151,6 +151,7 @@ export function MobileChatList(props: MobileChatListProps) {
       </nav>
       <div
         class={styles.list}
+        data-mobile-chat-list="true"
         onScroll={(event) => {
           if (!restoringScroll && userScrollIntent)
             props.onScroll(event.currentTarget.scrollTop);
