@@ -94,6 +94,14 @@ buffer_id: BufferId,
  */
 input: string, replace_start: number, replace_end: number, trigger: CompletionTrigger, argument_hint: string | null,
 /**
+ * Engine-owned text placed before the selected candidate label.
+ */
+replacement_prefix: string,
+/**
+ * Engine-owned text placed after the selected candidate label.
+ */
+replacement_suffix: string,
+/**
  * Ordered, bounded rich candidates.
  */
 candidates: Array<CompletionCandidate>, } | { "type": "network_state_changed",

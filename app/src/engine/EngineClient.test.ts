@@ -214,6 +214,8 @@ describe("WorkerEngineClient", () => {
       replace_end: 2,
       trigger: "command",
       argument_hint: null,
+      replacement_prefix: "/",
+      replacement_suffix: " ",
       candidates: [
         {
           type: "command",
@@ -234,6 +236,8 @@ describe("WorkerEngineClient", () => {
       replace_end: 2,
       trigger: "command",
       argument_hint: null,
+      replacement_prefix: "/",
+      replacement_suffix: " ",
       candidates: [
         {
           type: "command",

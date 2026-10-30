@@ -463,6 +463,8 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         typeof value.replace_end === "number" &&
         (value.argument_hint === null ||
           typeof value.argument_hint === "string") &&
+        typeof value.replacement_prefix === "string" &&
+        typeof value.replacement_suffix === "string" &&
         candidates !== undefined
       ) {
         return {
@@ -474,6 +476,8 @@ function decodeEngineMessage(value: unknown): EngineToUi {
           replace_start: value.replace_start,
           replace_end: value.replace_end,
           argument_hint: value.argument_hint,
+          replacement_prefix: value.replacement_prefix,
+          replacement_suffix: value.replacement_suffix,
           candidates,
         };
       }

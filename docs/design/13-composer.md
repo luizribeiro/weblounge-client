@@ -36,10 +36,10 @@ are projected before candidates leave the engine, so an unavailable command cann
 
 IRC names match and deduplicate with papo's active server name rules, never UI locale casing.
 Candidate collections stay bounded even in a 2,000-member channel. The UI applies the engine's
-replace range locally: a picked mention loses `@`, becoming `nick: ` at message start and `nick`
-inside a sentence, while an unpicked `@` remains literal. A picked channel retains `#`. Tab may
-request nick completion at any token for the IRC convention; after a popup opens, Tab cycles its
-current result without a worker round trip.
+replace range and replacement prefix/suffix locally without deriving punctuation: a picked mention
+loses `@`, becoming `nick: ` at message start and `nick` inside a sentence, while an unpicked `@`
+remains literal. A picked channel retains `#`. Tab may request nick completion at any token for the
+IRC convention; after a popup opens, Tab cycles its current result without a worker round trip.
 
 ## Boundaries
 
@@ -98,7 +98,8 @@ screenshots; and keeps the native-feel idle/hidden audits green.
 - Open suggestions as a valid trigger is typed; keep Tab completion available anywhere.
 - Return typed, bounded, capability-filtered candidates with engine-owned trigger and replace range.
 - Rank recent speakers before bounded members and joined channels before session-seen channels.
-- Insert IRC mentions without `@`, adding `: ` only when the mention begins the message.
+- Have the engine project completion replacement punctuation; the UI only applies it and cycles the
+  current result.
 - Render one token-driven listbox overlay shared by both shells without reflowing conversation rows.
 - Surface server command failures as buffer notice rows with typed stable fields.
 - Let papo own multiline framing and confirm optimistic output from `Sent`, never echo matching.

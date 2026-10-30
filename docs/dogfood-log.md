@@ -52,7 +52,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | fixed, live |
 | 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | fixed, live |
 | 46 | 2026-10-30 | Sometimes the buffer scrolls on its own shortly after opening a channel. Re-check after papo's history fix. | queued |
-| 47 | 2026-10-30 | Tab-completing a nick at the start of a message should add ": " (like the @ suggestion does). | queued |
+| 47 | 2026-10-30 | Tab-completing a nick at the start of a message should add ": " (like the @ suggestion does). | fixed, local |
 | 48 | 2026-10-30 | Two long live messages overlap each other, with the "New" divider drawn across the text (live on a7211bd). | fixed, live |
 | 49 | 2026-10-30 | Desktop: a long draft's text spills outside the composer box instead of the box growing. | not a bug (caused by a browser extension) |
 | 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | fixed, local |

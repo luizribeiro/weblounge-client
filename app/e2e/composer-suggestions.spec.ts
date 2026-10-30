@@ -18,6 +18,12 @@ test.describe("composer suggestions against local Ergo", () => {
       page,
     }) => {
       const ana = await connectAna("suggestions-desktop");
+      const anita = await IrcClient.connect(
+        "anita",
+        "weblounge-bot",
+        "weblounge-bot-test",
+        "#weblounge-test",
+      );
       try {
         await installNativeFeelInstrumentation(page);
         await page.emulateMedia({ colorScheme: "light" });
@@ -29,7 +35,7 @@ test.describe("composer suggestions against local Ergo", () => {
         await expect(composer).toBeVisible();
         await expect(
           page.getByRole("button", { name: "Toggle member list" }),
-        ).toContainText("2");
+        ).toContainText("3");
         const geometryBefore = await conversationGeometry(page, composer);
         await resetLayoutShift(page);
 
@@ -90,6 +96,19 @@ test.describe("composer suggestions against local Ergo", () => {
         ).toBeVisible();
         await composer.press("Enter");
         await expect(composer).toHaveValue("#weblounge-test");
+
+        await composer.fill("an");
+        await composer.press("Tab");
+        await expect(composer).toHaveValue("ana: ");
+        await composer.press("Tab");
+        await expect(composer).toHaveValue("anita: ");
+
+        await composer.fill("hello an");
+        await composer.press("Tab");
+        await expect(composer).toHaveValue("hello ana");
+        await composer.press("Tab");
+        await expect(composer).toHaveValue("hello anita");
+
         await composer.fill("focus stays after desktop send");
         await page.getByRole("button", { name: "Send" }).click();
         await expect(composer).toBeFocused();
@@ -98,6 +117,7 @@ test.describe("composer suggestions against local Ergo", () => {
         ).toBeVisible();
       } finally {
         ana.close();
+        anita.close();
       }
     });
   });

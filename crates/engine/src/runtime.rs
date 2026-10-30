@@ -29,6 +29,8 @@ struct CompletionContext {
     replace_end: u32,
     prefix: String,
     argument_hint: Option<String>,
+    replacement_prefix: String,
+    replacement_suffix: String,
 }
 
 struct RunningNetwork {
@@ -424,6 +426,8 @@ impl Runtime {
                 replace_start: context.replace_start,
                 replace_end: context.replace_end,
                 argument_hint: context.argument_hint,
+                replacement_prefix: context.replacement_prefix,
+                replacement_suffix: context.replacement_suffix,
                 candidates,
             },
             EngineToUi::CommandResult { id: command_id },
@@ -1422,15 +1426,27 @@ fn completion_context(
             replace_end,
             prefix: word.trim_start_matches('/').to_owned(),
             argument_hint: None,
+            replacement_prefix: "/".into(),
+            replacement_suffix: " ".into(),
         });
     }
     if let Some(context) = command_argument_context(before, word_start, replace_end, registry) {
         return Some(context);
     }
-    let (trigger, prefix) = match word.chars().next() {
-        Some('@') => (CompletionTrigger::Person, word.get(1..)?.to_owned()),
-        Some(first) if chantypes.contains(first) => (CompletionTrigger::Channel, word.to_owned()),
-        _ if explicit => (CompletionTrigger::Person, word.to_owned()),
+    let (trigger, prefix, replacement_suffix) = match word.chars().next() {
+        Some('@') => (
+            CompletionTrigger::Person,
+            word.get(1..)?.to_owned(),
+            if word_start == 0 { ": " } else { "" },
+        ),
+        Some(first) if chantypes.contains(first) => {
+            (CompletionTrigger::Channel, word.to_owned(), "")
+        }
+        _ if explicit => (
+            CompletionTrigger::Person,
+            word.to_owned(),
+            if word_start == 0 { ": " } else { "" },
+        ),
         _ => return None,
     };
     Some(CompletionContext {
@@ -1439,6 +1455,8 @@ fn completion_context(
         replace_end,
         prefix,
         argument_hint: None,
+        replacement_prefix: String::new(),
+        replacement_suffix: replacement_suffix.into(),
     })
 }
 
@@ -1479,6 +1497,8 @@ fn command_argument_context(
         replace_end,
         prefix,
         argument_hint: Some(spec.usage.clone()),
+        replacement_prefix: String::new(),
+        replacement_suffix: " ".into(),
     })
 }
 
@@ -2876,32 +2896,96 @@ mod tests {
     #[test]
     fn completion_context_recognizes_triggers_and_command_arguments() {
         let registry = commands::built_in_registry();
-        for (input, trigger, prefix, start, hint) in [
-            ("/jo", CompletionTrigger::Command, "jo", 0, None),
-            ("@an", CompletionTrigger::Person, "an", 0, None),
-            ("hello @an", CompletionTrigger::Person, "an", 6, None),
-            ("#we", CompletionTrigger::Channel, "#we", 0, None),
+        for (input, explicit, trigger, prefix, start, hint, before, after) in [
+            (
+                "/jo",
+                false,
+                CompletionTrigger::Command,
+                "jo",
+                0,
+                None,
+                "/",
+                " ",
+            ),
+            (
+                "@an",
+                false,
+                CompletionTrigger::Person,
+                "an",
+                0,
+                None,
+                "",
+                ": ",
+            ),
+            (
+                "hello @an",
+                false,
+                CompletionTrigger::Person,
+                "an",
+                6,
+                None,
+                "",
+                "",
+            ),
+            (
+                "#we",
+                false,
+                CompletionTrigger::Channel,
+                "#we",
+                0,
+                None,
+                "",
+                "",
+            ),
             (
                 "/msg ",
+                false,
                 CompletionTrigger::Person,
                 "",
                 5,
                 Some("cmd.msg.usage"),
+                "",
+                " ",
             ),
             (
                 "/join ",
+                false,
                 CompletionTrigger::Channel,
                 "",
                 6,
                 Some("cmd.join.usage"),
+                "",
+                " ",
+            ),
+            (
+                "an",
+                true,
+                CompletionTrigger::Person,
+                "an",
+                0,
+                None,
+                "",
+                ": ",
+            ),
+            (
+                "hello an",
+                true,
+                CompletionTrigger::Person,
+                "an",
+                6,
+                None,
+                "",
+                "",
             ),
         ] {
-            let context = completion_context(input, utf16_len(input), false, "#&", &registry)
+            let context = completion_context(input, utf16_len(input), explicit, "#&", &registry)
                 .expect("context");
             assert_eq!(context.trigger, trigger);
             assert_eq!(context.prefix, prefix);
             assert_eq!(context.replace_start, start);
             assert_eq!(context.argument_hint.as_deref(), hint);
+            assert_eq!(context.replacement_prefix, before);
+            assert_eq!(context.replacement_suffix, after);
         }
         assert!(completion_context("mail@an", 7, false, "#&", &registry).is_none());
         assert!(completion_context("hello /jo", 9, false, "#&", &registry).is_none());

@@ -31,12 +31,19 @@ interface ComposerProps {
   ) => boolean | undefined | Promise<boolean | undefined>;
 }
 
+interface TabCycle {
+  readonly result: CompletionResult;
+  readonly index: number;
+  readonly currentInput: string;
+}
+
 export function Composer(props: ComposerProps) {
   const platform = platformEnvironment();
   let textarea: HTMLTextAreaElement | undefined;
   let confirmButton: HTMLButtonElement | undefined;
   let composing = false;
   let pendingTabInput: string | undefined;
+  let tabCycle: TabCycle | undefined;
   let currentBuffer = props.bufferId;
   let currentDraftKey = props.draftKey;
   const [text, setText] = createSignal(readDraft(currentDraftKey));
@@ -97,9 +104,15 @@ export function Composer(props: ComposerProps) {
     setSelected(-1);
     setDismissedInput(undefined);
     setPendingConfirmation(undefined);
+    pendingTabInput = undefined;
+    tabCycle = undefined;
   });
 
-  const update = (value: string) => {
+  const update = (value: string, preserveTabCycle = false) => {
+    if (!preserveTabCycle) {
+      pendingTabInput = undefined;
+      tabCycle = undefined;
+    }
     setText(value);
     setPendingConfirmation(undefined);
     setSelected(-1);
@@ -139,6 +152,23 @@ export function Composer(props: ComposerProps) {
     setCompletionCursor(cursor);
     props.onRequestCandidates?.(value, cursor, explicit);
   };
+  const applyTabCycle = (index: number) => {
+    const cycle = tabCycle;
+    const candidate = cycle?.result.candidates[index];
+    if (cycle === undefined || candidate === undefined) return false;
+    const result = cycle.result;
+    const replacement = replacementFor(candidate, result);
+    const next = `${result.input.slice(0, result.replace_start)}${replacement}${result.input.slice(result.replace_end)}`;
+    const cursor = result.replace_start + replacement.length;
+    tabCycle = { result, index, currentInput: next };
+    update(next, true);
+    queueMicrotask(() => {
+      textarea?.focus({ preventScroll: true });
+      textarea?.setSelectionRange(cursor, cursor);
+      request(next, cursor, false);
+    });
+    return true;
+  };
   const accept = (
     index = selected() >= 0 ? selected() : 0,
     acceptSeparatorOnly = true,
@@ -147,10 +177,7 @@ export function Composer(props: ComposerProps) {
     const candidate = result?.candidates[index];
     if (result === undefined || candidate === undefined) return false;
     const currentText = text();
-    const replacement = replacementFor(candidate, {
-      ...result,
-      input: currentText,
-    });
+    const replacement = replacementFor(candidate, result);
     const replaceEnd =
       result.input === currentText ? result.replace_end : completionCursor();
     const next = `${currentText.slice(0, result.replace_start)}${replacement}${currentText.slice(replaceEnd)}`;
@@ -169,7 +196,8 @@ export function Composer(props: ComposerProps) {
     const result = suggestions();
     if (result === undefined || result.input !== pendingTabInput) return;
     pendingTabInput = undefined;
-    queueMicrotask(() => accept(0));
+    tabCycle = { result, index: 0, currentInput: result.input };
+    queueMicrotask(() => applyTabCycle(0));
   });
   const move = (offset: -1 | 1) => {
     const count = suggestions()?.candidates.length ?? 0;
@@ -196,7 +224,14 @@ export function Composer(props: ComposerProps) {
       if (!accept(undefined, false)) submit();
     } else if (event.key === "Tab") {
       event.preventDefault();
-      if (!accept()) {
+      const cycle = tabCycle;
+      if (
+        cycle !== undefined &&
+        cycle.currentInput === text() &&
+        cycle.result.candidates.length > 0
+      ) {
+        applyTabCycle((cycle.index + 1) % cycle.result.candidates.length);
+      } else if (!accept()) {
         pendingTabInput = text();
         request(text(), textarea?.selectionStart ?? text().length, true);
       }
@@ -374,19 +409,19 @@ function completionTriggerRemains(
 
 export function replacementFor(
   candidate: CompletionCandidate,
-  result: Pick<CompletionResult, "argument_hint" | "input" | "replace_start">,
+  result: Pick<CompletionResult, "replacement_prefix" | "replacement_suffix">,
 ): string {
+  let value: string;
   switch (candidate.type) {
     case "command":
-      return `/${candidate.name} `;
+      value = candidate.name;
+      break;
     case "person":
-      if (
-        result.replace_start === 0 &&
-        result.input.startsWith("@", result.replace_start)
-      )
-        return `${candidate.nick}: `;
-      return `${candidate.nick}${result.input.startsWith("@", result.replace_start) && result.argument_hint === null ? "" : " "}`;
+      value = candidate.nick;
+      break;
     case "channel":
-      return `${candidate.name}${result.argument_hint === null ? "" : " "}`;
+      value = candidate.name;
+      break;
   }
+  return `${result.replacement_prefix}${value}${result.replacement_suffix}`;
 }

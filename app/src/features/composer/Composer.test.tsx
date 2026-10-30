@@ -44,6 +44,8 @@ function completion(
   candidates: readonly CompletionCandidate[],
   replaceStart = 0,
   argumentHint: string | null = null,
+  replacementPrefix = "",
+  replacementSuffix = ": ",
 ): CompletionResult {
   return {
     type: "completion_result",
@@ -54,33 +56,32 @@ function completion(
     replace_start: replaceStart,
     replace_end: input.length,
     argument_hint: argumentHint,
+    replacement_prefix: replacementPrefix,
+    replacement_suffix: replacementSuffix,
     candidates: [...candidates],
   };
 }
 
-it("uses IRC insertion rules for mentions and plain Tab completion", () => {
+it("applies engine-owned completion punctuation", () => {
   const candidate = person("ana");
   expect(
     replacementFor(candidate, {
-      input: "@an",
-      replace_start: 0,
-      argument_hint: null,
+      replacement_prefix: "",
+      replacement_suffix: ": ",
     }),
   ).toBe("ana: ");
   expect(
     replacementFor(candidate, {
-      input: "hello @an",
-      replace_start: 6,
-      argument_hint: null,
+      replacement_prefix: "",
+      replacement_suffix: "",
     }),
   ).toBe("ana");
   expect(
     replacementFor(candidate, {
-      input: "an",
-      replace_start: 0,
-      argument_hint: null,
+      replacement_prefix: "",
+      replacement_suffix: ": ",
     }),
-  ).toBe("ana ");
+  ).toBe("ana: ");
 });
 
 it("focuses a desktop composer when it mounts", async () => {
@@ -197,12 +198,12 @@ it("navigates suggestions, inserts a mention, and restores drafts", () => {
   );
   fireEvent.keyDown(input, { key: "ArrowDown" });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(input).toHaveValue("alex ");
+  expect(input).toHaveValue("alex: ");
   setBufferId(3);
   expect(input).toHaveValue("");
   fireEvent.input(input, { target: { value: "other" } });
   setBufferId(2);
-  expect(input).toHaveValue("alex ");
+  expect(input).toHaveValue("alex: ");
 });
 
 it("accepts command suggestions and requests their argument context", async () => {
@@ -222,6 +223,8 @@ it("accepts command suggestions and requests their argument context", async () =
         ]),
         buffer_id: 4,
         trigger: "command",
+        replacement_prefix: "/",
+        replacement_suffix: " ",
       }}
       draftKey="test:slash"
       onRequestCandidates={request}
@@ -285,6 +288,8 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     ...completion("/", [join, me]),
     buffer_id: 9,
     trigger: "command",
+    replacement_prefix: "/",
+    replacement_suffix: " ",
   });
   expect(screen.getAllByRole("option")).toHaveLength(2);
   const joinRow = screen.getByRole("option", { name: /\/join/u });
@@ -301,6 +306,8 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     ...completion("/j", [join]),
     buffer_id: 9,
     trigger: "command",
+    replacement_prefix: "/",
+    replacement_suffix: " ",
   });
   expect(screen.getAllByRole("option")).toHaveLength(1);
   expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
@@ -321,6 +328,8 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     ...completion("/", [join, me]),
     buffer_id: 9,
     trigger: "command",
+    replacement_prefix: "/",
+    replacement_suffix: " ",
   });
   expect(screen.getAllByRole("option")).toHaveLength(2);
   expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
@@ -340,6 +349,7 @@ it("submits when Enter would only add a completion separator", async () => {
         argument_hint: "cmd.join.usage",
         buffer_id: 9,
         replace_start: 6,
+        replacement_suffix: " ",
       }}
       draftKey="test:exact-completion"
       onSend={onSend}
@@ -360,6 +370,7 @@ it("requests as input changes, accepts Tab, and ignores IME composition", async 
       ...completion(value, [person("weblounge")]),
       buffer_id: 6,
       replace_start: value.indexOf("weblo"),
+      replacement_suffix: "",
     });
     expect(explicit).toBe(false);
   });
@@ -379,11 +390,41 @@ it("requests as input changes, accepts Tab, and ignores IME composition", async 
   fireEvent.keyDown(input, { key: "Tab" });
 
   expect(request).toHaveBeenCalledWith("hello weblo", 11, false);
-  await waitFor(() => expect(input).toHaveValue("hello weblounge "));
+  await waitFor(() => expect(input).toHaveValue("hello weblounge"));
   request.mockClear();
   fireEvent.compositionStart(input);
   fireEvent.input(input, { target: { value: "@あ" } });
   expect(request).not.toHaveBeenCalled();
+});
+
+it("cycles explicit Tab candidates with their engine-owned suffix", async () => {
+  const [result, setResult] = createSignal<CompletionResult>();
+  const request = vi.fn((value: string, _cursor: number, explicit: boolean) => {
+    if (!explicit) return;
+    setResult({
+      ...completion(value, [person("ana"), person("anita")]),
+      buffer_id: 6,
+    });
+  });
+  render(() => (
+    <Composer
+      bufferId={6}
+      bufferTitle="#rust"
+      completion={result()}
+      draftKey="test:tab-cycle"
+      onRequestCandidates={request}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "an" } });
+  fireEvent.keyDown(input, { key: "Tab" });
+  await waitFor(() => expect(input).toHaveValue("ana: "));
+
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("anita: ");
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("ana: ");
 });
 
 it("routes Up from an empty composer to message navigation", () => {

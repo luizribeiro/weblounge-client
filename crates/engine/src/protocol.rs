@@ -640,6 +640,10 @@ pub enum EngineToUi {
         replace_end: u32,
         trigger: CompletionTrigger,
         argument_hint: Option<String>,
+        /// Engine-owned text placed before the selected candidate label.
+        replacement_prefix: String,
+        /// Engine-owned text placed after the selected candidate label.
+        replacement_suffix: String,
         /// Ordered, bounded rich candidates.
         candidates: Vec<CompletionCandidate>,
     },
