@@ -15,11 +15,12 @@ const buffer: BufferProjection = {
   read_through: null,
 };
 
-it("commits reduced-motion stack changes without transition neighbours", () => {
+it("keeps the chat list mounted without reloading history", () => {
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({ matches: true }) as MediaQueryList),
   );
+  const loadHistory = vi.fn();
   render(() => (
     <MobileShell
       buffers={[buffer]}
@@ -28,7 +29,7 @@ it("commits reduced-motion stack changes without transition neighbours", () => {
       memberships={new Map()}
       messages={new Map()}
       networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
-      onLoadHistory={vi.fn()}
+      onLoadHistory={loadHistory}
       onMarkRead={vi.fn()}
       onRequestCompletion={vi.fn()}
       onSelectBuffer={vi.fn()}
@@ -36,9 +37,15 @@ it("commits reduced-motion stack changes without transition neighbours", () => {
     />
   ));
 
-  fireEvent.click(screen.getByRole("button", { name: "mel" }));
+  const chatRow = screen.getByRole("button", { name: "mel" });
+  fireEvent.click(chatRow);
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
-  expect(document.querySelectorAll("[data-mobile-chats]")).toHaveLength(0);
+  expect(chatRow).toBeInTheDocument();
+  expect(chatRow.closest("[data-retained]")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  expect(loadHistory).toHaveBeenCalledTimes(1);
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
   fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
@@ -48,6 +55,8 @@ it("commits reduced-motion stack changes without transition neighbours", () => {
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "mel" })).toBe(chatRow);
+  expect(loadHistory).toHaveBeenCalledTimes(1);
   expect(document.querySelectorAll("[data-mobile-chat]")).toHaveLength(0);
 });
 

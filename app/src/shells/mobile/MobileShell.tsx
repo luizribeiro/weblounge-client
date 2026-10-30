@@ -14,6 +14,7 @@ import type { ChatFilter } from "./mobile-chats";
 import {
   createMobileStack,
   finishTransition,
+  type MobileScreen as MobileScreenState,
   mountedScreens,
   popChat,
   previousScreen,
@@ -191,9 +192,22 @@ export function MobileShell(props: MobileShellProps) {
     returnSwipe();
   };
   const screens = () =>
-    swipeProgress() === undefined
-      ? mountedScreens(stack())
-      : [previousScreen(stack()), stack().active];
+    retainChatsScreen(
+      stack(),
+      swipeProgress() === undefined
+        ? mountedScreens(stack())
+        : [previousScreen(stack()), stack().active],
+    );
+  const screenIsRetained = (screen: MobileScreenState) => {
+    const current = stack();
+    if (screen.kind !== "chats" || current.active.kind === "chats")
+      return false;
+    if (swipeProgress() !== undefined)
+      return previousScreen(current) !== screen;
+    return (
+      current.transition?.from !== screen && current.transition?.to !== screen
+    );
+  };
 
   onMount(() => {
     const handlePopState = () => {
@@ -266,6 +280,7 @@ export function MobileShell(props: MobileShellProps) {
                     : "to"
               }
               query={query()}
+              retained={screenIsRetained(screen)}
               screen={screen}
               scrollTop={scrollTop()}
               swipe={
@@ -313,6 +328,19 @@ export function MobileShell(props: MobileShellProps) {
       )}
     </main>
   );
+}
+
+function retainChatsScreen(
+  stack: ReturnType<typeof createMobileStack>,
+  screens: readonly MobileScreenState[],
+): readonly MobileScreenState[] {
+  const chats =
+    stack.active.kind === "chats"
+      ? stack.active
+      : stack.back.find((screen) => screen.kind === "chats");
+  return chats === undefined || screens.includes(chats)
+    ? screens
+    : [chats, ...screens];
 }
 
 function historyState(): Record<string, unknown> {

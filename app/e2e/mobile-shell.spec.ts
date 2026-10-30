@@ -46,6 +46,50 @@ test.describe("mobile shell against local Ergo", () => {
     ).toBeVisible();
   });
 
+  test("keeps the chats list mounted throughout back navigation", async ({
+    page,
+  }, testInfo) => {
+    await page.goto("/?irc-password=weblounge-test");
+    const row = page.getByRole("button", { name: "#weblounge-test" });
+    await expect(row).toBeVisible();
+    const originalRow = await row.elementHandle();
+    if (originalRow === null) throw new Error("chat row is missing");
+
+    await row.click();
+    await expect(
+      page.getByRole("heading", { name: "#weblounge-test" }),
+    ).toBeVisible();
+    await expect(page.locator("[data-mobile-chats]")).toHaveCount(1);
+    await expect(
+      page.locator("[data-retained] [data-buffer-id]"),
+    ).not.toHaveCount(0);
+
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    for (let frame = 0; frame < 3; frame += 1) {
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          ),
+      );
+      await expect(
+        page.locator("[data-mobile-chats] [data-buffer-id]"),
+      ).not.toHaveCount(0);
+      await testInfo.attach(`chat-list-back-frame-${frame + 1}`, {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+    }
+
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    expect(
+      await row.evaluate(
+        (current, original) => current === original,
+        originalRow,
+      ),
+    ).toBe(true);
+  });
+
   test("navigates, swipes, and keeps state across shells", async ({ page }) => {
     await installNativeFeelInstrumentation(page);
     await page.setViewportSize({ width: 402, height: 874 });
@@ -240,7 +284,7 @@ test.describe("mobile shell against local Ergo", () => {
         .toBe(scrollTop);
 
       await target.click();
-      await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      await expect(page.locator("[data-mobile-chats]")).not.toBeVisible();
       const shell = page.locator("[data-mobile-shell]");
       await shell.dispatchEvent("pointerdown", {
         clientX: 5,
