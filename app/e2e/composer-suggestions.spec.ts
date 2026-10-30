@@ -354,40 +354,50 @@ async function assertStableUpdates(
   });
   for (const input of ["/j", "/jo", "/joi"]) {
     await composer.fill(input);
-    const samples = await page.locator("[data-composer-suggestions]").evaluate(
-      (popup) =>
-        new Promise<
-          readonly { readonly opacity: number; readonly rows: number }[]
-        >((resolve) => {
-          const values: { opacity: number; rows: number }[] = [];
-          const sample = () => {
-            values.push({
-              opacity: Number.parseFloat(getComputedStyle(popup).opacity),
-              rows: popup.querySelectorAll('[role="option"]').length,
-            });
-            if (values.length === 8) resolve(values);
-            else requestAnimationFrame(sample);
-          };
-          requestAnimationFrame(sample);
-        }),
-    );
-    expect(
-      samples.every(({ opacity, rows }) => opacity === 1 && rows > 0),
-    ).toBe(true);
-    await expect(join).toBeVisible();
-    expect(
-      await join.evaluate(
-        (element) =>
-          (
-            window as Window & {
-              __webloungePersistentSuggestion?: Element;
-            }
-          ).__webloungePersistentSuggestion === element,
-      ),
-    ).toBe(true);
+    await assertPopupRemainsStable(page, join);
   }
-  await composer.fill("/");
-  await expect(join).toBeVisible();
+  for (const input of ["/jo", "/j", "/"]) {
+    await composer.press("Backspace");
+    await expect(composer).toHaveValue(input);
+    await assertPopupRemainsStable(page, join);
+  }
+}
+
+async function assertPopupRemainsStable(
+  page: Page,
+  persistentRow: Locator,
+): Promise<void> {
+  const samples = await page.locator("[data-composer-suggestions]").evaluate(
+    (popup) =>
+      new Promise<
+        readonly { readonly opacity: number; readonly rows: number }[]
+      >((resolve) => {
+        const values: { opacity: number; rows: number }[] = [];
+        const sample = () => {
+          values.push({
+            opacity: Number.parseFloat(getComputedStyle(popup).opacity),
+            rows: popup.querySelectorAll('[role="option"]').length,
+          });
+          if (values.length === 8) resolve(values);
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }),
+  );
+  expect(samples.every(({ opacity, rows }) => opacity === 1 && rows > 0)).toBe(
+    true,
+  );
+  await expect(persistentRow).toBeVisible();
+  expect(
+    await persistentRow.evaluate(
+      (element) =>
+        (
+          window as Window & {
+            __webloungePersistentSuggestion?: Element;
+          }
+        ).__webloungePersistentSuggestion === element,
+    ),
+  ).toBe(true);
 }
 
 async function resetLayoutShift(page: Page): Promise<void> {

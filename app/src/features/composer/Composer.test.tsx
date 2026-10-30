@@ -308,6 +308,25 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     "data-completion-input",
     "/j",
   );
+
+  fireEvent.input(input, { target: { value: "/" } });
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
+  expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
+    "data-completion-input",
+    "/j",
+  );
+
+  setResult({
+    ...completion("/", [join, me]),
+    buffer_id: 9,
+    trigger: "command",
+  });
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
+
+  fireEvent.input(input, { target: { value: "" } });
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
 });
 
 it("submits when Enter would only add a completion separator", async () => {

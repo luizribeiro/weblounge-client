@@ -56,6 +56,10 @@ export function Composer(props: ComposerProps) {
     )
       return undefined;
     const input = text();
+    if (result.input.startsWith(input) && result.input !== input)
+      return completionTriggerRemains(result, input, completionCursor())
+        ? result
+        : undefined;
     if (!input.startsWith(result.input)) return undefined;
     const query = input.slice(result.replace_start, completionCursor());
     const candidates = result.candidates.filter((candidate) =>
@@ -346,6 +350,25 @@ function candidateMatches(
         );
     case "channel":
       return candidate.name.toLocaleLowerCase().startsWith(normalized);
+  }
+}
+
+function completionTriggerRemains(
+  result: CompletionResult,
+  input: string,
+  cursor: number,
+): boolean {
+  const query = input.slice(result.replace_start, cursor);
+  if (result.argument_hint !== null) return cursor >= result.replace_start;
+  switch (result.trigger) {
+    case "command":
+      return query.startsWith("/");
+    case "person":
+      return result.input.startsWith("@", result.replace_start)
+        ? query.startsWith("@")
+        : query.length > 0;
+    case "channel":
+      return query.startsWith(result.input[result.replace_start] ?? "\0");
   }
 }
 

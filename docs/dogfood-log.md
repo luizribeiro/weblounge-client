@@ -40,7 +40,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 32 | 2026-10-30 | Scrolling up loads older history but stops before the oldest message the server has. | fixed, local |
 | 33 | 2026-10-30 | Every restored DM shows a red badge: read state isn't synced with the server, so all DM messages count as unread mentions. (Two indicators by design: unread dot vs mention count.) | fixed, local |
 | 34 | 2026-10-30 | Links don't show the pointer (hand) cursor. | fixed, local |
-| 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | queued |
+| 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | fixed, local |
 | 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | fixed, local |
 | 37 | 2026-10-30 | Firefox: the address bar doesn't follow the channel, so reload doesn't reopen it. | fixed, local |
 | 38 | 2026-10-30 | History messages show no mode prefix (asked whether it can always be accurate). | queued |
