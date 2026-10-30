@@ -188,16 +188,8 @@ async fn verify_mixed_history(bot: &papo::Client) {
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[0].text, first_text);
     assert_eq!(messages[1].text, second_text);
-    assert!(
-        messages[2]
-            .text
-            .starts_with(&format!("missed multiline {suffix} "))
-    );
-    assert!(
-        messages[..2]
-            .iter()
-            .all(|message| message.server_time.is_some())
-    );
+    assert_eq!(messages[2].text, multiline);
+    assert!(messages.iter().all(|message| message.server_time.is_some()));
     assert!(latest.items.iter().any(|item| matches!(
         item,
         papo::Event::Notice(notice)
