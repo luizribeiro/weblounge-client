@@ -1,7 +1,7 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, MutexGuard},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use tokio::sync::mpsc;
@@ -12,13 +12,15 @@ use crate::{
     NetworkConnectionState, NetworkId, OfflineReason,
     commands::{self, Command},
     state::{
-        DirectAvailability, HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget,
-        is_own_nick, time_millis,
+        DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend, ReadAdvance,
+        SendTarget, is_own_nick, time_millis,
     },
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
 const HISTORY_PAGE_SIZE: usize = 100;
+const RECENT_DIRECT_LIMIT: usize = 100;
+const RECENT_DIRECT_WINDOW: Duration = Duration::from_hours(30 * 24);
 const COMPLETION_LIMIT: usize = 100;
 
 struct CompletionContext {
@@ -1640,6 +1642,7 @@ async fn drain_events(
             process_history(&state, &outbound, &client, instance, page);
             continue;
         }
+        let restore_directs = matches!(event, papo::Event::Connected(_));
         let schedule_members = lock(&member_changes).record(&event, &client.state());
         let direct_message = match &event {
             papo::Event::Message(message)
@@ -1668,6 +1671,14 @@ async fn drain_events(
                 client.clone(),
                 instance,
                 HistoryFetch::Latest(target),
+            );
+        }
+        if restore_directs {
+            spawn_recent_direct_restore(
+                Arc::clone(&state),
+                outbound.clone(),
+                client.clone(),
+                instance,
             );
         }
         if schedule_members {
@@ -1811,18 +1822,18 @@ async fn fetch_history(
     fetch: HistoryFetch,
 ) -> Result<papo::HistoryPage, papo::Error> {
     match fetch {
-        HistoryFetch::Latest(SendTarget::Channel(channel)) => {
+        HistoryFetch::Latest(HistoryTarget::Channel(channel)) => {
             client
                 .history(channel)
                 .latest()
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
-        HistoryFetch::Latest(SendTarget::Direct { nick, .. }) => {
+        HistoryFetch::Latest(HistoryTarget::Direct(nick)) => {
             client.history(nick).latest().limit(HISTORY_PAGE_SIZE).await
         }
         HistoryFetch::Before {
-            target: SendTarget::Channel(channel),
+            target: HistoryTarget::Channel(channel),
             oldest,
         } => {
             client
@@ -1832,7 +1843,7 @@ async fn fetch_history(
                 .await
         }
         HistoryFetch::Before {
-            target: SendTarget::Direct { nick, .. },
+            target: HistoryTarget::Direct(nick),
             oldest,
         } => {
             client
@@ -1847,9 +1858,135 @@ async fn fetch_history(
 #[cfg(test)]
 async fn fetch_latest(
     client: &papo::Client,
-    target: SendTarget,
+    target: HistoryTarget,
 ) -> Result<papo::HistoryPage, papo::Error> {
     fetch_history(client, HistoryFetch::Latest(target)).await
+}
+
+fn spawn_recent_direct_restore(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+) {
+    spawn_task(async move {
+        let until = papo::time::now();
+        let since = until
+            .checked_sub(RECENT_DIRECT_WINDOW)
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        let Ok(recent) = client.recent_conversations(since, until).await else {
+            return;
+        };
+        let snapshot = client.state();
+        let mut directs = recent
+            .into_iter()
+            .filter_map(|recent| match recent.conversation {
+                papo::Conversation::Private(nick) if !is_own_nick(&snapshot, nick.as_ref()) => {
+                    Some((nick, recent.latest_server_time))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        directs.sort_by(|(first_nick, first_time), (second_nick, second_time)| {
+            second_time.cmp(first_time).then_with(|| {
+                snapshot
+                    .casemapping()
+                    .fold(first_nick.as_ref())
+                    .cmp(&snapshot.casemapping().fold(second_nick.as_ref()))
+            })
+        });
+        let mut seen = HashSet::new();
+        directs.retain(|(nick, _)| {
+            seen.insert(snapshot.casemapping().fold(nick.as_ref()).into_owned())
+        });
+        directs.truncate(RECENT_DIRECT_LIMIT);
+        drop(snapshot);
+        if directs.is_empty() {
+            return;
+        }
+
+        let mut output = Vec::new();
+        let mut fetches = Vec::new();
+        let mut resolutions = Vec::new();
+        for (nick, latest) in directs {
+            let restored = {
+                let mut state = lock(&state);
+                state
+                    .network
+                    .as_mut()
+                    .filter(|running| running.instance == instance)
+                    .map(|running| running.model.restore_direct(nick.clone(), latest))
+            };
+            let Some((fetch, should_resolve, added)) = restored else {
+                return;
+            };
+            if let Some(buffer) = added {
+                output.push(EngineToUi::BufferAdded { buffer });
+            }
+            fetches.push(fetch);
+            if should_resolve {
+                resolutions.push(nick);
+            }
+        }
+        let buffers = {
+            let state = lock(&state);
+            state
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .map(|running| running.model.buffers_event())
+        };
+        let Some(buffers) = buffers else {
+            return;
+        };
+        output.push(buffers);
+        send_events(&outbound, output);
+        for fetch in fetches {
+            spawn_history_fetch(
+                Arc::clone(&state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                fetch,
+            );
+        }
+        for nick in resolutions {
+            let state = Arc::clone(&state);
+            let outbound = outbound.clone();
+            let client = client.clone();
+            spawn_task(async move {
+                let result = client.direct(&nick).await;
+                apply_direct_resolution(&state, &outbound, instance, &nick, result);
+            });
+        }
+    });
+}
+
+fn apply_direct_resolution(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+    nick: &papo::Nick,
+    result: Result<papo::DirectRef, papo::Error>,
+) {
+    let (availability, degraded) = match result {
+        Ok(direct) => (DirectAvailability::Guarded(direct), false),
+        Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
+        Err(_) => (DirectAvailability::Failed, false),
+    };
+    let mut state = lock(state);
+    let Some(running) = state
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    else {
+        return;
+    };
+    running.model.resolve_direct(nick, availability);
+    drop(state);
+    if degraded {
+        let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
+    }
 }
 
 #[cfg(test)]
@@ -1859,7 +1996,7 @@ fn process_event(
     client: &papo::Client,
     instance: u64,
     event: papo::Event,
-) -> Vec<SendTarget> {
+) -> Vec<HistoryTarget> {
     process_event_with_direct(state, outbound, client, instance, event, None)
 }
 
@@ -1870,7 +2007,7 @@ fn process_event_with_direct(
     instance: u64,
     event: papo::Event,
     direct: Option<papo::DirectRef>,
-) -> Vec<SendTarget> {
+) -> Vec<HistoryTarget> {
     let snapshot = client.state();
     let shared_state = Arc::clone(state);
     let mut state = lock(state);
@@ -2038,7 +2175,7 @@ fn process_lagged(
     snapshot: &papo::State,
     lagged: &papo::event::Lagged,
     output: &mut Vec<EngineToUi>,
-) -> Vec<SendTarget> {
+) -> Vec<HistoryTarget> {
     output.push(EngineToUi::Diagnostic {
         command_id: "papo.event_queue".into(),
         message: format!("{} papo events dropped", lagged.dropped),
@@ -2232,7 +2369,7 @@ fn process_join(
     snapshot: &papo::State,
     joined: &papo::event::Joined,
     output: &mut Vec<EngineToUi>,
-) -> Vec<SendTarget> {
+) -> Vec<HistoryTarget> {
     output.extend(model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
         model
@@ -2547,7 +2684,7 @@ mod tests {
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
         EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkId, SaslCredentials,
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
-        state::{DirectAvailability, NetworkModel, PendingSend, SendTarget},
+        state::{DirectAvailability, HistoryTarget, NetworkModel, PendingSend, SendTarget},
     };
 
     #[test]
@@ -4266,6 +4403,32 @@ mod tests {
             .await;
     }
 
+    async fn send_recent_targets(
+        wire: &mut papo_testing::Wire,
+        label: &str,
+        targets: &[(&str, &str)],
+    ) {
+        let reply = format!("reply{label}");
+        let batch = format!("targets{label}");
+        wire.server(format!(
+            "@label={label} :offline.test BATCH +{reply} labeled-response"
+        ))
+        .await;
+        wire.server(format!(
+            "@batch={reply} :offline.test BATCH +{batch} draft/chathistory-targets"
+        ))
+        .await;
+        for (target, time) in targets {
+            wire.server(format!(
+                "@batch={batch} :offline.test CHATHISTORY TARGETS {target} {time}"
+            ))
+            .await;
+        }
+        wire.server(format!("@batch={reply} :offline.test BATCH -{batch}"))
+            .await;
+        wire.server(format!(":offline.test BATCH -{reply}")).await;
+    }
+
     fn request_label(request: &str) -> &str {
         request
             .strip_prefix("@label=")
@@ -4354,6 +4517,58 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn connected_restores_recent_directs_from_history_targets_in_activity_order() {
+        let (client, events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound,
+            client,
+            events,
+            1,
+        ));
+
+        register_for_history(&mut wire).await;
+        let request = wire.next_sent().await;
+        assert!(request.contains(" CHATHISTORY TARGETS timestamp="));
+        assert!(request.ends_with(" 100"));
+        let label = request_label(&request);
+        send_recent_targets(
+            &mut wire,
+            label,
+            &[
+                ("#ignored", "2026-10-30T12:00:03.000Z"),
+                ("Bob", "2026-10-30T12:00:01.000Z"),
+                ("alice", "2026-10-30T12:00:01.000Z"),
+                ("carol", "2026-10-30T12:00:02.000Z"),
+            ],
+        )
+        .await;
+
+        let ordered = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let EngineToUi::BuffersChanged { buffers, .. } =
+                    receiver.recv().await.expect("runtime remains active")
+                {
+                    let titles = buffers
+                        .iter()
+                        .map(|buffer| buffer.title.as_str())
+                        .collect::<Vec<_>>();
+                    if titles.len() == 4 {
+                        break titles.into_iter().map(str::to_owned).collect::<Vec<_>>();
+                    }
+                }
+            }
+        })
+        .await
+        .expect("recent direct buffers arrive");
+        assert_eq!(ordered, ["Test", "carol", "alice", "Bob"]);
+
+        drain.abort();
     }
 
     #[tokio::test]
@@ -4952,7 +5167,9 @@ mod tests {
         let dropped = lagged.as_lagged().expect("matching lagged event").dropped;
         let targets = process_event(&state, &outbound, &client, 1, lagged);
 
-        assert!(matches!(targets.as_slice(), [SendTarget::Channel(channel)] if channel == "#room"));
+        assert!(
+            matches!(targets.as_slice(), [HistoryTarget::Channel(channel)] if channel == "#room")
+        );
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
             EngineToUi::Diagnostic { command_id, message }
@@ -5280,7 +5497,7 @@ mod tests {
             .history_targets()
             .into_iter()
             .find_map(|target| match target {
-                SendTarget::Channel(channel) if channel == "#room" => Some(channel),
+                HistoryTarget::Channel(channel) if channel == "#room" => Some(channel),
                 _ => None,
             })
             .expect("joined channel is projected");
@@ -5413,7 +5630,7 @@ mod tests {
             .history_targets()
             .into_iter()
             .find_map(|target| match target {
-                SendTarget::Channel(channel) if channel == "#room" => Some(channel),
+                HistoryTarget::Channel(channel) if channel == "#room" => Some(channel),
                 _ => None,
             })
             .expect("joined channel is projected");

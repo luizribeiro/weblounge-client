@@ -51,6 +51,7 @@ struct BufferState {
     memberships: Vec<MembershipProjection>,
     last_membership: Option<MessageId>,
     direct: Option<DirectAvailability>,
+    last_activity_ms: Option<i64>,
     read_at_ms: Option<i64>,
     history: HistoryState,
 }
@@ -79,11 +80,33 @@ enum HistoryState {
 
 #[derive(Clone, Debug)]
 pub(crate) enum HistoryFetch {
-    Latest(SendTarget),
+    Latest(HistoryTarget),
     Before {
-        target: SendTarget,
+        target: HistoryTarget,
         oldest: papo::MessageId,
     },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum HistoryTarget {
+    Channel(papo::ChannelName),
+    Direct(papo::Nick),
+}
+
+impl HistoryTarget {
+    fn from_key(key: NameKey) -> Self {
+        match key {
+            NameKey::Channel(channel) => Self::Channel(channel),
+            NameKey::Direct(nick) => Self::Direct(nick),
+        }
+    }
+
+    fn name_key(&self) -> NameKey {
+        match self {
+            Self::Channel(channel) => NameKey::Channel(channel.clone()),
+            Self::Direct(nick) => NameKey::Direct(nick.clone()),
+        }
+    }
 }
 
 /// Information needed to perform an outgoing send without exposing papo targets to the UI.
@@ -191,6 +214,7 @@ impl NetworkModel {
             memberships: Vec::new(),
             last_membership: None,
             direct: None,
+            last_activity_ms: None,
             read_at_ms: None,
             history: HistoryState::Ready {
                 oldest: None,
@@ -732,19 +756,17 @@ impl NetworkModel {
         ))
     }
 
-    pub(crate) fn history_targets(&self) -> Vec<SendTarget> {
+    pub(crate) fn history_targets(&self) -> Vec<HistoryTarget> {
         self.buffer_order
             .iter()
             .filter_map(|id| self.buffers.get(id))
-            .filter_map(|buffer| {
-                SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.as_ref())
-            })
+            .filter_map(|buffer| buffer.key.clone().map(HistoryTarget::from_key))
             .collect()
     }
 
     pub(crate) fn request_history(&mut self, buffer_id: BufferId) -> Option<HistoryFetch> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.as_ref())?;
+        let target = HistoryTarget::from_key(buffer.key.clone()?);
         match &buffer.history {
             HistoryState::Unrequested => {
                 buffer.history = HistoryState::LoadingLatest;
@@ -769,7 +791,7 @@ impl NetworkModel {
     pub(crate) fn request_latest_channel(
         &mut self,
         channel: &papo::ChannelName,
-    ) -> Option<SendTarget> {
+    ) -> Option<HistoryTarget> {
         let buffer_id = self
             .names
             .get(&NameKey::Channel(channel.clone()))
@@ -778,7 +800,7 @@ impl NetworkModel {
         if !matches!(buffer.history, HistoryState::Unrequested) {
             return None;
         }
-        let target = SendTarget::from_buffer(buffer.key.clone()?, buffer.direct.as_ref())?;
+        let target = HistoryTarget::from_key(buffer.key.clone()?);
         buffer.history = HistoryState::LoadingLatest;
         Some(target)
     }
@@ -812,7 +834,7 @@ impl NetworkModel {
         let target = match fetch {
             HistoryFetch::Latest(target) | HistoryFetch::Before { target, .. } => target,
         };
-        let buffer_id = self.buffer_id_for_send_target(target)?;
+        let buffer_id = self.names.get(&target.name_key()).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         buffer.history = match &buffer.history {
             HistoryState::LoadingLatest => HistoryState::Unrequested,
@@ -820,7 +842,7 @@ impl NetworkModel {
                 oldest: Some(oldest.clone()),
                 at_start: false,
             },
-            state => state.clone(),
+            HistoryState::Unrequested | HistoryState::Ready { .. } => return None,
         };
         Some(buffer_id)
     }
@@ -898,6 +920,37 @@ impl NetworkModel {
             events.push(self.buffers_event());
         }
         (buffer_id, events)
+    }
+
+    pub(crate) fn restore_direct(
+        &mut self,
+        nick: papo::Nick,
+        latest: SystemTime,
+    ) -> (HistoryFetch, bool, Option<BufferProjection>) {
+        let key = NameKey::Direct(nick.clone());
+        let should_resolve = !matches!(
+            self.direct(&nick),
+            Some(DirectAvailability::Guarded(_) | DirectAvailability::Resolving)
+        );
+        let (buffer_id, added) = self.ensure_buffer(key, None);
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            buffer.last_activity_ms = Some(buffer.last_activity_ms.map_or_else(
+                || time_millis(latest),
+                |current| current.max(time_millis(latest)),
+            ));
+            if matches!(buffer.history, HistoryState::Unrequested) {
+                buffer.history = HistoryState::LoadingLatest;
+            }
+            if should_resolve {
+                buffer.direct = Some(DirectAvailability::Resolving);
+            }
+        }
+        self.sort_buffer_order();
+        (
+            HistoryFetch::Latest(HistoryTarget::Direct(nick)),
+            should_resolve,
+            added,
+        )
     }
 
     pub(crate) fn direct(&self, nick: &papo::Nick) -> Option<DirectAvailability> {
@@ -1238,6 +1291,7 @@ impl NetworkModel {
                 last_membership: None,
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
+                last_activity_ms: None,
                 read_at_ms: None,
                 history: HistoryState::Unrequested,
             },
@@ -1269,14 +1323,6 @@ impl NetworkModel {
         id
     }
 
-    fn buffer_id_for_send_target(&self, target: &SendTarget) -> Option<BufferId> {
-        let key = match target {
-            SendTarget::Channel(channel) => NameKey::Channel(channel.clone()),
-            SendTarget::Direct { nick, .. } => NameKey::Direct(nick.clone()),
-        };
-        self.names.get(&key).copied()
-    }
-
     fn insert(
         &mut self,
         buffer_id: BufferId,
@@ -1297,6 +1343,10 @@ impl NetworkModel {
             return Err(StateError::MissingBuffer(buffer_id));
         };
         buffer.last_membership = None;
+        buffer.last_activity_ms = Some(buffer.last_activity_ms.map_or_else(
+            || message_time(&record.projection),
+            |current| current.max(message_time(&record.projection)),
+        ));
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
         let excess = buffer.timeline.len().saturating_sub(self.window_limit);
@@ -1478,11 +1528,8 @@ fn compare_buffers(
                 })
         }
         BufferKind::Direct => second
-            .projection
-            .last_message
-            .as_ref()
-            .map(message_time)
-            .cmp(&first.projection.last_message.as_ref().map(message_time))
+            .last_activity_ms
+            .cmp(&first.last_activity_ms)
             .then_with(|| {
                 casemapping
                     .fold(&first.projection.title)
@@ -1667,6 +1714,19 @@ mod tests {
                 if buffers.iter().map(|buffer| buffer.title.as_str()).collect::<Vec<_>>()
                     == ["Test", "alice", "carol", "Bob"])
         }));
+    }
+
+    #[test]
+    fn restored_direct_order_uses_target_activity_before_history_arrives() {
+        let (mut model, state) = model(10);
+        for (nick, seconds) in [("Bob", 100), ("alice", 100), ("carol", 200)] {
+            model.restore_direct(
+                nick_name(&state, nick),
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
+            );
+        }
+
+        assert_eq!(ordered_titles(&model), ["Test", "carol", "alice", "Bob"]);
     }
 
     #[test]

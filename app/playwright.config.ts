@@ -86,6 +86,7 @@ export default defineConfig({
   workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
   use: {
     baseURL: `http://127.0.0.1:${port}`,
+    ignoreHTTPSErrors: process.env.WEBLOUNGE_E2E_SECURE_ERGO === "1",
   },
   webServer: [
     {
