@@ -267,6 +267,11 @@ export function DesktopShell(props: DesktopShellProps) {
                   props.memberships.get(activeBuffer()?.id ?? -1) ?? []
                 }
                 onLiveEdgeChange={setAtLiveEdge}
+                onOpenChannel={(channel) => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined)
+                    void props.onSend(buffer.id, `/join ${channel}`);
+                }}
                 readThrough={activeBuffer()?.read_through}
                 registerController={(controller) => {
                   messageListController = controller;

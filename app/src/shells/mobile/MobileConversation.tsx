@@ -138,6 +138,9 @@ export function MobileConversation(props: MobileConversationProps) {
           messages={props.messages}
           memberships={props.memberships}
           onLiveEdgeChange={setAtLiveEdge}
+          onOpenChannel={(channel) => {
+            void props.onSend(props.buffer.id, `/join ${channel}`);
+          }}
           presentation="mobile"
           readThrough={props.buffer.read_through}
           registerController={(controller) => {
