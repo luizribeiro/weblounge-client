@@ -25,3 +25,15 @@
   inline-size: 7rem;
   opacity: 0.72;
 }
+
+.retry {
+  background: var(--wl-color-accent);
+  border: 0;
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-accent-fg);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  min-block-size: 32px;
+  padding: 6px 16px;
+}

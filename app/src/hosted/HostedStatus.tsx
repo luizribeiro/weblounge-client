@@ -3,6 +3,7 @@ import styles from "./HostedStatus.module.css";
 interface HostedStatusProps {
   message: string;
   error?: boolean;
+  onRetry?: (() => void) | undefined;
 }
 
 export function HostedStatus(props: HostedStatusProps) {
@@ -15,6 +16,11 @@ export function HostedStatus(props: HostedStatusProps) {
         draggable={false}
       />
       <p role={props.error === true ? "alert" : "status"}>{props.message}</p>
+      {props.onRetry !== undefined && (
+        <button class={styles.retry} onClick={props.onRetry} type="button">
+          Retry
+        </button>
+      )}
     </main>
   );
 }

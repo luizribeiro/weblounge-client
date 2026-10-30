@@ -105,6 +105,22 @@ it("checks worker liveness on a persisted page restore", () => {
   expect(client.livenessChecks).toBe(1);
 });
 
+it("offers startup retry without reloading the page", async () => {
+  const retry = vi.fn();
+  render(() => (
+    <App
+      engineClient={new FakeEngineClient(undefined, Promise.reject())}
+      onRetryStartup={retry}
+    />
+  ));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Couldn't start weblounge.",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(retry).toHaveBeenCalledOnce();
+});
+
 it("hands a hosted token to the engine once and reauthorizes on rejection", async () => {
   const client = new FakeEngineClient();
   const authorize = vi.fn();

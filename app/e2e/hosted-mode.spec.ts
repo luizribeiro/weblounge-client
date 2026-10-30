@@ -1,19 +1,31 @@
 import { expect, type Page, type Route, test } from "@playwright/test";
 
-test("shows a clear error when production config is missing", async ({
+test("retries startup without reloading when production config was missing", async ({
   page,
 }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_DEV === "1",
     "development intentionally permits missing config",
   );
-  await page.route("**/config.json", (route) => route.fulfill({ status: 404 }));
+  let configRequests = 0;
+  await page.route("**/config.json", (route) => {
+    configRequests += 1;
+    return configRequests === 1
+      ? route.fulfill({ status: 404 })
+      : route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ mode: "app" }),
+        });
+  });
 
   await page.goto("/");
 
-  await expect(
-    page.getByText("This deployment is misconfigured"),
-  ).toBeVisible();
+  const error = page.getByText("This deployment is misconfigured");
+  await expect(error).toBeVisible();
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
+  expect(configRequests).toBe(2);
+  await expect(page).toHaveURL(/\/$/u);
 });
 
 test("authorizes with PKCE and hands the bearer token once to the engine", async ({

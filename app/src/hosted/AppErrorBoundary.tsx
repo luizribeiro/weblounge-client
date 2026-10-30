@@ -1,14 +1,16 @@
 import { ErrorBoundary, type JSX } from "solid-js";
 import { HostedStatus } from "./HostedStatus";
 
-export const renderFailureMessage = "Something went wrong. Reload to continue.";
+export const renderFailureMessage = "Something went wrong.";
 
 export function AppErrorBoundary(props: { children: JSX.Element }) {
   return (
     <ErrorBoundary
-      fallback={(error: unknown) => {
+      fallback={(error: unknown, reset) => {
         console.error(error);
-        return <HostedStatus message={renderFailureMessage} error />;
+        return (
+          <HostedStatus message={renderFailureMessage} error onRetry={reset} />
+        );
       }}
     >
       {props.children}

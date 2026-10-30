@@ -52,6 +52,7 @@ interface AppProps {
   onHostedAuthorizationRequired?: (
     reason: "expired" | "revoked" | "worker_restarted",
   ) => void;
+  onRetryStartup?: (() => void) | undefined;
 }
 
 export function App(props: AppProps) {
@@ -310,7 +311,7 @@ export function App(props: AppProps) {
     ).then((outcome) => {
       if (outcome === "reloading") return;
       if (outcome === "failed") {
-        setStartupError("Couldn't start weblounge. Reload to try again.");
+        setStartupError("Couldn't start weblounge.");
       }
       setEngineReady(true);
       if (outcome === "ready" && props.hostedSession !== undefined) {
@@ -385,11 +386,19 @@ export function App(props: AppProps) {
       </p>
       {!engineReady() ? null : startupError() !== undefined ? (
         startupRevealed() ? (
-          <HostedStatus message={startupError() ?? ""} error />
+          <HostedStatus
+            message={startupError() ?? ""}
+            error
+            onRetry={props.onRetryStartup}
+          />
         ) : null
       ) : !shellReady() ? (
         startupRevealed() && hostedError() !== undefined ? (
-          <HostedStatus message={hostedError() ?? ""} error />
+          <HostedStatus
+            message={hostedError() ?? ""}
+            error
+            onRetry={props.onRetryStartup}
+          />
         ) : null
       ) : (
         <ResponsiveShell
@@ -603,7 +612,7 @@ async function startEngine(
     }
     setStatus("Engine failed to start");
     if (hostedSession !== undefined) {
-      setHostedError("Couldn't start the chat. Reload the app to try again.");
+      setHostedError("Couldn't start the chat.");
     }
     return "failed";
   }

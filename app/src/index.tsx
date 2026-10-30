@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import { installDensity } from "./density/density";
@@ -28,7 +28,7 @@ type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
 type BootstrapState =
   | { type: "starting"; message: string }
   | { type: "error"; message: string }
-  | { type: "app" }
+  | { type: "app"; attempt: number }
   | { type: "hosted"; config: HostedConfig; session: HostedSession };
 
 interface BootstrapProps {
@@ -49,14 +49,17 @@ function Bootstrap(props: BootstrapProps) {
     type: "starting",
     message: "Starting…",
   });
+  let starting = false;
 
   onMount(() => void start());
 
   async function start(): Promise<void> {
+    if (starting) return;
+    starting = true;
     try {
       const config = await loadDeploymentConfig();
       if (config.mode === "app") {
-        setState({ type: "app" });
+        setState({ type: "app", attempt: 1 });
         return;
       }
       requireCurrentRedirect(config);
@@ -89,15 +92,12 @@ function Bootstrap(props: BootstrapProps) {
       await Promise.resolve();
       await props.beforeReveal();
       props.onReady();
+    } finally {
+      starting = false;
     }
   }
 
   async function restartAuthorization(config: HostedConfig): Promise<void> {
-    setState({
-      type: "starting",
-      message: "Your session expired. Signing in again…",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 600));
     try {
       const metadata = await discoverOAuthMetadata(config.oauth);
       window.location.replace(
@@ -114,10 +114,26 @@ function Bootstrap(props: BootstrapProps) {
       case "starting":
         return <HostedStatus message={current.message} />;
       case "error":
-        return <HostedStatus message={current.message} error />;
+        return (
+          <HostedStatus
+            message={current.message}
+            error
+            onRetry={() => void start()}
+          />
+        );
       case "app":
         return (
-          <App beforeReveal={props.beforeReveal} onReady={props.onReady} />
+          <Show keyed when={current.attempt}>
+            {(attempt) => (
+              <App
+                beforeReveal={props.beforeReveal}
+                onReady={props.onReady}
+                onRetryStartup={() =>
+                  setState({ type: "app", attempt: attempt + 1 })
+                }
+              />
+            )}
+          </Show>
         );
       case "hosted":
         return (
@@ -128,6 +144,7 @@ function Bootstrap(props: BootstrapProps) {
             onHostedAuthorizationRequired={() =>
               void restartAuthorization(current.config)
             }
+            onRetryStartup={() => void restartAuthorization(current.config)}
           />
         );
       default: {
@@ -152,7 +169,7 @@ function userFacingError(error: unknown): string {
   if (error instanceof HostedAuthorizationError || error instanceof Error) {
     return error.message;
   }
-  return "Couldn't start the app. Reload to try again.";
+  return "Couldn't start the app.";
 }
 
 const root = document.getElementById("root");
@@ -187,9 +204,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
     active = false;
     const status = splash.querySelector<HTMLElement>("[data-splash-status]");
     if (status === null) return;
-    status.dataset.error = "true";
-    status.setAttribute("role", "alert");
-    status.textContent = "Couldn't start weblounge. Reload to try again.";
+    status.textContent = "Still starting weblounge…";
   }, 15_000);
 
   return {

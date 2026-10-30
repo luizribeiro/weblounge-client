@@ -48,7 +48,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 40 | 2026-10-30 | After the splash, a second 'Signing in…' screen shows a black-on-black chair (desktop too). Drop it. | fixed, local |
 | 41 | 2026-10-30 | iPhone: the home-indicator space applies to every screen (chats list, members) and is too big; it should only pad the composer. | fixed, local |
 | 42 | 2026-10-30 | Mobile: edge swipes still trigger browser history (e.g. back from the chats list to the splash), including in the installed PWA. | fixed, local |
-| 43 | 2026-10-30 | The 'Couldn't start weblounge. Reload to try again.' screen has no retry button; a PWA has no reload. | queued |
+| 43 | 2026-10-30 | The 'Couldn't start weblounge. Reload to try again.' screen has no retry button; a PWA has no reload. | fixed, local |
 | 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | fixed, live |
 | 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | fixed, live |
 | 46 | 2026-10-30 | Sometimes the buffer scrolls on its own shortly after opening a channel. Re-check after papo's history fix. | queued |
