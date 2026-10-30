@@ -1097,7 +1097,7 @@ impl NetworkModel {
         };
         let dedup = if let Some(msgid) = &incoming.msgid {
             if self.msgids.contains_key(msgid) {
-                return self.enrich_duplicate(msgid, incoming.server_time_ms);
+                return Vec::new();
             }
             self.msgids.insert(msgid.clone(), 1);
             DedupReferences {
@@ -1181,54 +1181,6 @@ impl NetworkModel {
             unread,
             mentions,
         });
-        events
-    }
-
-    fn enrich_duplicate(&mut self, msgid: &str, server_time_ms: Option<i64>) -> Vec<EngineToUi> {
-        let Some(server_time_ms) = server_time_ms else {
-            return Vec::new();
-        };
-        let mut updated = None;
-        for (buffer_id, buffer) in &mut self.buffers {
-            let Some(record) = buffer
-                .timeline
-                .iter_mut()
-                .find(|record| record.projection.server_ids.iter().any(|id| id == msgid))
-            else {
-                continue;
-            };
-            if record.projection.server_time_ms.is_some() {
-                return Vec::new();
-            }
-            record.projection.server_time_ms = Some(server_time_ms);
-            let message = record.projection.clone();
-            buffer.timeline.sort_by_key(order_key);
-            derive_read_projection(buffer);
-            updated = Some((
-                *buffer_id,
-                message,
-                buffer.projection.clone(),
-                buffer.projection.unread,
-                buffer.projection.mentions,
-            ));
-            break;
-        }
-        let Some((buffer_id, message, buffer, unread, mentions)) = updated else {
-            return Vec::new();
-        };
-        let order_changed = self.sort_buffer_order();
-        let mut events = vec![
-            EngineToUi::MessageUpdated { buffer_id, message },
-            EngineToUi::BufferUpdated { buffer },
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread,
-                mentions,
-            },
-        ];
-        if order_changed {
-            events.push(self.buffers_event());
-        }
         events
     }
 
@@ -1785,7 +1737,7 @@ mod tests {
     }
 
     #[test]
-    fn history_duplicate_enriches_an_untimed_live_row() {
+    fn history_duplicate_does_not_mutate_an_untimed_live_row() {
         let (mut model, state) = model(10);
         model.receive_incoming(
             incoming(
@@ -1810,24 +1762,32 @@ mod tests {
             &state,
         );
 
-        let events = model.receive_incoming(
-            incoming(
-                &state,
-                "older",
-                Some("older"),
-                Some(1_000),
-                4_000,
-                TimelineOrigin::History,
-            ),
-            &state,
+        assert!(
+            model
+                .receive_incoming(
+                    incoming(
+                        &state,
+                        "older",
+                        Some("older"),
+                        Some(1_000),
+                        4_000,
+                        TimelineOrigin::History,
+                    ),
+                    &state,
+                )
+                .is_empty()
         );
 
-        assert_eq!(timeline(&model), ["older", "current"]);
-        assert!(events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageUpdated { message, .. }
-                if message.text == "older" && message.server_time_ms == Some(1_000)
-        )));
+        assert_eq!(timeline(&model), ["current", "older"]);
+        assert_eq!(
+            model
+                .buffers
+                .values()
+                .flat_map(|buffer| &buffer.timeline)
+                .find(|record| record.projection.text == "older")
+                .and_then(|record| record.projection.server_time_ms),
+            None
+        );
     }
 
     #[test]
