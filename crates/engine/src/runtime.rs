@@ -652,7 +652,6 @@ impl Runtime {
         text: String,
         kind: crate::MessageKind,
     ) -> Vec<EngineToUi> {
-        let text = collapse_blank_lines(text);
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
@@ -1173,26 +1172,6 @@ impl Runtime {
             EngineToUi::CommandResult { id: command_id },
         ]
     }
-}
-
-fn collapse_blank_lines(text: String) -> String {
-    if !text.contains("\n\n\n") {
-        return text;
-    }
-    let mut collapsed = String::with_capacity(text.len());
-    let mut newlines = 0;
-    for character in text.chars() {
-        if character == '\n' {
-            newlines += 1;
-            if newlines <= 2 {
-                collapsed.push(character);
-            }
-        } else {
-            newlines = 0;
-            collapsed.push(character);
-        }
-    }
-    collapsed
 }
 
 fn server_command(command: &Command) -> bool {
@@ -2751,10 +2730,9 @@ mod tests {
 
     use super::{
         AuthenticationKind, ConnectionAuthentication, ConnectionTransition, MemberViews,
-        RunningNetwork, Runtime, RuntimeState, collapse_blank_lines, completion_context,
-        connection_failure_notice, drain_events, fetch_history, fetch_latest, lock,
-        next_connection_state, person_candidates, process_event, process_history,
-        spawn_read_marker_fetch, utf16_len,
+        RunningNetwork, Runtime, RuntimeState, completion_context, connection_failure_notice,
+        drain_events, fetch_history, fetch_latest, lock, next_connection_state, person_candidates,
+        process_event, process_history, spawn_read_marker_fetch, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -2762,18 +2740,6 @@ mod tests {
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         state::{DirectAvailability, HistoryTarget, NetworkModel, PendingSend, SendTarget},
     };
-
-    #[test]
-    fn message_text_keeps_at_most_one_blank_line() {
-        assert_eq!(
-            collapse_blank_lines("first\n\n\nsecond\n\n\n\nthird".into()),
-            "first\n\nsecond\n\nthird"
-        );
-        assert_eq!(
-            collapse_blank_lines("first\n\nsecond".into()),
-            "first\n\nsecond"
-        );
-    }
 
     #[test]
     fn connection_state_table_covers_resilient_transitions() {
