@@ -105,6 +105,9 @@ test.describe("desktop shell against local Ergo", () => {
         name: "Message #weblounge-test",
       });
 
+      await page.getByRole("button", { name: "Toggle channel list" }).focus();
+      await page.keyboard.type("typed from desktop chrome");
+      await expect(composer).toHaveValue("typed from desktop chrome");
       await composer.fill(plainMessage);
       await composer.press("Enter");
       await expect(page.getByText(plainMessage, { exact: true })).toBeVisible();
@@ -134,8 +137,10 @@ test.describe("desktop shell against local Ergo", () => {
       const another = page.getByRole("textbox", {
         name: `Message ${draftChannel}`,
       });
+      await expect(another).toBeFocused();
       await another.fill("draft in another");
       await page.getByRole("button", { name: /^#weblounge-test/ }).click();
+      await expect(composer).toBeFocused();
       await composer.fill("draft in home");
       await page.getByRole("button", { name: draftChannel }).click();
       await expect(another).toHaveValue("draft in another");
@@ -153,6 +158,7 @@ test.describe("desktop shell against local Ergo", () => {
       const restoredAnother = page.getByRole("textbox", {
         name: `Message ${draftChannel}`,
       });
+      await expect(restoredAnother).toBeFocused();
       await expect(restoredAnother).toHaveValue("draft in another");
 
       await restoredAnother.fill("/hop");
@@ -170,6 +176,7 @@ test.describe("desktop shell against local Ergo", () => {
       const direct = page.getByRole("textbox", {
         name: "Message composer",
       });
+      await expect(direct).toBeFocused();
       await direct.fill("/help join");
       await direct.press("Enter");
       await expect(

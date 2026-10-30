@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
@@ -219,4 +220,79 @@ it("does not reset a local selection to a stale external selection", () => {
   fireEvent.click(screen.getByRole("button", { name: "#room" }));
 
   expect(screen.getByRole("textbox", { name: "Message #room" })).toBeVisible();
+});
+
+it("focuses the composer after buffer navigation and engine focus requests", async () => {
+  const [focusRequest, setFocusRequest] = createSignal<
+    { readonly bufferId: number } | undefined
+  >();
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel, otherChannel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={focusRequest()}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  fireEvent.click(screen.getByRole("button", { name: "#other" }));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Message #other" }),
+    ).toHaveFocus(),
+  );
+
+  screen.getByRole("button", { name: "#other" }).focus();
+  fireEvent.keyDown(document, { altKey: true, key: "ArrowUp" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Message #room" }),
+    ).toHaveFocus(),
+  );
+
+  setFocusRequest({ bufferId: otherChannel.id });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Message #other" }),
+    ).toHaveFocus(),
+  );
+});
+
+it("routes printable chrome keys to the composer without hijacking controls", () => {
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  const toggle = screen.getByRole("button", { name: "Toggle channel list" });
+  const composer = screen.getByRole("textbox", { name: "Message #room" });
+  toggle.focus();
+  fireEvent.keyDown(toggle, { key: "h" });
+  expect(composer).toHaveFocus();
+  expect(composer).toHaveValue("h");
+
+  toggle.focus();
+  fireEvent.keyDown(toggle, { key: " " });
+  expect(toggle).toHaveFocus();
+  expect(composer).toHaveValue("h");
 });

@@ -83,6 +83,20 @@ it("uses IRC insertion rules for mentions and plain Tab completion", () => {
   ).toBe("ana ");
 });
 
+it("focuses a desktop composer when it mounts", async () => {
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      draftKey="test:focused"
+      focusOnMount
+      onSend={() => {}}
+    />
+  ));
+
+  await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
+});
+
 it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   const onSend = vi.fn();
   render(() => (

@@ -19,6 +19,7 @@ interface ComposerProps {
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult | undefined;
   readonly disabled?: boolean;
+  readonly focusOnMount?: boolean | undefined;
   readonly onRequestCandidates?: (
     input: string,
     cursor: number,
@@ -297,7 +298,13 @@ export function Composer(props: ComposerProps) {
           }}
           onKeyDown={keydown}
           placeholder={`Message ${props.bufferTitle}`}
-          ref={textarea}
+          ref={(element) => {
+            textarea = element;
+            if (props.focusOnMount === true)
+              requestAnimationFrame(() => {
+                if (element.isConnected) element.focus({ preventScroll: true });
+              });
+          }}
           rows={1}
           value={text()}
         />

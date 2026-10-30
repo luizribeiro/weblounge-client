@@ -169,7 +169,10 @@ export function DesktopShell(props: DesktopShellProps) {
       "members.toggle": () => {
         if (!membersAvailable()) return;
         if (membersInline()) {
-          setMemberPanelOpen((open) => !open);
+          setMemberPanelOpen((open) => {
+            if (open) focusComposer();
+            return !open;
+          });
           setDrawer(null);
           return;
         }
@@ -273,7 +276,8 @@ export function DesktopShell(props: DesktopShellProps) {
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent) => {
-      registry.handleKeydown(event, context());
+      if (registry.handleKeydown(event, context())) return;
+      forwardPrintableKey(event, shellElement);
     };
     document.addEventListener("keydown", handleKeydown);
     const updateForeground = () =>
@@ -379,6 +383,7 @@ export function DesktopShell(props: DesktopShellProps) {
                           : undefined
                       }
                       disabled={buffer()?.kind === "server"}
+                      focusOnMount
                       onRequestCandidates={(input, cursor, explicit) =>
                         props.onRequestCompletion(
                           bufferId,
@@ -415,7 +420,10 @@ export function DesktopShell(props: DesktopShellProps) {
           return (
             <MemberPanel
               bufferTitle={buffer()?.title ?? ""}
-              onClose={() => setMemberPanelOpen(false)}
+              onClose={() => {
+                setMemberPanelOpen(false);
+                focusComposer();
+              }}
               onOpenDirect={(nick) => {
                 props.onOpenDirect?.(buffer()?.network_id ?? 0, nick);
                 focusComposer();
@@ -491,6 +499,62 @@ export function DesktopShell(props: DesktopShellProps) {
       />
     );
   }
+}
+
+function forwardPrintableKey(
+  event: KeyboardEvent,
+  shell: HTMLElement | undefined,
+): void {
+  if (
+    shell === undefined ||
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.getModifierState("AltGraph") ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    Array.from(event.key).length !== 1 ||
+    document.querySelector('[role="dialog"], dialog[open]') !== null
+  ) {
+    return;
+  }
+  const target = event.target;
+  if (target instanceof Element) {
+    if (isEditable(target)) return;
+    if (
+      event.key === " " &&
+      target.closest("button, a, summary, [role='button']") !== null
+    ) {
+      return;
+    }
+  }
+  const composer = shell.querySelector<HTMLTextAreaElement>(
+    "[data-composer] textarea:not(:disabled)",
+  );
+  if (composer === null) return;
+  event.preventDefault();
+  composer.focus({ preventScroll: true });
+  composer.setRangeText(
+    event.key,
+    composer.selectionStart,
+    composer.selectionEnd,
+    "end",
+  );
+  composer.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      data: event.key,
+      inputType: "insertText",
+    }),
+  );
+}
+
+function isEditable(target: Element): boolean {
+  return (
+    target.closest(
+      "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
+    ) !== null
+  );
 }
 
 function latestCommitted(

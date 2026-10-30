@@ -100,6 +100,9 @@ test.describe("desktop members against local Ergo", () => {
       await expect(
         page.getByRole("heading", { name: "member-bot" }),
       ).toBeVisible();
+      await expect(
+        page.getByRole("textbox", { name: "Message member-bot" }),
+      ).toBeFocused();
       await expect(panel).toHaveCount(0);
     } finally {
       bot.close();
