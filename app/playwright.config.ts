@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 const builtApp = process.env.WEBLOUNGE_APP_DIR;
 const outDir = builtApp === undefined ? "" : ` --outDir ${builtApp}`;
@@ -11,6 +11,23 @@ const serverCommand = devServer
 export default defineConfig({
   testDir: "./e2e",
   workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: /connection-resilience\.spec\.ts/,
+      use: { browserName: "chromium" },
+    },
+    {
+      name: "resilience-desktop-webkit",
+      testMatch: /connection-resilience\.spec\.ts/,
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "resilience-mobile-webkit",
+      testMatch: /connection-resilience\.spec\.ts/,
+      use: { ...devices["iPhone 16 Pro"] },
+    },
+  ],
   use: {
     baseURL: `http://127.0.0.1:${port}`,
   },

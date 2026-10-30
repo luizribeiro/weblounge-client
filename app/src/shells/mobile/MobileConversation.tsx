@@ -91,7 +91,15 @@ export function MobileConversation(props: MobileConversationProps) {
   });
 
   return (
-    <section class={styles.chat} data-mobile-chat={props.buffer.id}>
+    <section
+      class={styles.chat}
+      data-mobile-chat={props.buffer.id}
+      data-network-state={
+        props.network === undefined
+          ? undefined
+          : connectionStateKind(props.network.state)
+      }
+    >
       <header class={styles.chatHeader}>
         <button
           aria-label="Back to chats"
