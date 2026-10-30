@@ -186,7 +186,9 @@ export function MobileShell(props: MobileShellProps) {
       finishDrawerClose();
     }
   };
-  const requestBack = (instant = false) => {
+  const requestBack = () => popScreen(false);
+  const finishBackSwipe = () => popScreen(true);
+  const popScreen = (instant: boolean) => {
     if (drawerBufferId() !== undefined) {
       setDrawerHistoryClosing(true);
       return;
@@ -285,7 +287,7 @@ export function MobileShell(props: MobileShellProps) {
     onCommit: () => {
       suppressCompletedSwipeClick = true;
       setSwipeProgress(undefined);
-      requestBack(true);
+      finishBackSwipe();
     },
     onProgress: setSwipeProgress,
   });
@@ -379,8 +381,21 @@ export function MobileShell(props: MobileShellProps) {
       else setDrawerHistoryClosing(true);
     };
     const handleVisibilityChange = () => resetMotion();
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        drawerBufferId() !== undefined ||
+        stack().active.kind !== "chat" ||
+        stack().transition !== undefined ||
+        !isKeyboardBack(event, platform.shortcutPlatform)
+      )
+        return;
+      event.preventDefault();
+      requestBack();
+    };
     window.addEventListener("popstate", handlePopState);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("keydown", handleKeydown);
     shellElement?.addEventListener("click", consumeCompletedSwipeClick, true);
     if (historyPolicy === "replace") {
       window.history.replaceState(
@@ -391,6 +406,7 @@ export function MobileShell(props: MobileShellProps) {
     onCleanup(() => {
       window.removeEventListener("popstate", handlePopState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("keydown", handleKeydown);
       shellElement?.removeEventListener(
         "click",
         consumeCompletedSwipeClick,
@@ -513,6 +529,19 @@ export function MobileShell(props: MobileShellProps) {
         />
       )}
     </main>
+  );
+}
+
+function isKeyboardBack(
+  event: KeyboardEvent,
+  platform: "macos" | "other",
+): boolean {
+  return (
+    event.key === "Escape" ||
+    event.key === "BrowserBack" ||
+    (platform === "macos"
+      ? event.metaKey && event.key === "["
+      : event.altKey && event.key === "ArrowLeft")
   );
 }
 

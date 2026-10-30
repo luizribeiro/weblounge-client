@@ -30,6 +30,38 @@ test("mobile back gesture velocity completes aligned", async ({ page }) => {
   await expectAligned(page);
 });
 
+test("mobile Back button animates the chat over the visible list", async ({
+  page,
+}) => {
+  await openChat(page);
+  await startPopRecording(page);
+  await page.getByRole("button", { name: "Back to chats" }).tap();
+  const frames = await finishPopRecording(page);
+  const positions = frames
+    .filter((frame) => frame.chatLeft !== null)
+    .map((frame) => frame.chatLeft ?? 0);
+  const intermediate = positions.filter(
+    (position) => position > 0.5 && position < 401.5,
+  );
+
+  expect(new Set(intermediate.map(Math.round)).size).toBeGreaterThanOrEqual(8);
+  expect(monotonic(positions)).toBe(true);
+  expect(
+    frames
+      .filter((frame) => frame.popping || frame.chatLeft === null)
+      .every((frame) => frame.chatsVisible),
+  ).toBe(true);
+  expect(frames.at(-1)?.chatLeft).toBeNull();
+  await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
+});
+
+test("mobile keyboard Back uses the pop transition", async ({ page }) => {
+  await openChat(page);
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-transition="pop"]')).toHaveCount(2);
+  await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
+});
+
 test("mobile back gesture midpoint completes aligned", async ({ page }) => {
   await openChat(page);
   await drag(page, 4, 200, "pointerup");
@@ -190,4 +222,68 @@ async function expectAligned(page: Page): Promise<void> {
       }),
     )
     .toEqual({ left: 0, right: 402, transform: "none", viewport: 402 });
+}
+
+interface PopFrame {
+  readonly chatLeft: number | null;
+  readonly chatsVisible: boolean;
+  readonly popping: boolean;
+}
+
+async function startPopRecording(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const scope = window as Window & {
+      popRecording?: { done: boolean; frames: PopFrame[] };
+    };
+    const recording = { done: false, frames: [] as PopFrame[] };
+    scope.popRecording = recording;
+    const sample = () => {
+      const chat =
+        document.querySelector<HTMLElement>(
+          "[data-mobile-chat]",
+        )?.parentElement;
+      const chats = document.querySelector<HTMLElement>("[data-mobile-chats]");
+      recording.frames.push({
+        chatLeft: chat?.getBoundingClientRect().left ?? null,
+        chatsVisible:
+          chats?.checkVisibility({
+            opacityProperty: true,
+            visibilityProperty: true,
+          }) ?? false,
+        popping: chat?.dataset.transition === "pop",
+      });
+      if (chat === undefined || chat === null) recording.done = true;
+      else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+async function finishPopRecording(page: Page): Promise<readonly PopFrame[]> {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              popRecording?: { done: boolean };
+            }
+          ).popRecording?.done ?? false,
+      ),
+    )
+    .toBe(true);
+  return page.evaluate(
+    () =>
+      (
+        window as Window & {
+          popRecording?: { frames: PopFrame[] };
+        }
+      ).popRecording?.frames ?? [],
+  );
+}
+
+function monotonic(values: readonly number[]): boolean {
+  return values.every(
+    (value, index) => index === 0 || value >= (values[index - 1] ?? value),
+  );
 }

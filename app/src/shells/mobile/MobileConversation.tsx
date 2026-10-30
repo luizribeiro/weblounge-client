@@ -109,7 +109,7 @@ export function MobileConversation(props: MobileConversationProps) {
         <button
           aria-label="Back to chats"
           class={styles.back}
-          onClick={props.onBack}
+          onClick={() => props.onBack()}
           type="button"
         >
           <span aria-hidden="true">‹</span>
