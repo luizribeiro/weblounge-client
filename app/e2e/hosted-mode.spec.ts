@@ -91,6 +91,41 @@ test("recovers from a state mismatch with a fresh sign-in", async ({
   await expectHostedConnection(page);
 });
 
+test("returns to sign-in when the hosted token expires", async ({ page }) => {
+  await installFakeEngine(page);
+  await installHostedConfig(page);
+  let authorizationCount = 0;
+  await page.route("http://127.0.0.1:4174/authorize**", async (route) => {
+    authorizationCount += 1;
+    if (authorizationCount === 1) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<main>Hosted sign-in requested after expiry</main>",
+    });
+  });
+  await page.route("http://127.0.0.1:4174/token", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({
+        access_token: "short-lived-hosted-token",
+        token_type: "Bearer",
+        expires_in: 0.2,
+      }),
+    }),
+  );
+
+  await page.goto("/");
+
+  await expect(
+    page.getByText("Hosted sign-in requested after expiry"),
+  ).toBeVisible({ timeout: 15_000 });
+  expect(authorizationCount).toBe(2);
+});
+
 async function installHostedConfig(page: Page): Promise<() => string> {
   let redirectUri = "";
   await page.route("**/config.json", async (route) => {
