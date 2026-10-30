@@ -2055,7 +2055,7 @@ mod tests {
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
-        EngineRequestEnvelope, EngineToUi, NetworkId, SaslCredentials,
+        EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkId, SaslCredentials,
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         state::{NetworkModel, PendingSend, SendTarget},
     };
@@ -2910,6 +2910,70 @@ mod tests {
         send.await
             .expect("send task completes")
             .expect("send follows user");
+    }
+
+    #[tokio::test]
+    async fn direct_confirmation_before_close_stays_confirmed() {
+        assert_direct_confirmation_survives_close(false).await;
+    }
+
+    #[tokio::test]
+    async fn direct_confirmation_after_close_stays_confirmed() {
+        assert_direct_confirmation_survives_close(true).await;
+    }
+
+    async fn assert_direct_confirmation_survives_close(close_first: bool) {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room * :WebLounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":alice!a@host JOIN #room alice-one :Alice")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let direct = client.direct("alice").await.expect("shared user is direct");
+        let nick = direct.nick();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (buffer_id, _) = model.open_direct(nick, direct);
+        let (pending, _) = model
+            .begin_send(buffer_id, "hi".into(), &client.state())
+            .expect("direct is sendable");
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move {
+            super::send(&sender, &pending)
+                .await
+                .map(|sent| (pending, sent))
+        });
+        assert_eq!(wire.next_sent().await, "PRIVMSG alice hi");
+        if close_first {
+            model.close_direct(buffer_id).expect("direct closes");
+        }
+        let (pending, sent) = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+        let confirmation = model
+            .confirm_send(&pending, &sent)
+            .expect("retained optimistic row confirms");
+        if !close_first {
+            model.close_direct(buffer_id).expect("direct closes");
+        }
+
+        assert!(matches!(
+            model.buffers_event(),
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().all(|buffer| buffer.id != buffer_id)
+        ));
+        assert!(matches!(
+            confirmation.as_slice(),
+            [EngineToUi::MessageConfirmed { message, .. }]
+                if message.delivery == MessageDelivery::Confirmed
+        ));
     }
 
     #[tokio::test]
