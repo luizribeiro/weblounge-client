@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { repeatScenario, summarizeFrameRuns } from "./performance-runs";
+import { performanceRunCount, summarizeFrameRuns } from "./performance-runs";
 
 test("keeps a 10k-message timeline bounded at 4x CPU", async ({
   page,
@@ -9,33 +9,42 @@ test("keeps a 10k-message timeline bounded at 4x CPU", async ({
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's instrumented build",
   );
-  const session = await page.context().newCDPSession(page);
-  await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/e2e/message-list-performance.html");
-  await expect(
-    page.locator("[data-performance-harness='render-only']"),
-  ).toBeVisible();
-  const list = page.locator("[data-message-list]");
-  await expect(list).toBeVisible();
-
-  const frameRuns = await repeatScenario(() =>
-    list.evaluate(async (element) => {
-      const samples: number[] = [];
-      element.scrollTop = 0;
-      let previous = performance.now();
-      for (let step = 0; step <= 40; step += 1) {
-        element.scrollTop =
-          (element.scrollHeight - element.clientHeight) * (step / 40);
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame((now) => {
-            samples.push(now - previous);
-            previous = now;
-            resolve();
-          }),
-        );
-      }
-      return samples;
+  const runPages = [
+    page,
+    ...(await Promise.all(
+      Array.from({ length: performanceRunCount - 1 }, () =>
+        page.context().newPage(),
+      ),
+    )),
+  ];
+  const frameRuns = await Promise.all(
+    runPages.map(async (runPage) => {
+      const session = await runPage.context().newCDPSession(runPage);
+      await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+      await runPage.setViewportSize({ width: 1440, height: 900 });
+      await runPage.goto("/e2e/message-list-performance.html");
+      await expect(
+        runPage.locator("[data-performance-harness='render-only']"),
+      ).toBeVisible();
+      const list = runPage.locator("[data-message-list]");
+      await expect(list).toBeVisible();
+      return list.evaluate(async (element) => {
+        const samples: number[] = [];
+        element.scrollTop = 0;
+        let previous = performance.now();
+        for (let step = 0; step <= 40; step += 1) {
+          element.scrollTop =
+            (element.scrollHeight - element.clientHeight) * (step / 40);
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame((now) => {
+              samples.push(now - previous);
+              previous = now;
+              resolve();
+            }),
+          );
+        }
+        return samples;
+      });
     }),
   );
   const metrics = await page.evaluate(() => ({
