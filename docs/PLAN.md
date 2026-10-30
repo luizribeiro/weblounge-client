@@ -48,7 +48,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the history metadata; ordinary PRIVMSG and NOTICE replay preserves server time.
   - D1. [ ] Load older history on scroll-up (`CHATHISTORY BEFORE` with msgid cursors; scroll anchoring already exists).
   - D2. [ ] Rebuild the DM list from `CHATHISTORY TARGETS` on connect.
-  - D3. [ ] Clean resume after reconnect: papo catch-up gap fill, `Lagged` resync, a quiet "reconnecting" state, the composer queues sends while offline.
+  - D3. [x] Clean resume after reconnect: papo catch-up gap fill and `Lagged` resync; one
+    engine-owned lifecycle; quiet desktop/mobile indicators; visible-only worker liveness and
+    transparent respawn; ordered in-memory composer sends across network reconnects. Desktop and
+    iPhone 16 Pro WebKit cover background/server loss, browser offline, worker termination, Ergo
+    restart, hosted-token expiry, and preservation of the established shell, draft, and message
+    viewport. The in-memory send queue cannot survive worker termination.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
