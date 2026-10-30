@@ -31,6 +31,7 @@ const colorTokens = [
   "selection",
   "selectionFg",
   "mentionBg",
+  "overlayScrim",
   "unread",
   "inputBg",
   "chip",

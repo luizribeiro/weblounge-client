@@ -19,6 +19,7 @@
     "selection": "#bdd9a7",
     "selectionFg": "#1d2825",
     "mentionBg": "#e3ebd6",
+    "overlayScrim": "rgba(0,0,0,.28)",
     "unread": "#9a3b2e",
     "inputBg": "#faf9f4",
     "chip": "#e3e6dc",

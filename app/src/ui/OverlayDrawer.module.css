@@ -5,7 +5,7 @@
 }
 
 .backdrop {
-  background: color-mix(in srgb, var(--wl-color-fg) 30%, transparent);
+  background: var(--wl-color-overlay-scrim);
   border: 0;
   inset: 0;
   position: absolute;

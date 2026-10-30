@@ -24,6 +24,7 @@
   --wl-color-selection: #bdd9a7;
   --wl-color-selection-fg: #1d2825;
   --wl-color-mention-bg: #e3ebd6;
+  --wl-color-overlay-scrim: rgba(0, 0, 0, 0.28);
   --wl-color-unread: #9a3b2e;
   --wl-color-input-bg: #faf9f4;
   --wl-color-chip: #e3e6dc;
@@ -71,6 +72,7 @@
   --wl-color-selection: #2c3a2f;
   --wl-color-selection-fg: #edefe5;
   --wl-color-mention-bg: #25321f;
+  --wl-color-overlay-scrim: rgba(0, 0, 0, 0.48);
   --wl-color-unread: #eba293;
   --wl-color-input-bg: #202c24;
   --wl-color-chip: #253227;

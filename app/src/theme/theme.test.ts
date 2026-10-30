@@ -15,6 +15,12 @@ describe("theme registry", () => {
     expect(nickPaletteSize).toBe(6);
     expect(themeStyleSheet()).toContain("--wl-color-bg:#f3f1e9");
     expect(themeStyleSheet()).toContain("--wl-color-bg:#18221e");
+    expect(themeStyleSheet()).toContain(
+      "--wl-color-overlay-scrim:rgba(0,0,0,.28)",
+    );
+    expect(themeStyleSheet()).toContain(
+      "--wl-color-overlay-scrim:rgba(0,0,0,.48)",
+    );
     expect(themes[1]?.onboarding).not.toHaveProperty("soft");
     expect(themes[1]?.onboarding).not.toHaveProperty("signal");
     expect(

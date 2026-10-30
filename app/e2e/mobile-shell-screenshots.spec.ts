@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
@@ -104,10 +104,12 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-chat-light.png"),
       });
+      const lightWithoutScrim = await sampleScrimPixel(page);
       await page.emulateMedia({ colorScheme: "dark" });
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-chat-dark.png"),
       });
+      const darkWithoutScrim = await sampleScrimPixel(page);
       await page.getByRole("button", { name: "Show members" }).click();
       await expect(
         page.getByRole("button", {
@@ -124,10 +126,20 @@ test.describe("mobile shell screenshots against local Ergo", () => {
           ),
         );
       await page.emulateMedia({ colorScheme: "light" });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-theme",
+        "lounge",
+      );
+      expect(await sampleScrimPixel(page)).toBeLessThan(lightWithoutScrim);
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-members-light.png"),
       });
       await page.emulateMedia({ colorScheme: "dark" });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-theme",
+        "lounge-night",
+      );
+      expect(await sampleScrimPixel(page)).toBeLessThan(darkWithoutScrim);
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-members-dark.png"),
       });
@@ -136,3 +148,29 @@ test.describe("mobile shell screenshots against local Ergo", () => {
     }
   });
 });
+
+async function sampleScrimPixel(page: Page): Promise<number> {
+  const image = await page.screenshot({
+    clip: { x: 32, y: 430, width: 1, height: 1 },
+  });
+  return page.evaluate(async (encoded) => {
+    const bytes = Uint8Array.from(atob(encoded), (character) =>
+      character.charCodeAt(0),
+    );
+    const bitmap = await createImageBitmap(
+      new Blob([bytes], { type: "image/png" }),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("2D canvas is unavailable");
+    context.drawImage(bitmap, 0, 0);
+    const pixel = context.getImageData(0, 0, 1, 1).data;
+    return (
+      0.2126 * (pixel[0] ?? 0) +
+      0.7152 * (pixel[1] ?? 0) +
+      0.0722 * (pixel[2] ?? 0)
+    );
+  }, image.toString("base64"));
+}
