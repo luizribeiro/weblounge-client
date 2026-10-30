@@ -452,15 +452,17 @@ function MessageRow(props: {
             <Line>{formatTime(messageTime(message))}</Line>
           </time>
           <Line class={styles.nickColumn} data-message-chrome="true">
-            {message.mode_symbol !== null && (
-              <span class={styles.mode}>{message.mode_symbol}</span>
-            )}
-            <span
-              class={`${styles.nick} ${message.authorship === "own" ? styles.own : ""}`}
-              style={nickStyle}
-              title={message.author}
-            >
-              {message.author}
+            <span class={styles.nickIdentity}>
+              <span class={styles.mode} data-mode-slot="true">
+                {message.mode_symbol ?? ""}
+              </span>
+              <span
+                class={`${styles.nick} ${message.authorship === "own" ? styles.own : ""}`}
+                style={nickStyle}
+                title={message.author}
+              >
+                {message.author}
+              </span>
             </span>
             {message.bot && <span class={styles.bot}>BOT</span>}
           </Line>

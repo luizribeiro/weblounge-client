@@ -55,6 +55,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 47 | 2026-10-30 | Tab-completing a nick at the start of a message should add ": " (like the @ suggestion does). | queued |
 | 48 | 2026-10-30 | Two long live messages overlap each other, with the "New" divider drawn across the text (live on a7211bd). | fixed, live |
 | 49 | 2026-10-30 | Desktop: a long draft's text spills outside the composer box instead of the box growing. | not a bug (caused by a browser extension) |
-| 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | queued |
+| 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | fixed, local |
 | 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | fixed, local |
 | 52 | 2026-10-30 | iOS: members sign-in succeeds but never returns to the beta chat. | investigating (server CSP + client OAuth state) |

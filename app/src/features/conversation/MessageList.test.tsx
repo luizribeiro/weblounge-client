@@ -616,15 +616,27 @@ it("keeps following through a transient one-row render gap", async () => {
 });
 
 it("keeps the full nick accessible when its visual start truncates", () => {
-  render(() => (
+  const { container } = render(() => (
     <MessageList
-      messages={[{ ...message, author: "an-extremely-long-nickname" }]}
+      messages={[
+        {
+          ...message,
+          author: "an-extremely-long-nickname",
+          mode_symbol: "@",
+        },
+        { ...message, id: 2, author: "short", mode_symbol: null },
+      ]}
     />
   ));
 
   expect(screen.getByTitle("an-extremely-long-nickname")).toHaveTextContent(
     "an-extremely-long-nickname",
   );
+  expect(
+    [...container.querySelectorAll<HTMLElement>("[data-mode-slot]")].map(
+      (slot) => slot.textContent,
+    ),
+  ).toEqual(["@", ""]);
 });
 
 it("selects the latest own message for empty-composer Up", async () => {

@@ -71,13 +71,26 @@
   justify-content: flex-end;
   min-width: 0;
 }
+.nickIdentity {
+  align-items: baseline;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
 .mode {
   color: var(--wl-color-muted);
-  flex: none;
+  flex: 0 0 1ch;
+  font-family: var(--wl-font-mono);
   font-weight: 500;
+  inline-size: 1ch;
+  max-inline-size: 1ch;
+  min-inline-size: 1ch;
+  overflow: hidden;
+  text-align: center;
 }
 .nick {
   direction: rtl;
+  flex: 0 1 auto;
   font-weight: 650;
   min-width: 0;
   overflow: hidden;
@@ -222,6 +235,13 @@
   display: inline;
   overflow: visible;
   white-space: nowrap;
+}
+.list[data-presentation="mobile"] .nickIdentity {
+  display: inline;
+}
+.list[data-presentation="mobile"] .mode {
+  display: inline;
+  font-family: inherit;
 }
 .list[data-presentation="mobile"] .nick {
   direction: inherit;

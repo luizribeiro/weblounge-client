@@ -107,6 +107,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
   - [x] Make startup and render failures retryable in place; standalone retries create a fresh worker and engine, while hosted retries restart authorization.
+  - [x] Ellipsize long desktop message nicks within their fixed column while preserving a stable mode-symbol slot.
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
   - B1b. [x] Hosted sign-in hardening: explicit production config, redacted request secrets,

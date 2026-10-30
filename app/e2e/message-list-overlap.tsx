@@ -10,7 +10,7 @@ import {
 import { installPlatformEnvironment } from "../src/platform/environment";
 import "../src/styles/base.css";
 import { installTheme } from "../src/theme/theme-controller";
-import { harnessHistoryLength } from "./timeline-fixtures";
+import { harnessHistoryLength, longNick } from "./timeline-fixtures";
 
 export interface MessageListOverlapHarness {
   readonly append: (texts: readonly string[], readThrough: number) => void;
@@ -30,11 +30,11 @@ const start = new Date(2026, 9, 30, 14).getTime();
 function harnessMessage(id: number, text: string): MessageProjection {
   return {
     id,
-    author: id % 2 === 0 ? "amartinez" : "checksumbyte",
+    author: id % 2 === 0 ? "amartinez" : longNick,
     text,
     kind: "text",
     bot: false,
-    mode_symbol: null,
+    mode_symbol: id % 2 === 0 ? null : "@",
     authorship: "other",
     nick_color_index: id * 7_919,
     mentioned: false,

@@ -1,4 +1,5 @@
 export const harnessHistoryLength = 120;
+export const longNick = "checksumbyte1234";
 export const firstLongMessage =
   "I ran into a lot of similar issues with a dashboard i set up for some home stuff. I basically, had to take a step back from iterating with Claude and try to pass it design principles and themes first. Like, basically create a design system (font, spacing principles, alignment, etc..) and then go review it";
 export const secondLongMessage =
