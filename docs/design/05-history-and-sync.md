@@ -63,6 +63,9 @@ notification policy, or background push delivery.
   marker sends, and live remote advances.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
   configured limits.
+- Production-profile Playwright reconnects after own multiline and bot split/multiline sends,
+  asserting exact text, authorship, sender, server-time ordering, and a stable live-edge viewport
+  on every animation frame during the first second after history appears.
 - Playwright uses two independent browser contexts signed in to the same account: reading at the
   live edge in one clears the unread and mention indicators in the other. Native-feel idle and
   hidden-tab audits remain green.

@@ -42,11 +42,11 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then beta.weblounge.org. Luiz dogfoods it and gives feedback; split view and the core shortcuts come after, informed by real use.
 
 - **Dogfood slice** (minimal milestone 3):
-  - [ ] Fix joined-channel history timestamps/order. The production profile reproduced the beta
-    bug: papo drops the continuation text and opening `server-time` from a
-    `draft/multiline-concat` batch nested in `CHATHISTORY`, so the engine can only fall back to
-    receipt time. Same-msgid live/history overlap now enriches an untimed row instead of dropping
-    the history metadata; ordinary PRIVMSG and NOTICE replay preserves server time.
+  - [x] Keep joined-channel multiline history exact and chronologically ordered with papo
+    `f0672c0`. Production-profile browser coverage sends Shift+Enter blank lines and bot split and
+    multiline messages, then reconnects to assert one row, self authorship, member-line sender,
+    and original server times. The post-open viewport stays pinned across a one-second frame trace;
+    dogfood bug #46 no longer reproduces after the bump. The duplicate timestamp workaround is gone.
   - D1. [x] Load older history on scroll-up through an empty `CHATHISTORY BEFORE` page, with
     eviction-independent event cursors and exact ordering/deduplication across more than 1,000
     messages (scroll anchoring already exists).
@@ -114,11 +114,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `949bd5d`. Guarded directs, split-send reconciliation, exact multiline concatenation, server name rules, lag diagnostics, and channel-recreation warnings are integrated.
+- **papo:** papo 0.1 pinned at `f0672c0`. Guarded directs, split-send reconciliation, exact live
+  and nested-history multiline concatenation, server name rules, lag diagnostics, and
+  channel-recreation warnings are integrated.
   - Follow-up: adopt papo's planned `watch()` / free `direct()` operation with a per-send proof
     round trip so a full MONITOR list can still send without bypassing guarded-recipient safety.
-  - Question for Luiz: the production-profile Ergo test shows papo dropping replayed
-    `draft/multiline-concat` continuation segments and the opening batch's `server-time` when the
-    multiline batch is nested in a `CHATHISTORY` batch. The server sends and stores every segment
-    with the timestamp; should this be fixed in papo before WebLounge relies on replaying long
-    logical lines?
