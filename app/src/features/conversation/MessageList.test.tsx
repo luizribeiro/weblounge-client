@@ -17,6 +17,7 @@ const scrollToDescriptor = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   "scrollTo",
 );
+const fontsDescriptor = Object.getOwnPropertyDescriptor(document, "fonts");
 
 beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollTo", {
@@ -30,11 +31,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (scrollToDescriptor === undefined) {
+  vi.restoreAllMocks();
+  if (scrollToDescriptor === undefined)
     Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
-    return;
-  }
-  Object.defineProperty(HTMLElement.prototype, "scrollTo", scrollToDescriptor);
+  else
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "scrollTo",
+      scrollToDescriptor,
+    );
+  if (fontsDescriptor === undefined) Reflect.deleteProperty(document, "fonts");
+  else Object.defineProperty(document, "fonts", fontsDescriptor);
 });
 
 const message: MessageProjection = {
@@ -92,14 +99,9 @@ it("anchors the viewport when history rows are prepended", async () => {
 });
 
 it("measures wrapped rows without overlap and preserves the live edge", async () => {
-  const observers: ControlledResizeObserver[] = [];
-  vi.stubGlobal(
-    "ResizeObserver",
-    class extends ControlledResizeObserver {
-      constructor(callback: ResizeObserverCallback) {
-        super(callback);
-        observers.push(this);
-      }
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.matches("li[data-index]") ? measuredRowHeight(this) : 0;
     },
   );
   const messages = [
@@ -117,17 +119,11 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
   if (list === null || spacer === null)
     throw new Error("message list is missing");
   let scrollTop = 0;
-  let measuredScrollHeight: number | undefined;
   Object.defineProperties(list, {
     clientHeight: { configurable: true, value: 300 },
     scrollHeight: {
       configurable: true,
-      get: () => {
-        if (measuredScrollHeight !== undefined) return measuredScrollHeight;
-        const current =
-          container.querySelector<HTMLElement>("[class*='spacer']");
-        return Number.parseFloat(current?.style.height ?? "") || 0;
-      },
+      get: () => Number.parseFloat(spacer.style.height) || 0,
     },
     scrollTop: {
       configurable: true,
@@ -140,18 +136,6 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
 
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
-  for (const observer of observers) observer.flushTarget(list, 300);
-  const measuredElements = [
-    ...list.querySelectorAll<HTMLLIElement>("li[data-index]"),
-  ];
-  measuredScrollHeight = measuredElements.reduce(
-    (height, element) => height + measuredRowHeight(element),
-    0,
-  );
-  for (const element of measuredElements)
-    for (const observer of observers)
-      observer.flushTarget(element, measuredRowHeight(element));
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   const boxes = [...container.querySelectorAll<HTMLElement>("li[data-index]")]
@@ -167,6 +151,38 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
     500,
   );
   expect(list.scrollHeight - list.scrollTop - list.clientHeight).toBe(0);
+});
+
+it("remeasures rows after fonts finish loading", async () => {
+  const fonts = Object.assign(new EventTarget(), { ready: Promise.resolve() });
+  Object.defineProperty(document, "fonts", {
+    configurable: true,
+    value: fonts as unknown as FontFaceSet,
+  });
+  let messageHeight = 28;
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.querySelector("[data-message-row]") === null
+        ? 34
+        : messageHeight;
+    },
+  );
+  const { container } = render(() => (
+    <MessageList messages={[message, { ...message, id: 2 }]} />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const secondMessage = () =>
+    container.querySelector<HTMLLIElement>('[data-row-key="message-2"]');
+  const initialPosition = translateY(secondMessage()?.style.transform ?? "");
+
+  messageHeight = 90;
+  fonts.dispatchEvent(new Event("loadingdone"));
+  expect(translateY(secondMessage()?.style.transform ?? "")).not.toBe(
+    initialPosition,
+  );
+  expect(translateY(secondMessage()?.style.transform ?? "")).toBe(656);
 });
 
 it("anchors visible content when an overscanned row above it grows", async () => {

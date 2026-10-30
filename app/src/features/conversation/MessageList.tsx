@@ -9,6 +9,7 @@ import {
   createSignal,
   For,
   Match,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -61,6 +62,7 @@ const liveEdgeTolerance = 2;
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLOListElement | undefined;
+  let observedWidth: number | undefined;
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
@@ -84,17 +86,19 @@ export function MessageList(props: MessageListProps) {
     getScrollElement: () => list ?? null,
     initialRect: { width: 1024, height: 768 },
     observeElementRect: (instance, callback) =>
-      observeElementRect(instance, (rect) =>
-        callback(rect.height === 0 ? { width: 1024, height: 768 } : rect),
-      ),
+      observeElementRect(instance, (rect) => {
+        const next = rect.height === 0 ? { width: 1024, height: 768 } : rect;
+        const widthChanged =
+          observedWidth !== undefined && observedWidth !== next.width;
+        observedWidth = next.width;
+        callback(next);
+        if (widthChanged) remeasure();
+      }),
     estimateSize: (index) => (rows()[index]?.kind === "message" ? 28 : 34),
     getItemKey: (index) => rows()[index]?.key ?? index,
     measureElement: (element, entry, instance) => {
       const index = Number(element.dataset.index);
-      const measured =
-        entry === undefined
-          ? instance.options.estimateSize(index)
-          : measureElement(element, entry, instance);
+      const measured = measureElement(element, entry, instance);
       const size =
         measured > 0 ? measured : instance.options.estimateSize(index);
       return size;
@@ -104,22 +108,20 @@ export function MessageList(props: MessageListProps) {
     scrollEndThreshold: liveEdgeTolerance,
     overscan: 6,
   });
-  createEffect(() => {
-    rows();
-    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
-      if (list?.isConnected !== true) return;
-      for (const element of list.querySelectorAll<HTMLLIElement>(
-        "li[data-index]",
-      )) {
-        virtualizer.measureElement(element);
-        const index = Number(element.dataset.index);
-        virtualizer.resizeItem(
-          index,
-          element.offsetHeight || virtualizer.options.estimateSize(index),
-        );
-      }
-    });
-  });
+  const remeasure = () => {
+    if (list?.isConnected !== true) return;
+    virtualizer.measure();
+    for (const element of list.querySelectorAll<HTMLLIElement>(
+      "li[data-index]",
+    ))
+      virtualizer.measureElement(element);
+  };
+  const measureRow = (element: HTMLLIElement, index: number) => {
+    element.dataset.index = String(index);
+    const measured = measureElement(element, undefined, virtualizer);
+    if (measured > 0) virtualizer.resizeItem(index, measured);
+    virtualizer.measureElement(element);
+  };
   const reportLiveEdge = () => {
     const live = virtualizer.isAtEnd();
     if (!live && atLiveEdge() && !boundaryFrozen) {
@@ -181,7 +183,16 @@ export function MessageList(props: MessageListProps) {
       setUnseen((count) => count + messages.length - previousCount);
     renderedCount = messages.length;
   });
-  onMount(() => queueMicrotask(jumpToBottom));
+  onMount(() => {
+    const fonts = document.fonts;
+    const handleFontsLoaded = () => remeasure();
+    void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
+    fonts?.addEventListener("loadingdone", handleFontsLoaded);
+    onCleanup(() =>
+      fonts?.removeEventListener("loadingdone", handleFontsLoaded),
+    );
+    queueMicrotask(jumpToBottom);
+  });
 
   return (
     <div class={styles.surface}>
@@ -227,9 +238,7 @@ export function MessageList(props: MessageListProps) {
                 data-index={virtualRow.index}
                 data-row-key={String(virtualRow.key)}
                 data-selected={selected()}
-                ref={(element) =>
-                  queueMicrotask(() => virtualizer.measureElement(element))
-                }
+                ref={(element) => measureRow(element, virtualRow.index)}
                 style={{
                   transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
                 }}
