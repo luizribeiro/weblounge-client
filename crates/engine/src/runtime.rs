@@ -230,6 +230,14 @@ impl Runtime {
             |running| running.client.state().isupport().chantypes().to_owned(),
         );
         let parsed = commands::parse_with_registry(commands::registry(), input, &chantypes);
+        if parsed.as_ref().is_ok_and(server_command)
+            && !lock(&self.state)
+                .network
+                .as_ref()
+                .is_some_and(|running| running.model.is_online())
+        {
+            return rejected_command(id, "engine.offline");
+        }
         if parsed.is_ok()
             && let Some(name) = commands::explicit_command_name(input)
             && let Some(running) = lock(&self.state).network.as_mut()
@@ -1103,6 +1111,13 @@ impl Runtime {
             EngineToUi::CommandResult { id: command_id },
         ]
     }
+}
+
+fn server_command(command: &Command) -> bool {
+    !matches!(
+        command,
+        Command::Say { .. } | Command::Me { .. } | Command::Help { .. } | Command::Quit { .. }
+    )
 }
 
 fn spawn_read_advances(
@@ -4154,6 +4169,30 @@ mod tests {
         process_event(&state, &outbound, &client, 1, connected);
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued one");
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued two");
+    }
+
+    #[tokio::test]
+    async fn offline_server_commands_are_rejected_with_a_specific_reason() {
+        let (client, _events, _wire) = wire(papo::Client::builder(
+            "irc://offline-commands.test",
+            "weblounge",
+        ));
+        let (state, outbound, _receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+
+        assert_eq!(
+            runtime.request(EngineRequestEnvelope {
+                id: "join".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id: BufferId(1),
+                    input: "/join #room".into(),
+                },
+            }),
+            [EngineToUi::CommandRejected {
+                id: "join".into(),
+                message_key: "engine.offline".into(),
+            }]
+        );
     }
 
     #[tokio::test]
