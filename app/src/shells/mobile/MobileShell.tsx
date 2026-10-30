@@ -77,6 +77,8 @@ export function MobileShell(props: MobileShellProps) {
   let pendingDirect: { networkId: number; nick: string } | undefined;
   let pendingHistoryPopInstant = false;
   let pushNextFocus = false;
+  let suppressCompletedSwipeClick = false;
+  let shellElement: HTMLElement | undefined;
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
     | undefined;
@@ -171,6 +173,7 @@ export function MobileShell(props: MobileShellProps) {
   });
 
   const beginSwipe = (event: PointerEvent) => {
+    suppressCompletedSwipeClick = false;
     const target = event.target as Element;
     if (
       event.clientX > 24 ||
@@ -190,6 +193,7 @@ export function MobileShell(props: MobileShellProps) {
           ? event.currentTarget.getBoundingClientRect().width
           : window.innerWidth,
     };
+    event.preventDefault();
     setSwipeProgress(0);
   };
   const moveSwipe = (event: PointerEvent) => {
@@ -213,9 +217,16 @@ export function MobileShell(props: MobileShellProps) {
     const completes = swipeBackCompletes(distance, gesture.width, velocity);
     gesture = undefined;
     if (completes) {
+      suppressCompletedSwipeClick = true;
       setSwipeProgress(undefined);
       requestBack(true);
     } else returnSwipe();
+  };
+  const consumeCompletedSwipeClick = (event: MouseEvent) => {
+    if (!suppressCompletedSwipeClick) return;
+    suppressCompletedSwipeClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
   };
   const cancelSwipe = (event: PointerEvent) => {
     if (gesture?.pointerId !== event.pointerId) return;
@@ -259,6 +270,7 @@ export function MobileShell(props: MobileShellProps) {
     const handleVisibilityChange = () => resetMotion();
     window.addEventListener("popstate", handlePopState);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    shellElement?.addEventListener("click", consumeCompletedSwipeClick, true);
     const stopViewport = observeMobileViewport(window, setViewport);
     if (historyPolicy === "replace") {
       window.history.replaceState(
@@ -270,6 +282,11 @@ export function MobileShell(props: MobileShellProps) {
       stopViewport();
       window.removeEventListener("popstate", handlePopState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      shellElement?.removeEventListener(
+        "click",
+        consumeCompletedSwipeClick,
+        true,
+      );
     });
   });
 
@@ -282,6 +299,7 @@ export function MobileShell(props: MobileShellProps) {
       onPointerDown={beginSwipe}
       onPointerMove={moveSwipe}
       onPointerUp={endSwipe}
+      ref={shellElement}
       style={{
         "--wl-visual-height":
           viewport() === undefined ? undefined : `${viewport()?.height}px`,

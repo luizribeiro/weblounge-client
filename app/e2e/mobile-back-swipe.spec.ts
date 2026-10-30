@@ -1,60 +1,44 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { emulateStandalone } from "./mobile-platform";
 
-test("mobile back gestures always end aligned", async ({
-  browserName,
-  page,
-}) => {
+test.beforeEach(async ({ browserName, page }) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
   test.skip(browserName !== "webkit", "requires WebKit touch events");
+  await emulateStandalone(page);
   await page.goto("/?irc-password=weblounge-test");
-  const openChat = async () => {
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
-    await expect(
-      page.getByRole("heading", { name: "#weblounge-test" }),
-    ).toBeVisible();
-    await expect(page.locator("[data-position]")).toHaveCount(0);
-  };
-  const shell = page.locator("[data-mobile-shell]");
-  const drag = async (pointerId: number, endX: number, end: string) => {
-    await shell.dispatchEvent("pointerdown", {
-      clientX: 5,
-      clientY: 300,
-      pointerId,
-    });
-    await shell.dispatchEvent("pointermove", {
-      clientX: endX,
-      clientY: 300,
-      pointerId,
-    });
-    await shell.dispatchEvent(end, {
-      clientX: endX,
-      clientY: 300,
-      pointerId,
-    });
-  };
+});
 
-  await openChat();
-  await drag(1, 90, "pointercancel");
+test("mobile back gestures cancel and complete aligned", async ({ page }) => {
+  await openChat(page);
+  await drag(page, 1, 90, "pointercancel");
   await expect(page.locator("[data-swipe]")).toHaveCount(0);
   await expectAligned(page);
 
-  await drag(2, 360, "pointerup");
+  await drag(page, 2, 360, "pointerup");
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expectAligned(page);
+});
 
-  await openChat();
-  await drag(3, 80, "pointerup");
+test("mobile back gesture velocity completes aligned", async ({ page }) => {
+  await openChat(page);
+  await drag(page, 3, 80, "pointerup");
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expectAligned(page);
+});
 
-  await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await drag(4, 200, "pointerup");
+test("mobile back gesture midpoint completes aligned", async ({ page }) => {
+  await openChat(page);
+  await drag(page, 4, 200, "pointerup");
   await expect(page.locator("[data-position]")).toHaveCount(0);
   await expectAligned(page);
+});
 
+test("mobile history interrupts a gesture aligned", async ({ page }) => {
+  await openChat(page);
+  const shell = page.locator("[data-mobile-shell]");
   await shell.dispatchEvent("pointerdown", {
     clientX: 5,
     clientY: 300,
@@ -75,6 +59,38 @@ test("mobile back gestures always end aligned", async ({
   await expect(page.locator("[data-swipe]")).toHaveCount(0);
   await expectAligned(page);
 });
+
+async function openChat(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "#weblounge-test" }).click();
+  await expect(
+    page.getByRole("heading", { name: "#weblounge-test" }),
+  ).toBeVisible();
+  await expect(page.locator("[data-position]")).toHaveCount(0);
+}
+
+async function drag(
+  page: Page,
+  pointerId: number,
+  endX: number,
+  end: string,
+): Promise<void> {
+  const shell = page.locator("[data-mobile-shell]");
+  await shell.dispatchEvent("pointerdown", {
+    clientX: 5,
+    clientY: 300,
+    pointerId,
+  });
+  await shell.dispatchEvent("pointermove", {
+    clientX: endX,
+    clientY: 300,
+    pointerId,
+  });
+  await shell.dispatchEvent(end, {
+    clientX: endX,
+    clientY: 300,
+    pointerId,
+  });
+}
 
 async function expectAligned(
   page: import("@playwright/test").Page,

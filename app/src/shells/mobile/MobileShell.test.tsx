@@ -103,7 +103,9 @@ it("keeps the chat list mounted without reloading history", () => {
   expect(loadHistory).toHaveBeenCalledTimes(1);
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
-  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
+  expect(fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 })).toBe(
+    false,
+  );
   fireEvent.pointerMove(shell, { clientX: 45, pointerId: 7 });
   fireEvent.pointerCancel(shell, { clientX: 45, pointerId: 7 });
   expect(document.querySelector("[data-swipe]")).toBeNull();
