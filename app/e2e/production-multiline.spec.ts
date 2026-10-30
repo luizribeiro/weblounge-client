@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { productionMessageRow, useDedicatedWorker } from "./production-ergo";
+import {
+  hasSelfNickColour,
+  productionMessageRow,
+  useDedicatedWorker,
+} from "./production-ergo";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_PRODUCTION_ERGO !== "1",
@@ -33,14 +37,3 @@ test("restores one own multiline row with blank lines and the self colour", asyn
   await expect(restored).toHaveAttribute("data-message-text", expected);
   await expect.poll(() => restored.evaluate(hasSelfNickColour)).toBe(true);
 });
-
-function hasSelfNickColour(element: HTMLElement): boolean {
-  const nick = element.querySelector<HTMLElement>('[title="weblounge"]');
-  if (nick === null) return false;
-  const reference = document.createElement("span");
-  reference.style.color = "var(--wl-color-self-nick)";
-  document.body.append(reference);
-  const expected = getComputedStyle(reference).color;
-  reference.remove();
-  return getComputedStyle(nick).color === expected;
-}

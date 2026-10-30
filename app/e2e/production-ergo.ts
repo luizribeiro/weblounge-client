@@ -16,3 +16,14 @@ export async function useDedicatedWorker(page: Page): Promise<void> {
     });
   });
 }
+
+export function hasSelfNickColour(element: HTMLElement): boolean {
+  const nick = element.querySelector<HTMLElement>('[title="weblounge"]');
+  if (nick === null) return false;
+  const reference = document.createElement("span");
+  reference.style.color = "var(--wl-color-self-nick)";
+  document.body.append(reference);
+  const expected = getComputedStyle(reference).color;
+  reference.remove();
+  return getComputedStyle(nick).color === expected;
+}
