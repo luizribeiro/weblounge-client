@@ -70,6 +70,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     one mirrored overlay drawer without remounting conversation state. Safe-area and keyboard
     tokens cover iPhone portrait/landscape and Android gesture navigation, with a repository policy,
     native-feel geometry audit, and light/dark reference captures.
+  - [x] Close engine bugs found in the papo API review: DM buffers own and release their MONITOR
+    leases without history or channel traffic consuming slots; a full MONITOR list degrades only
+    presence while direct sends continue; own-nick completion uses IRC casemapping; and historical
+    rows never inherit an actor's current channel prefix.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
