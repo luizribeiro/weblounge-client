@@ -61,3 +61,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | fixed, local |
 | 54 | 2026-10-30 | iPhone: swiping from the edge to close a chat sometimes cancels mid-gesture at certain speeds (transcript touch handling?). | fixed, local |
 | 55 | 2026-10-30 | iPhone: the members drawer animation is broken on device (video): while opening, the chat vanishes and the drawer renders on the left sliding further left, then snaps; closing via ✕ has no animation; another close skips most of the motion. | fixed, local (root cause: autofocusing the off-screen filter scrolled the shell; drawers now use state-driven transitions); verify on device |
+| 56 | 2026-10-30 | Beta (b9d45c4) history regression: some channels empty on desktop (#bots, #ops) but not on mobile; others show week-old messages out of place with many duplicates; console `engine.read_marker_invalid`. | investigating (Opus agent) |
+| 57 | 2026-10-30 | Mobile: the Back button in a chat pops instantly; it should animate out like the push animates in. | queued |
+| 58 | 2026-10-30 | The mention highlight background should fill the transcript width (no side margin). | queued |

@@ -103,7 +103,6 @@ export function DesktopShell(props: DesktopShellProps) {
   let messageListController: MessageListController | undefined;
   let shellElement: HTMLDivElement | undefined;
   let shellObserver: ResizeObserver | undefined;
-  let navigationCommitted = props.activeBufferId !== undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
@@ -140,9 +139,8 @@ export function DesktopShell(props: DesktopShellProps) {
     bufferCount: props.buffers.length,
     listActive: (sidebarShown() && sidebarInline()) || drawer() === "sidebar",
   });
-  const showBuffer = (bufferId: number | undefined, deliberate = false) => {
+  const showBuffer = (bufferId: number | undefined) => {
     if (bufferId !== undefined) {
-      if (deliberate) navigationCommitted = true;
       setLayout((current) => showInFocusedPane(current, bufferId));
       props.onSelectBuffer?.(bufferId);
       if (drawer() === "sidebar") closeDrawer();
@@ -156,7 +154,7 @@ export function DesktopShell(props: DesktopShellProps) {
     const current = layout().root.bufferId;
     if (ids.length < 2 || current === undefined) return;
     const index = Math.max(0, ids.indexOf(current));
-    showBuffer(ids[(index + offset + ids.length) % ids.length], true);
+    showBuffer(ids[(index + offset + ids.length) % ids.length]);
   };
   const registry = new ActionRegistry(
     {
@@ -182,9 +180,8 @@ export function DesktopShell(props: DesktopShellProps) {
       },
       "message.jump-bottom": () => messageListController?.jumpBottom(),
       "network.add": () => {},
-      "network.open-server": (command) =>
-        showBuffer(command.targetBufferId, true),
-      "pane.show-buffer": (command) => showBuffer(command.targetBufferId, true),
+      "network.open-server": (command) => showBuffer(command.targetBufferId),
+      "pane.show-buffer": (command) => showBuffer(command.targetBufferId),
       "settings.open": () => {},
       "sidebar.toggle": () => {
         if (sidebarInline()) {
@@ -208,15 +205,6 @@ export function DesktopShell(props: DesktopShellProps) {
     on(
       () => props.activeBufferId,
       (activeBufferId) => {
-        const requestedBuffer = props.buffers.find(
-          (buffer) => buffer.id === activeBufferId,
-        );
-        if (
-          activeBufferId !== undefined &&
-          requestedBuffer?.kind !== "server"
-        ) {
-          navigationCommitted = true;
-        }
         if (
           activeBufferId !== undefined &&
           activeBufferId !== activeBuffer()?.id
@@ -260,7 +248,7 @@ export function DesktopShell(props: DesktopShellProps) {
   createEffect(() => {
     const request = props.focusRequest;
     if (request === undefined) return;
-    showBuffer(request.bufferId, true);
+    showBuffer(request.bufferId);
     props.onFocusRequestHandled?.(request);
   });
 
@@ -278,9 +266,10 @@ export function DesktopShell(props: DesktopShellProps) {
   });
 
   createEffect(() => {
-    if (navigationCommitted) return;
+    if (layout().root.bufferId !== undefined) return;
     const preferred = preferredInitialBuffer(props.buffers);
-    if (preferred?.id !== activeBuffer()?.id) showBuffer(preferred?.id);
+    if (preferred !== undefined)
+      setLayout((current) => showInFocusedPane(current, preferred.id));
   });
 
   onMount(() => {

@@ -1,4 +1,8 @@
 import { createEffect, createSignal, splitProps } from "solid-js";
+import {
+  selectBuffer as applyBufferSelection,
+  type BufferSelection,
+} from "../navigation/buffer-selection";
 import { platformEnvironment } from "../platform/environment";
 import { DesktopShell, type DesktopShellProps } from "./desktop/DesktopShell";
 import { MobileShell } from "./mobile/MobileShell";
@@ -12,9 +16,11 @@ export function ResponsiveShell(props: DesktopShellProps) {
     "onSelectBuffer",
     "pathForBuffer",
   ]);
-  const [activeBufferId, setActiveBufferId] = createSignal(
-    props.activeBufferId,
-  );
+  const initialSelection: BufferSelection =
+    props.activeBufferId === undefined
+      ? { bufferId: undefined, priority: "none" }
+      : { bufferId: props.activeBufferId, priority: "initial" };
+  const [selection, setSelection] = createSignal(initialSelection);
   const [pendingFocusRequest, setPendingFocusRequest] =
     createSignal<DesktopShellProps["focusRequest"]>();
   const [mobileInitialBufferId, setMobileInitialBufferId] =
@@ -23,35 +29,54 @@ export function ResponsiveShell(props: DesktopShellProps) {
   let previousShell = platform.environment().shell;
 
   createEffect(() => {
-    if (props.activeBufferId !== undefined)
-      setActiveBufferId(props.activeBufferId);
+    const activeBufferId = props.activeBufferId;
+    if (activeBufferId !== undefined)
+      setSelection((current) =>
+        applyBufferSelection(current, activeBufferId, "initial"),
+      );
   });
   createEffect(() => {
     const request = props.focusRequest;
     if (request === undefined || request === observedFocusRequest) return;
     observedFocusRequest = request;
-    setActiveBufferId(request.bufferId);
+    setSelection((current) =>
+      applyBufferSelection(current, request.bufferId, "explicit"),
+    );
     setPendingFocusRequest(request);
   });
   createEffect(() => {
-    if (activeBufferId() !== undefined) return;
+    const current = selection();
+    if (current.priority === "initial" || current.priority === "explicit")
+      return;
     const preferred =
       props.buffers.find((buffer) => buffer.kind === "channel") ??
       props.buffers.find((buffer) => buffer.kind === "direct") ??
       props.buffers[0];
-    if (preferred !== undefined) setActiveBufferId(preferred.id);
+    const selected = props.buffers.find(
+      (buffer) => buffer.id === current.bufferId,
+    );
+    if (
+      preferred !== undefined &&
+      (selected === undefined ||
+        bufferFallbackRank(preferred.kind) > bufferFallbackRank(selected.kind))
+    )
+      setSelection((current) =>
+        applyBufferSelection(current, preferred.id, "fallback"),
+      );
   });
   createEffect(() => {
     const shell = platform.environment().shell;
     if (previousShell === "desktop" && shell === "mobile") {
-      setMobileInitialBufferId(activeBufferId());
+      setMobileInitialBufferId(selection().bufferId);
     } else if (shell === "desktop") {
       setMobileInitialBufferId(undefined);
     }
     previousShell = shell;
   });
   const selectBuffer = (bufferId: number) => {
-    setActiveBufferId(bufferId);
+    setSelection((current) =>
+      applyBufferSelection(current, bufferId, "explicit"),
+    );
     props.onSelectBuffer?.(bufferId);
   };
 
@@ -73,7 +98,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
       ) : (
         <DesktopShell
           {...sharedProps}
-          activeBufferId={activeBufferId()}
+          activeBufferId={selection().bufferId}
           focusRequest={pendingFocusRequest()}
           onFocusRequestHandled={(request) =>
             setPendingFocusRequest((current) =>
@@ -86,4 +111,12 @@ export function ResponsiveShell(props: DesktopShellProps) {
       )}
     </div>
   );
+}
+
+function bufferFallbackRank(
+  kind: DesktopShellProps["buffers"][number]["kind"],
+): number {
+  if (kind === "channel") return 2;
+  if (kind === "direct") return 1;
+  return 0;
 }
