@@ -1,85 +1,79 @@
-import { devices, expect, test, webkit } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-test("mobile back gestures always end aligned", async ({ baseURL }) => {
-  test.slow();
+test("mobile back gestures always end aligned", async ({
+  browserName,
+  page,
+}) => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
-  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
-  const browser = await webkit.launch();
-  const context = await browser.newContext({ ...devices["iPhone 16 Pro"] });
-  const page = await context.newPage();
-  try {
-    await page.goto(`${baseURL}/?irc-password=weblounge-test`);
-    const openChat = async () => {
-      await page.getByRole("button", { name: "#weblounge-test" }).click();
-      await expect(
-        page.getByRole("heading", { name: "#weblounge-test" }),
-      ).toBeVisible();
-      await expect(page.locator("[data-position]")).toHaveCount(0);
-    };
-    const shell = page.locator("[data-mobile-shell]");
-    const drag = async (pointerId: number, endX: number, end: string) => {
-      await shell.dispatchEvent("pointerdown", {
-        clientX: 5,
-        clientY: 300,
-        pointerId,
-      });
-      await shell.dispatchEvent("pointermove", {
-        clientX: endX,
-        clientY: 300,
-        pointerId,
-      });
-      await shell.dispatchEvent(end, {
-        clientX: endX,
-        clientY: 300,
-        pointerId,
-      });
-    };
-
-    await openChat();
-    await drag(1, 90, "pointercancel");
-    await expect(page.locator("[data-swipe]")).toHaveCount(0);
-    await expectAligned(page);
-
-    await drag(2, 360, "pointerup");
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expectAligned(page);
-
-    await openChat();
-    await drag(3, 80, "pointerup");
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await expectAligned(page);
-
+  test.skip(browserName !== "webkit", "requires WebKit touch events");
+  await page.goto("/?irc-password=weblounge-test");
+  const openChat = async () => {
     await page.getByRole("button", { name: "#weblounge-test" }).click();
-    await drag(4, 200, "pointerup");
+    await expect(
+      page.getByRole("heading", { name: "#weblounge-test" }),
+    ).toBeVisible();
     await expect(page.locator("[data-position]")).toHaveCount(0);
-    await expectAligned(page);
-
+  };
+  const shell = page.locator("[data-mobile-shell]");
+  const drag = async (pointerId: number, endX: number, end: string) => {
     await shell.dispatchEvent("pointerdown", {
       clientX: 5,
       clientY: 300,
-      pointerId: 5,
+      pointerId,
     });
     await shell.dispatchEvent("pointermove", {
-      clientX: 120,
+      clientX: endX,
       clientY: 300,
-      pointerId: 5,
+      pointerId,
     });
-    await page.evaluate(() => history.back());
-    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-    await shell.dispatchEvent("pointerup", {
-      clientX: 120,
+    await shell.dispatchEvent(end, {
+      clientX: endX,
       clientY: 300,
-      pointerId: 5,
+      pointerId,
     });
-    await expect(page.locator("[data-swipe]")).toHaveCount(0);
-    await expectAligned(page);
-  } finally {
-    await context.close();
-    await browser.close();
-  }
+  };
+
+  await openChat();
+  await drag(1, 90, "pointercancel");
+  await expect(page.locator("[data-swipe]")).toHaveCount(0);
+  await expectAligned(page);
+
+  await drag(2, 360, "pointerup");
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
+
+  await openChat();
+  await drag(3, 80, "pointerup");
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
+
+  await page.getByRole("button", { name: "#weblounge-test" }).click();
+  await drag(4, 200, "pointerup");
+  await expect(page.locator("[data-position]")).toHaveCount(0);
+  await expectAligned(page);
+
+  await shell.dispatchEvent("pointerdown", {
+    clientX: 5,
+    clientY: 300,
+    pointerId: 5,
+  });
+  await shell.dispatchEvent("pointermove", {
+    clientX: 120,
+    clientY: 300,
+    pointerId: 5,
+  });
+  await page.evaluate(() => history.back());
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await shell.dispatchEvent("pointerup", {
+    clientX: 120,
+    clientY: 300,
+    pointerId: 5,
+  });
+  await expect(page.locator("[data-swipe]")).toHaveCount(0);
+  await expectAligned(page);
 });
 
 async function expectAligned(

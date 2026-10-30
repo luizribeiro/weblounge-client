@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 const builtApp = process.env.WEBLOUNGE_APP_DIR;
 const outDir = builtApp === undefined ? "" : ` --outDir ${builtApp}`;
@@ -23,6 +23,11 @@ export default defineConfig({
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-mobile-back",
+      testMatch: "**/mobile-back-swipe.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
   ],
   testDir: "./e2e",
