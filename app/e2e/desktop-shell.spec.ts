@@ -22,7 +22,6 @@ test.describe("desktop shell against local Ergo", () => {
       await bot.privmsgConfirmed("#weblounge-test", "short line one");
       await bot.privmsgConfirmed("#weblounge-test", "short line two");
       await page.goto("/?irc-password=weblounge-test");
-      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(
         page.getByText("short line two", { exact: true }),
       ).toBeVisible();
@@ -70,7 +69,6 @@ test.describe("desktop shell against local Ergo", () => {
       );
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto("/?irc-password=weblounge-test");
-      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(
         page.getByText("hello from completion bot", { exact: true }),
       ).toBeVisible();
@@ -125,7 +123,6 @@ test.describe("desktop shell against local Ergo", () => {
       await expect(reloadedHome).toHaveValue("draft in home");
       await reloadedHome.fill(`/join ${draftChannel}`);
       await reloadedHome.press("Enter");
-      await page.getByRole("button", { name: draftChannel }).click();
       const restoredAnother = page.getByRole("textbox", {
         name: `Message ${draftChannel}`,
       });
