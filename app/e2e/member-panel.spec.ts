@@ -184,4 +184,57 @@ test.describe("desktop members against local Ergo", () => {
       gardenExtraBot.close();
     }
   });
+
+  test("slides the narrow member drawer closed from its panel control", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 500, height: 900 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/?irc-password=weblounge-test");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await page.getByRole("button", { name: "Toggle member list" }).click();
+    await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
+      "data-phase",
+      "open",
+    );
+
+    const frames = await recordPanelClose(page);
+    const present = frames.filter((left): left is number => left !== null);
+    expect(new Set(present.map(Math.round)).size).toBeGreaterThanOrEqual(7);
+    expect(
+      present.every(
+        (left, index) => index === 0 || left >= (present[index - 1] ?? left),
+      ),
+    ).toBe(true);
+    expect(present.at(-1)).toBeGreaterThanOrEqual(499.5);
+    await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
+  });
 });
+
+async function recordPanelClose(
+  page: import("@playwright/test").Page,
+): Promise<readonly (number | null)[]> {
+  return page.evaluate(
+    () =>
+      new Promise<readonly (number | null)[]>((resolve, reject) => {
+        const frames: (number | null)[] = [];
+        const startedAt = performance.now();
+        document
+          .querySelector<HTMLElement>(
+            '[role="dialog"] button[aria-label="Hide members"]',
+          )
+          ?.click();
+        const sample = () => {
+          const drawer = document.querySelector<HTMLElement>(
+            '[data-overlay-drawer] [role="dialog"]',
+          );
+          frames.push(drawer?.getBoundingClientRect().left ?? null);
+          if (drawer === null) resolve(frames);
+          else if (performance.now() - startedAt > 3_000)
+            reject(new Error(`drawer did not close: ${frames.length} frames`));
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }),
+  );
+}

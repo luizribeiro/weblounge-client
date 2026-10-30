@@ -451,31 +451,33 @@ export function DesktopShell(props: DesktopShellProps) {
           closeLabel="Close member list"
           edge="right"
           label="Members"
-          onClose={closeDrawer}
+          onClose={() => {
+            setMemberPanelOpen(false);
+            closeDrawer();
+          }}
           width="232px"
         >
-          <div class={styles.drawerContent}>
-            <MemberPanel
-              bufferTitle={activeBuffer()?.title ?? ""}
-              onClose={() => {
-                setMemberPanelOpen(false);
-                closeDrawer();
-              }}
-              onOpenDirect={(nick) => {
-                props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick);
-                closeDrawer();
-              }}
-              onRequestRange={(offset) =>
-                props.onRequestMembers?.(
-                  memberViewId(),
-                  activeBuffer()?.id ?? 0,
-                  offset,
-                )
-              }
-              showModeSymbols={props.showMemberModeSymbols}
-              window={memberWindow()}
-            />
-          </div>
+          {(requestClose) => (
+            <div class={styles.drawerContent}>
+              <MemberPanel
+                bufferTitle={activeBuffer()?.title ?? ""}
+                onClose={requestClose}
+                onOpenDirect={(nick) => {
+                  props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick);
+                  closeDrawer();
+                }}
+                onRequestRange={(offset) =>
+                  props.onRequestMembers?.(
+                    memberViewId(),
+                    activeBuffer()?.id ?? 0,
+                    offset,
+                  )
+                }
+                showModeSymbols={props.showMemberModeSymbols}
+                window={memberWindow()}
+              />
+            </div>
+          )}
         </OverlayDrawer>
       )}
     </div>
