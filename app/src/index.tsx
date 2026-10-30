@@ -13,6 +13,8 @@ import {
   exchangeAuthorizationCode,
   HostedAuthorizationError,
 } from "./hosted/oauth";
+import { installPlatformEnvironment } from "./platform/environment";
+import "./platform/platform.css";
 import "./styles/base.css";
 import { installSystemTheme } from "./theme/theme-controller";
 
@@ -138,5 +140,6 @@ if (root === null) {
   throw new Error("missing application root");
 }
 
+installPlatformEnvironment(root, window);
 root.replaceChildren();
 render(() => <Bootstrap />, root);

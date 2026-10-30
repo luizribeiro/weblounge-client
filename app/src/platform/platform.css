@@ -1,0 +1,7 @@
+#root {
+  --wl-keyboard-inset: 0px;
+  --wl-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --wl-safe-left: env(safe-area-inset-left, 0px);
+  --wl-safe-right: env(safe-area-inset-right, 0px);
+  --wl-safe-top: env(safe-area-inset-top, 0px);
+}

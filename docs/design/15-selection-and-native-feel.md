@@ -1,6 +1,6 @@
 # 15 — Selection and native feel
 
-Status: milestone 2 foundation; platform-environment addendum awaiting review.
+Status: milestone 2 foundation; platform-environment addendum approved by Luiz on 2026-10-30.
 
 ## Problem
 

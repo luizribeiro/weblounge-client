@@ -1,6 +1,6 @@
 # 09 — Density and layout system
 
-Status: platform-environment addendum awaiting review.
+Status: platform-environment addendum approved by Luiz on 2026-10-30.
 
 ## Problem
 
