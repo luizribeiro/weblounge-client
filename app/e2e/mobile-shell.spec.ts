@@ -252,7 +252,7 @@ test.describe("mobile shell against local Ergo", () => {
         clientY: 300,
         pointerId: 7,
       });
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(150); // wait-ok: hold sets low velocity for returning-swipe coverage.
       await shell.dispatchEvent("pointerup", {
         clientX: 45,
         clientY: 300,
@@ -288,7 +288,8 @@ test.describe("mobile shell against local Ergo", () => {
 
       await target.click();
       await page.setViewportSize({ width: 900, height: 874 });
-      await expect(page.locator("[data-sidebar]")).toBeVisible();
+      await expect(page.locator("[data-mobile-shell]")).toBeVisible();
+      await expect(page.locator("[data-desktop-shell]")).toHaveCount(0);
       await expect(
         page.getByRole("heading", { name: targetNick }),
       ).toBeVisible();
