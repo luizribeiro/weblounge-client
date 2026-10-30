@@ -11,6 +11,7 @@ test.beforeEach(async ({ browserName, page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/?irc-password=weblounge-test");
   await page.getByRole("button", { name: "#weblounge-test" }).click();
+  await expect(page.locator("[data-position]")).toHaveCount(0);
 });
 
 test("member drawer pans, springs back, and closes before the chat", async ({
