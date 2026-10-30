@@ -199,7 +199,7 @@ export function Composer(props: ComposerProps) {
   };
 
   return (
-    <div class={styles.wrap}>
+    <div class={styles.wrap} data-composer="true">
       {suggestions() !== undefined && (
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}

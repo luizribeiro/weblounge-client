@@ -33,6 +33,7 @@ import {
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
 import { platformEnvironment } from "../../platform/environment";
+import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
 
@@ -81,12 +82,16 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   const [sidebarShown, setSidebarShown] = createSignal(true);
   const [memberPanelOpen, setMemberPanelOpen] = createSignal(false);
+  const [drawer, setDrawer] = createSignal<"sidebar" | "members">();
+  const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   const [foreground, setForeground] = createSignal(
     document.visibilityState === "visible" && document.hasFocus(),
   );
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
+  let shellElement: HTMLDivElement | undefined;
+  let shellObserver: ResizeObserver | undefined;
   let navigationCommitted = props.activeBufferId !== undefined;
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
@@ -101,17 +106,35 @@ export function DesktopShell(props: DesktopShellProps) {
     const current = props.memberWindows?.get(memberViewId());
     return current?.buffer_id === activeBuffer()?.id ? current : undefined;
   });
+  const sidebarInline = () => platform.environment().desktopPanels === "inline";
+  const paneWidth = () =>
+    shellWidth() - (sidebarShown() && sidebarInline() ? 256 : 0);
+  const membersInline = () => paneWidth() >= 232 + 320;
+  const membersAvailable = () => activeBuffer()?.kind === "channel";
   const membersVisible = () =>
-    memberPanelOpen() && activeBuffer()?.kind === "channel";
+    memberPanelOpen() &&
+    membersAvailable() &&
+    (membersInline() || drawer() === "members");
+  const focusComposer = () =>
+    queueMicrotask(() =>
+      shellElement
+        ?.querySelector<HTMLTextAreaElement>("[data-composer] textarea")
+        ?.focus({ preventScroll: true }),
+    );
+  const closeDrawer = (restoreFocus = true) => {
+    setDrawer(undefined);
+    if (restoreFocus) focusComposer();
+  };
   const context = (): ActionContext => ({
     bufferCount: props.buffers.length,
-    listActive: sidebarShown(),
+    listActive: (sidebarShown() && sidebarInline()) || drawer() === "sidebar",
   });
   const showBuffer = (bufferId: number | undefined, deliberate = false) => {
     if (bufferId !== undefined) {
       if (deliberate) navigationCommitted = true;
       setLayout((current) => showInFocusedPane(current, bufferId));
       props.onSelectBuffer?.(bufferId);
+      if (drawer() === "sidebar") closeDrawer();
     }
   };
   const moveBuffer = (offset: -1 | 1) => {
@@ -129,14 +152,33 @@ export function DesktopShell(props: DesktopShellProps) {
       "list.next": () => listController?.next(),
       "list.open": () => listController?.open(),
       "list.previous": () => listController?.previous(),
-      "members.toggle": () => setMemberPanelOpen((open) => !open),
+      "members.toggle": () => {
+        if (!membersAvailable()) return;
+        if (membersInline()) {
+          setMemberPanelOpen((open) => !open);
+          setDrawer(undefined);
+          return;
+        }
+        setMemberPanelOpen(true);
+        if (drawer() === "members") closeDrawer();
+        else setDrawer("members");
+      },
       "message.jump-bottom": () => messageListController?.jumpBottom(),
       "network.add": () => {},
       "network.open-server": (command) =>
         showBuffer(command.targetBufferId, true),
       "pane.show-buffer": (command) => showBuffer(command.targetBufferId, true),
       "settings.open": () => {},
-      "sidebar.toggle": () => setSidebarShown((shown) => !shown),
+      "sidebar.toggle": () => {
+        if (sidebarInline()) {
+          setSidebarShown((shown) => !shown);
+          setDrawer(undefined);
+          return;
+        }
+        setSidebarShown(true);
+        if (drawer() === "sidebar") closeDrawer();
+        else setDrawer("sidebar");
+      },
       "switcher.open": () => {},
     },
     platform.shortcutPlatform,
@@ -149,6 +191,16 @@ export function DesktopShell(props: DesktopShellProps) {
     const activeBufferId = props.activeBufferId;
     if (activeBufferId !== undefined && activeBufferId !== activeBuffer()?.id) {
       setLayout((current) => showInFocusedPane(current, activeBufferId));
+    }
+  });
+
+  createEffect(() => {
+    const current = drawer();
+    if (
+      (current === "sidebar" && sidebarInline()) ||
+      (current === "members" && membersInline())
+    ) {
+      closeDrawer();
     }
   });
 
@@ -208,6 +260,7 @@ export function DesktopShell(props: DesktopShellProps) {
     window.addEventListener("focus", updateForeground);
     window.addEventListener("blur", updateForeground);
     onCleanup(() => {
+      shellObserver?.disconnect();
       document.removeEventListener("keydown", handleKeydown);
       document.removeEventListener("visibilitychange", updateForeground);
       window.removeEventListener("focus", updateForeground);
@@ -216,25 +269,27 @@ export function DesktopShell(props: DesktopShellProps) {
   });
 
   return (
-    <div class={styles.shell} data-desktop-shell="true">
-      {sidebarShown() && (
-        <Sidebar
-          activeBufferId={activeBuffer()?.id}
-          buffers={props.buffers}
-          commandContext={context()}
-          networks={props.networks}
-          onRetryNetwork={props.onRetryNetwork}
-          registerListController={(controller) => {
-            listController = controller;
-          }}
-          registry={registry}
-          visibleBufferIds={visibleBufferIds()}
-        />
-      )}
+    <div
+      class={styles.shell}
+      data-desktop-shell="true"
+      ref={(element) => {
+        shellElement = element;
+        const width = element.getBoundingClientRect().width;
+        setShellWidth(width > 0 ? width : window.innerWidth);
+        shellObserver = new ResizeObserver(([entry]) => {
+          if (entry !== undefined) setShellWidth(entry.contentRect.width);
+        });
+        shellObserver.observe(element);
+      }}
+    >
+      {sidebarShown() && sidebarInline() && sidebarView()}
       <main
         class={styles.main}
         data-chromeless={
-          !sidebarShown() && !membersVisible() ? "true" : "false"
+          !(sidebarShown() && sidebarInline()) &&
+          !(membersVisible() && membersInline())
+            ? "true"
+            : "false"
         }
       >
         {activeBuffer() !== undefined ? (
@@ -311,13 +366,14 @@ export function DesktopShell(props: DesktopShellProps) {
           </section>
         )}
       </main>
-      {membersVisible() && activeBuffer() !== undefined && (
+      {membersVisible() && membersInline() && activeBuffer() !== undefined && (
         <MemberPanel
           bufferTitle={activeBuffer()?.title ?? ""}
           onClose={() => setMemberPanelOpen(false)}
-          onOpenDirect={(nick) =>
-            props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick)
-          }
+          onOpenDirect={(nick) => {
+            props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick);
+            focusComposer();
+          }}
           onRequestRange={(offset) =>
             props.onRequestMembers?.(
               memberViewId(),
@@ -329,8 +385,68 @@ export function DesktopShell(props: DesktopShellProps) {
           window={memberWindow()}
         />
       )}
+      {drawer() === "sidebar" && !sidebarInline() && (
+        <OverlayDrawer
+          closeLabel="Close channel list"
+          edge="left"
+          label="Channels"
+          onClose={closeDrawer}
+          width="256px"
+        >
+          {sidebarView()}
+        </OverlayDrawer>
+      )}
+      {drawer() === "members" && !membersInline() && membersAvailable() && (
+        <OverlayDrawer
+          closeLabel="Close member list"
+          edge="right"
+          label="Members"
+          onClose={closeDrawer}
+          width="232px"
+        >
+          <div class={styles.drawerContent}>
+            <MemberPanel
+              bufferTitle={activeBuffer()?.title ?? ""}
+              onClose={() => {
+                setMemberPanelOpen(false);
+                closeDrawer();
+              }}
+              onOpenDirect={(nick) => {
+                props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick);
+                closeDrawer();
+              }}
+              onRequestRange={(offset) =>
+                props.onRequestMembers?.(
+                  memberViewId(),
+                  activeBuffer()?.id ?? 0,
+                  offset,
+                )
+              }
+              showModeSymbols={props.showMemberModeSymbols}
+              window={memberWindow()}
+            />
+          </div>
+        </OverlayDrawer>
+      )}
     </div>
   );
+
+  function sidebarView() {
+    return (
+      <Sidebar
+        activeBufferId={activeBuffer()?.id}
+        buffers={props.buffers}
+        commandContext={context()}
+        networks={props.networks}
+        onRetryNetwork={props.onRetryNetwork}
+        registerListController={(controller) => {
+          listController = controller;
+        }}
+        registry={registry}
+        visibleBufferIds={visibleBufferIds()}
+      />
+    );
+  }
 }
 
 function latestCommitted(

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
+import { installPlatformEnvironment } from "../../platform/environment";
 import { DesktopShell } from "./DesktopShell";
 
 const channel: BufferProjection = {
@@ -99,4 +100,56 @@ it("shows the projected member total while the panel is closed", () => {
     screen.getByRole("button", { name: "Toggle member list" }),
   ).toHaveTextContent("7");
   expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
+});
+
+it("keeps the desktop shell and opens narrow panels as one drawer", async () => {
+  const innerWidth = vi.spyOn(window, "innerWidth", "get").mockReturnValue(400);
+  let resize: ((width: number) => void) | undefined;
+  const platform = installPlatformEnvironment(document.body, window, {
+    observeWidth: (_element, onWidth) => {
+      resize = onWidth;
+      return () => {};
+    },
+  });
+  resize?.(400);
+  render(() => (
+    <DesktopShell
+      activeBufferId={2}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[
+        { id: 1, label: "Local Ergo", nickname: "me", state: "online" },
+      ]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(document.querySelector("[data-desktop-shell]")).not.toBeNull();
+  expect(
+    screen.queryByRole("complementary", { name: "Channel list" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle channel list" }));
+  expect(screen.getByRole("dialog", { name: "Channels" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "#room" }));
+  await Promise.resolve();
+  expect(screen.queryByRole("dialog", { name: "Channels" })).toBeNull();
+  const composer = screen.getByRole("textbox", { name: "Message #room" });
+  expect(composer).toHaveFocus();
+
+  fireEvent.click(screen.getByRole("button", { name: "Toggle member list" }));
+  const membersDialog = screen.getByRole("dialog", { name: "Members" });
+  expect(membersDialog).toBeVisible();
+  fireEvent.keyDown(membersDialog, { key: "Escape" });
+  await Promise.resolve();
+  expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  expect(composer).toHaveFocus();
+  platform.dispose();
+  innerWidth.mockRestore();
 });
