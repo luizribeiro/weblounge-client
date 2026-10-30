@@ -65,6 +65,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the build. The self-hosted install manifest and Apple metadata ship in the hosted artifact;
     production validation covers image dimensions and Apple opacity, and the browser fetches every
     declared asset under the app's CSP.
+  - [x] Centralize platform adaptation behind one capability environment. Primary input selects the
+    shell while the 760px breakpoint only changes desktop panel presentation; narrow desktop uses
+    one mirrored overlay drawer without remounting conversation state. Safe-area and keyboard
+    tokens cover iPhone portrait/landscape and Android gesture navigation, with a repository policy,
+    native-feel geometry audit, and light/dark reference captures.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
