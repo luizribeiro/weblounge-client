@@ -46,8 +46,7 @@
   margin: 0 0 2px;
 }
 
-.summary,
-.userStatus {
+.summary {
   color: var(--wl-color-panel-muted);
   font-size: 11px;
 }
@@ -131,9 +130,14 @@
   width: 7px;
 }
 
-.statusDot[data-network-state="online"],
-.userDot {
+.statusDot[data-connection-color="online"],
+.userDot[data-connection-color="online"] {
   background: var(--wl-color-online);
+}
+
+.statusDot[data-connection-color="muted"],
+.userDot[data-connection-color="muted"] {
+  background: var(--wl-color-panel-muted);
 }
 
 .statusDot[data-network-state="connecting"],

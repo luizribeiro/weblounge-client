@@ -44,6 +44,38 @@ export function connectionPresentation(
   return { kind: "offline", label: "Offline", colorToken: "muted" };
 }
 
+export function connectionOverview(
+  networks: readonly NetworkProjection[],
+): ConnectionPresentation {
+  const presentations = networks.map((network) =>
+    connectionPresentation(network.state),
+  );
+  for (const kind of [
+    "reconnecting",
+    "connecting",
+    "registering",
+    "failed",
+    "offline",
+  ] as const) {
+    const presentation = presentations.find((item) => item.kind === kind);
+    if (presentation !== undefined) return presentation;
+  }
+  return (
+    presentations[0] ?? {
+      kind: "offline",
+      label: "Offline",
+      colorToken: "muted",
+    }
+  );
+}
+
+export function connectionSummary(
+  networks: readonly NetworkProjection[],
+): string {
+  const overview = connectionOverview(networks);
+  return overview.kind === "online" ? "" : overview.label;
+}
+
 export function connectionFailureMessage(
   state: NetworkProjection["state"],
 ): string | undefined {

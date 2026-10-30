@@ -14,7 +14,7 @@ it("keeps network rows and account chrome in focused components", () => {
   const openServer = vi.fn();
   const openBuffer = vi.fn();
   const settings = vi.fn();
-  render(() => (
+  const { container } = render(() => (
     <>
       <NetworkSection
         activeBufferId={2}
@@ -66,5 +66,8 @@ it("keeps network rows and account chrome in focused components", () => {
   expect(openServer).toHaveBeenCalledOnce();
   expect(openBuffer).toHaveBeenCalledOnce();
   expect(settings).toHaveBeenCalledOnce();
-  expect(screen.getByText("Connecting…")).toBeInTheDocument();
+  expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
+  expect(
+    container.querySelector('[data-connection-indicator="account"]'),
+  ).toHaveAttribute("data-connection-color", "muted");
 });

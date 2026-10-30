@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 
@@ -45,12 +45,20 @@ test.describe("connection resilience against local Ergo", () => {
       await page.waitForTimeout(250);
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
-      await expect(
-        page.getByText("Reconnecting…", { exact: true }).first(),
-      ).toBeVisible();
+      const reconnecting = page.locator(
+        '[data-connection-status="Reconnecting…"]',
+      );
+      await expect(reconnecting).toBeVisible({ timeout: 10_000 });
+      await expect(reconnecting).toHaveCount(1);
       await expectShellToRemain(page, channel);
 
       if (!isMobile(testInfo.project.name)) {
+        await expectMutedIndicator(
+          page.locator('[data-connection-indicator="account"]'),
+        );
+        await expectMutedIndicator(
+          page.locator('[data-connection-indicator="network"]'),
+        );
         await page.emulateMedia({ colorScheme: "light" });
         await page.screenshot({
           path: "e2e/screenshots/connection-reconnecting-light.png",
@@ -93,7 +101,7 @@ test.describe("connection resilience against local Ergo", () => {
 
     await context.setOffline(true);
     await expect(
-      page.getByText("Offline", { exact: true }).first(),
+      page.locator('[data-connection-status="Offline"]'),
     ).toBeVisible();
     const texts = [`offline one ${Date.now()}`, `offline two ${Date.now()}`];
     for (const text of texts) {
@@ -118,7 +126,9 @@ test.describe("connection resilience against local Ergo", () => {
     expect(order.indexOf(texts[0] ?? "")).toBeLessThan(
       order.indexOf(texts[1] ?? ""),
     );
-    await expect(page.getByText("Offline", { exact: true })).toHaveCount(0);
+    await expect(
+      page.locator('[data-connection-status="Offline"]'),
+    ).toHaveCount(0);
     await expectShellToRemain(page, channel);
   });
 
@@ -181,7 +191,7 @@ test.describe("connection resilience against local Ergo", () => {
 
     process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
     await expect(
-      page.getByText("Reconnecting…", { exact: true }).first(),
+      page.locator('[data-connection-status="Reconnecting…"]'),
     ).toBeVisible({ timeout: 10_000 });
     await expectOnline(page, testInfo.project.name);
     const bot = await connectBot("ergo");
@@ -193,6 +203,22 @@ test.describe("connection resilience against local Ergo", () => {
     }
   });
 });
+
+async function expectMutedIndicator(indicator: Locator) {
+  await expect(indicator).toHaveAttribute("data-connection-color", "muted");
+  const [actual, expected] = await indicator.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.background = "var(--wl-color-panel-muted)";
+    document.body.append(probe);
+    const colors = [
+      getComputedStyle(element).backgroundColor,
+      getComputedStyle(probe).backgroundColor,
+    ];
+    probe.remove();
+    return colors;
+  });
+  expect(actual).toBe(expected);
+}
 
 async function openChannel(page: Page, projectName: string) {
   await page.goto("/?irc-password=weblounge-test");

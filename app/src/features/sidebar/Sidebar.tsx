@@ -4,11 +4,15 @@ import type {
   ActionRegistry,
   UiActionId,
 } from "../../actions/action-registry";
+import {
+  connectionStateKind,
+  connectionSummary,
+} from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
 import { Line } from "../../ui/Line";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
-import { footerStatus, SidebarFooter } from "./SidebarFooter";
+import { SidebarFooter } from "./SidebarFooter";
 
 export interface SidebarListController {
   readonly next: () => void;
@@ -33,6 +37,10 @@ export function Sidebar(props: SidebarProps) {
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
+  const failedNetwork = () =>
+    props.networks.find(
+      (network) => connectionStateKind(network.state) === "failed",
+    );
   const run = (id: UiActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
       ...props.commandContext,
@@ -88,7 +96,25 @@ export function Sidebar(props: SidebarProps) {
           <h1>
             <Line>weblounge</Line>
           </h1>
-          <Line class={styles.summary}>{networkSummary(props.networks)}</Line>
+          {failedNetwork() !== undefined ? (
+            <button
+              class={styles.retry}
+              data-connection-status={connectionSummary(props.networks)}
+              onClick={() => props.onRetryNetwork?.(failedNetwork()?.id ?? 0)}
+              type="button"
+            >
+              {networkSummary(props.networks)}
+            </button>
+          ) : (
+            <Line
+              class={styles.summary}
+              data-connection-status={
+                connectionSummary(props.networks) || undefined
+              }
+            >
+              {networkSummary(props.networks)}
+            </Line>
+          )}
         </div>
       </div>
 
@@ -141,7 +167,6 @@ export function Sidebar(props: SidebarProps) {
       <SidebarFooter
         networks={props.networks}
         onOpenSettings={() => run("settings.open")}
-        onRetryNetwork={props.onRetryNetwork}
         settingsTooltip={tooltip(props.registry, "settings.open")}
       />
     </aside>
@@ -169,7 +194,7 @@ function kindOrder(buffer: SidebarBuffer): number {
 function networkSummary(networks: readonly NetworkProjection[]): string {
   const count = networks.length;
   const countLabel = `${count} ${count === 1 ? "network" : "networks"}`;
-  const status = footerStatus(networks);
+  const status = connectionSummary(networks);
   return status === "" ? countLabel : `${countLabel} · ${status}`;
 }
 
