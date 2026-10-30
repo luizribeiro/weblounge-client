@@ -38,14 +38,20 @@ test.describe("buffer order against local Ergo", () => {
         );
         await page.reload();
       }
+      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(
         page.getByRole("heading", { name: /#weblounge-test/ }),
       ).toBeVisible();
       const composer = page.getByRole("textbox", { name: "Message" });
       for (const channel of arrival) {
         if (channel === undefined) continue;
-        await composer.fill(`/join ${channel}`);
-        await composer.press("Enter");
+        const existing = page.getByRole("button", { name: channel });
+        if ((await existing.count()) === 0) {
+          await composer.fill(`/join ${channel}`);
+          await composer.press("Enter");
+        } else {
+          await existing.click();
+        }
         await expect(
           page.getByRole("heading", { name: channel }),
         ).toBeVisible();
