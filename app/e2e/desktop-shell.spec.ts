@@ -70,6 +70,7 @@ test.describe("desktop shell against local Ergo", () => {
       );
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto("/?irc-password=weblounge-test");
+      await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(
         page.getByText("hello from completion bot", { exact: true }),
       ).toBeVisible();
