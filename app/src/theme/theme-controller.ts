@@ -1,4 +1,4 @@
-import { type ThemeId, themeStyleSheet, themes } from "./theme-registry";
+import { type ThemeId, themes } from "./theme-registry";
 
 export type ThemePreference = "system" | ThemeId;
 
@@ -33,10 +33,6 @@ export function installTheme(
   document: Document,
   media: MediaPreference,
 ): ThemeController {
-  const style = document.createElement("style");
-  style.dataset.themeTokens = "true";
-  style.textContent = themeStyleSheet();
-  document.head.append(style);
   let preference: ThemePreference = "system";
   let active = resolveSystemTheme(media.matches);
 
@@ -46,7 +42,6 @@ export function installTheme(
     const theme = themes.find((candidate) => candidate.id === active);
     if (theme === undefined) throw new Error(`unknown theme: ${active}`);
     document.documentElement.dataset.theme = active;
-    document.documentElement.style.colorScheme = theme.appearance;
   };
   const systemChanged = () => {
     if (preference === "system") apply();
@@ -62,7 +57,6 @@ export function installTheme(
     },
     dispose() {
       media.removeEventListener("change", systemChanged);
-      style.remove();
     },
   };
 }

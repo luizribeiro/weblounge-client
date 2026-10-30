@@ -91,6 +91,7 @@ export default defineConfig(({ mode }) => {
 function testContentSecurityPolicy(): string {
   return [
     "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self'",
     "worker-src 'self'",
     "font-src 'self'",
     "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",

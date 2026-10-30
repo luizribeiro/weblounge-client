@@ -64,16 +64,12 @@ export function installDensity(
   document: Document,
   settings: DensitySettings = densityDefaults,
 ): () => void {
-  const style = document.createElement("style");
-  style.dataset.densityTokens = "true";
-  style.textContent = densityStyleSheet();
-  document.head.append(style);
   const root = document.documentElement;
   root.dataset.messageLayout = settings.messageLayout;
   root.dataset.messageDensity = settings.message;
   root.dataset.sidebarDensity = settings.desktopList;
   root.dataset.mobileDensity = settings.mobileList;
-  return () => style.remove();
+  return () => {};
 }
 
 function validatePresets(

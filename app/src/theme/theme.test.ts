@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { installTheme } from "./theme-controller";
 import {
@@ -35,6 +36,9 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).toContain("--wl-color-bg:#18221e");
     expect(themes[1]?.onboarding).not.toHaveProperty("soft");
     expect(themes[1]?.onboarding).not.toHaveProperty("signal");
+    expect(
+      compactCss(readFileSync("src/styles/theme-tokens.css", "utf8")),
+    ).toBe(compactCss(themeStyleSheet()));
   });
 
   it("owns motion tokens and their reduced-motion override", () => {
@@ -45,6 +49,13 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).toContain("--wl-motion-suggestions:0ms");
   });
 });
+
+function compactCss(value: string): string {
+  return value
+    .replaceAll(/\s+/g, "")
+    .replaceAll(/([(:,])0\./g, "$1.")
+    .replaceAll(";}", "}");
+}
 
 describe("theme controller", () => {
   it("follows live system changes until a theme is fixed", () => {
@@ -61,7 +72,7 @@ describe("theme controller", () => {
     controller.dispose();
   });
 
-  it("removes its system listener and token sheet", () => {
+  it("removes its system listener", () => {
     const media = new FakeMedia(false);
     const remove = vi.spyOn(media, "removeEventListener");
     const controller = installTheme(document, media);
@@ -69,6 +80,5 @@ describe("theme controller", () => {
     controller.dispose();
 
     expect(remove).toHaveBeenCalledOnce();
-    expect(document.querySelector("[data-theme-tokens]")).toBeNull();
   });
 });

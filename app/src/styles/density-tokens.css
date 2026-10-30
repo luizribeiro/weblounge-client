@@ -1,0 +1,54 @@
+:root[data-message-density="compact"] {
+  --wl-density-message-avatar: 26px;
+  --wl-density-message-continuation-padding: 0px;
+  --wl-density-message-font-delta: -1px;
+  --wl-density-message-group-top-padding: 5px;
+  --wl-density-message-line-height: 1.4;
+  --wl-density-message-one-line-row-padding: 1px;
+}
+:root[data-sidebar-density="compact"] {
+  --wl-density-sidebar-avatar: 18px;
+  --wl-density-sidebar-font-size: 12.5px;
+  --wl-density-sidebar-member-row-height: 24px;
+  --wl-density-sidebar-row-height: 26px;
+}
+:root[data-mobile-density="compact"] {
+  --wl-density-mobile-avatar: 32px;
+  --wl-density-mobile-row-height: 52px;
+}
+:root[data-message-density="cozy"] {
+  --wl-density-message-avatar: 36px;
+  --wl-density-message-continuation-padding: 2px;
+  --wl-density-message-font-delta: 0px;
+  --wl-density-message-group-top-padding: 10px;
+  --wl-density-message-line-height: 1.5;
+  --wl-density-message-one-line-row-padding: 3px;
+}
+:root[data-sidebar-density="cozy"] {
+  --wl-density-sidebar-avatar: 24px;
+  --wl-density-sidebar-font-size: 13px;
+  --wl-density-sidebar-member-row-height: 32px;
+  --wl-density-sidebar-row-height: 32px;
+}
+:root[data-mobile-density="cozy"] {
+  --wl-density-mobile-avatar: 44px;
+  --wl-density-mobile-row-height: 70px;
+}
+:root[data-message-density="comfortable"] {
+  --wl-density-message-avatar: 40px;
+  --wl-density-message-continuation-padding: 4px;
+  --wl-density-message-font-delta: 1px;
+  --wl-density-message-group-top-padding: 15px;
+  --wl-density-message-line-height: 1.6;
+  --wl-density-message-one-line-row-padding: 5px;
+}
+:root[data-sidebar-density="comfortable"] {
+  --wl-density-sidebar-avatar: 28px;
+  --wl-density-sidebar-font-size: 14px;
+  --wl-density-sidebar-member-row-height: 38px;
+  --wl-density-sidebar-row-height: 38px;
+}
+:root[data-mobile-density="comfortable"] {
+  --wl-density-mobile-avatar: 48px;
+  --wl-density-mobile-row-height: 80px;
+}

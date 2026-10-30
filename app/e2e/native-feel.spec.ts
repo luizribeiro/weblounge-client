@@ -11,7 +11,8 @@ const ready = "Engine ready: wasm worker round trip complete";
 test("passes the native-feel audit at rest", async ({ page }) => {
   await installNativeFeelInstrumentation(page);
   await page.goto("/");
-  await expect(page.getByRole("status")).toHaveText(ready);
+  await expect(page.getByText(ready, { exact: true })).toBeAttached();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 
   await nativeFeelAudit(page);
 });

@@ -100,6 +100,7 @@ export function themeStyleSheet(registry = themes): string {
   const themeRules = registry
     .map((theme) => {
       const values = [
+        `color-scheme:${theme.appearance}`,
         ...tokenProperties("color", theme.colors),
         ...tokenProperties("font", theme.typography),
         ...tokenProperties("radius", theme.shape),

@@ -37,6 +37,18 @@ export default defineConfig({
       ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
+    {
+      name: "webkit-splash-desktop",
+      grep: /desktop/,
+      testMatch: "**/splash.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-splash-mobile",
+      grep: /mobile/,
+      testMatch: "**/splash.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
   ],
   testDir: "./e2e",
   workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,

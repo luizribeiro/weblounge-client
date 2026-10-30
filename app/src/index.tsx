@@ -25,7 +25,12 @@ type BootstrapState =
   | { type: "app" }
   | { type: "hosted"; config: HostedConfig; session: HostedSession };
 
-function Bootstrap() {
+interface BootstrapProps {
+  readonly beforeReveal: () => Promise<void>;
+  readonly onReady: () => void;
+}
+
+function Bootstrap(props: BootstrapProps) {
   const theme = installSystemTheme(document, window);
   const removeDensity = installDensity(document);
   const removePageZoomGuard = installPageZoomGuard(document);
@@ -73,6 +78,8 @@ function Bootstrap() {
       });
     } catch (error: unknown) {
       setState({ type: "error", message: userFacingError(error) });
+      await props.beforeReveal();
+      props.onReady();
     }
   }
 
@@ -100,11 +107,15 @@ function Bootstrap() {
       case "error":
         return <HostedStatus message={current.message} error />;
       case "app":
-        return <App />;
+        return (
+          <App beforeReveal={props.beforeReveal} onReady={props.onReady} />
+        );
       case "hosted":
         return (
           <App
+            beforeReveal={props.beforeReveal}
             hostedSession={current.session}
+            onReady={props.onReady}
             onHostedAuthorizationRequired={() =>
               void restartAuthorization(current.config)
             }
@@ -141,5 +152,54 @@ if (root === null) {
   throw new Error("missing application root");
 }
 
-root.replaceChildren();
-render(() => <Bootstrap />, root);
+const splash = root.querySelector<HTMLElement>("[data-initial-splash]");
+if (splash === null) {
+  throw new Error("missing initial splash");
+}
+const startup = createStartupGate(splash);
+const application = document.createElement("div");
+application.dataset.applicationMount = "true";
+root.append(application);
+render(
+  () => (
+    <Bootstrap beforeReveal={startup.beforeReveal} onReady={startup.onReady} />
+  ),
+  application,
+);
+
+function createStartupGate(splash: HTMLElement): BootstrapProps {
+  let active = true;
+  const fontReady = document.fonts
+    .load("400 13px Inter", "Connecting to weblounge…")
+    .catch(() => []);
+  const timeout = window.setTimeout(() => {
+    if (!active) return;
+    active = false;
+    const status = splash.querySelector<HTMLElement>("[data-splash-status]");
+    if (status === null) return;
+    status.dataset.error = "true";
+    status.setAttribute("role", "alert");
+    status.textContent = "Couldn't start weblounge. Reload to try again.";
+  }, 15_000);
+
+  return {
+    beforeReveal: async () => {
+      await fontReady;
+    },
+    onReady: () => {
+      if (!active) return;
+      active = false;
+      window.clearTimeout(timeout);
+      splash.setAttribute("aria-hidden", "true");
+      splash.dataset.state = "leaving";
+      const animations = splash.getAnimations();
+      if (animations.length === 0) {
+        splash.remove();
+        return;
+      }
+      void Promise.allSettled(
+        animations.map((animation) => animation.finished),
+      ).then(() => splash.remove());
+    },
+  };
+}

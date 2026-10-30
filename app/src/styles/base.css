@@ -8,26 +8,10 @@
   font-size: var(--wl-font-base);
 }
 
-@font-face {
-  font-family: Inter;
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url("/fonts/inter-latin.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Inter Fallback";
-  src: local("Arial");
-  ascent-override: 90.2%;
-  descent-override: 22.48%;
-  line-gap-override: 0%;
-  size-adjust: 107.4%;
-}
-
 html,
 body,
-#root {
+#root,
+[data-application-mount] {
   block-size: 100%;
   inline-size: 100%;
   margin: 0;
@@ -50,15 +34,6 @@ body,
   overscroll-behavior: none;
   touch-action: pan-x pan-y;
   user-select: none;
-}
-
-[data-initial-splash] {
-  align-items: center;
-  block-size: 100%;
-  display: flex;
-  flex-direction: column;
-  inline-size: 100%;
-  justify-content: center;
 }
 
 .visually-hidden {

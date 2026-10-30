@@ -1,12 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
 import {
   densityDefaults,
   densityPresets,
   densityStyleSheet,
   installDensity,
 } from "./density";
-
-afterEach(() => document.querySelector("[data-density-tokens]")?.remove());
 
 describe("density presets", () => {
   it("matches Appendix B and keeps independent defaults", () => {
@@ -32,8 +31,14 @@ describe("density presets", () => {
     expect(densityStyleSheet()).toContain(
       "--wl-density-message-one-line-row-padding:3px",
     );
+    expect(
+      compactCss(readFileSync("src/styles/density-tokens.css", "utf8")),
+    ).toBe(compactCss(densityStyleSheet()));
 
     dispose();
-    expect(document.querySelector("[data-density-tokens]")).toBeNull();
   });
 });
+
+function compactCss(value: string): string {
+  return value.replaceAll(/\s+/g, "").replaceAll(";}", "}");
+}

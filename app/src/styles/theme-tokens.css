@@ -1,0 +1,113 @@
+:root {
+  --wl-motion-fade: 200ms;
+  --wl-motion-members: 220ms;
+  --wl-motion-preview-fade: 420ms;
+  --wl-motion-push-in: 280ms;
+  --wl-motion-push-out: 230ms;
+  --wl-motion-suggestions: 120ms;
+  --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+:root[data-theme="lounge"] {
+  color-scheme: light;
+  --wl-color-bg: #f3f1e9;
+  --wl-color-surface: #f3f1e9;
+  --wl-color-panel: #eaede3;
+  --wl-color-panel-fg: #1d2825;
+  --wl-color-panel-muted: #5c655d;
+  --wl-color-panel-border: #d5d8ce;
+  --wl-color-panel-alt: #faf9f4;
+  --wl-color-fg: #1d2825;
+  --wl-color-muted: #5c655d;
+  --wl-color-border: #d5d8ce;
+  --wl-color-accent: #4e6244;
+  --wl-color-accent-fg: #f3f1e9;
+  --wl-color-selection: #bdd9a7;
+  --wl-color-selection-fg: #1d2825;
+  --wl-color-mention-bg: #e3ebd6;
+  --wl-color-unread: #9a3b2e;
+  --wl-color-input-bg: #faf9f4;
+  --wl-color-chip: #e3e6dc;
+  --wl-color-code-bg: #eaede3;
+  --wl-color-online: #4e6244;
+  --wl-color-self-nick: #4e6244;
+  --wl-color-error: #9a3b2e;
+  --wl-color-focus-ring: #4e6244;
+  --wl-font-ui: Inter, Inter Fallback, system-ui, sans-serif;
+  --wl-font-mono: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-base: 14px;
+  --wl-font-section-family:
+    SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-section-size: 11px;
+  --wl-font-section-transform: uppercase;
+  --wl-font-section-tracking: 0.12em;
+  --wl-radius-control: 3px;
+  --wl-radius-avatar: 6px;
+  --wl-radius-composer: 6px;
+  --wl-radius-palette: 6px;
+  --wl-radius-pill: 3px;
+  --wl-effect-overlay-shadow: 0 20px 60px rgba(29, 40, 37, 0.18);
+  --wl-effect-icon-ring: none;
+  --wl-nick-0: #2f6b5e;
+  --wl-nick-1: #8a5a12;
+  --wl-nick-2: #3f5f8a;
+  --wl-nick-3: #9a3b2e;
+  --wl-nick-4: #6a4f86;
+  --wl-nick-5: #7a4a62;
+}
+:root[data-theme="lounge-night"] {
+  color-scheme: dark;
+  --wl-color-bg: #18221e;
+  --wl-color-surface: #18221e;
+  --wl-color-panel: #131b18;
+  --wl-color-panel-fg: #edefe5;
+  --wl-color-panel-muted: #a9b3a8;
+  --wl-color-panel-border: #2a352e;
+  --wl-color-panel-alt: #1b2621;
+  --wl-color-fg: #edefe5;
+  --wl-color-muted: #a9b3a8;
+  --wl-color-border: #39463b;
+  --wl-color-accent: #bdd9a7;
+  --wl-color-accent-fg: #18221e;
+  --wl-color-selection: #2c3a2f;
+  --wl-color-selection-fg: #edefe5;
+  --wl-color-mention-bg: #25321f;
+  --wl-color-unread: #eba293;
+  --wl-color-input-bg: #202c24;
+  --wl-color-chip: #253227;
+  --wl-color-code-bg: #131b18;
+  --wl-color-online: #bdd9a7;
+  --wl-color-self-nick: #bdd9a7;
+  --wl-color-error: #eba293;
+  --wl-color-focus-ring: #bdd9a7;
+  --wl-font-ui: Inter, Inter Fallback, system-ui, sans-serif;
+  --wl-font-mono: SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-base: 14px;
+  --wl-font-section-family:
+    SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --wl-font-section-size: 11px;
+  --wl-font-section-transform: uppercase;
+  --wl-font-section-tracking: 0.12em;
+  --wl-radius-control: 3px;
+  --wl-radius-avatar: 6px;
+  --wl-radius-composer: 6px;
+  --wl-radius-palette: 6px;
+  --wl-radius-pill: 3px;
+  --wl-effect-overlay-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  --wl-effect-icon-ring: inset 0 0 0 1px rgba(237, 239, 229, 0.16);
+  --wl-nick-0: #8fd3c1;
+  --wl-nick-1: #e8c07a;
+  --wl-nick-2: #9cb8e8;
+  --wl-nick-3: #eba293;
+  --wl-nick-4: #c6aee8;
+  --wl-nick-5: #d9d48a;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --wl-motion-push-in: 0ms;
+    --wl-motion-push-out: 0ms;
+    --wl-motion-members: 0ms;
+    --wl-motion-fade: 0ms;
+    --wl-motion-preview-fade: 0ms;
+    --wl-motion-suggestions: 0ms;
+  }
+}
