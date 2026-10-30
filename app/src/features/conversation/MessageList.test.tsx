@@ -103,7 +103,7 @@ it("anchors the viewport when history rows are prepended", async () => {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   list.scrollTop = 40;
   list.dispatchEvent(new Event("scroll"));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   setMessages([{ ...message, id: 0, text: "older" }, message]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -247,7 +247,7 @@ it("anchors visible content when an overscanned row above it grows", async () =>
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   list.scrollTop = 600;
   list.dispatchEvent(new Event("scroll"));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   const rendered = [
     ...container.querySelectorAll<HTMLLIElement>("li[data-index]"),
@@ -435,7 +435,7 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const observer = observers[0];
   if (observer === undefined) throw new Error("live-edge observer is missing");
   observer.flush(false);
@@ -481,13 +481,13 @@ it("reports the live edge from the bottom sentinel", async () => {
 
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   observer.flush(false);
   expect(onLiveEdgeChange).toHaveBeenLastCalledWith(false);
 
   list.scrollTop = 800;
   list.dispatchEvent(new Event("scroll"));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   observer.flush(true);
   expect(onLiveEdgeChange).toHaveBeenLastCalledWith(true);
 });
@@ -522,7 +522,7 @@ it("reports the live edge once the virtualizer catches up with the sentinel", as
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const observer = observers[0];
   if (observer === undefined) throw new Error("live-edge observer is missing");
   observer.flush(false);
@@ -531,11 +531,13 @@ it("reports the live edge once the virtualizer catches up with the sentinel", as
 
   list.scrollTop = 800;
   list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   expect(onLiveEdgeChange).toHaveBeenLastCalledWith(true);
 
   onLiveEdgeChange.mockClear();
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   expect(onLiveEdgeChange).not.toHaveBeenCalled();
 });
 
