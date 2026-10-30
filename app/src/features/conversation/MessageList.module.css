@@ -9,6 +9,7 @@
   margin: 0;
   min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
   padding: 12px 14px 22px;
   position: relative;
 }
