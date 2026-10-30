@@ -45,6 +45,10 @@ export default defineConfig(({ mode }) => {
                   import.meta.dirname,
                   "e2e/message-list-performance.html",
                 ),
+                "message-list-overlap": resolve(
+                  import.meta.dirname,
+                  "e2e/message-list-overlap.html",
+                ),
                 "member-list-performance": resolve(
                   import.meta.dirname,
                   "e2e/member-list-performance.html",
