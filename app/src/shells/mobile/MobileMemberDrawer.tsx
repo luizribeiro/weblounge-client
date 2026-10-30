@@ -2,6 +2,7 @@ import {
   MemberPanel,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
+import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./MobileMemberDrawer.module.css";
 
 interface MobileMemberDrawerProps {
@@ -35,21 +36,19 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
     if (closes) props.onClose();
   };
   return (
-    <div class={styles.overlay} data-member-drawer="true">
-      <button
-        aria-label="Close member list"
-        class={styles.backdrop}
-        onClick={props.onClose}
-        type="button"
-      />
+    <OverlayDrawer
+      closeLabel="Close member list"
+      edge="right"
+      label="Members"
+      onClose={props.onClose}
+      width="min(300px, 82%)"
+    >
       <div
-        aria-label="Members"
-        aria-modal="true"
-        class={styles.drawer}
+        class={styles.content}
+        data-member-drawer="true"
         onPointerCancel={finish}
         onPointerDown={begin}
         onPointerUp={finish}
-        role="dialog"
       >
         <MemberPanel
           bufferTitle={props.bufferTitle}
@@ -63,7 +62,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
           window={props.window}
         />
       </div>
-    </div>
+    </OverlayDrawer>
   );
 }
 

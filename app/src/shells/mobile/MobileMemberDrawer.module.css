@@ -1,30 +1,9 @@
-.overlay {
-  inset: 0;
-  position: absolute;
-  z-index: 30;
-}
-
-.backdrop {
-  background: color-mix(in srgb, var(--wl-color-fg) 30%, transparent);
-  border: 0;
-  inset: 0;
-  position: absolute;
-  width: 100%;
-}
-
-.drawer {
-  animation: drawer-in var(--wl-motion-members) var(--wl-motion-standard-curve);
-  bottom: 0;
-  box-shadow: var(--wl-effect-overlay-shadow);
-  max-width: 82%;
-  position: absolute;
-  right: var(--wl-safe-right);
-  top: 0;
+.content {
+  height: 100%;
   touch-action: pan-y;
-  width: 300px;
 }
 
-.drawer > aside {
+.content > aside {
   --wl-density-sidebar-avatar: 30px;
   --wl-density-sidebar-font-size: 15px;
   background: var(--wl-color-surface);
@@ -33,21 +12,12 @@
   width: 100%;
 }
 
-.drawer > aside > header {
+.content > aside > header {
   flex-basis: calc(58px + var(--wl-safe-top));
   padding-top: var(--wl-safe-top);
 }
 
-.drawer > aside > header button {
+.content > aside > header button {
   height: 44px;
   width: 44px;
-}
-
-@keyframes drawer-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
 }

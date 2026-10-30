@@ -1,0 +1,52 @@
+.overlay {
+  inset: 0;
+  position: absolute;
+  z-index: 30;
+}
+
+.backdrop {
+  background: color-mix(in srgb, var(--wl-color-fg) 30%, transparent);
+  border: 0;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.drawer {
+  animation-duration: var(--wl-motion-members);
+  animation-fill-mode: both;
+  animation-timing-function: var(--wl-motion-standard-curve);
+  bottom: 0;
+  box-shadow: var(--wl-effect-overlay-shadow);
+  position: absolute;
+  top: 0;
+  width: var(--wl-overlay-drawer-width);
+}
+
+.drawer[data-edge="left"] {
+  animation-name: drawer-in-left;
+  left: var(--wl-safe-left);
+}
+
+.drawer[data-edge="right"] {
+  animation-name: drawer-in-right;
+  right: var(--wl-safe-right);
+}
+
+@keyframes drawer-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawer-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
