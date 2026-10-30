@@ -200,6 +200,34 @@ split. Mobile links push on the invoking tab, with external buffer links selecti
 links open the server buffer on desktop and Networks settings on mobile. Settings and onboarding
 use modal desktop presentation and stack mobile presentation.
 
+Web buffer routes use one encoded path segment per identifier:
+
+| Destination | Path |
+|---|---|
+| Network server buffer | `/<network>` |
+| `#lounge` | `/<network>/lounge` |
+| `##ops` | `/<network>/%23ops` |
+| `&local` | `/<network>/%26local` |
+| Direct message with `mel` | `/<network>/@mel` |
+
+`network` is the configured network name. The ordinary `#` channel sigil is omitted; any other
+leading sigil remains part of the percent-encoded destination segment, which keeps `##foo` and
+`&foo` unambiguous. Nicknames and channel names are decoded as a single segment and matched with
+the network's IRC casemapping. Malformed escapes, extra segments, and empty destination segments
+are recoverable invalid links, never commands.
+
+Selecting a buffer replaces the URL on desktop. Mobile supplies the same route URL when its
+platform policy pushes or replaces the corresponding screen, so URL synchronization creates no
+additional entry. Initial selection resolves in this order: a valid URL target, the device-local
+last viewed buffer, then the first channel in engine order. A URL for a channel that is not joined
+renders a not-joined destination with an explicit Join action; loading a URL never joins by itself.
+
+Before an OAuth redirect, the shell stores a same-origin, syntactically valid buffer route. The
+callback remains `/`; after successful authorization the stored route is restored and removed.
+Untrusted origins and unknown route shapes are discarded. Hosted and preview servers must fall
+back non-asset paths to `index.html` while retaining the app's security headers; production nginx
+therefore needs `try_files $uri /index.html;` for those paths.
+
 ## Boundaries
 
 This subsystem owns shell navigation, desktop focus/action semantics, placement adapters,
