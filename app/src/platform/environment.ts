@@ -29,6 +29,11 @@ export interface InstallOptions {
   readonly observeWidth?: WidthObserver;
 }
 
+export interface KeyboardGeometry {
+  readonly inset: number;
+  readonly state: "closed" | "open";
+}
+
 type WidthObserver = (
   element: Element,
   onWidth: (width: number) => void,
@@ -105,6 +110,7 @@ export function installPlatformEnvironment(
       delete root.dataset.display;
       delete root.dataset.shell;
       delete root.dataset.desktopPanels;
+      delete root.dataset.keyboard;
       root.style.removeProperty("--wl-keyboard-inset");
       if (installed === controller) installed = undefined;
     },
@@ -184,17 +190,29 @@ function observeKeyboardInset(
   const viewport = browserWindow.visualViewport;
   if (viewport === null || viewport === undefined) return () => {};
   const update = () => {
-    const inset = Math.max(
-      0,
-      browserWindow.innerHeight - viewport.offsetTop - viewport.height,
+    const keyboard = resolveKeyboardGeometry(
+      browserWindow.innerHeight,
+      viewport,
     );
-    root.style.setProperty("--wl-keyboard-inset", `${inset}px`);
+    root.dataset.keyboard = keyboard.state;
+    root.style.setProperty("--wl-keyboard-inset", `${keyboard.inset}px`);
   };
   viewport.addEventListener("resize", update);
   update();
   return () => {
     viewport.removeEventListener("resize", update);
   };
+}
+
+export function resolveKeyboardGeometry(
+  layoutHeight: number,
+  viewport: Pick<VisualViewport, "height" | "offsetTop">,
+): KeyboardGeometry {
+  const inset = Math.max(
+    0,
+    layoutHeight - viewport.offsetTop - viewport.height,
+  );
+  return { inset, state: inset > 0 ? "open" : "closed" };
 }
 
 function mediaQuery(browserWindow: Window, query: string): MediaQueryList {

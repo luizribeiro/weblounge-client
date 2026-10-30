@@ -1,7 +1,12 @@
 #root {
   --wl-keyboard-inset: 0px;
   --wl-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --wl-safe-bottom-effective: var(--wl-safe-bottom);
   --wl-safe-left: env(safe-area-inset-left, 0px);
   --wl-safe-right: env(safe-area-inset-right, 0px);
   --wl-safe-top: env(safe-area-inset-top, 0px);
+}
+
+#root[data-keyboard="open"] {
+  --wl-safe-bottom-effective: 0px;
 }

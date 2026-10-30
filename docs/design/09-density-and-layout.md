@@ -66,11 +66,13 @@ The corresponding root attributes are `data-input`, `data-display`, `data-shell`
 `data-desktop-panels`. The last attribute is presentation state, not shell selection, and is the
 only consumer of the 760px app-container breakpoint. Root CSS defines `--wl-safe-top`,
 `--wl-safe-right`, `--wl-safe-bottom`, and `--wl-safe-left` from `env(safe-area-inset-*)`, plus
-`--wl-keyboard-inset`. Tests can replace those custom properties on the root without impersonating
-a device. The web adapter derives display mode from `(display-mode: standalone)` and keyboard
-geometry from `visualViewport`; Tauri injects the same contract from its target and keyboard
-plugin. Theme and motion code consumes platform-owned preference observers or token-file media
-queries rather than issuing its own `matchMedia` calls.
+`--wl-keyboard-inset`. `--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard
+is closed and becomes zero under `data-keyboard="open"`, so components never interpret keyboard
+state themselves. Tests can replace those custom properties on the root without impersonating a
+device. The web adapter derives display mode from `(display-mode: standalone)` and keyboard geometry
+from `visualViewport`; Tauri injects the same contract from its target and keyboard plugin. Theme
+and motion code consumes platform-owned preference observers or token-file media queries rather
+than issuing its own `matchMedia` calls.
 
 Components consume only these attributes and properties. A repository check rejects
 `env(safe-area`, `matchMedia(`, `navigator.userAgent`, `navigator.platform`, and media-query
@@ -246,9 +248,11 @@ an open drawer. A root list with no bottom bar scrolls beneath the home-indicato
 its final content clear with bottom content padding. Composer padding is the larger of its ordinary
 spacing and the safe inset, never their sum. Content may scroll under opaque or translucent bars,
 but interactive controls and text never enter the inset. The keyboard adapter publishes
-`--wl-keyboard-inset`; the conversation bottom follows the larger effective obstruction without
-adding safe-area padding in both shell and component. No component reads raw `env()` or ships the
-prototype's iPhone measurements.
+`--wl-keyboard-inset` and `data-keyboard`; the conversation bottom follows the larger effective
+obstruction without adding safe-area padding in both shell and component. The composer transitions
+to its ordinary bottom padding with the reduced-motion-aware platform motion tokens while staying
+pinned to the live edge. No component reads raw `env()` or ships the prototype's iPhone
+measurements.
 
 ## Boundaries
 
