@@ -2,7 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@solidjs/testing-library";
 import { afterEach, beforeEach, vi } from "vitest";
 
-beforeEach(() =>
+beforeEach(() => {
+  history.replaceState(null, "", "/");
+  localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -10,8 +13,8 @@ beforeEach(() =>
       disconnect() {}
       unobserve() {}
     },
-  ),
-);
+  );
+});
 
 afterEach(cleanup);
 afterEach(() => document.body.replaceChildren());

@@ -186,6 +186,7 @@ it("replaces chat and drawer state in touch WebKit browser tabs", () => {
         onRequestCompletion={() => {}}
         onSelectBuffer={() => {}}
         onSend={async () => true}
+        pathForBuffer={() => "/Local/room"}
       />
     ));
 
@@ -194,6 +195,7 @@ it("replaces chat and drawer state in touch WebKit browser tabs", () => {
       "replace",
     );
     fireEvent.click(screen.getByRole("button", { name: "#room" }));
+    expect(window.location.pathname).toBe("/Local/room");
     fireEvent.click(screen.getByRole("button", { name: "Show members" }));
     fireEvent.click(
       screen.getAllByRole("button", {
@@ -203,6 +205,7 @@ it("replaces chat and drawer state in touch WebKit browser tabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
 
     expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+    expect(window.location.pathname).toBe("/");
     expect(push).not.toHaveBeenCalled();
     expect(replace).toHaveBeenCalled();
     expect(back).not.toHaveBeenCalled();

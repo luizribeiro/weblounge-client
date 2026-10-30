@@ -31,6 +31,9 @@ interface MobileShellProps extends MobileShellData {
     | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
+  readonly pathForBuffer?:
+    | ((bufferId: number) => string | undefined)
+    | undefined;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
   readonly memberViewScope?: string | undefined;
   readonly onOpenDirect?:
@@ -77,14 +80,15 @@ export function MobileShell(props: MobileShellProps) {
     | undefined;
 
   const open = (bufferId: number, preserveCurrent = false) => {
-    props.onSelectBuffer(bufferId);
     const state = mobileHistoryState(true, false);
+    const path = props.pathForBuffer?.(bufferId);
     if (
       historyPolicy === "stack" &&
       (stack().active.kind === "chats" || preserveCurrent)
     )
-      window.history.pushState(state, "");
-    else window.history.replaceState(state, "");
+      window.history.pushState(state, "", path);
+    else window.history.replaceState(state, "", path);
+    props.onSelectBuffer(bufferId);
     setStack((current) =>
       pushChat(current, bufferId, reducedMotion(), preserveCurrent),
     );
@@ -96,6 +100,9 @@ export function MobileShell(props: MobileShellProps) {
         window.history.replaceState(
           mobileHistoryState(next.active.kind === "chat", false),
           "",
+          next.active.kind === "chat"
+            ? props.pathForBuffer?.(next.active.bufferId)
+            : "/",
         );
       }
       return next;

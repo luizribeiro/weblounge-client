@@ -13,9 +13,12 @@ export function ResponsiveShell(props: DesktopShellProps) {
     "focusRequest",
     "onFocusRequestHandled",
     "onSelectBuffer",
+    "pathForBuffer",
   ]);
   const [shell, setShell] = createSignal<Shell>("desktop");
-  const [activeBufferId, setActiveBufferId] = createSignal<number>();
+  const [activeBufferId, setActiveBufferId] = createSignal(
+    props.activeBufferId,
+  );
   const [pendingFocusRequest, setPendingFocusRequest] =
     createSignal<DesktopShellProps["focusRequest"]>();
   const [mobileInitialBufferId, setMobileInitialBufferId] =
@@ -36,6 +39,10 @@ export function ResponsiveShell(props: DesktopShellProps) {
   };
 
   createEffect(() => {
+    if (props.activeBufferId !== undefined)
+      setActiveBufferId(props.activeBufferId);
+  });
+  createEffect(() => {
     const request = props.focusRequest;
     if (request === undefined || request === observedFocusRequest) return;
     observedFocusRequest = request;
@@ -50,6 +57,10 @@ export function ResponsiveShell(props: DesktopShellProps) {
       props.buffers[0];
     if (preferred !== undefined) setActiveBufferId(preferred.id);
   });
+  const selectBuffer = (bufferId: number) => {
+    setActiveBufferId(bufferId);
+    props.onSelectBuffer?.(bufferId);
+  };
   onCleanup(() => stopObserving());
 
   return (
@@ -73,7 +84,8 @@ export function ResponsiveShell(props: DesktopShellProps) {
               current === request ? undefined : current,
             )
           }
-          onSelectBuffer={setActiveBufferId}
+          onSelectBuffer={selectBuffer}
+          pathForBuffer={props.pathForBuffer}
         />
       ) : (
         <DesktopShell
@@ -85,7 +97,8 @@ export function ResponsiveShell(props: DesktopShellProps) {
               current === request ? undefined : current,
             )
           }
-          onSelectBuffer={setActiveBufferId}
+          onSelectBuffer={selectBuffer}
+          pathForBuffer={props.pathForBuffer}
         />
       )}
     </div>

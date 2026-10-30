@@ -54,6 +54,9 @@ export interface DesktopShellProps {
   readonly showMemberModeSymbols?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
   readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
+  readonly pathForBuffer?:
+    | ((bufferId: number) => string | undefined)
+    | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
@@ -114,6 +117,9 @@ export function DesktopShell(props: DesktopShellProps) {
       if (deliberate) navigationCommitted = true;
       setLayout((current) => showInFocusedPane(current, bufferId));
       props.onSelectBuffer?.(bufferId);
+      const path = props.pathForBuffer?.(bufferId);
+      if (path !== undefined)
+        window.history.replaceState(window.history.state, "", path);
     }
   };
   const moveBuffer = (offset: -1 | 1) => {
