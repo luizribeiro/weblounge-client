@@ -340,6 +340,12 @@
             entry = "${pkgs.nodejs}/bin/node app/scripts/test-wait-policy.ts";
             files = "^app/(e2e/.*\\.tsx?|playwright\\.config\\.ts)$";
           };
+          platform-boundary-policy = {
+            enable = true;
+            entry = "${pkgs.nodejs}/bin/node app/scripts/platform-boundary-policy.ts";
+            files = "^app/src/.*\\.(css|tsx?)$";
+            pass_filenames = false;
+          };
           protocol-types = {
             enable = true;
             entry = "${
