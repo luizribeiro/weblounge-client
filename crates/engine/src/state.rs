@@ -786,7 +786,7 @@ impl NetworkModel {
             .into_iter()
             .flat_map(|buffer| buffer.timeline.iter().rev())
             .map(|record| record.projection.author.clone())
-            .filter(|nick| state.casemapping().fold(nick) != state.nick().as_ref())
+            .filter(|nick| !is_own_nick(state, nick))
             .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
             .filter(|value| seen.insert(state.casemapping().fold(value).into_owned()))
             .collect()
@@ -1307,7 +1307,11 @@ fn actor_mode_symbol(
 fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
     text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty())
-        .any(|word| state.casemapping().fold(word) == state.nick().as_ref())
+        .any(|word| is_own_nick(state, word))
+}
+
+pub(crate) fn is_own_nick(state: &papo::State, nick: &str) -> bool {
+    state.casemapping().fold(nick) == state.casemapping().fold(state.nick().as_ref())
 }
 
 fn compare_buffers(

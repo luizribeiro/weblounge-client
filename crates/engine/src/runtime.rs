@@ -11,7 +11,9 @@ use crate::{
     EngineRequestEnvelope, EngineToUi, MembershipKind, MessageId, NetworkConnectionState,
     NetworkId, OfflineReason,
     commands::{self, Command},
-    state::{HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget, time_millis},
+    state::{
+        HistoryFetch, NetworkModel, PendingSend, ReadAdvance, SendTarget, is_own_nick, time_millis,
+    },
 };
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
@@ -1505,7 +1507,7 @@ fn person_candidates(
     let mut seen = std::collections::HashSet::new();
     nicks
         .into_iter()
-        .filter(|nick| state.casemapping().fold(nick) != state.nick().as_ref())
+        .filter(|nick| !is_own_nick(state, nick))
         .filter(|nick| seen.insert(state.casemapping().fold(nick).into_owned()))
         .take(COMPLETION_LIMIT)
         .map(|nick| {
@@ -2388,7 +2390,8 @@ mod tests {
     use super::{
         AuthenticationKind, ConnectionAuthentication, ConnectionTransition, MemberViews,
         RunningNetwork, Runtime, RuntimeState, completion_context, drain_events, fetch_history,
-        fetch_latest, lock, next_connection_state, process_event, process_history, utf16_len,
+        fetch_latest, lock, next_connection_state, person_candidates, process_event,
+        process_history, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -3121,6 +3124,25 @@ mod tests {
             },
         });
         assert_eq!(command_candidate_names(&recent).get(7), Some(&"help"));
+    }
+
+    #[tokio::test]
+    async fn person_completion_excludes_an_uppercase_own_nick() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "Luiz"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":Luiz!u@host JOIN #new").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "Luiz".into(), 50);
+        let state = client.state();
+        model.sync_channels(&state);
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(known_channel(&client, "#new")))
+            .expect("joined buffer exists");
+
+        assert!(person_candidates(&model, buffer_id, "lu", &state).is_empty());
     }
 
     fn command_candidate_names(events: &[EngineToUi]) -> Vec<&str> {
