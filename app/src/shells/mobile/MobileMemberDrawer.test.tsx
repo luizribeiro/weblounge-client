@@ -22,11 +22,18 @@ it("renders a modal touch drawer with shared member contents", () => {
   fireEvent.click(
     screen.getAllByRole("button", { name: "Close member list" })[0] as Element,
   );
+  expect(close).not.toHaveBeenCalled();
+  fireEvent(
+    screen.getByRole("dialog", { name: "Members" }),
+    Object.assign(new Event("animationend", { bubbles: true }), {
+      animationName: "drawer-out-right",
+    }),
+  );
   expect(close).toHaveBeenCalledOnce();
 });
 
 it("closes on a deliberate or fast right swipe", () => {
-  expect(swipeClosesDrawer(99, 300, 0.2)).toBe(false);
-  expect(swipeClosesDrawer(100, 300, 0.2)).toBe(true);
+  expect(swipeClosesDrawer(119, 300, 0.2)).toBe(false);
+  expect(swipeClosesDrawer(120, 300, 0.2)).toBe(true);
   expect(swipeClosesDrawer(40, 300, 0.5)).toBe(true);
 });

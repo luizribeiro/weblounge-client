@@ -1,17 +1,29 @@
-import { type JSX, onMount } from "solid-js";
+import { createEffect, createSignal, type JSX, onMount } from "solid-js";
 import styles from "./OverlayDrawer.module.css";
 
 interface OverlayDrawerProps {
-  readonly children: JSX.Element;
+  readonly children: JSX.Element | ((requestClose: () => void) => JSX.Element);
   readonly closeLabel: string;
+  readonly closing?: boolean | undefined;
   readonly edge: "left" | "right";
   readonly label: string;
   readonly onClose: () => void;
+  readonly dragProgress?: number | undefined;
+  readonly dragReturning?: boolean | undefined;
+  readonly onDragReturnEnd?: (() => void) | undefined;
   readonly width: string;
 }
 
 export function OverlayDrawer(props: OverlayDrawerProps) {
   let drawer: HTMLDivElement | undefined;
+  const [phase, setPhase] = createSignal<"opening" | "open" | "closing">(
+    props.dragProgress === undefined ? "opening" : "open",
+  );
+  const requestClose = () => setPhase("closing");
+
+  createEffect(() => {
+    if (props.closing === true) requestClose();
+  });
 
   onMount(() => {
     queueMicrotask(() => focusable(drawer)[0]?.focus());
@@ -20,7 +32,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
   const keydown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      props.onClose();
+      requestClose();
       return;
     }
     if (event.key !== "Tab") return;
@@ -38,11 +50,22 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
   };
 
   return (
-    <div class={styles.overlay} data-overlay-drawer={props.edge}>
+    <div
+      class={styles.overlay}
+      data-drag-returning={props.dragReturning}
+      data-dragging={props.dragProgress === undefined ? undefined : "true"}
+      data-overlay-drawer={props.edge}
+      data-phase={phase()}
+      style={{
+        "--wl-overlay-drawer-progress": props.dragProgress,
+        "--wl-overlay-drawer-width": props.width,
+      }}
+    >
       <button
         aria-label={props.closeLabel}
         class={styles.backdrop}
-        onClick={props.onClose}
+        data-overlay-scrim="true"
+        onClick={requestClose}
         type="button"
       />
       <div
@@ -50,12 +73,29 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
         aria-modal="true"
         class={styles.drawer}
         data-edge={props.edge}
+        onAnimationEnd={(event) => {
+          if (event.target !== drawer) return;
+          if (
+            phase() === "closing" &&
+            event.animationName.includes("drawer-out-")
+          )
+            props.onClose();
+          else if (
+            phase() === "opening" &&
+            event.animationName.includes("drawer-in-")
+          )
+            setPhase("open");
+        }}
         onKeyDown={keydown}
+        onTransitionEnd={(event) => {
+          if (event.propertyName === "transform") props.onDragReturnEnd?.();
+        }}
         ref={drawer}
         role="dialog"
-        style={{ "--wl-overlay-drawer-width": props.width }}
       >
-        {props.children}
+        {typeof props.children === "function"
+          ? props.children(requestClose)
+          : props.children}
       </div>
     </div>
   );

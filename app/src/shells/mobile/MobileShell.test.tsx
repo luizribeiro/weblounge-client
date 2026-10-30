@@ -166,7 +166,19 @@ it("closes the member drawer before popping the chat", () => {
     0,
     "",
   );
+  history.replaceState({ webloungeMobileChat: true }, "", "/Local/room");
   window.dispatchEvent(new PopStateEvent("popstate"));
+  const membersDialog = screen.getByRole("dialog", { name: "Members" });
+  expect(membersDialog.closest("[data-overlay-drawer]")).toHaveAttribute(
+    "data-phase",
+    "closing",
+  );
+  fireEvent(
+    membersDialog,
+    Object.assign(new Event("animationend", { bubbles: true }), {
+      animationName: "drawer-out-right",
+    }),
+  );
   expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   expect(screen.getByRole("heading", { name: "#room" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));
@@ -219,6 +231,49 @@ it("clears an in-flight swipe when browser history or visibility wins", () => {
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
 });
 
+it("does not open members from a pan on a direct chat", () => {
+  history.replaceState(null, "", "/Local/mel");
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: true }) as MediaQueryList),
+  );
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={2}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
+  if (shell === null) throw new Error("mobile shell is missing");
+  vi.spyOn(shell, "getBoundingClientRect").mockReturnValue({
+    bottom: 800,
+    height: 800,
+    left: 0,
+    right: 400,
+    toJSON: () => ({}),
+    top: 0,
+    width: 400,
+    x: 0,
+    y: 0,
+  });
+
+  fireEvent.pointerDown(shell, { clientX: 250, clientY: 300, pointerId: 9 });
+  fireEvent.pointerMove(shell, { clientX: 50, clientY: 300, pointerId: 9 });
+  fireEvent.pointerUp(shell, { clientX: 50, clientY: 300, pointerId: 9 });
+
+  expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+});
+
 it("replaces chat and drawer state in touch WebKit browser tabs", () => {
   vi.stubGlobal(
     "matchMedia",
@@ -268,6 +323,12 @@ it("replaces chat and drawer state in touch WebKit browser tabs", () => {
       screen.getAllByRole("button", {
         name: "Close member list",
       })[0] as Element,
+    );
+    fireEvent(
+      screen.getByRole("dialog", { name: "Members" }),
+      Object.assign(new Event("animationend", { bubbles: true }), {
+        animationName: "drawer-out-right",
+      }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
 

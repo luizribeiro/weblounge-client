@@ -9,6 +9,7 @@ import {
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
+import { createHorizontalPan } from "../../ui/horizontal-pan";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
@@ -21,7 +22,6 @@ import {
   popChat,
   previousScreen,
   pushChat,
-  swipeBackCompletes,
 } from "./mobile-navigation";
 import { type MobileViewport, observeMobileViewport } from "./mobile-viewport";
 
@@ -71,20 +71,23 @@ export function MobileShell(props: MobileShellProps) {
   const [viewport, setViewport] = createSignal<MobileViewport>();
   const [drawerBufferId, setDrawerBufferId] = createSignal<number>();
   const [memberFilter, setMemberFilter] = createSignal("");
+  const [memberOpenProgress, setMemberOpenProgress] = createSignal<number>();
+  const [memberOpenReturning, setMemberOpenReturning] = createSignal(false);
+  const [drawerHistoryClosing, setDrawerHistoryClosing] = createSignal(false);
   const drawerBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
   );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
+  let memberOpenBufferId: number | undefined;
+  let memberOpenTarget: "closed" | "open" | undefined;
   let pendingDirect: { networkId: number; nick: string } | undefined;
+  let drawerCloseAwaitingHistory = false;
   let pendingHistoryPopInstant = false;
   let pushNextFocus = false;
   let suppressCompletedSwipeClick = false;
   let shellElement: HTMLElement | undefined;
   let chatsStable = true;
   let returnScrollTop = 0;
-  let gesture:
-    | { pointerId: number; startX: number; startedAt: number; width: number }
-    | undefined;
 
   const open = (
     bufferId: number,
@@ -127,15 +130,30 @@ export function MobileShell(props: MobileShellProps) {
       return next;
     });
   const resetSwipe = () => {
-    gesture = undefined;
+    swipeGesture.reset();
     setSwipeReturning(false);
     setSwipeProgress(undefined);
   };
+  const resetMemberOpen = () => {
+    memberOpenGesture.reset();
+    memberOpenBufferId = undefined;
+    memberOpenTarget = undefined;
+    setMemberOpenReturning(false);
+    setMemberOpenProgress(undefined);
+  };
   const resetMotion = () => {
     resetSwipe();
+    if (memberOpenTarget === "open") resetMemberOpen();
+    else if (memberOpenProgress() !== undefined) {
+      resetMemberOpen();
+      setDrawerBufferId(undefined);
+    }
     setStack(finishTransition);
   };
   const finishDrawerClose = () => {
+    resetMemberOpen();
+    drawerCloseAwaitingHistory = false;
+    setDrawerHistoryClosing(false);
     setDrawerBufferId(undefined);
     if (pendingDirect !== undefined) {
       pushNextFocus = true;
@@ -143,19 +161,28 @@ export function MobileShell(props: MobileShellProps) {
       pendingDirect = undefined;
     }
   };
+  const recordDrawerOpen = () => {
+    const state = mobileHistoryState(true, true);
+    if (historyPolicy === "stack") window.history.pushState(state, "");
+    else window.history.replaceState(state, "");
+  };
   const closeDrawer = () => {
     if (
       historyPolicy === "stack" &&
       window.history.state?.webloungeMobileDrawer === true
-    )
+    ) {
+      drawerCloseAwaitingHistory = true;
       window.history.back();
-    else {
+    } else {
       window.history.replaceState(mobileHistoryState(true, false), "");
       finishDrawerClose();
     }
   };
   const requestBack = (instant = false) => {
-    if (drawerBufferId() !== undefined) return closeDrawer();
+    if (drawerBufferId() !== undefined) {
+      setDrawerHistoryClosing(true);
+      return;
+    }
     if (
       historyPolicy === "stack" &&
       window.history.state?.webloungeMobileChat === true
@@ -169,9 +196,7 @@ export function MobileShell(props: MobileShellProps) {
   const openMembers = (bufferId: number) => {
     setMemberFilter("");
     setDrawerBufferId(bufferId);
-    const state = mobileHistoryState(true, true);
-    if (historyPolicy === "stack") window.history.pushState(state, "");
-    else window.history.replaceState(state, "");
+    recordDrawerOpen();
   };
 
   createEffect(() => {
@@ -196,34 +221,44 @@ export function MobileShell(props: MobileShellProps) {
     chatsStable = stable;
   });
 
-  const beginSwipe = (event: PointerEvent) => {
+  const beginPan = (event: PointerEvent) => {
     suppressCompletedSwipeClick = false;
     const target = event.target as Element;
+    const width =
+      event.currentTarget instanceof Element
+        ? event.currentTarget.getBoundingClientRect().width
+        : window.innerWidth;
     if (
-      event.clientX > 24 ||
-      stack().active.kind !== "chat" ||
+      event.clientX <= 24 &&
+      stack().active.kind === "chat" &&
+      stack().transition === undefined &&
+      target.closest(
+        "[data-selectable], input, textarea, [data-horizontal-scroll]",
+      ) === null
+    ) {
+      swipeGesture.begin(event, width);
+      return;
+    }
+    const active = stack().active;
+    const buffer =
+      active.kind === "chat"
+        ? props.buffers.find((candidate) => candidate.id === active.bufferId)
+        : undefined;
+    const selection = window.getSelection();
+    if (
+      event.clientX <= 24 ||
+      event.clientX >= width - 24 ||
+      buffer?.kind !== "channel" ||
+      drawerBufferId() !== undefined ||
       stack().transition !== undefined ||
+      (selection !== null && !selection.isCollapsed) ||
       target.closest(
         "[data-selectable], input, textarea, [data-horizontal-scroll]",
       ) !== null
     )
       return;
-    gesture = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startedAt: event.timeStamp,
-      width:
-        event.currentTarget instanceof Element
-          ? event.currentTarget.getBoundingClientRect().width
-          : window.innerWidth,
-    };
-    event.preventDefault();
-    setSwipeProgress(0);
-  };
-  const moveSwipe = (event: PointerEvent) => {
-    if (gesture?.pointerId !== event.pointerId) return;
-    const distance = Math.max(0, event.clientX - gesture.startX);
-    setSwipeProgress(Math.min(1, distance / gesture.width));
+    memberOpenBufferId = buffer.id;
+    memberOpenGesture.begin(event, width);
   };
   const returnSwipe = () => {
     if (platform.prefersReducedMotion() || swipeProgress() === 0) {
@@ -233,29 +268,69 @@ export function MobileShell(props: MobileShellProps) {
     setSwipeReturning(true);
     setSwipeProgress(0);
   };
-  const endSwipe = (event: PointerEvent) => {
-    if (gesture?.pointerId !== event.pointerId) return;
-    const distance = Math.max(0, event.clientX - gesture.startX);
-    const velocity =
-      distance / Math.max(1, event.timeStamp - gesture.startedAt);
-    const completes = swipeBackCompletes(distance, gesture.width, velocity);
-    gesture = undefined;
-    if (completes) {
+  const swipeGesture = createHorizontalPan({
+    commitRatio: 0.5,
+    commitVelocity: 0.5,
+    direction: "right",
+    preventDefaultOnStart: true,
+    onCancel: returnSwipe,
+    onCommit: () => {
       suppressCompletedSwipeClick = true;
       setSwipeProgress(undefined);
       requestBack(true);
-    } else returnSwipe();
+    },
+    onProgress: setSwipeProgress,
+  });
+  const cancelMemberOpen = () => {
+    memberOpenBufferId = undefined;
+    const progress = memberOpenProgress();
+    if (progress === undefined) return;
+    if (platform.prefersReducedMotion() || progress === 1) {
+      resetMemberOpen();
+      setDrawerBufferId(undefined);
+      return;
+    }
+    memberOpenTarget = "closed";
+    setMemberOpenReturning(true);
+    setMemberOpenProgress(1);
+  };
+  const memberOpenGesture = createHorizontalPan({
+    commitRatio: 0.4,
+    commitVelocity: 0.5,
+    direction: "left",
+    onCancel: cancelMemberOpen,
+    onCommit: () => {
+      suppressCompletedSwipeClick = true;
+      memberOpenBufferId = undefined;
+      memberOpenTarget = "open";
+      recordDrawerOpen();
+      if (platform.prefersReducedMotion()) {
+        resetMemberOpen();
+        return;
+      }
+      setMemberOpenReturning(true);
+      setMemberOpenProgress(0);
+    },
+    onProgress: (progress) => {
+      if (progress === 0 && memberOpenProgress() === undefined) return;
+      if (drawerBufferId() === undefined) {
+        setMemberFilter("");
+        setDrawerBufferId(memberOpenBufferId);
+      }
+      setMemberOpenReturning(false);
+      setMemberOpenProgress(1 - progress);
+    },
+  });
+  const finishMemberOpenReturn = () => {
+    const target = memberOpenTarget;
+    resetMemberOpen();
+    if (target === "closed") setDrawerBufferId(undefined);
   };
   const consumeCompletedSwipeClick = (event: MouseEvent) => {
     if (!suppressCompletedSwipeClick) return;
     suppressCompletedSwipeClick = false;
     event.preventDefault();
     event.stopImmediatePropagation();
-  };
-  const cancelSwipe = (event: PointerEvent) => {
-    if (gesture?.pointerId !== event.pointerId) return;
-    gesture = undefined;
-    returnSwipe();
   };
   const screens = () =>
     retainChatsScreen(
@@ -283,13 +358,14 @@ export function MobileShell(props: MobileShellProps) {
       }
       const browserHandledSwipe =
         pendingHistoryPopInstant ||
-        gesture !== undefined ||
+        swipeGesture.active() ||
         swipeProgress() !== undefined;
       pendingHistoryPopInstant = false;
       resetSwipe();
       if (drawerBufferId() === undefined)
         dispatchBack(browserHandledSwipe || reducedMotion());
-      else finishDrawerClose();
+      else if (drawerCloseAwaitingHistory) finishDrawerClose();
+      else setDrawerHistoryClosing(true);
     };
     const handleVisibilityChange = () => resetMotion();
     window.addEventListener("popstate", handlePopState);
@@ -319,10 +395,19 @@ export function MobileShell(props: MobileShellProps) {
       class={styles.shell}
       data-history-policy={historyPolicy}
       data-mobile-shell="true"
-      onPointerCancel={cancelSwipe}
-      onPointerDown={beginSwipe}
-      onPointerMove={moveSwipe}
-      onPointerUp={endSwipe}
+      onPointerCancel={(event) => {
+        swipeGesture.cancel(event);
+        memberOpenGesture.cancel(event);
+      }}
+      onPointerDown={beginPan}
+      onPointerMove={(event) => {
+        swipeGesture.move(event);
+        memberOpenGesture.move(event);
+      }}
+      onPointerUp={(event) => {
+        swipeGesture.end(event);
+        memberOpenGesture.end(event);
+      }}
       ref={shellElement}
       style={{
         "--wl-visual-height":
@@ -398,6 +483,7 @@ export function MobileShell(props: MobileShellProps) {
       {drawerBuffer() !== undefined && (
         <MobileMemberDrawer
           bufferTitle={drawerBuffer()?.title ?? ""}
+          closing={drawerHistoryClosing() || undefined}
           filter={memberFilter()}
           onClose={closeDrawer}
           onFilter={(filter) => {
@@ -408,8 +494,8 @@ export function MobileShell(props: MobileShellProps) {
               networkId: drawerBuffer()?.network_id ?? 0,
               nick,
             };
-            closeDrawer();
           }}
+          onOpenReturnEnd={finishMemberOpenReturn}
           onRequestRange={(offset) =>
             props.onRequestMembers?.(
               memberViewId,
@@ -418,6 +504,8 @@ export function MobileShell(props: MobileShellProps) {
               memberFilter(),
             )
           }
+          openProgress={memberOpenProgress()}
+          openReturning={memberOpenReturning() || undefined}
           window={props.memberWindows?.get(memberViewId)}
         />
       )}

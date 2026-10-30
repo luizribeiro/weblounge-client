@@ -93,6 +93,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep production consoles clean through desktop and mobile load, navigation, scrolling,
     sending, and member-list flows in Chromium, Firefox, and WebKit. Wasm initializes through
     the object API, and virtualizer offset and resize delivery avoid browser diagnostics.
+  - [x] Share axis-locked pan handling between mobile Back and the drag-to-close members drawer.
+  - [x] Animate overlay drawers, scrims, and shadows as one progress-linked entrance and exit.
+  - [x] Open channel members with a protected mid-screen pan while keeping browser-edge and history gestures platform-owned.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).

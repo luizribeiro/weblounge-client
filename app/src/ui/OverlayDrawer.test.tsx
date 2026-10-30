@@ -26,6 +26,13 @@ it("traps focus and closes a mirrored drawer with Escape", async () => {
   fireEvent.keyDown(dialog, { key: "Tab" });
   expect(first).toHaveFocus();
   fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(close).not.toHaveBeenCalled();
+  fireEvent(
+    dialog,
+    Object.assign(new Event("animationend", { bubbles: true }), {
+      animationName: "drawer-out-left",
+    }),
+  );
   expect(close).toHaveBeenCalledOnce();
   expect(
     view.container.querySelector('[data-overlay-drawer="left"]'),
