@@ -1,6 +1,4 @@
 .shell {
-  --wl-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --wl-safe-top: env(safe-area-inset-top, 0px);
   background: var(--wl-color-surface);
   height: var(--wl-visual-height, 100%);
   overflow: hidden;
@@ -13,7 +11,8 @@
   background: var(--wl-color-surface);
   display: flex;
   flex-direction: column;
-  inset: var(--wl-safe-top) 0 var(--wl-safe-bottom);
+  inset: var(--wl-safe-top) var(--wl-safe-right) var(--wl-safe-bottom)
+    var(--wl-safe-left);
   min-height: 0;
   position: absolute;
   will-change: transform, opacity;

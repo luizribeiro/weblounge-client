@@ -18,7 +18,7 @@
   box-shadow: var(--wl-effect-overlay-shadow);
   max-width: 82%;
   position: absolute;
-  right: 0;
+  right: var(--wl-safe-right);
   top: 0;
   touch-action: pan-y;
   width: 300px;
@@ -29,13 +29,13 @@
   --wl-density-sidebar-font-size: 15px;
   background: var(--wl-color-surface);
   height: 100%;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--wl-safe-bottom);
   width: 100%;
 }
 
 .drawer > aside > header {
-  flex-basis: calc(58px + env(safe-area-inset-top, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
+  flex-basis: calc(58px + var(--wl-safe-top));
+  padding-top: var(--wl-safe-top);
 }
 
 .drawer > aside > header button {
