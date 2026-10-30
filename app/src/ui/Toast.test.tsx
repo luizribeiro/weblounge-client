@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
-import { Toast, type ToastNotice } from "./Toast";
+import { createNotifier, type ToastNotice } from "./notices";
+import { Toast } from "./Toast";
 
 afterEach(() => vi.useRealTimers());
 
@@ -10,11 +11,18 @@ it("dismisses the latest notice after six seconds", async () => {
   const dismiss = vi.fn();
   const [notice, setNotice] = createSignal<ToastNotice>({
     id: "first",
-    message: "First",
+    message: { key: "engine.connection_failed" },
+    tone: "error",
   });
-  render(() => <Toast notice={notice()} onDismiss={dismiss} />);
+  render(() => (
+    <Toast notice={notice()} onAction={vi.fn()} onDismiss={dismiss} />
+  ));
   await vi.advanceTimersByTimeAsync(4_000);
-  setNotice({ id: "second", message: "Second" });
+  setNotice({
+    id: "second",
+    message: { key: "engine.state_inconsistent" },
+    tone: "neutral",
+  });
   await vi.advanceTimersByTimeAsync(5_999);
   expect(dismiss).not.toHaveBeenCalled();
 
@@ -29,9 +37,14 @@ it("pauses dismissal while hovered or focused", async () => {
     <Toast
       notice={{
         id: "failure",
-        message: "Not delivered",
-        action: { label: "Open", run: () => {} },
+        message: {
+          key: "notice.message_not_delivered",
+          values: { target: "ana" },
+        },
+        tone: "error",
+        action: { label: "action.open", run: "buffer.open" },
       }}
+      onAction={vi.fn()}
       onDismiss={dismiss}
     />
   ));
@@ -51,21 +64,45 @@ it("pauses dismissal while hovered or focused", async () => {
   expect(dismiss).toHaveBeenCalledWith("failure");
 });
 
-it("runs an action once and dismisses the notice", () => {
-  const run = vi.fn();
+it("dispatches an action id once and dismisses the notice", () => {
+  const onAction = vi.fn();
   const dismiss = vi.fn();
   render(() => (
     <Toast
       notice={{
         id: "failure",
-        message: "Not delivered",
-        action: { label: "Open", run },
+        message: {
+          key: "notice.message_not_delivered",
+          values: { target: "ana" },
+        },
+        tone: "error",
+        action: { label: "action.open", run: "buffer.open" },
       }}
+      onAction={onAction}
       onDismiss={dismiss}
     />
   ));
 
   fireEvent.click(screen.getByRole("button", { name: "Open" }));
-  expect(run).toHaveBeenCalledOnce();
+  expect(onAction).toHaveBeenCalledOnce();
+  expect(onAction).toHaveBeenCalledWith("buffer.open");
   expect(dismiss).toHaveBeenCalledWith("failure");
+});
+
+it("replaces the visible notice through the typed notifier", () => {
+  vi.stubGlobal("crypto", { randomUUID: vi.fn(() => "notice-id") });
+  const notifier = createNotifier();
+  notifier.notify({
+    message: { key: "engine.connection_failed" },
+    tone: "error",
+  });
+
+  expect(notifier.notice()).toEqual({
+    id: "notice-id",
+    message: { key: "engine.connection_failed" },
+    tone: "error",
+  });
+  notifier.dismiss("notice-id");
+  expect(notifier.notice()).toBeUndefined();
+  vi.unstubAllGlobals();
 });

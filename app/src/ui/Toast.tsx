@@ -1,16 +1,12 @@
 import { createEffect, onCleanup } from "solid-js";
+import type { ActionId } from "../actions/action-registry";
+import { t } from "../features/composer/strings";
+import type { ToastNotice } from "./notices";
 import styles from "./Toast.module.css";
-
-export interface ToastNotice {
-  readonly id: string;
-  readonly message: string;
-  readonly action?:
-    | { readonly label: string; readonly run: () => void }
-    | undefined;
-}
 
 interface ToastProps {
   readonly notice: ToastNotice;
+  readonly onAction: (id: ActionId) => void;
   readonly onDismiss: (id: string) => void;
 }
 
@@ -51,6 +47,7 @@ export function Toast(props: ToastProps) {
       <div
         class={styles.toast}
         data-toast="true"
+        data-tone={props.notice.tone}
         onFocusIn={pause}
         onFocusOut={(event) => {
           if (!surface?.contains(event.relatedTarget as Node | null)) resume();
@@ -60,17 +57,18 @@ export function Toast(props: ToastProps) {
         ref={surface}
         role="status"
       >
-        <span>{props.notice.message}</span>
+        <span>{t(props.notice.message.key, props.notice.message.values)}</span>
         {props.notice.action !== undefined && (
           <button
             class={styles.action}
             onClick={() => {
-              props.notice.action?.run();
+              const action = props.notice.action;
+              if (action !== undefined) props.onAction(action.run);
               props.onDismiss(props.notice.id);
             }}
             type="button"
           >
-            {props.notice.action.label}
+            {t(props.notice.action.label)}
           </button>
         )}
       </div>
