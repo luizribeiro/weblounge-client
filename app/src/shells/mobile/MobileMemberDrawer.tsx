@@ -9,11 +9,15 @@ import styles from "./MobileMemberDrawer.module.css";
 
 interface MobileMemberDrawerProps {
   readonly bufferTitle: string;
+  readonly closing?: boolean | undefined;
   readonly filter: string;
   readonly window: MemberWindow | undefined;
   readonly onClose: () => void;
   readonly onFilter: (filter: string) => void;
   readonly onOpenDirect: (nick: string) => void;
+  readonly openProgress?: number | undefined;
+  readonly openReturning?: boolean | undefined;
+  readonly onOpenReturnEnd?: (() => void) | undefined;
   readonly onRequestRange: (offset: number) => void;
 }
 
@@ -21,6 +25,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
   let requestClose = props.onClose;
   const [dragProgress, setDragProgress] = createSignal<number>();
   const [dragReturning, setDragReturning] = createSignal(false);
+  const activeProgress = () => props.openProgress ?? dragProgress();
   const returnDrawer = () => {
     if ((dragProgress() ?? 0) === 0) {
       setDragProgress(undefined);
@@ -52,12 +57,17 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
   return (
     <OverlayDrawer
       closeLabel="Close member list"
-      dragProgress={dragProgress()}
-      dragReturning={dragReturning() || undefined}
+      closing={props.closing}
+      dragProgress={activeProgress()}
+      dragReturning={props.openReturning || dragReturning() || undefined}
       edge="right"
       label="Members"
       onClose={props.onClose}
       onDragReturnEnd={() => {
+        if (props.openProgress !== undefined) {
+          props.onOpenReturnEnd?.();
+          return;
+        }
         setDragProgress(undefined);
         setDragReturning(false);
       }}

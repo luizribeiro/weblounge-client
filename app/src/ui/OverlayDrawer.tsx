@@ -1,9 +1,10 @@
-import { createSignal, type JSX, onMount } from "solid-js";
+import { createEffect, createSignal, type JSX, onMount } from "solid-js";
 import styles from "./OverlayDrawer.module.css";
 
 interface OverlayDrawerProps {
   readonly children: JSX.Element | ((requestClose: () => void) => JSX.Element);
   readonly closeLabel: string;
+  readonly closing?: boolean | undefined;
   readonly edge: "left" | "right";
   readonly label: string;
   readonly onClose: () => void;
@@ -16,9 +17,13 @@ interface OverlayDrawerProps {
 export function OverlayDrawer(props: OverlayDrawerProps) {
   let drawer: HTMLDivElement | undefined;
   const [phase, setPhase] = createSignal<"opening" | "open" | "closing">(
-    "opening",
+    props.dragProgress === undefined ? "opening" : "open",
   );
   const requestClose = () => setPhase("closing");
+
+  createEffect(() => {
+    if (props.closing === true) requestClose();
+  });
 
   onMount(() => {
     queueMicrotask(() => focusable(drawer)[0]?.focus());
