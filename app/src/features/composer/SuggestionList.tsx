@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { createMemo, For } from "solid-js";
 import type { CompletionCandidate } from "../../engine/protocol";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import { Line } from "../../ui/Line";
@@ -17,6 +17,9 @@ interface SuggestionListProps {
 }
 
 export function SuggestionList(props: SuggestionListProps) {
+  const candidateIds = createMemo(() => props.candidates.map(candidateId));
+  const candidateById = (id: string) =>
+    props.candidates.find((candidate) => candidateId(candidate) === id);
   return (
     <div
       class={styles.popup}
@@ -25,47 +28,66 @@ export function SuggestionList(props: SuggestionListProps) {
     >
       {props.hint !== null && <Line class={styles.hint}>{t(props.hint)}</Line>}
       <div class={styles.candidates} id={props.listId} role="listbox">
-        <For each={props.candidates}>
-          {(candidate, index) => (
-            <div
-              aria-selected={index() === props.selected}
-              class={styles.candidate}
-              data-selected={index() === props.selected}
-              id={props.optionId(index())}
-              onClick={() => props.onAccept(index())}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  props.onAccept(index());
-                }
-              }}
-              onMouseEnter={() => props.onSelect(index())}
-              onPointerDown={(event) => event.preventDefault()}
-              role="option"
-              tabIndex={-1}
-            >
-              <Line class={styles.primary}>
-                <span style={candidateStyle(candidate)}>
-                  {candidateLabel(candidate)}
-                </span>
-                {candidate.type === "person" && candidate.bot && (
-                  <span class={styles.bot}>BOT</span>
-                )}
-              </Line>
-              {candidateDetail(candidate) !== null && (
-                <Line class={styles.secondary}>
-                  {candidateDetail(candidate)}
+        <For each={candidateIds()}>
+          {(id, index) => {
+            const candidate = () => candidateById(id);
+            return (
+              <div
+                aria-selected={index() === props.selected}
+                class={styles.candidate}
+                data-selected={index() === props.selected}
+                id={props.optionId(index())}
+                onClick={() => props.onAccept(index())}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    props.onAccept(index());
+                  }
+                }}
+                onMouseEnter={() => props.onSelect(index())}
+                onPointerDown={(event) => event.preventDefault()}
+                role="option"
+                tabIndex={-1}
+              >
+                <Line class={styles.primary}>
+                  <span style={candidateStyle(candidate())}>
+                    {candidateLabel(candidate())}
+                  </span>
+                  {candidateIsBot(candidate()) && (
+                    <span class={styles.bot}>BOT</span>
+                  )}
                 </Line>
-              )}
-            </div>
-          )}
+                {candidateDetail(candidate()) !== null && (
+                  <Line class={styles.secondary}>
+                    {candidateDetail(candidate())}
+                  </Line>
+                )}
+              </div>
+            );
+          }}
         </For>
       </div>
     </div>
   );
 }
 
-function candidateLabel(candidate: CompletionCandidate): string {
+function candidateIsBot(candidate: CompletionCandidate | undefined): boolean {
+  return candidate?.type === "person" && candidate.bot;
+}
+
+function candidateId(candidate: CompletionCandidate): string {
+  switch (candidate.type) {
+    case "command":
+      return `command:${candidate.name}`;
+    case "person":
+      return `person:${candidate.nick}`;
+    case "channel":
+      return `channel:${candidate.name}`;
+  }
+}
+
+function candidateLabel(candidate: CompletionCandidate | undefined): string {
+  if (candidate === undefined) return "";
   switch (candidate.type) {
     case "command":
       return `/${candidate.name}`;
@@ -76,7 +98,10 @@ function candidateLabel(candidate: CompletionCandidate): string {
   }
 }
 
-function candidateDetail(candidate: CompletionCandidate): string | null {
+function candidateDetail(
+  candidate: CompletionCandidate | undefined,
+): string | null {
+  if (candidate === undefined) return null;
   switch (candidate.type) {
     case "command": {
       const invocation = `/${candidate.name}`;
@@ -95,8 +120,8 @@ function candidateDetail(candidate: CompletionCandidate): string | null {
   }
 }
 
-function candidateStyle(candidate: CompletionCandidate) {
-  return candidate.type === "person"
+function candidateStyle(candidate: CompletionCandidate | undefined) {
+  return candidate?.type === "person"
     ? {
         color: `var(--wl-nick-${candidate.nick_color_index % nickPaletteSize})`,
         opacity: candidate.away ? 0.62 : 1,

@@ -179,7 +179,13 @@ export function App(props: AppProps) {
       }
       if (message.type === "completion_result") {
         if (message.command_id === latestCompletionRequest) {
-          setCompletion(message);
+          const delay = completionDelay();
+          if (delay === 0) setCompletion(message);
+          else
+            window.setTimeout(() => {
+              if (message.command_id === latestCompletionRequest)
+                setCompletion(message);
+            }, delay);
         }
       }
       if (message.type === "focus_buffer_requested") {
@@ -429,17 +435,7 @@ export function App(props: AppProps) {
                   explicit,
                 },
               })
-              .then(() => {
-                if (
-                  latestCompletionRequest === id &&
-                  completion()?.command_id !== id
-                ) {
-                  setCompletion(undefined);
-                }
-              })
-              .catch(() => {
-                if (latestCompletionRequest === id) setCompletion(undefined);
-              });
+              .catch(() => undefined);
           }}
           onRequestMembers={(viewId, bufferId, offset, filter = "") => {
             if (client === undefined) return;
@@ -505,6 +501,16 @@ export function App(props: AppProps) {
       ...(values?.target === undefined ? {} : { targetNick: values.target }),
     });
   }
+}
+
+function completionDelay(): number {
+  if (__DEBUG_IRC_CONFIG__ === null) return 0;
+  const value = new URL(window.location.href).searchParams.get(
+    "completion-delay",
+  );
+  if (value === null) return 0;
+  const delay = Number.parseInt(value, 10);
+  return Number.isFinite(delay) ? Math.max(0, Math.min(delay, 1_000)) : 0;
 }
 
 function noticeAction(

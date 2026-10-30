@@ -273,9 +273,11 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     trigger: "command",
   });
   expect(screen.getAllByRole("option")).toHaveLength(2);
+  const joinRow = screen.getByRole("option", { name: /\/join/u });
 
   fireEvent.input(input, { target: { value: "/j" } });
-  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
   expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
     "data-completion-input",
     "/",
@@ -287,6 +289,7 @@ it("keeps previous suggestions visible while the next result is pending", () => 
     trigger: "command",
   });
   expect(screen.getAllByRole("option")).toHaveLength(1);
+  expect(screen.getByRole("option", { name: /\/join/u })).toBe(joinRow);
   expect(screen.getByRole("listbox").parentElement).toHaveAttribute(
     "data-completion-input",
     "/j",

@@ -48,11 +48,19 @@ export function Composer(props: ComposerProps) {
   const optionId = (index: number) => `${listId()}-${index}`;
   const suggestions = createMemo(() => {
     const result = props.completion;
-    return result?.buffer_id === props.bufferId &&
-      text() !== dismissedInput() &&
-      result.candidates.length > 0
-      ? result
-      : undefined;
+    if (
+      result?.buffer_id !== props.bufferId ||
+      text() === dismissedInput() ||
+      result.candidates.length === 0
+    )
+      return undefined;
+    const input = text();
+    if (!input.startsWith(result.input)) return undefined;
+    const query = input.slice(result.replace_start, completionCursor());
+    const candidates = result.candidates.filter((candidate) =>
+      candidateMatches(candidate, query),
+    );
+    return candidates.length > 0 ? { ...result, candidates } : result;
   });
   const confirmationText = () => {
     const command = pendingConfirmation();
@@ -308,6 +316,25 @@ export function Composer(props: ComposerProps) {
       </p>
     </div>
   );
+}
+
+function candidateMatches(
+  candidate: CompletionCandidate,
+  query: string,
+): boolean {
+  const normalized = query.toLocaleLowerCase();
+  switch (candidate.type) {
+    case "command":
+      return `/${candidate.name.toLocaleLowerCase()}`.startsWith(normalized);
+    case "person":
+      return candidate.nick
+        .toLocaleLowerCase()
+        .startsWith(
+          normalized.startsWith("@") ? normalized.slice(1) : normalized,
+        );
+    case "channel":
+      return candidate.name.toLocaleLowerCase().startsWith(normalized);
+  }
 }
 
 export function replacementFor(
