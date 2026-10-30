@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { BufferProjection, NetworkProjection } from "../engine/protocol";
-import { bufferPath, parseBufferRoute } from "./buffer-route";
+import {
+  bufferPath,
+  parseBufferRoute,
+  resolveBufferRoute,
+} from "./buffer-route";
 
 const network: NetworkProjection = {
   id: 1,
@@ -43,6 +47,30 @@ describe("buffer routes", () => {
     "rejects the invalid route %s",
     (path) => expect(parseBufferRoute(path)).toBeUndefined(),
   );
+
+  it("resolves names with the buffer's IRC casemapping", () => {
+    const route = parseBufferRoute("/web%20lounge/ROOM%5B");
+    const room = {
+      ...buffer("channel", "#room{"),
+      draft_key: "10:web lounge:rfc1459:#room{",
+    };
+
+    expect(
+      route === undefined
+        ? undefined
+        : resolveBufferRoute(route, [network], [room]),
+    ).toEqual({ kind: "buffer", bufferId: room.id });
+  });
+
+  it("keeps an unknown channel inert until Join is chosen", () => {
+    const route = parseBufferRoute("/web%20lounge/new-room");
+
+    expect(
+      route === undefined
+        ? undefined
+        : resolveBufferRoute(route, [network], []),
+    ).toEqual({ kind: "not_joined", networkId: 1, channel: "#new-room" });
+  });
 });
 
 function buffer(
