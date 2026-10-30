@@ -71,9 +71,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     tokens cover iPhone portrait/landscape and Android gesture navigation, with a repository policy,
     native-feel geometry audit, and light/dark reference captures.
   - [x] Close engine bugs found in the papo API review: DM buffers own and release their MONITOR
-    leases without history or channel traffic consuming slots; a full MONITOR list degrades only
-    presence while direct sends continue; own-nick completion uses IRC casemapping; and historical
-    rows never inherit an actor's current channel prefix.
+    leases without history or channel traffic consuming slots; a full MONITOR list keeps the DM
+    readable but disables unverified sends with a human reason; own-nick completion uses IRC
+    casemapping; and historical rows never inherit an actor's current channel prefix.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
@@ -86,6 +86,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 ## External dependencies
 
 - **papo:** papo 0.1 pinned at `949bd5d`. Guarded directs, split-send reconciliation, exact multiline concatenation, server name rules, lag diagnostics, and channel-recreation warnings are integrated.
+  - Follow-up: adopt papo's planned `watch()` / free `direct()` operation with a per-send proof
+    round trip so a full MONITOR list can still send without bypassing guarded-recipient safety.
   - Question for Luiz: the production-profile Ergo test shows papo dropping replayed
     `draft/multiline-concat` continuation segments and the opening batch's `server-time` when the
     multiline batch is nested in a `CHATHISTORY` batch. The server sends and stores every segment

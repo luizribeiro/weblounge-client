@@ -25,9 +25,15 @@ describe("composer strings", () => {
     expect(t("engine.direct_target_gone")).toContain("nickname now belongs");
   });
 
-  it("explains that a full presence list does not block direct messages", () => {
+  it("explains degraded direct presence", () => {
     expect(t("engine.direct_presence_unavailable")).toContain(
-      "Private messages still work",
+      "Presence updates are unavailable",
+    );
+  });
+
+  it("explains why an unverified direct message is disabled", () => {
+    expect(t("engine.direct_monitor_full")).toContain(
+      "Close one to message them",
     );
   });
 

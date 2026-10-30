@@ -666,7 +666,7 @@ impl Runtime {
             crate::MessageKind::Notice => None,
         };
         let Some((pending, mut output)) = pending else {
-            return rejected_command(command_id, "engine.buffer_not_sendable");
+            return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
         };
         running.pending_sends.push_back(pending);
         let should_flush = running.model.is_online() && !running.flushing_sends;
@@ -871,7 +871,7 @@ impl Runtime {
                     }
                 },
             };
-            let (pending, output) = {
+            let (pending, rejection, output) = {
                 let mut state = lock(&state);
                 let Some(running) = state
                     .network
@@ -892,15 +892,20 @@ impl Runtime {
                         buffer_id,
                     });
                 }
+                let mut rejection = None;
                 let pending = text.and_then(|text| {
-                    let (pending, events) =
+                    let Some((pending, events)) =
                         running
                             .model
-                            .begin_send(buffer_id, text, &running.client.state())?;
+                            .begin_send(buffer_id, text, &running.client.state())
+                    else {
+                        rejection = Some(running.model.send_rejection_key(buffer_id));
+                        return None;
+                    };
                     output.extend(events);
                     Some(pending)
                 });
-                (pending, output)
+                (pending, rejection, output)
             };
             for event in output {
                 let _ = outbound.send(event);
@@ -908,7 +913,7 @@ impl Runtime {
             if let Some(pending) = pending {
                 finish_send(&state, &outbound, &client, instance, &pending).await;
             }
-            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+            let _ = outbound.send(terminal_command(command_id, rejection));
         });
     }
 
@@ -1275,31 +1280,6 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
     }
 }
 
-enum SendDelivery {
-    Typed(papo::Sent),
-    Unguarded,
-}
-
-async fn deliver(client: &papo::Client, pending: &PendingSend) -> Result<SendDelivery, SendError> {
-    let SendTarget::Direct {
-        nick,
-        recipient: None,
-    } = &pending.target
-    else {
-        return send(client, pending).await.map(SendDelivery::Typed);
-    };
-    let text = if pending.kind == crate::MessageKind::Action {
-        format!("\u{1}ACTION {}\u{1}", pending.text)
-    } else {
-        pending.text.clone()
-    };
-    client
-        .send_raw(papo::Line::new("PRIVMSG").with_params([nick.to_string(), text]))
-        .await
-        .map(|()| SendDelivery::Unguarded)
-        .map_err(|error| classify_send_error(&error))
-}
-
 fn classify_send_error(error: &papo::Error) -> SendError {
     match error {
         papo::Error::Disconnected(_) => SendError::Offline,
@@ -1345,7 +1325,7 @@ async fn flush_pending_sends(
             };
             pending
         };
-        let result = deliver(client, &pending).await;
+        let result = send(client, &pending).await;
         let events = {
             let mut state = lock(state);
             let Some(running) = state
@@ -1356,12 +1336,7 @@ async fn flush_pending_sends(
                 return;
             };
             match result {
-                Ok(SendDelivery::Typed(sent)) => {
-                    running.model.confirm_send(&pending, &sent, &client.state())
-                }
-                Ok(SendDelivery::Unguarded) => running
-                    .model
-                    .confirm_unguarded_send(&pending, &client.state()),
+                Ok(sent) => running.model.confirm_send(&pending, &sent, &client.state()),
                 Err(SendError::Offline) => {
                     running.pending_sends.push_front(pending);
                     running.flushing_sends = false;
@@ -1383,7 +1358,7 @@ async fn finish_send(
     instance: u64,
     pending: &PendingSend,
 ) {
-    let result = deliver(client, pending).await;
+    let result = send(client, pending).await;
     let events = {
         let mut state = lock(state);
         let Some(running) = state
@@ -1394,12 +1369,7 @@ async fn finish_send(
             return;
         };
         match result {
-            Ok(SendDelivery::Typed(sent)) => {
-                running.model.confirm_send(pending, &sent, &client.state())
-            }
-            Ok(SendDelivery::Unguarded) => running
-                .model
-                .confirm_unguarded_send(pending, &client.state()),
+            Ok(sent) => running.model.confirm_send(pending, &sent, &client.state()),
             Err(error) => Some(vec![running.model.fail_send(pending, error.message_key())]),
         }
     };
@@ -2431,6 +2401,16 @@ fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
     }]
 }
 
+fn terminal_command(command_id: String, rejection: Option<&'static str>) -> EngineToUi {
+    match rejection {
+        Some(message_key) => EngineToUi::CommandRejected {
+            id: command_id,
+            message_key: message_key.into(),
+        },
+        None => EngineToUi::CommandResult { id: command_id },
+    }
+}
+
 fn join_error_key(error: &papo::Error) -> &'static str {
     if matches!(
         error,
@@ -3064,7 +3044,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_full_monitor_list_still_opens_and_sends_a_direct_message() {
+    async fn a_full_monitor_list_opens_the_direct_but_disables_sending() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[]).await;
@@ -3095,8 +3075,13 @@ mod tests {
                 })
                 .is_empty()
         );
-        assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
-        let output = collect(&mut receiver);
+        let mut output = Vec::new();
+        while !output
+            .iter()
+            .any(|event| matches!(event, EngineToUi::CommandRejected { .. }))
+        {
+            output.push(receiver.recv().await.expect("direct output"));
+        }
         assert!(output.iter().any(|event| matches!(
             event,
             EngineToUi::Notice { message_key }
@@ -3108,6 +3093,11 @@ mod tests {
                 .any(|event| matches!(event, EngineToUi::BufferAdded { buffer }
                 if buffer.kind == BufferKind::Direct && buffer.title == "alice"))
         );
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::CommandRejected { message_key, .. }
+                if message_key == "engine.direct_monitor_full"
+        )));
     }
 
     #[tokio::test]

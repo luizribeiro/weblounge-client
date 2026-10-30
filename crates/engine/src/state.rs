@@ -477,6 +477,16 @@ impl NetworkModel {
         let buffer = self.buffers.get(&buffer_id)?;
         let key = buffer.key.clone()?;
         let direct = buffer.direct.clone();
+        let target = SendTarget::from_buffer(key.clone(), direct.as_ref())?;
+        if matches!(
+            &target,
+            SendTarget::Direct {
+                recipient: None,
+                ..
+            }
+        ) {
+            return None;
+        }
         let local_send_id = LocalSendId(self.next_local_send_id);
         self.next_local_send_id += 1;
         let message = MessageProjection {
@@ -498,7 +508,6 @@ impl NetworkModel {
         let order_changed = self
             .insert(buffer_id, message.clone(), DedupReferences::default())
             .ok()?;
-        let target = SendTarget::from_buffer(key, direct.as_ref())?;
         let mut events = vec![
             EngineToUi::MessagesAppended {
                 buffer_id,
@@ -575,23 +584,6 @@ impl NetworkModel {
         sent: &papo::Sent,
         state: &papo::State,
     ) -> Option<Vec<EngineToUi>> {
-        self.confirm_send_with_metadata(pending, Some(sent), state)
-    }
-
-    pub(crate) fn confirm_unguarded_send(
-        &mut self,
-        pending: &PendingSend,
-        state: &papo::State,
-    ) -> Option<Vec<EngineToUi>> {
-        self.confirm_send_with_metadata(pending, None, state)
-    }
-
-    fn confirm_send_with_metadata(
-        &mut self,
-        pending: &PendingSend,
-        sent: Option<&papo::Sent>,
-        state: &papo::State,
-    ) -> Option<Vec<EngineToUi>> {
         let mode_symbol = actor_mode_symbol(state, &pending.target.name_key(), state.nick());
         let buffer = self.buffers.get_mut(&pending.buffer_id)?;
         let index = buffer
@@ -599,10 +591,10 @@ impl NetworkModel {
             .iter()
             .position(|record| record.projection.local_send_id == Some(pending.local_send_id))?;
         let record = buffer.timeline.remove(index);
-        let (lines, server_time) = match sent.map(|sent| &sent.outcome) {
-            Some(papo::SentOutcome::Confirmed {
+        let (lines, server_time) = match &sent.outcome {
+            papo::SentOutcome::Confirmed {
                 lines, server_time, ..
-            }) if !lines.is_empty() => (Some(lines), server_time.map(time_millis)),
+            } if !lines.is_empty() => (Some(lines), server_time.map(time_millis)),
             _ => (None, None),
         };
         let messages = if let Some(lines) = lines {
@@ -848,6 +840,19 @@ impl NetworkModel {
     pub(crate) fn direct(&self, nick: &papo::Nick) -> Option<DirectAvailability> {
         let buffer_id = self.names.get(&NameKey::Direct(nick.clone()))?;
         self.buffers.get(buffer_id)?.direct.clone()
+    }
+
+    pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> &'static str {
+        if self
+            .buffers
+            .get(&buffer_id)
+            .and_then(|buffer| buffer.direct.as_ref())
+            .is_some_and(|direct| matches!(direct, DirectAvailability::MonitorFull))
+        {
+            "engine.direct_monitor_full"
+        } else {
+            "engine.buffer_not_sendable"
+        }
     }
 
     pub(crate) fn begin_direct_resolution(&mut self, nick: &papo::Nick) -> bool {

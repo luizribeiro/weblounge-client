@@ -16,6 +16,7 @@ export const messageKeys = [
   "engine.hosted_auth_failed",
   "engine.dedicated_worker_fallback",
   "engine.direct_target_gone",
+  "engine.direct_monitor_full",
   "engine.direct_presence_unavailable",
   "engine.direct_unavailable",
   "engine.invalid_endpoint",
@@ -97,8 +98,10 @@ export function t(key: string, values: MessageValues = {}): string {
       return "This browser uses one connection per tab because SharedWorker is unavailable.";
     case "engine.direct_target_gone":
       return "That person left or the nickname now belongs to someone else. Your message was not sent.";
+    case "engine.direct_monitor_full":
+      return "Too many open conversations to verify this person. Close one to message them.";
     case "engine.direct_presence_unavailable":
-      return "Private messages still work, but presence updates are unavailable.";
+      return "Presence updates are unavailable for this conversation.";
     case "engine.direct_unavailable":
       return "That person isn't available for a private message.";
     case "engine.invalid_endpoint":
