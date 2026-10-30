@@ -12,7 +12,7 @@ export interface WasmEngine {
 }
 
 interface WasmModule {
-  default: (module: string) => Promise<unknown>;
+  default: (input: { module_or_path: string }) => Promise<unknown>;
   WasmEngine: new (
     buildId: string,
     instanceId: string,
@@ -99,7 +99,7 @@ async function loadEngine(
 ): Promise<WasmEngine> {
   const imported: unknown = await import("@weblounge-engine");
   if (!isWasmModule(imported)) throw new Error("invalid wasm module");
-  await imported.default(wasmBinaryUrl);
+  await imported.default({ module_or_path: wasmBinaryUrl });
   return new imported.WasmEngine(__BUILD_ID__, crypto.randomUUID(), onEvent);
 }
 
