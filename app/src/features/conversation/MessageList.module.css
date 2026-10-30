@@ -105,6 +105,11 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.messageLink {
+  color: var(--wl-color-accent);
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+}
 .pending,
 .failed {
   font-size: 11px;

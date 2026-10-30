@@ -18,17 +18,18 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import { nickPaletteSize } from "../../theme/theme-registry";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MessageList.module.css";
+import { MessageText } from "./MessageText";
 import {
   currentMessageDensity,
   estimateMessageHeight,
 } from "./message-size-estimate";
+import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
@@ -38,6 +39,8 @@ interface MessageListProps {
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readThrough?: number | null | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -297,6 +300,8 @@ export function MessageList(props: MessageListProps) {
                 <TimelineRowView
                   index={virtualRow.index}
                   nickLookup={nickLookup()}
+                  onOpenChannel={props.onOpenChannel}
+                  onOpenExternal={props.onOpenExternal}
                   row={row()}
                 />
               </li>
@@ -316,6 +321,8 @@ export function MessageList(props: MessageListProps) {
 function TimelineRowView(props: {
   readonly index: number;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly row: TimelineRow | undefined;
 }) {
   return (
@@ -338,6 +345,8 @@ function TimelineRowView(props: {
                 index={props.index}
                 message={row.message}
                 nickLookup={props.nickLookup}
+                onOpenChannel={props.onOpenChannel}
+                onOpenExternal={props.onOpenExternal}
               />
             )}
           </Match>
@@ -360,9 +369,19 @@ function MessageRow(props: {
   readonly index: number;
   readonly message: MessageProjection;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
 }) {
   const message = props.message;
-  if (message.kind === "notice") return <NoticeRow message={message} />;
+  if (message.kind === "notice")
+    return (
+      <NoticeRow
+        message={message}
+        nickLookup={props.nickLookup}
+        onOpenChannel={props.onOpenChannel}
+        onOpenExternal={props.onOpenExternal}
+      />
+    );
   const nickStyle =
     message.authorship === "own"
       ? undefined
@@ -386,7 +405,12 @@ function MessageRow(props: {
             <span class={styles.actionNick} style={nickStyle}>
               {message.author}
             </span>{" "}
-            {renderText(message.text, props.nickLookup)}
+            <MessageText
+              authors={props.nickLookup}
+              onOpenChannel={props.onOpenChannel}
+              onOpenExternal={props.onOpenExternal}
+              text={message.text}
+            />
           </Selectable>
           <Delivery message={message} />
         </>
@@ -413,7 +437,12 @@ function MessageRow(props: {
             {message.bot && <span class={styles.bot}>BOT</span>}
           </Line>
           <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
-            {renderText(message.text, props.nickLookup)}
+            <MessageText
+              authors={props.nickLookup}
+              onOpenChannel={props.onOpenChannel}
+              onOpenExternal={props.onOpenExternal}
+              text={message.text}
+            />
           </Selectable>
           <Delivery message={message} />
         </>
@@ -422,7 +451,12 @@ function MessageRow(props: {
   );
 }
 
-function NoticeRow(props: { readonly message: MessageProjection }) {
+function NoticeRow(props: {
+  readonly message: MessageProjection;
+  readonly nickLookup: ReadonlyMap<string, NickDisplay>;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
+}) {
   const message = props.message;
   return (
     <div
@@ -436,7 +470,16 @@ function NoticeRow(props: { readonly message: MessageProjection }) {
         class={styles.noticeTopic}
         surfaceId={`message-${message.id}`}
       >
-        {message.text || "No topic is set."}
+        {message.text === "" ? (
+          "No topic is set."
+        ) : (
+          <MessageText
+            authors={props.nickLookup}
+            onOpenChannel={props.onOpenChannel}
+            onOpenExternal={props.onOpenExternal}
+            text={message.text}
+          />
+        )}
       </Selectable>
       {message.author !== "" && <span> — set by {message.author}</span>}
       {message.server_time_ms !== null && (
@@ -455,25 +498,6 @@ function Delivery(props: { readonly message: MessageProjection }) {
   if (props.message.delivery === "failed")
     return <Line class={styles.failed}>Failed</Line>;
   return null;
-}
-
-function renderText(text: string, authors: ReadonlyMap<string, NickDisplay>) {
-  return text.split(/([\p{L}\p{N}_\-[\]{}\\`^|]+)/gu).map((part) => {
-    const author = authors.get(part.toLocaleLowerCase());
-    if (author === undefined) return part;
-    return (
-      <span
-        class={author.authorship === "own" ? styles.own : undefined}
-        style={
-          author.authorship === "own"
-            ? undefined
-            : { color: nickColor(author.nick_color_index) }
-        }
-      >
-        {part}
-      </span>
-    );
-  });
 }
 
 function timelineRows(
@@ -552,10 +576,6 @@ function formatNoticeTime(milliseconds: number): string {
     timeStyle: "short",
   }).format(milliseconds);
 }
-function nickColor(index: number): string {
-  return `var(--wl-nick-${index % nickPaletteSize})`;
-}
-
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight - 22);
 }
