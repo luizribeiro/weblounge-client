@@ -447,17 +447,21 @@ export function App(props: AppProps) {
           memberWindows={memberWindows()}
           onMarkRead={(bufferId, through) => {
             if (client === undefined) return;
-            void client.send({
-              id: crypto.randomUUID(),
-              request: { type: "mark_read", buffer_id: bufferId, through },
-            });
+            void client
+              .send({
+                id: crypto.randomUUID(),
+                request: { type: "mark_read", buffer_id: bufferId, through },
+              })
+              .catch(() => undefined);
           }}
           onLoadHistory={(bufferId) => {
             if (client === undefined) return;
-            void client.send({
-              id: crypto.randomUUID(),
-              request: { type: "load_history", buffer_id: bufferId },
-            });
+            void client
+              .send({
+                id: crypto.randomUUID(),
+                request: { type: "load_history", buffer_id: bufferId },
+              })
+              .catch(() => undefined);
           }}
           onSelectBuffer={(bufferId) => {
             const path = pathForBuffer(bufferId);

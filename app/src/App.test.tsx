@@ -803,7 +803,7 @@ it("reopens a hidden failed DM from its typed notice", async () => {
   expect(screen.getByText("Sending…")).toBeVisible();
 });
 
-it("marks a visible live-edge buffer read only after a focused 500ms dwell", async () => {
+it("marks a visible live-edge buffer read only after a focused 500ms dwell, tolerating a rejected marker", async () => {
   vi.useFakeTimers();
   vi.stubGlobal(
     "IntersectionObserver",
@@ -829,7 +829,11 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell", asy
     },
   );
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
-  const client = new FakeEngineClient();
+  const client = new FakeEngineClient(
+    "engine.read_marker_invalid",
+    Promise.resolve(),
+    "mark_read",
+  );
   render(() => <App engineClient={client} />);
   await vi.advanceTimersByTimeAsync(0);
   client.emit({
@@ -924,6 +928,7 @@ class FakeEngineClient implements EngineClient {
   constructor(
     private readonly rejection?: string,
     private readonly startResult: Promise<void> = Promise.resolve(),
+    private readonly rejectedType: EngineRequestEnvelope["request"]["type"] = "submit_input",
   ) {}
 
   start(): Promise<void> {
@@ -933,7 +938,7 @@ class FakeEngineClient implements EngineClient {
   async send(request: Parameters<EngineClient["send"]>[0]) {
     this.requests.push(request);
     if (
-      request.request.type === "submit_input" &&
+      request.request.type === this.rejectedType &&
       this.rejection !== undefined
     ) {
       throw new EngineCommandError({
