@@ -1,8 +1,9 @@
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import { installDensity } from "./density/density";
 import type { DeploymentConfig } from "./engine/generated/DeploymentConfig";
+import { AppErrorBoundary } from "./hosted/AppErrorBoundary";
 import { loadDeploymentConfig } from "./hosted/deployment-config";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
@@ -99,7 +100,7 @@ function Bootstrap(props: BootstrapProps) {
     }
   }
 
-  const content = createMemo(() => {
+  const content = () => {
     const current = state();
     switch (current.type) {
       case "starting":
@@ -126,8 +127,8 @@ function Bootstrap(props: BootstrapProps) {
         return exhaustive;
       }
     }
-  });
-  return <>{content()}</>;
+  };
+  return <AppErrorBoundary>{content()}</AppErrorBoundary>;
 }
 
 function requireCurrentRedirect(config: HostedConfig): void {
