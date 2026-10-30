@@ -134,7 +134,10 @@ export function Composer(props: ComposerProps) {
     setCompletionCursor(cursor);
     props.onRequestCandidates?.(value, cursor, explicit);
   };
-  const accept = (index = selected() >= 0 ? selected() : 0) => {
+  const accept = (
+    index = selected() >= 0 ? selected() : 0,
+    acceptSeparatorOnly = true,
+  ) => {
     const result = suggestions();
     const candidate = result?.candidates[index];
     if (result === undefined || candidate === undefined) return false;
@@ -146,6 +149,8 @@ export function Composer(props: ComposerProps) {
     const replaceEnd =
       result.input === currentText ? result.replace_end : completionCursor();
     const next = `${currentText.slice(0, result.replace_start)}${replacement}${currentText.slice(replaceEnd)}`;
+    if (!acceptSeparatorOnly && next.trimEnd() === currentText.trimEnd())
+      return false;
     const cursor = result.replace_start + replacement.length;
     update(next);
     queueMicrotask(() => {
@@ -183,7 +188,7 @@ export function Composer(props: ComposerProps) {
       setSelected(-1);
     } else if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!accept()) submit();
+      if (!accept(undefined, false)) submit();
     } else if (event.key === "Tab") {
       event.preventDefault();
       if (!accept()) {

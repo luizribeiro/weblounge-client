@@ -296,6 +296,30 @@ it("keeps previous suggestions visible while the next result is pending", () => 
   );
 });
 
+it("submits when Enter would only add a completion separator", async () => {
+  const onSend = vi.fn(() => true);
+  render(() => (
+    <Composer
+      bufferId={9}
+      bufferTitle="#rust"
+      completion={{
+        ...completion("/join #rust", [{ type: "channel", name: "#rust" }]),
+        argument_hint: "cmd.join.usage",
+        buffer_id: 9,
+        replace_start: 6,
+      }}
+      draftKey="test:exact-completion"
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/join #rust" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  expect(onSend).toHaveBeenCalledWith("/join #rust");
+  await waitFor(() => expect(input).toHaveValue(""));
+});
+
 it("requests as input changes, accepts Tab, and ignores IME composition", async () => {
   const [result, setResult] = createSignal<CompletionResult>();
   const request = vi.fn((value: string, _cursor: number, explicit: boolean) => {
