@@ -49,7 +49,7 @@ test("mobile history interrupts a gesture aligned", async ({ page }) => {
     clientY: 300,
     pointerId: 5,
   });
-  await page.evaluate(() => history.back());
+  await page.evaluate(() => dispatchEvent(new PopStateEvent("popstate")));
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await shell.dispatchEvent("pointerup", {
     clientX: 120,
