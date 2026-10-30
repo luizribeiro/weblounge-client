@@ -1,5 +1,8 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { connectionStateKind } from "../../engine/connection-state";
+import {
+  connectionStateKind,
+  connectionSummary,
+} from "../../engine/connection-state";
 import type {
   BufferProjection,
   CommandSpec,
@@ -16,7 +19,6 @@ import {
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MobileShell.module.css";
-import { connectionSummary } from "./mobile-chats";
 
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;

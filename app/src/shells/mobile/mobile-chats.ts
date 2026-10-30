@@ -1,4 +1,3 @@
-import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -39,38 +38,4 @@ export function networkLabel(
 ): string | undefined {
   if (networkId === networks[0]?.id) return undefined;
   return networks.find((network) => network.id === networkId)?.label;
-}
-
-export function connectionSummary(
-  networks: readonly NetworkProjection[],
-): string {
-  const online = networks.filter(
-    (network) => connectionStateKind(network.state) === "online",
-  ).length;
-  if (online === networks.length && online > 0) {
-    return "";
-  }
-  if (
-    networks.some(
-      (network) => connectionStateKind(network.state) === "reconnecting",
-    )
-  )
-    return "Reconnecting…";
-  if (
-    networks.some((network) =>
-      ["connecting", "registering"].includes(
-        connectionStateKind(network.state),
-      ),
-    )
-  )
-    return "Connecting…";
-  if (
-    networks.some((network) => connectionStateKind(network.state) === "failed")
-  )
-    return "Offline · Retry";
-  if (
-    networks.some((network) => connectionStateKind(network.state) === "offline")
-  )
-    return "Offline";
-  return networks.length === 0 ? "Offline" : `${online} connected`;
 }

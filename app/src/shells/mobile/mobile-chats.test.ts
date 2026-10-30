@@ -1,9 +1,10 @@
 import { expect, it } from "vitest";
+import { connectionSummary } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
 } from "../../engine/protocol";
-import { connectionSummary, filterChats, networkLabel } from "./mobile-chats";
+import { filterChats, networkLabel } from "./mobile-chats";
 
 const buffers: BufferProjection[] = [
   buffer(1, "server", "Local"),

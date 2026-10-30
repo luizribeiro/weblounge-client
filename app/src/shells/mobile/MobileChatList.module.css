@@ -53,12 +53,16 @@
   padding: 0;
 }
 .statusDot {
-  background: var(--wl-color-online);
+  background: var(--wl-color-muted);
   border-radius: 50%;
   display: inline-block;
   height: 7px;
   margin-inline-end: 6px;
   width: 7px;
+}
+
+.statusDot[data-connection-color="online"] {
+  background: var(--wl-color-online);
 }
 
 .search {

@@ -4,7 +4,11 @@ import {
   densityDefaults,
   densityPresets,
 } from "../../density/density";
-import { connectionStateKind } from "../../engine/connection-state";
+import {
+  connectionOverview,
+  connectionStateKind,
+  connectionSummary,
+} from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -15,7 +19,6 @@ import { MobileChatRow } from "./MobileChatRow";
 import {
   type ChatFilter,
   chatFilters,
-  connectionSummary,
   filterChats,
   networkLabel,
 } from "./mobile-chats";
@@ -41,6 +44,7 @@ export function MobileChatList(props: MobileChatListProps) {
     props.networks.find(
       (network) => connectionStateKind(network.state) === "failed",
     );
+  const connection = () => connectionOverview(props.networks);
   return (
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
       <header class={styles.header}>
@@ -54,14 +58,22 @@ export function MobileChatList(props: MobileChatListProps) {
           {failedNetwork() !== undefined ? (
             <button
               class={styles.retry}
+              data-connection-status={connectionSummary(props.networks)}
               onClick={() => props.onRetryNetwork?.(failedNetwork()?.id ?? 0)}
               type="button"
             >
               Offline · Retry
             </button>
           ) : connectionSummary(props.networks) !== "" ? (
-            <Line class={styles.status}>
-              <span aria-hidden="true" class={styles.statusDot} />
+            <Line
+              class={styles.status}
+              data-connection-status={connectionSummary(props.networks)}
+            >
+              <span
+                aria-hidden="true"
+                class={styles.statusDot}
+                data-connection-color={connection().colorToken}
+              />
               {connectionSummary(props.networks)}
             </Line>
           ) : null}
