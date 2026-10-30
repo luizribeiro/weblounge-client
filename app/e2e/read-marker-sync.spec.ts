@@ -72,7 +72,7 @@ test.describe("IRCv3 read markers", () => {
         .toBeGreaterThan(0);
 
       await first.bringToFront();
-      await first.keyboard.press("End");
+      await firstList.press("End");
       await expect(firstBuffer).toHaveAttribute("data-unread", "0");
       await expect(secondBuffer).toHaveAttribute("data-unread", "0");
       await expect(secondBuffer).toHaveAttribute("data-mentions", "0");
