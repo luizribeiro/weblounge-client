@@ -81,7 +81,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     casemapping; and historical rows never inherit an actor's current channel prefix.
   - [x] Size desktop timestamp columns from the active locale; never ellipsize times.
   - [x] Reset mobile back-swipe motion on cancellation, browser history, visibility, and interrupted transitions.
-  - [x] Keep the mobile chat list mounted across back navigation without recreating rows or requesting history.
+  - [x] Keep the mobile chat list mounted across back navigation without recreating rows on retained buffer updates or requesting history.
   - [x] Resubscribe desktop member windows when the active channel changes.
   - [x] Keep every touch text field at 16px or larger so focusing never zooms the page.
   - [x] Disable shell-level pinch and double-tap zoom while preserving root text scaling.

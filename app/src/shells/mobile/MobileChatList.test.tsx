@@ -56,6 +56,35 @@ it("updates chat filters and search through accessible controls", () => {
   expect(open).toHaveBeenCalledWith(3, 37);
 });
 
+it("keeps row elements when buffer projections are replaced", () => {
+  const [current, setCurrent] =
+    createSignal<readonly BufferProjection[]>(buffers);
+  render(() => (
+    <MobileChatList
+      buffers={current()}
+      filter="all"
+      networks={[]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={() => {}}
+      query=""
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
+    />
+  ));
+  const original = screen.getByRole("button", { name: "#garden" });
+
+  setCurrent(
+    buffers.map((buffer) =>
+      buffer.id === 2 ? { ...buffer, unread: 1 } : buffer,
+    ),
+  );
+
+  expect(screen.getByRole("button", { name: "#garden" })).toBe(original);
+  expect(screen.getByLabelText("1 unread")).toBeVisible();
+});
+
 it("restores the retained chat list after returning from a conversation", async () => {
   const [restoreScroll, setRestoreScroll] = createSignal(0);
   const [restoreVersion, setRestoreVersion] = createSignal(0);

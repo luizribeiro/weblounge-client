@@ -58,6 +58,10 @@ export function MobileChatList(props: MobileChatListProps) {
   const chats = createMemo(() =>
     filterChats(props.buffers, props.filter, props.query),
   );
+  const chatsById = createMemo(
+    () => new Map(chats().map((buffer) => [buffer.id, buffer])),
+  );
+  const chatIds = createMemo(() => [...chatsById().keys()]);
   const failedNetwork = () =>
     props.networks.find(
       (network) => connectionStateKind(network.state) === "failed",
@@ -167,21 +171,31 @@ export function MobileChatList(props: MobileChatListProps) {
           });
         }}
       >
-        <For each={chats()}>
-          {(buffer) => (
-            <MobileChatRow
-              buffer={buffer}
-              previews={mobilePreviews()}
-              networkLabel={networkLabel(props.networks, buffer.network_id)}
-              onOpen={() => {
-                userScrollIntent = false;
-                props.onOpen(buffer.id, scrollTopBeforeOpen);
-              }}
-              onPressStart={() => {
-                scrollTopBeforeOpen = list?.scrollTop ?? 0;
-              }}
-            />
-          )}
+        <For each={chatIds()}>
+          {(bufferId) => {
+            const buffer = () => chatsById().get(bufferId);
+            return (
+              <Show when={buffer()}>
+                {(current) => (
+                  <MobileChatRow
+                    buffer={current()}
+                    previews={mobilePreviews()}
+                    networkLabel={networkLabel(
+                      props.networks,
+                      current().network_id,
+                    )}
+                    onOpen={() => {
+                      userScrollIntent = false;
+                      props.onOpen(current().id, scrollTopBeforeOpen);
+                    }}
+                    onPressStart={() => {
+                      scrollTopBeforeOpen = list?.scrollTop ?? 0;
+                    }}
+                  />
+                )}
+              </Show>
+            );
+          }}
         </For>
         <Show when={chats().length === 0}>
           <p class={styles.empty}>No chats match this view.</p>
