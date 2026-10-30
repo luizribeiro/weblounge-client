@@ -297,6 +297,10 @@ test.describe("desktop shell against local Ergo", () => {
             .filter({ hasText: text }),
         ).toContainText(nick);
       }
+      await expectFullBleedHighlight(
+        screenshotPage,
+        "weblounge: history on open is working",
+      );
       await mkdir(screenshotDirectory, { recursive: true });
       await screenshotPage.screenshot({
         path: path.join(screenshotDirectory, "desktop-shell-light.png"),
@@ -323,6 +327,32 @@ test.describe("desktop shell against local Ergo", () => {
     }
   });
 });
+
+async function expectFullBleedHighlight(
+  page: import("@playwright/test").Page,
+  text: string,
+): Promise<void> {
+  const geometry = await page
+    .getByText(text, { exact: true })
+    .evaluate((node) => {
+      const row = node.closest<HTMLElement>("[data-message-row]");
+      const list = node.closest<HTMLElement>("[data-message-list]");
+      if (row === null || list === null)
+        throw new Error("highlight geometry is missing");
+      const rowRect = row.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+      return {
+        background: getComputedStyle(row).backgroundColor,
+        listLeft: listRect.left,
+        listRight: listRect.left + list.clientWidth,
+        rowLeft: rowRect.left,
+        rowRight: rowRect.right,
+      };
+    });
+  expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(geometry.rowLeft).toBeCloseTo(geometry.listLeft, 0);
+  expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
+}
 
 async function expectDesktopGeometry(
   page: import("@playwright/test").Page,

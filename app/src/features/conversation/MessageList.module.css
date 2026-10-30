@@ -10,7 +10,7 @@
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
-  padding: 12px 14px 22px;
+  padding: 12px 0 22px;
   position: relative;
   touch-action: pan-y;
 }
@@ -29,14 +29,13 @@
   width: 1px;
 }
 .virtualRow {
-  left: 14px;
+  left: 0;
   position: absolute;
-  right: 14px;
+  right: 0;
   top: 0;
 }
 .row {
   align-items: baseline;
-  border-radius: var(--wl-radius-control);
   display: grid;
   font-size: calc(var(--wl-font-base) + var(--wl-density-message-font-delta));
   gap: 10px;
@@ -44,9 +43,10 @@
     var(--wl-message-time-column, 9ch) 112px minmax(0, 1fr)
     auto;
   line-height: var(--wl-density-message-line-height);
-  padding: var(--wl-density-message-one-line-row-padding) 8px;
+  padding: var(--wl-density-message-one-line-row-padding) 22px;
 }
 .virtualRow[data-selected="true"] .row {
+  background: var(--wl-color-panel-alt);
   outline: 2px solid var(--wl-color-focus-ring);
   outline-offset: -2px;
 }
@@ -170,13 +170,13 @@
   font-style: italic;
   height: 34px;
   line-height: 34px;
-  padding-left: 58px;
+  padding-left: 72px;
 }
 .notice {
   color: var(--wl-color-muted);
   font-size: 12px;
   min-height: 34px;
-  padding: 8px 0 8px 58px;
+  padding: 8px 14px 8px 72px;
 }
 .noticeTopic {
   color: var(--wl-color-fg);
@@ -190,6 +190,7 @@
   font-weight: 650;
   gap: 10px;
   height: 34px;
+  margin-inline: 14px;
 }
 .divider::before,
 .divider::after,
@@ -225,7 +226,7 @@
 
 .list[data-presentation="mobile"] .row {
   display: block;
-  padding-inline: 0;
+  padding-inline: 14px;
 }
 .list[data-presentation="mobile"] .time,
 .list[data-presentation="mobile"] .nickColumn,
@@ -260,8 +261,10 @@
 .list[data-presentation="mobile"] .failed {
   margin-inline-start: 6px;
 }
-.list[data-presentation="mobile"] .actionText,
 .list[data-presentation="mobile"] .membership,
 .list[data-presentation="mobile"] .notice {
+  padding-inline-start: 14px;
+}
+.list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;
 }

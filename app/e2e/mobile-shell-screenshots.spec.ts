@@ -45,7 +45,7 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       );
       await bots[2]?.privmsgConfirmed(
         "#weblounge-test",
-        "Mobile history is ready for the lounge",
+        "weblounge: Mobile history is ready for the lounge",
       );
       await bots[0]?.privmsgConfirmed(
         "weblounge",
@@ -75,10 +75,14 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       await page.emulateMedia({ colorScheme: "light" });
       await page.getByRole("button", { name: "#weblounge-test" }).click();
       await expect(
-        page.getByText("Mobile history is ready for the lounge", {
+        page.getByText("weblounge: Mobile history is ready for the lounge", {
           exact: true,
         }),
       ).toBeVisible();
+      await expectFullBleedHighlight(
+        page,
+        "weblounge: Mobile history is ready for the lounge",
+      );
       await expect(page.locator("[data-mobile-chats]")).toHaveCount(1);
       await expect(
         page.locator("[data-mobile-chats]").locator(".."),
@@ -143,6 +147,32 @@ test.describe("mobile shell screenshots against local Ergo", () => {
     }
   });
 });
+
+async function expectFullBleedHighlight(
+  page: Page,
+  text: string,
+): Promise<void> {
+  const geometry = await page
+    .getByText(text, { exact: true })
+    .evaluate((node) => {
+      const row = node.closest<HTMLElement>("[data-message-row]");
+      const list = node.closest<HTMLElement>("[data-message-list]");
+      if (row === null || list === null)
+        throw new Error("highlight geometry is missing");
+      const rowRect = row.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+      return {
+        background: getComputedStyle(row).backgroundColor,
+        listLeft: listRect.left,
+        listRight: listRect.left + list.clientWidth,
+        rowLeft: rowRect.left,
+        rowRight: rowRect.right,
+      };
+    });
+  expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(geometry.rowLeft).toBeCloseTo(geometry.listLeft, 0);
+  expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
+}
 
 async function sampleScrimPixel(page: Page): Promise<number> {
   const image = await page.screenshot({
