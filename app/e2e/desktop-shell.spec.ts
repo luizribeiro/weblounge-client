@@ -55,6 +55,7 @@ test.describe("desktop shell against local Ergo", () => {
   test("composes commands, completion, and per-buffer drafts", async ({
     page,
   }) => {
+    const draftChannel = `#another-${Date.now().toString(36)}`;
     const bot = await IrcClient.connect(
       "composer",
       "weblounge-bot",
@@ -98,16 +99,18 @@ test.describe("desktop shell against local Ergo", () => {
         path: path.join(screenshotDirectory, "composer-completion-dark.png"),
       });
 
-      await composer.fill("/j #another");
+      await composer.fill(`/j ${draftChannel}`);
       await composer.press("Enter");
       await expect(
-        page.getByRole("heading", { name: "#another" }),
+        page.getByRole("heading", { name: draftChannel }),
       ).toBeVisible();
-      const another = page.getByRole("textbox", { name: "Message #another" });
+      const another = page.getByRole("textbox", {
+        name: `Message ${draftChannel}`,
+      });
       await another.fill("draft in another");
       await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await composer.fill("draft in home");
-      await page.getByRole("button", { name: /^#another/ }).click();
+      await page.getByRole("button", { name: draftChannel }).click();
       await expect(another).toHaveValue("draft in another");
       await page.getByRole("button", { name: /^#weblounge-test/ }).click();
       await expect(composer).toHaveValue("draft in home");
@@ -118,17 +121,17 @@ test.describe("desktop shell against local Ergo", () => {
         name: "Message #weblounge-test",
       });
       await expect(reloadedHome).toHaveValue("draft in home");
-      await reloadedHome.fill("/join #another");
+      await reloadedHome.fill(`/join ${draftChannel}`);
       await reloadedHome.press("Enter");
       const restoredAnother = page.getByRole("textbox", {
-        name: "Message #another",
+        name: `Message ${draftChannel}`,
       });
       await expect(restoredAnother).toHaveValue("draft in another");
 
       await restoredAnother.fill("/hop");
       await restoredAnother.press("Enter");
       await expect(
-        page.getByRole("heading", { name: "#another" }),
+        page.getByRole("heading", { name: draftChannel }),
       ).toBeVisible();
 
       await restoredAnother.fill("/q composer hi");
