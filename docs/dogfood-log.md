@@ -26,7 +26,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 18 | 2026-10-29 | Beta loaded unstyled: the server CSP blocked the runtime-injected theme styles. | client fixed and live (a7211bd); server stopgap removal requested |
 | 19 | 2026-10-29 | Mobile: the members drawer's overlay lightens the content in dark mode; it must respect light/dark. | fixed, local |
 | 20 | 2026-10-29 | Mobile: no gesture to close the members drawer. | fixed, local |
-| 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | queued |
+| 21 | 2026-10-29 | Mobile: opening the members drawer doesn't feel native: the overlay pops in instead of fading with the drawer, and swiping to open moves the overlay with the finger (likely Safari's back/forward swipe). A good open gesture is missing. | fixed, local |
 | 22 | 2026-10-29 | Resizing the window doesn't keep the newest message at the bottom when you were at the live edge (also mobile keyboard, panels, composer growth). | queued |
 | 23 | 2026-10-29 | The auto-complete popup flashes on each keystroke before updating. | fixed, live |
 | 24 | 2026-10-29 | Desktop: after collapsing the sidebar with the hamburger, the conversation and composer don't widen to fill the window. | fixed, live |
@@ -51,3 +51,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 43 | 2026-10-30 | The 'Couldn't start weblounge. Reload to try again.' screen has no retry button; a PWA has no reload. | queued |
 | 44 | 2026-10-30 | Mobile: the members drawer animation looks bad. | queued |
 | 45 | 2026-10-30 | Desktop: the favicon doesn't match the members site's (glyph on dark green). | queued |
+| 46 | 2026-10-30 | Sometimes the buffer scrolls on its own shortly after opening a channel. Re-check after papo's history fix. | queued |
