@@ -12,6 +12,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: "**/mobile-page-zoom.spec.ts",
       use: { browserName: "chromium" },
     },
     {

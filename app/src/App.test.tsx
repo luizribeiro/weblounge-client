@@ -27,7 +27,7 @@ it("reports the wasm worker round trip", async () => {
   ).toBeInTheDocument();
 });
 
-it("keeps the shell unrendered until the engine and visual assets are ready", async () => {
+it("renders the empty shell after the engine handshake before revealing it", async () => {
   let releaseEngine = () => {};
   let releaseVisuals = () => {};
   const engine = new Promise<void>((resolve) => {
@@ -50,13 +50,16 @@ it("keeps the shell unrendered until the engine and visual assets are ready", as
   expect(
     await screen.findByText("Engine ready: wasm worker round trip complete"),
   ).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "weblounge" })).toBeNull();
-  releaseVisuals();
-
   expect(
     await screen.findByRole("heading", { name: "weblounge" }),
   ).toBeVisible();
+  expect(screen.queryByRole("status")).toBeNull();
+  releaseVisuals();
+
   await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Engine ready: wasm worker round trip complete",
+  );
 });
 
 it("reports document visibility to the engine", () => {

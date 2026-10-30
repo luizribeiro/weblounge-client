@@ -43,6 +43,7 @@ export function App(props: AppProps) {
   const [hostedError, setHostedError] = createSignal<string>();
   const [startupError, setStartupError] = createSignal<string>();
   const [engineReady, setEngineReady] = createSignal(false);
+  const [startupRevealed, setStartupRevealed] = createSignal(false);
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
@@ -162,13 +163,14 @@ export function App(props: AppProps) {
       clientId,
     ).then(async (outcome) => {
       if (outcome === "reloading") return;
-      await props.beforeReveal?.();
-      if (disposed) return;
       if (outcome === "failed") {
         setStartupError("Couldn't start weblounge. Reload to try again.");
       }
       setEngineReady(true);
-      queueMicrotask(() => props.onReady?.());
+      await props.beforeReveal?.();
+      if (disposed) return;
+      props.onReady?.();
+      setStartupRevealed(true);
       if (outcome === "ready" && props.hostedSession !== undefined) {
         cancelTokenExpiry = scheduleExpiry(
           props.hostedSession.token.expiresAt,
@@ -220,7 +222,11 @@ export function App(props: AppProps) {
         appRoot = element;
       }}
     >
-      <p class="visually-hidden" role="status">
+      <p
+        aria-hidden={startupRevealed() ? undefined : "true"}
+        class="visually-hidden"
+        role={startupRevealed() ? "status" : undefined}
+      >
         {engineStatus()}
       </p>
       {engineNotice() !== undefined && (

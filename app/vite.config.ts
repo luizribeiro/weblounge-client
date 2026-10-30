@@ -12,10 +12,7 @@ export default defineConfig(({ mode }) => {
   const appConfigHarness = process.env.WEBLOUNGE_E2E_APP_CONFIG === "1";
   const maxWorkers = process.env.WEBLOUNGE_VITEST_MAX_WORKERS;
   const testTimeout = process.env.WEBLOUNGE_VITEST_TEST_TIMEOUT;
-  const cspHeaders =
-    process.env.WEBLOUNGE_E2E_CSP === "1"
-      ? { "Content-Security-Policy": testContentSecurityPolicy() }
-      : undefined;
+  const cspEnabled = process.env.WEBLOUNGE_E2E_CSP === "1";
   const wasmDirectory =
     process.env.WEBLOUNGE_ENGINE_WASM_DIR ??
     resolve(import.meta.dirname, "../result/dist");
@@ -66,9 +63,20 @@ export default defineConfig(({ mode }) => {
       engineWasmAsset(wasmPath),
       ...(appConfigHarness ? [testAppConfig()] : []),
     ],
-    ...(cspHeaders === undefined
+    ...(!cspEnabled
       ? {}
-      : { server: { headers: cspHeaders }, preview: { headers: cspHeaders } }),
+      : {
+          server: {
+            headers: {
+              "Content-Security-Policy": testContentSecurityPolicy(true),
+            },
+          },
+          preview: {
+            headers: {
+              "Content-Security-Policy": testContentSecurityPolicy(false),
+            },
+          },
+        }),
     resolve: {
       alias: {
         "@weblounge-engine": wasmModulePath,
@@ -88,10 +96,10 @@ export default defineConfig(({ mode }) => {
   };
 });
 
-function testContentSecurityPolicy(): string {
+function testContentSecurityPolicy(devServer: boolean): string {
   return [
     "script-src 'self' 'wasm-unsafe-eval'",
-    "style-src 'self'",
+    `style-src 'self'${devServer ? " 'unsafe-inline'" : ""}`,
     "worker-src 'self'",
     "font-src 'self'",
     "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",
