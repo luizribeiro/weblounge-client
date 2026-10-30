@@ -82,6 +82,7 @@ const themeFiles = import.meta.glob("../../themes/*.json", {
 });
 
 export const motionTokens = {
+  drawerCurve: "cubic-bezier(0.32, 0.72, 0, 1)",
   fade: "200ms",
   members: "220ms",
   previewFade: "420ms",

@@ -87,6 +87,7 @@ test("opens the channel drawer from a protected mid-screen pan", async ({
   await shellPointer(page, "pointerdown", 250, 300, 600, 12);
   await shellPointer(page, "pointermove", 210, 300, 1_000, 12);
   await expect(drawer).toBeVisible();
+  await expect(drawer.getByPlaceholder("Filter members")).not.toBeFocused();
   await shellPointer(page, "pointerup", 210, 300, 1_100, 12);
   await expect(drawer).toHaveCount(0);
 
@@ -110,50 +111,60 @@ test("member drawer and scrim enter and leave as one motion", async ({
   page,
 }) => {
   const opening = await sampleMotion(page, "opening");
-  expect(opening.length).toBeGreaterThan(2);
+  expect(opening.frames.length).toBeGreaterThan(2);
+  expect(opening.curve).not.toBe("");
+  expect(opening.easings.map(compact)).toEqual(
+    opening.easings.map(() => compact(opening.curve)),
+  );
   expect(
     monotonic(
-      opening.map((frame) => frame.scrim),
+      opening.frames.map((frame) => frame.scrim),
       "up",
     ),
   ).toBe(true);
   expect(
     monotonic(
-      opening.map((frame) => frame.shadow),
+      opening.frames.map((frame) => frame.shadow),
       "up",
     ),
   ).toBe(true);
   expect(
     monotonic(
-      opening.map((frame) => Math.abs(frame.offset)),
+      opening.frames.map((frame) => Math.abs(frame.offset)),
       "down",
     ),
   ).toBe(true);
+  expect(new Set(opening.frames.map((frame) => frame.contentWidth)).size).toBe(
+    1,
+  );
 
   await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
     "data-phase",
     "open",
   );
   const closing = await sampleMotion(page, "closing");
-  expect(closing.length).toBeGreaterThan(2);
+  expect(closing.frames.length).toBeGreaterThan(2);
   expect(
     monotonic(
-      closing.map((frame) => frame.scrim),
+      closing.frames.map((frame) => frame.scrim),
       "down",
     ),
   ).toBe(true);
   expect(
     monotonic(
-      closing.map((frame) => frame.shadow),
+      closing.frames.map((frame) => frame.shadow),
       "down",
     ),
   ).toBe(true);
   expect(
     monotonic(
-      closing.map((frame) => Math.abs(frame.offset)),
+      closing.frames.map((frame) => Math.abs(frame.offset)),
       "up",
     ),
   ).toBe(true);
+  expect(new Set(closing.frames.map((frame) => frame.contentWidth)).size).toBe(
+    1,
+  );
   await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
 });
 
@@ -215,15 +226,22 @@ async function shellPointer(
 }
 
 interface MotionFrame {
+  readonly contentWidth: number;
   readonly offset: number;
   readonly scrim: number;
   readonly shadow: number;
 }
 
+interface MotionSample {
+  readonly curve: string;
+  readonly easings: readonly string[];
+  readonly frames: readonly MotionFrame[];
+}
+
 async function sampleMotion(
   page: Page,
   phase: "opening" | "closing",
-): Promise<MotionFrame[]> {
+): Promise<MotionSample> {
   return page.evaluate((motionPhase) => {
     if (motionPhase === "opening") {
       document
@@ -250,18 +268,35 @@ async function sampleMotion(
       ),
     );
     for (const animation of animations) animation.pause();
+    const content = document.querySelector<HTMLElement>("[data-mobile-chat]");
+    if (content === null) throw new Error("conversation content is missing");
     const frames = Array.from({ length: 6 }, (_, index) => {
       const time = (duration * index) / 5;
       for (const animation of animations) animation.currentTime = time;
       return {
+        contentWidth: content.getBoundingClientRect().width,
         offset: new DOMMatrix(getComputedStyle(drawer).transform).m41,
         scrim: Number(getComputedStyle(scrim).opacity),
         shadow: Number(getComputedStyle(drawer, "::before").opacity),
       };
     });
     for (const animation of animations) animation.finish();
-    return frames;
+    return {
+      curve: getComputedStyle(document.documentElement)
+        .getPropertyValue("--wl-motion-drawer-curve")
+        .trim(),
+      easings: [
+        getComputedStyle(drawer).animationTimingFunction,
+        getComputedStyle(drawer, "::before").animationTimingFunction,
+        getComputedStyle(scrim).animationTimingFunction,
+      ],
+      frames,
+    };
   }, phase);
+}
+
+function compact(value: string): string {
+  return value.replaceAll(" ", "");
 }
 
 function monotonic(values: readonly number[], direction: "up" | "down") {

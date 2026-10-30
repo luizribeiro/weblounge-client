@@ -33,30 +33,30 @@
 }
 
 .overlay[data-phase="opening"] .backdrop {
-  animation: backdrop-in var(--wl-motion-members)
-    var(--wl-motion-standard-curve) both;
+  animation: backdrop-in var(--wl-motion-members) var(--wl-motion-drawer-curve)
+    both;
 }
 
 .overlay[data-phase="closing"] .backdrop {
-  animation: backdrop-out var(--wl-motion-members)
-    var(--wl-motion-standard-curve) both;
+  animation: backdrop-out var(--wl-motion-members) var(--wl-motion-drawer-curve)
+    both;
 }
 
 .overlay[data-phase="opening"] .drawer,
 .overlay[data-phase="closing"] .drawer {
   animation-duration: var(--wl-motion-members);
   animation-fill-mode: both;
-  animation-timing-function: var(--wl-motion-standard-curve);
+  animation-timing-function: var(--wl-motion-drawer-curve);
 }
 
 .overlay[data-phase="opening"] .drawer::before {
-  animation: backdrop-in var(--wl-motion-members)
-    var(--wl-motion-standard-curve) both;
+  animation: backdrop-in var(--wl-motion-members) var(--wl-motion-drawer-curve)
+    both;
 }
 
 .overlay[data-phase="closing"] .drawer::before {
-  animation: backdrop-out var(--wl-motion-members)
-    var(--wl-motion-standard-curve) both;
+  animation: backdrop-out var(--wl-motion-members) var(--wl-motion-drawer-curve)
+    both;
 }
 
 .overlay[data-dragging="true"] .drawer,
@@ -66,12 +66,12 @@
 }
 
 .overlay[data-drag-returning="true"] .drawer {
-  transition: transform var(--wl-motion-members) var(--wl-motion-standard-curve);
+  transition: transform var(--wl-motion-members) var(--wl-motion-drawer-curve);
 }
 
 .overlay[data-drag-returning="true"] .backdrop,
 .overlay[data-drag-returning="true"] .drawer::before {
-  transition: opacity var(--wl-motion-members) var(--wl-motion-standard-curve);
+  transition: opacity var(--wl-motion-members) var(--wl-motion-drawer-curve);
 }
 
 .drawer[data-edge="left"] {

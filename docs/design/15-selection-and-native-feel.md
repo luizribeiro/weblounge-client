@@ -82,11 +82,14 @@ Motion is a global semantic token layer owned by subsystem 08, not by individual
 --wl-motion-members: 220ms;
 --wl-motion-fade: 200ms;
 --wl-motion-preview-fade: 420ms;
+--wl-motion-drawer-curve: cubic-bezier(0.32, 0.72, 0, 1);
 --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
 ```
 
 Components may transition only `transform` and `opacity`. Under `prefers-reduced-motion: reduce`,
 all duration tokens become `0ms`; components do not add independent media queries or timers.
+Drawers use the faster-settling drawer curve for their panel, scrim, shadow, and drag return; other
+motion uses the standard curve.
 
 ## Focus policy (Luiz, 2026-10-29)
 

@@ -22,6 +22,7 @@ export type MemberWindow = MemberWindowEvent & {
   readonly window_size: number;
 };
 interface MemberPanelProps {
+  readonly autofocusFilter?: boolean | undefined;
   readonly bufferTitle: string;
   readonly closeLabel?: string | undefined;
   readonly filter?: string | undefined;
@@ -121,7 +122,7 @@ export function MemberPanel(props: MemberPanelProps) {
             <span class="visually-hidden">Filter members</span>
             <span aria-hidden="true">⌕</span>
             <input
-              autofocus
+              autofocus={props.autofocusFilter !== false}
               onInput={(event) => props.onFilter?.(event.currentTarget.value)}
               placeholder="Filter members"
               type="search"

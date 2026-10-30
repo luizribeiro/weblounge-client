@@ -29,6 +29,7 @@ describe("theme registry", () => {
   });
 
   it("owns motion tokens and their reduced-motion override", () => {
+    expect(motionTokens.drawerCurve).toBe("cubic-bezier(0.32, 0.72, 0, 1)");
     expect(motionTokens.pushIn).toBe("280ms");
     expect(motionTokens.suggestions).toBe("120ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:280ms");

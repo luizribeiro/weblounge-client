@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type JSX, onMount } from "solid-js";
+import { createEffect, createSignal, type JSX } from "solid-js";
 import styles from "./OverlayDrawer.module.css";
 
 interface OverlayDrawerProps {
@@ -25,7 +25,8 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
     if (props.closing === true) requestClose();
   });
 
-  onMount(() => {
+  createEffect(() => {
+    if (props.dragProgress !== undefined) return;
     queueMicrotask(() => focusable(drawer)[0]?.focus());
   });
 

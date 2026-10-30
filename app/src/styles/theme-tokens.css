@@ -1,4 +1,5 @@
 :root {
+  --wl-motion-drawer-curve: cubic-bezier(0.32, 0.72, 0, 1);
   --wl-motion-fade: 200ms;
   --wl-motion-members: 220ms;
   --wl-motion-preview-fade: 420ms;

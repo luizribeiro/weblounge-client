@@ -323,12 +323,12 @@ export function MobileShell(props: MobileShellProps) {
     },
     onProgress: (progress) => {
       if (progress === 0 && memberOpenProgress() === undefined) return;
+      setMemberOpenReturning(false);
+      setMemberOpenProgress(1 - progress);
       if (drawerBufferId() === undefined) {
         setMemberFilter("");
         setDrawerBufferId(memberOpenBufferId);
       }
-      setMemberOpenReturning(false);
-      setMemberOpenProgress(1 - progress);
     },
   });
   const finishMemberOpenReturn = () => {

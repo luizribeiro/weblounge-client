@@ -85,6 +85,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
             onPointerUp={gesture.end}
           >
             <MemberPanel
+              autofocusFilter={props.openProgress === undefined}
               bufferTitle={props.bufferTitle}
               closeLabel="Close member list"
               filter={props.filter}
