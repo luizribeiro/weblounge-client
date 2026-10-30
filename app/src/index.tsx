@@ -13,6 +13,7 @@ import {
   exchangeAuthorizationCode,
   HostedAuthorizationError,
 } from "./hosted/oauth";
+import { installPageZoomGuard } from "./page-zoom";
 import "./styles/base.css";
 import { installSystemTheme } from "./theme/theme-controller";
 
@@ -27,8 +28,10 @@ type BootstrapState =
 function Bootstrap() {
   const theme = installSystemTheme(document, window);
   const removeDensity = installDensity(document);
+  const removePageZoomGuard = installPageZoomGuard(document);
   onCleanup(() => theme.dispose());
   onCleanup(removeDensity);
+  onCleanup(removePageZoomGuard);
   const [state, setState] = createSignal<BootstrapState>({
     type: "starting",
     message: "Starting…",

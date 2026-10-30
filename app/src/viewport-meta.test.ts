@@ -9,3 +9,13 @@ it("lets iOS report safe-area insets so the shell clears the home indicator", ()
     "viewport-fit=cover",
   );
 });
+
+it("disables page zoom while retaining the initial device scale", () => {
+  const html = readFileSync("index.html", "utf8");
+  const viewport = html.match(/name="viewport"\s+content="([^"]+)"/)?.[1];
+  const values = viewport?.split(",").map((part) => part.trim());
+
+  expect(values).toContain("initial-scale=1.0");
+  expect(values).toContain("maximum-scale=1.0");
+  expect(values).toContain("user-scalable=no");
+});

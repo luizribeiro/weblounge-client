@@ -31,7 +31,10 @@ export default defineConfig({
     },
     {
       name: "webkit-mobile-inputs",
-      testMatch: "**/mobile-input-zoom.spec.ts",
+      testMatch: [
+        "**/mobile-input-zoom.spec.ts",
+        "**/mobile-page-zoom.spec.ts",
+      ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
   ],
