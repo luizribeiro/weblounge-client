@@ -21,7 +21,7 @@ test.describe("mobile shell screenshots against local Ergo", () => {
   test("captures the chats list and pushed conversation", async ({ page }) => {
     await page.goto("/?irc-password=weblounge-test");
     await expect(
-      page.getByText("connected · 1 network", { exact: true }),
+      page.getByRole("button", { name: "#weblounge-test" }),
     ).toBeVisible();
     const bots: IrcClient[] = [];
     try {
@@ -79,7 +79,10 @@ test.describe("mobile shell screenshots against local Ergo", () => {
           exact: true,
         }),
       ).toBeVisible();
-      await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      await expect(page.locator("[data-mobile-chats]")).toHaveCount(1);
+      await expect(
+        page.locator("[data-mobile-chats]").locator(".."),
+      ).toHaveAttribute("aria-hidden", "true");
       const composerBox = await page
         .getByRole("textbox", { name: "Message #weblounge-test" })
         .boundingBox();

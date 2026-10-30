@@ -11,7 +11,8 @@ const ready = "Engine ready: wasm worker round trip complete";
 test("passes the native-feel audit at rest", async ({ page }) => {
   await installNativeFeelInstrumentation(page);
   await page.goto("/");
-  await expect(page.getByRole("status")).toHaveText(ready);
+  await expect(page.getByText(ready, { exact: true })).toBeAttached();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 
   await nativeFeelAudit(page);
 });
@@ -112,7 +113,9 @@ test.describe("native feel against local Ergo", () => {
       await expect(
         page.getByRole("heading", { name: /#weblounge-test/ }),
       ).toBeVisible();
-      await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      await expect(
+        page.locator("[data-mobile-chats]").locator(".."),
+      ).toHaveAttribute("aria-hidden", "true");
       const bot = await IrcClient.connect(
         "hidden-audit",
         "weblounge-bot",
@@ -187,7 +190,10 @@ test.describe("native feel against local Ergo", () => {
                 .__hiddenMutations,
           ),
         ).toBe(0);
-        await expect(page.getByText(text, { exact: false })).toHaveCount(0);
+        const message = page
+          .locator("[data-message-row]")
+          .getByText(text, { exact: true });
+        await expect(message).toHaveCount(0);
 
         await page.evaluate(() =>
           (
@@ -196,7 +202,7 @@ test.describe("native feel against local Ergo", () => {
             }
           ).__setNativeVisibility?.(false),
         );
-        await expect(page.getByText(text, { exact: false })).toBeVisible();
+        await expect(message).toBeVisible();
         expect(
           await page.evaluate(
             () =>

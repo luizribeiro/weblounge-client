@@ -1,3 +1,4 @@
+import type { Accessor } from "solid-js";
 import type {
   BufferProjection,
   CommandSpec,
@@ -37,21 +38,24 @@ export interface MobileShellData {
 }
 
 interface MobileScreenProps extends MobileShellData {
+  readonly chatsScrollTop: Accessor<number | undefined>;
+  readonly chatsScrollVersion: Accessor<number>;
   readonly filter: ChatFilter;
   readonly position?: "from" | "to" | undefined;
   readonly query: string;
+  readonly retained?: boolean | undefined;
   readonly screen: Screen;
-  readonly scrollTop: number;
   readonly swipe?: "chat" | "chats" | undefined;
   readonly swipeProgress?: number | undefined;
   readonly swipeReturning?: boolean | undefined;
   readonly transition?: MobileTransition["direction"] | undefined;
   readonly onBack: () => void;
   readonly onFilter: (filter: ChatFilter) => void;
-  readonly onOpen: (bufferId: number) => void;
+  readonly onOpen: (bufferId: number, scrollTop: number) => void;
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onSwipeReturnEnd: () => void;
+  readonly onTransitionCancel: () => void;
   readonly onTransitionEnd: () => void;
 }
 
@@ -64,12 +68,17 @@ export function MobileScreen(props: MobileScreenProps) {
   };
   return (
     <div
+      aria-hidden={props.retained || undefined}
       class={styles.screen}
+      data-retained={props.retained || undefined}
+      inert={props.retained ?? false}
       data-position={props.position}
       data-swipe={props.swipe}
       data-swipe-returning={props.swipeReturning}
       data-transition={props.transition}
+      onAnimationCancel={props.onTransitionCancel}
       onAnimationEnd={props.onTransitionEnd}
+      onTransitionCancel={props.onTransitionCancel}
       onTransitionEnd={props.onSwipeReturnEnd}
       style={{ "--wl-swipe-progress": props.swipeProgress }}
     >
@@ -84,7 +93,8 @@ export function MobileScreen(props: MobileScreenProps) {
           onRetryNetwork={props.onRetryNetwork}
           onScroll={props.onScroll}
           query={props.query}
-          scrollTop={props.scrollTop}
+          restoreScroll={() => props.chatsScrollTop() ?? 0}
+          restoreVersion={props.chatsScrollVersion}
         />
       ) : buffer() !== undefined ? (
         <MobileConversation

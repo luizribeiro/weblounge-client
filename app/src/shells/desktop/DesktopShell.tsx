@@ -4,6 +4,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  Show,
 } from "solid-js";
 import {
   type ActionContext,
@@ -44,6 +45,9 @@ export interface DesktopShellProps {
   readonly composerNotice: string | undefined;
   readonly completion: CompletionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
+  readonly onFocusRequestHandled?:
+    | ((request: { readonly bufferId: number }) => void)
+    | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
@@ -51,6 +55,9 @@ export interface DesktopShellProps {
   readonly showMemberModeSymbols?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
   readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
+  readonly pathForBuffer?:
+    | ((bufferId: number) => string | undefined)
+    | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onLoadHistory: (bufferId: number) => void;
@@ -135,6 +142,9 @@ export function DesktopShell(props: DesktopShellProps) {
       setLayout((current) => showInFocusedPane(current, bufferId));
       props.onSelectBuffer?.(bufferId);
       if (drawer() === "sidebar") closeDrawer();
+      const path = props.pathForBuffer?.(bufferId);
+      if (path !== undefined)
+        window.history.replaceState(window.history.state, "", path);
     }
   };
   const moveBuffer = (offset: -1 | 1) => {
@@ -225,7 +235,9 @@ export function DesktopShell(props: DesktopShellProps) {
 
   createEffect(() => {
     const request = props.focusRequest;
-    if (request !== undefined) showBuffer(request.bufferId, true);
+    if (request === undefined) return;
+    showBuffer(request.bufferId, true);
+    props.onFocusRequestHandled?.(request);
   });
 
   createEffect(() => {
@@ -319,6 +331,11 @@ export function DesktopShell(props: DesktopShellProps) {
                   props.memberships.get(activeBuffer()?.id ?? -1) ?? []
                 }
                 onLiveEdgeChange={setAtLiveEdge}
+                onOpenChannel={(channel) => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined)
+                    void props.onSend(buffer.id, `/join ${channel}`);
+                }}
                 readThrough={activeBuffer()?.read_through}
                 registerController={(controller) => {
                   messageListController = controller;
@@ -329,35 +346,38 @@ export function DesktopShell(props: DesktopShellProps) {
                   {props.composerNotice}
                 </p>
               )}
-              <Composer
-                bufferId={activeBuffer()?.id ?? 0}
-                bufferTitle={activeBuffer()?.title ?? ""}
-                commandSpecs={props.commandSpecs}
-                draftKey={activeBuffer()?.draft_key ?? ""}
-                completion={
-                  props.completion?.buffer_id === activeBuffer()?.id
-                    ? props.completion
-                    : undefined
-                }
-                disabled={activeBuffer()?.kind === "server"}
-                onRequestCandidates={(input, cursor, explicit) => {
-                  const buffer = activeBuffer();
-                  if (buffer !== undefined) {
-                    props.onRequestCompletion(
-                      buffer.id,
-                      input,
-                      cursor,
-                      explicit,
-                    );
-                  }
+              <Show when={activeBuffer()?.id} keyed>
+                {(bufferId) => {
+                  const buffer = () =>
+                    props.buffers.find((item) => item.id === bufferId);
+                  return (
+                    <Composer
+                      bufferId={bufferId}
+                      bufferTitle={buffer()?.title ?? ""}
+                      commandSpecs={props.commandSpecs}
+                      draftKey={buffer()?.draft_key ?? ""}
+                      completion={
+                        props.completion?.buffer_id === bufferId
+                          ? props.completion
+                          : undefined
+                      }
+                      disabled={buffer()?.kind === "server"}
+                      onRequestCandidates={(input, cursor, explicit) =>
+                        props.onRequestCompletion(
+                          bufferId,
+                          input,
+                          cursor,
+                          explicit,
+                        )
+                      }
+                      onSelectLast={() =>
+                        messageListController?.selectLastOwn()
+                      }
+                      onSend={(text) => props.onSend(bufferId, text)}
+                    />
+                  );
                 }}
-                onSelectLast={() => messageListController?.selectLastOwn()}
-                onSend={(text) => {
-                  const buffer = activeBuffer();
-                  if (buffer === undefined) return false;
-                  return props.onSend(buffer.id, text);
-                }}
-              />
+              </Show>
             </div>
           </section>
         ) : (
@@ -366,25 +386,32 @@ export function DesktopShell(props: DesktopShellProps) {
           </section>
         )}
       </main>
-      {membersVisible() && membersInline() && activeBuffer() !== undefined && (
-        <MemberPanel
-          bufferTitle={activeBuffer()?.title ?? ""}
-          onClose={() => setMemberPanelOpen(false)}
-          onOpenDirect={(nick) => {
-            props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick);
-            focusComposer();
-          }}
-          onRequestRange={(offset) =>
-            props.onRequestMembers?.(
-              memberViewId(),
-              activeBuffer()?.id ?? 0,
-              offset,
-            )
-          }
-          showModeSymbols={props.showMemberModeSymbols}
-          window={memberWindow()}
-        />
-      )}
+      <Show
+        when={
+          membersVisible() && membersInline() ? activeBuffer()?.id : undefined
+        }
+        keyed
+      >
+        {(bufferId) => {
+          const buffer = () =>
+            props.buffers.find((candidate) => candidate.id === bufferId);
+          return (
+            <MemberPanel
+              bufferTitle={buffer()?.title ?? ""}
+              onClose={() => setMemberPanelOpen(false)}
+              onOpenDirect={(nick) => {
+                props.onOpenDirect?.(buffer()?.network_id ?? 0, nick);
+                focusComposer();
+              }}
+              onRequestRange={(offset) =>
+                props.onRequestMembers?.(memberViewId(), bufferId, offset)
+              }
+              showModeSymbols={props.showMemberModeSymbols}
+              window={memberWindow()}
+            />
+          );
+        }}
+      </Show>
       {drawer() === "sidebar" && !sidebarInline() && (
         <OverlayDrawer
           closeLabel="Close channel list"

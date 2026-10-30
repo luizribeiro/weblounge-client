@@ -1,4 +1,4 @@
-import { type ThemeId, themeStyleSheet, themes } from "./theme-registry";
+import { type ThemeId, themes } from "./theme-registry";
 
 export type ThemePreference = "system" | ThemeId;
 
@@ -13,10 +13,6 @@ export function installTheme(
   document: Document,
   initialSystemDark: boolean,
 ): ThemeController {
-  const style = document.createElement("style");
-  style.dataset.themeTokens = "true";
-  style.textContent = themeStyleSheet();
-  document.head.append(style);
   let preference: ThemePreference = "system";
   let systemDark = initialSystemDark;
   let active = resolveSystemTheme(systemDark);
@@ -27,7 +23,6 @@ export function installTheme(
     const theme = themes.find((candidate) => candidate.id === active);
     if (theme === undefined) throw new Error(`unknown theme: ${active}`);
     document.documentElement.dataset.theme = active;
-    document.documentElement.style.colorScheme = theme.appearance;
   };
   apply();
   return {
@@ -40,9 +35,7 @@ export function installTheme(
       systemDark = dark;
       if (preference === "system") apply();
     },
-    dispose() {
-      style.remove();
-    },
+    dispose() {},
   };
 }
 

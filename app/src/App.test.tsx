@@ -20,9 +20,44 @@ it("reports the wasm worker round trip", async () => {
   render(() => <App engineClient={new FakeEngineClient()} />);
 
   expect(
-    screen.getByRole("heading", { name: "weblounge" }),
+    await screen.findByRole("heading", { name: "weblounge" }),
   ).toBeInTheDocument();
-  expect(await screen.findByRole("status")).toHaveTextContent(
+  expect(
+    await screen.findByText("Engine ready: wasm worker round trip complete"),
+  ).toBeInTheDocument();
+});
+
+it("renders the empty shell after the engine handshake before revealing it", async () => {
+  let releaseEngine = () => {};
+  let releaseVisuals = () => {};
+  const engine = new Promise<void>((resolve) => {
+    releaseEngine = resolve;
+  });
+  const visuals = new Promise<void>((resolve) => {
+    releaseVisuals = resolve;
+  });
+  const onReady = vi.fn();
+  render(() => (
+    <App
+      beforeReveal={() => visuals}
+      engineClient={new FakeEngineClient(undefined, engine)}
+      onReady={onReady}
+    />
+  ));
+
+  expect(screen.queryByRole("heading", { name: "weblounge" })).toBeNull();
+  releaseEngine();
+  expect(
+    await screen.findByText("Engine ready: wasm worker round trip complete"),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { name: "weblounge" }),
+  ).toBeVisible();
+  expect(screen.queryByRole("status")).toBeNull();
+  releaseVisuals();
+
+  await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+  expect(screen.getByRole("status")).toHaveTextContent(
     "Engine ready: wasm worker round trip complete",
   );
 });
@@ -305,6 +340,62 @@ it("focuses command-created buffers only from engine buffer ids", async () => {
   ).toBeInTheDocument();
 });
 
+it("retains engine focus until a delayed shell can consume it", async () => {
+  const client = new FakeEngineClient();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: ["#home"],
+        },
+        token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
+      }}
+    />
+  ));
+  for (const [id, kind, title] of [
+    [2, "channel", "#home"],
+    [3, "direct", "composer"],
+  ] as const) {
+    client.emit({
+      type: "buffer_added",
+      buffer: {
+        id,
+        network_id: 1,
+        kind,
+        title,
+        draft_key: `test:${title}`,
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    });
+  }
+  client.emit({
+    type: "focus_buffer_requested",
+    command_id: "query-1",
+    buffer_id: 3,
+  });
+  await Promise.resolve();
+
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: "online",
+    },
+  });
+
+  expect(
+    await screen.findByRole("heading", { name: "composer" }),
+  ).toBeVisible();
+});
+
 it("renders command error and engine notice keys as human text", async () => {
   const client = new FakeEngineClient("composer.unknown_command");
   render(() => <App engineClient={client} />);
@@ -504,9 +595,33 @@ it("shows an optimistic message as failed when sending fails", async () => {
 
 it("marks a visible live-edge buffer read only after a focused 500ms dwell", async () => {
   vi.useFakeTimers();
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+
+      observe(target: Element): void {
+        this.callback(
+          [{ isIntersecting: true, target } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        );
+      }
+
+      disconnect(): void {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      unobserve(): void {}
+    },
+  );
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);
+  await vi.advanceTimersByTimeAsync(0);
   client.emit({
     type: "buffer_added",
     buffer: {
@@ -596,9 +711,14 @@ class FakeEngineClient implements EngineClient {
   livenessChecks = 0;
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
-  constructor(private readonly rejection?: string) {}
+  constructor(
+    private readonly rejection?: string,
+    private readonly startResult: Promise<void> = Promise.resolve(),
+  ) {}
 
-  async start(): Promise<void> {}
+  start(): Promise<void> {
+    return this.startResult;
+  }
 
   async send(request: Parameters<EngineClient["send"]>[0]) {
     this.requests.push(request);

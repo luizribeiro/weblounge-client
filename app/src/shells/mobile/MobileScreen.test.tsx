@@ -67,6 +67,8 @@ function renderRoute(
   return render(() => (
     <MobileScreen
       buffers={buffers}
+      chatsScrollTop={() => 0}
+      chatsScrollVersion={() => 0}
       composerNotice={undefined}
       completion={undefined}
       filter="all"
@@ -83,10 +85,10 @@ function renderRoute(
       onScroll={() => {}}
       onSend={async () => true}
       onSwipeReturnEnd={() => {}}
+      onTransitionCancel={() => {}}
       onTransitionEnd={() => {}}
       query=""
       screen={route}
-      scrollTop={0}
     />
   ));
 }

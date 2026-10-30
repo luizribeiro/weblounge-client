@@ -1,10 +1,15 @@
-import { createVirtualizer, observeElementRect } from "@tanstack/solid-virtual";
+import {
+  createVirtualizer,
+  measureElement,
+  observeElementRect,
+} from "@tanstack/solid-virtual";
 import {
   createEffect,
   createMemo,
   createSignal,
   For,
   Match,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -13,13 +18,18 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import { nickPaletteSize } from "../../theme/theme-registry";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
-import { formatTime } from "../../ui/format-time";
+import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MessageList.module.css";
+import { MessageText } from "./MessageText";
+import {
+  currentMessageDensity,
+  estimateMessageHeight,
+} from "./message-size-estimate";
+import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
@@ -29,6 +39,8 @@ interface MessageListProps {
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readThrough?: number | null | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
     | undefined;
@@ -57,11 +69,10 @@ const liveEdgeTolerance = 2;
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLOListElement | undefined;
-  let renderedFirst: number | undefined;
-  let renderedHeight = 0;
+  let liveEdgeSentinel: HTMLDivElement | undefined;
+  let observedWidth: number | undefined;
+  let observedHeight: number | undefined;
   let renderedCount = 0;
-  let autoScrollPending = false;
-  let correctingLiveEdge = false;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
   let boundaryFrozen =
@@ -77,54 +88,7 @@ export function MessageList(props: MessageListProps) {
     timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
   );
   const nickLookup = createMemo(() => createNickLookup(props.messages));
-  const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
-    get count() {
-      return rows().length;
-    },
-    getScrollElement: () => list ?? null,
-    initialRect: { width: 1024, height: 768 },
-    observeElementRect: (instance, callback) =>
-      observeElementRect(instance, (rect) =>
-        callback(rect.height === 0 ? { width: 1024, height: 768 } : rect),
-      ),
-    estimateSize: (index) => (rows()[index]?.kind === "message" ? 26 : 34),
-    getItemKey: (index) => rows()[index]?.key ?? index,
-    overscan: 12,
-  });
-  createEffect(() => {
-    rows();
-    void (document.fonts?.ready ?? Promise.resolve()).then(() => {
-      if (list?.isConnected !== true) return;
-      const preserveLiveEdge = atLiveEdge() || autoScrollPending;
-      for (const element of list.querySelectorAll<HTMLLIElement>(
-        "li[data-index]",
-      )) {
-        virtualizer.measureElement(element);
-        virtualizer.resizeItem(
-          Number(element.dataset.index),
-          element.offsetHeight,
-        );
-      }
-      if (preserveLiveEdge) jumpToBottom();
-    });
-  });
-  const reportLiveEdge = () => {
-    if (list === undefined) return;
-    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    const live = distance <= liveEdgeTolerance;
-    if (!live && autoScrollPending) {
-      if (!correctingLiveEdge) {
-        correctingLiveEdge = true;
-        requestAnimationFrame(() => {
-          correctingLiveEdge = false;
-          if (list?.isConnected !== true) return;
-          list.scrollTop = list.scrollHeight;
-          reportLiveEdge();
-        });
-      }
-      return;
-    }
-    autoScrollPending = false;
+  const setLiveEdge = (live: boolean) => {
     if (!live && atLiveEdge() && !boundaryFrozen) {
       const lastSeen = props.messages.at(-1)?.id;
       if (lastSeen !== undefined) {
@@ -136,10 +100,81 @@ export function MessageList(props: MessageListProps) {
     if (live) setUnseen(0);
     props.onLiveEdgeChange?.(live);
   };
+  const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
+    get count() {
+      return rows().length;
+    },
+    getScrollElement: () => list ?? null,
+    initialRect: { width: 1024, height: 768 },
+    observeElementRect: (instance, callback) =>
+      observeElementRect(instance, (rect) => {
+        const next = rect.height === 0 ? { width: 1024, height: 768 } : rect;
+        const widthChanged =
+          observedWidth !== undefined && observedWidth !== next.width;
+        const viewportChanged =
+          (observedWidth !== undefined && observedWidth !== next.width) ||
+          (observedHeight !== undefined && observedHeight !== next.height);
+        const followEnd = viewportChanged && atLiveEdge();
+        observedWidth = next.width;
+        observedHeight = next.height;
+        callback(next);
+        if (widthChanged) remeasure();
+        if (followEnd) virtualizer.scrollToEnd();
+      }),
+    estimateSize: (index) => {
+      const row = rows()[index];
+      if (row?.kind !== "message") return 34;
+      const width =
+        list !== undefined && list.clientWidth > 0
+          ? list.clientWidth
+          : props.presentation === "mobile"
+            ? 402
+            : 1024;
+      return estimateMessageHeight(
+        row.message,
+        width,
+        currentMessageDensity(document.documentElement),
+      );
+    },
+    getItemKey: (index) => rows()[index]?.key ?? index,
+    measureElement: (element, entry, instance) => {
+      const index = Number(element.dataset.index);
+      const measured = measureElement(element, entry, instance);
+      const size =
+        measured > 0 ? measured : instance.options.estimateSize(index);
+      return size;
+    },
+    anchorTo: "end",
+    followOnAppend: true,
+    scrollEndThreshold: liveEdgeTolerance,
+    // The sentinel can report before the virtualizer has seen the scroll that
+    // reached the end, and stays visible afterwards, so arrival at the end is
+    // also taken from the virtualizer. Leaving stays sentinel-driven so a
+    // transient gap during an append cannot freeze the read boundary.
+    onChange: (instance) => {
+      if (!atLiveEdge() && instance.isAtEnd()) setLiveEdge(true);
+    },
+    overscan: 6,
+  });
+  const remeasure = () => {
+    if (list?.isConnected !== true) return;
+    virtualizer.measure();
+    for (const element of list.querySelectorAll<HTMLLIElement>(
+      "li[data-index]",
+    ))
+      virtualizer.measureElement(element);
+  };
+  const measureRow = (element: HTMLLIElement, index: number) => {
+    element.dataset.index = String(index);
+    const measured = measureElement(element, undefined, virtualizer);
+    if (measured > 0) virtualizer.resizeItem(index, measured);
+    virtualizer.measureElement(element);
+  };
+  const reportLiveEdge = (sentinelVisible: boolean) =>
+    setLiveEdge(sentinelVisible && virtualizer.isAtEnd());
   const jumpToBottom = () => {
-    autoScrollPending = true;
-    virtualizer.scrollToIndex(rows().length - 1, { align: "end" });
-    queueMicrotask(reportLiveEdge);
+    if (list === undefined || rows().length === 0) return;
+    virtualizer.scrollToEnd();
   };
   const selectLastOwn = () => {
     const message = [...props.messages]
@@ -180,29 +215,39 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const messages = props.messages;
-    const currentFirst = messages[0]?.id;
-    const previousFirst = renderedFirst;
-    const previousHeight = renderedHeight;
     const previousCount = renderedCount;
-    const wasLive = atLiveEdge();
-    if (messages.length > previousCount && wasLive) autoScrollPending = true;
-    queueMicrotask(() => {
-      if (list === undefined) return;
-      if (
-        previousFirst !== undefined &&
-        messages.findIndex((message) => message.id === previousFirst) > 0
-      ) {
-        list.scrollTop += list.scrollHeight - previousHeight;
-      } else if (messages.length > previousCount) {
-        if (wasLive || autoScrollPending) jumpToBottom();
-        else setUnseen((count) => count + messages.length - previousCount);
-      }
-      renderedFirst = currentFirst;
-      renderedHeight = list.scrollHeight;
-      renderedCount = messages.length;
-    });
+    if (messages.length > previousCount && !atLiveEdge())
+      setUnseen((count) => count + messages.length - previousCount);
+    renderedCount = messages.length;
   });
-  onMount(() => queueMicrotask(jumpToBottom));
+  onMount(() => {
+    const fonts = document.fonts;
+    const handleFontsLoaded = () => {
+      remeasure();
+      if (atLiveEdge()) virtualizer.scrollToEnd();
+    };
+    const liveEdgeObserver =
+      list === undefined || typeof IntersectionObserver === "undefined"
+        ? undefined
+        : new IntersectionObserver(
+            (entries) => {
+              const entry = entries.find(
+                (candidate) => candidate.target === liveEdgeSentinel,
+              );
+              if (entry !== undefined) reportLiveEdge(entry.isIntersecting);
+            },
+            { root: list },
+          );
+    if (liveEdgeSentinel !== undefined)
+      liveEdgeObserver?.observe(liveEdgeSentinel);
+    void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
+    fonts?.addEventListener("loadingdone", handleFontsLoaded);
+    onCleanup(() => {
+      liveEdgeObserver?.disconnect();
+      fonts?.removeEventListener("loadingdone", handleFontsLoaded);
+    });
+    queueMicrotask(jumpToBottom);
+  });
 
   return (
     <div class={styles.surface}>
@@ -216,10 +261,10 @@ export function MessageList(props: MessageListProps) {
           event.preventDefault();
           jumpToBottom();
         }}
-        onScroll={reportLiveEdge}
         ref={(element) => {
           list = element;
         }}
+        style={{ "--wl-message-time-column": formattedTimeColumnWidth() }}
         tabindex="0"
         onCopy={(event) =>
           copySelectedRows(event, event.currentTarget, toCopyRows(rows()))
@@ -229,6 +274,14 @@ export function MessageList(props: MessageListProps) {
           aria-hidden="true"
           class={styles.spacer}
           style={{ height: `${virtualizer.getTotalSize()}px` }}
+        />
+        <div
+          aria-hidden="true"
+          class={styles.liveEdge}
+          ref={(element) => {
+            liveEdgeSentinel = element;
+          }}
+          style={{ top: `${Math.max(virtualizer.getTotalSize() - 1, 0)}px` }}
         />
         <For each={virtualizer.getVirtualItems()}>
           {(virtualRow) => {
@@ -245,7 +298,9 @@ export function MessageList(props: MessageListProps) {
                 class={styles.virtualRow}
                 data-copy-row-index={virtualRow.index}
                 data-index={virtualRow.index}
+                data-row-key={String(virtualRow.key)}
                 data-selected={selected()}
+                ref={(element) => measureRow(element, virtualRow.index)}
                 style={{
                   transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
                 }}
@@ -253,6 +308,8 @@ export function MessageList(props: MessageListProps) {
                 <TimelineRowView
                   index={virtualRow.index}
                   nickLookup={nickLookup()}
+                  onOpenChannel={props.onOpenChannel}
+                  onOpenExternal={props.onOpenExternal}
                   row={row()}
                 />
               </li>
@@ -272,6 +329,8 @@ export function MessageList(props: MessageListProps) {
 function TimelineRowView(props: {
   readonly index: number;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly row: TimelineRow | undefined;
 }) {
   return (
@@ -294,6 +353,8 @@ function TimelineRowView(props: {
                 index={props.index}
                 message={row.message}
                 nickLookup={props.nickLookup}
+                onOpenChannel={props.onOpenChannel}
+                onOpenExternal={props.onOpenExternal}
               />
             )}
           </Match>
@@ -316,9 +377,19 @@ function MessageRow(props: {
   readonly index: number;
   readonly message: MessageProjection;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
 }) {
   const message = props.message;
-  if (message.kind === "notice") return <NoticeRow message={message} />;
+  if (message.kind === "notice")
+    return (
+      <NoticeRow
+        message={message}
+        nickLookup={props.nickLookup}
+        onOpenChannel={props.onOpenChannel}
+        onOpenExternal={props.onOpenExternal}
+      />
+    );
   const nickStyle =
     message.authorship === "own"
       ? undefined
@@ -343,7 +414,12 @@ function MessageRow(props: {
             <span class={styles.actionNick} style={nickStyle}>
               {message.author}
             </span>{" "}
-            {renderText(message.text, props.nickLookup)}
+            <MessageText
+              authors={props.nickLookup}
+              onOpenChannel={props.onOpenChannel}
+              onOpenExternal={props.onOpenExternal}
+              text={message.text}
+            />
           </Selectable>
           <Delivery message={message} />
         </>
@@ -370,7 +446,12 @@ function MessageRow(props: {
             {message.bot && <span class={styles.bot}>BOT</span>}
           </Line>
           <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
-            {renderText(message.text, props.nickLookup)}
+            <MessageText
+              authors={props.nickLookup}
+              onOpenChannel={props.onOpenChannel}
+              onOpenExternal={props.onOpenExternal}
+              text={message.text}
+            />
           </Selectable>
           <Delivery message={message} />
         </>
@@ -379,7 +460,12 @@ function MessageRow(props: {
   );
 }
 
-function NoticeRow(props: { readonly message: MessageProjection }) {
+function NoticeRow(props: {
+  readonly message: MessageProjection;
+  readonly nickLookup: ReadonlyMap<string, NickDisplay>;
+  readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenExternal?: ((href: string) => void) | undefined;
+}) {
   const message = props.message;
   return (
     <div
@@ -393,7 +479,16 @@ function NoticeRow(props: { readonly message: MessageProjection }) {
         class={styles.noticeTopic}
         surfaceId={`message-${message.id}`}
       >
-        {message.text || "No topic is set."}
+        {message.text === "" ? (
+          "No topic is set."
+        ) : (
+          <MessageText
+            authors={props.nickLookup}
+            onOpenChannel={props.onOpenChannel}
+            onOpenExternal={props.onOpenExternal}
+            text={message.text}
+          />
+        )}
       </Selectable>
       {message.author !== "" && <span> — set by {message.author}</span>}
       {message.server_time_ms !== null && (
@@ -412,25 +507,6 @@ function Delivery(props: { readonly message: MessageProjection }) {
   if (props.message.delivery === "failed")
     return <Line class={styles.failed}>Failed</Line>;
   return null;
-}
-
-function renderText(text: string, authors: ReadonlyMap<string, NickDisplay>) {
-  return text.split(/([\p{L}\p{N}_\-[\]{}\\`^|]+)/gu).map((part) => {
-    const author = authors.get(part.toLocaleLowerCase());
-    if (author === undefined) return part;
-    return (
-      <span
-        class={author.authorship === "own" ? styles.own : undefined}
-        style={
-          author.authorship === "own"
-            ? undefined
-            : { color: nickColor(author.nick_color_index) }
-        }
-      >
-        {part}
-      </span>
-    );
-  });
 }
 
 function timelineRows(
@@ -509,10 +585,6 @@ function formatNoticeTime(milliseconds: number): string {
     timeStyle: "short",
   }).format(milliseconds);
 }
-function nickColor(index: number): string {
-  return `var(--wl-nick-${index % nickPaletteSize})`;
-}
-
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight - 22);
 }

@@ -11,25 +11,78 @@ const serverCommand = devServer
   : `WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite preview --host 127.0.0.1 --port ${port}${outDir}`;
 
 export default defineConfig({
-  testDir: "./e2e",
-  workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
   projects: [
     {
       name: "chromium",
-      testIgnore: /connection-resilience\.spec\.ts/,
+      testIgnore: [
+        "**/mobile-page-zoom.spec.ts",
+        "**/connection-resilience.spec.ts",
+      ],
+      use: { browserName: "chromium" },
+    },
+    {
+      name: "firefox-timestamps",
+      testMatch: "**/timestamps.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
+      name: "webkit-timestamps",
+      testMatch: "**/timestamps.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-mobile-back",
+      testMatch: "**/mobile-back-swipe.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "webkit-mobile-inputs",
+      testMatch: [
+        "**/mobile-input-zoom.spec.ts",
+        "**/mobile-page-zoom.spec.ts",
+      ],
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "webkit-splash-desktop",
+      grep: /desktop/,
+      testMatch: "**/splash.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-splash-mobile",
+      grep: /mobile/,
+      testMatch: "**/splash.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "webkit-mobile-history",
+      testMatch: "**/mobile-history.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-mobile-history",
+      testMatch: "**/mobile-history.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
+      name: "resilience-desktop-chromium",
+      testMatch: "**/connection-resilience.spec.ts",
       use: { browserName: "chromium" },
     },
     {
       name: "resilience-desktop-webkit",
-      testMatch: /connection-resilience\.spec\.ts/,
+      testMatch: "**/connection-resilience.spec.ts",
       use: { browserName: "webkit" },
     },
     {
       name: "resilience-mobile-webkit",
-      testMatch: /connection-resilience\.spec\.ts/,
-      use: { ...devices["iPhone 16 Pro"] },
+      testMatch: "**/connection-resilience.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
   ],
+  testDir: "./e2e",
+  workers: process.env.WEBLOUNGE_E2E_ERGO === "1" ? 1 : undefined,
   use: {
     baseURL: `http://127.0.0.1:${port}`,
   },

@@ -175,6 +175,15 @@ Back processing dismisses the top overlay, then pops a screen, then yields to th
 back, header controls, browser history, and the swipe gesture dispatch the same action. Browser
 history stores opaque route IDs rather than state snapshots.
 
+Browser history follows one platform policy owned outside the shell. Installed PWAs, including
+iOS standalone, and Android push opaque entries for screens and overlays so the system Back action
+walks the in-app stack. A touch-capable WebKit browser tab uses `replaceState` for every in-app
+screen and overlay change: Safari's edge gesture then has no in-app page snapshots to animate, and
+the app's leading-edge gesture is the only in-app swipe-back. Detection combines standalone display
+mode (`display-mode: standalone` or `navigator.standalone`) with a WebKit touch feature test; shell
+components never inspect a user-agent string. In both policies, selecting a buffer replaces the URL
+for the current route; URL synchronization never requires an extra history entry.
+
 Hardware-keyboard and accessible controls dispatch `mobile.tab-chats`, `mobile.tab-activity`, and
 `mobile.tab-settings`. Mobile Back dispatches `navigation.back`; overlay dismissal still uses
 `navigation.escape`. Activity's control dispatches `activity.mark-all-read`. Subsystem 14 owns
@@ -190,6 +199,34 @@ Desktop buffer links show in the focused pane unless the invoking action explici
 split. Mobile links push on the invoking tab, with external buffer links selecting Chats. Network
 links open the server buffer on desktop and Networks settings on mobile. Settings and onboarding
 use modal desktop presentation and stack mobile presentation.
+
+Web buffer routes use one encoded path segment per identifier:
+
+| Destination | Path |
+|---|---|
+| Network server buffer | `/<network>` |
+| `#lounge` | `/<network>/lounge` |
+| `##ops` | `/<network>/%23ops` |
+| `&local` | `/<network>/%26local` |
+| Direct message with `mel` | `/<network>/@mel` |
+
+`network` is the configured network name. The ordinary `#` channel sigil is omitted; any other
+leading sigil remains part of the percent-encoded destination segment, which keeps `##foo` and
+`&foo` unambiguous. Nicknames and channel names are decoded as a single segment and matched with
+the network's IRC casemapping. Malformed escapes, extra segments, and empty destination segments
+are recoverable invalid links, never commands.
+
+Selecting a buffer replaces the URL on desktop. Mobile supplies the same route URL when its
+platform policy pushes or replaces the corresponding screen, so URL synchronization creates no
+additional entry. Initial selection resolves in this order: a valid URL target, the device-local
+last viewed buffer, then the first channel in engine order. A URL for a channel that is not joined
+renders a not-joined destination with an explicit Join action; loading a URL never joins by itself.
+
+Before an OAuth redirect, the shell stores a same-origin, syntactically valid buffer route. The
+callback remains `/`; after successful authorization the stored route is restored and removed.
+Untrusted origins and unknown route shapes are discarded. Hosted and preview servers must fall
+back non-asset paths to `index.html` while retaining the app's security headers; production nginx
+therefore needs `try_files $uri /index.html;` for those paths.
 
 ## Boundaries
 

@@ -9,6 +9,9 @@ import {
 let platform: PlatformController | undefined;
 
 beforeEach(() => {
+  history.replaceState(null, "", "/");
+  localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
     class {

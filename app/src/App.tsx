@@ -33,8 +33,10 @@ import {
 const reloadMarker = "weblounge-build-reload";
 
 interface AppProps {
+  beforeReveal?: () => Promise<void>;
   engineClient?: EngineClient;
   hostedSession?: HostedSession;
+  onReady?: () => void;
   onHostedAuthorizationRequired?: (
     reason: "expired" | "revoked" | "worker_restarted",
   ) => void;
@@ -48,6 +50,9 @@ export function App(props: AppProps) {
   const [shellReady, setShellReady] = createSignal(
     props.hostedSession === undefined,
   );
+  const [startupError, setStartupError] = createSignal<string>();
+  const [engineReady, setEngineReady] = createSignal(false);
+  const [startupRevealed, setStartupRevealed] = createSignal(false);
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
@@ -69,6 +74,7 @@ export function App(props: AppProps) {
   let cancelTokenExpiry = () => {};
   let restartingHostedAuthorization = false;
   let engineInstance: string | undefined;
+  let disposed = false;
 
   onMount(() => {
     const removeContextMenuHandler = installContextMenuHandler(document);
@@ -127,13 +133,7 @@ export function App(props: AppProps) {
         }
       }
       if (message.type === "focus_buffer_requested") {
-        const request = { bufferId: message.buffer_id };
-        setFocusRequest(request);
-        queueMicrotask(() =>
-          setFocusRequest((current) =>
-            current === request ? undefined : current,
-          ),
-        );
+        setFocusRequest({ bufferId: message.buffer_id });
       }
       if (message.type === "network_state_changed") {
         if (connectionStateKind(message.network.state) === "online") {
@@ -238,14 +238,25 @@ export function App(props: AppProps) {
       debugPassword,
       props.hostedSession,
       clientId,
-    ).then(() => {
-      if (props.hostedSession === undefined) return;
-      cancelTokenExpiry = scheduleExpiry(
-        props.hostedSession.token.expiresAt,
-        () => void restartHostedAuthorization("expired"),
-      );
+    ).then(async (outcome) => {
+      if (outcome === "reloading") return;
+      if (outcome === "failed") {
+        setStartupError("Couldn't start weblounge. Reload to try again.");
+      }
+      setEngineReady(true);
+      await props.beforeReveal?.();
+      if (disposed) return;
+      props.onReady?.();
+      setStartupRevealed(true);
+      if (outcome === "ready" && props.hostedSession !== undefined) {
+        cancelTokenExpiry = scheduleExpiry(
+          props.hostedSession.token.expiresAt,
+          () => void restartHostedAuthorization("expired"),
+        );
+      }
     });
     onCleanup(() => {
+      disposed = true;
       cancelTokenExpiry();
       unregisterContextSurface();
       removeContextMenuHandler();
@@ -291,7 +302,11 @@ export function App(props: AppProps) {
         appRoot = element;
       }}
     >
-      <p class="visually-hidden" role="status">
+      <p
+        aria-hidden={startupRevealed() ? undefined : "true"}
+        class="visually-hidden"
+        role={startupRevealed() ? "status" : undefined}
+      >
         {engineStatus()}
       </p>
       {engineNotice() !== undefined && (
@@ -299,7 +314,9 @@ export function App(props: AppProps) {
           {engineNotice()}
         </p>
       )}
-      {!shellReady() ? (
+      {!engineReady() ? null : startupError() !== undefined ? (
+        <HostedStatus message={startupError() ?? ""} error />
+      ) : !shellReady() ? (
         <HostedStatus
           message={hostedError() ?? "Signing in…"}
           error={hostedError() !== undefined}
@@ -419,7 +436,7 @@ async function startEngine(
   debugPassword: string | null,
   hostedSession: HostedSession | undefined,
   clientId: string,
-): Promise<void> {
+): Promise<"ready" | "failed" | "reloading"> {
   try {
     await client.start({
       build_id: __BUILD_ID__,
@@ -450,15 +467,16 @@ async function startEngine(
     } else if (debugPassword !== null) {
       await connectDebugNetwork(client, debugPassword);
     }
+    return "ready";
   } catch (error: unknown) {
     if (error instanceof IncompatibleBuildError) {
-      recoverFromBuildMismatch(setStatus);
-      return;
+      return recoverFromBuildMismatch(setStatus) ? "reloading" : "failed";
     }
     setStatus("Engine failed to start");
     if (hostedSession !== undefined) {
       setHostedError("Couldn't start the chat. Reload the app to try again.");
     }
+    return "failed";
   }
 }
 
@@ -638,12 +656,13 @@ export function recoverFromBuildMismatch(
   setStatus: (status: string) => void,
   storage: Pick<Storage, "getItem" | "setItem"> = sessionStorage,
   reload: () => void = () => location.reload(),
-): void {
+): boolean {
   if (storage.getItem(reloadMarker) === __BUILD_ID__) {
     setStatus("Engine update failed; reload site data to recover");
-    return;
+    return false;
   }
 
   storage.setItem(reloadMarker, __BUILD_ID__);
   reload();
+  return true;
 }

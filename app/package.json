@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tanstack/solid-virtual": "3.13.12",
+    "@tanstack/solid-virtual": "3.13.48",
     "solid-js": "1.9.17"
   },
   "devDependencies": {

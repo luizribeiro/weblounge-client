@@ -8,6 +8,7 @@ import {
 } from "solid-js";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
+import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
@@ -15,6 +16,7 @@ import type { ChatFilter } from "./mobile-chats";
 import {
   createMobileStack,
   finishTransition,
+  type MobileScreen as MobileScreenState,
   mountedScreens,
   popChat,
   previousScreen,
@@ -25,8 +27,14 @@ import { type MobileViewport, observeMobileViewport } from "./mobile-viewport";
 
 interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
+  readonly onFocusRequestHandled?:
+    | ((request: { readonly bufferId: number }) => void)
+    | undefined;
   readonly initialBufferId?: number | undefined;
   readonly onSelectBuffer: (bufferId: number) => void;
+  readonly pathForBuffer?:
+    | ((bufferId: number) => string | undefined)
+    | undefined;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
   readonly memberViewScope?: string | undefined;
   readonly onOpenDirect?:
@@ -44,16 +52,20 @@ interface MobileShellProps extends MobileShellData {
 
 export function MobileShell(props: MobileShellProps) {
   const platform = platformEnvironment();
+  const historyPolicy = mobileHistoryPolicy();
+  const reducedMotion = platform.prefersReducedMotion;
   const memberViewId = `${props.memberViewScope ?? crypto.randomUUID()}:mobile:drawer`;
   const initial = createMobileStack();
+  const initialBufferId =
+    window.location.pathname === "/" ? undefined : props.initialBufferId;
   const [stack, setStack] = createSignal(
-    props.initialBufferId === undefined
+    initialBufferId === undefined
       ? initial
-      : pushChat(initial, props.initialBufferId, true),
+      : pushChat(initial, initialBufferId, true),
   );
   const [filter, setFilter] = createSignal<ChatFilter>("all");
   const [query, setQuery] = createSignal("");
-  const [scrollTop, setScrollTop] = createSignal(0);
+  const [scrollRestoreVersion, setScrollRestoreVersion] = createSignal(0);
   const [swipeProgress, setSwipeProgress] = createSignal<number>();
   const [swipeReturning, setSwipeReturning] = createSignal(false);
   const [viewport, setViewport] = createSignal<MobileViewport>();
@@ -64,17 +76,33 @@ export function MobileShell(props: MobileShellProps) {
   );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let pendingDirect: { networkId: number; nick: string } | undefined;
+  let pendingHistoryPopInstant = false;
   let pushNextFocus = false;
+  let suppressCompletedSwipeClick = false;
+  let shellElement: HTMLElement | undefined;
+  let chatsStable = true;
+  let returnScrollTop = 0;
   let gesture:
     | { pointerId: number; startX: number; startedAt: number; width: number }
     | undefined;
 
-  const open = (bufferId: number, preserveCurrent = false) => {
+  const open = (
+    bufferId: number,
+    preserveCurrent = false,
+    currentScrollTop?: number,
+  ) => {
+    if (currentScrollTop !== undefined) {
+      returnScrollTop = currentScrollTop;
+    }
+    const state = mobileHistoryState(true, false);
+    const path = props.pathForBuffer?.(bufferId);
+    if (
+      historyPolicy === "stack" &&
+      (stack().active.kind === "chats" || preserveCurrent)
+    )
+      window.history.pushState(state, "", path);
+    else window.history.replaceState(state, "", path);
     props.onSelectBuffer(bufferId);
-    const state = { ...historyState(), webloungeMobileChat: true };
-    if (stack().active.kind === "chats" || preserveCurrent)
-      window.history.pushState(state, "");
-    else window.history.replaceState(state, "");
     setStack((current) =>
       pushChat(
         current,
@@ -84,8 +112,29 @@ export function MobileShell(props: MobileShellProps) {
       ),
     );
   };
-  const dispatchBack = () =>
-    setStack((current) => popChat(current, platform.prefersReducedMotion()));
+  const dispatchBack = (instant = reducedMotion()) =>
+    setStack((current) => {
+      const next = popChat(current, instant);
+      if (historyPolicy === "replace") {
+        window.history.replaceState(
+          mobileHistoryState(next.active.kind === "chat", false),
+          "",
+          next.active.kind === "chat"
+            ? props.pathForBuffer?.(next.active.bufferId)
+            : "/",
+        );
+      }
+      return next;
+    });
+  const resetSwipe = () => {
+    gesture = undefined;
+    setSwipeReturning(false);
+    setSwipeProgress(undefined);
+  };
+  const resetMotion = () => {
+    resetSwipe();
+    setStack(finishTransition);
+  };
   const finishDrawerClose = () => {
     setDrawerBufferId(undefined);
     if (pendingDirect !== undefined) {
@@ -95,25 +144,34 @@ export function MobileShell(props: MobileShellProps) {
     }
   };
   const closeDrawer = () => {
-    if (window.history.state?.webloungeMobileDrawer === true)
+    if (
+      historyPolicy === "stack" &&
+      window.history.state?.webloungeMobileDrawer === true
+    )
       window.history.back();
-    else finishDrawerClose();
+    else {
+      window.history.replaceState(mobileHistoryState(true, false), "");
+      finishDrawerClose();
+    }
   };
-  const requestBack = () => {
+  const requestBack = (instant = false) => {
     if (drawerBufferId() !== undefined) return closeDrawer();
-    if (window.history.state?.webloungeMobileChat === true) {
+    if (
+      historyPolicy === "stack" &&
+      window.history.state?.webloungeMobileChat === true
+    ) {
+      pendingHistoryPopInstant = instant;
       window.history.back();
     } else {
-      dispatchBack();
+      dispatchBack(instant || reducedMotion());
     }
   };
   const openMembers = (bufferId: number) => {
     setMemberFilter("");
     setDrawerBufferId(bufferId);
-    window.history.pushState(
-      { ...historyState(), webloungeMobileDrawer: true },
-      "",
-    );
+    const state = mobileHistoryState(true, true);
+    if (historyPolicy === "stack") window.history.pushState(state, "");
+    else window.history.replaceState(state, "");
   };
 
   createEffect(() => {
@@ -126,9 +184,20 @@ export function MobileShell(props: MobileShellProps) {
       open(requested, pushNextFocus);
     }
     pushNextFocus = false;
+    props.onFocusRequestHandled?.(request);
+  });
+
+  createEffect(() => {
+    const stable =
+      stack().active.kind === "chats" && stack().transition === undefined;
+    if (stable && !chatsStable) {
+      setScrollRestoreVersion((version) => version + 1);
+    }
+    chatsStable = stable;
   });
 
   const beginSwipe = (event: PointerEvent) => {
+    suppressCompletedSwipeClick = false;
     const target = event.target as Element;
     if (
       event.clientX > 24 ||
@@ -148,6 +217,7 @@ export function MobileShell(props: MobileShellProps) {
           ? event.currentTarget.getBoundingClientRect().width
           : window.innerWidth,
     };
+    event.preventDefault();
     setSwipeProgress(0);
   };
   const moveSwipe = (event: PointerEvent) => {
@@ -171,9 +241,16 @@ export function MobileShell(props: MobileShellProps) {
     const completes = swipeBackCompletes(distance, gesture.width, velocity);
     gesture = undefined;
     if (completes) {
+      suppressCompletedSwipeClick = true;
       setSwipeProgress(undefined);
-      requestBack();
+      requestBack(true);
     } else returnSwipe();
+  };
+  const consumeCompletedSwipeClick = (event: MouseEvent) => {
+    if (!suppressCompletedSwipeClick) return;
+    suppressCompletedSwipeClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
   };
   const cancelSwipe = (event: PointerEvent) => {
     if (gesture?.pointerId !== event.pointerId) return;
@@ -181,29 +258,72 @@ export function MobileShell(props: MobileShellProps) {
     returnSwipe();
   };
   const screens = () =>
-    swipeProgress() === undefined
-      ? mountedScreens(stack())
-      : [previousScreen(stack()), stack().active];
+    retainChatsScreen(
+      stack(),
+      swipeProgress() === undefined
+        ? mountedScreens(stack())
+        : [previousScreen(stack()), stack().active],
+    );
+  const screenIsRetained = (screen: MobileScreenState) => {
+    const current = stack();
+    if (screen.kind !== "chats" || current.active.kind === "chats")
+      return false;
+    if (swipeProgress() !== undefined)
+      return previousScreen(current) !== screen;
+    return (
+      current.transition?.from !== screen && current.transition?.to !== screen
+    );
+  };
 
   onMount(() => {
-    const handlePopState = () =>
-      drawerBufferId() === undefined ? dispatchBack() : finishDrawerClose();
+    const handlePopState = () => {
+      if (historyPolicy === "replace") {
+        resetMotion();
+        return;
+      }
+      const browserHandledSwipe =
+        pendingHistoryPopInstant ||
+        gesture !== undefined ||
+        swipeProgress() !== undefined;
+      pendingHistoryPopInstant = false;
+      resetSwipe();
+      if (drawerBufferId() === undefined)
+        dispatchBack(browserHandledSwipe || reducedMotion());
+      else finishDrawerClose();
+    };
+    const handleVisibilityChange = () => resetMotion();
     window.addEventListener("popstate", handlePopState);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    shellElement?.addEventListener("click", consumeCompletedSwipeClick, true);
     const stopViewport = observeMobileViewport(window, setViewport);
+    if (historyPolicy === "replace") {
+      window.history.replaceState(
+        mobileHistoryState(stack().active.kind === "chat", false),
+        "",
+      );
+    }
     onCleanup(() => {
       stopViewport();
       window.removeEventListener("popstate", handlePopState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      shellElement?.removeEventListener(
+        "click",
+        consumeCompletedSwipeClick,
+        true,
+      );
     });
   });
 
   return (
     <main
       class={styles.shell}
+      data-history-policy={historyPolicy}
       data-mobile-shell="true"
       onPointerCancel={cancelSwipe}
       onPointerDown={beginSwipe}
       onPointerMove={moveSwipe}
       onPointerUp={endSwipe}
+      ref={shellElement}
       style={{
         "--wl-visual-height":
           viewport() === undefined ? undefined : `${viewport()?.height}px`,
@@ -217,6 +337,8 @@ export function MobileShell(props: MobileShellProps) {
           return (
             <MobileScreen
               buffers={props.buffers}
+              chatsScrollTop={() => returnScrollTop}
+              chatsScrollVersion={scrollRestoreVersion}
               commandSpecs={props.commandSpecs}
               composerNotice={props.composerNotice}
               completion={props.completion}
@@ -228,14 +350,23 @@ export function MobileShell(props: MobileShellProps) {
               onFilter={setFilter}
               onLoadHistory={props.onLoadHistory}
               onMarkRead={props.onMarkRead}
-              onOpen={open}
+              onOpen={(bufferId, currentScrollTop) =>
+                open(bufferId, false, currentScrollTop)
+              }
               onOpenMembers={openMembers}
               onQuery={setQuery}
               onRequestCompletion={props.onRequestCompletion}
               onRetryNetwork={props.onRetryNetwork}
-              onScroll={setScrollTop}
+              onScroll={(nextScrollTop) => {
+                if (
+                  stack().active.kind === "chats" &&
+                  stack().transition === undefined
+                )
+                  returnScrollTop = nextScrollTop;
+              }}
               onSend={props.onSend}
               onTransitionEnd={() => setStack(finishTransition)}
+              onTransitionCancel={resetMotion}
               position={
                 transition() === undefined
                   ? undefined
@@ -244,8 +375,8 @@ export function MobileShell(props: MobileShellProps) {
                     : "to"
               }
               query={query()}
+              retained={screenIsRetained(screen)}
               screen={screen}
-              scrollTop={scrollTop()}
               swipe={
                 swipeProgress() === undefined
                   ? undefined
@@ -257,8 +388,7 @@ export function MobileShell(props: MobileShellProps) {
               swipeProgress={swipeProgress()}
               transition={transition()?.direction}
               onSwipeReturnEnd={() => {
-                setSwipeReturning(false);
-                setSwipeProgress(undefined);
+                resetSwipe();
               }}
             />
           );
@@ -294,9 +424,34 @@ export function MobileShell(props: MobileShellProps) {
   );
 }
 
+function retainChatsScreen(
+  stack: ReturnType<typeof createMobileStack>,
+  screens: readonly MobileScreenState[],
+): readonly MobileScreenState[] {
+  const chats =
+    stack.active.kind === "chats"
+      ? stack.active
+      : stack.back.find((screen) => screen.kind === "chats");
+  return chats === undefined || screens.includes(chats)
+    ? screens
+    : [chats, ...screens];
+}
+
 function historyState(): Record<string, unknown> {
   const state: unknown = window.history.state;
   return typeof state === "object" && state !== null
     ? (state as Record<string, unknown>)
     : {};
+}
+
+function mobileHistoryState(
+  chat: boolean,
+  drawer: boolean,
+): Record<string, unknown> {
+  const state = { ...historyState() };
+  delete state.webloungeMobileChat;
+  delete state.webloungeMobileDrawer;
+  if (chat) state.webloungeMobileChat = true;
+  if (drawer) state.webloungeMobileDrawer = true;
+  return state;
 }

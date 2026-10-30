@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
@@ -29,7 +29,8 @@ it("updates chat filters and search through accessible controls", () => {
         buffers={buffers}
         filter={filter()}
         query={query()}
-        scrollTop={0}
+        restoreScroll={() => 0}
+        restoreVersion={() => 0}
         onFilter={setFilter}
         onOpen={open}
         onQuery={setQuery}
@@ -46,8 +47,41 @@ it("updates chat filters and search through accessible controls", () => {
   fireEvent.input(screen.getByRole("searchbox", { name: "Search chats" }), {
     target: { value: "mel" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "mel" }));
-  expect(open).toHaveBeenCalledWith(3);
+  const direct = screen.getByRole("button", { name: "mel" });
+  const list = direct.parentElement;
+  if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
+  list.scrollTop = 37;
+  fireEvent.pointerDown(direct);
+  fireEvent.click(direct);
+  expect(open).toHaveBeenCalledWith(3, 37);
+});
+
+it("restores the retained chat list after returning from a conversation", async () => {
+  const [restoreScroll, setRestoreScroll] = createSignal(0);
+  const [restoreVersion, setRestoreVersion] = createSignal(0);
+  render(() => (
+    <MobileChatList
+      buffers={buffers}
+      filter="all"
+      networks={[]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={() => {}}
+      query=""
+      restoreScroll={restoreScroll}
+      restoreVersion={restoreVersion}
+    />
+  ));
+  const direct = screen.getByRole("button", { name: "mel" });
+  const list = direct.parentElement;
+  if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
+  list.scrollTop = 0;
+
+  setRestoreScroll(57);
+  setRestoreVersion(1);
+
+  await waitFor(() => expect(list.scrollTop).toBe(57));
 });
 
 it("omits the preview element at compact mobile density", () => {
@@ -85,7 +119,8 @@ it("omits the preview element at compact mobile density", () => {
       onQuery={() => {}}
       onScroll={() => {}}
       query=""
-      scrollTop={0}
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
     />
   ));
 

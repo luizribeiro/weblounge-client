@@ -67,7 +67,7 @@ subsystem 08.
 | Rubber-band and pull-to-refresh | `html`, `body`, root, and app shell fill the viewport, do not page-scroll, and use `overscroll-behavior: none`; lists own scrolling. |
 | Mobile input zoom | Editable controls compute to at least `16px` under root `data-input="touch"`. |
 | Font layout shift | Task 4 self-hosts and preloads subsets with metric-matched fallbacks or `size-adjust`; the foundation uses the system stack and the audit observes font readiness. |
-| Accidental zoom suppression | The viewport remains user-scalable; controls use `touch-action: manipulation` without disabling accessibility zoom. |
+| Accidental zoom suppression | The app shell fixes page scale at 1, uses `touch-action: pan-x pan-y`, and cancels WebKit gesture events. Text size remains accessible through inherited rem/root scaling; future media viewers may opt into local pinch zoom. |
 
 Raw fallback geometry exists only until task 4 emits the full theme/density token sets and is
 marked there. No raw colour is introduced.

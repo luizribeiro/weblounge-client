@@ -1,4 +1,11 @@
-import { createMemo, For, Show } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import {
   type DensityId,
   densityDefaults,
@@ -28,15 +35,26 @@ interface MobileChatListProps {
   readonly buffers: readonly BufferProjection[];
   readonly filter: ChatFilter;
   readonly query: string;
-  readonly scrollTop: number;
+  readonly restoreScroll: Accessor<number>;
+  readonly restoreVersion: Accessor<number>;
   readonly onFilter: (filter: ChatFilter) => void;
-  readonly onOpen: (bufferId: number) => void;
+  readonly onOpen: (bufferId: number, scrollTop: number) => void;
   readonly onQuery: (query: string) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onScroll: (scrollTop: number) => void;
 }
 
 export function MobileChatList(props: MobileChatListProps) {
+  let list: HTMLDivElement | undefined;
+  let restoringScroll = false;
+  let userScrollIntent = false;
+  let scrollTopBeforeOpen = 0;
+  const markUserScrollIntent = () => {
+    userScrollIntent = true;
+  };
+  const markScrollKeyIntent = (event: KeyboardEvent) => {
+    if (scrollKeys.has(event.key)) userScrollIntent = true;
+  };
   const chats = createMemo(() =>
     filterChats(props.buffers, props.filter, props.query),
   );
@@ -45,6 +63,31 @@ export function MobileChatList(props: MobileChatListProps) {
       (network) => connectionStateKind(network.state) === "failed",
     );
   const connection = () => connectionOverview(props.networks);
+  createEffect(() => {
+    props.restoreVersion();
+    const scrollTop = props.restoreScroll();
+    if (list === undefined) return;
+    userScrollIntent = false;
+    const element = list;
+    restoringScroll = true;
+    element.scrollTop = scrollTop;
+    let releaseFrame: number | undefined;
+    const restoreFrame = requestAnimationFrame(() => {
+      element.scrollTop = scrollTop;
+      releaseFrame = requestAnimationFrame(() => {
+        restoringScroll = false;
+      });
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(restoreFrame);
+      if (releaseFrame !== undefined) cancelAnimationFrame(releaseFrame);
+    });
+  });
+  onCleanup(() => {
+    list?.removeEventListener("keydown", markScrollKeyIntent);
+    list?.removeEventListener("pointermove", markUserScrollIntent);
+    list?.removeEventListener("wheel", markUserScrollIntent);
+  });
   return (
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
       <header class={styles.header}>
@@ -108,10 +151,18 @@ export function MobileChatList(props: MobileChatListProps) {
       </nav>
       <div
         class={styles.list}
-        onScroll={(event) => props.onScroll(event.currentTarget.scrollTop)}
+        onScroll={(event) => {
+          if (!restoringScroll && userScrollIntent)
+            props.onScroll(event.currentTarget.scrollTop);
+        }}
         ref={(element) => {
-          queueMicrotask(() => {
-            element.scrollTop = props.scrollTop;
+          list = element;
+          element.addEventListener("keydown", markScrollKeyIntent);
+          element.addEventListener("pointermove", markUserScrollIntent, {
+            passive: true,
+          });
+          element.addEventListener("wheel", markUserScrollIntent, {
+            passive: true,
           });
         }}
       >
@@ -121,7 +172,13 @@ export function MobileChatList(props: MobileChatListProps) {
               buffer={buffer}
               previews={mobilePreviews()}
               networkLabel={networkLabel(props.networks, buffer.network_id)}
-              onOpen={() => props.onOpen(buffer.id)}
+              onOpen={() => {
+                userScrollIntent = false;
+                props.onOpen(buffer.id, scrollTopBeforeOpen);
+              }}
+              onPressStart={() => {
+                scrollTopBeforeOpen = list?.scrollTop ?? 0;
+              }}
             />
           )}
         </For>
@@ -132,6 +189,15 @@ export function MobileChatList(props: MobileChatListProps) {
     </section>
   );
 }
+
+const scrollKeys = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+]);
 
 function mobilePreviews(): boolean {
   const configured = document.documentElement.dataset.mobileDensity;

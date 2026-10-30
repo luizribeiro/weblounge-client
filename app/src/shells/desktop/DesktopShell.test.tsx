@@ -153,3 +153,35 @@ it("keeps the desktop shell and opens narrow panels as one drawer", async () => 
   platform.dispose();
   innerWidth.mockRestore();
 });
+
+it("replaces the URL when a buffer is selected", () => {
+  const replace = vi.spyOn(window.history, "replaceState");
+  const push = vi.spyOn(window.history, "pushState");
+  try {
+    render(() => (
+      <DesktopShell
+        buffers={[channel]}
+        composerNotice={undefined}
+        completion={undefined}
+        focusRequest={undefined}
+        memberships={new Map()}
+        messages={new Map()}
+        networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+        onLoadHistory={() => {}}
+        onMarkRead={() => {}}
+        onRequestCompletion={() => {}}
+        onSend={async () => true}
+        pathForBuffer={() => "/Local/room"}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "#room" }));
+
+    expect(window.location.pathname).toBe("/Local/room");
+    expect(replace).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  } finally {
+    replace.mockRestore();
+    push.mockRestore();
+  }
+});

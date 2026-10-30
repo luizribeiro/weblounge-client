@@ -204,13 +204,19 @@ mod tests {
             (
                 "app/src/App.tsx"
                     | "app/src/engine/createEngineClient.ts"
-                    | "app/src/engine/worker-runtime.ts",
+                    | "app/src/engine/worker-runtime.ts"
+                    | "app/src/features/conversation/message-size-estimate.ts",
                 "notice",
             ) | ("app/src/actions/action-registry.ts", "help")
                 | ("app/src/engine/EngineClient.ts", "notice" | "part" | "quit")
                 | (
                     "app/src/features/conversation/MessageList.tsx",
                     "notice" | "quit",
+                )
+                | (
+                    "app/src/features/conversation/MessageText.tsx"
+                        | "app/src/features/conversation/message-tokenizer.ts",
+                    "nick",
                 )
         )
     }

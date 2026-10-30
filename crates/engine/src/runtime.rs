@@ -3367,6 +3367,10 @@ mod tests {
         ));
     }
 
+    fn assert_no_output(events: &[EngineToUi]) {
+        assert!(events.is_empty());
+    }
+
     #[tokio::test]
     async fn submit_join_and_msg_use_typed_papo_commands() {
         let (client, mut events, mut wire) = wire(
@@ -3393,6 +3397,7 @@ mod tests {
             })),
             outbound,
         };
+        mark_runtime_online(&runtime);
 
         _ = runtime.request(EngineRequestEnvelope {
             id: "join".into(),
@@ -3424,7 +3429,6 @@ mod tests {
             },
         });
         assert_empty_completion(&completion);
-
         runtime.request(EngineRequestEnvelope {
             id: "topic".into(),
             request: EngineRequest::SubmitInput {
@@ -3452,14 +3456,13 @@ mod tests {
         assert_network_nickname(&mut receiver, "lounge2");
         wire.server(":alice!u@host JOIN #new").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let output = runtime.request(EngineRequestEnvelope {
+        assert_no_output(&runtime.request(EngineRequestEnvelope {
             id: "msg".into(),
             request: EngineRequest::SubmitInput {
                 buffer_id: BufferId(1),
                 input: "/msg alice hello".into(),
             },
-        });
-        assert!(output.is_empty());
+        }));
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
         assert_unfocused_direct(&collect(&mut receiver), "alice");
 
@@ -3507,6 +3510,7 @@ mod tests {
             })),
             outbound,
         };
+        mark_runtime_online(&runtime);
 
         let output = runtime.request(EngineRequestEnvelope {
             id: "identify".into(),
@@ -3649,6 +3653,7 @@ mod tests {
             })),
             outbound,
         };
+        mark_runtime_online(&runtime);
 
         let output = runtime.request(EngineRequestEnvelope {
             id: "join-pairs".into(),
@@ -3712,6 +3717,7 @@ mod tests {
             })),
             outbound,
         };
+        mark_runtime_online(&runtime);
 
         assert!(
             runtime
@@ -3848,6 +3854,15 @@ mod tests {
             .client
             .clone();
         process_event(&runtime.state, &runtime.outbound, &client, 1, event);
+    }
+
+    fn mark_runtime_online(runtime: &Runtime) {
+        lock(&runtime.state)
+            .network
+            .as_mut()
+            .expect("network remains running")
+            .model
+            .set_connection(crate::NetworkConnectionState::Online, None);
     }
 
     fn assert_network_nickname(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>, expected: &str) {

@@ -1,14 +1,9 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import { installDensity } from "./density/density";
 import type { DeploymentConfig } from "./engine/generated/DeploymentConfig";
+import { AppErrorBoundary } from "./hosted/AppErrorBoundary";
 import { loadDeploymentConfig } from "./hosted/deployment-config";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
@@ -24,6 +19,7 @@ import {
   platformEnvironment,
 } from "./platform/environment";
 import "./platform/platform.css";
+import { installPageZoomGuard } from "./page-zoom";
 import "./styles/base.css";
 import { installTheme } from "./theme/theme-controller";
 
@@ -35,13 +31,20 @@ type BootstrapState =
   | { type: "app" }
   | { type: "hosted"; config: HostedConfig; session: HostedSession };
 
-function Bootstrap() {
+interface BootstrapProps {
+  readonly beforeReveal: () => Promise<void>;
+  readonly onReady: () => void;
+}
+
+function Bootstrap(props: BootstrapProps) {
   const platform = platformEnvironment();
   const theme = installTheme(document, platform.prefersDark());
   const removeDensity = installDensity(document);
+  const removePageZoomGuard = installPageZoomGuard(document);
   createEffect(() => theme.setSystemDark(platform.prefersDark()));
   onCleanup(() => theme.dispose());
   onCleanup(removeDensity);
+  onCleanup(removePageZoomGuard);
   const [state, setState] = createSignal<BootstrapState>({
     type: "starting",
     message: "Starting…",
@@ -83,6 +86,9 @@ function Bootstrap() {
       });
     } catch (error: unknown) {
       setState({ type: "error", message: userFacingError(error) });
+      await Promise.resolve();
+      await props.beforeReveal();
+      props.onReady();
     }
   }
 
@@ -102,7 +108,7 @@ function Bootstrap() {
     }
   }
 
-  const content = createMemo(() => {
+  const content = () => {
     const current = state();
     switch (current.type) {
       case "starting":
@@ -110,11 +116,15 @@ function Bootstrap() {
       case "error":
         return <HostedStatus message={current.message} error />;
       case "app":
-        return <App />;
+        return (
+          <App beforeReveal={props.beforeReveal} onReady={props.onReady} />
+        );
       case "hosted":
         return (
           <App
+            beforeReveal={props.beforeReveal}
             hostedSession={current.session}
+            onReady={props.onReady}
             onHostedAuthorizationRequired={() =>
               void restartAuthorization(current.config)
             }
@@ -125,8 +135,8 @@ function Bootstrap() {
         return exhaustive;
       }
     }
-  });
-  return <>{content()}</>;
+  };
+  return <AppErrorBoundary>{content()}</AppErrorBoundary>;
 }
 
 function requireCurrentRedirect(config: HostedConfig): void {
@@ -152,5 +162,55 @@ if (root === null) {
 }
 
 installPlatformEnvironment(root, window);
-root.replaceChildren();
-render(() => <Bootstrap />, root);
+const splash = root.querySelector<HTMLElement>("[data-initial-splash]");
+if (splash === null) {
+  throw new Error("missing initial splash");
+}
+const startup = createStartupGate(splash);
+const application = document.createElement("div");
+application.dataset.applicationMount = "true";
+root.append(application);
+render(
+  () => (
+    <Bootstrap beforeReveal={startup.beforeReveal} onReady={startup.onReady} />
+  ),
+  application,
+);
+
+function createStartupGate(splash: HTMLElement): BootstrapProps {
+  let active = true;
+  const fontReady = document.fonts
+    .load("400 13px Inter", "Connecting to weblounge…")
+    .catch(() => []);
+  const timeout = window.setTimeout(() => {
+    if (!active) return;
+    active = false;
+    const status = splash.querySelector<HTMLElement>("[data-splash-status]");
+    if (status === null) return;
+    status.dataset.error = "true";
+    status.setAttribute("role", "alert");
+    status.textContent = "Couldn't start weblounge. Reload to try again.";
+  }, 15_000);
+
+  return {
+    beforeReveal: async () => {
+      await fontReady;
+    },
+    onReady: () => {
+      if (!active) return;
+      active = false;
+      window.clearTimeout(timeout);
+      splash.querySelector("[data-splash-status]")?.remove();
+      splash.setAttribute("aria-hidden", "true");
+      splash.dataset.state = "leaving";
+      const animations = splash.getAnimations();
+      if (animations.length === 0) {
+        splash.remove();
+        return;
+      }
+      void Promise.allSettled(
+        animations.map((animation) => animation.finished),
+      ).then(() => splash.remove());
+    },
+  };
+}

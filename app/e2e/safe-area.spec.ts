@@ -75,6 +75,7 @@ async function verifyProfile(
   await expect(
     page.getByRole("textbox", { name: "Message #weblounge-test" }),
   ).toBeVisible();
+  await expect(page.locator("[data-position]")).toHaveCount(0);
   await page.locator("#root").evaluate((root, inset) => {
     root.style.setProperty("--wl-safe-top", `${inset.top}px`);
     root.style.setProperty("--wl-safe-right", `${inset.right}px`);

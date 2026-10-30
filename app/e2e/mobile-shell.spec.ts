@@ -3,6 +3,7 @@ import { IrcClient } from "./irc-client";
 import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
+  resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
 
 test.use({
@@ -46,18 +47,62 @@ test.describe("mobile shell against local Ergo", () => {
     ).toBeVisible();
   });
 
+  test("keeps the chats list mounted throughout back navigation", async ({
+    page,
+  }, testInfo) => {
+    await page.goto("/?irc-password=weblounge-test");
+    const row = page.getByRole("button", { name: "#weblounge-test" });
+    await expect(row).toBeVisible();
+    const originalRow = await row.elementHandle();
+    if (originalRow === null) throw new Error("chat row is missing");
+
+    await row.click();
+    await expect(
+      page.getByRole("heading", { name: "#weblounge-test" }),
+    ).toBeVisible();
+    await expect(page.locator("[data-mobile-chats]")).toHaveCount(1);
+    await expect(
+      page.locator("[data-retained] [data-buffer-id]"),
+    ).not.toHaveCount(0);
+
+    await page.getByRole("button", { name: "Back to chats" }).click();
+    for (let frame = 0; frame < 3; frame += 1) {
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          ),
+      );
+      await expect(
+        page.locator("[data-mobile-chats] [data-buffer-id]"),
+      ).not.toHaveCount(0);
+      await testInfo.attach(`chat-list-back-frame-${frame + 1}`, {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+    }
+
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    expect(
+      await row.evaluate(
+        (current, original) => current === original,
+        originalRow,
+      ),
+    ).toBe(true);
+  });
+
   test("navigates, swipes, and keeps state across shells", async ({ page }) => {
     await installNativeFeelInstrumentation(page);
     await page.setViewportSize({ width: 402, height: 874 });
     await page.goto("/?irc-password=weblounge-test");
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
     await expect(
-      page.getByText("connected · 1 network", { exact: true }),
+      page.getByRole("button", { name: "#weblounge-test" }),
     ).toBeVisible();
 
     const bots: IrcClient[] = [];
     const suffix = Date.now().toString().slice(-4);
-    const targetNick = `mobile10${suffix}`;
+    const targetNick = `mobile09${suffix}`;
     try {
       for (let index = 0; index < 11; index += 1) {
         const nick = `mobile${index.toString().padStart(2, "0")}${suffix}`;
@@ -104,6 +149,7 @@ test.describe("mobile shell against local Ergo", () => {
         .getByRole("searchbox", { name: "Filter members" })
         .fill(targetNick);
       await expect(drawerMember).toBeVisible();
+      await resetNativeFeelLayoutShift(page);
       await nativeFeelAudit(page);
       await page.goBack();
       await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(
@@ -152,6 +198,9 @@ test.describe("mobile shell against local Ergo", () => {
         const list = row.parentElement;
         if (!(list instanceof HTMLElement))
           throw new Error("chat list missing");
+        list.dispatchEvent(
+          new WheelEvent("wheel", { bubbles: true, deltaY: 1 }),
+        );
         list.scrollTop = list.scrollHeight;
         list.dispatchEvent(new Event("scroll"));
         return list.scrollTop;
@@ -187,7 +236,7 @@ test.describe("mobile shell against local Ergo", () => {
       ).toBeVisible();
       const wrappingText =
         "A deliberately long mobile message wraps beneath itself instead of reserving desktop columns on this narrow screen.";
-      await bots.at(-1)?.privmsgConfirmed("weblounge", wrappingText);
+      await bots[9]?.privmsgConfirmed("weblounge", wrappingText);
       const wrappedMessage = page.getByText(wrappingText, { exact: true });
       await expect(wrappedMessage).toBeVisible();
       const geometry = await wrappedMessage.evaluate((text) => {
@@ -240,7 +289,9 @@ test.describe("mobile shell against local Ergo", () => {
         .toBe(scrollTop);
 
       await target.click();
-      await expect(page.locator("[data-mobile-chats]")).toHaveCount(0);
+      await expect(
+        page.locator("[data-mobile-chats]").locator(".."),
+      ).toHaveAttribute("aria-hidden", "true");
       const shell = page.locator("[data-mobile-shell]");
       await shell.dispatchEvent("pointerdown", {
         clientX: 5,

@@ -134,7 +134,6 @@
   color: var(--wl-color-fg);
   flex: 1;
   font: inherit;
-  font-size: 16px;
   min-width: 0;
   outline: 0;
 }

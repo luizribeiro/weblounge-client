@@ -12,6 +12,7 @@ interface MobileChatRowProps {
   readonly networkLabel?: string | undefined;
   readonly previews: boolean;
   readonly onOpen: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
+  readonly onPressStart: JSX.EventHandler<HTMLButtonElement, PointerEvent>;
 }
 
 export function MobileChatRow(props: MobileChatRowProps) {
@@ -24,6 +25,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
       class={styles.row}
       data-buffer-id={props.buffer.id}
       onClick={props.onOpen}
+      onPointerDown={props.onPressStart}
       type="button"
     >
       <span aria-hidden="true" class={styles.avatar}>

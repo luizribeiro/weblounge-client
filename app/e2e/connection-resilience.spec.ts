@@ -50,7 +50,9 @@ test.describe("connection resilience against local Ergo", () => {
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
       const reconnecting = isMobile(testInfo.project.name)
-        ? page.getByText("Reconnecting…", { exact: true })
+        ? page
+            .locator("[data-mobile-chat]")
+            .getByText("Reconnecting…", { exact: true })
         : page.locator('[data-connection-status="Reconnecting…"]');
       await expect(reconnecting).toBeVisible();
       await expect(reconnecting).toHaveCount(1);

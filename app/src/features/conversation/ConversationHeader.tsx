@@ -53,9 +53,15 @@ export function ConversationHeader(props: ConversationHeaderProps) {
             <circle cx="17" cy="9" r="2.4" />
             <path d="M15.4 14.1c2.9-.7 4.6.6 5.1 3.4" />
           </svg>
-          <span>{props.memberCount.toLocaleString("en-US")}</span>
+          <span>{formatMemberCount(props.memberCount)}</span>
         </button>
       )}
     </header>
   );
+}
+
+// Solid can re-run the count text with a DM's props once before the guard
+// that removes the button re-runs, so the formatter must accept no count.
+function formatMemberCount(count: number | undefined): string {
+  return count?.toLocaleString("en-US") ?? "";
 }

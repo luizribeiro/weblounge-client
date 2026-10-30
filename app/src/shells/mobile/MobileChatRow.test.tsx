@@ -46,6 +46,7 @@ it("renders preview, non-default network, time, and mention badge", () => {
       buffer={buffer()}
       networkLabel="Libera"
       onOpen={vi.fn()}
+      onPressStart={() => {}}
       previews={true}
     />
   ));
@@ -61,6 +62,7 @@ it("omits the default network label and uses the unread badge", () => {
     <MobileChatRow
       buffer={buffer({ mentions: 0 })}
       onOpen={vi.fn()}
+      onPressStart={() => {}}
       previews={true}
     />
   ));
@@ -72,7 +74,12 @@ it("omits the default network label and uses the unread badge", () => {
 it("uses the same locale time in chat previews and message rows", () => {
   const { container } = render(() => (
     <>
-      <MobileChatRow buffer={buffer()} onOpen={vi.fn()} previews={true} />
+      <MobileChatRow
+        buffer={buffer()}
+        onOpen={vi.fn()}
+        onPressStart={() => {}}
+        previews={true}
+      />
       <MessageList messages={[lastMessage]} />
     </>
   ));
@@ -87,7 +94,12 @@ it("uses the same locale time in chat previews and message rows", () => {
 it("omits the peer name from direct previews and labels own messages", () => {
   const direct = buffer({ kind: "direct", title: "mel" });
   const { unmount } = render(() => (
-    <MobileChatRow buffer={direct} onOpen={vi.fn()} previews={true} />
+    <MobileChatRow
+      buffer={direct}
+      onOpen={vi.fn()}
+      onPressStart={() => {}}
+      previews={true}
+    />
   ));
 
   expect(screen.getByText("See you there")).toBeVisible();
@@ -100,6 +112,7 @@ it("omits the peer name from direct previews and labels own messages", () => {
         last_message: { ...lastMessage, author: "me", authorship: "own" },
       }}
       onOpen={vi.fn()}
+      onPressStart={() => {}}
       previews={true}
     />
   ));
@@ -119,6 +132,7 @@ it("keeps a long message's full text unique to the conversation", () => {
           last_message: message,
         })}
         onOpen={vi.fn()}
+        onPressStart={() => {}}
         previews={true}
       />
       <MessageList messages={[message]} />

@@ -153,7 +153,7 @@
           version = "0.1.0";
           src = appSource;
           fetcherVersion = 5;
-          hash = "sha256-WOnLqtnVYDbMWWuIY0mTuQ9AbRhUIxqalLchfijXZq4=";
+          hash = "sha256-UQqq4uncZL85zrwjobRizxTF/lmtEbvgwsHbOKZpRQQ=";
         };
         appRuntimeInputs = [
           pkgs.librsvg
@@ -226,7 +226,9 @@
             localErgo
           ];
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
           WEBLOUNGE_APP_DIR = "${e2eApp}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
@@ -268,7 +270,9 @@
             pkgs.fontconfig
           ];
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_DEV = "1";
@@ -334,6 +338,30 @@
             files = "(^|/)(app/.*\\.tsx?|package\\.json|pnpm-lock\\.yaml)$";
             pass_filenames = false;
           };
+          pnpm-deps-hash = {
+            enable = true;
+            entry = "${
+              pkgs.writeShellApplication {
+                name = "pnpm-deps-hash-hook";
+                runtimeInputs = [ pkgs.gnused ];
+                text = ''
+                  expected=$(nix eval --raw .#pnpm-deps.outputHash)
+                  build_output=$(nix build --no-link .#pnpm-deps-probe 2>&1 || true)
+                  got=$(printf '%s\n' "$build_output" | sed -n 's/.*got: *\(sha256-[^ ]*\).*/\1/p' | tail -n 1)
+                  if [ -z "$got" ]; then
+                    echo "Could not compute the pnpm dependency hash." >&2
+                    exit 1
+                  fi
+                  if [ "$got" != "$expected" ]; then
+                    echo "flake.nix pnpmDeps hash is stale: replace $expected with $got" >&2
+                    exit 1
+                  fi
+                '';
+              }
+            }/bin/pnpm-deps-hash-hook";
+            files = "(^|/)(package\\.json|pnpm-lock\\.yaml|pnpm-workspace\\.yaml)$";
+            pass_filenames = false;
+          };
           test-wait-policy = {
             enable = true;
             entry = "${pkgs.nodejs}/bin/node app/scripts/test-wait-policy.ts";
@@ -343,7 +371,6 @@
             enable = true;
             entry = "${pkgs.nodejs}/bin/node app/scripts/platform-boundary-policy.ts";
             files = "^app/src/.*\\.(css|tsx?)$";
-            pass_filenames = false;
           };
           protocol-types = {
             enable = true;
@@ -445,6 +472,8 @@
           inherit app;
           engine-wasm = engineWasm;
           ergo-weblounge = webloungeErgo;
+          pnpm-deps = pnpmDeps;
+          pnpm-deps-probe = pnpmDeps.overrideAttrs { outputHash = pkgs.lib.fakeHash; };
         };
         apps.ergo = {
           type = "app";
@@ -456,7 +485,9 @@
         };
         devShells.default = pkgs.mkShell {
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
           packages = [
             rustToolchain
             wasmBindgenCli
