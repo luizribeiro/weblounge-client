@@ -213,7 +213,7 @@ function consumePending(state: string | null, storage: Storage): string {
   storage.removeItem(pendingKey);
   if (encoded === null || state === null) {
     throw new HostedAuthorizationError(
-      "The sign-in response did not match this tab.",
+      "The sign-in response did not match this tab. Sign in again.",
     );
   }
   let pending: unknown;
@@ -221,7 +221,7 @@ function consumePending(state: string | null, storage: Storage): string {
     pending = JSON.parse(encoded);
   } catch {
     throw new HostedAuthorizationError(
-      "The sign-in response did not match this tab.",
+      "The sign-in response did not match this tab. Sign in again.",
     );
   }
   if (
@@ -230,7 +230,7 @@ function consumePending(state: string | null, storage: Storage): string {
     typeof pending.verifier !== "string"
   ) {
     throw new HostedAuthorizationError(
-      "The sign-in response did not match this tab.",
+      "The sign-in response did not match this tab. Sign in again.",
     );
   }
   return pending.verifier;

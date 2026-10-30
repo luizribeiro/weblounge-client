@@ -57,6 +57,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 49 | 2026-10-30 | Desktop: a long draft's text spills outside the composer box instead of the box growing. | not a bug (caused by a browser extension) |
 | 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | fixed, local |
 | 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | fixed, local |
-| 52 | 2026-10-30 | iOS: members sign-in succeeds but never returns to the beta chat. | root cause: members CSP form-action; server fix built, deploys with your OK |
-| 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | queued |
+| 52 | 2026-10-30 | iOS: members sign-in succeeds but never returns to the beta chat. | root cause: members CSP form-action (server fix deploys with your OK); client shows Sign in again on failure |
+| 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | fixed, local |
 | 54 | 2026-10-30 | iPhone: swiping from the edge to close a chat sometimes cancels mid-gesture at certain speeds (transcript touch handling?). | queued |

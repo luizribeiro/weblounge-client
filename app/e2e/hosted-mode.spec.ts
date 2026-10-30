@@ -87,6 +87,9 @@ test("cleans the callback URL before a failed token exchange", async ({
   await page.goto("/");
 
   await expect(page.getByRole("alert")).toContainText("code expired");
+  await expect(
+    page.getByRole("button", { name: "Sign in again" }),
+  ).toBeVisible();
   await expect(page).toHaveURL(redirectUri());
 });
 
@@ -109,9 +112,12 @@ test("recovers from a state mismatch with a fresh sign-in", async ({
   await page.goto("/");
   await expect(page.getByRole("alert")).toContainText("did not match this tab");
   await expect(page).toHaveURL(redirectUri());
+  await expect(
+    page.getByRole("button", { name: "Sign in again" }),
+  ).toBeVisible();
 
   await page.unroute("http://127.0.0.1:4174/authorize**", mismatch);
-  await page.goto("/");
+  await page.getByRole("button", { name: "Sign in again" }).click();
   await expectHostedConnection(page);
 });
 

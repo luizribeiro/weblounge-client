@@ -23,7 +23,10 @@ const metadata = {
   tokenEndpoint: "https://members.weblounge.org/oauth/token",
 };
 
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 describe("OAuth authorization code with PKCE", () => {
   it("builds the RFC 8414 well-known URL for an issuer path", () => {
@@ -146,6 +149,16 @@ describe("OAuth authorization code with PKCE", () => {
     expect(() => consumeAuthorizationCallback(callback)).toThrow(
       HostedAuthorizationError,
     );
+  });
+
+  it("clears the verifier when callback state is missing", async () => {
+    await createAuthorizationUrl(metadata, config);
+    const callback = new URL(`${config.redirect_uri}?code=x`);
+
+    expect(() => consumeAuthorizationCallback(callback)).toThrow(
+      "did not match this tab",
+    );
+    expect(sessionStorage.length).toBe(0);
   });
 
   it("turns authorization denial into a human error", async () => {

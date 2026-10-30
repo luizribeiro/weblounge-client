@@ -91,9 +91,9 @@ On first load, the bootstrap fetches concierge's RFC 8414 metadata, generates ra
 and a PKCE verifier, keeps both in `sessionStorage`, and redirects to the authorization endpoint
 with an S256 challenge. Concierge uses its existing member session (or asks the member to sign in),
 then returns a one-minute authorization code and the state to the exact root redirect URI. The
-client rejects a state mismatch, removes the pending verifier, and posts the code, verifier,
-redirect URI, and the configured `client_id` to the token endpoint without a client secret. Redirect URIs
-never include the page fragment.
+client rejects a missing or mismatched state with a human sign-in retry, removes the pending
+verifier, and posts the code, verifier, redirect URI, and the configured `client_id` to the token
+endpoint without a client secret. Redirect URIs never include the page fragment.
 
 Concierge returns a bearer access token whose lifetime matches the approving member session. The
 bootstrap passes it once into the worker secret store; connection construction maps
@@ -231,7 +231,8 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
 - The same minimal Ergo fixture supplies manual verification and a small automated connection
   smoke test; there is no packaged papo test-server dependency.
 - OAuth state, PKCE, callback, one-shot secret transfer, expiry, and redaction have pure or mocked
-  HTTP tests. The existing weblounge VM remains the manual end-to-end concierge/Ergo check.
+  HTTP tests. Browser coverage checks callback failures show an explicit sign-in retry. The
+  existing weblounge VM remains the manual end-to-end concierge/Ergo check.
 - State-machine table tests cover every transition, papo-projected retry timing, and hosted token
   expiry versus transient transport failure.
 - Playwright desktop and mobile WebKit tests preserve the mounted shell through offline/online,
