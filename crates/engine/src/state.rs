@@ -393,7 +393,11 @@ impl NetworkModel {
         } else {
             TimelineOrigin::Live
         };
-        let mode_symbol = actor_mode_symbol(state, &conversation, message.actor.nick());
+        let mode_symbol = if history {
+            None
+        } else {
+            actor_mode_symbol(state, &conversation, message.actor.nick())
+        };
         let incoming = Incoming {
             direct: direct.map(DirectAvailability::Guarded),
             conversation,

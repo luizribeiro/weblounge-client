@@ -4901,6 +4901,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn history_rows_do_not_inherit_the_actors_current_channel_prefix() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":offline.test 005 weblounge PREFIX=(qov)~@+ CHANMODES=b,k,l,imnst :supported")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::FeaturesChanged { .. })
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":alice!a@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":offline.test 353 weblounge = #room :weblounge alice")
+            .await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+        apply_test_mode(&mut wire, &mut events, "+o alice").await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let snapshot = client.state();
+        let channel = known_channel(&client, "#room");
+        let alice = snapshot
+            .name_rules()
+            .expect("registered name rules")
+            .nick("alice");
+        assert_eq!(
+            snapshot
+                .channel(&channel)
+                .and_then(|channel| channel.member(&alice))
+                .and_then(|member| member.prefixes().first())
+                .map(|prefix| prefix.symbol()),
+            Some('@')
+        );
+        model.sync_channels(&snapshot);
+
+        wire.server(":alice!a@host PRIVMSG #room :historical line")
+            .await;
+        let papo::Event::Message(history) = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await
+        else {
+            panic!("history message expected");
+        };
+        let historical = model.receive(&history, true, &client.state(), None);
+
+        wire.server(":alice!a@host PRIVMSG #room :live line").await;
+        let papo::Event::Message(live) = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await
+        else {
+            panic!("live message expected");
+        };
+        let live = model.receive(&live, false, &client.state(), None);
+
+        assert_eq!(projected_mode_symbol(&historical), None);
+        assert_eq!(projected_mode_symbol(&live), Some('@'));
+    }
+
+    #[tokio::test]
     async fn no_echo_action_confirms_without_server_metadata() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
