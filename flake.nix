@@ -364,6 +364,11 @@
             files = "(^|/)(package\\.json|pnpm-lock\\.yaml|pnpm-workspace\\.yaml)$";
             pass_filenames = false;
           };
+          test-wait-policy = {
+            enable = true;
+            entry = "${pkgs.nodejs}/bin/node app/scripts/test-wait-policy.ts";
+            files = "^app/(e2e/.*\\.tsx?|playwright\\.config\\.ts)$";
+          };
           protocol-types = {
             enable = true;
             entry = "${
