@@ -367,6 +367,48 @@ it("focuses command-created buffers only from engine buffer ids", async () => {
   ).toBeInTheDocument();
 });
 
+it("retains command focus when the target buffer arrives later", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "focus_buffer_requested",
+    command_id: "join-restored",
+    buffer_id: 3,
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#home",
+      draft_key: "test:#home",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 3,
+      network_id: 1,
+      kind: "channel",
+      title: "#restored",
+      draft_key: "test:#restored",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+
+  expect(
+    await screen.findByRole("heading", { name: "#restored" }),
+  ).toBeInTheDocument();
+});
+
 it("retains engine focus until a delayed shell can consume it", async () => {
   const client = new FakeEngineClient();
   render(() => (
