@@ -409,10 +409,14 @@ export async function auditSafeArea(page: Page): Promise<void> {
     const composer = [...root.querySelectorAll("[data-composer]")].find(
       visible,
     );
+    const composerContentBottom =
+      composer === undefined
+        ? undefined
+        : composer.getBoundingClientRect().bottom -
+          Number.parseFloat(getComputedStyle(composer).paddingBottom);
     const activeBottom =
       drawerPanel === null || drawerPanel === undefined
-        ? (composer?.getBoundingClientRect().bottom ??
-          innerHeight - inset.bottom)
+        ? (composerContentBottom ?? innerHeight - inset.bottom)
         : drawerPanel.getBoundingClientRect().bottom -
           Number.parseFloat(getComputedStyle(drawerPanel).paddingBottom);
     return {
