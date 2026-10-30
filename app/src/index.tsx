@@ -27,7 +27,7 @@ type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
 
 type BootstrapState =
   | { type: "starting"; message: string }
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; retryLabel: string }
   | { type: "app"; attempt: number }
   | { type: "hosted"; config: HostedConfig; session: HostedSession };
 
@@ -88,7 +88,12 @@ function Bootstrap(props: BootstrapProps) {
         },
       });
     } catch (error: unknown) {
-      setState({ type: "error", message: userFacingError(error) });
+      setState({
+        type: "error",
+        message: userFacingError(error),
+        retryLabel:
+          error instanceof HostedAuthorizationError ? "Sign in again" : "Retry",
+      });
       await Promise.resolve();
       await props.beforeReveal();
       props.onReady();
@@ -104,7 +109,11 @@ function Bootstrap(props: BootstrapProps) {
         await createAuthorizationUrl(metadata, config.oauth),
       );
     } catch (error: unknown) {
-      setState({ type: "error", message: userFacingError(error) });
+      setState({
+        type: "error",
+        message: userFacingError(error),
+        retryLabel: "Sign in again",
+      });
     }
   }
 
@@ -119,6 +128,7 @@ function Bootstrap(props: BootstrapProps) {
             message={current.message}
             error
             onRetry={() => void start()}
+            retryLabel={current.retryLabel}
           />
         );
       case "app":

@@ -33,6 +33,11 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
 }) => {
   await installFakeEngine(page, true);
   const redirectUri = await installHostedConfig(page);
+  await page.addInitScript(() => {
+    if (new URL(location.href).searchParams.has("code")) {
+      sessionStorage.clear();
+    }
+  });
 
   await page.goto("http://127.0.0.1:4174/health");
   await page.goto("/");
@@ -64,6 +69,7 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   });
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
+  await expect.poll(() => pendingOAuthEntries(page)).toEqual([]);
   await page.goBack();
   await expect(page).toHaveURL("http://127.0.0.1:4174/health");
 });
@@ -107,12 +113,43 @@ test("recovers from a state mismatch with a fresh sign-in", async ({
   await page.route("http://127.0.0.1:4174/authorize**", mismatch);
 
   await page.goto("/");
-  await expect(page.getByRole("alert")).toContainText("did not match this tab");
+  await expect(page.getByRole("alert")).toContainText(
+    "did not match this browser",
+  );
   await expect(page).toHaveURL(redirectUri());
+  await expect(
+    page.getByRole("button", { name: "Sign in again" }),
+  ).toBeVisible();
+  await expect.poll(() => pendingOAuthEntries(page)).toEqual([]);
 
   await page.unroute("http://127.0.0.1:4174/authorize**", mismatch);
-  await page.goto("/");
+  await page.getByRole("button", { name: "Sign in again" }).click();
   await expectHostedConnection(page);
+});
+
+test("offers a fresh sign-in when pending state has expired", async ({
+  page,
+}) => {
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  await page.addInitScript(() => {
+    const state = new URL(location.href).searchParams.get("state");
+    if (state === null) return;
+    const key = `weblounge.oauth.pending.${state}`;
+    const encoded = localStorage.getItem(key);
+    if (encoded === null) return;
+    const pending = JSON.parse(encoded) as Record<string, unknown>;
+    localStorage.setItem(key, JSON.stringify({ ...pending, createdAt: 0 }));
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("alert")).toContainText("response expired");
+  await expect(
+    page.getByRole("button", { name: "Sign in again" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(redirectUri());
+  await expect.poll(() => pendingOAuthEntries(page)).toEqual([]);
 });
 
 test("returns to sign-in when the hosted token expires", async ({ page }) => {
@@ -185,6 +222,14 @@ async function expectHostedConnection(page: Page): Promise<void> {
         .catch(() => []),
     )
     .toContainEqual(expect.objectContaining({ type: "connect_hosted" }));
+}
+
+async function pendingOAuthEntries(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Object.keys(localStorage).filter((key) =>
+      key.startsWith("weblounge.oauth.pending"),
+    ),
+  );
 }
 
 async function installFakeEngine(page: Page, holdConnection = false) {

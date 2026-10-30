@@ -88,6 +88,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Linkify safe message URLs and channel names on desktop and mobile.
   - [x] Keep a theme-correct loading splash until fonts and the engine snapshot are ready.
   - [x] Keep touch WebKit navigation replace-only in Safari tabs and standalone PWAs while Android retains a platform Back stack.
+  - [x] Keep hosted sign-in returns working after WebKit discards the initiating tab. The single
+    pending PKCE verifier is state-keyed, expires after ten minutes, is removed on every callback,
+    and missing, stale, or mismatched callbacks show a human retry screen.
   - [x] Keep composer suggestions mounted, locally narrowed, and keyed while engine updates are in flight.
   - [x] Submit exact composer completions on Enter and keep shell sizing CSP-safe.
   - [x] Let the desktop conversation reclaim the full width of collapsed side panels.

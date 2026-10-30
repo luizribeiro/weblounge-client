@@ -23,7 +23,10 @@ const metadata = {
   tokenEndpoint: "https://members.weblounge.org/oauth/token",
 };
 
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 describe("OAuth authorization code with PKCE", () => {
   it("builds the RFC 8414 well-known URL for an issuer path", () => {
@@ -112,7 +115,7 @@ describe("OAuth authorization code with PKCE", () => {
     );
   });
 
-  it("stores state and a verifier only in session storage", async () => {
+  it("completes after session storage is lost and removes the verifier", async () => {
     const authorization = new URL(
       await createAuthorizationUrl(metadata, config),
     );
@@ -123,7 +126,11 @@ describe("OAuth authorization code with PKCE", () => {
     );
     const state = authorization.searchParams.get("state");
     expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/u);
-    expect(localStorage.length).toBe(0);
+    expect(localStorage.length).toBe(2);
+    expect(localStorage.getItem(`weblounge.oauth.pending.${state}`)).toContain(
+      '"verifier"',
+    );
+    sessionStorage.clear();
 
     const callback = new URL(config.redirect_uri);
     callback.searchParams.set("code", "one-minute-code");
@@ -131,6 +138,7 @@ describe("OAuth authorization code with PKCE", () => {
     const code = consumeAuthorizationCallback(callback);
     expect(code?.code).toBe("one-minute-code");
     expect(code?.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
   });
 
@@ -139,13 +147,51 @@ describe("OAuth authorization code with PKCE", () => {
     const callback = new URL(`${config.redirect_uri}?code=x&state=wrong`);
     const replace = vi.fn();
     expect(() =>
-      consumeAuthorizationCallback(callback, sessionStorage, replace),
-    ).toThrow("did not match this tab");
+      consumeAuthorizationCallback(callback, localStorage, replace),
+    ).toThrow("did not match this browser");
     expect(replace).toHaveBeenCalledWith("/");
-    expect(sessionStorage.length).toBe(0);
+    expect(localStorage.length).toBe(0);
     expect(() => consumeAuthorizationCallback(callback)).toThrow(
       HostedAuthorizationError,
     );
+  });
+
+  it("expires pending sign-in after ten minutes and removes the verifier", async () => {
+    const authorization = new URL(
+      await createAuthorizationUrl(metadata, config, localStorage, () => 1_000),
+    );
+    const callback = new URL(config.redirect_uri);
+    callback.searchParams.set("code", "stale-code");
+    callback.searchParams.set(
+      "state",
+      authorization.searchParams.get("state") ?? "",
+    );
+
+    expect(() =>
+      consumeAuthorizationCallback(
+        callback,
+        localStorage,
+        vi.fn(),
+        () => 601_001,
+      ),
+    ).toThrow("sign-in response expired");
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("replaces an older pending flow", async () => {
+    const first = new URL(await createAuthorizationUrl(metadata, config));
+    const second = new URL(await createAuthorizationUrl(metadata, config));
+    const firstState = first.searchParams.get("state");
+    const secondState = second.searchParams.get("state");
+
+    expect(firstState).not.toBe(secondState);
+    expect(
+      localStorage.getItem(`weblounge.oauth.pending.${firstState}`),
+    ).toBeNull();
+    expect(
+      localStorage.getItem(`weblounge.oauth.pending.${secondState}`),
+    ).not.toBeNull();
+    expect(localStorage.length).toBe(2);
   });
 
   it("turns authorization denial into a human error", async () => {
