@@ -790,6 +790,13 @@ function applyDebugEvent(
       ]);
       return next;
     });
+  } else if (message.type === "buffer_snapshot") {
+    setMessages((current) =>
+      new Map(current).set(message.buffer_id, message.messages),
+    );
+    setMemberships((current) =>
+      new Map(current).set(message.buffer_id, message.memberships),
+    );
   } else if (message.type === "membership_changed") {
     setMemberships((current) => {
       const next = new Map(current);

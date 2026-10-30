@@ -292,6 +292,61 @@ it("lists projected networks, buffers, and messages", async () => {
   });
 });
 
+it("replaces a buffer's rows from the snapshot an attaching tab receives", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Local Ergo",
+      nickname: "weblounge",
+      state: "online",
+    },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      title: "#room",
+      ...{ draft_key: "test:#room" },
+      topic: null,
+      unread: 1,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  client.emit({
+    type: "buffer_snapshot",
+    buffer_id: 2,
+    messages: [
+      {
+        id: 7,
+        author: "louro",
+        text: "retained before this tab opened",
+        kind: "text",
+        bot: true,
+        mode_symbol: null,
+        authorship: "other",
+        nick_color_index: 0,
+        mentioned: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: ["msg-7"],
+        server_time_ms: 7,
+        received_at_ms: 7,
+      },
+    ],
+    memberships: [],
+  });
+
+  expect(
+    await screen.findByText("retained before this tab opened"),
+  ).toBeInTheDocument();
+});
+
 it("opens the projected member panel and routes a member to a DM", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);
