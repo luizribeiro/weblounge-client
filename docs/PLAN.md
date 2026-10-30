@@ -85,7 +85,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Disable shell-level pinch and double-tap zoom while preserving root text scaling.
   - [x] Linkify safe message URLs and channel names on desktop and mobile.
   - [x] Keep a theme-correct loading splash until fonts and the engine snapshot are ready.
-  - [x] Keep Safari tab navigation replace-only while standalone and Android retain platform Back stacks.
+  - [x] Keep touch WebKit navigation replace-only in Safari tabs and standalone PWAs while Android retains a platform Back stack.
   - [x] Keep composer suggestions mounted, locally narrowed, and keyed while engine updates are in flight.
   - [x] Submit exact composer completions on Enter and keep shell sizing CSP-safe.
   - [x] Let the desktop conversation reclaim the full width of collapsed side panels.

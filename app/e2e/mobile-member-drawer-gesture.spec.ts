@@ -53,11 +53,9 @@ test("member drawer pans, springs back, and closes before the chat", async ({
   await expect(drawer).toHaveCount(0);
 
   await openDrawer(page);
-  await page.goBack();
+  await page.evaluate(() => dispatchEvent(new PopStateEvent("popstate")));
   await expect(drawer).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 });
 
 test("opens the channel drawer from a protected mid-screen pan", async ({
@@ -101,13 +99,11 @@ test("opens the channel drawer from a protected mid-screen pan", async ({
     "true",
   );
   await expect(drawer).toHaveCSS("transform", "none");
-  expect(await page.evaluate(() => history.length)).toBe(historyLength + 1);
+  expect(await page.evaluate(() => history.length)).toBe(historyLength);
 
-  await page.goBack();
+  await page.evaluate(() => dispatchEvent(new PopStateEvent("popstate")));
   await expect(drawer).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: "#weblounge-test" }),
-  ).toBeVisible();
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 });
 
 test("member drawer and scrim enter and leave as one motion", async ({

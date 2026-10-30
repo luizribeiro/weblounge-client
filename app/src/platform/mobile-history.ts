@@ -10,9 +10,6 @@ interface MobilePlatformFeatures {
 export function mobileHistoryPolicy(
   features: MobilePlatformFeatures = browserFeatures(),
 ): MobileHistoryPolicy {
-  if (features.displayModeStandalone || features.navigatorStandalone) {
-    return "stack";
-  }
   return features.coarsePointer && features.webkitPoint ? "replace" : "stack";
 }
 

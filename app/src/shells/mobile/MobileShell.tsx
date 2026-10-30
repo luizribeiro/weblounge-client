@@ -129,6 +129,16 @@ export function MobileShell(props: MobileShellProps) {
       }
       return next;
     });
+  const replaceWithRoot = () => {
+    window.history.replaceState(mobileHistoryState(false, false), "", "/");
+    setStack((current) => {
+      const chats =
+        current.active.kind === "chats"
+          ? current.active
+          : current.back.find((screen) => screen.kind === "chats");
+      return { active: chats ?? { kind: "chats" }, back: [] };
+    });
+  };
   const resetSwipe = () => {
     swipeGesture.reset();
     setSwipeReturning(false);
@@ -354,6 +364,8 @@ export function MobileShell(props: MobileShellProps) {
     const handlePopState = () => {
       if (historyPolicy === "replace") {
         resetMotion();
+        if (drawerBufferId() !== undefined) finishDrawerClose();
+        replaceWithRoot();
         return;
       }
       const browserHandledSwipe =
@@ -365,6 +377,7 @@ export function MobileShell(props: MobileShellProps) {
       if (drawerBufferId() === undefined)
         dispatchBack(browserHandledSwipe || reducedMotion());
       else if (drawerCloseAwaitingHistory) finishDrawerClose();
+      else if (reducedMotion()) finishDrawerClose();
       else setDrawerHistoryClosing(true);
     };
     const handleVisibilityChange = () => resetMotion();

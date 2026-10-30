@@ -22,6 +22,7 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   await installFakeEngine(page);
   const redirectUri = await installHostedConfig(page);
 
+  await page.goto("http://127.0.0.1:4174/health");
   await page.goto("/");
   // A cold CI browser completes two cross-origin OAuth navigations before returning.
   await expect(page).toHaveURL(redirectUri());
@@ -42,6 +43,8 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
       }),
     );
   await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
+  await page.goBack();
+  await expect(page).toHaveURL("http://127.0.0.1:4174/health");
 });
 
 test("cleans the callback URL before a failed token exchange", async ({

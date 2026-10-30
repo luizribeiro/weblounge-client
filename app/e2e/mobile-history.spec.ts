@@ -41,7 +41,7 @@ test.describe("mobile platform history against local Ergo", () => {
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   });
 
-  test("standalone WebKit pushes entries for platform Back", async ({
+  test("standalone WebKit keeps in-app navigation replace-only", async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -54,18 +54,19 @@ test.describe("mobile platform history against local Ergo", () => {
     await page.getByRole("button", { name: "#weblounge-test" }).click();
     await expect(page.locator("[data-mobile-shell]")).toHaveAttribute(
       "data-history-policy",
-      "stack",
+      "replace",
     );
     await page.getByRole("button", { name: "Show members" }).click();
-    expect(await page.evaluate(() => history.length)).toBe(initialLength + 2);
+    expect(await page.evaluate(() => history.length)).toBe(initialLength);
 
-    await page.goBack();
+    await page.evaluate(() => dispatchEvent(new PopStateEvent("popstate")));
     await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
-    await expect(
-      page.getByRole("heading", { name: "#weblounge-test" }),
-    ).toBeVisible();
-    await page.goBack();
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    expect(await page.evaluate(() => history.length)).toBe(initialLength);
+
+    await page.evaluate(() => dispatchEvent(new PopStateEvent("popstate")));
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test("Android Back exhausts the app stack before leaving", async ({

@@ -66,7 +66,7 @@ function Bootstrap(props: BootstrapProps) {
       const metadata = await discoverOAuthMetadata(config.oauth);
       if (authorization === null) {
         setState({ type: "starting", message: "Opening sign in…" });
-        window.location.assign(
+        window.location.replace(
           await createAuthorizationUrl(metadata, config.oauth),
         );
         return;
@@ -100,7 +100,7 @@ function Bootstrap(props: BootstrapProps) {
     await new Promise((resolve) => setTimeout(resolve, 600));
     try {
       const metadata = await discoverOAuthMetadata(config.oauth);
-      window.location.assign(
+      window.location.replace(
         await createAuthorizationUrl(metadata, config.oauth),
       );
     } catch (error: unknown) {

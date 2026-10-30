@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
+import { installPlatformEnvironment } from "../../platform/environment";
 import { MobileShell } from "./MobileShell";
 
 const buffer: BufferProjection = {
@@ -125,12 +126,17 @@ it("keeps the chat list mounted without reloading history", () => {
   expect(document.querySelectorAll("[data-mobile-chat]")).toHaveLength(0);
 });
 
-it("closes the member drawer before popping the chat", () => {
+it("commits a browser drawer close immediately under reduced motion", () => {
   history.replaceState(null, "", "/Local/room");
   vi.stubGlobal(
     "matchMedia",
-    vi.fn(() => ({ matches: true }) as MediaQueryList),
+    vi.fn((query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof matchMedia,
   );
+  installPlatformEnvironment(document.body, window);
   const channel = {
     ...buffer,
     id: 3,
@@ -168,17 +174,6 @@ it("closes the member drawer before popping the chat", () => {
   );
   history.replaceState({ webloungeMobileChat: true }, "", "/Local/room");
   window.dispatchEvent(new PopStateEvent("popstate"));
-  const membersDialog = screen.getByRole("dialog", { name: "Members" });
-  expect(membersDialog.closest("[data-overlay-drawer]")).toHaveAttribute(
-    "data-phase",
-    "closing",
-  );
-  fireEvent(
-    membersDialog,
-    Object.assign(new Event("animationend", { bubbles: true }), {
-      animationName: "drawer-out-right",
-    }),
-  );
   expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   expect(screen.getByRole("heading", { name: "#room" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));

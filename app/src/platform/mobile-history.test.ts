@@ -12,7 +12,7 @@ it("replaces in-app history in touch WebKit browser tabs", () => {
   ).toBe("replace");
 });
 
-it("keeps a platform back stack in installed apps and Android", () => {
+it("replaces in-app history in touch WebKit standalone mode", () => {
   expect(
     mobileHistoryPolicy({
       displayModeStandalone: true,
@@ -20,7 +20,18 @@ it("keeps a platform back stack in installed apps and Android", () => {
       coarsePointer: true,
       webkitPoint: true,
     }),
-  ).toBe("stack");
+  ).toBe("replace");
+  expect(
+    mobileHistoryPolicy({
+      displayModeStandalone: false,
+      navigatorStandalone: true,
+      coarsePointer: true,
+      webkitPoint: true,
+    }),
+  ).toBe("replace");
+});
+
+it("keeps a platform back stack on Android", () => {
   expect(
     mobileHistoryPolicy({
       displayModeStandalone: false,
