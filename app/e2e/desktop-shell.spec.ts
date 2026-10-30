@@ -125,6 +125,7 @@ test.describe("desktop shell against local Ergo", () => {
       await expect(reloadedHome).toHaveValue("draft in home");
       await reloadedHome.fill(`/join ${draftChannel}`);
       await reloadedHome.press("Enter");
+      await page.getByRole("button", { name: draftChannel }).click();
       const restoredAnother = page.getByRole("textbox", {
         name: `Message ${draftChannel}`,
       });
