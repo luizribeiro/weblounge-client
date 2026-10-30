@@ -3,6 +3,7 @@ import {
   desktopPanelBoundary,
   installPlatformEnvironment,
   resolveEnvironment,
+  resolveShortcutPlatform,
 } from "./environment";
 
 class FakeMediaQuery {
@@ -66,6 +67,11 @@ describe("platform environment", () => {
         desktopPanels: "overlay",
       },
     );
+  });
+
+  it("centralizes shortcut-label platform adaptation", () => {
+    expect(resolveShortcutPlatform({ platform: "MacIntel" })).toBe("macos");
+    expect(resolveShortcutPlatform({ platform: "Linux x86_64" })).toBe("other");
   });
 
   it("publishes capability changes without treating width as shell selection", () => {

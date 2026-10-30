@@ -302,10 +302,6 @@ function needsConfirmation(
   );
 }
 
-export function detectPlatform(navigator: Navigator): Platform {
-  return /Mac|iPhone|iPad/.test(navigator.platform) ? "macos" : "other";
-}
-
 function command(
   id: UiActionId,
   title: string,

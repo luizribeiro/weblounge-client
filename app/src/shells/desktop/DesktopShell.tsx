@@ -8,7 +8,6 @@ import {
 import {
   type ActionContext,
   ActionRegistry,
-  detectPlatform,
   type UiActionId,
 } from "../../actions/action-registry";
 import type {
@@ -33,6 +32,7 @@ import {
   Sidebar,
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
+import { platformEnvironment } from "../../platform/environment";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
 
@@ -74,6 +74,7 @@ export interface DesktopShellProps {
 }
 
 export function DesktopShell(props: DesktopShellProps) {
+  const platform = platformEnvironment();
   const memberViewScope = props.memberViewScope ?? crypto.randomUUID();
   const [layout, setLayout] = createSignal(
     createSinglePane(props.activeBufferId),
@@ -138,7 +139,7 @@ export function DesktopShell(props: DesktopShellProps) {
       "sidebar.toggle": () => setSidebarShown((shown) => !shown),
       "switcher.open": () => {},
     },
-    detectPlatform(navigator),
+    platform.shortcutPlatform,
     props.commandSpecs ?? [],
   );
   createEffect(() => registry.updateCommands(props.commandSpecs ?? []));

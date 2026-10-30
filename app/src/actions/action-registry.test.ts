@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ActionRegistry, detectPlatform } from "./action-registry";
+import { ActionRegistry } from "./action-registry";
 
 const context = {
   bufferCount: 3,
@@ -162,13 +162,6 @@ describe("ActionRegistry", () => {
     );
     expect(registry.run("command.join", context, "typed")).toBe("ran");
     expect(registry.run("command.join", context, "menu", true)).toBe("ran");
-  });
-
-  it("detects Apple shortcut labels", () => {
-    expect(detectPlatform({ platform: "MacIntel" } as Navigator)).toBe("macos");
-    expect(detectPlatform({ platform: "Linux x86_64" } as Navigator)).toBe(
-      "other",
-    );
   });
 });
 

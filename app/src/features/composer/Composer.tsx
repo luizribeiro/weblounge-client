@@ -4,6 +4,7 @@ import type {
   CompletionCandidate,
   CompletionResult,
 } from "../../engine/protocol";
+import { platformEnvironment } from "../../platform/environment";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
@@ -30,6 +31,7 @@ interface ComposerProps {
 }
 
 export function Composer(props: ComposerProps) {
+  const platform = platformEnvironment();
   let textarea: HTMLTextAreaElement | undefined;
   let confirmButton: HTMLButtonElement | undefined;
   let composing = false;
@@ -98,7 +100,8 @@ export function Composer(props: ComposerProps) {
     const command = commandForInput(submitted, props.commandSpecs ?? []);
     if (!confirmed && command?.confirm === "always") {
       setPendingConfirmation(command);
-      if (!isCoarsePointer()) queueMicrotask(() => confirmButton?.focus());
+      if (platform.environment().input !== "touch")
+        queueMicrotask(() => confirmButton?.focus());
       return;
     }
     setPendingConfirmation(undefined);
@@ -184,7 +187,7 @@ export function Composer(props: ComposerProps) {
     } else if (event.key === "ArrowDown" && move(1)) {
       event.preventDefault();
     } else if (
-      isApplePlatform() &&
+      platform.shortcutPlatform === "macos" &&
       event.ctrlKey &&
       ((event.key.toLowerCase() === "p" && move(-1)) ||
         (event.key.toLowerCase() === "n" && move(1)))
@@ -324,12 +327,4 @@ export function replacementFor(
     case "channel":
       return `${candidate.name}${result.argument_hint === null ? "" : " "}`;
   }
-}
-
-function isApplePlatform(): boolean {
-  return /Mac|iPhone|iPad/u.test(navigator.platform);
-}
-
-function isCoarsePointer(): boolean {
-  return window.matchMedia?.("(pointer: coarse)").matches ?? false;
 }

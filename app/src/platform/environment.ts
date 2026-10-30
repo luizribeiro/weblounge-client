@@ -7,6 +7,7 @@ export type DisplayMode = "standalone" | "browser" | "tauri";
 export type Shell = "mobile" | "desktop";
 export type DesktopPanels = "inline" | "overlay";
 export type PlatformTarget = "web" | "tauri-desktop" | "tauri-mobile";
+export type ShortcutPlatform = "macos" | "other";
 
 export interface PlatformEnvironment {
   readonly input: PrimaryInput;
@@ -19,10 +20,11 @@ export interface PlatformController {
   readonly environment: Accessor<PlatformEnvironment>;
   readonly prefersDark: Accessor<boolean>;
   readonly prefersReducedMotion: Accessor<boolean>;
+  readonly shortcutPlatform: ShortcutPlatform;
   dispose(): void;
 }
 
-interface InstallOptions {
+export interface InstallOptions {
   readonly target?: PlatformTarget;
   readonly observeWidth?: WidthObserver;
 }
@@ -93,11 +95,17 @@ export function installPlatformEnvironment(
     environment,
     prefersDark,
     prefersReducedMotion,
+    shortcutPlatform: resolveShortcutPlatform(browserWindow.navigator),
     dispose() {
       for (const query of media)
         query.removeEventListener("change", mediaChanged);
       stopKeyboardObserver();
       stopWidthObserver();
+      delete root.dataset.input;
+      delete root.dataset.display;
+      delete root.dataset.shell;
+      delete root.dataset.desktopPanels;
+      root.style.removeProperty("--wl-keyboard-inset");
       if (installed === controller) installed = undefined;
     },
   };
@@ -141,6 +149,12 @@ export function resolveEnvironment(
     shell: touchPrimary ? "mobile" : "desktop",
     desktopPanels,
   };
+}
+
+export function resolveShortcutPlatform(
+  browserNavigator: Pick<Navigator, "platform">,
+): ShortcutPlatform {
+  return /Mac|iPhone|iPad/u.test(browserNavigator.platform) ? "macos" : "other";
 }
 
 function panelsForWidth(width: number): DesktopPanels {
