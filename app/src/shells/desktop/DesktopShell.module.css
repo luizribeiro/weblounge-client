@@ -36,11 +36,6 @@
   width: 100%;
 }
 
-.main[data-chromeless="true"] .conversationBody {
-  align-self: center;
-  max-width: 880px;
-}
-
 .empty {
   align-items: center;
   color: var(--wl-color-muted);

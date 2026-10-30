@@ -11,6 +11,35 @@ test.describe("desktop shell against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
+  test("fills the space beside visible desktop panels", async ({ page }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: /^#weblounge-test/ }).click();
+    const sidebarToggle = page.getByRole("button", {
+      name: "Toggle channel list",
+    });
+    const memberToggle = page.getByRole("button", {
+      name: "Toggle member list",
+    });
+
+    for (const width of [1440, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expectDesktopGeometry(page, width, 256, 0);
+
+      await sidebarToggle.click();
+      await expectDesktopGeometry(page, width, 0, 0);
+      await page.keyboard.press("Control+Alt+S");
+      await expectDesktopGeometry(page, width, 256, 0);
+
+      await memberToggle.click();
+      await expectDesktopGeometry(page, width, 256, 232);
+      await sidebarToggle.click();
+      await expectDesktopGeometry(page, width, 0, 232);
+      await memberToggle.click();
+      await expectDesktopGeometry(page, width, 0, 0);
+      await sidebarToggle.click();
+    }
+  });
+
   test("anchors a short real conversation to the bottom", async ({ page }) => {
     const bot = await IrcClient.connect(
       "short-timeline",
@@ -188,7 +217,7 @@ test.describe("desktop shell against local Ergo", () => {
           .locator("[data-message-list]")
           .evaluate((element) => element.getBoundingClientRect().width),
       )
-      .toBeLessThanOrEqual(880);
+      .toBe(1440);
     await toggle.click();
     await expect(sidebar).toBeVisible();
 
@@ -287,3 +316,29 @@ test.describe("desktop shell against local Ergo", () => {
     }
   });
 });
+
+async function expectDesktopGeometry(
+  page: import("@playwright/test").Page,
+  viewportWidth: number,
+  leftPanelWidth: number,
+  rightPanelWidth: number,
+): Promise<void> {
+  const boxes = await page.evaluate(() => {
+    const box = (selector: string) => {
+      const bounds = document.querySelector(selector)?.getBoundingClientRect();
+      if (bounds === undefined) throw new Error(`${selector} is missing`);
+      return { left: bounds.left, right: bounds.right };
+    };
+    return [
+      box("[data-main-header]"),
+      box("[data-message-list]"),
+      box("[data-composer]"),
+    ];
+  });
+  for (const box of boxes) {
+    expect(Math.abs(box.left - leftPanelWidth)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(box.right - (viewportWidth - rightPanelWidth)),
+    ).toBeLessThanOrEqual(1);
+  }
+}

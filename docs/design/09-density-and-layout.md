@@ -206,9 +206,9 @@ focused pane is rendered without mutating the tree or persisted zoom flag. The w
 the status “Layout hidden at this window size.” Growing the window restores the tree. Explicit
 zoom wins over this automatic presentation.
 
-With one pane and both side panels hidden, conversation content is centred at about 880px. With
-multiple panes, the tree fills the main area. Headers remain because they contain structural pane
-controls.
+With one pane, the conversation, message list, and composer fill all space between visible side
+panels; hiding a panel immediately gives that width back to the conversation. Multiple panes also
+fill the main area. Headers remain because they contain structural pane controls.
 
 Every divider is a keyboard-focusable separator with orientation and 15–85 values. Pointer drag
 previews the affected ratio and commits an absolute value on release; double-click resets it.
