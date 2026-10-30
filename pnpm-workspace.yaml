@@ -1,6 +1,3 @@
 ---
 packages:
   - app
-minimumReleaseAgeExclude:
-  - '@tanstack/solid-virtual@3.13.51'
-  - '@tanstack/virtual-core@3.19.9'
