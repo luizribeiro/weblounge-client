@@ -2174,7 +2174,9 @@ fn connection_failure_notice(
     disconnected: &papo::Disconnected,
     hosted_authentication_failed: bool,
 ) -> Option<EngineToUi> {
-    (!matches!(disconnected.cause, papo::DisconnectCause::Requested { .. })).then(|| {
+    (disconnected.reconnect_in.is_none()
+        && !matches!(disconnected.cause, papo::DisconnectCause::Requested { .. }))
+    .then(|| {
         EngineToUi::notice(if hosted_authentication_failed {
             "engine.hosted_auth_failed"
         } else {
@@ -2640,6 +2642,16 @@ mod tests {
             Some(EngineToUi::Notice { key, .. })
                 if key == "engine.connection_failed"
         ));
+    }
+
+    #[test]
+    fn reconnecting_disconnects_do_not_emit_a_failure_notice() {
+        let disconnected = papo::Disconnected::new(
+            papo::DisconnectCause::PingTimeout,
+            Some(Duration::from_secs(1)),
+        );
+
+        assert_eq!(connection_failure_notice(&disconnected, false), None);
     }
 
     #[tokio::test]
