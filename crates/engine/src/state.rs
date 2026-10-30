@@ -283,6 +283,22 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn snapshot_events(&self) -> Vec<EngineToUi> {
+        self.buffer_order
+            .iter()
+            .filter_map(|id| self.buffers.get(id).map(|buffer| (*id, buffer)))
+            .map(|(buffer_id, buffer)| EngineToUi::BufferSnapshot {
+                buffer_id,
+                messages: buffer
+                    .timeline
+                    .iter()
+                    .map(|record| record.projection.clone())
+                    .collect(),
+                memberships: buffer.memberships.clone(),
+            })
+            .collect()
+    }
+
     pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {
         self.network.nickname = nickname;
         self.network_event()
@@ -2088,6 +2104,40 @@ mod tests {
         }
 
         assert_eq!(timeline(&model), ["two", "three"]);
+    }
+
+    #[test]
+    fn snapshots_replay_each_buffers_retained_rows_in_order() {
+        let (mut model, state) = model(2);
+        for (index, text) in ["one", "two", "three"].into_iter().enumerate() {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(text),
+                    Some(i64::try_from(index).expect("small index")),
+                    0,
+                    TimelineOrigin::History,
+                ),
+                &state,
+            );
+        }
+
+        let snapshots = model
+            .snapshot_events()
+            .into_iter()
+            .map(|event| match event {
+                crate::EngineToUi::BufferSnapshot { messages, .. } => messages
+                    .into_iter()
+                    .map(|message| message.text)
+                    .collect::<Vec<_>>(),
+                other => panic!("unexpected snapshot event {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            snapshots,
+            [vec![], vec!["two".to_owned(), "three".to_owned()]]
+        );
     }
 
     #[test]

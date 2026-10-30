@@ -390,6 +390,40 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes a buffer snapshot for an attaching tab", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const snapshot = {
+      type: "buffer_snapshot",
+      buffer_id: 2,
+      messages: [
+        {
+          id: 4,
+          author: "louro",
+          text: "long first\nlong second",
+          kind: "text",
+          bot: true,
+          mode_symbol: null,
+          authorship: "other",
+          nick_color_index: 3,
+          mentioned: false,
+          delivery: "received",
+          local_send_id: null,
+          server_ids: ["ml"],
+          server_time_ms: 2,
+          received_at_ms: 3,
+        },
+      ],
+      memberships: [],
+    };
+
+    port.emit(snapshot);
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(snapshot);
+  });
+
   it("decodes engine-owned stable draft keys", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();

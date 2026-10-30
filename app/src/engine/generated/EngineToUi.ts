@@ -156,7 +156,19 @@ buffer_id: BufferId,
 /**
  * Older rows in established timeline order.
  */
-messages: Array<MessageProjection>, } | { "type": "history_state_changed",
+messages: Array<MessageProjection>, } | { "type": "buffer_snapshot",
+/**
+ * Buffer whose rows are replaced.
+ */
+buffer_id: BufferId,
+/**
+ * Retained rows in established timeline order.
+ */
+messages: Array<MessageProjection>,
+/**
+ * Retained membership runs.
+ */
+memberships: Array<MembershipProjection>, } | { "type": "history_state_changed",
 /**
  * Conversation whose history state changed.
  */

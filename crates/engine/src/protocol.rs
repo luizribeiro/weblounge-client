@@ -697,6 +697,15 @@ pub enum EngineToUi {
         /// Older rows in established timeline order.
         messages: Vec<MessageProjection>,
     },
+    /// Replace one buffer's rows for a shell attaching to an already running network.
+    BufferSnapshot {
+        /// Buffer whose rows are replaced.
+        buffer_id: BufferId,
+        /// Retained rows in established timeline order.
+        messages: Vec<MessageProjection>,
+        /// Retained membership runs.
+        memberships: Vec<MembershipProjection>,
+    },
     /// Report one buffer's older-history request and terminal boundary.
     HistoryStateChanged {
         /// Conversation whose history state changed.

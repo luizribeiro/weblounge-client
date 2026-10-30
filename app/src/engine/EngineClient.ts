@@ -552,6 +552,23 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "buffer_snapshot": {
+      const messages = decodeArray(value.messages, decodeMessage);
+      const memberships = decodeArray(value.memberships, decodeMembership);
+      if (
+        typeof value.buffer_id === "number" &&
+        messages !== undefined &&
+        memberships !== undefined
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          messages,
+          memberships,
+        };
+      }
+      break;
+    }
     case "membership_changed": {
       const membership = decodeMembership(value.membership);
       if (typeof value.buffer_id === "number" && membership !== undefined) {
@@ -687,6 +704,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "messages_appended" ||
     value === "message_updated" ||
     value === "messages_prepended" ||
+    value === "buffer_snapshot" ||
     value === "history_state_changed" ||
     value === "membership_changed" ||
     value === "members_changed" ||

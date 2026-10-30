@@ -442,16 +442,10 @@ impl Runtime {
         let authentication_kind = config.authentication.kind();
         let mut state = lock(&self.state);
         if let Some(running) = state.network.as_ref() {
-            if authentication_kind == AuthenticationKind::HostedOAuth
-                && running.authentication_kind == AuthenticationKind::HostedOAuth
-            {
-                return vec![
-                    running.model.network_event(),
-                    running.model.buffers_event(),
-                    EngineToUi::CommandResult { id: command_id },
-                ];
+            if authentication_kind != running.authentication_kind {
+                return rejected_command(command_id, "engine.network_already_connected");
             }
-            return rejected_command(command_id, "engine.network_already_connected");
+            return attach_shell(&running.model, command_id);
         }
         let id = NetworkId(state.next_network_id);
         state.next_network_id += 1;
@@ -1176,6 +1170,15 @@ impl Runtime {
             EngineToUi::CommandResult { id: command_id },
         ]
     }
+}
+
+/// Another tab sharing this engine starts with no rows, so it receives the running network's
+/// retained timelines along with the buffer list.
+fn attach_shell(model: &NetworkModel, command_id: String) -> Vec<EngineToUi> {
+    let mut output = vec![model.network_event(), model.buffers_event()];
+    output.extend(model.snapshot_events());
+    output.push(EngineToUi::CommandResult { id: command_id });
+    output
 }
 
 fn server_command(command: &Command) -> bool {
@@ -3495,7 +3498,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn second_connect_is_rejected_without_replacing_the_running_client() {
+    async fn second_tab_connect_attaches_without_replacing_the_running_client() {
         let (client, _events, _wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         let (outbound, _receiver) = mpsc::unbounded_channel();
@@ -3540,8 +3543,27 @@ mod tests {
 
         assert!(matches!(
             output.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged { .. },
+                EngineToUi::BuffersChanged { .. },
+                EngineToUi::BufferSnapshot { .. },
+                EngineToUi::CommandResult { id },
+            ] if id == "connect-again"
+        ));
+        let hosted = runtime.request(EngineRequestEnvelope {
+            id: "hosted".into(),
+            request: EngineRequest::ConnectHosted {
+                label: "weblounge".into(),
+                endpoint: "wss://beta.weblounge.org/socket".into(),
+                nickname: "weblounge".into(),
+                oauth_token: "token".into(),
+                autojoin: Vec::new(),
+            },
+        });
+        assert!(matches!(
+            hosted.as_slice(),
             [EngineToUi::CommandRejected { id, message_key }]
-                if id == "connect-again" && message_key == "engine.network_already_connected"
+                if id == "hosted" && message_key == "engine.network_already_connected"
         ));
         assert_eq!(
             lock(&runtime.state)
@@ -3596,6 +3618,7 @@ mod tests {
             [
                 EngineToUi::NetworkStateChanged { .. },
                 EngineToUi::BuffersChanged { .. },
+                EngineToUi::BufferSnapshot { .. },
                 EngineToUi::CommandResult { id },
             ] if id == "second-tab"
         ));
