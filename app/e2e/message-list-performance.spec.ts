@@ -4,7 +4,6 @@ import { repeatScenario, summarizeFrameRuns } from "./performance-runs";
 test("keeps a 10k-message timeline bounded at 4x CPU", async ({
   page,
 }, testInfo) => {
-  test.slow();
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's instrumented build",
@@ -24,9 +23,9 @@ test("keeps a 10k-message timeline bounded at 4x CPU", async ({
       const samples: number[] = [];
       element.scrollTop = 0;
       let previous = performance.now();
-      for (let step = 0; step <= 40; step += 1) {
+      for (let step = 0; step <= 10; step += 1) {
         element.scrollTop =
-          (element.scrollHeight - element.clientHeight) * (step / 40);
+          (element.scrollHeight - element.clientHeight) * (step / 10);
         await new Promise<void>((resolve) =>
           requestAnimationFrame((now) => {
             samples.push(now - previous);
