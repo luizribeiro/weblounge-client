@@ -17,8 +17,7 @@
   background: var(--wl-color-panel-alt);
   border: 1px solid var(--wl-color-border);
   border-radius: var(--wl-radius-composer);
-  box-shadow: 0 8px 24px
-    color-mix(in srgb, var(--wl-color-fg) 18%, transparent);
+  box-shadow: var(--wl-effect-overlay-shadow);
   color: var(--wl-color-fg);
   display: flex;
   font-size: 14px;
