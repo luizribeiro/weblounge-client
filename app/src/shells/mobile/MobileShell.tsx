@@ -390,7 +390,6 @@ export function MobileShell(props: MobileShellProps) {
               networkId: drawerBuffer()?.network_id ?? 0,
               nick,
             };
-            closeDrawer();
           }}
           onRequestRange={(offset) =>
             props.onRequestMembers?.(

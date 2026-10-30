@@ -269,6 +269,12 @@ it("replaces chat and drawer state in touch WebKit browser tabs", () => {
         name: "Close member list",
       })[0] as Element,
     );
+    fireEvent(
+      screen.getByRole("dialog", { name: "Members" }),
+      Object.assign(new Event("animationend", { bubbles: true }), {
+        animationName: "drawer-out-right",
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
 
     expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();

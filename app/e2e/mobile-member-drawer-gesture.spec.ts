@@ -8,14 +8,15 @@ test.beforeEach(async ({ browserName, page }) => {
   );
   test.skip(browserName !== "webkit", "requires WebKit touch events");
   await emulateStandalone(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/?irc-password=weblounge-test");
   await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await openDrawer(page);
 });
 
 test("member drawer pans, springs back, and closes before the chat", async ({
   page,
 }) => {
+  await openDrawer(page);
   const drawer = page.getByRole("dialog", { name: "Members" });
 
   await pointer(page, "pointerdown", 100, 300, 0);
@@ -59,9 +60,64 @@ test("member drawer pans, springs back, and closes before the chat", async ({
   ).toBeVisible();
 });
 
+test("member drawer and scrim enter and leave as one motion", async ({
+  page,
+}) => {
+  const opening = await sampleMotion(page, "opening");
+  expect(opening.length).toBeGreaterThan(2);
+  expect(
+    monotonic(
+      opening.map((frame) => frame.scrim),
+      "up",
+    ),
+  ).toBe(true);
+  expect(
+    monotonic(
+      opening.map((frame) => frame.shadow),
+      "up",
+    ),
+  ).toBe(true);
+  expect(
+    monotonic(
+      opening.map((frame) => Math.abs(frame.offset)),
+      "down",
+    ),
+  ).toBe(true);
+
+  await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
+    "data-phase",
+    "open",
+  );
+  const closing = await sampleMotion(page, "closing");
+  expect(closing.length).toBeGreaterThan(2);
+  expect(
+    monotonic(
+      closing.map((frame) => frame.scrim),
+      "down",
+    ),
+  ).toBe(true);
+  expect(
+    monotonic(
+      closing.map((frame) => frame.shadow),
+      "down",
+    ),
+  ).toBe(true);
+  expect(
+    monotonic(
+      closing.map((frame) => Math.abs(frame.offset)),
+      "up",
+    ),
+  ).toBe(true);
+  await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
+});
+
 async function openDrawer(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Show members" }).click();
   await expect(page.getByRole("dialog", { name: "Members" })).toBeVisible();
+  await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
+    "data-phase",
+    "open",
+  );
 }
 
 async function pointer(
@@ -86,4 +142,64 @@ async function pointer(
     },
     { clientX, clientY, pointerId, timeStamp, type },
   );
+}
+
+interface MotionFrame {
+  readonly offset: number;
+  readonly scrim: number;
+  readonly shadow: number;
+}
+
+async function sampleMotion(
+  page: Page,
+  phase: "opening" | "closing",
+): Promise<MotionFrame[]> {
+  return page.evaluate((motionPhase) => {
+    if (motionPhase === "opening") {
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="Show members"]')
+        ?.click();
+    } else {
+      document
+        .querySelector<HTMLElement>(
+          '[role="dialog"] button[aria-label="Close member list"]',
+        )
+        ?.click();
+    }
+    const overlay = document.querySelector<HTMLElement>(
+      `[data-overlay-drawer]`,
+    );
+    const drawer = overlay?.querySelector<HTMLElement>("[role=dialog]");
+    const scrim = overlay?.querySelector<HTMLElement>("[data-overlay-scrim]");
+    if (overlay === null || drawer === undefined || scrim === undefined)
+      throw new Error("drawer motion surfaces are missing");
+    const animations = overlay.getAnimations({ subtree: true });
+    const duration = Math.max(
+      ...animations.map((animation) =>
+        Number(animation.effect?.getComputedTiming().endTime ?? 0),
+      ),
+    );
+    for (const animation of animations) animation.pause();
+    const frames = Array.from({ length: 6 }, (_, index) => {
+      const time = (duration * index) / 5;
+      for (const animation of animations) animation.currentTime = time;
+      return {
+        offset: new DOMMatrix(getComputedStyle(drawer).transform).m41,
+        scrim: Number(getComputedStyle(scrim).opacity),
+        shadow: Number(getComputedStyle(drawer, "::before").opacity),
+      };
+    });
+    for (const animation of animations) animation.finish();
+    return frames;
+  }, phase);
+}
+
+function monotonic(values: readonly number[], direction: "up" | "down") {
+  return values.every((value, index) => {
+    const previous = values[index - 1];
+    if (previous === undefined) return true;
+    return direction === "up"
+      ? value + 0.01 >= previous
+      : value - 0.01 <= previous;
+  });
 }

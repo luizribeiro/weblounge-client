@@ -8,46 +8,114 @@
   background: var(--wl-color-overlay-scrim);
   border: 0;
   inset: 0;
+  opacity: calc(1 - var(--wl-overlay-drawer-progress, 0));
   position: absolute;
   width: 100%;
 }
 
 .drawer {
-  animation-duration: var(--wl-motion-members);
-  animation-fill-mode: both;
-  animation-timing-function: var(--wl-motion-standard-curve);
   bottom: 0;
-  box-shadow: var(--wl-effect-overlay-shadow);
+  isolation: isolate;
   position: absolute;
   top: 0;
   will-change: transform;
   width: var(--wl-overlay-drawer-width);
 }
 
-.drawer[data-dragging="true"] {
+.drawer::before {
+  box-shadow: var(--wl-effect-overlay-shadow);
+  content: "";
+  inset: 0;
+  opacity: calc(1 - var(--wl-overlay-drawer-progress, 0));
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+.overlay[data-phase="opening"] .backdrop {
+  animation: backdrop-in var(--wl-motion-members)
+    var(--wl-motion-standard-curve) both;
+}
+
+.overlay[data-phase="closing"] .backdrop {
+  animation: backdrop-out var(--wl-motion-members)
+    var(--wl-motion-standard-curve) both;
+}
+
+.overlay[data-phase="opening"] .drawer,
+.overlay[data-phase="closing"] .drawer {
+  animation-duration: var(--wl-motion-members);
+  animation-fill-mode: both;
+  animation-timing-function: var(--wl-motion-standard-curve);
+}
+
+.overlay[data-phase="opening"] .drawer::before {
+  animation: backdrop-in var(--wl-motion-members)
+    var(--wl-motion-standard-curve) both;
+}
+
+.overlay[data-phase="closing"] .drawer::before {
+  animation: backdrop-out var(--wl-motion-members)
+    var(--wl-motion-standard-curve) both;
+}
+
+.overlay[data-dragging="true"] .drawer,
+.overlay[data-dragging="true"] .drawer::before,
+.overlay[data-dragging="true"] .backdrop {
   animation: none;
 }
 
-.drawer[data-drag-returning="true"] {
+.overlay[data-drag-returning="true"] .drawer {
   transition: transform var(--wl-motion-members) var(--wl-motion-standard-curve);
 }
 
+.overlay[data-drag-returning="true"] .backdrop,
+.overlay[data-drag-returning="true"] .drawer::before {
+  transition: opacity var(--wl-motion-members) var(--wl-motion-standard-curve);
+}
+
 .drawer[data-edge="left"] {
-  animation-name: drawer-in-left;
   left: var(--wl-safe-left);
 }
 
-.drawer[data-edge="left"][data-dragging="true"] {
+.overlay[data-phase="opening"] .drawer[data-edge="left"] {
+  animation-name: drawer-in-left;
+}
+
+.overlay[data-phase="closing"] .drawer[data-edge="left"] {
+  animation-name: drawer-out-left;
+}
+
+.overlay[data-dragging="true"] .drawer[data-edge="left"] {
   transform: translateX(calc(var(--wl-overlay-drawer-progress) * -100%));
 }
 
 .drawer[data-edge="right"] {
-  animation-name: drawer-in-right;
   right: var(--wl-safe-right);
 }
 
-.drawer[data-edge="right"][data-dragging="true"] {
+.overlay[data-phase="opening"] .drawer[data-edge="right"] {
+  animation-name: drawer-in-right;
+}
+
+.overlay[data-phase="closing"] .drawer[data-edge="right"] {
+  animation-name: drawer-out-right;
+}
+
+.overlay[data-dragging="true"] .drawer[data-edge="right"] {
   transform: translateX(calc(var(--wl-overlay-drawer-progress) * 100%));
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes drawer-in-left {
@@ -65,5 +133,17 @@
   }
   to {
     transform: translateX(0);
+  }
+}
+
+@keyframes drawer-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes drawer-out-right {
+  to {
+    transform: translateX(100%);
   }
 }

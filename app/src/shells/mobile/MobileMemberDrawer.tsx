@@ -18,6 +18,7 @@ interface MobileMemberDrawerProps {
 }
 
 export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
+  let requestClose = props.onClose;
   const [dragProgress, setDragProgress] = createSignal<number>();
   const [dragReturning, setDragReturning] = createSignal(false);
   const returnDrawer = () => {
@@ -33,7 +34,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
     commitVelocity: 0.5,
     direction: "right",
     onCancel: returnDrawer,
-    onCommit: props.onClose,
+    onCommit: () => requestClose(),
     onProgress: (progress) => {
       setDragReturning(false);
       setDragProgress(progress);
@@ -62,26 +63,34 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
       }}
       width="min(300px, 82%)"
     >
-      <div
-        class={styles.content}
-        data-member-drawer="true"
-        onPointerCancel={gesture.cancel}
-        onPointerDown={begin}
-        onPointerMove={gesture.move}
-        onPointerUp={gesture.end}
-      >
-        <MemberPanel
-          bufferTitle={props.bufferTitle}
-          closeLabel="Close member list"
-          filter={props.filter}
-          onClose={props.onClose}
-          onFilter={props.onFilter}
-          onOpenDirect={props.onOpenDirect}
-          onRequestRange={props.onRequestRange}
-          presentation="mobile"
-          window={props.window}
-        />
-      </div>
+      {(close) => {
+        requestClose = close;
+        return (
+          <div
+            class={styles.content}
+            data-member-drawer="true"
+            onPointerCancel={gesture.cancel}
+            onPointerDown={begin}
+            onPointerMove={gesture.move}
+            onPointerUp={gesture.end}
+          >
+            <MemberPanel
+              bufferTitle={props.bufferTitle}
+              closeLabel="Close member list"
+              filter={props.filter}
+              onClose={close}
+              onFilter={props.onFilter}
+              onOpenDirect={(nick) => {
+                props.onOpenDirect(nick);
+                close();
+              }}
+              onRequestRange={props.onRequestRange}
+              presentation="mobile"
+              window={props.window}
+            />
+          </div>
+        );
+      }}
     </OverlayDrawer>
   );
 }

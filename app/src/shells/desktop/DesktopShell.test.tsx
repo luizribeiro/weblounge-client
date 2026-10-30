@@ -153,6 +153,12 @@ it("keeps the desktop shell and opens narrow panels as one drawer", async () => 
   const membersDialog = screen.getByRole("dialog", { name: "Members" });
   expect(membersDialog).toBeVisible();
   fireEvent.keyDown(membersDialog, { key: "Escape" });
+  fireEvent(
+    membersDialog,
+    Object.assign(new Event("animationend", { bubbles: true }), {
+      animationName: "drawer-out-right",
+    }),
+  );
   await Promise.resolve();
   expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   expect(composer).toHaveFocus();
