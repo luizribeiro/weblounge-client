@@ -341,6 +341,29 @@
             files = "(^|/)(app/.*\\.tsx?|package\\.json|pnpm-lock\\.yaml)$";
             pass_filenames = false;
           };
+          pnpm-deps-hash = {
+            enable = true;
+            entry = "${
+              pkgs.writeShellApplication {
+                name = "pnpm-deps-hash-hook";
+                runtimeInputs = [ pkgs.gnused ];
+                text = ''
+                  expected=$(nix eval --raw .#pnpm-deps.outputHash)
+                  got=$(nix build --no-link .#pnpm-deps-probe 2>&1 | sed -n 's/.*got: *\(sha256-[^ ]*\).*/\1/p' | tail -n 1)
+                  if [ -z "$got" ]; then
+                    echo "Could not compute the pnpm dependency hash." >&2
+                    exit 1
+                  fi
+                  if [ "$got" != "$expected" ]; then
+                    echo "flake.nix pnpmDeps hash is stale: replace $expected with $got" >&2
+                    exit 1
+                  fi
+                '';
+              }
+            }/bin/pnpm-deps-hash-hook";
+            files = "(^|/)(package\\.json|pnpm-lock\\.yaml|pnpm-workspace\\.yaml)$";
+            pass_filenames = false;
+          };
           protocol-types = {
             enable = true;
             entry = "${
@@ -441,6 +464,8 @@
           inherit app;
           engine-wasm = engineWasm;
           ergo-weblounge = webloungeErgo;
+          pnpm-deps = pnpmDeps;
+          pnpm-deps-probe = pnpmDeps.overrideAttrs { outputHash = pkgs.lib.fakeHash; };
         };
         apps.ergo = {
           type = "app";
