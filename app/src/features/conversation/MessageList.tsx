@@ -88,6 +88,18 @@ export function MessageList(props: MessageListProps) {
     timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
   );
   const nickLookup = createMemo(() => createNickLookup(props.messages));
+  const setLiveEdge = (live: boolean) => {
+    if (!live && atLiveEdge() && !boundaryFrozen) {
+      const lastSeen = props.messages.at(-1)?.id;
+      if (lastSeen !== undefined) {
+        boundaryFrozen = true;
+        setFrozenReadThrough(lastSeen);
+      }
+    }
+    setAtLiveEdge(live);
+    if (live) setUnseen(0);
+    props.onLiveEdgeChange?.(live);
+  };
   const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
     get count() {
       return rows().length;
@@ -135,6 +147,13 @@ export function MessageList(props: MessageListProps) {
     anchorTo: "end",
     followOnAppend: true,
     scrollEndThreshold: liveEdgeTolerance,
+    // The sentinel can report before the virtualizer has seen the scroll that
+    // reached the end, and stays visible afterwards, so arrival at the end is
+    // also taken from the virtualizer. Leaving stays sentinel-driven so a
+    // transient gap during an append cannot freeze the read boundary.
+    onChange: (instance) => {
+      if (!atLiveEdge() && instance.isAtEnd()) setLiveEdge(true);
+    },
     overscan: 6,
   });
   const remeasure = () => {
@@ -151,19 +170,8 @@ export function MessageList(props: MessageListProps) {
     if (measured > 0) virtualizer.resizeItem(index, measured);
     virtualizer.measureElement(element);
   };
-  const reportLiveEdge = (sentinelVisible: boolean) => {
-    const live = sentinelVisible && virtualizer.isAtEnd();
-    if (!live && atLiveEdge() && !boundaryFrozen) {
-      const lastSeen = props.messages.at(-1)?.id;
-      if (lastSeen !== undefined) {
-        boundaryFrozen = true;
-        setFrozenReadThrough(lastSeen);
-      }
-    }
-    setAtLiveEdge(live);
-    if (live) setUnseen(0);
-    props.onLiveEdgeChange?.(live);
-  };
+  const reportLiveEdge = (sentinelVisible: boolean) =>
+    setLiveEdge(sentinelVisible && virtualizer.isAtEnd());
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
     virtualizer.scrollToEnd();

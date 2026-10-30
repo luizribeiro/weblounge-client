@@ -476,6 +476,53 @@ it("reports the live edge from the bottom sentinel", async () => {
   expect(onLiveEdgeChange).toHaveBeenLastCalledWith(true);
 });
 
+it("reports the live edge once the virtualizer catches up with the sentinel", async () => {
+  const observers: ControlledIntersectionObserver[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class extends ControlledIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  const onLiveEdgeChange = vi.fn();
+  const messages = Array.from({ length: 50 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    text: `message ${index + 1}`,
+    received_at_ms: index + 1,
+  }));
+  const { container } = render(() => (
+    <MessageList messages={messages} onLiveEdgeChange={onLiveEdgeChange} />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 1_300 },
+  });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const observer = observers[0];
+  if (observer === undefined) throw new Error("live-edge observer is missing");
+  observer.flush(false);
+  observer.flush(true);
+  expect(onLiveEdgeChange.mock.calls).toEqual([[false], [false]]);
+
+  list.scrollTop = 800;
+  list.dispatchEvent(new Event("scroll"));
+  expect(onLiveEdgeChange).toHaveBeenLastCalledWith(true);
+
+  onLiveEdgeChange.mockClear();
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  expect(onLiveEdgeChange).not.toHaveBeenCalled();
+});
+
 it("keeps following through a transient one-row render gap", async () => {
   const [messages, setMessages] = createSignal([message]);
   const { container } = render(() => <MessageList messages={messages()} />);
