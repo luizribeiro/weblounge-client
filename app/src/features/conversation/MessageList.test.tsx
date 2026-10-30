@@ -392,6 +392,16 @@ it("builds one distinct-nick lookup for all rendered rows", () => {
 });
 
 it("offers new messages without moving a scrolled-away viewport", async () => {
+  const observers: ControlledIntersectionObserver[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class extends ControlledIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
   const initial = Array.from({ length: 50 }, (_, index) => ({
     ...message,
     id: index + 1,
@@ -410,6 +420,9 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const observer = observers[0];
+  if (observer === undefined) throw new Error("live-edge observer is missing");
+  observer.flush(false);
 
   setMessages([
     ...initial,
@@ -421,6 +434,47 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
   expect(screen.getByRole("button", { name: /1 new message/ })).toBeVisible();
   expect(list.scrollTop).toBe(0);
 }, 15_000);
+
+it("reports the live edge from the bottom sentinel", async () => {
+  const observers: ControlledIntersectionObserver[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class extends ControlledIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  const onLiveEdgeChange = vi.fn();
+  const { container } = render(() => (
+    <MessageList
+      messages={[message, { ...message, id: 2 }]}
+      onLiveEdgeChange={onLiveEdgeChange}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 1_300 },
+  });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const observer = observers[0];
+  if (observer === undefined) throw new Error("live-edge observer is missing");
+
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  observer.flush(false);
+  expect(onLiveEdgeChange).toHaveBeenLastCalledWith(false);
+
+  list.scrollTop = 800;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  observer.flush(true);
+  expect(onLiveEdgeChange).toHaveBeenLastCalledWith(true);
+});
 
 it("keeps following through a transient one-row render gap", async () => {
   const [messages, setMessages] = createSignal([message]);
@@ -503,6 +557,36 @@ class ControlledResizeObserver {
         } as unknown as ResizeObserverEntry,
       ],
       this as unknown as ResizeObserver,
+    );
+  }
+}
+
+class ControlledIntersectionObserver {
+  readonly #callback: IntersectionObserverCallback;
+  #target: Element | undefined;
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.#callback = callback;
+  }
+
+  observe(target: Element): void {
+    this.#target = target;
+  }
+
+  disconnect(): void {
+    this.#target = undefined;
+  }
+
+  flush(isIntersecting: boolean): void {
+    if (this.#target === undefined) return;
+    this.#callback(
+      [
+        {
+          isIntersecting,
+          target: this.#target,
+        } as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
     );
   }
 }

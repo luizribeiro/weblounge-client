@@ -66,7 +66,9 @@ const liveEdgeTolerance = 2;
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLOListElement | undefined;
+  let liveEdgeSentinel: HTMLDivElement | undefined;
   let observedWidth: number | undefined;
+  let observedHeight: number | undefined;
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
@@ -94,9 +96,15 @@ export function MessageList(props: MessageListProps) {
         const next = rect.height === 0 ? { width: 1024, height: 768 } : rect;
         const widthChanged =
           observedWidth !== undefined && observedWidth !== next.width;
+        const viewportChanged =
+          (observedWidth !== undefined && observedWidth !== next.width) ||
+          (observedHeight !== undefined && observedHeight !== next.height);
+        const followEnd = viewportChanged && atLiveEdge();
         observedWidth = next.width;
+        observedHeight = next.height;
         callback(next);
         if (widthChanged) remeasure();
+        if (followEnd) virtualizer.scrollToEnd();
       }),
     estimateSize: (index) => {
       const row = rows()[index];
@@ -140,8 +148,8 @@ export function MessageList(props: MessageListProps) {
     if (measured > 0) virtualizer.resizeItem(index, measured);
     virtualizer.measureElement(element);
   };
-  const reportLiveEdge = () => {
-    const live = virtualizer.isAtEnd();
+  const reportLiveEdge = (sentinelVisible: boolean) => {
+    const live = sentinelVisible && virtualizer.isAtEnd();
     if (!live && atLiveEdge() && !boundaryFrozen) {
       const lastSeen = props.messages.at(-1)?.id;
       if (lastSeen !== undefined) {
@@ -203,12 +211,30 @@ export function MessageList(props: MessageListProps) {
   });
   onMount(() => {
     const fonts = document.fonts;
-    const handleFontsLoaded = () => remeasure();
+    const handleFontsLoaded = () => {
+      remeasure();
+      if (atLiveEdge()) virtualizer.scrollToEnd();
+    };
+    const liveEdgeObserver =
+      list === undefined || typeof IntersectionObserver === "undefined"
+        ? undefined
+        : new IntersectionObserver(
+            (entries) => {
+              const entry = entries.find(
+                (candidate) => candidate.target === liveEdgeSentinel,
+              );
+              if (entry !== undefined) reportLiveEdge(entry.isIntersecting);
+            },
+            { root: list },
+          );
+    if (liveEdgeSentinel !== undefined)
+      liveEdgeObserver?.observe(liveEdgeSentinel);
     void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
-    onCleanup(() =>
-      fonts?.removeEventListener("loadingdone", handleFontsLoaded),
-    );
+    onCleanup(() => {
+      liveEdgeObserver?.disconnect();
+      fonts?.removeEventListener("loadingdone", handleFontsLoaded);
+    });
     queueMicrotask(jumpToBottom);
   });
 
@@ -224,7 +250,6 @@ export function MessageList(props: MessageListProps) {
           event.preventDefault();
           jumpToBottom();
         }}
-        onScroll={() => queueMicrotask(reportLiveEdge)}
         ref={(element) => {
           list = element;
         }}
@@ -238,6 +263,14 @@ export function MessageList(props: MessageListProps) {
           aria-hidden="true"
           class={styles.spacer}
           style={{ height: `${virtualizer.getTotalSize()}px` }}
+        />
+        <div
+          aria-hidden="true"
+          class={styles.liveEdge}
+          ref={(element) => {
+            liveEdgeSentinel = element;
+          }}
+          style={{ top: `${Math.max(virtualizer.getTotalSize() - 1, 0)}px` }}
         />
         <For each={virtualizer.getVirtualItems()}>
           {(virtualRow) => {
