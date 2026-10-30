@@ -50,6 +50,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - D1. [x] Load older history on scroll-up through an empty `CHATHISTORY BEFORE` page, with
     eviction-independent event cursors and exact ordering/deduplication across more than 1,000
     messages (scroll anchoring already exists).
+  - [x] Requested history pages stay where they belong: papo `f0672c0` also emits each answered
+    CHATHISTORY batch as a `Replay` event, which the engine had merged as a live append; Replay
+    pages are now dropped when the server supports CHATHISTORY. A tab attaching to a running
+    shared engine receives each buffer's retained rows. Open question for Luiz: should papo stop
+    emitting the Replay copy for batches that answer a labeled request?
   - D2. [x] Rebuild the DM list from a 30-day `CHATHISTORY TARGETS` window on connect and
     reconnect, capped at 100 direct conversations and ordered by server-reported recent activity.
     Latest history hydrates desktop and mobile previews without disturbing older-page cursors.

@@ -8,7 +8,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 |---|---|---|---|
 | 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. Also in scrollback: rows overlap until rendered, then the page jumps as they're corrected; new overlaps when scrolling back down (screenshot of #bots). | fixed, live |
 | 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | fixed, live |
-| 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | queued |
+| 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | fixed, local (same root cause as #56: papo's Replay copy of requested history) |
 | 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | fixed, live |
 | 5 | 2026-10-29 | Mobile: the chats list flashes when going back to it, as if reloading. | fixed, live |
 | 6 | 2026-10-29 | Desktop: with the member list open, switching channels leaves it empty (zero members). | fixed, live |
@@ -61,6 +61,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | fixed, local |
 | 54 | 2026-10-30 | iPhone: swiping from the edge to close a chat sometimes cancels mid-gesture at certain speeds (transcript touch handling?). | fixed, local |
 | 55 | 2026-10-30 | iPhone: the members drawer animation is broken on device (video): while opening, the chat vanishes and the drawer renders on the left sliding further left, then snaps; closing via ✕ has no animation; another close skips most of the motion. | fixed, local (root cause: autofocusing the off-screen filter scrolled the shell; drawers now use state-driven transitions); verify on device |
-| 56 | 2026-10-30 | Beta (b9d45c4) history regression: some channels empty on desktop (#bots, #ops) but not on mobile; others show week-old messages out of place with many duplicates; console `engine.read_marker_invalid`. | investigating (Opus agent) |
+| 56 | 2026-10-30 | Beta (b9d45c4) history regression: some channels empty on desktop (#bots, #ops) but not on mobile; others show week-old messages out of place with many duplicates; console `engine.read_marker_invalid`. | fixed, local. Papo also emits every answered CHATHISTORY batch as a Replay event; the engine appended that copy at the live edge (with the beta's papo, nested multiline lacked msgid/time, so it was also duplicated and stamped now), which also broke read markers. The engine now drops Replay pages under CHATHISTORY. The empty channels were a second tab attaching to the shared engine without rows; attaching now snapshots retained rows. Rejected read-marker hints no longer reach the console. |
 | 57 | 2026-10-30 | Mobile: the Back button in a chat pops instantly; it should animate out like the push animates in. | queued |
 | 58 | 2026-10-30 | The mention highlight background should fill the transcript width (no side margin). | queued |
