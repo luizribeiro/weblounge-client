@@ -1,6 +1,6 @@
 # 09 — Density and layout system
 
-Status: revised for milestone 1 review.
+Status: platform-environment addendum awaiting review.
 
 ## Problem
 
@@ -32,11 +32,63 @@ accessibility output. Touch targets remain at least 44 CSS px and text continues
 
 ## Shell selection
 
-A `ResizeObserver` on the app container selects mobile for widths below 760px and desktop at 760px
-or wider. Selection never uses the user agent. Both shells retain independent local navigation
-state, so crossing the boundary neither converts nor discards the desktop pane tree.
+Shell choice follows the primary input, never the viewport width. The web adapter selects mobile
+only when `(hover: none) and (pointer: coarse)` matches; every other web environment selects
+desktop. Tauri desktop selects desktop and Tauri iOS/Android select mobile from their build target,
+without running browser detection. Tablets whose primary input is touch use mobile for now. iPad
+with a trackpad or keyboard remains an open product question.
 
-Milestone 1 uses the exact breakpoint with no resize hysteresis.
+The platform environment installs `data-shell` before the Solid root renders. Resizing never
+changes it, remounts the shell, or converts navigation state. A 400px mouse-primary browser is a
+narrow desktop; a 1024px touch-primary browser is mobile. A genuine primary-input capability
+change may update the web selection, but width changes cannot.
+
+## Platform environment
+
+`app/src/platform/` is the only runtime owner of browser, input, display-mode, safe-area, keyboard,
+and platform-quirk detection. It publishes this closed environment on the app root:
+
+```ts
+export type PrimaryInput = "touch" | "mouse";
+export type DisplayMode = "standalone" | "browser" | "tauri";
+export type Shell = "mobile" | "desktop";
+export type DesktopPanels = "inline" | "overlay";
+
+export interface PlatformEnvironment {
+  readonly input: PrimaryInput;
+  readonly display: DisplayMode;
+  readonly shell: Shell;
+  readonly desktopPanels: DesktopPanels;
+}
+```
+
+The corresponding root attributes are `data-input`, `data-display`, `data-shell`, and
+`data-desktop-panels`. The last attribute is presentation state, not shell selection, and is the
+only consumer of the 760px app-container breakpoint. Root CSS defines `--wl-safe-top`,
+`--wl-safe-right`, `--wl-safe-bottom`, and `--wl-safe-left` from `env(safe-area-inset-*)`, plus
+`--wl-keyboard-inset`. Tests can replace those custom properties on the root without impersonating
+a device. The web adapter derives display mode from `(display-mode: standalone)` and keyboard
+geometry from `visualViewport`; Tauri injects the same contract from its target and keyboard
+plugin. Theme and motion code consumes platform-owned preference observers or token-file media
+queries rather than issuing its own `matchMedia` calls.
+
+Components consume only these attributes and properties. A repository check rejects
+`env(safe-area`, `matchMedia(`, `navigator.userAgent`, `navigator.platform`, and media-query
+`max-width:` outside `app/src/platform/` and the explicit token/breakpoint files. It distinguishes
+media queries from ordinary `max-width` declarations. The existing modifier-key adapter, theme
+preference, reduced-motion check, touch sizing, and safe-area declarations all move behind this
+boundary.
+
+Device or model sniffing is forbidden. The sole exception is
+`app/src/platform/quirks.ts`, whose closed entries each carry a name, the narrowest available
+detection (a feature test whenever possible), an upstream bug URL, and a concrete removal
+condition. The planned `iosGestureEvents` entry for WebKit pinch suppression follows that shape;
+quirks cannot select a shell or provide ordinary layout policy.
+
+Width still controls presentation inside the desktop shell. `760px` is the single desktop-panel
+breakpoint: at or above it the sidebar can be inline; below it the sidebar is transient. Member
+lists independently use the existing pane calculation of a 232px list beside at least a 320px
+conversation. The minimum supported desktop viewport is `360px`.
 
 ## Desktop pane tree
 
@@ -134,6 +186,21 @@ member-panel, and chromeless presentation are inputs from navigation/settings ra
 the pane tree; per-channel member visibility lives only in subsystem 10. Layout supplies each
 pane's width so navigation can choose inline member list or overlay drawer.
 
+On narrow desktop, one shared drawer primitive presents the sidebar from the left or the focused
+pane's member list from the right. Its state is a closed union (`"sidebar" | "members" | null`),
+so the two overlays cannot be open together. Both directions use the same scrim, motion tokens,
+focus containment, and dismissal behavior as the mobile members drawer and future split-view
+overlay. The header button and `sidebar.toggle` open the sidebar drawer when it cannot be inline;
+`members.toggle` does the same on the right when the focused pane cannot fit its list.
+
+Choosing a channel, pressing Escape, or activating the scrim closes a desktop drawer and returns
+focus to the composer. Growing across the panel breakpoint removes a transient drawer and restores
+the corresponding inline panel when its persisted visibility says shown; shrinking collapses the
+inline presentation without changing that preference. Neither transition remounts the desktop
+shell, pane, conversation, message list, or composer, so draft and scroll state retain element
+identity. At 360px the header, one focused conversation, and composer must still lay out without
+overlap.
+
 Each pane's minimum rendered box is 320×240px. If the tree cannot meet that minimum, only the
 focused pane is rendered without mutating the tree or persisted zoom flag. The workspace bar shows
 the status “Layout hidden at this window size.” Growing the window restores the tree. Explicit
@@ -167,16 +234,26 @@ future versions are preserved until the user changes layout.
 
 ## Mobile and safe areas
 
-Mobile never renders or mutates the pane tree. The shell exports logical variables from
-`env(safe-area-inset-*)`, consumes each inset once, and clears the software keyboard through the
-Visual Viewport/Tauri keyboard adapter. It never ships prototype hard-coded safe-area values.
+Mobile never renders or mutates the pane tree. `viewport-fit=cover` enables the platform safe-area
+values, and `apple-mobile-web-app-status-bar-style` is `black-translucent`: the themed header paints
+through the status region while its content starts below `--wl-safe-top`. This is the only
+component that consumes the top inset. The shell frame consumes the left/right insets once so
+landscape children use an already-safe content box.
+
+The active bottom edge consumes `--wl-safe-bottom` once: the tab bar on a root tab, the composer on
+a conversation, or the bottom of an open drawer. Content may scroll under those opaque or
+translucent bars, but interactive controls and text never enter the inset. The keyboard adapter
+publishes `--wl-keyboard-inset`; the conversation bottom follows the larger effective obstruction
+without adding safe-area padding in both shell and component. No component reads raw `env()` or
+ships the prototype's iPhone measurements.
 
 ## Boundaries
 
-This subsystem owns density measurements, breakpoint selection, pane-tree validation/reduction,
+This subsystem owns density measurements, the platform-environment contract, shell selection,
+desktop panel breakpoints, safe-area/keyboard geometry, pane-tree validation/reduction,
 geometry/directional queries, responsive presentation, and layout persistence. It does not own
-buffer content, member-panel state, read markers, navigation actions, command bindings, themes, or
-virtual-list behavior.
+buffer content, member-panel preference, read markers, navigation actions, command bindings,
+themes, or virtual-list behavior.
 
 ## Testing
 
@@ -187,8 +264,18 @@ virtual-list behavior.
   clamping, and the 320×240 automatic presentation boundary.
 - Persistence tests cover corruption, missing buffers, zoom restoration, migrations, and resize
   write coalescing.
-- Playwright covers the 760px shell switch, one through six panes, explicit/automatic zoom,
-  chromeless mode, safe areas, browser zoom, and theme × density combinations.
+- Platform unit tests cover web media-feature mapping, Tauri target mapping, reactive preference
+  changes, injected safe-area/keyboard values, and quirk-registry metadata.
+- Playwright keeps one desktop shell element across 1440, 900, 600, and 400px widths and across
+  the old 760px boundary, preserving its draft and scroll. At 400px it covers left drawer open,
+  channel selection, scrim/Escape dismissal, and composer focus; touch iPhone and Android profiles
+  select mobile.
+- Safe-area Playwright profiles inject iPhone portrait (top 62px, bottom 34px), iPhone landscape
+  (left/right 62px, bottom 21px), and Android gesture navigation (bottom 24px). They assert header,
+  composer/tab bar, drawer, interactive controls, and text stay inside the safe content box, with
+  light/dark screenshots for every profile.
+- Playwright also covers one through six panes, explicit/automatic zoom, chromeless mode, browser
+  zoom, and theme × density combinations.
 - Accessibility tests cover focus rings, separators, and 44px touch targets.
 
 ## Out of scope
@@ -198,11 +285,15 @@ and cross-device layout sync are not planned.
 
 ## Later
 
-- Add resize hysteresis only if measured browser/keyboard oscillation occurs.
+- Decide whether an iPad with a trackpad/keyboard should offer desktop shell selection.
 
 ## Decisions
 
-- Use 760px as the exact mobile/desktop shell boundary.
+- Choose the shell from primary input capability, never viewport width.
+- Use 760px only as the desktop sidebar presentation breakpoint and support desktop down to 360px.
+- Centralize browser/Tauri adaptation in `app/src/platform/`; components consume root attributes
+  and geometry tokens.
+- Use `black-translucent` status-bar style with one themed header owner for the top inset.
 - Use 320×240px as the minimum pane box with reversible focused-pane presentation.
 - Persist zoom with the pane tree.
 - Show narrow-layout status in the workspace bar.

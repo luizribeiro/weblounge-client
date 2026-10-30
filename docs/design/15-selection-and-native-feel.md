@@ -1,6 +1,6 @@
 # 15 — Selection and native feel
 
-Status: milestone 2 foundation.
+Status: milestone 2 foundation; platform-environment addendum awaiting review.
 
 ## Problem
 
@@ -65,7 +65,7 @@ subsystem 08.
 | Mouse focus flash | Suppress ordinary outlines and restore the token-driven ring only with `:focus-visible`. |
 | Image/link drag | Chrome assets set `draggable={false}` and base CSS disables WebKit user drag; a root `dragstart` fallback rejects chrome drags. |
 | Rubber-band and pull-to-refresh | `html`, `body`, root, and app shell fill the viewport, do not page-scroll, and use `overscroll-behavior: none`; lists own scrolling. |
-| Mobile input zoom | Editable controls compute to at least `16px` on coarse-pointer/mobile layouts. |
+| Mobile input zoom | Editable controls compute to at least `16px` under root `data-input="touch"`. |
 | Font layout shift | Task 4 self-hosts and preloads subsets with metric-matched fallbacks or `size-adjust`; the foundation uses the system stack and the audit observes font readiness. |
 | Accidental zoom suppression | The viewport remains user-scalable; controls use `touch-action: manipulation` without disabling accessibility zoom. |
 
@@ -93,6 +93,9 @@ all duration tokens become `0ms`; components do not add independent media querie
 **Desktop: typing almost always reaches the composer.**
 - A printable key with no modifier pressed while focus is on app chrome (sidebar, message list, header buttons) goes to the composer and isn't lost. Not when another text input is focused (switcher, search, settings, member filter) or a dialog is open, and never for navigation keys (arrows, Tab, Space/Enter on a focused control), so keyboard and screen-reader users aren't hijacked.
 - Focus returns to the composer after: switching buffers (click, Alt+↑/↓, switcher), closing a popup, the switcher, settings or a confirmation, sending or cancelling, and opening a DM from the member list.
+- A narrow-desktop sidebar or member drawer returns focus to the composer after channel selection,
+  Escape, or scrim dismissal. Resizing between inline and drawer presentation does not move focus
+  unless it closes the active drawer.
 - Selecting and copying text in the message list stays possible; typing afterwards still goes to the composer.
 
 **Mobile: never open the keyboard unless the user asked.**
@@ -107,12 +110,17 @@ all duration tokens become `0ms`; components do not add independent media querie
 |---|---|---|---|---|
 | Suggestions popup | fade + 4px rise, ≤120ms | fade ≤120ms | composer | message list, composer |
 | On-screen keyboard | platform animation; composer follows via `transform` (VirtualKeyboard API on Chromium, `visualViewport` on iOS) | same | composer while open | header, message list bottom anchor |
-| Member drawer | 220ms slide (transform) | slide back | drawer filter while open; composer not refocused on mobile | conversation underneath |
+| Member/sidebar drawer | 220ms slide from its owned edge | slide back | drawer filter while open; composer on desktop dismissal, not on mobile | conversation underneath |
 | Inline confirmation | fade ≤120ms above the composer | fade | its primary button; composer afterwards | message list |
 | Swipe-back | follows the finger; completes or eases back | | — | — |
 | New-messages button | fade | fade | — | message list scroll position |
 
 All of them: opaque surfaces from theme tokens with the overlay shadow, transform/opacity only, nothing under reduced motion, no layout shift, no empty-state flicker while results update.
+
+The mirrored desktop sidebar/member drawers and the mobile member drawer are one primitive with a
+typed edge (`"left" | "right"`), not separate transition or focus implementations. Platform
+capabilities, safe-area values, and reduced-motion state arrive through subsystem 09's root
+contract; transient surfaces never call media, viewport, user-agent, or safe-area APIs directly.
 
 ## Primitives
 
@@ -138,6 +146,10 @@ It asserts:
   allow-listed with a reason (network callbacks are outside those APIs and therefore exempt);
 - while visibility is emulated as hidden, a second Ergo client can deliver messages without
   mutating the message-list DOM; becoming visible causes one batched catch-up mutation.
+- under injected safe-area profiles, every visible interactive or textual rectangle stays within
+  the left/right safe content bounds, header content begins at or below the top inset, and the
+  active composer, tab bar, or drawer bottom ends at the viewport minus the bottom inset (within
+  one CSS pixel).
 
 The timer instrumentation is installed before app code. It counts timeout and animation-frame
 callbacks and records every interval registration as well as its callbacks.
