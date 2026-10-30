@@ -1,14 +1,13 @@
 import {
-  expect,
   type BrowserContext,
   type ConsoleMessage,
+  expect,
   type Page,
   test,
 } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 
-const fixtureChannel =
-  process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
+const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 test("keeps normal desktop and mobile flows console-clean", async ({
   baseURL,

@@ -37,6 +37,11 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "webkit-console",
+      testMatch: "**/console-clean.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-back",
       testMatch: "**/mobile-back-swipe.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },

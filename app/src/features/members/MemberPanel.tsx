@@ -60,6 +60,7 @@ export function MemberPanel(props: MemberPanelProps) {
         ? metrics.group
         : metrics.member,
     overscan: 10,
+    useAnimationFrameWithResizeObserver: true,
   });
   const virtualRows = createMemo(() => virtualizer.getVirtualItems());
   const renderedRows = createMemo(() => {
