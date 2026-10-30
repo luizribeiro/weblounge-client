@@ -752,8 +752,6 @@ impl NetworkModel {
     pub(crate) fn close_direct(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
         let buffer = self.buffers.get(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
-        self.names.remove(buffer.key.as_ref()?);
-        self.buffers.remove(&buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
     }
@@ -793,7 +791,7 @@ impl NetworkModel {
     ) -> (BufferId, Vec<EngineToUi>) {
         let (buffer_id, added) = self.ensure_buffer(NameKey::Direct(nick), Some(direct));
         let mut events = Vec::new();
-        if let Some(buffer) = added {
+        if let Some(buffer) = added.or_else(|| self.reveal_buffer(buffer_id)) {
             events.push(EngineToUi::BufferAdded { buffer });
             events.push(self.buffers_event());
         }
@@ -926,6 +924,11 @@ impl NetworkModel {
 
         let (buffer_id, added) =
             self.ensure_buffer(incoming.conversation.clone(), incoming.direct.clone());
+        let added = added.or_else(|| {
+            (incoming.authorship != MessageAuthorship::Own)
+                .then(|| self.reveal_buffer(buffer_id))
+                .flatten()
+        });
         let mentioned = incoming.authorship != MessageAuthorship::Own
             && mentions_own_nick(&incoming.text, state);
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
@@ -998,6 +1001,15 @@ impl NetworkModel {
         };
         let projection = self.add_buffer(key, kind, direct, None);
         (projection.id, Some(projection))
+    }
+
+    fn reveal_buffer(&mut self, buffer_id: BufferId) -> Option<BufferProjection> {
+        if self.buffer_order.contains(&buffer_id) {
+            return None;
+        }
+        let projection = self.buffers.get(&buffer_id)?.projection.clone();
+        self.buffer_order.push(buffer_id);
+        Some(projection)
     }
 
     fn add_buffer(
@@ -1713,12 +1725,51 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_direct_buffer_removes_only_its_local_projection() {
+    fn closing_a_direct_buffer_hides_its_retained_state() {
         let (mut model, state) = model(10);
-        let (buffer_id, _) = model.ensure_buffer(NameKey::Direct(nick_name(&state, "alice")), None);
+        let key = NameKey::Direct(nick_name(&state, "alice"));
+        let (buffer_id, _) = model.ensure_buffer(key.clone(), None);
         assert!(model.close_direct(buffer_id).is_some());
         assert!(!model.buffer_order.contains(&buffer_id));
-        assert!(!model.buffers.contains_key(&buffer_id));
+        assert!(model.buffers.contains_key(&buffer_id));
+        assert_eq!(model.names.get(&key), Some(&buffer_id));
+    }
+
+    #[test]
+    fn closed_direct_reopens_only_for_peer_activity() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Direct(nick_name(&state, "alice"));
+        let (buffer_id, _) = model.ensure_buffer(key.clone(), None);
+        model.close_direct(buffer_id).expect("direct closes");
+
+        let mut own = incoming(
+            &state,
+            "from another device",
+            Some("own"),
+            None,
+            1,
+            TimelineOrigin::Live,
+        );
+        own.conversation = key.clone();
+        own.authorship = MessageAuthorship::Own;
+        model.receive_incoming(own, &state);
+        assert!(!model.buffer_order.contains(&buffer_id));
+
+        let mut peer = incoming(
+            &state,
+            "from alice",
+            Some("peer"),
+            None,
+            2,
+            TimelineOrigin::Live,
+        );
+        peer.conversation = key;
+        let events = model.receive_incoming(peer, &state);
+        assert!(model.buffer_order.contains(&buffer_id));
+        assert!(matches!(
+            events.first(),
+            Some(EngineToUi::BufferAdded { buffer }) if buffer.id == buffer_id
+        ));
     }
 
     #[test]

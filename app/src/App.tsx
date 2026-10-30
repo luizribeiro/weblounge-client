@@ -452,7 +452,11 @@ function applyDebugEvent(
   } else if (message.type === "buffer_added") {
     setBuffers((current) => upsert(current, message.buffer));
   } else if (message.type === "buffer_updated") {
-    setBuffers((current) => upsert(current, message.buffer));
+    setBuffers((current) =>
+      current.map((buffer) =>
+        buffer.id === message.buffer.id ? message.buffer : buffer,
+      ),
+    );
   } else if (message.type === "unread_changed") {
     setBuffers((current) =>
       current.map((buffer) =>

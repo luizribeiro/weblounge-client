@@ -493,6 +493,33 @@ it("shows a confirmation received without this tab's optimistic row", async () =
   );
 });
 
+it("does not resurrect a closed buffer from a later projection update", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  const direct = {
+    id: 2,
+    network_id: 1,
+    kind: "direct" as const,
+    title: "ana",
+    draft_key: "test:ana",
+    topic: null,
+    unread: 0,
+    mentions: 0,
+    read_through: null,
+  };
+  client.emit({ type: "buffer_added", buffer: direct });
+  expect(await screen.findByRole("heading", { name: "ana" })).toBeVisible();
+
+  client.emit({ type: "buffers_changed", network_id: 1, buffers: [] });
+  expect(screen.queryByRole("heading", { name: "ana" })).toBeNull();
+  client.emit({
+    type: "buffer_updated",
+    buffer: { ...direct, unread: 1 },
+  });
+
+  expect(screen.queryByRole("heading", { name: "ana" })).toBeNull();
+});
+
 it("shows an optimistic message as failed when sending fails", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);
