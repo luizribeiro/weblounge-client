@@ -735,45 +735,41 @@ impl Runtime {
         spawn_task(async move {
             for target in targets {
                 let channel_name = target.channel.clone();
+                let Some((output, focused)) =
+                    sync_joined_channel(&state, &client, instance, &command_id, &channel_name)
+                else {
+                    return;
+                };
+                send_events(&outbound, output);
+                if focused {
+                    continue;
+                }
                 let result = match target.key {
                     Some(key) => client.join(target.channel).key(key).await,
                     None => client.join(target.channel).await,
                 };
                 if let Err(error) = result {
+                    let Some((output, focused)) =
+                        sync_joined_channel(&state, &client, instance, &command_id, &channel_name)
+                    else {
+                        return;
+                    };
+                    send_events(&outbound, output);
+                    if focused {
+                        continue;
+                    }
                     let _ = outbound.send(EngineToUi::CommandRejected {
                         id: command_id,
                         message_key: join_error_key(&error).into(),
                     });
                     return;
                 }
-                let output = {
-                    let mut state = lock(&state);
-                    let Some(running) = state
-                        .network
-                        .as_mut()
-                        .filter(|running| running.instance == instance)
-                    else {
-                        return;
-                    };
-                    let mut output = running.model.sync_channels(&client.state());
-                    let channel = client
-                        .state()
-                        .name_rules()
-                        .map(|rules| rules.channel(channel_name));
-                    if let Some(buffer_id) = channel
-                        .as_ref()
-                        .and_then(|channel| running.model.buffer_id_for_channel(channel))
-                    {
-                        output.push(EngineToUi::FocusBufferRequested {
-                            command_id: command_id.clone(),
-                            buffer_id,
-                        });
-                    }
-                    output
+                let Some((output, _)) =
+                    sync_joined_channel(&state, &client, instance, &command_id, &channel_name)
+                else {
+                    return;
                 };
-                for event in output {
-                    let _ = outbound.send(event);
-                }
+                send_events(&outbound, output);
             }
             let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
@@ -2455,6 +2451,40 @@ fn join_error_key(error: &papo::Error) -> &'static str {
     }
 }
 
+fn sync_joined_channel(
+    state: &Arc<Mutex<RuntimeState>>,
+    client: &papo::Client,
+    instance: u64,
+    command_id: &str,
+    channel_name: &str,
+) -> Option<(Vec<EngineToUi>, bool)> {
+    let snapshot = client.state();
+    let channel = snapshot
+        .channel(channel_name)
+        .map(|channel| channel.name().clone());
+    let mut state = lock(state);
+    let running = state
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)?;
+    let Some(channel) = channel else {
+        return Some((Vec::new(), false));
+    };
+    let mut output = running.model.sync_channels(&snapshot);
+    let buffer_id = running.model.buffer_id_for_channel(&channel)?;
+    output.push(EngineToUi::FocusBufferRequested {
+        command_id: command_id.into(),
+        buffer_id,
+    });
+    Some((output, true))
+}
+
+fn send_events(outbound: &mpsc::UnboundedSender<EngineToUi>, events: Vec<EngineToUi>) {
+    for event in events {
+        let _ = outbound.send(event);
+    }
+}
+
 fn identify_line(password: &str) -> papo::Line {
     papo::Line::new("PRIVMSG")
         .param("NickServ")
@@ -2968,7 +2998,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_direct_adds_and_focuses_the_engine_buffer() {
+    async fn query_focuses_new_and_existing_direct_buffers_once() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["extended-join"]).await;
@@ -3000,12 +3030,13 @@ mod tests {
             })),
             outbound,
         };
+        mark_runtime_online(&runtime);
 
         let immediate = runtime.request(EngineRequestEnvelope {
             id: "open-mel".into(),
-            request: EngineRequest::OpenDirect {
-                network_id: NetworkId(1),
-                nick: "mel".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/query mel".into(),
             },
         });
         assert!(immediate.is_empty());
@@ -3024,6 +3055,30 @@ mod tests {
             EngineToUi::FocusBufferRequested { buffer_id, .. },
             EngineToUi::CommandResult { .. },
         ] if buffer.kind == BufferKind::Direct && buffer.title == "mel" && buffer.id == *buffer_id));
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "open-mel-again".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id: BufferId(1),
+                        input: "/query mel".into(),
+                    },
+                })
+                .is_empty()
+        );
+        let focus = receiver.recv().await.expect("existing direct is focused");
+        let result = receiver.recv().await.expect("query completes");
+        assert!(
+            matches!(focus, EngineToUi::FocusBufferRequested { command_id, .. }
+            if command_id == "open-mel-again")
+        );
+        assert_eq!(
+            result,
+            EngineToUi::CommandResult {
+                id: "open-mel-again".into()
+            }
+        );
     }
 
     #[tokio::test]
@@ -3749,6 +3804,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_join_adds_a_new_buffer_before_focusing_it_once() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        mark_runtime_online(&runtime);
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "join-new".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id: BufferId(1),
+                        input: "/join #new".into(),
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(wire.next_sent().await, "JOIN #new");
+        wire.server(":weblounge!u@host JOIN #new").await;
+        wire.server(":offline.test 366 weblounge #new :End of NAMES")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+        let output = command_output(&mut receiver).await;
+
+        assert!(matches!(output.as_slice(), [
+            EngineToUi::BufferAdded { buffer },
+            EngineToUi::BuffersChanged { .. },
+            EngineToUi::FocusBufferRequested { buffer_id, .. },
+            EngineToUi::CommandResult { .. },
+        ] if buffer.title == "#new" && buffer.id == *buffer_id));
+    }
+
+    #[tokio::test]
+    async fn submit_join_focuses_an_existing_channel_without_rejoining() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .sync_channels(&client.state());
+        let runtime = Runtime { state, outbound };
+        mark_runtime_online(&runtime);
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "join-existing".into(),
+                    request: EngineRequest::SubmitInput {
+                        buffer_id: BufferId(1),
+                        input: "/join #room".into(),
+                    },
+                })
+                .is_empty()
+        );
+        let focus = receiver.recv().await.expect("existing channel is focused");
+        let result = receiver.recv().await.expect("join completes");
+        assert!(
+            matches!(focus, EngineToUi::FocusBufferRequested { command_id, .. }
+            if command_id == "join-existing")
+        );
+        assert_eq!(
+            result,
+            EngineToUi::CommandResult {
+                id: "join-existing".into()
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn submit_join_preserves_each_channel_key_on_the_wire() {
         let (client, mut events, mut wire) = wire(
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
@@ -4033,6 +4176,18 @@ mod tests {
             matches!(event, papo::Event::FeaturesChanged { .. })
         })
         .await;
+    }
+
+    async fn command_output(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>) -> Vec<EngineToUi> {
+        let mut output = Vec::new();
+        loop {
+            let event = receiver.recv().await.expect("command completes");
+            let complete = matches!(event, EngineToUi::CommandResult { .. });
+            output.push(event);
+            if complete {
+                return output;
+            }
+        }
     }
 
     fn collect(receiver: &mut mpsc::UnboundedReceiver<EngineToUi>) -> Vec<EngineToUi> {
