@@ -1794,6 +1794,15 @@ fn spawn_history_fetch(
     instance: u64,
     fetch: HistoryFetch,
 ) {
+    if let HistoryFetch::Latest(target) = &fetch {
+        spawn_read_marker_fetch(
+            Arc::clone(&state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+            target.clone(),
+        );
+    }
     spawn_task(async move {
         if let Ok(page) = fetch_history(&client, fetch.clone()).await {
             process_history(&state, &outbound, &client, instance, page);
@@ -1814,6 +1823,41 @@ fn spawn_history_fetch(
                 at_start: false,
             });
         }
+    });
+}
+
+fn spawn_read_marker_fetch(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    target: HistoryTarget,
+) {
+    if !client.state().supports(papo::Feature::ReadMarkers) {
+        return;
+    }
+    spawn_task(async move {
+        let read_until = match target.clone() {
+            HistoryTarget::Channel(channel) => client.fetch_read_marker(channel).await,
+            HistoryTarget::Direct(nick) => client.fetch_read_marker(nick).await,
+        };
+        let Ok(read_until) = read_until else {
+            return;
+        };
+        let events = {
+            let mut state = lock(&state);
+            let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            else {
+                return;
+            };
+            running
+                .model
+                .apply_server_read_marker(&target.conversation(), read_until)
+        };
+        send_events(&outbound, events);
     });
 }
 
@@ -2688,7 +2732,7 @@ mod tests {
         AuthenticationKind, ConnectionAuthentication, ConnectionTransition, MemberViews,
         RunningNetwork, Runtime, RuntimeState, completion_context, connection_failure_notice,
         drain_events, fetch_history, fetch_latest, lock, next_connection_state, person_candidates,
-        process_event, process_history, utf16_len,
+        process_event, process_history, spawn_read_marker_fetch, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -4927,6 +4971,72 @@ mod tests {
             event,
             EngineToUi::ReadMarkerMoved { through: Some(id), .. } if *id == message_id
         )));
+    }
+
+    #[tokio::test]
+    async fn initial_direct_read_marker_fetch_clears_restored_badges() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        wire.server(
+            "@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG weblounge :restored direct",
+        )
+        .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                unread: 1,
+                mentions: 1,
+                ..
+            }
+        )));
+
+        let target = crate::state::HistoryTarget::Direct(
+            client
+                .state()
+                .name_rules()
+                .expect("registration established name rules")
+                .nick("alice"),
+        );
+        spawn_read_marker_fetch(Arc::clone(&state), outbound, client, 1, target);
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        assert!(request.ends_with("MARKREAD alice"));
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD alice timestamp=2026-10-27T12:00:00.000Z"
+        ))
+        .await;
+
+        let cleared = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Some(EngineToUi::UnreadChanged {
+                    unread: 0,
+                    mentions: 0,
+                    ..
+                }) = receiver.recv().await
+                {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(cleared.is_ok());
     }
 
     #[tokio::test]

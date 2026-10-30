@@ -107,6 +107,13 @@ impl HistoryTarget {
             Self::Direct(nick) => NameKey::Direct(nick.clone()),
         }
     }
+
+    pub(crate) fn conversation(&self) -> papo::Conversation {
+        match self {
+            Self::Channel(channel) => papo::Conversation::Channel(channel.clone()),
+            Self::Direct(nick) => papo::Conversation::Private(nick.clone()),
+        }
+    }
 }
 
 /// Information needed to perform an outgoing send without exposing papo targets to the UI.
