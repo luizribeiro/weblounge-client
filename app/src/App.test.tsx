@@ -387,9 +387,9 @@ it("renders command error and engine notice keys as human text", async () => {
     tone: "neutral",
     action: null,
   });
-  expect(screen.getByRole("note")).toHaveTextContent(
-    "The conversation changed unexpectedly. Try again.",
-  );
+  expect(
+    screen.getByText("The conversation changed unexpectedly. Try again."),
+  ).toBeVisible();
 
   client.emit({
     type: "notice",
@@ -594,6 +594,78 @@ it("shows an optimistic message as failed when sending fails", async () => {
   expect(
     screen.getByText(/nickname now belongs to someone else/u),
   ).toBeInTheDocument();
+});
+
+it("reopens a hidden failed DM from its typed notice", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  const buffer = {
+    id: 2,
+    network_id: 1,
+    kind: "direct" as const,
+    title: "ana",
+    draft_key: "test:ana",
+    topic: null,
+    unread: 0,
+    mentions: 0,
+    read_through: null,
+  };
+  client.emit({ type: "buffer_added", buffer });
+  client.emit({
+    type: "messages_appended",
+    buffer_id: 2,
+    messages: [
+      {
+        id: 9,
+        author: "weblounge",
+        text: "hi",
+        kind: "text",
+        bot: false,
+        mode_symbol: null,
+        authorship: "own",
+        nick_color_index: 0,
+        mentioned: false,
+        delivery: "optimistic",
+        local_send_id: 7,
+        server_ids: [],
+        server_time_ms: null,
+        received_at_ms: 8,
+      },
+    ],
+  });
+  client.emit({ type: "buffers_changed", network_id: 1, buffers: [] });
+  client.emit({
+    type: "message_failed",
+    network_id: 1,
+    buffer_id: 2,
+    target: "ana",
+    local_send_id: 7,
+    message_key: "engine.send_failed",
+  });
+  client.emit({
+    type: "notice",
+    key: "notice.message_not_delivered",
+    values: { network_id: "1", target: "ana" },
+    tone: "error",
+    action: { label: "action.open", run: "buffer.open-direct" },
+  });
+
+  expect(
+    await screen.findByText("Message to ana wasn't delivered"),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  expect(client.requests).toContainEqual({
+    id: expect.any(String),
+    request: { type: "open_direct", network_id: 1, nick: "ana" },
+  });
+  client.emit({ type: "buffer_added", buffer });
+
+  expect(await screen.findByRole("heading", { name: "ana" })).toBeVisible();
+  expect(screen.getByText("hi").closest("[data-message-row]")).toHaveAttribute(
+    "data-delivery",
+    "failed",
+  );
+  expect(screen.queryByText("Message to ana wasn't delivered")).toBeNull();
 });
 
 it("marks a visible live-edge buffer read only after a focused 500ms dwell", async () => {

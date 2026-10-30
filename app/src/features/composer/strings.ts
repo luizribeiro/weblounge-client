@@ -1,5 +1,6 @@
 export interface MessageValues {
   readonly input?: string;
+  readonly network_id?: string;
   readonly target?: string;
   readonly text?: string;
 }
@@ -35,6 +36,16 @@ export type MessageKey =
   | (typeof messageKeys)[number]
   | (typeof noticeKeys)[number]
   | (typeof actionKeys)[number];
+
+const knownMessageKeys: ReadonlySet<string> = new Set([
+  ...messageKeys,
+  ...noticeKeys,
+  ...actionKeys,
+]);
+
+export function isMessageKey(key: string): key is MessageKey {
+  return knownMessageKeys.has(key);
+}
 
 const commandStrings: Readonly<Record<string, string>> = {
   "cmd.close.confirmation_action": "Leave",
