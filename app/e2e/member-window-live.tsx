@@ -9,8 +9,9 @@ import {
   MemberPanel,
   type MemberWindow,
 } from "../src/features/members/MemberPanel";
+import { installPlatformEnvironment } from "../src/platform/environment";
 import "../src/styles/base.css";
-import { installSystemTheme } from "../src/theme/theme-controller";
+import { installTheme } from "../src/theme/theme-controller";
 import { FakeMemberPort } from "./fake-member-engine";
 
 const port = new FakeMemberPort();
@@ -19,7 +20,8 @@ const client = new WorkerEngineClient(connection);
 const root = document.getElementById("root");
 if (root === null) throw new Error("missing live member root");
 installDensity(document);
-installSystemTheme(document, window);
+const platform = installPlatformEnvironment(root, window);
+installTheme(document, platform.prefersDark());
 render(() => <Harness />, root);
 void client.start({
   build_id: "fake",

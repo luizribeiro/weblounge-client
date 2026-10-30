@@ -2,8 +2,9 @@ import { render } from "solid-js/web";
 import { installDensity } from "../src/density/density";
 import type { MessageProjection } from "../src/engine/protocol";
 import { MessageList } from "../src/features/conversation/MessageList";
+import { installPlatformEnvironment } from "../src/platform/environment";
 import "../src/styles/base.css";
-import { installSystemTheme } from "../src/theme/theme-controller";
+import { installTheme } from "../src/theme/theme-controller";
 
 const authors = [
   { authorship: "other", color: 338_283_141, nick: "ana" },
@@ -40,9 +41,10 @@ const messages = Array.from({ length: 10_000 }, (_, index) => {
 });
 
 installDensity(document);
-installSystemTheme(document, window);
 const root = document.getElementById("root");
 if (root === null) throw new Error("missing performance harness root");
+const platform = installPlatformEnvironment(root, window);
+installTheme(document, platform.prefersDark());
 root.style.height = "100%";
 render(
   () => (

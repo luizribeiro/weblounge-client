@@ -6,8 +6,9 @@ import {
   MemberPanel,
   type MemberWindow,
 } from "../src/features/members/MemberPanel";
+import { installPlatformEnvironment } from "../src/platform/environment";
 import "../src/styles/base.css";
-import { installSystemTheme } from "../src/theme/theme-controller";
+import { installTheme } from "../src/theme/theme-controller";
 
 type Member = Extract<
   EngineToUi,
@@ -30,9 +31,10 @@ const members: Member[] = groups.flatMap((group, groupIndex) =>
 );
 
 installDensity(document);
-installSystemTheme(document, window);
 const root = document.getElementById("root");
 if (root === null) throw new Error("missing performance harness root");
+const platform = installPlatformEnvironment(root, window);
+installTheme(document, platform.prefersDark());
 root.style.height = "100%";
 render(() => <Harness />, root);
 
