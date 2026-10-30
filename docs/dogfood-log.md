@@ -56,3 +56,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 48 | 2026-10-30 | Two long live messages overlap each other, with the "New" divider drawn across the text (live on a7211bd). | in progress (Opus agent) |
 | 49 | 2026-10-30 | Desktop: a long draft's text spills outside the composer box instead of the box growing. | not a bug (caused by a browser extension) |
 | 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | queued |
+| 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | queued |
