@@ -56,7 +56,10 @@ function dedicatedEngineClient(
   return new WorkerEngineClient(dedicatedConnection(worker), undefined, [
     {
       type: "notice",
-      message_key: "engine.dedicated_worker_fallback",
+      key: "engine.dedicated_worker_fallback",
+      values: {},
+      tone: "neutral",
+      action: null,
     },
   ]);
 }

@@ -371,9 +371,7 @@ impl NetworkModel {
                 .insert(message.actor.nick().clone(), direct.clone());
         }
         let Some(conversation) = NameKey::from_conversation(&message.conversation) else {
-            return vec![EngineToUi::Notice {
-                message_key: "engine.unsupported_conversation".into(),
-            }];
+            return vec![EngineToUi::notice("engine.unsupported_conversation")];
         };
         let origin = if history {
             TimelineOrigin::History
@@ -1180,9 +1178,7 @@ fn system_time_from_millis(milliseconds: i64) -> SystemTime {
 }
 
 fn inconsistent_state_notice() -> Vec<EngineToUi> {
-    vec![EngineToUi::Notice {
-        message_key: "engine.state_inconsistent".into(),
-    }]
+    vec![EngineToUi::notice("engine.state_inconsistent")]
 }
 
 fn draft_key(network: &str, buffer: &str, casemapping: papo::Casemapping) -> String {
@@ -1855,8 +1851,8 @@ mod tests {
 
         assert!(matches!(
             events.as_slice(),
-            [crate::EngineToUi::Notice { message_key }]
-                if message_key == "engine.state_inconsistent"
+            [crate::EngineToUi::Notice { key, .. }]
+                if key == "engine.state_inconsistent"
         ));
     }
 }

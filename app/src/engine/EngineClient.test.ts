@@ -42,6 +42,10 @@ function fixture() {
   return { client, close, frames, port };
 }
 
+function notice(key: string) {
+  return { type: "notice", key, values: {}, tone: "neutral", action: null };
+}
+
 describe("WorkerEngineClient", () => {
   it("completes the build handshake", async () => {
     const { client, port } = fixture();
@@ -346,14 +350,32 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("decodes localized notice values and registry actions", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const event = {
+      type: "notice",
+      key: "notice.message_not_delivered",
+      values: { network_id: "1", target: "ana" },
+      tone: "error",
+      action: { label: "action.open", run: "buffer.open" },
+    };
+
+    port.emit(event);
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(event);
+  });
+
   it("applies one catch-up frame after becoming visible", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
     client.setVisibility("hidden");
 
-    port.emit({ type: "notice", message_key: "first" });
-    port.emit({ type: "notice", message_key: "second" });
+    port.emit(notice("first"));
+    port.emit(notice("second"));
 
     expect(frames).toHaveLength(0);
     expect(listener).not.toHaveBeenCalled();
@@ -361,9 +383,10 @@ describe("WorkerEngineClient", () => {
     client.setVisibility("visible");
     expect(frames).toHaveLength(1);
     frames[0]?.(0);
-    expect(listener.mock.calls.map(([message]) => message.message_key)).toEqual(
-      ["first", "second"],
-    );
+    expect(listener.mock.calls.map(([message]) => message.key)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("flushes prior events before an optimistic row in the same frame", () => {
@@ -387,7 +410,7 @@ describe("WorkerEngineClient", () => {
       received_at_ms: 1,
     };
 
-    port.emit({ type: "notice", message_key: "already-queued" });
+    port.emit(notice("already-queued"));
     port.emit({
       type: "messages_appended",
       buffer_id: 2,

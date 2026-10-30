@@ -41,6 +41,9 @@ it("uses and owns a dedicated Worker when SharedWorker is unavailable", async ()
   expect(worker.terminate).toHaveBeenCalledOnce();
   expect(listener).toHaveBeenCalledWith({
     type: "notice",
-    message_key: "engine.dedicated_worker_fallback",
+    key: "engine.dedicated_worker_fallback",
+    values: {},
+    tone: "neutral",
+    action: null,
   });
 });

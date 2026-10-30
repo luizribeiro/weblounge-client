@@ -82,13 +82,13 @@ export function App(props: AppProps) {
         setEngineStatus(`Engine ready: ${message.message}`);
       }
       if (message.type === "notice") {
-        if (message.message_key === "engine.hosted_auth_failed") {
+        if (message.key === "engine.hosted_auth_failed") {
           void restartHostedAuthorization("revoked");
           return;
         }
-        const notice = t(message.message_key);
+        const notice = t(message.key, message.values);
         setEngineNotice(notice);
-        if (message.message_key === "engine.connection_failed") {
+        if (message.key === "engine.connection_failed") {
           setComposerNotice(notice);
           if (props.hostedSession !== undefined) setHostedError(notice);
         }

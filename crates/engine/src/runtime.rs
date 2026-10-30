@@ -509,9 +509,7 @@ impl Runtime {
         });
         vec![
             event,
-            EngineToUi::Notice {
-                message_key: "engine.hosted_auth_failed".into(),
-            },
+            EngineToUi::notice("engine.hosted_auth_failed"),
             EngineToUi::CommandResult { id: command_id },
         ]
     }
@@ -1587,9 +1585,7 @@ fn process_event_with_direct(
             process_lagged(&mut running.model, &snapshot, &lagged, &mut output)
         }
         papo::Event::Warning(papo::event::Warning::ChannelRecreated { .. }) => {
-            output.push(EngineToUi::Notice {
-                message_key: "engine.channel_recreated".into(),
-            });
+            output.push(EngineToUi::notice("engine.channel_recreated"));
             Vec::new()
         }
         papo::Event::CasemappingChanged(_) => {
@@ -1712,14 +1708,11 @@ fn connection_failure_notice(
     hosted_authentication_failed: bool,
 ) -> Option<EngineToUi> {
     (!matches!(disconnected.cause, papo::DisconnectCause::Requested { .. })).then(|| {
-        EngineToUi::Notice {
-            message_key: if hosted_authentication_failed {
-                "engine.hosted_auth_failed"
-            } else {
-                "engine.connection_failed"
-            }
-            .into(),
-        }
+        EngineToUi::notice(if hosted_authentication_failed {
+            "engine.hosted_auth_failed"
+        } else {
+            "engine.connection_failed"
+        })
     })
 }
 
@@ -2065,8 +2058,8 @@ mod tests {
         let disconnected = papo::Disconnected::new(papo::DisconnectCause::PingTimeout, None);
         assert!(matches!(
             connection_failure_notice(&disconnected, false),
-            Some(EngineToUi::Notice { message_key })
-                if message_key == "engine.connection_failed"
+            Some(EngineToUi::Notice { key, .. })
+                if key == "engine.connection_failed"
         ));
     }
 
@@ -2588,9 +2581,9 @@ mod tests {
             expired.as_slice(),
             [
                 EngineToUi::NetworkStateChanged { .. },
-                EngineToUi::Notice { message_key },
+                EngineToUi::Notice { key, .. },
                 EngineToUi::CommandResult { id },
-            ] if message_key == "engine.hosted_auth_failed" && id == "expired"
+            ] if key == "engine.hosted_auth_failed" && id == "expired"
         ));
         assert!(lock(&runtime.state).network.is_none());
     }
@@ -3905,7 +3898,7 @@ mod tests {
         process_event(&state, &outbound, &client, 1, warning);
         assert!(matches!(
             collect(&mut receiver).as_slice(),
-            [EngineToUi::Notice { message_key }] if message_key == "engine.channel_recreated"
+            [EngineToUi::Notice { key, .. }] if key == "engine.channel_recreated"
         ));
     }
 

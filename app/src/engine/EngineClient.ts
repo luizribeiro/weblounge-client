@@ -303,11 +303,25 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
-    case "notice":
-      if (typeof value.message_key === "string") {
-        return { type: "notice", message_key: value.message_key };
+    case "notice": {
+      const values = decodeStringRecord(value.values);
+      const action = decodeNoticeAction(value.action);
+      if (
+        typeof value.key === "string" &&
+        values !== undefined &&
+        (value.tone === "neutral" || value.tone === "error") &&
+        action !== undefined
+      ) {
+        return {
+          type: "notice",
+          key: value.key,
+          values,
+          tone: value.tone,
+          action,
+        };
       }
       break;
+    }
     case "command_help_requested":
       if (value.command === null || typeof value.command === "string") {
         return { type: messageType, command: value.command };
@@ -550,6 +564,29 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "unread_changed" ||
     value === "read_marker_moved"
   );
+}
+
+function decodeStringRecord(
+  value: unknown,
+): Readonly<Record<string, string>> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.some(([, item]) => typeof item !== "string")) return undefined;
+  return Object.fromEntries(entries) as Readonly<Record<string, string>>;
+}
+
+function decodeNoticeAction(
+  value: unknown,
+): { readonly label: string; readonly run: string } | null | undefined {
+  if (value === null) return null;
+  if (
+    isRecord(value) &&
+    typeof value.label === "string" &&
+    typeof value.run === "string"
+  ) {
+    return { label: value.label, run: value.run };
+  }
+  return undefined;
 }
 
 type MemberProjection = Extract<

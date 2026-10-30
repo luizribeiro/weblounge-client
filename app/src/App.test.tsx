@@ -116,7 +116,13 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
   });
   expect(await screen.findByText("1 network · connected")).toBeVisible();
 
-  client.emit({ type: "notice", message_key: "engine.hosted_auth_failed" });
+  client.emit({
+    type: "notice",
+    key: "engine.hosted_auth_failed",
+    values: {},
+    tone: "neutral",
+    action: null,
+  });
   await waitFor(() => expect(authorize).toHaveBeenCalledWith("revoked"));
   expect(client.requests).toContainEqual({
     id: expect.any(String),
@@ -374,12 +380,24 @@ it("renders command error and engine notice keys as human text", async () => {
   fireEvent.keyDown(input, { key: "Enter" });
 
   expect(await screen.findByText("Unknown command /frobnicate.")).toBeVisible();
-  client.emit({ type: "notice", message_key: "engine.state_inconsistent" });
+  client.emit({
+    type: "notice",
+    key: "engine.state_inconsistent",
+    values: {},
+    tone: "neutral",
+    action: null,
+  });
   expect(screen.getByRole("note")).toHaveTextContent(
     "The conversation changed unexpectedly. Try again.",
   );
 
-  client.emit({ type: "notice", message_key: "engine.connection_failed" });
+  client.emit({
+    type: "notice",
+    key: "engine.connection_failed",
+    values: {},
+    tone: "neutral",
+    action: null,
+  });
   const visibleConnectionNotice = screen
     .getAllByText(/Couldn't connect to the server/u)
     .find((element) => !element.classList.contains("visually-hidden"));
