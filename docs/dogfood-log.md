@@ -58,11 +58,12 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | fixed, live (dafcae3); please confirm |
 | 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | fixed, live (dafcae3); please confirm |
 | 52 | 2026-10-30 | iOS: members sign-in succeeds but never returns to the beta chat. | fixed, live (dafcae3); please confirm |
-| 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | fixed, live (e28b9c1); please confirm on device |
+| 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | still wrong on device (994793f): composer cut off at the bottom with the keyboard closed; keyboard open lands at the top with a big gap or is scrollable. Research-first agent working on it |
 | 54 | 2026-10-30 | iPhone: swiping from the edge to close a chat sometimes cancels mid-gesture at certain speeds (transcript touch handling?). | fixed, live (dafcae3); please confirm |
 | 55 | 2026-10-30 | iPhone: the members drawer animation is broken on device (video): while opening, the chat vanishes and the drawer renders on the left sliding further left, then snaps; closing via ✕ has no animation; another close skips most of the motion. | fixed, confirmed by Luiz |
 | 56 | 2026-10-30 | Beta (b9d45c4) history regression: some channels empty on desktop (#bots, #ops) but not on mobile; others show week-old messages out of place with many duplicates; console `engine.read_marker_invalid`. | fixed, confirmed by Luiz on dafcae3 |
-| 57 | 2026-10-30 | Mobile: the Back button in a chat pops instantly; it should animate out like the push animates in. | fixed, live (e28b9c1); please confirm on device |
-| 58 | 2026-10-30 | The mention highlight background should fill the transcript width (no side margin). | fixed, live (e28b9c1); please confirm on device |
-| 59 | 2026-10-30 | Mobile push/pop: the chats list should stay still while the chat slides over it (in, out, and swipe gestures alike). | fixed, live (e28b9c1); please confirm on device |
-| 60 | 2026-10-30 | Mobile: releasing a swipe-back mid-way jumps straight to the end state instead of animating there. | fixed, live (e28b9c1); please confirm on device |
+| 57 | 2026-10-30 | Mobile: the Back button in a chat pops instantly; it should animate out like the push animates in. | fixed, confirmed by Luiz |
+| 58 | 2026-10-30 | The mention highlight background should fill the transcript width (no side margin). | fixed, confirmed by Luiz |
+| 59 | 2026-10-30 | Mobile push/pop: the chats list should stay still while the chat slides over it (in, out, and swipe gestures alike). | fixed, confirmed by Luiz |
+| 60 | 2026-10-30 | Mobile: releasing a swipe-back mid-way jumps straight to the end state instead of animating there. | fixed, confirmed by Luiz |
+| 61 | 2026-10-31 | Mobile: swipe-back settles slower than tap-Back; both should use the same speed, between the two. | queued |
