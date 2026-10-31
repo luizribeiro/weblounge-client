@@ -27,13 +27,14 @@ export function resolveViewportGeometry({
 
 // iOS reveals a focused field by panning the visual viewport or scrolling the
 // document, even when nothing overflows; the app is already sized to the
-// visible area, so any pan only hides the header and must be undone.
+// visible area, so a pan only hides the header. Negative values are rubber-band
+// overscroll, which settles by itself.
 export function documentPanned({
   scrollY,
   viewport,
 }: ViewportMeasurements): boolean {
   if (zoomed(viewport)) return false;
-  return Math.abs(scrollY) >= 1 || Math.abs(viewport.offsetTop) >= 1;
+  return scrollY >= 1 || viewport.offsetTop >= 1;
 }
 
 export function observeViewportGeometry(

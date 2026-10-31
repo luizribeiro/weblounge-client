@@ -67,8 +67,9 @@ describe("document pan", () => {
     expect(documentPanned({ ...iphone, scrollY: 62 })).toBe(true);
   });
 
-  it("ignores sub-pixel noise and pinch zoom", () => {
+  it("ignores sub-pixel noise, rubber-band overscroll and pinch zoom", () => {
     expect(documentPanned(withViewport(476, 0.4))).toBe(false);
+    expect(documentPanned({ ...iphone, scrollY: -40 })).toBe(false);
     expect(documentPanned(withViewport(406, 200, 2))).toBe(false);
   });
 });
@@ -134,6 +135,21 @@ describe("viewport geometry observer", () => {
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 300}px`,
     );
+  });
+
+  it("leaves an unpanned document alone and stops measuring once stable", async () => {
+    const frames = vi.spyOn(window, "requestAnimationFrame");
+    const scrollTo = vi.spyOn(window, "scrollTo");
+    const { viewport } = observe();
+
+    viewport.set(window.innerHeight - 300, 0, "resize");
+    await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
+    const settled = frames.mock.calls.length;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(frames).toHaveBeenCalledTimes(settled + 2);
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("re-measures on focus changes", () => {
