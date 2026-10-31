@@ -137,8 +137,42 @@ test.describe("iOS standalone viewport geometry", () => {
   });
 });
 
-async function openChannel(page: Page) {
-  await page.goto("/?irc-password=weblounge-test");
+test.describe("viewport diagnostics overlay", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 402, height: 874 },
+  });
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+
+  test("shows live geometry behind ?debug=viewport until turned off", async ({
+    page,
+  }) => {
+    await openChannel(page, "&debug=viewport");
+    const overlay = page.locator("[data-viewport-debug]");
+    await expect(overlay).toContainText("inner: 402×874");
+    await expect(overlay).toContainText("data-keyboard: closed");
+    await page
+      .getByRole("textbox", { name: "Message #weblounge-test" })
+      .focus();
+    await expect(overlay).toContainText("event: focusin");
+    await expect(overlay).toContainText(/composer: [\d.]+–[\d.]+/u);
+
+    await page.goto("/?irc-password=weblounge-test");
+    await expect(overlay).toBeAttached();
+    await page.goto("/?irc-password=weblounge-test&debug=off");
+    await expect(
+      page.getByRole("button", { name: "#weblounge-test" }),
+    ).toBeVisible();
+    await expect(overlay).toHaveCount(0);
+  });
+});
+
+async function openChannel(page: Page, query = "") {
+  await page.goto(`/?irc-password=weblounge-test${query}`);
   await page.getByRole("button", { name: "#weblounge-test" }).click();
 }
 
