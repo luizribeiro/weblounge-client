@@ -1,159 +1,181 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  documentPanned,
   observeViewportGeometry,
   resolveViewportGeometry,
   type ViewportMeasurements,
 } from "./viewport-geometry";
 
-const iphoneStandalone: ViewportMeasurements = {
-  layoutHeight: 812,
-  screenHeight: 874,
-  safeTop: 62,
-  standalone: true,
-  viewport: { height: 812, offsetTop: 0, scale: 1 },
+const iphone: ViewportMeasurements = {
+  layoutHeight: 874,
+  scrollY: 0,
+  viewport: { height: 874, offsetTop: 0, scale: 1 },
 };
 
-const iphoneTab: ViewportMeasurements = {
-  layoutHeight: 760,
-  screenHeight: 874,
-  safeTop: 62,
-  standalone: false,
-  viewport: { height: 760, offsetTop: 0, scale: 1 },
-};
+function withViewport(
+  height: number,
+  offsetTop = 0,
+  scale = 1,
+): ViewportMeasurements {
+  return { ...iphone, viewport: { height, offsetTop, scale } };
+}
 
 describe("viewport geometry", () => {
-  it("fills the screen when iOS standalone shortens the layout viewport by the status bar", () => {
-    expect(resolveViewportGeometry(iphoneStandalone)).toEqual({
-      appHeight: 874,
-      appTop: 0,
+  it("leaves the app to CSS while the keyboard is closed", () => {
+    expect(resolveViewportGeometry(iphone)).toEqual({ keyboard: "closed" });
+    expect(resolveViewportGeometry({ ...iphone, layoutHeight: 812 })).toEqual({
       keyboard: "closed",
     });
-    expect(
-      resolveViewportGeometry({ ...iphoneStandalone, layoutHeight: 811 }),
-    ).toMatchObject({ appHeight: 874 });
-  });
-
-  it("keeps the layout viewport in a browser tab even when the screen is taller", () => {
-    expect(resolveViewportGeometry(iphoneTab)).toEqual({
-      appHeight: 760,
-      appTop: 0,
-      keyboard: "closed",
-    });
-  });
-
-  it("ignores standalone shortfalls that are not the status bar", () => {
-    expect(
-      resolveViewportGeometry({ ...iphoneStandalone, layoutHeight: 810 }),
-    ).toMatchObject({ appHeight: 810 });
-    expect(
-      resolveViewportGeometry({
-        ...iphoneStandalone,
-        layoutHeight: 600,
-        viewport: { height: 600, offsetTop: 0, scale: 1 },
-      }),
-    ).toEqual({ appHeight: 600, appTop: 0, keyboard: "closed" });
-    expect(
-      resolveViewportGeometry({ ...iphoneStandalone, safeTop: 0 }),
-    ).toMatchObject({ appHeight: 812 });
   });
 
   it("treats a visual viewport up to 120px short as no keyboard", () => {
-    const full = { ...iphoneStandalone, layoutHeight: 874 };
-    expect(
-      resolveViewportGeometry({
-        ...full,
-        viewport: { height: 754, offsetTop: 0, scale: 1 },
-      }),
-    ).toEqual({ appHeight: 874, appTop: 0, keyboard: "closed" });
-    expect(
-      resolveViewportGeometry({
-        ...full,
-        viewport: { height: 753, offsetTop: 0, scale: 1 },
-      }),
-    ).toEqual({ appHeight: 753, appTop: 0, keyboard: "open" });
-    expect(
-      resolveViewportGeometry({
-        ...full,
-        viewport: { height: 900, offsetTop: 0, scale: 1 },
-      }),
-    ).toMatchObject({ keyboard: "closed" });
+    expect(resolveViewportGeometry(withViewport(754))).toEqual({
+      keyboard: "closed",
+    });
+    expect(resolveViewportGeometry(withViewport(753))).toEqual({
+      keyboard: "open",
+      height: 753,
+      top: 0,
+    });
   });
 
   it("pins the app to the visual viewport above an open keyboard", () => {
-    expect(
-      resolveViewportGeometry({
-        ...iphoneStandalone,
-        viewport: { height: 476, offsetTop: 0, scale: 1 },
-      }),
-    ).toEqual({ appHeight: 476, appTop: 0, keyboard: "open" });
-    expect(
-      resolveViewportGeometry({
-        ...iphoneTab,
-        viewport: { height: 420, offsetTop: 0, scale: 1 },
-      }),
-    ).toEqual({ appHeight: 420, appTop: 0, keyboard: "open" });
-  });
-
-  it("follows iOS panning the visual viewport while the keyboard is open", () => {
-    expect(
-      resolveViewportGeometry({
-        ...iphoneStandalone,
-        viewport: { height: 476, offsetTop: 336, scale: 1 },
-      }),
-    ).toEqual({ appHeight: 476, appTop: 336, keyboard: "open" });
+    expect(resolveViewportGeometry(withViewport(476))).toEqual({
+      keyboard: "open",
+      height: 476,
+      top: 0,
+    });
+    expect(resolveViewportGeometry(withViewport(476, 336))).toEqual({
+      keyboard: "open",
+      height: 476,
+      top: 336,
+    });
   });
 
   it("does not mistake pinch zoom for a keyboard", () => {
-    expect(
-      resolveViewportGeometry({
-        ...iphoneStandalone,
-        viewport: { height: 406, offsetTop: 200, scale: 2 },
-      }),
-    ).toEqual({ appHeight: 874, appTop: 0, keyboard: "closed" });
+    expect(resolveViewportGeometry(withViewport(406, 200, 2))).toEqual({
+      keyboard: "closed",
+    });
+  });
+});
+
+describe("document pan", () => {
+  it("is detected through either the visual viewport or the document scroll", () => {
+    expect(documentPanned(iphone)).toBe(false);
+    expect(documentPanned(withViewport(476, 336))).toBe(true);
+    expect(documentPanned({ ...withViewport(476), scrollY: 336 })).toBe(true);
+    expect(documentPanned({ ...iphone, scrollY: 62 })).toBe(true);
+  });
+
+  it("ignores sub-pixel noise, rubber-band overscroll and pinch zoom", () => {
+    expect(documentPanned(withViewport(476, 0.4))).toBe(false);
+    expect(documentPanned({ ...iphone, scrollY: -40 })).toBe(false);
+    expect(documentPanned(withViewport(406, 200, 2))).toBe(false);
   });
 });
 
 describe("viewport geometry observer", () => {
   afterEach(() => {
     document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
-  it("publishes geometry on viewport resize and pan, and clears it on dispose", () => {
-    const root = document.createElement("div");
-    document.body.append(root);
-    const viewport = new FakeVisualViewport(window.innerHeight);
-    const browserWindow = fakeWindow(viewport);
-    const stop = observeViewportGeometry(root, browserWindow, () => false);
+  it("publishes the open keyboard and clears it when the keyboard closes", () => {
+    const { root, viewport, stop } = observe();
 
     expect(root.dataset.keyboard).toBe("closed");
-    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
-      `${window.innerHeight}px`,
-    );
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
 
     viewport.set(window.innerHeight - 300, 0, "resize");
     expect(root.dataset.keyboard).toBe("open");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 300}px`,
     );
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
 
-    viewport.set(window.innerHeight - 300, 120, "scroll");
-    expect(root.style.getPropertyValue("--wl-app-top")).toBe("120px");
+    viewport.set(window.innerHeight, 0, "resize");
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("");
 
     stop();
     expect(root.dataset.keyboard).toBeUndefined();
-    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
-    expect(root.style.getPropertyValue("--wl-app-top")).toBe("");
     viewport.set(window.innerHeight - 300, 0, "resize");
     expect(root.dataset.keyboard).toBeUndefined();
   });
 
+  it("undoes an iOS pan and lands at the top of the visual viewport", () => {
+    const { root, viewport } = observe();
+    const scrollTo = vi
+      .spyOn(window, "scrollTo")
+      .mockImplementation(() => viewport.set(viewport.height, 0, "scroll"));
+
+    viewport.set(window.innerHeight - 300, 336, "resize");
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
+  });
+
+  it("follows a pan that cannot be undone", () => {
+    const { root, viewport } = observe();
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+
+    viewport.set(window.innerHeight - 300, 336, "resize");
+
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("336px");
+  });
+
+  it("re-measures on later frames when an event reported stale values", async () => {
+    const { root, viewport } = observe();
+    viewport.dispatchEvent(new Event("resize"));
+    viewport.height = window.innerHeight - 300;
+
+    await vi.waitFor(() => expect(root.dataset.keyboard).toBe("open"));
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 300}px`,
+    );
+  });
+
+  it("leaves an unpanned document alone and stops measuring once stable", async () => {
+    const frames = vi.spyOn(window, "requestAnimationFrame");
+    const scrollTo = vi.spyOn(window, "scrollTo");
+    const { viewport } = observe();
+
+    viewport.set(window.innerHeight - 300, 0, "resize");
+    await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
+    const settled = frames.mock.calls.length;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(frames).toHaveBeenCalledTimes(settled + 2);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("re-measures on focus changes", () => {
+    const { root, viewport } = observe();
+    viewport.height = window.innerHeight - 300;
+
+    window.dispatchEvent(new FocusEvent("focusin"));
+
+    expect(root.dataset.keyboard).toBe("open");
+  });
+
   it("does nothing without a visual viewport", () => {
     const root = document.createElement("div");
-    const stop = observeViewportGeometry(root, fakeWindow(null), () => false);
+    const stop = observeViewportGeometry(root, fakeWindow(null));
     expect(root.dataset.keyboard).toBeUndefined();
     stop();
   });
 });
+
+function observe() {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const viewport = new FakeVisualViewport(window.innerHeight);
+  const stop = observeViewportGeometry(root, fakeWindow(viewport));
+  return { root, viewport, stop };
+}
 
 class FakeVisualViewport extends EventTarget {
   height: number;

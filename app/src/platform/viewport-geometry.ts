@@ -1,97 +1,111 @@
-export type KeyboardState = "closed" | "open";
+export type ViewportGeometry =
+  | { readonly keyboard: "closed" }
+  | {
+      readonly keyboard: "open";
+      readonly height: number;
+      readonly top: number;
+    };
 
 export interface ViewportMeasurements {
   readonly layoutHeight: number;
-  readonly screenHeight: number;
-  readonly safeTop: number;
-  readonly standalone: boolean;
+  readonly scrollY: number;
   readonly viewport: Pick<VisualViewport, "height" | "offsetTop" | "scale">;
 }
 
-export interface ViewportGeometry {
-  readonly appHeight: number;
-  readonly appTop: number;
-  readonly keyboard: KeyboardState;
-}
-
 const keyboardThreshold = 120;
+const settledFrames = 2;
 
-export function resolveViewportGeometry(
-  measurements: ViewportMeasurements,
-): ViewportGeometry {
-  const fullHeight =
-    measurements.layoutHeight + statusBarShortfall(measurements);
-  const { viewport } = measurements;
-  const zoomed = Math.abs(viewport.scale - 1) > 0.01;
-  if (zoomed || fullHeight - viewport.height <= keyboardThreshold) {
-    return { appHeight: fullHeight, appTop: 0, keyboard: "closed" };
+export function resolveViewportGeometry({
+  layoutHeight,
+  viewport,
+}: ViewportMeasurements): ViewportGeometry {
+  if (zoomed(viewport) || layoutHeight - viewport.height <= keyboardThreshold) {
+    return { keyboard: "closed" };
   }
-  return {
-    appHeight: viewport.height,
-    appTop: viewport.offsetTop,
-    keyboard: "open",
-  };
+  return { keyboard: "open", height: viewport.height, top: viewport.offsetTop };
 }
 
-// iOS standalone apps with a black-translucent status bar report a layout
-// viewport that starts at the screen top but is shorter by the top safe inset.
-function statusBarShortfall(measurements: ViewportMeasurements): number {
-  if (!measurements.standalone || measurements.safeTop <= 0) return 0;
-  const shortfall = measurements.screenHeight - measurements.layoutHeight;
-  return Math.abs(shortfall - measurements.safeTop) <= 1 ? shortfall : 0;
+// iOS reveals a focused field by panning the visual viewport or scrolling the
+// document, even when nothing overflows; the app is already sized to the
+// visible area, so a pan only hides the header. Negative values are rubber-band
+// overscroll, which settles by itself.
+export function documentPanned({
+  scrollY,
+  viewport,
+}: ViewportMeasurements): boolean {
+  if (zoomed(viewport)) return false;
+  return scrollY >= 1 || viewport.offsetTop >= 1;
 }
 
 export function observeViewportGeometry(
   root: HTMLElement,
   browserWindow: Window,
-  isStandalone: () => boolean,
 ): () => void {
   const viewport = browserWindow.visualViewport;
   if (viewport === null || viewport === undefined) return () => {};
-  let safeTop = 0;
+  let published = "";
+  let frame = 0;
+  let stableFrames = 0;
+  const measure = (): ViewportMeasurements => ({
+    layoutHeight: browserWindow.innerHeight,
+    scrollY: browserWindow.scrollY,
+    viewport,
+  });
   const update = () => {
-    const geometry = resolveViewportGeometry({
-      layoutHeight: browserWindow.innerHeight,
-      screenHeight: orientedScreenHeight(browserWindow),
-      safeTop,
-      standalone: isStandalone(),
-      viewport,
-    });
-    root.dataset.keyboard = geometry.keyboard;
-    root.style.setProperty("--wl-app-height", `${geometry.appHeight}px`);
-    root.style.setProperty("--wl-app-top", `${geometry.appTop}px`);
+    if (documentPanned(measure())) browserWindow.scrollTo(0, 0);
+    const geometry = resolveViewportGeometry(measure());
+    const key = JSON.stringify(geometry);
+    if (key === published) return false;
+    published = key;
+    applyGeometry(root, geometry);
+    return true;
   };
-  const remeasure = () => {
-    safeTop = isStandalone() ? measureSafeTop(root) : 0;
+  // WebKit can fire viewport events before it updates the values they report,
+  // so re-measure on the following frames until the geometry stops changing.
+  const settle = () => {
+    frame = 0;
+    stableFrames = update() ? 0 : stableFrames + 1;
+    if (stableFrames < settledFrames) {
+      frame = browserWindow.requestAnimationFrame(settle);
+    }
+  };
+  const onChange = () => {
     update();
+    stableFrames = 0;
+    if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
   };
-  viewport.addEventListener("resize", update);
-  viewport.addEventListener("scroll", update);
-  browserWindow.addEventListener("resize", remeasure);
-  remeasure();
+  const viewportEvents = ["resize", "scroll"] as const;
+  const windowEvents = ["resize", "scroll", "focusin", "focusout"] as const;
+  for (const type of viewportEvents) viewport.addEventListener(type, onChange);
+  for (const type of windowEvents)
+    browserWindow.addEventListener(type, onChange);
+  update();
   return () => {
-    viewport.removeEventListener("resize", update);
-    viewport.removeEventListener("scroll", update);
-    browserWindow.removeEventListener("resize", remeasure);
+    if (frame !== 0) browserWindow.cancelAnimationFrame(frame);
+    for (const type of viewportEvents)
+      viewport.removeEventListener(type, onChange);
+    for (const type of windowEvents)
+      browserWindow.removeEventListener(type, onChange);
     delete root.dataset.keyboard;
-    root.style.removeProperty("--wl-app-height");
-    root.style.removeProperty("--wl-app-top");
+    clearOpenGeometry(root);
   };
 }
 
-function orientedScreenHeight(browserWindow: Window): number {
-  const { width, height } = browserWindow.screen;
-  const landscape = browserWindow.innerWidth > browserWindow.innerHeight;
-  return landscape ? Math.min(width, height) : Math.max(width, height);
+function applyGeometry(root: HTMLElement, geometry: ViewportGeometry): void {
+  root.dataset.keyboard = geometry.keyboard;
+  if (geometry.keyboard === "closed") {
+    clearOpenGeometry(root);
+    return;
+  }
+  root.style.setProperty("--wl-app-height", `${geometry.height}px`);
+  root.style.setProperty("--wl-app-top", `${geometry.top}px`);
 }
 
-function measureSafeTop(root: HTMLElement): number {
-  const probe = root.ownerDocument.createElement("div");
-  probe.style.setProperty("position", "absolute");
-  probe.style.setProperty("visibility", "hidden");
-  probe.style.setProperty("padding-top", "var(--wl-safe-top)");
-  root.append(probe);
-  const safeTop = Number.parseFloat(getComputedStyle(probe).paddingTop);
-  probe.remove();
-  return Number.isFinite(safeTop) ? safeTop : 0;
+function clearOpenGeometry(root: HTMLElement): void {
+  root.style.removeProperty("--wl-app-height");
+  root.style.removeProperty("--wl-app-top");
+}
+
+function zoomed(viewport: Pick<VisualViewport, "scale">): boolean {
+  return Math.abs(viewport.scale - 1) > 0.01;
 }

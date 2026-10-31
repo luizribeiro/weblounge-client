@@ -64,12 +64,29 @@ export interface PlatformEnvironment {
 
 The corresponding root attributes are `data-input`, `data-display`, `data-shell`, and
 `data-desktop-panels`. The last attribute is presentation state, not shell selection, and is the
-only consumer of the 760px app-container breakpoint. Root CSS defines `--wl-safe-top`,
+only consumer of the 760px app-container breakpoint. `:root` defines `--wl-safe-top`,
 `--wl-safe-right`, `--wl-safe-bottom`, and `--wl-safe-left` from `env(safe-area-inset-*)`. The
-platform owns the app geometry: `#root` is fixed and sized by `--wl-app-height` and `--wl-app-top`,
-so the document never scrolls. Closed, the height is the layout viewport plus the iOS standalone
-status-bar shortfall (a layout viewport shorter than the screen by exactly the top inset); with a
-keyboard open, it is the visual viewport's height at its `offsetTop`, following iOS's pan.
+platform owns the app geometry: `#root` is fixed and the document never scrolls.
+
+- Keyboard closed, `#root` fills the layout viewport through CSS alone. iOS 26 Home Screen apps
+  with a `black-translucent` status bar get a layout viewport short by the top inset and WebKit
+  paints nothing below it ([WebKit 301108](https://bugs.webkit.org/show_bug.cgi?id=301108)), so
+  making `#root` taller only clips the composer. The viewport is full once the document is at
+  least screen tall, so in standalone `html` has
+  `min-block-size: min(100lvh, calc(100% + var(--wl-safe-top)))`; the `100lvh` cap keeps it at
+  `100%` when the viewport is already full or the status bar is opaque. If a WebKit release keeps
+  the viewport short anyway, the composer still sits whole inside the painted area above an
+  unpainted band.
+- Keyboard open (the visual viewport over 120px shorter than the layout viewport, pinch zoom
+  excluded), `#root` takes the visual viewport's height from `--wl-app-height`. iOS still pans
+  the visual viewport or scrolls the document to reveal the focused field; the platform undoes
+  any pan with `scrollTo(0, 0)` on viewport, window-scroll and focus events, and follows
+  `offsetTop` through `--wl-app-top` only if a pan survives. Because WebKit can fire viewport
+  events before updating their values, each event re-measures on the following frames until the
+  geometry holds for two of them.
+- `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
+  layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
+
 `--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard
 is closed and becomes zero under `data-keyboard="open"`, so components never interpret keyboard
 state themselves. Tests can replace those custom properties on the root without impersonating a
