@@ -161,6 +161,21 @@ describe("viewport geometry observer", () => {
     expect(root.dataset.keyboard).toBe("open");
   });
 
+  it("keeps measuring after a focus change until the keyboard has settled", async () => {
+    const { root, viewport } = observe();
+
+    window.dispatchEvent(new FocusEvent("focusin"));
+    for (let frame = 0; frame < 6; frame += 1)
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(root.dataset.keyboard).toBe("closed");
+    viewport.height = window.innerHeight - 403;
+
+    await vi.waitFor(() => expect(root.dataset.keyboard).toBe("open"));
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 403}px`,
+    );
+  });
+
   it("never treats a nested scroller as a document pan", () => {
     const { viewport } = observe();
     const scrollTo = vi.spyOn(window, "scrollTo");

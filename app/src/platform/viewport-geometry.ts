@@ -14,6 +14,9 @@ export interface ViewportMeasurements {
 
 const keyboardThreshold = 120;
 const settledFrames = 2;
+// Longer than the iOS keyboard's slide, which can finish without any further
+// viewport event.
+const focusSettleMilliseconds = 1000;
 
 export function resolveViewportGeometry({
   layoutHeight,
@@ -46,6 +49,7 @@ export function observeViewportGeometry(
   let published = "";
   let frame = 0;
   let stableFrames = 0;
+  let settleUntil = 0;
   const measure = (): ViewportMeasurements => ({
     layoutHeight: browserWindow.innerHeight,
     scrollY: browserWindow.scrollY,
@@ -55,6 +59,14 @@ export function observeViewportGeometry(
   // and WebKit has neither interactive-widget nor the VirtualKeyboard API, so we
   // undo the pan and size to the visual viewport. Its events can report stale
   // values, hence the re-measuring on the following frames.
+  // https://bugs.webkit.org/show_bug.cgi?id=254861
+  // https://bugs.webkit.org/show_bug.cgi?id=259770
+  // https://bugs.webkit.org/show_bug.cgi?id=230225
+  // iOS reveals a focused field by panning the document instead of resizing it,
+  // and WebKit has neither interactive-widget nor the VirtualKeyboard API, so we
+  // undo the pan and size to the visual viewport. Its events can report stale
+  // values, or stop before the keyboard settles, hence the re-measuring on the
+  // following frames.
   // https://bugs.webkit.org/show_bug.cgi?id=254861
   // https://bugs.webkit.org/show_bug.cgi?id=259770
   // https://bugs.webkit.org/show_bug.cgi?id=230225
@@ -69,10 +81,10 @@ export function observeViewportGeometry(
   };
   // WebKit can fire viewport events before it updates the values they report,
   // so re-measure on the following frames until the geometry stops changing.
-  const settle = () => {
+  const settle = (now: number) => {
     frame = 0;
     stableFrames = update() ? 0 : stableFrames + 1;
-    if (stableFrames < settledFrames) {
+    if (stableFrames < settledFrames || now < settleUntil) {
       frame = browserWindow.requestAnimationFrame(settle);
     }
   };
@@ -88,6 +100,8 @@ export function observeViewportGeometry(
       event.target !== browserWindow.document
     )
       return;
+    if (event.type === "focusin" || event.type === "focusout")
+      settleUntil = browserWindow.performance.now() + focusSettleMilliseconds;
     onChange();
   };
   const viewportEvents = ["resize", "scroll"] as const;
