@@ -17,8 +17,14 @@
     var(--wl-motion-standard-curve);
 }
 
-:global([data-keyboard-motion]) .wrap {
-  box-shadow: 0 100vh 0 100vh var(--wl-color-surface);
+:global([data-keyboard-motion-active="true"]) .wrap::after {
+  background: var(--wl-color-surface);
+  block-size: 100vh;
+  content: "";
+  inset-block-start: 100%;
+  inset-inline: 0;
+  pointer-events: none;
+  position: absolute;
 }
 
 .wrap .form {

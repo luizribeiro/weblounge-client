@@ -173,6 +173,82 @@ test("mobile Back button animates the chat over the visible list", async ({
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
 });
 
+test("mobile back reveals chat rows below the composer line", async ({
+  page,
+}) => {
+  const suffix = Date.now().toString(36);
+  const bots: IrcClient[] = [];
+  try {
+    await openChat(page);
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    await expect(composer).toBeEnabled();
+    const composerTop = await composer.evaluate(
+      (field) => field.closest("[data-composer]")?.getBoundingClientRect().top,
+    );
+    expect(composerTop).toBeDefined();
+    await page.getByRole("button", { name: "Back to chats" }).tap();
+    await expect(page.locator("[data-motion]")).toHaveCount(0);
+
+    for (let index = 0; index < 11; index += 1) {
+      const nick = `swipe-fill-${index}-${suffix}`;
+      const bot = await IrcClient.connect(
+        nick,
+        "weblounge-bot",
+        "weblounge-bot-test",
+        "#weblounge-test",
+      );
+      bots.push(bot);
+      await bot.privmsgConfirmed("weblounge", `swipe fill preview ${index}`);
+    }
+    await expect(
+      page.getByRole("button", { name: `swipe-fill-10-${suffix}` }),
+    ).toContainText("swipe fill preview 10");
+
+    const clip = await page
+      .locator("[data-mobile-chat-list]")
+      .evaluate((list, top) => {
+        const lowerRow = [
+          ...list.querySelectorAll<HTMLElement>("[data-buffer-id]"),
+        ]
+          .map((row) => row.getBoundingClientRect())
+          .find((row) => row.bottom > top + 16 && row.top < innerHeight);
+        if (lowerRow === undefined)
+          throw new Error(
+            "chat list has no visible row below the composer line",
+          );
+        const y = Math.ceil(top + 8);
+        return {
+          height: Math.min(60, innerHeight - y - 4),
+          width: 100,
+          x: 0,
+          y,
+        };
+      }, composerTop ?? 0);
+    expect(clip.height).toBeGreaterThan(0);
+    const resting = await page.screenshot({ clip });
+
+    await openChat(page);
+    await drag(page, 76, 220);
+    await expect(page.locator('[data-motion="dragging"]')).toHaveCount(1);
+    const chatLeft = await page
+      .locator("[data-mobile-chat]")
+      .evaluate(
+        (chat) => chat.parentElement?.getBoundingClientRect().left ?? 0,
+      );
+    expect(chatLeft).toBeGreaterThan(clip.width + 80);
+    expect(chatLeft).toBeLessThan(280);
+    const midDrag = await page.screenshot({ clip });
+
+    expect(midDrag.equals(resting)).toBe(true);
+    await releaseBackSwipe(page, 220);
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  } finally {
+    for (const bot of bots) bot.close();
+  }
+});
+
 test("mobile keyboard Back uses the pop transition", async ({ page }) => {
   await openChat(page);
   await page.keyboard.press("Escape");
@@ -354,7 +430,7 @@ async function drag(
   page: Page,
   pointerId: number,
   endX: number,
-  end: string,
+  end?: string,
 ): Promise<void> {
   const shell = page.locator("[data-mobile-shell]");
   await shell.dispatchEvent("pointerdown", {
@@ -375,10 +451,21 @@ async function drag(
     clientY: 300,
     pointerId,
   });
-  await shell.dispatchEvent(end, {
+  if (end !== undefined)
+    await shell.dispatchEvent(end, {
+      clientX: endX,
+      clientY: 300,
+      pointerId,
+    });
+}
+
+async function releaseBackSwipe(page: Page, endX: number): Promise<void> {
+  await page.locator("[data-mobile-shell]").dispatchEvent("pointerup", {
     clientX: endX,
     clientY: 300,
-    pointerId,
+    isPrimary: true,
+    pointerId: 76,
+    pointerType: "touch",
   });
 }
 
