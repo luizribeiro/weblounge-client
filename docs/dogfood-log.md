@@ -67,4 +67,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 59 | 2026-10-30 | Mobile push/pop: the chats list should stay still while the chat slides over it (in, out, and swipe gestures alike). | fixed, confirmed by Luiz |
 | 60 | 2026-10-30 | Mobile: releasing a swipe-back mid-way jumps straight to the end state instead of animating there. | fixed, confirmed by Luiz |
 | 61 | 2026-10-31 | Mobile: swipe-back settles slower than tap-Back; both should use the same speed, between the two. | fixed, local; please confirm on device |
-| 62 | 2026-10-31 | Every incoming DM line is highlighted in the transcript; highlight should follow rules (today: your nick), not "it's a DM". | queued |
+| 62 | 2026-10-31 | Every incoming DM line is highlighted in the transcript; highlight should follow rules (today: your nick), not "it's a DM". | fixed, local; please confirm on device |
+| 63 | 2026-10-31 | Desktop sidebar: no @ or # icons; show the channel name with its sigil (#ops, &help) and DMs as bare nicks. | queued |
+| 64 | 2026-10-31 | Mobile chats list: bigger text inside the avatars; DMs could use the nick colours. | queued |
+| 65 | 2026-10-31 | Reloading a deep link like /weblounge/ops lands on /. | queued |
