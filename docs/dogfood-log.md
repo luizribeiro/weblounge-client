@@ -8,7 +8,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 |---|---|---|---|
 | 1 | 2026-10-29 | Long (wrapping) messages make the message list jank: rows overlap. Also in scrollback: rows overlap until rendered, then the page jumps as they're corrected; new overlaps when scrolling back down (screenshot of #bots). | fixed, live |
 | 2 | 2026-10-29 | Desktop (Firefox): timestamps sometimes render with an ellipsis ("12:25 P…"). | fixed, live |
-| 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | fixed, live (dafcae3); please confirm |
+| 3 | 2026-10-29 | Joining #bots shows yesterday's juniper/louro messages after today's, all stamped with the join time. | fixed, confirmed by Luiz |
 | 4 | 2026-10-29 | Mobile: after swiping back from a chat, the chats list is sometimes offset to the left, with a flash (maybe the browser's own back gesture). | fixed, live |
 | 5 | 2026-10-29 | Mobile: the chats list flashes when going back to it, as if reloading. | fixed, live |
 | 6 | 2026-10-29 | Desktop: with the member list open, switching channels leaves it empty (zero members). | fixed, live |
@@ -34,11 +34,11 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 26 | 2026-10-29 | iPhone PWA: content needs space for the home indicator (the Dynamic Island is fine). Device tweaks need one organised place. | fixed, live |
 | 27 | 2026-10-29 | Messages you just sent show no mode prefix ("luiz" instead of "~luiz") until reloaded from history. | fixed, live |
 | 28 | 2026-10-29 | Beta console noise from our code: wasm-bindgen "deprecated parameters" warning, TanStack "Failed to get offset for index: 0", unused Inter preload, Firefox "scroll-linked positioning effect". (The webserial and CSP-eval errors come from browser extensions, not the app.) | queued (task 37, message-list rework, splash) |
-| 29 | 2026-10-29 | A Shift+Enter multiline message shows as one message live, but after reload as separate rows (blank lines as empty rows) with your nick in the wrong colour. Same papo history bug as #3. | fixed, live (dafcae3); please confirm |
+| 29 | 2026-10-29 | A Shift+Enter multiline message shows as one message live, but after reload as separate rows (blank lines as empty rows) with your nick in the wrong colour. Same papo history bug as #3. | fixed, confirmed by Luiz |
 | 30 | 2026-10-30 | Mobile: the browser's back/forward swipe gestures still fight the in-app gestures. | queued |
 | 31 | 2026-10-30 | Desktop: a narrow window switches to the touch-first mobile layout. It should stay a small desktop UI, with the sidebar reachable as an overlay (like the members button). | fixed, live |
 | 32 | 2026-10-30 | Scrolling up loads older history but stops before the oldest message the server has. | fixed, local |
-| 33 | 2026-10-30 | Every restored DM shows a red badge: read state isn't synced with the server, so all DM messages count as unread mentions. (Two indicators by design: unread dot vs mention count.) | fixed, local |
+| 33 | 2026-10-30 | Every restored DM shows a red badge: read state isn't synced with the server, so all DM messages count as unread mentions. (Two indicators by design: unread dot vs mention count.) | fixed, confirmed by Luiz |
 | 34 | 2026-10-30 | Links don't show the pointer (hand) cursor. | fixed, live (dafcae3); please confirm |
 | 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | fixed, live (dafcae3); please confirm |
 | 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | fixed, live (dafcae3); please confirm |
@@ -58,9 +58,10 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 50 | 2026-10-30 | Long nicks are clipped mid-glyph in the nick column. | fixed, live (dafcae3); please confirm |
 | 51 | 2026-10-30 | iPhone: the home-indicator space stays under the composer while the keyboard is open (the keyboard covers the indicator). | fixed, live (dafcae3); please confirm |
 | 52 | 2026-10-30 | iOS: members sign-in succeeds but never returns to the beta chat. | fixed, live (dafcae3); please confirm |
-| 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | fixed, live (dafcae3); please confirm |
+| 53 | 2026-10-30 | iPhone home-screen app: the app stops ~63pt short of the screen bottom (band under the chats list; huge gap under the composer; drawer scrim doesn't cover it). | NOT fixed on device (dafcae3): bottom band remains, composer gap too big, page scrollable with keyboard open |
 | 54 | 2026-10-30 | iPhone: swiping from the edge to close a chat sometimes cancels mid-gesture at certain speeds (transcript touch handling?). | fixed, live (dafcae3); please confirm |
-| 55 | 2026-10-30 | iPhone: the members drawer animation is broken on device (video): while opening, the chat vanishes and the drawer renders on the left sliding further left, then snaps; closing via ✕ has no animation; another close skips most of the motion. | fixed, live (dafcae3); please confirm |
+| 55 | 2026-10-30 | iPhone: the members drawer animation is broken on device (video): while opening, the chat vanishes and the drawer renders on the left sliding further left, then snaps; closing via ✕ has no animation; another close skips most of the motion. | fixed, confirmed by Luiz |
 | 56 | 2026-10-30 | Beta (b9d45c4) history regression: some channels empty on desktop (#bots, #ops) but not on mobile; others show week-old messages out of place with many duplicates; console `engine.read_marker_invalid`. | fixed, confirmed by Luiz on dafcae3 |
 | 57 | 2026-10-30 | Mobile: the Back button in a chat pops instantly; it should animate out like the push animates in. | fixed, local (the click event was entering the pop's `instant` parameter; button, keyboard, and Android history Back now use the 230ms pop) |
 | 58 | 2026-10-30 | The mention highlight background should fill the transcript width (no side margin). | fixed, local (mention, hover, and keyboard-selected row surfaces are full-bleed while content keeps its inset) |
+| 59 | 2026-10-30 | Mobile push/pop: the chats list should stay still while the chat slides over it (in, out, and swipe gestures alike). | queued (needs a recording) |
