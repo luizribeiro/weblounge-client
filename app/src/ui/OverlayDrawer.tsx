@@ -6,6 +6,7 @@ import {
   onMount,
 } from "solid-js";
 import styles from "./OverlayDrawer.module.css";
+import { afterStartStatePaints, movingTransform } from "./transform-motion";
 
 interface OverlayDrawerProps {
   readonly children:
@@ -142,25 +143,6 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
       </div>
     </div>
   );
-}
-
-function afterStartStatePaints(callback: () => void): () => void {
-  let frame = requestAnimationFrame(() => {
-    frame = requestAnimationFrame(callback);
-  });
-  return () => cancelAnimationFrame(frame);
-}
-
-function movingTransform(element: HTMLElement | undefined): boolean {
-  if (element === undefined || typeof element.getAnimations !== "function")
-    return false;
-  return element
-    .getAnimations()
-    .some(
-      (animation) =>
-        animation.playState === "running" &&
-        (animation as CSSTransition).transitionProperty === "transform",
-    );
 }
 
 function initialFocus(root: HTMLElement | undefined): HTMLElement | undefined {
