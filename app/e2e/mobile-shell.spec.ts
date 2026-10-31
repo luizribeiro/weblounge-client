@@ -222,7 +222,7 @@ test.describe("mobile shell against local Ergo", () => {
       await expect(
         page.getByRole("heading", { name: joinedChannel }),
       ).toBeVisible();
-      await expect(page.locator("[data-position]")).toHaveCount(0);
+      await expect(page.locator("[data-motion]")).toHaveCount(0);
       expect(await page.evaluate(() => history.length)).toBe(chatHistoryLength);
       await page.goBack();
       await expect(page.locator("[data-mobile-chats]")).toBeVisible();
@@ -311,14 +311,12 @@ test.describe("mobile shell against local Ergo", () => {
         clientY: 300,
         pointerId: 7,
       });
-      const returningScreen = page.locator(
-        '[data-swipe="chat"][data-swipe-returning="true"]',
-      );
+      const returningScreen = page.locator('[data-motion="returning"]');
       await expect(returningScreen).toHaveCSS(
         "transition-property",
         "transform",
       );
-      await expect(page.locator("[data-swipe]")).toHaveCount(0);
+      await expect(page.locator("[data-motion]")).toHaveCount(0);
       await expect(
         page.getByRole("heading", { name: targetNick }),
       ).toBeVisible();

@@ -16,7 +16,7 @@ export async function openStandaloneChannel(
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/?irc-password=weblounge-test");
   await page.getByRole("button", { name: "#weblounge-test" }).click();
-  await expect(page.locator("[data-position]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
 }
 
 export async function openDrawer(page: Page): Promise<void> {

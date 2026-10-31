@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import { installPlatformEnvironment } from "../../platform/environment";
@@ -73,7 +73,7 @@ it("opens a deep link above the chats list", () => {
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
 });
 
-it("keeps the chat list mounted without reloading history", () => {
+it("keeps the chat list mounted without reloading history", async () => {
   vi.stubGlobal(
     "matchMedia",
     vi.fn(() => ({ matches: true }) as MediaQueryList),
@@ -98,8 +98,7 @@ it("keeps the chat list mounted without reloading history", () => {
   const chatRow = screen.getByRole("button", { name: "mel" });
   fireEvent.click(chatRow);
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
-  const transition = document.querySelector("[data-transition]");
-  if (transition !== null) fireEvent.animationEnd(transition);
+  await settledMotion();
   expect(chatRow).toBeInTheDocument();
   expect(chatRow.closest("[data-retained]")).toHaveAttribute(
     "aria-hidden",
@@ -113,13 +112,10 @@ it("keeps the chat list mounted without reloading history", () => {
   );
   fireEvent.pointerMove(shell, { clientX: 45, pointerId: 7 });
   fireEvent.pointerCancel(shell, { clientX: 45, pointerId: 7 });
-  const returning = document.querySelector('[data-swipe-returning="true"]');
-  if (returning !== null) fireEvent.transitionEnd(returning);
-  expect(document.querySelector("[data-swipe]")).toBeNull();
+  await settledMotion();
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));
-  const popTransition = document.querySelector('[data-transition="pop"]');
-  if (popTransition !== null) fireEvent.animationEnd(popTransition);
+  await settledMotion();
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
   expect(screen.getByRole("button", { name: "mel" })).toBe(chatRow);
   expect(loadHistory).toHaveBeenCalledTimes(1);
@@ -180,7 +176,7 @@ it("commits a browser drawer close immediately under reduced motion", () => {
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
 });
 
-it("clears an in-flight swipe when browser history or visibility wins", () => {
+it("clears an in-flight swipe when browser history or visibility wins", async () => {
   history.replaceState(null, "", "/Local/mel");
   vi.stubGlobal(
     "matchMedia",
@@ -207,22 +203,18 @@ it("clears an in-flight swipe when browser history or visibility wins", () => {
 
   fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
   fireEvent.pointerMove(shell, { clientX: 100, pointerId: 7 });
-  expect(document.querySelector("[data-swipe]")).not.toBeNull();
+  expect(document.querySelector('[data-motion="dragging"]')).not.toBeNull();
   window.dispatchEvent(new PopStateEvent("popstate"));
   fireEvent.pointerUp(shell, { clientX: 100, pointerId: 7 });
-  expect(document.querySelector("[data-swipe]")).toBeNull();
+  expect(document.querySelector("[data-motion]")).toBeNull();
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: "mel" }));
-  const chat = document.querySelector("[data-mobile-chat]");
-  if (chat === null) throw new Error("mobile chat is missing");
-  const chatScreen = chat.parentElement;
-  if (chatScreen === null) throw new Error("mobile chat screen is missing");
-  fireEvent.animationEnd(chatScreen);
+  await settledMotion();
   fireEvent.pointerDown(shell, { clientX: 5, pointerId: 8 });
   fireEvent.pointerMove(shell, { clientX: 100, pointerId: 8 });
   document.dispatchEvent(new Event("visibilitychange"));
-  expect(document.querySelector("[data-swipe]")).toBeNull();
+  expect(document.querySelector("[data-motion]")).toBeNull();
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
 });
 
@@ -333,3 +325,9 @@ it("replaces chat and drawer state in touch WebKit browser tabs", async () => {
     back.mockRestore();
   }
 });
+
+async function settledMotion(): Promise<void> {
+  await waitFor(() =>
+    expect(document.querySelector("[data-motion]")).toBeNull(),
+  );
+}

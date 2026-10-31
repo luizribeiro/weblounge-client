@@ -3,7 +3,6 @@ import {
   createMobileStack,
   finishTransition,
   layeredScreens,
-  mountedScreens,
   popChat,
   previousScreen,
   pushChat,
@@ -18,7 +17,6 @@ describe("mobile stack navigation", () => {
       direction: "push",
       duration: 280,
     });
-    expect(mountedScreens(pushed)).toHaveLength(2);
     expect(layeredScreens(pushed, false)).toEqual([
       { kind: "chats" },
       { kind: "chat", bufferId: 7 },

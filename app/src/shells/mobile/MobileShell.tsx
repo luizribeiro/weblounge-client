@@ -10,6 +10,7 @@ import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { createHorizontalPan } from "../../ui/horizontal-pan";
+import { afterStartStatePaints } from "../../ui/transform-motion";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
 import styles from "./MobileShell.module.css";
@@ -17,12 +18,14 @@ import type { ChatFilter } from "./mobile-chats";
 import {
   createMobileStack,
   finishTransition,
+  layeredScreens,
   type MobileScreen as MobileScreenState,
-  mountedScreens,
+  type MobileTransition,
   popChat,
   previousScreen,
   pushChat,
 } from "./mobile-navigation";
+import { type PushMotion, type SwipeMotion, stackMotion } from "./push-motion";
 
 interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
@@ -65,8 +68,8 @@ export function MobileShell(props: MobileShellProps) {
   const [filter, setFilter] = createSignal<ChatFilter>("all");
   const [query, setQuery] = createSignal("");
   const [scrollRestoreVersion, setScrollRestoreVersion] = createSignal(0);
-  const [swipeProgress, setSwipeProgress] = createSignal<number>();
-  const [swipeReturning, setSwipeReturning] = createSignal(false);
+  const [swipe, setSwipe] = createSignal<SwipeMotion>();
+  const [paintedPush, setPaintedPush] = createSignal<MobileTransition>();
   const [drawerBufferId, setDrawerBufferId] = createSignal<number>();
   const [memberFilter, setMemberFilter] = createSignal("");
   const [memberOpenProgress, setMemberOpenProgress] = createSignal<number>();
@@ -139,8 +142,7 @@ export function MobileShell(props: MobileShellProps) {
   };
   const resetSwipe = () => {
     swipeGesture.reset();
-    setSwipeReturning(false);
-    setSwipeProgress(undefined);
+    setSwipe(undefined);
   };
   const resetMemberOpen = () => {
     memberOpenGesture.reset();
@@ -231,6 +233,16 @@ export function MobileShell(props: MobileShellProps) {
     chatsStable = stable;
   });
 
+  const pushTransition = createMemo(() => {
+    const transition = stack().transition;
+    return transition?.direction === "push" ? transition : undefined;
+  });
+  createEffect(() => {
+    const transition = pushTransition();
+    if (transition === undefined) return;
+    onCleanup(afterStartStatePaints(() => setPaintedPush(transition)));
+  });
+
   const beginPan = (event: PointerEvent) => {
     suppressCompletedSwipeClick = false;
     const target = event.target as Element;
@@ -242,6 +254,7 @@ export function MobileShell(props: MobileShellProps) {
       event.clientX <= 24 &&
       stack().active.kind === "chat" &&
       stack().transition === undefined &&
+      swipe() === undefined &&
       target.closest(
         "[data-selectable], input, textarea, [data-horizontal-scroll]",
       ) === null
@@ -271,12 +284,10 @@ export function MobileShell(props: MobileShellProps) {
     memberOpenGesture.begin(event, width);
   };
   const returnSwipe = () => {
-    if (platform.prefersReducedMotion() || swipeProgress() === 0) {
-      setSwipeProgress(undefined);
-      return;
-    }
-    setSwipeReturning(true);
-    setSwipeProgress(0);
+    const current = swipe();
+    if (current?.phase === "dragging" && current.progress > 0)
+      setSwipe({ phase: "returning" });
+    else resetSwipe();
   };
   const swipeGesture = createHorizontalPan({
     commitRatio: 0.5,
@@ -286,10 +297,10 @@ export function MobileShell(props: MobileShellProps) {
     onCancel: returnSwipe,
     onCommit: () => {
       suppressCompletedSwipeClick = true;
-      setSwipeProgress(undefined);
+      setSwipe(undefined);
       finishBackSwipe();
     },
-    onProgress: setSwipeProgress,
+    onProgress: (progress) => setSwipe({ phase: "dragging", progress }),
   });
   const cancelMemberOpen = () => {
     memberOpenBufferId = undefined;
@@ -343,18 +354,31 @@ export function MobileShell(props: MobileShellProps) {
     event.stopImmediatePropagation();
   };
   const screens = () =>
-    retainChatsScreen(
-      stack(),
-      swipeProgress() === undefined
-        ? mountedScreens(stack())
-        : [previousScreen(stack()), stack().active],
-    );
+    retainChatsScreen(stack(), layeredScreens(stack(), swipe() !== undefined));
+  const movingScreen = () => {
+    const current = stack();
+    const transition = current.transition;
+    if (transition !== undefined)
+      return transition.direction === "push" ? transition.to : transition.from;
+    return swipe() === undefined ? undefined : current.active;
+  };
+  const motion = (): PushMotion | undefined => {
+    const transition = stack().transition;
+    return transition === undefined
+      ? swipe()
+      : stackMotion(transition, paintedPush() === transition);
+  };
+  const settleMotion = () => {
+    const current = motion();
+    if (current?.phase === "opening" || current?.phase === "closing")
+      setStack(finishTransition);
+    else if (current?.phase === "returning") resetSwipe();
+  };
   const screenIsRetained = (screen: MobileScreenState) => {
     const current = stack();
     if (screen.kind !== "chats" || current.active.kind === "chats")
       return false;
-    if (swipeProgress() !== undefined)
-      return previousScreen(current) !== screen;
+    if (swipe() !== undefined) return previousScreen(current) !== screen;
     return (
       current.transition?.from !== screen && current.transition?.to !== screen
     );
@@ -371,7 +395,7 @@ export function MobileShell(props: MobileShellProps) {
       const browserHandledSwipe =
         pendingHistoryPopInstant ||
         swipeGesture.active() ||
-        swipeProgress() !== undefined;
+        swipe() !== undefined;
       pendingHistoryPopInstant = false;
       resetSwipe();
       if (drawerBufferId() === undefined)
@@ -387,6 +411,7 @@ export function MobileShell(props: MobileShellProps) {
         drawerBufferId() !== undefined ||
         stack().active.kind !== "chat" ||
         stack().transition !== undefined ||
+        swipe() !== undefined ||
         !isKeyboardBack(event, platform.shortcutPlatform)
       )
         return;
@@ -436,68 +461,45 @@ export function MobileShell(props: MobileShellProps) {
       ref={shellElement}
     >
       <For each={screens()}>
-        {(screen, index) => {
-          const transition = () => stack().transition;
-          return (
-            <MobileScreen
-              buffers={props.buffers}
-              chatsScrollTop={() => returnScrollTop}
-              chatsScrollVersion={scrollRestoreVersion}
-              commandSpecs={props.commandSpecs}
-              composerNotice={props.composerNotice}
-              completion={props.completion}
-              filter={filter()}
-              memberships={props.memberships}
-              messages={props.messages}
-              networks={props.networks}
-              onBack={requestBack}
-              onFilter={setFilter}
-              onLoadHistory={props.onLoadHistory}
-              onMarkRead={props.onMarkRead}
-              onOpen={(bufferId, currentScrollTop) =>
-                open(bufferId, false, currentScrollTop)
-              }
-              onOpenMembers={openMembers}
-              onQuery={setQuery}
-              onRequestCompletion={props.onRequestCompletion}
-              onRetryNetwork={props.onRetryNetwork}
-              onRetry={props.onRetry}
-              onScroll={(nextScrollTop) => {
-                if (
-                  stack().active.kind === "chats" &&
-                  stack().transition === undefined
-                )
-                  returnScrollTop = nextScrollTop;
-              }}
-              onSend={props.onSend}
-              onTransitionEnd={() => setStack(finishTransition)}
-              onTransitionCancel={resetMotion}
-              position={
-                transition() === undefined
-                  ? undefined
-                  : index() === 0
-                    ? "from"
-                    : "to"
-              }
-              query={query()}
-              retained={screenIsRetained(screen)}
-              screen={screen}
-              swipe={
-                swipeProgress() === undefined
-                  ? undefined
-                  : screen.kind === "chat"
-                    ? "chat"
-                    : "chats"
-              }
-              swipeReturning={swipeReturning() || undefined}
-              swipeProgress={swipeProgress()}
-              transition={transition()?.direction}
-              onSwipeReturnEnd={() => {
-                resetSwipe();
-              }}
-            />
-          );
-        }}
+        {(screen) => (
+          <MobileScreen
+            buffers={props.buffers}
+            chatsScrollTop={() => returnScrollTop}
+            chatsScrollVersion={scrollRestoreVersion}
+            commandSpecs={props.commandSpecs}
+            composerNotice={props.composerNotice}
+            completion={props.completion}
+            filter={filter()}
+            memberships={props.memberships}
+            messages={props.messages}
+            networks={props.networks}
+            onBack={requestBack}
+            onFilter={setFilter}
+            onLoadHistory={props.onLoadHistory}
+            onMarkRead={props.onMarkRead}
+            onOpen={(bufferId, currentScrollTop) =>
+              open(bufferId, false, currentScrollTop)
+            }
+            onOpenMembers={openMembers}
+            onQuery={setQuery}
+            onRequestCompletion={props.onRequestCompletion}
+            onRetryNetwork={props.onRetryNetwork}
+            onRetry={props.onRetry}
+            onScroll={(nextScrollTop) => {
+              if (
+                stack().active.kind === "chats" &&
+                stack().transition === undefined
+              )
+                returnScrollTop = nextScrollTop;
+            }}
+            onSend={props.onSend}
+            motion={screen === movingScreen() ? motion() : undefined}
+            onMotionEnd={settleMotion}
+            query={query()}
+            retained={screenIsRetained(screen)}
+            screen={screen}
+          />
+        )}
       </For>
       {drawerBuffer() !== undefined && (
         <MobileMemberDrawer

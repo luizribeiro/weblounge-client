@@ -15,7 +15,7 @@ test.beforeEach(async ({ browserName, page }) => {
 test("mobile back gestures cancel and complete aligned", async ({ page }) => {
   await openChat(page);
   await drag(page, 1, 90, "pointercancel");
-  await expect(page.locator("[data-swipe]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
   await expectAligned(page);
 
   await drag(page, 2, 360, "pointerup");
@@ -58,14 +58,14 @@ test("mobile Back button animates the chat over the visible list", async ({
 test("mobile keyboard Back uses the pop transition", async ({ page }) => {
   await openChat(page);
   await page.keyboard.press("Escape");
-  await expect(page.locator('[data-transition="pop"]')).toHaveCount(2);
+  await expect(page.locator('[data-motion="closing"]')).toHaveCount(1);
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
 });
 
 test("mobile back gesture midpoint completes aligned", async ({ page }) => {
   await openChat(page);
   await drag(page, 4, 200, "pointerup");
-  await expect(page.locator("[data-position]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
   await expectAligned(page);
 });
 
@@ -96,7 +96,7 @@ test("mobile back swipe stays owned over selectable transcript content", async (
     });
     await panOverTranscript(page, messageY, 80, 500);
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
-    await expect(page.locator("[data-swipe]")).toHaveCount(0);
+    await expect(page.locator("[data-motion]")).toHaveCount(0);
     await expectAligned(page);
 
     const listY = await page.locator("[data-message-list]").evaluate((list) => {
@@ -136,7 +136,7 @@ test("mobile history interrupts a gesture aligned", async ({ page }) => {
     clientY: 300,
     pointerId: 5,
   });
-  await expect(page.locator("[data-swipe]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
   await expectAligned(page);
 });
 
@@ -145,7 +145,7 @@ async function openChat(page: Page): Promise<void> {
   await expect(
     page.getByRole("heading", { name: "#weblounge-test" }),
   ).toBeVisible();
-  await expect(page.locator("[data-position]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
 }
 
 async function drag(
@@ -250,7 +250,7 @@ async function startPopRecording(page: Page): Promise<void> {
             opacityProperty: true,
             visibilityProperty: true,
           }) ?? false,
-        popping: chat?.dataset.transition === "pop",
+        popping: chat?.dataset.motion === "closing",
       });
       if (chat === undefined || chat === null) recording.done = true;
       else requestAnimationFrame(sample);
