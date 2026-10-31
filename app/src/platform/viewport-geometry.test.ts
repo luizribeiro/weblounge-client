@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  cacheKeyboardHeight,
   documentPanned,
   observeViewportGeometry,
+  requestCachedKeyboardOpen,
   resolveViewportGeometry,
   type ViewportMeasurements,
   type ViewportObserverOptions,
@@ -190,6 +192,71 @@ describe("viewport geometry observer", () => {
     );
   });
 
+  it("uses a cached orientation height before focus and leaves a cold path alone", () => {
+    const browserWindow = fakeWindow(
+      new FakeVisualViewport(window.innerHeight),
+    );
+    const root = document.createElement("div");
+    document.body.append(root);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+
+    expect(requestCachedKeyboardOpen(browserWindow)).toBe(false);
+    expect(root.dataset.keyboard).toBe("closed");
+
+    cacheKeyboardHeight(browserWindow, window.innerHeight - 320);
+    expect(requestCachedKeyboardOpen(browserWindow)).toBe(true);
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 320}px`,
+    );
+  });
+
+  it("starts close motion on focusout before closed geometry arrives", () => {
+    const surface = document.createElement("div");
+    surface.dataset.keyboardMotion = "true";
+    document.body.append(surface);
+    const animate = vi.fn().mockReturnValue({
+      cancel: vi.fn(),
+      finished: new Promise<void>(() => {}),
+    });
+    surface.animate = animate;
+    const { root, viewport } = observe();
+    const field = textField();
+    viewport.set(window.innerHeight - 300, 0, "resize");
+    animate.mockClear();
+
+    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    expect(animate).toHaveBeenCalledOnce();
+    expect(animate.mock.calls[0]?.[0]).toEqual([
+      { transform: "translateY(0px)" },
+      { transform: "translateY(300px)" },
+    ]);
+    expect(root.dataset.keyboard).toBe("open");
+  });
+
+  it("uses VirtualKeyboard overlay geometry on Android", () => {
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const keyboard = new FakeVirtualKeyboard();
+    const browserWindow = fakeWindow(viewport, keyboard);
+    const root = document.createElement("div");
+    document.body.append(root);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+
+    expect(keyboard.overlaysContent).toBe(true);
+    keyboard.height = 280;
+    keyboard.dispatchEvent(new Event("geometrychange"));
+
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 280}px`,
+    );
+    stop();
+    expect(keyboard.overlaysContent).toBe(false);
+  });
+
   it("settles desktop focus in a couple of frames", async () => {
     const frames = vi.spyOn(window, "requestAnimationFrame");
     const field = textField();
@@ -273,12 +340,44 @@ class FakeVisualViewport extends EventTarget {
   }
 }
 
-function fakeWindow(viewport: FakeVisualViewport | null): Window {
+class FakeVirtualKeyboard extends EventTarget {
+  height = 0;
+  overlaysContent = false;
+  get boundingRect(): DOMRectReadOnly {
+    return rect(0, this.height);
+  }
+}
+
+function fakeWindow(
+  viewport: FakeVisualViewport | null,
+  keyboard?: FakeVirtualKeyboard,
+): Window {
   return new Proxy(window, {
     get(target, property) {
       if (property === "visualViewport") return viewport;
+      if (property === "navigator" && keyboard !== undefined)
+        return new Proxy(target.navigator, {
+          get(navigator, navigatorProperty) {
+            if (navigatorProperty === "virtualKeyboard") return keyboard;
+            return Reflect.get(navigator, navigatorProperty, navigator);
+          },
+        });
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+function rect(top: number, height: number): DOMRectReadOnly {
+  return {
+    bottom: top + height,
+    height,
+    left: 0,
+    right: 0,
+    top,
+    width: 0,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  };
 }
