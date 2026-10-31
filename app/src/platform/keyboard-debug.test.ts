@@ -3,6 +3,7 @@ import {
   formatKeyboardTrace,
   installKeyboardDebug,
   readKeyboardTraceFrame,
+  summarizeKeyboardTrace,
 } from "./keyboard-debug";
 
 afterEach(() => {
@@ -32,6 +33,7 @@ it("records the keyboard geometry needed for an on-device frame trace", () => {
   expect(formatKeyboardTrace([frame])).toContain(
     `${window.innerHeight} 8 476 410`,
   );
+  expect(summarizeKeyboardTrace([frame])).toContain("1 frames · tap to copy");
 });
 
 it("traces for one second after a tap or focusout and removes its listeners", () => {
@@ -51,7 +53,7 @@ it("traces for one second after a tap or focusout and removes its listeners", ()
   callback?.(1001);
   const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
   expect(overlay?.textContent).toContain("trigger: pointerup");
-  expect(overlay?.textContent).toContain("trace: ms sy vo vh ih rt rh ct");
+  expect(overlay?.textContent).toContain("frames · tap to copy full trace");
 
   window.dispatchEvent(new FocusEvent("focusout"));
   stop();

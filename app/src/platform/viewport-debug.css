@@ -15,6 +15,11 @@
   z-index: 2147483647;
 }
 
+[data-debug-overlay][data-debug-copy="keyboard"] {
+  pointer-events: auto;
+  user-select: text;
+}
+
 [data-viewport-debug-probe] {
   inset: 0 auto auto 0;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)

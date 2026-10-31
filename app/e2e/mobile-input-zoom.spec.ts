@@ -269,7 +269,8 @@ test.describe("viewport diagnostics overlay", () => {
 
     await expect(overlay).toContainText("[keyboard]");
     await expect(overlay).toContainText("trigger: pointerup");
-    await expect(overlay).toContainText("trace: ms sy vo vh ih rt rh ct");
+    await expect(overlay).toContainText("frames · tap to copy full trace");
+    await expect(overlay).toHaveCSS("user-select", "text");
   });
 });
 
