@@ -64,15 +64,21 @@ interface AppProps {
 
 export function App(props: AppProps) {
   const clientId = crypto.randomUUID();
+  const startupSyncRequired =
+    props.hostedSession !== undefined ||
+    (__DEBUG_IRC_CONFIG__ !== null &&
+      new URL(window.location.href).searchParams.has("irc-password"));
   const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
   const notifier = createNotifier();
   const [hostedError, setHostedError] = createSignal<string>();
-  const [shellReady, setShellReady] = createSignal(
-    props.hostedSession === undefined,
-  );
+  const [shellReady, setShellReady] = createSignal(!startupSyncRequired);
   const [startupError, setStartupError] = createSignal<string>();
   const [engineReady, setEngineReady] = createSignal(false);
   const [startupRevealed, setStartupRevealed] = createSignal(false);
+  const [startupContentReady, setStartupContentReady] = createSignal(
+    !startupSyncRequired,
+  );
+  const [startupCapReached, setStartupCapReached] = createSignal(false);
   const [composerNotice, setComposerNotice] = createSignal<string>();
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
@@ -101,6 +107,14 @@ export function App(props: AppProps) {
   let disposed = false;
   let revealingStartup = false;
   let initialNavigationResolved = false;
+  let startupCap: number | undefined;
+  let startupSettleFrame: number | undefined;
+  let startupConfirmFrame: number | undefined;
+  const startupOnlineNetworks = new Set<number>();
+  const startupBufferNetworks = new Set<number>();
+  const startupDirectNetworks = new Set<number>();
+  const startupHistoryPending = new Set<number>();
+  const startupHistoryComplete = new Set<number>();
   const storedNavigationPath = readLastViewedPath();
   const noticeActions = new ActionRegistry(
     {
@@ -140,7 +154,11 @@ export function App(props: AppProps) {
       !engineReady() ||
       (startupError() === undefined &&
         !shellReady() &&
-        hostedError() === undefined)
+        hostedError() === undefined) ||
+      (startupError() === undefined &&
+        hostedError() === undefined &&
+        !startupContentReady() &&
+        !startupCapReached())
     ) {
       return;
     }
@@ -247,6 +265,11 @@ export function App(props: AppProps) {
         if (connectionStateKind(message.network.state) === "online") {
           setShellReady(true);
           setHostedError(undefined);
+          if (!startupRevealed() && startupSyncRequired) {
+            startupOnlineNetworks.add(message.network.id);
+            startStartupCap();
+            scheduleStartupContentCheck();
+          }
         } else {
           const messageKey = connectionFailureMessage(message.network.state);
           if (!shellReady() && messageKey !== undefined) {
@@ -295,6 +318,34 @@ export function App(props: AppProps) {
         setLoadedNetworkIds((current) =>
           new Set(current).add(message.network_id),
         );
+        if (
+          !startupRevealed() &&
+          startupOnlineNetworks.has(message.network_id)
+        ) {
+          startupBufferNetworks.add(message.network_id);
+          trackStartupBuffers(message.buffers);
+        }
+      }
+      if (message.type === "buffer_added" && !startupRevealed()) {
+        trackStartupBuffers([message.buffer]);
+      }
+      if (message.type === "recent_directs_ready" && !startupRevealed()) {
+        startupDirectNetworks.add(message.network_id);
+        scheduleStartupContentCheck();
+      }
+      if (
+        message.type === "history_state_changed" &&
+        !message.loading &&
+        !startupRevealed()
+      ) {
+        startupHistoryComplete.add(message.buffer_id);
+        startupHistoryPending.delete(message.buffer_id);
+        scheduleStartupContentCheck();
+      }
+      if (message.type === "buffer_snapshot" && !startupRevealed()) {
+        startupHistoryComplete.add(message.buffer_id);
+        startupHistoryPending.delete(message.buffer_id);
+        scheduleStartupContentCheck();
       }
       applyDebugEvent(
         message,
@@ -367,6 +418,7 @@ export function App(props: AppProps) {
     onCleanup(() => {
       disposed = true;
       cancelTokenExpiry();
+      clearStartupWaits();
       unregisterContextSurface();
       removeContextMenuHandler();
       document.removeEventListener("visibilitychange", updateVisibility);
@@ -407,10 +459,70 @@ export function App(props: AppProps) {
   async function revealStartup(): Promise<void> {
     if (revealingStartup || startupRevealed()) return;
     revealingStartup = true;
+    clearStartupWaits();
     await props.beforeReveal?.();
     if (disposed) return;
     setStartupRevealed(true);
     props.onReady?.();
+  }
+
+  function startStartupCap(): void {
+    if (startupCap !== undefined) return;
+    // wait-ok: this is the product's fixed upper bound for startup hydration.
+    startupCap = window.setTimeout(() => {
+      startupCap = undefined;
+      setStartupCapReached(true);
+    }, 400);
+  }
+
+  function trackStartupBuffers(current: readonly BufferProjection[]): void {
+    cancelStartupSettle();
+    for (const buffer of current) {
+      if (buffer.kind !== "server" && !startupHistoryComplete.has(buffer.id)) {
+        startupHistoryPending.add(buffer.id);
+      }
+    }
+    scheduleStartupContentCheck();
+  }
+
+  function scheduleStartupContentCheck(): void {
+    cancelStartupSettle();
+    if (
+      startupOnlineNetworks.size === 0 ||
+      [...startupOnlineNetworks].some(
+        (networkId) =>
+          !startupBufferNetworks.has(networkId) ||
+          !startupDirectNetworks.has(networkId),
+      ) ||
+      startupHistoryPending.size > 0
+    ) {
+      return;
+    }
+    startupSettleFrame = requestAnimationFrame(() => {
+      startupSettleFrame = undefined;
+      startupConfirmFrame = requestAnimationFrame(() => {
+        startupConfirmFrame = undefined;
+        if (startupHistoryPending.size > 0) return;
+        if (startupCap !== undefined) window.clearTimeout(startupCap);
+        startupCap = undefined;
+        setStartupContentReady(true);
+      });
+    });
+  }
+
+  function cancelStartupSettle(): void {
+    if (startupSettleFrame !== undefined)
+      cancelAnimationFrame(startupSettleFrame);
+    if (startupConfirmFrame !== undefined)
+      cancelAnimationFrame(startupConfirmFrame);
+    startupSettleFrame = undefined;
+    startupConfirmFrame = undefined;
+  }
+
+  function clearStartupWaits(): void {
+    if (startupCap !== undefined) window.clearTimeout(startupCap);
+    startupCap = undefined;
+    cancelStartupSettle();
   }
 
   return (
