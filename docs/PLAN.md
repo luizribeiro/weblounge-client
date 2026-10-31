@@ -148,6 +148,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     on-device check).
   - [x] Close the narrow-desktop member panel through the shared drawer exit motion.
   - [x] Extend transcript mention, hover, and selected-row surfaces edge to edge without moving their content.
+  - [x] Keep the full-bleed highlight browser assertion scoped to the active transcript and retry-safe across virtual-row replacement.
   - [x] Keep every incoming DM in the mention badge count without highlighting ordinary DM rows;
     transcript highlights now follow the engine's nick-word rule independently (#62, awaiting
     Luiz's on-device check).
