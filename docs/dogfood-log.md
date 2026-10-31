@@ -67,3 +67,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 59 | 2026-10-30 | Mobile push/pop: the chats list should stay still while the chat slides over it (in, out, and swipe gestures alike). | fixed, confirmed by Luiz |
 | 60 | 2026-10-30 | Mobile: releasing a swipe-back mid-way jumps straight to the end state instead of animating there. | fixed, confirmed by Luiz |
 | 61 | 2026-10-31 | Mobile: swipe-back settles slower than tap-Back; both should use the same speed, between the two. | queued |
+| 62 | 2026-10-31 | Every incoming DM line is highlighted in the transcript; highlight should follow rules (today: your nick), not "it's a DM". | queued |
