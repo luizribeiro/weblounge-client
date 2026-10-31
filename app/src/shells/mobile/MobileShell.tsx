@@ -287,14 +287,9 @@ export function MobileShell(props: MobileShellProps) {
         ? props.buffers.find((candidate) => candidate.id === active.bufferId)
         : undefined;
     const selection = window.getSelection();
-    const nickAction = target.closest("[data-nick-action]") !== null;
     const excluded =
       (selection !== null && !selection.isCollapsed) ||
-      target.closest(
-        nickAction
-          ? "input, textarea, [data-horizontal-scroll]"
-          : "[data-selectable], input, textarea, [data-horizontal-scroll]",
-      ) !== null;
+      target.closest("input, textarea, [data-horizontal-scroll]") !== null;
     const currentSwipe = swipe();
     const canStartSwipe =
       event.clientX <= swipeBackActivationWidth &&

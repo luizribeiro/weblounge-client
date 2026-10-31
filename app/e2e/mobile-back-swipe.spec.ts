@@ -187,7 +187,7 @@ test("mobile back gesture midpoint completes aligned", async ({ page }) => {
   await expectAligned(page);
 });
 
-test("mobile back swipe stays owned over selectable transcript content", async ({
+test("mobile back swipe starts on selectable transcript content", async ({
   page,
 }) => {
   const bot = await IrcClient.connect(
@@ -208,11 +208,19 @@ test("mobile back swipe stays owned over selectable transcript content", async (
     );
     await expect(message).toHaveCSS("user-select", "text");
 
-    const messageY = await message.evaluate((element) => {
+    const messagePoint = await message.evaluate((element) => {
       const bounds = element.getBoundingClientRect();
-      return bounds.top + bounds.height / 2;
+      return {
+        x: Math.min(bounds.right - 1, bounds.left + 2),
+        y: bounds.top + bounds.height / 2,
+      };
     });
-    await panOverTranscript(page, messageY, 80, 500);
+    await panOverTranscript(page, messagePoint.x, messagePoint.y, 401, 600);
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expectAligned(page);
+
+    await openChat(page);
+    await panOverTranscript(page, 5, messagePoint.y, 80, 500);
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
     await expect(page.locator("[data-motion]")).toHaveCount(0);
     await expectAligned(page);
@@ -221,12 +229,12 @@ test("mobile back swipe stays owned over selectable transcript content", async (
       const bounds = list.getBoundingClientRect();
       return bounds.top + 4;
     });
-    await panOverTranscript(page, listY, 240, 600);
+    await panOverTranscript(page, 5, listY, 240, 600);
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
     await expectAligned(page);
 
     await openChat(page);
-    await panOverTranscript(page, messageY, 80, 80);
+    await panOverTranscript(page, 5, messagePoint.y, 80, 80);
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
     await expectAligned(page);
   } finally {
@@ -376,13 +384,14 @@ async function drag(
 
 async function panOverTranscript(
   page: Page,
+  startX: number,
   clientY: number,
   endX: number,
   duration: number,
 ): Promise<void> {
   await page.evaluate(
-    ({ clientY, duration, endX }) => {
-      const target = document.elementFromPoint(5, clientY);
+    ({ clientY, duration, endX, startX }) => {
+      const target = document.elementFromPoint(startX, clientY);
       if (target === null) throw new Error("swipe start target is missing");
       const dispatch = (type: string, clientX: number, timeStamp: number) => {
         const event = new PointerEvent(type, {
@@ -397,12 +406,12 @@ async function panOverTranscript(
         Object.defineProperty(event, "timeStamp", { value: timeStamp });
         target.dispatchEvent(event);
       };
-      dispatch("pointerdown", 5, 1_000);
-      dispatch("pointermove", 20, 1_000 + duration / 3);
+      dispatch("pointerdown", startX, 1_000);
+      dispatch("pointermove", startX + 15, 1_000 + duration / 3);
       dispatch("pointermove", endX, 1_000 + (2 * duration) / 3);
       dispatch("pointerup", endX, 1_000 + duration);
     },
-    { clientY, duration, endX },
+    { clientY, duration, endX, startX },
   );
 }
 
