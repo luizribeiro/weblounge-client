@@ -146,6 +146,8 @@
 }
 
 .rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
   padding-left: 6px;
 }
 

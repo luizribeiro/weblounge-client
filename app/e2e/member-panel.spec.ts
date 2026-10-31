@@ -6,6 +6,7 @@ import {
   installNativeFeelInstrumentation,
   nativeFeelAudit,
 } from "./native-feel-audit";
+import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
 
 const channel = "#weblounge-test";
 const screenshots = path.join(process.cwd(), "e2e", "screenshots");
@@ -17,19 +18,28 @@ test.describe("desktop members against local Ergo", () => {
   );
 
   test("updates groups, toggles, and opens a DM", async ({ page }) => {
+    const memberChannel = `#member-panel-${Date.now().toString().slice(-6)}`;
     const bot = await IrcClient.connect(
       "member-bot",
       "weblounge-bot",
       "weblounge-bot-test",
-      channel,
+      memberChannel,
     );
+    let voice: IrcClient | undefined;
     try {
       await bot.mode("member-bot", "+B");
       await installNativeFeelInstrumentation(page);
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto("/?irc-password=weblounge-test");
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      const composer = page.getByRole("textbox", {
+        name: `Message ${channel}`,
+      });
+      await composer.fill(`/join ${memberChannel}`);
+      await composer.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: memberChannel }),
+      ).toBeVisible();
 
       const toggle = page.getByRole("button", { name: "Toggle member list" });
       await toggle.click();
@@ -65,9 +75,24 @@ test.describe("desktop members against local Ergo", () => {
         desktopStack.listTop,
       );
 
-      await bot.mode(channel, "+o", "weblounge");
+      await bot.mode(memberChannel, "+o", "weblounge");
       await expect(panel.getByText("Operators — 1")).toBeVisible();
-      await bot.mode(channel, "-o", "weblounge");
+      voice = await IrcClient.connect(
+        "member-voice",
+        "weblounge-bot",
+        "weblounge-bot-test",
+        memberChannel,
+      );
+      await bot.mode(memberChannel, "+v", voice.nickname);
+      await expect(
+        panel.locator("[data-member-prefix]", { hasText: "+" }),
+      ).toBeVisible();
+      await expectAlignedPrefixColumn(
+        panel,
+        "[data-member-prefix]",
+        "[data-member-name]",
+      );
+      await bot.mode(memberChannel, "-o", "weblounge");
       await expect(panel.getByText("Online — 1")).toBeVisible();
 
       await page.keyboard.press("Control+Period");
@@ -105,6 +130,7 @@ test.describe("desktop members against local Ergo", () => {
       ).toBeFocused();
       await expect(panel).toHaveCount(0);
     } finally {
+      voice?.close();
       bot.close();
     }
   });

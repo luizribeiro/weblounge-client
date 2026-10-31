@@ -22,6 +22,11 @@ it("renders member facts and opens the direct conversation", () => {
   expect(screen.getByText("concierge")).toHaveStyle({
     color: "var(--wl-nick-2)",
   });
+  expect(screen.getByText("@")).toHaveAttribute("data-member-prefix", "true");
+  expect(screen.getByText("concierge")).toHaveAttribute(
+    "data-member-name",
+    "true",
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Open direct message with concierge" }),
   );

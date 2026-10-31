@@ -53,6 +53,10 @@ export default defineConfig(({ mode }) => {
                   import.meta.dirname,
                   "e2e/member-list-performance.html",
                 ),
+                "prefix-column": resolve(
+                  import.meta.dirname,
+                  "e2e/prefix-column.html",
+                ),
                 "member-window-live": resolve(
                   import.meta.dirname,
                   "e2e/member-window-live.html",

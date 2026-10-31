@@ -5,11 +5,14 @@
   border: 0;
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-fg);
-  display: flex;
+  display: grid;
   font: inherit;
-  gap: 6px;
+  font-size: var(--wl-density-sidebar-font-size);
+  font-weight: 550;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   height: var(--wl-density-sidebar-member-row-height);
-  padding: 1px 8px;
+  padding-block: 1px;
   text-align: start;
   width: 100%;
 }
@@ -34,21 +37,29 @@
   flex: 0 0 var(--wl-density-sidebar-avatar);
   font-size: 10px;
   font-weight: 700;
+  grid-column: 1;
   height: var(--wl-density-sidebar-avatar);
   justify-content: center;
 }
 
 .identity {
+  align-items: center;
+  display: flex;
   flex: 1;
-  font-size: var(--wl-density-sidebar-font-size);
-  font-weight: 550;
+  gap: var(--wl-space-list-gap);
+  grid-column: 3;
+  min-width: 0;
 }
 
 .mode {
   color: var(--wl-color-muted);
-  display: inline-block;
-  font-family: var(--wl-font-mono);
-  width: 10px;
+  grid-column: 2;
+  justify-self: stretch;
+  text-align: right;
+}
+
+.nick {
+  flex: 1;
 }
 
 .bot {

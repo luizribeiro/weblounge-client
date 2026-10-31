@@ -64,6 +64,11 @@ export function MemberPanel(props: MemberPanelProps) {
     useAnimationFrameWithResizeObserver: true,
   });
   const virtualRows = createMemo(() => virtualizer.getVirtualItems());
+  const leadingSpace = () => virtualRows()[0]?.start ?? 0;
+  const trailingSpace = () => {
+    const end = virtualRows().at(-1)?.end ?? 0;
+    return Math.max(0, virtualizer.getTotalSize() - end);
+  };
   const renderedRows = createMemo(() => {
     const current = window();
     return virtualRows().map((virtual) => ({
@@ -144,19 +149,22 @@ export function MemberPanel(props: MemberPanelProps) {
           class={styles.list}
           ref={list}
         >
-          <div
+          <li
+            aria-hidden="true"
+            data-member-virtual-size="true"
+            hidden
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          />
+          <li
             aria-hidden="true"
             class={styles.spacer}
-            data-member-virtual-size="true"
-            style={{ height: `${virtualizer.getTotalSize()}px` }}
+            style={{ height: `${leadingSpace()}px` }}
           />
           <Index each={renderedRows()}>
             {(rendered) => (
               <li
                 class={styles.virtualRow}
-                style={{
-                  transform: `translateY(${rendered().virtual.start}px)`,
-                }}
+                style={{ height: `${rendered().virtual.size}px` }}
               >
                 <MemberListRowView
                   onOpenDirect={props.onOpenDirect}
@@ -166,6 +174,11 @@ export function MemberPanel(props: MemberPanelProps) {
               </li>
             )}
           </Index>
+          <li
+            aria-hidden="true"
+            class={styles.spacer}
+            style={{ height: `${trailingSpace()}px` }}
+          />
         </ul>
       </div>
     </aside>
