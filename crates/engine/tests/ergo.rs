@@ -216,7 +216,7 @@ async fn verify_history_paging(bot: &papo::Client) {
     let mut received = page
         .chat_messages()
         .filter(|message| message.text.contains(&paging_suffix))
-        .map(|message| (message.text.clone(), message.msgid.clone()))
+        .map(|message| (message.text.clone(), message.msgid().cloned()))
         .collect::<Vec<_>>();
     loop {
         let oldest = page
@@ -234,7 +234,7 @@ async fn verify_history_paging(bot: &papo::Client) {
         let older = page
             .chat_messages()
             .filter(|message| message.text.contains(&paging_suffix))
-            .map(|message| (message.text.clone(), message.msgid.clone()))
+            .map(|message| (message.text.clone(), message.msgid().cloned()))
             .collect::<Vec<_>>();
         received.splice(0..0, older);
     }
@@ -269,7 +269,7 @@ async fn connect_account(
 ) -> (papo::Client, papo::Events) {
     papo::Client::builder(endpoint, nickname)
         .allow_insecure_auth(true)
-        .sasl(papo::Sasl::plain(account, password))
+        .sasl(papo::Sasl::plain(account, papo::Secret::new(password)))
         .autojoin([channel])
         .connect()
         .await
@@ -301,7 +301,10 @@ async fn wait_for_own_join(events: &mut papo::Events, nickname: &str, channel: &
 async fn connect_reader(endpoint: &str) -> (papo::Client, papo::Events) {
     let (reader, mut events) = papo::Client::builder(endpoint, "multiline-reader")
         .allow_insecure_auth(true)
-        .sasl(papo::Sasl::plain("weblounge-bot", "weblounge-bot-test"))
+        .sasl(papo::Sasl::plain(
+            "weblounge-bot",
+            papo::Secret::new("weblounge-bot-test"),
+        ))
         .autojoin(["#weblounge-test"])
         .connect()
         .await

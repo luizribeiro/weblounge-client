@@ -50,11 +50,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - D1. [x] Load older history on scroll-up through an empty `CHATHISTORY BEFORE` page, with
     eviction-independent event cursors and exact ordering/deduplication across more than 1,000
     messages (scroll anchoring already exists).
-  - [x] Requested history pages stay where they belong: papo `f0672c0` also emits each answered
-    CHATHISTORY batch as a `Replay` event, which the engine had merged as a live append; Replay
-    pages are now dropped when the server supports CHATHISTORY. A tab attaching to a running
-    shared engine receives each buffer's retained rows. Open question for Luiz: should papo stop
-    emitting the Replay copy for batches that answer a labeled request?
+  - [x] Requested history pages stay where they belong: papo `9ca82d9` consumes correlated
+    CHATHISTORY responses instead of also emitting them as `Replay` events. The engine therefore
+    accepts unrequested playback again, including when the server supports CHATHISTORY. A tab
+    attaching to a running shared engine receives each buffer's retained rows.
   - D2. [x] Rebuild the DM list from a 30-day `CHATHISTORY TARGETS` window on connect and
     reconnect, capped at 100 direct conversations and ordered by server-reported recent activity.
     Latest history hydrates desktop and mobile previews without disturbing older-page cursors.
@@ -150,8 +149,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `f0672c0`. Guarded directs, split-send reconciliation, exact live
-  and nested-history multiline concatenation, server name rules, lag diagnostics, and
-  channel-recreation warnings are integrated.
+- **papo:** papo 0.1 pinned at `9ca82d9`. Guarded directs, split-send reconciliation, exact live
+  and nested-history multiline concatenation, server name rules, lag diagnostics,
+  channel-recreation warnings, hardened typed inputs, and correlated history responses are
+  integrated.
   - Follow-up: adopt papo's planned `watch()` / free `direct()` operation with a per-send proof
     round trip so a full MONITOR list can still send without bypassing guarded-recipient safety.

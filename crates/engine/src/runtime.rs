@@ -161,7 +161,7 @@ impl Runtime {
                     nickname,
                     authentication: ConnectionAuthentication::SaslPlain {
                         account: sasl.account,
-                        password: papo::Secret::from(sasl.password.into_inner()),
+                        password: papo::Secret::new(sasl.password.into_inner()),
                     },
                     autojoin,
                     allow_insecure,
@@ -180,7 +180,7 @@ impl Runtime {
                     endpoint,
                     nickname,
                     authentication: ConnectionAuthentication::HostedOAuth {
-                        token: papo::Secret::from(oauth_token.into_inner()),
+                        token: papo::Secret::new(oauth_token.into_inner()),
                     },
                     autojoin,
                     allow_insecure: false,
@@ -745,7 +745,12 @@ impl Runtime {
                     continue;
                 }
                 let result = match target.key {
-                    Some(key) => client.join(target.channel).key(key).await,
+                    Some(key) => {
+                        client
+                            .join(target.channel)
+                            .key(papo::Secret::new(key))
+                            .await
+                    }
                     None => client.join(target.channel).await,
                 };
                 if let Err(error) = result {
@@ -1662,9 +1667,7 @@ async fn drain_events(
     let member_changes = Arc::new(Mutex::new(crate::members::Changes::default()));
     while let Some(event) = events.next().await {
         if let papo::Event::History(page) = event {
-            if !echoes_requested_history(&client, &page) {
-                process_history(&state, &outbound, &client, instance, page);
-            }
+            process_history(&state, &outbound, &client, instance, page);
             continue;
         }
         let restore_directs = matches!(event, papo::Event::Connected(_));
@@ -1672,7 +1675,7 @@ async fn drain_events(
         let direct_message = match &event {
             papo::Event::Message(message)
                 if message.authorship != papo::Authorship::Own
-                    && matches!(message.conversation, papo::Conversation::Private(_)) =>
+                    && matches!(message.conversation(), papo::Conversation::Private(_)) =>
             {
                 Some(message.clone())
             }
@@ -1721,13 +1724,6 @@ async fn drain_events(
             });
         }
     }
-}
-
-/// Papo duplicates each answered CHATHISTORY batch as a `Replay` event. With CHATHISTORY the
-/// engine requests every page it shows, so merging that copy would re-append requested pages at
-/// the live edge.
-fn echoes_requested_history(client: &papo::Client, page: &papo::HistoryPage) -> bool {
-    page.reason == papo::HistoryReason::Replay && client.state().supports(papo::Feature::History)
 }
 
 fn spawn_direct_resolution(
@@ -2880,7 +2876,7 @@ mod tests {
     #[tokio::test]
     async fn hosted_authentication_uses_papos_redacting_oauth_bearer() {
         let sasl = ConnectionAuthentication::HostedOAuth {
-            token: "oauth-token-7391".into(),
+            token: papo::Secret::new("oauth-token-7391"),
         }
         .into_sasl();
         assert!(!format!("{sasl:?}").contains("oauth-token-7391"));
@@ -6121,8 +6117,7 @@ mod tests {
             }
         }
 
-        /// The requested copy finishes the history state; a live line sent after the page
-        /// orders behind any Replay copy papo emitted for it.
+        /// The requested page finishes the history state before the following live line.
         async fn page_output(&mut self, sentinel: &str) -> Vec<EngineToUi> {
             self.wire
                 .server(format!(
@@ -6148,6 +6143,22 @@ mod tests {
             .expect("the page and the sentinel arrive");
             output
         }
+
+        async fn timeline_output(&mut self, expected: &[&str]) -> Vec<EngineToUi> {
+            let mut output = Vec::new();
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !expected.iter().all(|expected| {
+                    timeline_texts(&output, false)
+                        .iter()
+                        .any(|text| text == expected)
+                }) {
+                    output.push(self.receiver.recv().await.expect("runtime remains active"));
+                }
+            })
+            .await
+            .expect("the expected timeline rows arrive");
+            output
+        }
     }
 
     fn timeline_texts(events: &[EngineToUi], prepended: bool) -> Vec<String> {
@@ -6165,7 +6176,7 @@ mod tests {
     const HISTORY_CAPS: &str = "draft/chathistory labeled-response batch server-time message-tags";
 
     #[tokio::test]
-    async fn latest_ergo_page_prepends_once_despite_papos_replay_copy() {
+    async fn latest_ergo_page_prepends_once() {
         let mut harness = ReplayHarness::joined(HISTORY_CAPS).await;
         let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
         send_ergo_history_page(
@@ -6191,7 +6202,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn older_ergo_page_prepends_once_despite_papos_replay_copy() {
+    async fn older_ergo_page_prepends_once() {
         let mut harness = ReplayHarness::joined(HISTORY_CAPS).await;
         let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
         send_ergo_history_page(
@@ -6239,20 +6250,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replayed_history_merges_without_chathistory() {
-        let mut harness = ReplayHarness::joined("batch server-time message-tags").await;
-        harness
-            .wire
-            .server(":offline.test BATCH +replay chathistory #room")
-            .await;
-        harness
-            .wire
-            .server("@batch=replay;time=2026-10-27T12:00:00.000Z;msgid=r1 :louro!l@host PRIVMSG #room :replayed")
-            .await;
-        harness.wire.server(":offline.test BATCH -replay").await;
+    async fn unrequested_playback_merges_with_chathistory_support() {
+        let mut harness = ReplayHarness::joined(HISTORY_CAPS).await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(&mut harness.wire, &latest, &[]).await;
+        _ = harness.page_output("initial-sentinel").await;
 
-        let output = harness.page_output("sentinel").await;
-        assert_eq!(timeline_texts(&output, false), ["replayed", "sentinel"]);
+        harness
+            .wire
+            .server(":offline.test BATCH +playback chathistory #room")
+            .await;
+        harness
+            .wire
+            .server("@batch=playback;time=2026-10-27T12:00:00.000Z;msgid=r1 :louro!l@host PRIVMSG #room :server playback")
+            .await;
+        harness.wire.server(":offline.test BATCH -playback").await;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:00:00.000Z;msgid=live :louro!l@host PRIVMSG #room :live after playback")
+            .await;
+
+        let output = harness
+            .timeline_output(&["server playback", "live after playback"])
+            .await;
+        assert_eq!(
+            timeline_texts(&output, false),
+            ["server playback", "live after playback"]
+        );
         harness.drain.abort();
     }
 }
