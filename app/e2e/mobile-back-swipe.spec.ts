@@ -224,6 +224,36 @@ test("mobile back swipe stays owned over selectable transcript content", async (
   }
 });
 
+test("mobile back swipe starting on a nickname wins over its tap", async ({
+  page,
+}) => {
+  const suffix = Date.now().toString().slice(-6);
+  const nick = `swipenick${suffix}`;
+  const marker = `nick swipe target ${suffix}`;
+  const bot = await IrcClient.connect(
+    nick,
+    "weblounge-bot",
+    "weblounge-bot-test",
+    "#weblounge-test",
+  );
+  try {
+    await bot.privmsgConfirmed("#weblounge-test", marker);
+    await openChat(page);
+    const nickAction = page
+      .locator("[data-message-row]")
+      .filter({ has: page.getByText(marker, { exact: true }) })
+      .getByRole("button", { name: `Open direct message with ${nick}` });
+    await expect(nickAction).toBeVisible();
+
+    expect(await swipeFromNickname(nickAction)).toBe(true);
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+    await expect(page.getByRole("heading", { name: nick })).toHaveCount(0);
+    await expectAligned(page);
+  } finally {
+    bot.close();
+  }
+});
+
 test("mobile transcript leaves vertical touchmove available to native scrolling", async ({
   page,
 }) => {
@@ -364,6 +394,43 @@ async function panOverTranscript(
     },
     { clientY, duration, endX },
   );
+}
+
+async function swipeFromNickname(
+  nickname: import("@playwright/test").Locator,
+): Promise<boolean> {
+  return nickname.evaluate((target) => {
+    const bounds = target.getBoundingClientRect();
+    const startX = bounds.left + bounds.width / 2;
+    const clientY = bounds.top + bounds.height / 2;
+    const points = [
+      [startX, 1_000],
+      [startX + 15, 1_010],
+      [Math.min(startX + 120, 320), 1_040],
+      [401, 1_080],
+    ] as const;
+    const pointer = (type: string, clientX: number, timeStamp: number) => {
+      const event = new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY,
+        isPrimary: true,
+        pointerId: 91,
+        pointerType: "touch",
+      });
+      Object.defineProperty(event, "timeStamp", { value: timeStamp });
+      target.dispatchEvent(event);
+    };
+    pointer("pointerdown", points[0][0], points[0][1]);
+    for (const [clientX, timeStamp] of points.slice(1))
+      pointer("pointermove", clientX, timeStamp);
+    const last = points.at(-1) ?? points[0];
+    pointer("pointerup", last[0], last[1]);
+    return !target.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+  });
 }
 
 type GesturePoint = readonly [x: number, y: number, time: number];

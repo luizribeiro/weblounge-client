@@ -32,6 +32,7 @@ export interface MobileConversationProps {
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onOpenMembers: () => void;
+  readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onRequestCompletion: (
     bufferId: number,
     input: string,
@@ -174,6 +175,9 @@ export function MobileConversation(props: MobileConversationProps) {
           onOpenChannel={(channel) => {
             void props.onSend(props.buffer.id, `/join ${channel}`);
           }}
+          onOpenDirect={
+            props.buffer.kind === "server" ? undefined : props.onOpenDirect
+          }
           onRetry={(localSendId) =>
             props.onRetry?.(props.buffer.id, localSendId)
           }

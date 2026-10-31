@@ -27,12 +27,11 @@ import { Selectable } from "../../ui/Selectable";
 import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import styles from "./MessageList.module.css";
-import { MessageText } from "./MessageText";
+import { MessageText, Nickname } from "./MessageText";
 import {
   currentMessageDensity,
   estimateMessageHeight,
 } from "./message-size-estimate";
-import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
@@ -43,6 +42,7 @@ interface MessageListProps {
   readonly readThrough?: number | null | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly registerController?:
@@ -398,6 +398,7 @@ export function MessageList(props: MessageListProps) {
                   index={virtualRow.index}
                   nickLookup={nickLookup()}
                   onOpenChannel={props.onOpenChannel}
+                  onOpenDirect={props.onOpenDirect}
                   onOpenExternal={props.onOpenExternal}
                   onRetry={props.onRetry}
                   row={row()}
@@ -429,6 +430,7 @@ function TimelineRowView(props: {
   readonly index: number;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly row: TimelineRow | undefined;
@@ -454,6 +456,7 @@ function TimelineRowView(props: {
                 message={row.message}
                 nickLookup={props.nickLookup}
                 onOpenChannel={props.onOpenChannel}
+                onOpenDirect={props.onOpenDirect}
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
               />
@@ -479,6 +482,7 @@ function MessageRow(props: {
   readonly message: MessageProjection;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
 }) {
@@ -489,13 +493,10 @@ function MessageRow(props: {
         message={message}
         nickLookup={props.nickLookup}
         onOpenChannel={props.onOpenChannel}
+        onOpenDirect={props.onOpenDirect}
         onOpenExternal={props.onOpenExternal}
       />
     );
-  const nickStyle =
-    message.authorship === "own"
-      ? undefined
-      : { color: nickColor(message.nick_color_index) };
   return (
     <div
       class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.kind === "action" ? styles.action : ""}`}
@@ -513,12 +514,16 @@ function MessageRow(props: {
             <span aria-hidden="true" class={styles.actionStar}>
               *
             </span>{" "}
-            <span class={styles.actionNick} style={nickStyle}>
-              {message.author}
-            </span>{" "}
+            <Nickname
+              class={styles.actionNick}
+              display={message}
+              onOpenDirect={props.onOpenDirect}
+              value={message.author}
+            />{" "}
             <MessageText
               authors={props.nickLookup}
               onOpenChannel={props.onOpenChannel}
+              onOpenDirect={props.onOpenDirect}
               onOpenExternal={props.onOpenExternal}
               text={message.text}
             />
@@ -539,13 +544,13 @@ function MessageRow(props: {
               <span class={styles.mode} data-mode-slot="true">
                 {message.mode_symbol ?? ""}
               </span>
-              <span
-                class={`${styles.nick} ${message.authorship === "own" ? styles.own : ""}`}
-                style={nickStyle}
+              <Nickname
+                class={styles.nick}
+                display={message}
+                onOpenDirect={props.onOpenDirect}
                 title={message.author}
-              >
-                {message.author}
-              </span>
+                value={message.author}
+              />
             </span>
             {message.bot && <span class={styles.bot}>BOT</span>}
           </Line>
@@ -553,6 +558,7 @@ function MessageRow(props: {
             <MessageText
               authors={props.nickLookup}
               onOpenChannel={props.onOpenChannel}
+              onOpenDirect={props.onOpenDirect}
               onOpenExternal={props.onOpenExternal}
               text={message.text}
             />
@@ -568,6 +574,7 @@ function NoticeRow(props: {
   readonly message: MessageProjection;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
+  readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
 }) {
   const message = props.message;
@@ -589,6 +596,7 @@ function NoticeRow(props: {
           <MessageText
             authors={props.nickLookup}
             onOpenChannel={props.onOpenChannel}
+            onOpenDirect={props.onOpenDirect}
             onOpenExternal={props.onOpenExternal}
             text={message.text}
           />

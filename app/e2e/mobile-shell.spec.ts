@@ -142,7 +142,10 @@ test.describe("mobile shell against local Ergo", () => {
         }),
       );
 
-      const target = page.getByRole("button", { name: targetNick });
+      const target = page.getByRole("button", {
+        exact: true,
+        name: targetNick,
+      });
       await expect(target).toContainText(`preview from ${targetNick}`);
       await page.getByRole("button", { name: "#weblounge-test" }).click();
       await page.getByRole("button", { name: "Show members" }).click();
@@ -251,7 +254,7 @@ test.describe("mobile shell against local Ergo", () => {
       await page.goBack();
       await expect(page.locator("[data-mobile-chats]")).toBeVisible();
       await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
-      await page.getByRole("button", { name: targetNick }).click();
+      await page.getByRole("button", { exact: true, name: targetNick }).click();
       await expect(
         page.getByRole("heading", { name: targetNick }),
       ).toBeVisible();

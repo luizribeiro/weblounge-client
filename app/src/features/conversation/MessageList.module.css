@@ -106,6 +106,38 @@
 .own {
   color: var(--wl-color-self-nick);
 }
+.nickAction {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: inherit;
+  display: inline;
+  font: inherit;
+  line-height: normal;
+  padding: 0;
+  text-align: inherit;
+}
+.text .nickAction,
+.actionText .nickAction,
+.noticeTopic .nickAction {
+  -webkit-touch-callout: default;
+  user-select: text;
+}
+@media (hover: hover) {
+  .text .nickAction,
+  .actionText .nickAction,
+  .noticeTopic .nickAction,
+  .nickColumn .nickAction {
+    cursor: pointer;
+  }
+  .nickAction:hover {
+    background: var(--wl-color-chip);
+  }
+}
+.nickAction:active {
+  background: var(--wl-color-selection);
+}
 .bot {
   border: 1px solid currentcolor;
   border-radius: 3px;

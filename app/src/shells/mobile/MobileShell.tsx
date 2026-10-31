@@ -47,9 +47,6 @@ interface MobileShellProps extends MobileShellData {
     | undefined;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
   readonly memberViewScope?: string | undefined;
-  readonly onOpenDirect?:
-    | ((networkId: number, nick: string) => void)
-    | undefined;
   readonly onRequestMembers?:
     | ((
         viewId: string,
@@ -290,10 +287,13 @@ export function MobileShell(props: MobileShellProps) {
         ? props.buffers.find((candidate) => candidate.id === active.bufferId)
         : undefined;
     const selection = window.getSelection();
+    const nickAction = target.closest("[data-nick-action]") !== null;
     const excluded =
       (selection !== null && !selection.isCollapsed) ||
       target.closest(
-        "[data-selectable], input, textarea, [data-horizontal-scroll]",
+        nickAction
+          ? "input, textarea, [data-horizontal-scroll]"
+          : "[data-selectable], input, textarea, [data-horizontal-scroll]",
       ) !== null;
     const currentSwipe = swipe();
     const canStartSwipe =
@@ -568,6 +568,7 @@ export function MobileShell(props: MobileShellProps) {
               open(bufferId, false, currentScrollTop)
             }
             onOpenMembers={openMembers}
+            onOpenDirect={props.onOpenDirect}
             onQuery={setQuery}
             onRequestCompletion={props.onRequestCompletion}
             onRetryNetwork={props.onRetryNetwork}

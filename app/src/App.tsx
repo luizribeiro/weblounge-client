@@ -548,10 +548,11 @@ export function App(props: AppProps) {
             });
           }}
           onOpenDirect={(networkId, nick) => {
-            if (client === undefined) return;
-            void client.send({
-              id: crypto.randomUUID(),
-              request: { type: "open_direct", network_id: networkId, nick },
+            noticeActions.run("buffer.open-direct", {
+              bufferCount: buffers().length,
+              listActive: false,
+              targetNetworkId: networkId,
+              targetNick: nick,
             });
           }}
           onRetryNetwork={(networkId) => {

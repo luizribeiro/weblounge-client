@@ -160,6 +160,15 @@ export function DesktopShell(props: DesktopShellProps) {
     {
       "buffer.next": () => moveBuffer(1),
       "buffer.open": () => {},
+      "buffer.open-direct": (command) => {
+        if (
+          command.targetNetworkId === undefined ||
+          command.targetNick === undefined
+        )
+          return;
+        props.onOpenDirect?.(command.targetNetworkId, command.targetNick);
+        focusComposer();
+      },
       "buffer.previous": () => moveBuffer(-1),
       "list.next": () => listController?.next(),
       "list.open": () => listController?.open(),
@@ -200,6 +209,15 @@ export function DesktopShell(props: DesktopShellProps) {
   );
   createEffect(() => registry.updateCommands(props.commandSpecs ?? []));
   const run = (id: UiActionId) => registry.run(id, context());
+  const openDirect = (nick: string) => {
+    const buffer = activeBuffer();
+    if (buffer === undefined || buffer.kind === "server") return;
+    registry.run("buffer.open-direct", {
+      ...context(),
+      targetNetworkId: buffer.network_id,
+      targetNick: nick,
+    });
+  };
 
   createEffect(
     on(
@@ -350,6 +368,9 @@ export function DesktopShell(props: DesktopShellProps) {
                   if (buffer !== undefined)
                     void props.onSend(buffer.id, `/join ${channel}`);
                 }}
+                onOpenDirect={
+                  activeBuffer()?.kind === "server" ? undefined : openDirect
+                }
                 onRetry={(localSendId) => {
                   const buffer = activeBuffer();
                   if (buffer !== undefined)
@@ -423,8 +444,7 @@ export function DesktopShell(props: DesktopShellProps) {
                 focusComposer();
               }}
               onOpenDirect={(nick) => {
-                props.onOpenDirect?.(buffer()?.network_id ?? 0, nick);
-                focusComposer();
+                openDirect(nick);
               }}
               onRequestRange={(offset) =>
                 props.onRequestMembers?.(memberViewId(), bufferId, offset)
@@ -463,7 +483,7 @@ export function DesktopShell(props: DesktopShellProps) {
                 bufferTitle={activeBuffer()?.title ?? ""}
                 onClose={requestClose}
                 onOpenDirect={(nick) => {
-                  props.onOpenDirect?.(activeBuffer()?.network_id ?? 0, nick);
+                  openDirect(nick);
                   closeDrawer();
                 }}
                 onRequestRange={(offset) =>

@@ -73,6 +73,50 @@ it("renders highlight, nick colour, and failed delivery presentation", () => {
   expect(screen.getByText("Failed")).toBeInTheDocument();
 });
 
+it("opens non-own authors and mentions through the same nickname action", () => {
+  const openDirect = vi.fn();
+  render(() => (
+    <MessageList
+      messages={[
+        { ...message, text: "hello bob and weblounge" },
+        {
+          ...message,
+          id: 2,
+          author: "bob",
+          text: "hello",
+          highlighted: false,
+        },
+        {
+          ...message,
+          id: 3,
+          author: "weblounge",
+          authorship: "own",
+          text: "hello",
+          highlighted: false,
+        },
+      ]}
+      onOpenDirect={openDirect}
+    />
+  ));
+
+  fireEvent.click(
+    screen.getAllByRole("button", {
+      name: "Open direct message with alice",
+    })[0] as HTMLElement,
+  );
+  fireEvent.click(
+    screen.getAllByRole("button", {
+      name: "Open direct message with bob",
+    })[0] as HTMLElement,
+  );
+  expect(openDirect.mock.calls).toEqual([["alice"], ["bob"]]);
+  expect(
+    screen.queryByRole("button", {
+      name: "Open direct message with weblounge",
+    }),
+  ).toBeNull();
+});
+
 it("re-anchors the live edge synchronously with app geometry", () => {
   render(() => <MessageList messages={[message]} />);
   const list = screen.getByRole("list", { name: "Messages" });

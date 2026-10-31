@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
-import type { BufferProjection } from "../../engine/protocol";
+import type {
+  BufferProjection,
+  MessageProjection,
+} from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { installPlatformEnvironment } from "../../platform/environment";
 import { DesktopShell } from "./DesktopShell";
@@ -23,6 +26,22 @@ const otherChannel: BufferProjection = {
   id: 3,
   title: "#other",
   draft_key: "1:#other",
+};
+const nickMessage: MessageProjection = {
+  id: 1,
+  author: "mel",
+  text: "hello mel",
+  kind: "text",
+  bot: false,
+  mode_symbol: null,
+  authorship: "other",
+  nick_color_index: 1,
+  highlighted: false,
+  delivery: "received",
+  local_send_id: null,
+  server_ids: [],
+  server_time_ms: null,
+  received_at_ms: 1,
 };
 const members: MemberWindow = {
   type: "members_changed",
@@ -83,6 +102,57 @@ it("toggles the channel member panel and routes direct messages", () => {
   fireEvent.click(screen.getByRole("button", { name: "Hide members" }));
   expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
   expect(requestMembers).toHaveBeenCalledWith("test-port:desktop:pane-1", 2, 0);
+});
+
+it("routes transcript nicknames through the direct-message action", () => {
+  const openDirect = vi.fn();
+  const result = render(() => (
+    <DesktopShell
+      activeBufferId={2}
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map([[2, [nickMessage]]])}
+      networks={[]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onOpenDirect={openDirect}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  fireEvent.click(
+    screen.getAllByRole("button", {
+      name: "Open direct message with mel",
+    })[0] as HTMLElement,
+  );
+  expect(openDirect).toHaveBeenCalledWith(1, "mel");
+  result.unmount();
+
+  const server = { ...channel, id: 4, kind: "server" as const, title: "Local" };
+  render(() => (
+    <DesktopShell
+      activeBufferId={4}
+      buffers={[server]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map([[4, [nickMessage]]])}
+      networks={[]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onOpenDirect={openDirect}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  expect(
+    screen.queryByRole("button", { name: "Open direct message with mel" }),
+  ).toBeNull();
 });
 
 it("shows the projected member total while the panel is closed", () => {

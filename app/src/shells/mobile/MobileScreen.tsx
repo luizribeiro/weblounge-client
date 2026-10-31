@@ -31,6 +31,9 @@ export interface MobileShellData {
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onOpenMembers?: ((bufferId: number) => void) | undefined;
+  readonly onOpenDirect?:
+    | ((networkId: number, nick: string) => void)
+    | undefined;
   readonly onRequestCompletion: (
     bufferId: number,
     input: string,
@@ -135,6 +138,9 @@ export function MobileScreen(props: MobileScreenProps) {
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}
           onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
+          onOpenDirect={(nick) =>
+            props.onOpenDirect?.(buffer()?.network_id ?? 0, nick)
+          }
           onRequestCompletion={props.onRequestCompletion}
           onRetryNetwork={props.onRetryNetwork}
           onRetry={props.onRetry}

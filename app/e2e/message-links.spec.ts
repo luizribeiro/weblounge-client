@@ -5,7 +5,7 @@ import {
   nativeFeelAudit,
 } from "./native-feel-audit";
 
-test.describe("message links against local Ergo", () => {
+test.describe("message links and nicknames against local Ergo", () => {
   test.skip(
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
@@ -15,6 +15,90 @@ test.describe("message links against local Ergo", () => {
     await installNativeFeelInstrumentation(page);
     await page.setViewportSize({ width: 1200, height: 800 });
     await exerciseLinks(page, "desktop", false, true);
+  });
+
+  test("opens desktop nickname authors and mentions accessibly", async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString().slice(-6);
+    const authorNick = `clicka${suffix}`;
+    const mentionNick = `clickb${suffix}`;
+    const marker = `clickable nick ${suffix}`;
+    const author = await IrcClient.connect(
+      authorNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const mentioned = await IrcClient.connect(
+      mentionNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    try {
+      await mentioned.privmsgConfirmed(
+        "#weblounge-test",
+        `known nick ${suffix}`,
+      );
+      await author.privmsgConfirmed(
+        "#weblounge-test",
+        `${marker} ${mentionNick}`,
+      );
+      await page.setViewportSize({ width: 1200, height: 800 });
+      await page.goto("/?irc-password=weblounge-test");
+
+      const authorRow = page.locator("[data-message-row]").filter({
+        has: page.getByText(marker, { exact: false }),
+      });
+      const authorAction = authorRow.getByRole("button", {
+        name: `Open direct message with ${authorNick}`,
+      });
+      await expect(authorAction).toHaveCSS("cursor", "pointer");
+      await authorAction.click();
+      await expect(
+        page.getByRole("heading", { name: authorNick }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("textbox", { name: `Message ${authorNick}` }),
+      ).toBeFocused();
+
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
+      const mentionAction = authorRow.getByRole("button", {
+        name: `Open direct message with ${mentionNick}`,
+      });
+      await mentionAction.click();
+      await expect(
+        page.getByRole("textbox", { name: `Message ${mentionNick}` }),
+      ).toBeFocused();
+
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
+      await mentionAction.focus();
+      await mentionAction.press("Space");
+      await expect(
+        page.getByRole("heading", { name: mentionNick }),
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
+      const ownMarker = `own nick inert ${suffix}`;
+      const composer = page.getByRole("textbox", {
+        name: "Message #weblounge-test",
+      });
+      await composer.fill(`${ownMarker} weblounge`);
+      await composer.press("Enter");
+      const ownRow = page.locator("[data-message-row]").filter({
+        has: page.getByText(ownMarker, { exact: false }),
+      });
+      await expect(ownRow).toBeVisible();
+      await expect(
+        ownRow.getByRole("button", {
+          name: "Open direct message with weblounge",
+        }),
+      ).toHaveCount(0);
+    } finally {
+      author.close();
+      mentioned.close();
+    }
   });
 
   test.describe("touch-primary rendering", () => {
@@ -28,6 +112,44 @@ test.describe("message links against local Ergo", () => {
       page,
     }) => {
       await exerciseLinks(page, "mobile", true);
+    });
+
+    test("opens a mobile nickname without raising the keyboard", async ({
+      page,
+    }) => {
+      const suffix = Date.now().toString().slice(-6);
+      const nick = `tapnick${suffix}`;
+      const marker = `tap nick ${suffix}`;
+      const bot = await IrcClient.connect(
+        nick,
+        "weblounge-bot",
+        "weblounge-bot-test",
+        "#weblounge-test",
+      );
+      try {
+        await bot.privmsgConfirmed("#weblounge-test", marker);
+        await page.goto("/?irc-password=weblounge-test");
+        await page.getByRole("button", { name: "#weblounge-test" }).tap();
+        const row = page.locator("[data-message-row]").filter({
+          has: page.getByText(marker, { exact: true }),
+        });
+        await row
+          .getByRole("button", {
+            name: `Open direct message with ${nick}`,
+          })
+          .tap();
+
+        await expect(page.getByRole("heading", { name: nick })).toBeVisible();
+        await expect(
+          page.getByRole("textbox", { name: `Message ${nick}` }),
+        ).not.toBeFocused();
+        await expect(page.locator("#root")).toHaveAttribute(
+          "data-keyboard",
+          "closed",
+        );
+      } finally {
+        bot.close();
+      }
     });
   });
 });
