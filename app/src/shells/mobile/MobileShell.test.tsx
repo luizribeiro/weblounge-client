@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import { installPlatformEnvironment } from "../../platform/environment";
@@ -71,6 +72,35 @@ it("opens a deep link above the chats list", () => {
   fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+});
+
+it("opens a deep link when its buffer resolves after mount", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  const [initialBufferId, setInitialBufferId] = createSignal<number>();
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={initialBufferId()}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  setInitialBufferId(2);
+  expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
 });
 
 it("keeps the chat list mounted without reloading history", async () => {

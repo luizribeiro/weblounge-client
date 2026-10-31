@@ -1,4 +1,5 @@
 import type { HostedOAuthConfig } from "../engine/generated/HostedOAuthConfig";
+import { parseBufferRoute } from "../navigation/buffer-route";
 
 const pendingKey = "weblounge.oauth.pending";
 
@@ -11,6 +12,7 @@ export interface OAuthMetadata {
 export interface AuthorizationCode {
   code: string;
   verifier: string;
+  returnPath?: string;
 }
 
 export interface AccessToken {
@@ -80,12 +82,23 @@ export async function discoverOAuthMetadata(
 export async function createAuthorizationUrl(
   metadata: OAuthMetadata,
   config: HostedOAuthConfig,
+  returnPath?: string,
   storage: Storage = sessionStorage,
 ): Promise<string> {
   const state = randomBase64Url(32);
   const verifier = randomBase64Url(32);
   const challenge = await pkceChallenge(verifier);
-  storage.setItem(pendingKey, JSON.stringify({ state, verifier }));
+  const storedReturnPath = validReturnPath(returnPath);
+  storage.setItem(
+    pendingKey,
+    JSON.stringify({
+      state,
+      verifier,
+      ...(storedReturnPath === undefined
+        ? {}
+        : { returnPath: storedReturnPath }),
+    }),
+  );
   const url = new URL(metadata.authorizationEndpoint);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.client_id);
@@ -106,7 +119,7 @@ export function consumeAuthorizationCallback(
   const oauthError = url.searchParams.get("error");
   if (code === null && oauthError === null) return null;
   try {
-    const verifier = consumePending(url.searchParams.get("state"), storage);
+    const pending = consumePending(url.searchParams.get("state"), storage);
     if (oauthError !== null) {
       if (oauthError === "access_denied") {
         throw new HostedAuthorizationError(
@@ -117,7 +130,13 @@ export function consumeAuthorizationCallback(
         "Sign-in could not be completed. Please try again.",
       );
     }
-    return { code: code ?? "", verifier };
+    return {
+      code: code ?? "",
+      verifier: pending.verifier,
+      ...(pending.returnPath === undefined
+        ? {}
+        : { returnPath: pending.returnPath }),
+    };
   } finally {
     replace(clearAuthorizationParameters(url));
   }
@@ -190,6 +209,13 @@ export function clearAuthorizationParameters(url: URL): string {
   return `${cleaned.pathname}${cleaned.search}${cleaned.hash}`;
 }
 
+export function authorizationReturnPath(
+  url: URL,
+  appOrigin: string,
+): string | undefined {
+  return url.origin === appOrigin ? validReturnPath(url.pathname) : undefined;
+}
+
 export function metadataUrl(issuer: string): string {
   const url = new URL(issuer);
   const issuerPath =
@@ -208,7 +234,10 @@ export async function pkceChallenge(verifier: string): Promise<string> {
   return base64Url(new Uint8Array(digest));
 }
 
-function consumePending(state: string | null, storage: Storage): string {
+function consumePending(
+  state: string | null,
+  storage: Storage,
+): { verifier: string; returnPath?: string } {
   const encoded = storage.getItem(pendingKey);
   storage.removeItem(pendingKey);
   if (encoded === null || state === null) {
@@ -233,7 +262,17 @@ function consumePending(state: string | null, storage: Storage): string {
       "The sign-in response did not match this tab. Sign in again.",
     );
   }
-  return pending.verifier;
+  const returnPath = validReturnPath(pending.returnPath);
+  return {
+    verifier: pending.verifier,
+    ...(returnPath === undefined ? {} : { returnPath }),
+  };
+}
+
+function validReturnPath(value: unknown): string | undefined {
+  return typeof value === "string" && parseBufferRoute(value) !== undefined
+    ? value
+    : undefined;
 }
 
 function randomBase64Url(length: number): string {

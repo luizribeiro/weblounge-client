@@ -8,6 +8,7 @@ import { loadDeploymentConfig } from "./hosted/deployment-config";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
 import {
+  authorizationReturnPath,
   consumeAuthorizationCallback,
   createAuthorizationUrl,
   discoverOAuthMetadata,
@@ -64,14 +65,17 @@ function Bootstrap(props: BootstrapProps) {
         return;
       }
       requireCurrentRedirect(config);
-      const authorization = consumeAuthorizationCallback(
-        new URL(window.location.href),
-      );
+      const currentUrl = new URL(window.location.href);
+      const authorization = consumeAuthorizationCallback(currentUrl);
       const metadata = await discoverOAuthMetadata(config.oauth);
       if (authorization === null) {
         setState({ type: "starting", message: "Opening sign in…" });
         window.location.replace(
-          await createAuthorizationUrl(metadata, config.oauth),
+          await createAuthorizationUrl(
+            metadata,
+            config.oauth,
+            authorizationReturnPath(currentUrl, window.location.origin),
+          ),
         );
         return;
       }
@@ -80,6 +84,9 @@ function Bootstrap(props: BootstrapProps) {
         config.oauth,
         authorization,
       );
+      if (authorization.returnPath !== undefined) {
+        history.replaceState(history.state, "", authorization.returnPath);
+      }
       setState({
         type: "hosted",
         config,
@@ -107,7 +114,14 @@ function Bootstrap(props: BootstrapProps) {
     try {
       const metadata = await discoverOAuthMetadata(config.oauth);
       window.location.replace(
-        await createAuthorizationUrl(metadata, config.oauth),
+        await createAuthorizationUrl(
+          metadata,
+          config.oauth,
+          authorizationReturnPath(
+            new URL(window.location.href),
+            window.location.origin,
+          ),
+        ),
       );
     } catch (error: unknown) {
       setState({

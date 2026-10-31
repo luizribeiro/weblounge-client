@@ -86,6 +86,7 @@ export function MobileShell(props: MobileShellProps) {
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
   );
   let handledFocusRequest: { readonly bufferId: number } | undefined;
+  let acceptedInitialBuffer = initialBufferId !== undefined;
   let memberOpenBufferId: number | undefined;
   let memberOpenTarget: "closed" | "open" | undefined;
   let pendingDirect: { networkId: number; nick: string } | undefined;
@@ -96,6 +97,19 @@ export function MobileShell(props: MobileShellProps) {
   let shellElement: HTMLElement | undefined;
   let chatsStable = true;
   let returnScrollTop = 0;
+
+  createEffect(() => {
+    const nextInitialBufferId = props.initialBufferId;
+    if (
+      acceptedInitialBuffer ||
+      nextInitialBufferId === undefined ||
+      window.location.pathname === "/"
+    ) {
+      return;
+    }
+    acceptedInitialBuffer = true;
+    setStack((current) => pushChat(current, nextInitialBufferId, true));
+  });
 
   const open = (
     bufferId: number,

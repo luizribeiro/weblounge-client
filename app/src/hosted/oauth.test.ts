@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostedOAuthConfig } from "../engine/generated/HostedOAuthConfig";
 import {
+  authorizationReturnPath,
   clearAuthorizationParameters,
   consumeAuthorizationCallback,
   createAuthorizationUrl,
@@ -135,6 +136,38 @@ describe("OAuth authorization code with PKCE", () => {
     expect(code?.code).toBe("one-minute-code");
     expect(code?.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it("restores only same-origin buffer routes after authorization", async () => {
+    const returnPath = authorizationReturnPath(
+      new URL("https://beta.weblounge.org/weblounge/ops"),
+      "https://beta.weblounge.org",
+    );
+    const authorization = new URL(
+      await createAuthorizationUrl(metadata, config, returnPath),
+    );
+    const callback = new URL(config.redirect_uri);
+    callback.searchParams.set("code", "one-minute-code");
+    callback.searchParams.set(
+      "state",
+      authorization.searchParams.get("state") ?? "",
+    );
+
+    expect(consumeAuthorizationCallback(callback)?.returnPath).toBe(
+      "/weblounge/ops",
+    );
+    expect(
+      authorizationReturnPath(
+        new URL("https://attacker.example/weblounge/ops"),
+        "https://beta.weblounge.org",
+      ),
+    ).toBeUndefined();
+    expect(
+      authorizationReturnPath(
+        new URL("https://beta.weblounge.org/not/a/buffer/route"),
+        "https://beta.weblounge.org",
+      ),
+    ).toBeUndefined();
   });
 
   it("checks state once and clears a mismatched verifier", async () => {

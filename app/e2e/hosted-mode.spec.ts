@@ -156,6 +156,54 @@ test("returns to sign-in when the hosted token expires", async ({ page }) => {
   expect(authorizationCount).toBe(2);
 });
 
+for (const shell of [
+  {
+    name: "desktop",
+    use: {
+      hasTouch: false,
+      isMobile: false,
+      viewport: { width: 1280, height: 900 },
+    },
+  },
+  {
+    name: "mobile",
+    use: {
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 402, height: 874 },
+    },
+  },
+] as const) {
+  test.describe(`hosted deep links on ${shell.name}`, () => {
+    test.use(shell.use);
+
+    test("survive sign-in and a plain reload", async ({ page }) => {
+      await installFakeEngine(page);
+      await installHostedConfig(page);
+      let authorizationCount = 0;
+      await page.route("http://127.0.0.1:4174/authorize**", async (route) => {
+        authorizationCount += 1;
+        await route.continue();
+      });
+
+      await page.goto("/weblounge/ops");
+
+      await expect(page.getByRole("heading", { name: "#ops" })).toBeVisible();
+      await expect(page).toHaveURL(/\/weblounge\/ops$/u);
+      expect(authorizationCount).toBe(1);
+      await expect
+        .poll(() => page.evaluate(() => sessionStorage.length))
+        .toBe(0);
+
+      await page.reload();
+
+      await expect(page.getByRole("heading", { name: "#ops" })).toBeVisible();
+      await expect(page).toHaveURL(/\/weblounge\/ops$/u);
+      expect(authorizationCount).toBe(2);
+    });
+  });
+}
+
 async function installHostedConfig(page: Page): Promise<() => string> {
   let redirectUri = "";
   await page.route("**/config.json", async (route) => {
@@ -234,7 +282,35 @@ async function installFakeEngine(page: Page, holdConnection = false) {
                 state: "online",
               },
             });
-            this.emit({ type: "buffers_changed", network_id: 1, buffers: [] });
+            this.emit({
+              type: "buffers_changed",
+              network_id: 1,
+              buffers: [
+                {
+                  id: 1,
+                  network_id: 1,
+                  kind: "server",
+                  title: "weblounge",
+                  draft_key: "10:weblounge:rfc1459:weblounge",
+                  topic: null,
+                  unread: 0,
+                  mentions: 0,
+                  read_through: null,
+                },
+                {
+                  id: 2,
+                  network_id: 1,
+                  kind: "channel",
+                  title: "#ops",
+                  draft_key: "10:weblounge:rfc1459:#ops",
+                  topic: null,
+                  member_count: 0,
+                  unread: 0,
+                  mentions: 0,
+                  read_through: null,
+                },
+              ],
+            });
           };
           if (holdHostedConnection) {
             Reflect.set(globalThis, "completeHostedConnection", complete);

@@ -86,7 +86,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
         <MobileShell
           {...sharedProps}
           focusRequest={pendingFocusRequest()}
-          initialBufferId={mobileInitialBufferId()}
+          initialBufferId={mobileInitialBufferId() ?? props.activeBufferId}
           onFocusRequestHandled={(request) =>
             setPendingFocusRequest((current) =>
               current === request ? undefined : current,
