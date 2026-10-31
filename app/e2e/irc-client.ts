@@ -3,6 +3,7 @@ import { createConnection, type Socket } from "node:net";
 
 const host = "127.0.0.1";
 const port = Number(process.env.WEBLOUNGE_E2E_IRC_PORT ?? 6667);
+const ircTimeoutMilliseconds = 5_000;
 
 export class IrcClient {
   readonly #socket: Socket;
@@ -28,8 +29,7 @@ export class IrcClient {
     password: string,
     channel: string,
   ): Promise<IrcClient> {
-    const socket = createConnection({ host, port });
-    await once(socket, "connect");
+    const socket = await connectedSocket();
     const client = new IrcClient(socket, nickname);
     client.send("CAP LS 302");
     client.send(`NICK ${nickname}`);
@@ -141,14 +141,34 @@ export class IrcClient {
   }
 
   private async waitFor(predicate: (line: string) => boolean): Promise<string> {
-    const signal = AbortSignal.timeout(5_000);
-    while (!signal.aborted) {
-      const index = this.#lines.findIndex(predicate);
-      if (index !== -1) return this.#lines.splice(index, 1)[0] ?? "";
-      await once(this.#socket, "data", { signal });
+    const signal = AbortSignal.timeout(ircTimeoutMilliseconds);
+    try {
+      for (;;) {
+        const index = this.#lines.findIndex(predicate);
+        if (index !== -1) return this.#lines.splice(index, 1)[0] ?? "";
+        await once(this.#socket, "data", { signal });
+      }
+    } catch (error) {
+      if (!signal.aborted) throw error;
+      throw new Error(
+        `IRC response timed out; received ${this.#lines.join(" | ")}`,
+        { cause: error },
+      );
     }
-    throw new Error(
-      `IRC response timed out; received ${this.#lines.join(" | ")}`,
-    );
+  }
+}
+
+async function connectedSocket(): Promise<Socket> {
+  const socket = createConnection({ host, port });
+  const signal = AbortSignal.timeout(ircTimeoutMilliseconds);
+  try {
+    await once(socket, "connect", { signal });
+    return socket;
+  } catch (error) {
+    socket.destroy();
+    if (!signal.aborted) throw error;
+    throw new Error(`IRC connection to ${host}:${port} timed out`, {
+      cause: error,
+    });
   }
 }
