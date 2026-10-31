@@ -315,7 +315,9 @@ async function scrollDesktopBetweenEdges(
 ): Promise<number> {
   const range = await messageListScrollRange(list);
   await list.hover();
+  const scrollEnded = await armScrollEndAwayFrom(list);
   await page.mouse.wheel(0, -range / 2);
+  await scrollEnded();
   await expect
     .poll(() =>
       list.evaluate((element) =>
@@ -327,6 +329,32 @@ async function scrollDesktopBetweenEdges(
     )
     .toBeGreaterThan(minimumMargin);
   return list.evaluate((element) => element.scrollTop);
+}
+
+const scrollEndKey = "__resilienceScrollEnd";
+
+// WebKit animates a wheel scroll, so an anchor read before scrollend would
+// record a position the list is still travelling away from.
+async function armScrollEndAwayFrom(
+  list: Locator,
+): Promise<() => Promise<void>> {
+  await list.evaluate((element, key) => {
+    const armedAt = element.scrollTop;
+    Reflect.set(
+      element,
+      key,
+      new Promise<void>((resolve) => {
+        const settle = () => {
+          if (element.scrollTop === armedAt) return;
+          element.removeEventListener("scrollend", settle);
+          resolve();
+        };
+        element.addEventListener("scrollend", settle);
+      }),
+    );
+  }, scrollEndKey);
+  return () =>
+    list.evaluate((element, key) => Reflect.get(element, key), scrollEndKey);
 }
 
 async function scrollAnchorOffset(
