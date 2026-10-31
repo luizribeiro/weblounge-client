@@ -33,11 +33,13 @@ test.describe("mobile shell against local Ergo", () => {
     await expect(page.getByRole("option", { name: /\/debug/u })).toBeVisible();
     await composer.fill("/debug viewport");
     await composer.press("Enter");
-    await expect(page.locator("[data-viewport-debug]")).toBeVisible();
+    const debugOverlay = page.locator("[data-debug-overlay]");
+    await expect(debugOverlay).toBeVisible();
+    await expect(debugOverlay).toContainText("[viewport]");
 
     await composer.fill("/debug off");
     await composer.press("Enter");
-    await expect(page.locator("[data-viewport-debug]")).toHaveCount(0);
+    await expect(debugOverlay).toHaveCount(0);
   });
 
   test("confirms typed quit before mobile execution", async ({ page }) => {
