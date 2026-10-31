@@ -59,6 +59,7 @@ for (const shell of shells) {
         .poll(async () => {
           await list.evaluate((element) => {
             element.scrollTop = 0;
+            element.dispatchEvent(new Event("scroll"));
           });
           return renderedRowText(list, "first");
         })
