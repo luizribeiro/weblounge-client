@@ -1501,7 +1501,7 @@ fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
 }
 
 pub(crate) fn is_own_nick(state: &papo::State, nick: &str) -> bool {
-    state.casemapping().fold(nick) == state.casemapping().fold(state.nick().as_ref())
+    state.nick() == nick
 }
 
 fn compare_buffers(
