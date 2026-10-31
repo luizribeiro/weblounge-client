@@ -74,6 +74,9 @@ export function MessageList(props: MessageListProps) {
   let liveEdgeSentinel: HTMLDivElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
+  let userScrollIntent = false;
+  let userScrollSequence = false;
+  let followEndQueued = false;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
@@ -109,6 +112,15 @@ export function MessageList(props: MessageListProps) {
     setAtLiveEdge(live);
     if (live) setUnseen(0);
     props.onLiveEdgeChange?.(live);
+  };
+  const markUserScrollIntent = (continuesThroughScrollEnd: boolean) => {
+    userScrollIntent = true;
+    userScrollSequence = continuesThroughScrollEnd;
+  };
+  const markPointerScrollIntent = () => markUserScrollIntent(true);
+  const markWheelScrollIntent = () => markUserScrollIntent(false);
+  const markScrollKeyIntent = (event: KeyboardEvent) => {
+    if (scrollKeys.has(event.key)) markUserScrollIntent(true);
   };
   const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
     get count() {
@@ -161,15 +173,22 @@ export function MessageList(props: MessageListProps) {
     anchorTo: "end",
     followOnAppend: true,
     scrollEndThreshold: liveEdgeTolerance,
-    // The sentinel can report before the virtualizer has seen the scroll that
-    // reached the end, and stays visible afterwards, so arrival at the end is
-    // also taken from the virtualizer. Leaving stays sentinel-driven so a
-    // transient gap during an append cannot freeze the read boundary.
+    // The sentinel can report before the virtualizer has seen a scroll that
+    // reached the end. Arrival can therefore come from either source, while
+    // only user input can leave the edge; layout gaps must not freeze it.
     onChange: (instance) => {
       if (!atLiveEdge() && instance.isAtEnd()) setLiveEdge(true);
     },
     overscan: 6,
   });
+  const scheduleFollowEnd = () => {
+    if (followEndQueued || !atLiveEdge()) return;
+    followEndQueued = true;
+    queueMicrotask(() => {
+      followEndQueued = false;
+      if (list?.isConnected === true && atLiveEdge()) virtualizer.scrollToEnd();
+    });
+  };
   const remeasure = () => {
     if (list?.isConnected !== true) return;
     virtualizer.measure();
@@ -183,11 +202,18 @@ export function MessageList(props: MessageListProps) {
     const measured = measureElement(element, undefined, virtualizer);
     if (measured > 0) virtualizer.resizeItem(index, measured);
     virtualizer.measureElement(element);
+    scheduleFollowEnd();
   };
-  const reportLiveEdge = (sentinelVisible: boolean) =>
-    setLiveEdge(sentinelVisible && virtualizer.isAtEnd());
+  const reportLiveEdge = (sentinelVisible: boolean) => {
+    if (sentinelVisible && virtualizer.isAtEnd()) {
+      setLiveEdge(true);
+      return;
+    }
+    scheduleFollowEnd();
+  };
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
+    setLiveEdge(true);
     virtualizer.scrollToEnd();
   };
   const selectLastOwn = () => {
@@ -212,6 +238,8 @@ export function MessageList(props: MessageListProps) {
       boundaryFrozen = false;
       renderedCount = 0;
       setUnseen(0);
+      setLiveEdge(true);
+      scheduleFollowEnd();
     }
   });
   createEffect(() => {
@@ -233,6 +261,7 @@ export function MessageList(props: MessageListProps) {
     if (messages.length > previousCount && !atLiveEdge())
       setUnseen((count) => count + messages.length - previousCount);
     renderedCount = messages.length;
+    scheduleFollowEnd();
   });
   onMount(() => {
     const fonts = document.fonts;
@@ -259,6 +288,9 @@ export function MessageList(props: MessageListProps) {
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
+      list?.removeEventListener("keydown", markScrollKeyIntent);
+      list?.removeEventListener("pointermove", markPointerScrollIntent);
+      list?.removeEventListener("wheel", markWheelScrollIntent);
     });
     queueMicrotask(jumpToBottom);
   });
@@ -270,6 +302,19 @@ export function MessageList(props: MessageListProps) {
         class={styles.list}
         data-message-list="true"
         data-presentation={props.presentation ?? "desktop"}
+        onScroll={(event) => {
+          if (!userScrollIntent && event.isTrusted) return;
+          const element = event.currentTarget;
+          setLiveEdge(
+            element.scrollHeight - element.scrollTop - element.clientHeight <=
+              liveEdgeTolerance,
+          );
+          if (!userScrollSequence) userScrollIntent = false;
+        }}
+        onScrollEnd={() => {
+          userScrollIntent = false;
+          userScrollSequence = false;
+        }}
         onKeyDown={(event) => {
           if (event.key !== "End") return;
           event.preventDefault();
@@ -277,6 +322,13 @@ export function MessageList(props: MessageListProps) {
         }}
         ref={(element) => {
           list = element;
+          element.addEventListener("keydown", markScrollKeyIntent);
+          element.addEventListener("pointermove", markPointerScrollIntent, {
+            passive: true,
+          });
+          element.addEventListener("wheel", markWheelScrollIntent, {
+            passive: true,
+          });
         }}
         style={{ "--wl-message-time-column": formattedTimeColumnWidth() }}
         tabindex="0"
@@ -341,6 +393,15 @@ export function MessageList(props: MessageListProps) {
     </div>
   );
 }
+
+const scrollKeys = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+]);
 
 function TimelineRowView(props: {
   readonly index: number;
