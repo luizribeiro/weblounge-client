@@ -41,6 +41,9 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).toContain("--wl-motion-drawer-open:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-drawer-curve:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-push-curve:0ms");
+    expect(themeStyleSheet()).toContain(
+      "--wl-motion-settle-curve:cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+    );
   });
 });
 

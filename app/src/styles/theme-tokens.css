@@ -7,6 +7,7 @@
   --wl-motion-push-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
   --wl-motion-push-in: 280ms;
   --wl-motion-push-out: 230ms;
+  --wl-motion-settle-curve: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --wl-motion-suggestions: 120ms;
   --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
