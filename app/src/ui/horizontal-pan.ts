@@ -1,5 +1,5 @@
 export interface PanRelease {
-  readonly velocity: number;
+  readonly progressPerMs: number;
 }
 
 export interface HorizontalPanOptions {
@@ -61,7 +61,7 @@ export function createHorizontalPan(
   const abandon = (current: PanState) => {
     release(current);
     state = undefined;
-    options.onCancel({ velocity: 0 });
+    options.onCancel({ progressPerMs: 0 });
   };
   const recentSamples = (current: PanState, event: PointerEvent) =>
     [...current.samples, { time: event.timeStamp, x: event.clientX }].filter(
@@ -126,7 +126,9 @@ export function createHorizontalPan(
       const distance = signedDistance(event, current);
       const velocity =
         distance / Math.max(1, event.timeStamp - current.startedAt);
-      const settle = { velocity: releaseVelocity(current, event) };
+      const settle = {
+        progressPerMs: releaseVelocity(current, event) / current.width,
+      };
       release(current);
       state = undefined;
       if (
