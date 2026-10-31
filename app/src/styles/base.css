@@ -1,4 +1,6 @@
 :root {
+  --wl-space-list-gap: 6px;
+  --wl-space-list-inset: 8px;
   --wl-size-suggestions-max-width: 420px;
   --wl-size-touch-target: 44px;
   --wl-font-touch-editable-min: 16px;

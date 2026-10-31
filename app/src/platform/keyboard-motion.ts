@@ -100,6 +100,7 @@ export class KeyboardMotionController {
       !this.#reducedMotion();
     this.#cancelPendingClose();
     this.#cancelAnimation();
+    if (surface !== null) surface.getBoundingClientRect();
     if (animate) surface.dataset.keyboardMotionActive = "true";
     commit();
     if (!animate || surface === null) return;

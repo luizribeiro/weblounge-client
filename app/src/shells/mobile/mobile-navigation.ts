@@ -83,9 +83,9 @@ export function previousScreen(state: MobileStack): MobileScreen {
 }
 
 export function swipeBackCompletes(
-  distance: number,
+  claimDistance: number,
   width: number,
-  velocity: number,
+  releaseVelocity: number,
 ): boolean {
-  return panCommits(distance, width, velocity, 0.5, 0.5);
+  return panCommits(claimDistance, width, releaseVelocity, 0.5, 0.25);
 }

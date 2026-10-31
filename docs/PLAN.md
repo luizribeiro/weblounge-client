@@ -134,7 +134,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep the tapped composer outside WebKit's delayed reveal until measured keyboard geometry,
     cache open heights per orientation, and own open/close motion with platform-matched transform
     curves on the transcript/composer surface. `/debug keyboard` records a copyable frame trace;
-    WebKit coverage proves monotonic motion, a fixed root, and an adjacent live-edge transcript
+    WebKit coverage proves monotonic motion through late geometry retargets by clearing canceled
+    compositor transforms, a fixed root, and an adjacent live-edge transcript
     (#69 follow-up, awaiting on-device motion confirmation).
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
@@ -175,17 +176,19 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Drive transcript scroll-away journeys with user-owned wheel input so live-edge coverage
     follows the same intent boundary as the app.
   - [x] Keep iOS swipe-back claimed through diagonal finger drift with the shared non-passive
-    touch policy; use release velocity and a claim-relative origin, allow full-screen starts and
-    mid-return retries, and expose gesture decisions through `/debug gestures` (#71, awaiting
-    Luiz's on-device confirmation).
+    touch policy; use a 0.25px/ms release threshold and a claim-relative origin, allow full-screen
+    starts and mid-return retries, and expose gesture decisions through `/debug gestures` (#71,
+    awaiting Luiz's on-device confirmation).
   - [x] Align desktop channel sigils and member mode prefixes in content-sized columns, with bare
-    names sharing one left edge and normal in-word spacing (#68).
+    names sharing one left edge and normal in-word, theme-independent spacing (#68).
   - [x] Keep resilience scroll-preservation journeys between both transcript edges with one
     user-owned wheel input, and assert the visual row anchor across reconnects.
   - [x] Open direct messages from transcript authors and known nick mentions without making the
     own nick or server-buffer text interactive. Desktop mouse and keyboard activation restores
     composer focus; mobile taps preserve the closed keyboard and nickname-originated swipes keep
     Back gesture ownership.
+    user-owned wheel input, and preserve the visual row anchor across reconnects and late
+    font-driven virtualizer remeasurement.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
