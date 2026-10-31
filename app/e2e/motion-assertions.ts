@@ -69,7 +69,7 @@ export function expectStepsFollowCurve(
 }
 
 export function durationMs(duration: string): number {
-  const match = /^(\d+(?:\.\d+)?)(ms|s)$/.exec(duration.trim());
+  const match = /^(\d*\.?\d+)(ms|s)$/.exec(duration.trim());
   if (match === null) throw new Error(`unexpected duration: ${duration}`);
   const value = Number(match[1]);
   return match[2] === "s" ? value * 1_000 : value;
