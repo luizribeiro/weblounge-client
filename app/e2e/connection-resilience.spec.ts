@@ -38,11 +38,12 @@ test.describe("connection resilience against local Ergo", () => {
       await expect
         .poll(() => messageListScrollRange(list))
         .toBeGreaterThan(scrollDistance * 3);
-      const scrollTop = await scrollAwayFromLiveEdge(page, list, {
-        distance: scrollDistance,
-        input: mobile ? "touch" : "wheel",
-        wheelDelta: scrollDistance * 2,
-      });
+      const scrollTop = mobile
+        ? await scrollAwayFromLiveEdge(page, list, {
+            distance: scrollDistance,
+            input: "touch",
+          })
+        : await scrollDesktopBetweenEdges(page, list, scrollDistance);
       expect(scrollTop).toBeGreaterThan(0);
       const scrollAnchor = await visibleScrollAnchor(list);
       const draft = `draft survives ${Date.now()}`;
@@ -90,12 +91,8 @@ test.describe("connection resilience against local Ergo", () => {
         page.getByText(scrollAnchor.text, { exact: true }),
       ).toBeInViewport();
       await expect
-        .poll(async () =>
-          Math.abs(
-            (await list.evaluate((element) => element.scrollTop)) - scrollTop,
-          ),
-        )
-        .toBeLessThanOrEqual(40);
+        .poll(() => scrollAnchorOffset(list, scrollAnchor.text))
+        .toBeCloseTo(scrollAnchor.offset, 0);
 
       bot.close();
       bot = await connectBot("resumed");
@@ -305,9 +302,45 @@ async function visibleScrollAnchor(list: ReturnType<Page["locator"]>) {
     ].find((candidate) => candidate.getBoundingClientRect().bottom > listTop);
     if (row === undefined) throw new Error("visible message anchor missing");
     return {
+      offset: row.getBoundingClientRect().top - listTop,
       text: row.dataset.messageText ?? "",
     };
   });
+}
+
+async function scrollDesktopBetweenEdges(
+  page: Page,
+  list: Locator,
+  minimumMargin: number,
+): Promise<number> {
+  const range = await messageListScrollRange(list);
+  await list.hover();
+  await page.mouse.wheel(0, -range / 2);
+  await expect
+    .poll(() =>
+      list.evaluate((element) =>
+        Math.min(
+          element.scrollTop,
+          element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      ),
+    )
+    .toBeGreaterThan(minimumMargin);
+  return list.evaluate((element) => element.scrollTop);
+}
+
+async function scrollAnchorOffset(
+  list: Locator,
+  text: string,
+): Promise<number | null> {
+  return list.evaluate((element, anchorText) => {
+    const row = [
+      ...element.querySelectorAll<HTMLElement>("[data-message-row]"),
+    ].find((candidate) => candidate.dataset.messageText === anchorText);
+    return row === undefined
+      ? null
+      : row.getBoundingClientRect().top - element.getBoundingClientRect().top;
+  }, text);
 }
 
 async function messageListScrollRange(list: Locator): Promise<number> {
