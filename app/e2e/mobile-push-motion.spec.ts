@@ -50,7 +50,9 @@ test("tap Back slides the chat off a still chats list", async ({ page }) => {
   );
   expectPushTransition(moving, "popDuration", "popCurve");
   expectShadowWhileMoving(moving);
-  expect(moving.at(-1)?.chatLeft).toBeGreaterThanOrEqual(viewport(page) - 1.5);
+  expect(frames.at(-1)?.transformEndLeft).toBeGreaterThanOrEqual(
+    viewport(page) - 1.5,
+  );
   expect(frames.at(-1)?.chatLeft).toBeNull();
 });
 
@@ -241,7 +243,7 @@ function expectSettlesFromFinger(
     restingLeft,
     transitionFrame.transition,
   );
-  const final = moving.at(-1)?.chatLeft ?? Number.NaN;
+  const final = settle.frames.at(-1)?.transformEndLeft ?? Number.NaN;
   expect(Math.abs(final - restingLeft)).toBeLessThan(1.5);
   expectShadowWhileMoving(moving);
 }
@@ -266,6 +268,7 @@ interface Frame {
   readonly shadow: string | null;
   readonly shadowOpacity: number;
   readonly time: number;
+  readonly transformEndLeft: number | null;
   readonly tokens: {
     readonly pushCurve: string;
     readonly pushInDuration: string;
@@ -295,11 +298,29 @@ async function recordMotion(
   act: () => Promise<void>,
 ): Promise<readonly Frame[]> {
   await page.evaluate(() => {
-    const recording = { done: false, frames: [] as Frame[] };
+    const recording = {
+      done: false,
+      frames: [] as Frame[],
+      transformEndLeft: null as number | null,
+    };
     (
       window as Window & { motionRecording?: typeof recording }
     ).motionRecording = recording;
     let seenMotion = false;
+    const captureTransformEnd = (event: TransitionEvent) => {
+      const chat =
+        document.querySelector<HTMLElement>(
+          "[data-mobile-chat]",
+        )?.parentElement;
+      if (
+        chat !== null &&
+        chat !== undefined &&
+        event.target === chat &&
+        event.propertyName === "transform"
+      )
+        recording.transformEndLeft = chat.getBoundingClientRect().left;
+    };
+    document.addEventListener("transitionend", captureTransformEnd, true);
     const sample = () => {
       const chat =
         document.querySelector<HTMLElement>(
@@ -344,6 +365,7 @@ async function recordMotion(
         shadow: shadow?.content === "none" ? null : (shadow?.boxShadow ?? null),
         shadowOpacity: Number(shadow?.opacity ?? 0),
         time: performance.now(),
+        transformEndLeft: recording.transformEndLeft,
         tokens: {
           pushCurve: rootStyle
             .getPropertyValue("--wl-motion-push-curve")
@@ -364,8 +386,14 @@ async function recordMotion(
       const settled =
         document.querySelector("[data-motion]") === null &&
         (seenMotion || recording.frames.length >= 20);
-      if (settled) recording.done = true;
-      else requestAnimationFrame(sample);
+      if (settled) {
+        recording.done = true;
+        document.removeEventListener(
+          "transitionend",
+          captureTransformEnd,
+          true,
+        );
+      } else requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
   });

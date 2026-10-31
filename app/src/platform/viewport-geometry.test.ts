@@ -161,6 +161,18 @@ describe("viewport geometry observer", () => {
     expect(root.dataset.keyboard).toBe("open");
   });
 
+  it("never treats a nested scroller as a document pan", () => {
+    const { viewport } = observe();
+    const scrollTo = vi.spyOn(window, "scrollTo");
+    const scroller = document.createElement("div");
+    document.body.append(scroller);
+    viewport.offsetTop = 336;
+
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
   it("does nothing without a visual viewport", () => {
     const root = document.createElement("div");
     const stop = observeViewportGeometry(root, fakeWindow(null));

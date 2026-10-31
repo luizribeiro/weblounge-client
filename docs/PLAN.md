@@ -85,7 +85,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     casemapping; and historical rows never inherit an actor's current channel prefix.
   - [x] Size desktop timestamp columns from the active locale; never ellipsize times.
   - [x] Reset mobile back-swipe motion on cancellation, browser history, visibility, and interrupted transitions.
-  - [x] Keep the mobile chat list mounted across back navigation without recreating rows on retained buffer updates or requesting history.
+  - [x] Keep the mobile chat list mounted across back navigation without recreating rows on retained
+    buffer updates or requesting history. Scroll restoration follows user input, ignores focus and
+    visibility adjustments, and iOS document-pan correction never handles inner scrollers.
   - [x] Resubscribe desktop member windows when the active channel changes.
   - [x] Keep every touch text field at 16px or larger so focusing never zooms the page.
   - [x] Disable shell-level pinch and double-tap zoom while preserving root text scaling.
@@ -133,8 +135,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep the chats list still while a pushed chat slides over it on push, pop, and swipe-back;
     a released swipe continues from the finger to closed or back open with velocity-sized timing
     (#59, awaiting Luiz's on-device check). Motion coverage verifies the computed token
-    configuration, monotonic intermediate movement, and elapsed-time curve bounds without assuming
-    a runner frame rate.
+    configuration, monotonic intermediate movement, transition-end positions, and elapsed-time
+    curve bounds without assuming a runner frame rate.
   - [x] Give tap-Back and released swipe-back one 280ms pop speed and curve. Swipe settlement scales
     by remaining distance, with release velocity allowed only to shorten it (#61, awaiting Luiz's
     on-device check).

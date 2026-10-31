@@ -13,7 +13,9 @@ interface MobileChatRowProps {
   readonly networkLabel?: string | undefined;
   readonly previews: boolean;
   readonly onOpen: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
-  readonly onPressStart: JSX.EventHandler<HTMLButtonElement, PointerEvent>;
+  readonly onPressStart?:
+    | JSX.EventHandler<HTMLButtonElement, PointerEvent>
+    | undefined;
 }
 
 export function MobileChatRow(props: MobileChatRowProps) {

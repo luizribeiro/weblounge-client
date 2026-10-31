@@ -48,12 +48,26 @@ export function MobileChatList(props: MobileChatListProps) {
   let list: HTMLDivElement | undefined;
   let restoringScroll = false;
   let userScrollIntent = false;
+  let userScrollSequence = false;
   let scrollTopBeforeOpen = 0;
-  const markUserScrollIntent = () => {
-    userScrollIntent = true;
+  let restoreFrame: number | undefined;
+  let releaseFrame: number | undefined;
+  const cancelScrollRestore = () => {
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame);
+    if (releaseFrame !== undefined) cancelAnimationFrame(releaseFrame);
+    restoreFrame = undefined;
+    releaseFrame = undefined;
+    restoringScroll = false;
   };
+  const markUserScrollIntent = (continuesThroughScrollEnd: boolean) => {
+    cancelScrollRestore();
+    userScrollIntent = true;
+    userScrollSequence = continuesThroughScrollEnd;
+  };
+  const markPointerScrollIntent = () => markUserScrollIntent(true);
+  const markWheelScrollIntent = () => markUserScrollIntent(false);
   const markScrollKeyIntent = (event: KeyboardEvent) => {
-    if (scrollKeys.has(event.key)) userScrollIntent = true;
+    if (scrollKeys.has(event.key)) markUserScrollIntent(false);
   };
   const chats = createMemo(() =>
     filterChats(props.buffers, props.filter, props.query),
@@ -71,26 +85,27 @@ export function MobileChatList(props: MobileChatListProps) {
     props.restoreVersion();
     const scrollTop = props.restoreScroll();
     if (list === undefined) return;
+    cancelScrollRestore();
     userScrollIntent = false;
+    userScrollSequence = false;
+    scrollTopBeforeOpen = scrollTop;
     const element = list;
     restoringScroll = true;
     element.scrollTop = scrollTop;
-    let releaseFrame: number | undefined;
-    const restoreFrame = requestAnimationFrame(() => {
+    restoreFrame = requestAnimationFrame(() => {
+      restoreFrame = undefined;
       element.scrollTop = scrollTop;
       releaseFrame = requestAnimationFrame(() => {
+        releaseFrame = undefined;
         restoringScroll = false;
       });
     });
-    onCleanup(() => {
-      cancelAnimationFrame(restoreFrame);
-      if (releaseFrame !== undefined) cancelAnimationFrame(releaseFrame);
-    });
   });
   onCleanup(() => {
+    cancelScrollRestore();
     list?.removeEventListener("keydown", markScrollKeyIntent);
-    list?.removeEventListener("pointermove", markUserScrollIntent);
-    list?.removeEventListener("wheel", markUserScrollIntent);
+    list?.removeEventListener("pointermove", markPointerScrollIntent);
+    list?.removeEventListener("wheel", markWheelScrollIntent);
   });
   return (
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
@@ -157,16 +172,27 @@ export function MobileChatList(props: MobileChatListProps) {
         class={styles.list}
         data-mobile-chat-list="true"
         onScroll={(event) => {
-          if (!restoringScroll && userScrollIntent)
+          if (!restoringScroll && userScrollIntent) {
+            userScrollIntent = false;
+            scrollTopBeforeOpen = event.currentTarget.scrollTop;
             props.onScroll(event.currentTarget.scrollTop);
+          }
+        }}
+        onScrollEnd={(event) => {
+          if (!restoringScroll && userScrollSequence) {
+            userScrollIntent = false;
+            userScrollSequence = false;
+            scrollTopBeforeOpen = event.currentTarget.scrollTop;
+            props.onScroll(event.currentTarget.scrollTop);
+          }
         }}
         ref={(element) => {
           list = element;
           element.addEventListener("keydown", markScrollKeyIntent);
-          element.addEventListener("pointermove", markUserScrollIntent, {
+          element.addEventListener("pointermove", markPointerScrollIntent, {
             passive: true,
           });
-          element.addEventListener("wheel", markUserScrollIntent, {
+          element.addEventListener("wheel", markWheelScrollIntent, {
             passive: true,
           });
         }}
@@ -186,10 +212,8 @@ export function MobileChatList(props: MobileChatListProps) {
                     )}
                     onOpen={() => {
                       userScrollIntent = false;
+                      userScrollSequence = false;
                       props.onOpen(current().id, scrollTopBeforeOpen);
-                    }}
-                    onPressStart={() => {
-                      scrollTopBeforeOpen = list?.scrollTop ?? 0;
                     }}
                   />
                 )}
