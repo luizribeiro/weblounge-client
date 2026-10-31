@@ -20,11 +20,74 @@ test.beforeEach(async ({ browserName, page }) => {
 
 test("mobile back gestures cancel and complete aligned", async ({ page }) => {
   await openChat(page);
-  await drag(page, 1, 90, "pointercancel");
+  await drag(page, 1, 10, "pointercancel");
   await expect(page.locator("[data-motion]")).toHaveCount(0);
   await expectAligned(page);
 
   await drag(page, 2, 360, "pointerup");
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
+});
+
+test("mobile back gesture survives diagonal drift after locking", async ({
+  page,
+}) => {
+  await openChat(page);
+  const prevented = await pointerAndTouchSequence(
+    page,
+    [
+      [100, 300, 1_000],
+      [115, 302, 1_010],
+      [175, 382, 1_050],
+      [260, 382, 1_100],
+    ],
+    "pointercancel",
+  );
+
+  expect(prevented).toEqual([true, true, true]);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
+});
+
+test("mobile back uses release velocity and direction", async ({ page }) => {
+  await openChat(page);
+  await pointerSequence(page, [
+    [200, 300, 1_000],
+    [215, 300, 1_010],
+    [260, 300, 1_500],
+    [330, 300, 1_550],
+  ]);
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
+
+  await openChat(page);
+  await pointerSequence(page, [
+    [50, 300, 2_000],
+    [65, 300, 2_010],
+    [300, 300, 2_500],
+    [250, 300, 2_550],
+  ]);
+  await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
+});
+
+test("mobile back starts anywhere and can grab a returning screen", async ({
+  page,
+}) => {
+  await openChat(page);
+  await pointerSequence(page, [
+    [180, 300, 1_000],
+    [195, 300, 1_010],
+    [280, 300, 1_400],
+  ]);
+  await expect(page.locator('[data-motion="returning"]')).toHaveCount(1);
+
+  await pointerSequence(page, [
+    [280, 300, 1_500],
+    [295, 300, 1_510],
+    [390, 300, 1_550],
+  ]);
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expectAligned(page);
 });
@@ -34,6 +97,30 @@ test("mobile back gesture velocity completes aligned", async ({ page }) => {
   await drag(page, 3, 80, "pointerup");
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
   await expectAligned(page);
+});
+
+test("gesture diagnostics show and remember pan decisions", async ({
+  page,
+}) => {
+  await page.goto("/?irc-password=weblounge-test&debug=gestures");
+  await openChat(page);
+  await pointerSequence(page, [
+    [160, 300, 1_000],
+    [175, 300, 1_010],
+    [240, 300, 1_500],
+  ]);
+
+  const overlay = page.locator("[data-debug-overlay]");
+  await expect(overlay).toContainText("[gestures]");
+  await expect(overlay).toContainText("data-keyboard: closed");
+  await expect(overlay).toContainText("160,300 swipe-back");
+  await expect(overlay).toContainText("horizontal@15,0");
+  await expect(overlay).toContainText("up-cancel");
+
+  await page.goto("/?irc-password=weblounge-test");
+  await expect(overlay).toBeAttached();
+  await page.goto("/?irc-password=weblounge-test&debug=off");
+  await expect(overlay).toHaveCount(0);
 });
 
 test("mobile Back button animates the chat over the visible list", async ({
@@ -124,7 +211,7 @@ test("mobile back swipe stays owned over selectable transcript content", async (
       const bounds = list.getBoundingClientRect();
       return bounds.top + 4;
     });
-    await panOverTranscript(page, listY, 220, 600);
+    await panOverTranscript(page, listY, 240, 600);
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
     await expectAligned(page);
 
@@ -137,11 +224,57 @@ test("mobile back swipe stays owned over selectable transcript content", async (
   }
 });
 
+test("mobile transcript leaves vertical touchmove available to native scrolling", async ({
+  page,
+}) => {
+  await openChat(page);
+  const prevented = await page
+    .locator("[data-message-list]")
+    .evaluate((list) => {
+      const bounds = list.getBoundingClientRect();
+      const target = document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      );
+      if (target === null)
+        throw new Error("transcript touch target is missing");
+      const dispatch = (type: string, y: number) => {
+        const touch = {
+          clientX: bounds.left + bounds.width / 2,
+          clientY: y,
+          identifier: 81,
+          target,
+        };
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        const active = type === "touchend" ? [] : [touch];
+        Object.defineProperties(event, {
+          changedTouches: { value: [touch] },
+          targetTouches: { value: active },
+          touches: { value: active },
+        });
+        return !target.dispatchEvent(event);
+      };
+      dispatch("touchstart", bounds.top + bounds.height / 2);
+      const movePrevented = dispatch("touchmove", bounds.top + 40);
+      dispatch("touchend", bounds.top + 40);
+      return movePrevented;
+    });
+
+  expect(prevented).toBe(false);
+  await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+});
+
 test("mobile history interrupts a gesture aligned", async ({ page }) => {
   await openChat(page);
   const shell = page.locator("[data-mobile-shell]");
   await shell.dispatchEvent("pointerdown", {
     clientX: 5,
+    clientY: 300,
+    isPrimary: true,
+    pointerId: 5,
+  });
+  await shell.dispatchEvent("pointermove", {
+    clientX: 20,
     clientY: 300,
     pointerId: 5,
   });
@@ -179,8 +312,16 @@ async function drag(
   await shell.dispatchEvent("pointerdown", {
     clientX: 5,
     clientY: 300,
+    isPrimary: true,
     pointerId,
   });
+  if (endX > 20)
+    await shell.dispatchEvent("pointermove", {
+      clientX: 20,
+      clientY: 300,
+      isPrimary: true,
+      pointerId,
+    });
   await shell.dispatchEvent("pointermove", {
     clientX: endX,
     clientY: 300,
@@ -209,6 +350,7 @@ async function panOverTranscript(
           cancelable: true,
           clientX,
           clientY,
+          isPrimary: true,
           pointerId: 41,
           pointerType: "touch",
         });
@@ -216,10 +358,79 @@ async function panOverTranscript(
         target.dispatchEvent(event);
       };
       dispatch("pointerdown", 5, 1_000);
-      dispatch("pointermove", endX, 1_000 + duration / 2);
+      dispatch("pointermove", 20, 1_000 + duration / 3);
+      dispatch("pointermove", endX, 1_000 + (2 * duration) / 3);
       dispatch("pointerup", endX, 1_000 + duration);
     },
     { clientY, duration, endX },
+  );
+}
+
+type GesturePoint = readonly [x: number, y: number, time: number];
+
+async function pointerSequence(
+  page: Page,
+  points: readonly GesturePoint[],
+): Promise<void> {
+  await pointerAndTouchSequence(page, points, "pointerup", false);
+}
+
+async function pointerAndTouchSequence(
+  page: Page,
+  points: readonly GesturePoint[],
+  end: "pointerup" | "pointercancel",
+  includeTouch = true,
+): Promise<readonly boolean[]> {
+  // Synthetic events prove our cancellability policy and pointer state machine,
+  // but Playwright cannot reproduce iOS's native scroll recognizer arbitration.
+  return page.evaluate(
+    ({ end, includeTouch, points }) => {
+      const first = points[0];
+      if (first === undefined) throw new Error("gesture needs a start point");
+      const target = document.elementFromPoint(first[0], first[1]);
+      if (target === null) throw new Error("gesture start target is missing");
+      const pointer = (type: string, point: GesturePoint) => {
+        const event = new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: point[0],
+          clientY: point[1],
+          isPrimary: true,
+          pointerId: 71,
+          pointerType: "touch",
+        });
+        Object.defineProperty(event, "timeStamp", { value: point[2] });
+        target.dispatchEvent(event);
+      };
+      const touch = (type: string, point: GesturePoint) => {
+        const item = {
+          clientX: point[0],
+          clientY: point[1],
+          identifier: 71,
+          target,
+        };
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        const active = type === "touchend" ? [] : [item];
+        Object.defineProperties(event, {
+          changedTouches: { value: [item] },
+          targetTouches: { value: active },
+          touches: { value: active },
+        });
+        return !target.dispatchEvent(event);
+      };
+      if (includeTouch) touch("touchstart", first);
+      pointer("pointerdown", first);
+      const prevented: boolean[] = [];
+      for (const point of points.slice(1)) {
+        pointer("pointermove", point);
+        if (includeTouch) prevented.push(touch("touchmove", point));
+      }
+      const last = points.at(-1) ?? first;
+      pointer(end, last);
+      if (includeTouch) touch("touchend", last);
+      return prevented;
+    },
+    { end, includeTouch, points },
   );
 }
 

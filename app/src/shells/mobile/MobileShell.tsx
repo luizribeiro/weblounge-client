@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
+import { recordGestureNotStarted } from "../../platform/gesture-debug";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
 import { createHorizontalPan, type PanRelease } from "../../ui/horizontal-pan";
 import { afterStartStatePaints } from "../../ui/transform-motion";
@@ -58,6 +59,9 @@ interface MobileShellProps extends MobileShellData {
       ) => void)
     | undefined;
 }
+
+// Replace with a pixel width to restrict Back to a leading-edge strip.
+export const swipeBackActivationWidth = Number.POSITIVE_INFINITY;
 
 export function MobileShell(props: MobileShellProps) {
   const platform = platformEnvironment();
@@ -168,23 +172,23 @@ export function MobileShell(props: MobileShellProps) {
     });
   };
   const completingSwipe = () => swipe()?.phase === "completing";
-  const resetSwipe = () => {
+  const resetSwipe = (reason?: "visibility" | "popstate") => {
     completedBeforePop = false;
-    swipeGesture.reset();
+    swipeGesture.reset(reason);
     setSwipe(undefined);
   };
-  const resetMemberOpen = () => {
-    memberOpenGesture.reset();
+  const resetMemberOpen = (reason?: "visibility" | "popstate") => {
+    memberOpenGesture.reset(reason);
     memberOpenBufferId = undefined;
     memberOpenTarget = undefined;
     setMemberOpenReturning(false);
     setMemberOpenProgress(undefined);
   };
-  const resetMotion = () => {
-    resetSwipe();
-    if (memberOpenTarget === "open") resetMemberOpen();
+  const resetMotion = (reason: "visibility" | "popstate") => {
+    resetSwipe(reason);
+    if (memberOpenTarget === "open") resetMemberOpen(reason);
     else if (memberOpenProgress() !== undefined) {
-      resetMemberOpen();
+      resetMemberOpen(reason);
       setDrawerBufferId(undefined);
     }
     setStack(finishTransition);
@@ -271,40 +275,62 @@ export function MobileShell(props: MobileShellProps) {
 
   const beginPan = (event: PointerEvent) => {
     suppressCompletedSwipeClick = false;
+    if (event.isPrimary === false) {
+      recordGestureNotStarted("swipe-back", event, "non-primary");
+      return;
+    }
     const target = event.target as Element;
     const width =
       event.currentTarget instanceof Element
         ? event.currentTarget.getBoundingClientRect().width
         : window.innerWidth;
-    if (
-      event.clientX <= 24 &&
-      stack().active.kind === "chat" &&
-      stack().transition === undefined &&
-      swipe() === undefined &&
-      drawerBufferId() === undefined &&
-      target.closest(
-        "[data-selectable], input, textarea, [data-horizontal-scroll]",
-      ) === null
-    ) {
-      swipeGesture.begin(event, width);
-      return;
-    }
     const active = stack().active;
     const buffer =
       active.kind === "chat"
         ? props.buffers.find((candidate) => candidate.id === active.bufferId)
         : undefined;
     const selection = window.getSelection();
+    const excluded =
+      (selection !== null && !selection.isCollapsed) ||
+      target.closest(
+        "[data-selectable], input, textarea, [data-horizontal-scroll]",
+      ) !== null;
+    const currentSwipe = swipe();
+    const canStartSwipe =
+      event.clientX <= swipeBackActivationWidth &&
+      active.kind === "chat" &&
+      stack().transition === undefined &&
+      (currentSwipe === undefined || currentSwipe.phase === "returning") &&
+      drawerBufferId() === undefined &&
+      !excluded;
+    if (canStartSwipe) {
+      const initialProgress =
+        currentSwipe?.phase === "returning"
+          ? renderedSwipeProgress(shellElement, width)
+          : 0;
+      if (currentSwipe?.phase === "returning")
+        setSwipe({ phase: "dragging", progress: initialProgress });
+      swipeGesture.begin(event, width, initialProgress);
+    } else {
+      recordGestureNotStarted(
+        "swipe-back",
+        event,
+        swipeNotStartedReason(
+          active.kind,
+          stack().transition,
+          currentSwipe,
+          drawerBufferId(),
+          excluded,
+        ),
+      );
+    }
     if (
       event.clientX <= 24 ||
       event.clientX >= width - 24 ||
       buffer?.kind !== "channel" ||
       drawerBufferId() !== undefined ||
       stack().transition !== undefined ||
-      (selection !== null && !selection.isCollapsed) ||
-      target.closest(
-        "[data-selectable], input, textarea, [data-horizontal-scroll]",
-      ) !== null
+      excluded
     )
       return;
     memberOpenBufferId = buffer.id;
@@ -323,9 +349,9 @@ export function MobileShell(props: MobileShellProps) {
   };
   const swipeGesture = createHorizontalPan({
     commitRatio: 0.5,
-    commitVelocity: 0.5,
+    commitVelocity: 0.25,
+    debugRegion: "swipe-back",
     direction: "right",
-    preventDefaultOnStart: true,
     onCancel: returnSwipe,
     onCommit: (release) => {
       suppressCompletedSwipeClick = true;
@@ -349,7 +375,8 @@ export function MobileShell(props: MobileShellProps) {
   };
   const memberOpenGesture = createHorizontalPan({
     commitRatio: 0.4,
-    commitVelocity: 0.5,
+    commitVelocity: 0.25,
+    debugRegion: "member-open",
     direction: "left",
     onCancel: cancelMemberOpen,
     onCommit: () => {
@@ -442,7 +469,7 @@ export function MobileShell(props: MobileShellProps) {
   onMount(() => {
     const handlePopState = () => {
       if (historyPolicy === "replace") {
-        resetMotion();
+        resetMotion("popstate");
         if (drawerBufferId() !== undefined) finishDrawerClose();
         replaceWithRoot();
         return;
@@ -453,14 +480,14 @@ export function MobileShell(props: MobileShellProps) {
       }
       const browserHandledSwipe =
         swipeGesture.active() || swipe() !== undefined;
-      resetSwipe();
+      resetSwipe("popstate");
       if (drawerBufferId() === undefined)
         dispatchBack(browserHandledSwipe || reducedMotion());
       else if (drawerCloseAwaitingHistory) finishDrawerClose();
       else if (reducedMotion()) finishDrawerClose();
       else setDrawerHistoryClosing(true);
     };
-    const handleVisibilityChange = () => resetMotion();
+    const handleVisibilityChange = () => resetMotion("visibility");
     const handleKeydown = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -506,6 +533,10 @@ export function MobileShell(props: MobileShellProps) {
         memberOpenGesture.cancel(event);
       }}
       onPointerDown={beginPan}
+      onLostPointerCapture={(event) => {
+        swipeGesture.lostCapture(event);
+        memberOpenGesture.lostCapture(event);
+      }}
       onPointerMove={(event) => {
         swipeGesture.move(event);
         memberOpenGesture.move(event);
@@ -588,6 +619,34 @@ export function MobileShell(props: MobileShellProps) {
       )}
     </main>
   );
+}
+
+function renderedSwipeProgress(
+  shell: HTMLElement | undefined,
+  width: number,
+): number {
+  const screen = shell?.querySelector<HTMLElement>('[data-motion="returning"]');
+  if (screen === undefined || screen === null || width <= 0) return 0;
+  const shellLeft = shell?.getBoundingClientRect().left ?? 0;
+  return Math.max(
+    0,
+    Math.min(1, (screen.getBoundingClientRect().left - shellLeft) / width),
+  );
+}
+
+function swipeNotStartedReason(
+  activeKind: MobileScreenState["kind"],
+  transition: MobileTransition | undefined,
+  swipe: SwipeMotion | undefined,
+  drawerBufferId: number | undefined,
+  excluded: boolean,
+): string {
+  if (activeKind !== "chat") return "not-chat";
+  if (transition !== undefined) return "transition";
+  if (swipe !== undefined && swipe.phase !== "returning") return "swipe-active";
+  if (drawerBufferId !== undefined) return "drawer-open";
+  if (excluded) return "excluded-target";
+  return "outside-activation";
 }
 
 function isKeyboardBack(

@@ -137,11 +137,15 @@ it("keeps the chat list mounted without reloading history", async () => {
   expect(loadHistory).toHaveBeenCalledTimes(1);
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
-  expect(fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 })).toBe(
-    false,
-  );
-  fireEvent.pointerMove(shell, { clientX: 45, pointerId: 7 });
-  fireEvent.pointerCancel(shell, { clientX: 45, pointerId: 7 });
+  expect(
+    fireEvent.pointerDown(shell, {
+      clientX: 5,
+      isPrimary: true,
+      pointerId: 7,
+    }),
+  ).toBe(true);
+  fireEvent.pointerMove(shell, { clientX: 10, pointerId: 7 });
+  fireEvent.pointerCancel(shell, { clientX: 10, pointerId: 7 });
   await settledMotion();
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));
@@ -235,7 +239,8 @@ it("clears an in-flight swipe when browser history or visibility wins", async ()
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
 
-  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 7 });
+  fireEvent.pointerDown(shell, { clientX: 5, isPrimary: true, pointerId: 7 });
+  fireEvent.pointerMove(shell, { clientX: 20, pointerId: 7 });
   fireEvent.pointerMove(shell, { clientX: 100, pointerId: 7 });
   expect(document.querySelector('[data-motion="dragging"]')).not.toBeNull();
   window.dispatchEvent(new PopStateEvent("popstate"));
@@ -245,7 +250,8 @@ it("clears an in-flight swipe when browser history or visibility wins", async ()
 
   fireEvent.click(screen.getByRole("button", { name: "mel" }));
   await settledMotion();
-  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 8 });
+  fireEvent.pointerDown(shell, { clientX: 5, isPrimary: true, pointerId: 8 });
+  fireEvent.pointerMove(shell, { clientX: 20, pointerId: 8 });
   fireEvent.pointerMove(shell, { clientX: 100, pointerId: 8 });
   document.dispatchEvent(new Event("visibilitychange"));
   expect(document.querySelector("[data-motion]")).toBeNull();
@@ -280,7 +286,8 @@ it("continues a completed swipe closed before unmounting the chat", async () => 
     width: 1_000,
   } as DOMRect);
 
-  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 9 });
+  fireEvent.pointerDown(shell, { clientX: 5, isPrimary: true, pointerId: 9 });
+  fireEvent.pointerMove(shell, { clientX: 20, pointerId: 9 });
   fireEvent.pointerMove(shell, { clientX: 600, pointerId: 9 });
   fireEvent.pointerUp(shell, { clientX: 600, pointerId: 9 });
   const completing = document.querySelector<HTMLElement>(
@@ -322,7 +329,12 @@ it("pops a completed swipe through history exactly once", async () => {
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
 
-  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 10 });
+  fireEvent.pointerDown(shell, {
+    clientX: 5,
+    isPrimary: true,
+    pointerId: 10,
+  });
+  fireEvent.pointerMove(shell, { clientX: 20, pointerId: 10 });
   fireEvent.pointerMove(shell, { clientX: 900, pointerId: 10 });
   fireEvent.pointerUp(shell, { clientX: 900, pointerId: 10 });
   await Promise.resolve();
@@ -376,7 +388,13 @@ it("does not open members from a pan on a direct chat", () => {
     y: 0,
   });
 
-  fireEvent.pointerDown(shell, { clientX: 250, clientY: 300, pointerId: 9 });
+  fireEvent.pointerDown(shell, {
+    clientX: 250,
+    clientY: 300,
+    isPrimary: true,
+    pointerId: 9,
+  });
+  fireEvent.pointerMove(shell, { clientX: 230, clientY: 300, pointerId: 9 });
   fireEvent.pointerMove(shell, { clientX: 50, clientY: 300, pointerId: 9 });
   fireEvent.pointerUp(shell, { clientX: 50, clientY: 300, pointerId: 9 });
 
