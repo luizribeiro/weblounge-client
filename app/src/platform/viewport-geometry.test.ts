@@ -156,17 +156,20 @@ describe("viewport geometry observer", () => {
 
   it("re-measures on focus changes", () => {
     const { root, viewport } = observe();
+    const field = textField();
     viewport.height = window.innerHeight - 300;
 
-    window.dispatchEvent(new FocusEvent("focusin"));
+    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 
     expect(root.dataset.keyboard).toBe("open");
   });
 
-  it("keeps measuring after a focus change until the keyboard has settled", async () => {
+  it("detects an iOS keyboard shrink several frames after focus", async () => {
     const { root, viewport } = observe();
+    const field = textField();
 
-    window.dispatchEvent(new FocusEvent("focusin"));
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     for (let frame = 0; frame < 6; frame += 1)
       await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(root.dataset.keyboard).toBe("closed");
@@ -178,11 +181,28 @@ describe("viewport geometry observer", () => {
     );
   });
 
-  it("settles in a couple of frames after focus changes without an on-screen keyboard", async () => {
+  it("settles desktop focus in a couple of frames", async () => {
     const frames = vi.spyOn(window, "requestAnimationFrame");
+    const field = textField();
     observe({ onScreenKeyboard: () => false });
 
-    window.dispatchEvent(new FocusEvent("focusin"));
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
+    for (let frame = 0; frame < 3; frame += 1)
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(frames).toHaveBeenCalledTimes(5);
+  });
+
+  it("stops measuring once a touch keyboard is open and stable", async () => {
+    const frames = vi.spyOn(window, "requestAnimationFrame");
+    const { viewport } = observe();
+    const field = textField();
+    viewport.height = window.innerHeight - 300;
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
     for (let frame = 0; frame < 3; frame += 1)
       await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -219,6 +239,12 @@ function observe(options?: ViewportObserverOptions) {
   const stop = observeViewportGeometry(root, fakeWindow(viewport), options);
   running.push(stop);
   return { root, viewport, stop };
+}
+
+function textField(): HTMLTextAreaElement {
+  const field = document.createElement("textarea");
+  document.body.append(field);
+  return field;
 }
 
 class FakeVisualViewport extends EventTarget {

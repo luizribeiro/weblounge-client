@@ -121,6 +121,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Replace the status-bar shortfall with WebKit's own full-screen viewport (standalone `html`
     at least screen tall), undo iOS keyboard pans instead of following them, re-measure on the
     frames after viewport events, and add the `?debug=viewport` overlay (awaiting device).
+  - [x] Keep late iOS keyboard geometry polling around pointer-activated text focus only, and stop
+    as soon as the expected open or closed state is stable so programmatic focus returns to idle.
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.

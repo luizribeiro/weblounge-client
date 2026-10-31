@@ -17,6 +17,15 @@ const settledFrames = 2;
 // Longer than the iOS keyboard's slide, which can finish without any further
 // viewport event.
 const focusSettleMilliseconds = 1000;
+const keyboardInputTypes = new Set([
+  "email",
+  "number",
+  "password",
+  "search",
+  "tel",
+  "text",
+  "url",
+]);
 
 export function resolveViewportGeometry({
   layoutHeight,
@@ -55,18 +64,13 @@ export function observeViewportGeometry(
   let frame = 0;
   let stableFrames = 0;
   let settleUntil = 0;
+  let expectedKeyboard: ViewportGeometry["keyboard"] | undefined;
+  let pointerMayFocus = false;
   const measure = (): ViewportMeasurements => ({
     layoutHeight: browserWindow.innerHeight,
     scrollY: browserWindow.scrollY,
     viewport,
   });
-  // iOS reveals a focused field by panning the document instead of resizing it,
-  // and WebKit has neither interactive-widget nor the VirtualKeyboard API, so we
-  // undo the pan and size to the visual viewport. Its events can report stale
-  // values, hence the re-measuring on the following frames.
-  // https://bugs.webkit.org/show_bug.cgi?id=254861
-  // https://bugs.webkit.org/show_bug.cgi?id=259770
-  // https://bugs.webkit.org/show_bug.cgi?id=230225
   // iOS reveals a focused field by panning the document instead of resizing it,
   // and WebKit has neither interactive-widget nor the VirtualKeyboard API, so we
   // undo the pan and size to the visual viewport. Its events can report stale
@@ -79,24 +83,48 @@ export function observeViewportGeometry(
     if (documentPanned(measure())) browserWindow.scrollTo(0, 0);
     const geometry = resolveViewportGeometry(measure());
     const key = JSON.stringify(geometry);
-    if (key === published) return false;
+    if (key === published) return { changed: false, geometry };
     published = key;
     applyGeometry(root, geometry);
-    return true;
+    return { changed: true, geometry };
   };
   // WebKit can fire viewport events before it updates the values they report,
   // so re-measure on the following frames until the geometry stops changing.
   const settle = (now: number) => {
     frame = 0;
-    stableFrames = update() ? 0 : stableFrames + 1;
-    if (stableFrames < settledFrames || now < settleUntil) {
+    const result = update();
+    stableFrames = result.changed ? 0 : stableFrames + 1;
+    const awaitingKeyboard =
+      expectedKeyboard !== undefined &&
+      result.geometry.keyboard !== expectedKeyboard &&
+      now < settleUntil;
+    if (stableFrames < settledFrames || awaitingKeyboard) {
       frame = browserWindow.requestAnimationFrame(settle);
+    } else {
+      expectedKeyboard = undefined;
     }
   };
   const onChange = () => {
     update();
     stableFrames = 0;
     if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
+  };
+  const expectKeyboard = (keyboard: ViewportGeometry["keyboard"]) => {
+    expectedKeyboard = keyboard;
+    settleUntil = browserWindow.performance.now() + focusSettleMilliseconds;
+  };
+  const onPointerDown = (event: Event) => {
+    if (!onScreenKeyboard()) return;
+    pointerMayFocus = true;
+    if (keyboardField(event.target)) {
+      expectKeyboard("open");
+      onChange();
+    }
+  };
+  const clearPointerFocus = () => {
+    browserWindow.queueMicrotask(() => {
+      pointerMayFocus = false;
+    });
   };
   const onWindowChange = (event: Event) => {
     if (
@@ -106,10 +134,19 @@ export function observeViewportGeometry(
     )
       return;
     if (
-      (event.type === "focusin" || event.type === "focusout") &&
-      onScreenKeyboard()
+      event.type === "focusin" &&
+      pointerMayFocus &&
+      keyboardField(event.target)
     )
-      settleUntil = browserWindow.performance.now() + focusSettleMilliseconds;
+      expectKeyboard("open");
+    if (
+      onScreenKeyboard() &&
+      event.type === "focusout" &&
+      keyboardField(event.target) &&
+      !keyboardField((event as FocusEvent).relatedTarget) &&
+      (root.dataset.keyboard === "open" || expectedKeyboard === "open")
+    )
+      expectKeyboard("closed");
     onChange();
   };
   const viewportEvents = ["resize", "scroll"] as const;
@@ -117,6 +154,9 @@ export function observeViewportGeometry(
   for (const type of viewportEvents) viewport.addEventListener(type, onChange);
   for (const type of windowEvents)
     browserWindow.addEventListener(type, onWindowChange);
+  browserWindow.addEventListener("pointerdown", onPointerDown);
+  browserWindow.addEventListener("pointerup", clearPointerFocus);
+  browserWindow.addEventListener("pointercancel", clearPointerFocus);
   update();
   return () => {
     if (frame !== 0) browserWindow.cancelAnimationFrame(frame);
@@ -124,9 +164,27 @@ export function observeViewportGeometry(
       viewport.removeEventListener(type, onChange);
     for (const type of windowEvents)
       browserWindow.removeEventListener(type, onWindowChange);
+    browserWindow.removeEventListener("pointerdown", onPointerDown);
+    browserWindow.removeEventListener("pointerup", clearPointerFocus);
+    browserWindow.removeEventListener("pointercancel", clearPointerFocus);
     delete root.dataset.keyboard;
     clearOpenGeometry(root);
   };
+}
+
+function keyboardField(target: EventTarget | null): boolean {
+  if (target instanceof HTMLInputElement)
+    return (
+      !target.disabled &&
+      !target.readOnly &&
+      keyboardInputTypes.has(target.type)
+    );
+  if (target instanceof HTMLTextAreaElement)
+    return !target.disabled && !target.readOnly;
+  return (
+    target instanceof HTMLElement &&
+    target.matches("[contenteditable]:not([contenteditable='false'])")
+  );
 }
 
 function applyGeometry(root: HTMLElement, geometry: ViewportGeometry): void {
