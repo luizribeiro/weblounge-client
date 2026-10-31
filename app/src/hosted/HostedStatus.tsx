@@ -1,3 +1,4 @@
+import chairUrl from "../assets/chair.svg?url";
 import styles from "./HostedStatus.module.css";
 
 interface HostedStatusProps {
@@ -10,12 +11,7 @@ interface HostedStatusProps {
 export function HostedStatus(props: HostedStatusProps) {
   return (
     <main class={styles.root} data-hosted-status>
-      <img
-        class={styles.mark}
-        src="/brand/chair.svg"
-        alt=""
-        draggable={false}
-      />
+      <img class={styles.mark} src={chairUrl} alt="" draggable={false} />
       <p role={props.error === true ? "alert" : "status"}>{props.message}</p>
       {props.onRetry !== undefined && (
         <button class={styles.retry} onClick={props.onRetry} type="button">

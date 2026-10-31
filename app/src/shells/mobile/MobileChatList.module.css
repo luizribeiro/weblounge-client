@@ -27,7 +27,7 @@
 .logoMark {
   background: var(--wl-color-surface);
   height: 26px;
-  mask: url("../../../public/brand/chair.svg") center / contain no-repeat;
+  mask: url("../../assets/chair.svg?inline") center / contain no-repeat;
   width: 26px;
 }
 

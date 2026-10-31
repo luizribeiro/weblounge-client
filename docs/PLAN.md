@@ -107,6 +107,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     and startup reveals channel and recent-DM previews only after their latest history settles or
     the fixed 400ms cap expires. Filmstrip, local-Ergo first-reveal, and stalled-history coverage
     protect the complete path.
+  - [x] Keep the startup font and chair assets Vite-managed in development and production, with
+    content hashes in production and working dev-server URLs.
   - [x] Keep touch WebKit navigation replace-only in Safari tabs and standalone PWAs while Android retains a platform Back stack.
   - [x] Show an explicit Sign in again action when a hosted OAuth callback is missing state, has
     mismatched state, or reaches an expired authorization code instead of leaving a splash stalled.

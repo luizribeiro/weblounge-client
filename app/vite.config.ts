@@ -126,7 +126,9 @@ function testContentSecurityPolicy(devServer: boolean): string {
     "frame-ancestors 'none'",
     "manifest-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval'",
-    `style-src 'self' 'sha256-${splashHash}'${devServer ? " 'unsafe-inline'" : ""}`,
+    `style-src 'self'${
+      devServer ? " 'unsafe-inline'" : ` 'sha256-${splashHash}'`
+    }`,
     "worker-src 'self'",
     "font-src 'self'",
     "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://127.0.0.1:8068 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",

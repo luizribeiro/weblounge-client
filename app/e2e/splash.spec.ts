@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const fontAssetPattern =
+  process.env.WEBLOUNGE_E2E_DEV === "1"
+    ? /\/src\/assets\/inter-latin\.woff2$/u
+    : /\/assets\/inter-latin-[^/]+\.woff2$/u;
+
 const appearances = [
   {
     background: "rgb(243, 241, 233)",
@@ -142,7 +147,7 @@ async function verifySplash(
   const consoleErrors: string[] = [];
   const fontUrls = new Set<string>();
   page.on("request", (request) => {
-    if (/\/assets\/inter-latin-[^/]+\.woff2$/u.test(request.url())) {
+    if (fontAssetPattern.test(request.url())) {
       fontUrls.add(request.url());
     }
   });
@@ -180,10 +185,7 @@ async function verifySplash(
       'link[rel="preload"][as="font"][type="font/woff2"]',
     );
     await expect(fontPreload).toHaveAttribute("crossorigin", "");
-    await expect(fontPreload).toHaveAttribute(
-      "href",
-      /\/assets\/inter-latin-[^/]+\.woff2$/u,
-    );
+    await expect(fontPreload).toHaveAttribute("href", fontAssetPattern);
     expect(
       await splashStyle.evaluate((element) => {
         const blocking = document.head.querySelector(
