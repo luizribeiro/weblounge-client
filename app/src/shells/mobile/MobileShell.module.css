@@ -134,7 +134,8 @@
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
 }
-.conversation[data-keyboard-motion-active="true"] {
+.conversation[data-keyboard-motion-active="true"]
+  [data-keyboard-motion-surface] {
   will-change: transform;
 }
 .notice {

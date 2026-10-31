@@ -215,6 +215,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     defer close motion until focus remains outside keyboard fields for a frame, and cancel a false
     close when refocus or viewport geometry proves the keyboard stayed open (#75, awaiting Luiz's
     on-device confirmation).
+  - [x] Keep the mobile transcript frame fixed while an overscanned row overlay and composer follow
+    iOS keyboard motion; commit cached close geometry at motion end without probing or moving the
+    live scroller (#74, awaiting Luiz's on-device confirmation).
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.

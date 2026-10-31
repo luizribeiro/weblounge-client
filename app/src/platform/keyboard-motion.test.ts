@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   KeyboardMotionController,
-  openingTranslate,
+  openingTarget,
   readTranslateY,
   selectKeyboardMotion,
 } from "./keyboard-motion";
@@ -18,7 +18,7 @@ describe("keyboard motion policy", () => {
         "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)",
         false,
       ),
-    ).toMatchObject({ duration: 383, platform: "ios" });
+    ).toMatchObject({ duration: 333, platform: "ios" });
     expect(
       selectKeyboardMotion(
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X)",
@@ -36,21 +36,21 @@ describe("keyboard motion policy", () => {
     });
   });
 
-  it("retargets from the current transform after the layout step", () => {
+  it("moves open surfaces by the layout-height difference", () => {
     expect(
-      openingTranslate(120, {
+      openingTarget({
         afterHeight: 470,
-        beforeHeight: 500,
+        beforeHeight: 800,
         viewportOffsetTop: 0,
       }),
-    ).toBe(150);
+    ).toBe(-330);
   });
 
   it("never adds app motion on top of a visual viewport pan", () => {
     expect(
-      openingTranslate(120, {
+      openingTarget({
         afterHeight: 470,
-        beforeHeight: 500,
+        beforeHeight: 800,
         viewportOffsetTop: 20,
       }),
     ).toBe(0);
@@ -67,109 +67,111 @@ describe("keyboard motion policy", () => {
   });
 });
 
-it("waits for both close motion and closed geometry before committing", async () => {
-  const surface = document.createElement("div");
-  surface.dataset.keyboardMotion = "true";
-  document.body.append(surface);
-  let finishAnimation = () => {};
-  const finished = new Promise<void>((resolve) => {
-    finishAnimation = resolve;
-  });
-  const cancel = vi.fn();
-  surface.animate = vi.fn().mockReturnValue({ cancel, finished });
+it("commits closed layout when motion ends without waiting for geometry", async () => {
+  const { animations, finish, scope, scroller } = motionFixture();
   const commit = vi.fn();
-  const controller = new KeyboardMotionController(
-    window,
-    selectKeyboardMotion("iPhone OS 18_0", false),
-    () => false,
-  );
+  const controller = controllerFor(window);
 
-  controller.beginClose(358, commit);
-  controller.closeGeometry(commit);
+  controller.beginClose(358, () => {}, commit);
   expect(commit).not.toHaveBeenCalled();
-  finishAnimation();
-  await finished;
+  expect(animations).toHaveLength(2);
+  expect(animations[0]?.frames).toEqual([
+    { transform: "translateY(0px)" },
+    { transform: "translateY(358px)" },
+  ]);
+  expect(animations[1]?.frames).toEqual([
+    { transform: "translateY(0px)" },
+    { transform: "translateY(358px)" },
+  ]);
+  expect(scroller.scrollTop).toBe(73);
+
+  finish();
+  await Promise.resolve();
   await Promise.resolve();
 
   expect(commit).toHaveBeenCalledOnce();
-  expect(cancel).toHaveBeenCalledOnce();
+  expect(scope.dataset.keyboardMotionActive).toBeUndefined();
 });
 
 it("settles an interrupted close back to the open position", () => {
-  const surface = document.createElement("div");
-  surface.dataset.keyboardMotion = "true";
-  document.body.append(surface);
-  const cancel = vi.fn();
-  surface.animate = vi.fn().mockReturnValue({
-    cancel,
-    finished: new Promise<void>(() => {}),
-  });
+  const { animations, scope } = motionFixture();
   const commit = vi.fn();
-  const controller = new KeyboardMotionController(
-    window,
-    selectKeyboardMotion("iPhone OS 18_0", false),
-    () => false,
-  );
+  const controller = controllerFor(window);
 
-  controller.beginClose(358, commit);
+  controller.beginClose(358, () => {}, commit);
   controller.keepOpen();
 
-  expect(cancel).toHaveBeenCalledOnce();
+  expect(animations.every(({ cancel }) => cancel.mock.calls.length === 1)).toBe(
+    true,
+  );
   expect(commit).not.toHaveBeenCalled();
-  expect(surface.dataset.keyboardMotionActive).toBeUndefined();
+  expect(scope.dataset.keyboardMotionActive).toBeUndefined();
 });
 
-it("clears a stale compositor transform before retargeting open geometry", () => {
-  const surface = document.createElement("div");
-  surface.dataset.keyboardMotion = "true";
+it("retargets both surfaces from the current compositor transform", () => {
+  const { animations, composer } = motionFixture();
+  let reads = 0;
+  vi.spyOn(composer, "getBoundingClientRect").mockImplementation(() =>
+    rect(reads++ === 0 ? -120 : 0),
+  );
+  const controller = controllerFor(window);
+
+  controller.open(
+    { afterHeight: 400, beforeHeight: 800, viewportOffsetTop: 0 },
+    () => {},
+    () => {},
+  );
+
+  expect(animations).toHaveLength(2);
+  expect(animations[0]?.frames).toEqual([
+    { transform: "translateY(0px)" },
+    { transform: "translateY(-280px)" },
+  ]);
+  expect(animations[1]?.frames).toEqual([
+    { transform: "translateY(-120px)" },
+    { transform: "translateY(-400px)" },
+  ]);
+});
+
+interface RecordedAnimation {
+  readonly cancel: ReturnType<typeof vi.fn>;
+  readonly frames: Keyframe[];
+}
+
+function motionFixture() {
+  const scope = document.createElement("div");
+  scope.dataset.keyboardMotion = "true";
+  const content = document.createElement("div");
+  content.dataset.keyboardMotionSurface = "true";
+  const scroller = document.createElement("div");
+  scroller.dataset.messageList = "true";
+  scroller.scrollTop = 73;
   const composer = document.createElement("div");
   composer.dataset.composer = "true";
-  document.body.append(surface, composer);
-  let layoutTop = 800;
-  let compositorTranslate = 0;
-  vi.spyOn(surface, "getBoundingClientRect").mockImplementation(() => {
-    compositorTranslate = 0;
-    return rect(layoutTop + compositorTranslate);
+  composer.dataset.keyboardMotionSurface = "true";
+  scope.append(scroller, content, composer);
+  document.body.append(scope);
+  let resolve = () => {};
+  const finished = new Promise<void>((next) => {
+    resolve = next;
   });
-  vi.spyOn(composer, "getBoundingClientRect").mockImplementation(() =>
-    rect(layoutTop + compositorTranslate),
-  );
-  vi.spyOn(window, "getComputedStyle").mockReturnValue({
-    transform: "matrix(1, 0, 0, 1, 0, 120)",
-  } as CSSStyleDeclaration);
-  const animations: Keyframe[][] = [];
-  surface.animate = vi.fn().mockImplementation((frames: Keyframe[]) => {
-    animations.push(frames);
-    return {
-      cancel: vi.fn(),
-      finished: new Promise<void>(() => {}),
-    };
-  });
-  const controller = new KeyboardMotionController(
-    window,
+  const animations: RecordedAnimation[] = [];
+  for (const surface of [content, composer])
+    surface.animate = vi.fn().mockImplementation((frames: Keyframe[]) => {
+      const animation = { cancel: vi.fn(), finished, frames };
+      animations.push(animation);
+      return animation;
+    });
+  return { animations, composer, finish: resolve, scope, scroller };
+}
+
+function controllerFor(browserWindow: Window): KeyboardMotionController {
+  return new KeyboardMotionController(
+    browserWindow,
     selectKeyboardMotion("iPhone OS 18_0", false),
     () => false,
   );
-
-  controller.open(
-    { afterHeight: 500, beforeHeight: 800, viewportOffsetTop: 0 },
-    () => {
-      layoutTop = 500;
-    },
-  );
-  compositorTranslate = 120;
-  controller.open(
-    { afterHeight: 400, beforeHeight: 500, viewportOffsetTop: 0 },
-    () => {
-      layoutTop = 400;
-    },
-  );
-
-  expect(animations[1]).toEqual([
-    { transform: "translateY(220px)" },
-    { transform: "translateY(0px)" },
-  ]);
-});
+}
 
 function rect(top: number): DOMRect {
   return {

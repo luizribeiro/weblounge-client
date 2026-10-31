@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  cacheKeyboardClosedHeight,
   cacheKeyboardHeight,
   documentPanned,
+  keyboardCloseDistance,
   observeViewportGeometry,
   requestCachedKeyboardOpen,
   resolveViewportGeometry,
@@ -92,6 +94,16 @@ describe("keyboard close decision", () => {
   });
 });
 
+describe("keyboard close distance", () => {
+  it("uses the cached corrected closed height for the current orientation", () => {
+    const browserWindow = fakeWindow(new FakeVisualViewport(500));
+
+    expect(keyboardCloseDistance(browserWindow, 500, 812)).toBe(312);
+    cacheKeyboardClosedHeight(browserWindow, 874);
+    expect(keyboardCloseDistance(browserWindow, 500, 812)).toBe(374);
+  });
+});
+
 describe("viewport geometry observer", () => {
   afterEach(() => {
     for (const stop of running.splice(0)) stop();
@@ -153,7 +165,7 @@ describe("viewport geometry observer", () => {
 
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledTimes(2);
     window.removeEventListener("weblounge:app-geometry-change", changed);
   });
 
@@ -231,46 +243,51 @@ describe("viewport geometry observer", () => {
   });
 
   it("starts close motion one frame after focusout before closed geometry arrives", async () => {
-    const surface = document.createElement("div");
-    surface.dataset.keyboardMotion = "true";
-    document.body.append(surface);
-    const animate = vi.fn().mockReturnValue({
-      cancel: vi.fn(),
-      finished: new Promise<void>(() => {}),
-    });
-    surface.animate = animate;
     const { root, viewport } = observe();
     const field = textField();
     viewport.set(window.innerHeight - 300, 0, "resize");
-    animate.mockClear();
+    const { animate } = keyboardMotionFixture();
 
     field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
 
     expect(animate).not.toHaveBeenCalled();
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    expect(animate).toHaveBeenCalledOnce();
+    expect(animate).toHaveBeenCalledTimes(2);
     expect(animate.mock.calls[0]?.[0]).toEqual([
       { transform: "translateY(0px)" },
       { transform: "translateY(300px)" },
     ]);
-    expect(root.dataset.keyboard).toBe("open");
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 300}px`,
+    );
+  });
+
+  it("retains the corrected closed height until late close geometry arrives", async () => {
+    const { root, viewport } = observe();
+    const field = textField();
+    viewport.set(window.innerHeight - 300, 0, "resize");
+    const { finish } = keyboardMotionFixture();
+
+    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight}px`,
+    );
   });
 
   it("keeps the keyboard still when focus returns before the close frame", async () => {
-    const surface = document.createElement("div");
-    surface.dataset.keyboardMotion = "true";
-    document.body.append(surface);
-    const animate = vi.fn().mockReturnValue({
-      cancel: vi.fn(),
-      finished: new Promise<void>(() => {}),
-    });
-    surface.animate = animate;
     const { viewport } = observe();
     const field = textField();
     const button = document.createElement("button");
     document.body.append(button);
     viewport.set(window.innerHeight - 300, 0, "resize");
-    animate.mockClear();
+    const { animate } = keyboardMotionFixture();
 
     field.focus();
     button.focus();
@@ -281,50 +298,32 @@ describe("viewport geometry observer", () => {
   });
 
   it("cancels close motion when refocus proves the keyboard stayed open", async () => {
-    const surface = document.createElement("div");
-    surface.dataset.keyboardMotion = "true";
-    document.body.append(surface);
-    const cancel = vi.fn();
-    const animate = vi.fn().mockReturnValue({
-      cancel,
-      finished: new Promise<void>(() => {}),
-    });
-    surface.animate = animate;
     const { root, viewport } = observe();
     const field = textField();
     viewport.set(window.innerHeight - 300, 0, "resize");
-    animate.mockClear();
+    const { cancel, scope } = keyboardMotionFixture();
 
     field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    cancel.mockClear();
     field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(surface.dataset.keyboardMotionActive).toBeUndefined();
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(scope.dataset.keyboardMotionActive).toBeUndefined();
     expect(root.dataset.keyboard).toBe("open");
   });
 
   it("cancels close motion when resize still measures an open keyboard", async () => {
-    const surface = document.createElement("div");
-    surface.dataset.keyboardMotion = "true";
-    document.body.append(surface);
-    const cancel = vi.fn();
-    surface.animate = vi.fn().mockReturnValue({
-      cancel,
-      finished: new Promise<void>(() => {}),
-    });
     const { root, viewport } = observe();
     const field = textField();
     viewport.set(window.innerHeight - 300, 0, "resize");
+    const { cancel, scope } = keyboardMotionFixture();
 
     field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    cancel.mockClear();
     viewport.dispatchEvent(new Event("resize"));
 
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(surface.dataset.keyboardMotionActive).toBeUndefined();
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(scope.dataset.keyboardMotionActive).toBeUndefined();
     expect(root.dataset.keyboard).toBe("open");
   });
 
@@ -399,6 +398,30 @@ describe("viewport geometry observer", () => {
 });
 
 const running: (() => void)[] = [];
+
+function keyboardMotionFixture() {
+  const scope = document.createElement("div");
+  scope.dataset.keyboardMotion = "true";
+  const content = document.createElement("div");
+  content.dataset.keyboardMotionSurface = "true";
+  const composer = document.createElement("div");
+  composer.dataset.composer = "true";
+  composer.dataset.keyboardMotionSurface = "true";
+  scope.append(content, composer);
+  document.body.append(scope);
+  const cancel = vi.fn();
+  let finish = () => {};
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const animate = vi.fn().mockReturnValue({
+    cancel,
+    finished,
+  });
+  content.animate = animate;
+  composer.animate = animate;
+  return { animate, cancel, finish, scope };
+}
 
 function observe(options?: ViewportObserverOptions) {
   const root = document.createElement("div");

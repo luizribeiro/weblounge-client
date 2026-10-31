@@ -29,7 +29,7 @@ export function selectKeyboardMotion(
     10,
   );
   return major >= 26
-    ? { duration: 383, easing: ios26Spring, platform: "ios" }
+    ? { duration: 333, easing: ios26Spring, platform: "ios" }
     : {
         duration: 500,
         easing: "cubic-bezier(0.38, 0.7, 0.125, 1)",
@@ -37,12 +37,9 @@ export function selectKeyboardMotion(
       };
 }
 
-export function openingTranslate(
-  currentTranslate: number,
-  change: KeyboardLayoutChange,
-): number {
+export function openingTarget(change: KeyboardLayoutChange): number {
   if (Math.abs(change.viewportOffsetTop) >= 1) return 0;
-  return currentTranslate + change.beforeHeight - change.afterHeight;
+  return Math.min(0, change.afterHeight - change.beforeHeight);
 }
 
 export function readTranslateY(
@@ -63,21 +60,29 @@ export function readTranslateY(
   );
 }
 
-interface PendingClose {
-  commit: () => void;
-  geometryReady: boolean;
-  motionReady: boolean;
-  timeout: number;
+interface MotionElements {
+  readonly anchor: HTMLElement;
+  readonly scroller: HTMLElement | undefined;
+  readonly scope: HTMLElement;
+  readonly surfaces: readonly HTMLElement[];
+}
+
+interface MotionOverlay {
+  readonly original: HTMLElement;
+  readonly previousVisibility: string;
+  readonly wrapper: HTMLElement;
 }
 
 export class KeyboardMotionController {
   readonly #browserWindow: Window;
   readonly #config: KeyboardMotionConfig;
   readonly #reducedMotion: () => boolean;
-  #animation: Animation | undefined;
-  #animatedSurface: HTMLElement | undefined;
+  #animations: Animation[] = [];
+  #animatedScope: HTMLElement | undefined;
   #generation = 0;
-  #pendingClose: PendingClose | undefined;
+  #overlays: MotionOverlay[] = [];
+  #restoreLiveEdge = false;
+  #scroller: HTMLElement | undefined;
 
   constructor(
     browserWindow: Window,
@@ -89,157 +94,186 @@ export class KeyboardMotionController {
     this.#reducedMotion = reducedMotion;
   }
 
-  open(change: KeyboardLayoutChange, commit: () => void): void {
-    const surface = this.#surface();
-    const current =
-      surface === null ? 0 : readTranslateY(surface, this.#browserWindow);
-    const anchorBefore = this.#anchor()?.getBoundingClientRect().top;
+  open(
+    change: KeyboardLayoutChange,
+    prepare: () => void,
+    commit: () => void,
+  ): void {
+    let elements = this.#elements();
+    const target = openingTarget(change);
+    const currentTop = elements?.anchor.getBoundingClientRect().top;
+    this.#cancelAnimation();
+    if (elements !== undefined) elements = this.#activate(elements);
+    prepare();
+    const from =
+      currentTop === undefined || elements === undefined
+        ? 0
+        : currentTop - elements.anchor.getBoundingClientRect().top;
     const animate =
-      surface !== null &&
+      elements !== undefined &&
+      target !== from &&
       Math.abs(change.viewportOffsetTop) < 1 &&
       !this.#reducedMotion();
-    this.#cancelPendingClose();
-    this.#cancelAnimation();
-    if (surface !== null) surface.getBoundingClientRect();
-    if (animate) surface.dataset.keyboardMotionActive = "true";
-    commit();
-    if (!animate || surface === null) return;
-    const anchorAfter = this.#anchor()?.getBoundingClientRect().top;
-    const from = openingTranslate(current, {
-      ...change,
-      ...(anchorBefore === undefined || anchorAfter === undefined
-        ? {}
-        : {
-            beforeHeight: anchorBefore - current,
-            afterHeight: anchorAfter,
-          }),
-    });
-    if (from === 0) {
-      delete surface.dataset.keyboardMotionActive;
-      return;
-    }
-    this.#animate(surface, from, 0);
-  }
-
-  beginClose(distance: number, commit: () => void): void {
-    const surface = this.#surface();
-    const current =
-      surface === null ? 0 : readTranslateY(surface, this.#browserWindow);
-    this.#cancelPendingClose();
-    this.#cancelAnimation();
-    const pending: PendingClose = {
-      commit,
-      geometryReady: false,
-      motionReady: surface === null || this.#reducedMotion(),
-      timeout: this.#browserWindow.setTimeout(() => {
-        pending.geometryReady = true;
-        this.#finishClose(pending);
-      }, 1000),
-    };
-    this.#pendingClose = pending;
-    if (!pending.motionReady && surface !== null) {
-      this.#animate(surface, current, distance, () => {
-        pending.motionReady = true;
-        this.#finishClose(pending);
-      });
-    }
-    this.#finishClose(pending);
-  }
-
-  closeGeometry(commit: () => void): void {
-    const pending = this.#pendingClose;
-    if (pending === undefined) {
+    if (!animate || elements === undefined) {
       commit();
+      this.#cancelAnimation();
       return;
     }
-    pending.commit = commit;
-    pending.geometryReady = true;
-    this.#finishClose(pending);
+    this.#animate(elements, from, target, commit);
+  }
+
+  beginClose(distance: number, prepare: () => void, commit: () => void): void {
+    let elements = this.#elements();
+    const currentTop = elements?.anchor.getBoundingClientRect().top;
+    this.#cancelAnimation();
+    if (elements !== undefined) elements = this.#activate(elements);
+    prepare();
+    const from =
+      currentTop === undefined || elements === undefined
+        ? 0
+        : currentTop - elements.anchor.getBoundingClientRect().top;
+    const animate =
+      elements !== undefined && distance !== from && !this.#reducedMotion();
+    if (!animate || elements === undefined) {
+      commit();
+      this.#cancelAnimation();
+      return;
+    }
+    this.#animate(elements, from, distance, commit);
   }
 
   keepOpen(): void {
-    this.#cancelPendingClose();
     this.#cancelAnimation();
   }
 
   cancel(): void {
-    this.#cancelPendingClose();
     this.#cancelAnimation();
   }
 
-  #surface(): HTMLElement | null {
-    return this.#browserWindow.document.querySelector("[data-keyboard-motion]");
-  }
-
-  #anchor(): HTMLElement | null {
-    return this.#browserWindow.document.querySelector("[data-composer]");
+  #elements(): MotionElements | undefined {
+    const scope = this.#browserWindow.document.querySelector<HTMLElement>(
+      "[data-keyboard-motion]",
+    );
+    const anchor = scope?.querySelector<HTMLElement>("[data-composer]");
+    const scroller =
+      scope?.querySelector<HTMLElement>("[data-message-list]") ?? undefined;
+    const surfaces = [
+      ...(scope?.querySelectorAll<HTMLElement>(
+        "[data-keyboard-motion-surface]",
+      ) ?? []),
+    ];
+    return scope === null ||
+      scope === undefined ||
+      anchor === null ||
+      anchor === undefined ||
+      surfaces.length === 0
+      ? undefined
+      : { anchor, scroller, scope, surfaces };
   }
 
   #animate(
-    surface: HTMLElement,
+    elements: MotionElements,
     from: number,
     to: number,
-    finish?: () => void,
+    finish: () => void,
   ): void {
     const generation = ++this.#generation;
-    surface.dataset.keyboardMotionActive = "true";
-    this.#animatedSurface = surface;
-    // WKWebView receives only UIKeyboardFrameEndUserInfoKey, so CSS cannot
-    // observe native progress. Match the platform transform instead:
-    // https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790
-    // https://github.com/TelegramMessenger/Telegram-iOS/blob/master/submodules/Display/Source/CAAnimationUtils.swift
-    // https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/view/InsetsController.java
-    const animation = surface.animate(
-      [
-        { transform: `translateY(${from}px)` },
-        { transform: `translateY(${to}px)` },
-      ],
-      {
-        duration: this.#config.duration,
-        easing: this.#config.easing,
-        fill: "both",
-      },
-    );
-    this.#animation = animation;
-    void animation.finished.then(
+    this.#animations = elements.surfaces.map((surface) => {
+      const [surfaceFrom, surfaceTo] =
+        surface === elements.anchor ? [from, to] : [0, to - from];
+      return surface.animate(
+        [
+          { transform: `translateY(${surfaceFrom}px)` },
+          { transform: `translateY(${surfaceTo}px)` },
+        ],
+        {
+          duration: this.#config.duration,
+          easing: this.#config.easing,
+          fill: "both",
+        },
+      );
+    });
+    void Promise.all(
+      this.#animations.map((animation) => animation.finished),
+    ).then(
       () => {
         if (generation !== this.#generation) return;
-        finish?.();
-        if (finish === undefined) {
-          delete surface.dataset.keyboardMotionActive;
-          this.#cancelAnimation();
-        }
+        finish();
+        this.#cancelAnimation();
       },
       () => {},
     );
   }
 
-  #finishClose(pending: PendingClose): void {
-    if (
-      this.#pendingClose !== pending ||
-      !pending.geometryReady ||
-      !pending.motionReady
-    )
-      return;
-    this.#browserWindow.clearTimeout(pending.timeout);
-    this.#pendingClose = undefined;
-    pending.commit();
-    this.#cancelAnimation();
-  }
-
-  #cancelPendingClose(): void {
-    const pending = this.#pendingClose;
-    if (pending === undefined) return;
-    this.#browserWindow.clearTimeout(pending.timeout);
-    this.#pendingClose = undefined;
+  #activate(elements: MotionElements): MotionElements {
+    elements.scope.dataset.keyboardMotionActive = "true";
+    this.#animatedScope = elements.scope;
+    this.#scroller = elements.scroller;
+    if (elements.scroller !== undefined) {
+      this.#restoreLiveEdge =
+        elements.scroller.scrollHeight -
+          elements.scroller.clientHeight -
+          elements.scroller.scrollTop <=
+        2;
+    }
+    const root = elements.scope.closest<HTMLElement>("#root");
+    const rowSurfaces = elements.surfaces.filter(
+      (surface) => surface !== elements.anchor,
+    );
+    if (root === null || elements.scroller === undefined) return elements;
+    const scrollerRect = elements.scroller.getBoundingClientRect();
+    const animatedRows = rowSurfaces.map((surface) => {
+      const rect = surface.getBoundingClientRect();
+      const wrapper = this.#browserWindow.document.createElement("div");
+      wrapper.ariaHidden = "true";
+      wrapper.dataset.keyboardMotionOverlay = "true";
+      const clone = surface.cloneNode(true) as HTMLElement;
+      // Keep the real scroll owner stable while its overscanned rows paint
+      // through the keyboard-covered part of the viewport.
+      Object.assign(wrapper.style, {
+        bottom: "0",
+        left: `${scrollerRect.left}px`,
+        overflow: "hidden",
+        pointerEvents: "none",
+        position: "fixed",
+        top: `${scrollerRect.top}px`,
+        width: `${scrollerRect.width}px`,
+        zIndex: "1",
+      });
+      Object.assign(clone.style, {
+        height: `${rect.height}px`,
+        inset: "auto",
+        left: "0",
+        position: "absolute",
+        top: `${rect.top - scrollerRect.top}px`,
+        width: `${rect.width}px`,
+      });
+      const previousVisibility = surface.style.visibility;
+      surface.style.visibility = "hidden";
+      wrapper.append(clone);
+      root.append(wrapper);
+      this.#overlays.push({ original: surface, previousVisibility, wrapper });
+      return clone;
+    });
+    return { ...elements, surfaces: [...animatedRows, elements.anchor] };
   }
 
   #cancelAnimation(): void {
     this.#generation += 1;
-    this.#animation?.cancel();
-    this.#animation = undefined;
-    if (this.#animatedSurface !== undefined)
-      delete this.#animatedSurface.dataset.keyboardMotionActive;
-    this.#animatedSurface = undefined;
+    for (const animation of this.#animations) animation.cancel();
+    this.#animations = [];
+    if (this.#animatedScope !== undefined)
+      delete this.#animatedScope.dataset.keyboardMotionActive;
+    for (const { original, previousVisibility, wrapper } of this.#overlays) {
+      original.style.visibility = previousVisibility;
+      wrapper.remove();
+    }
+    this.#overlays = [];
+    if (this.#restoreLiveEdge && this.#scroller !== undefined)
+      this.#scroller.scrollTop =
+        this.#scroller.scrollHeight - this.#scroller.clientHeight;
+    this.#restoreLiveEdge = false;
+    this.#scroller = undefined;
+    this.#animatedScope = undefined;
   }
 }

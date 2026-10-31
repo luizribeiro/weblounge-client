@@ -28,6 +28,7 @@
 
 :global([data-keyboard-motion-active="true"]) .wrap {
   transition: none;
+  z-index: 2;
 }
 
 .input {

@@ -73,8 +73,8 @@ type TimelineRow =
 const liveEdgeTolerance = 2;
 
 export function MessageList(props: MessageListProps) {
-  let list: HTMLOListElement | undefined;
-  let liveEdgeSentinel: HTMLDivElement | undefined;
+  let list: HTMLDivElement | undefined;
+  let liveEdgeSentinel: HTMLLIElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
   const estimatedDensity = currentMessageDensity(document.documentElement);
@@ -132,7 +132,7 @@ export function MessageList(props: MessageListProps) {
   const markScrollKeyIntent = (event: KeyboardEvent) => {
     if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
   };
-  const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
+  const virtualizer = createVirtualizer<HTMLDivElement, HTMLLIElement>({
     get count() {
       return rows().length;
     },
@@ -147,7 +147,11 @@ export function MessageList(props: MessageListProps) {
         const viewportChanged =
           (observedWidth !== undefined && observedWidth !== next.width) ||
           (observedHeight !== undefined && observedHeight !== next.height);
-        const followEnd = viewportChanged && atLiveEdge();
+        const followEnd =
+          viewportChanged &&
+          atLiveEdge() &&
+          (list?.closest("[data-keyboard-motion-active='true']") ?? null) ===
+            null;
         if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
         observedHeight = next.height;
@@ -189,7 +193,7 @@ export function MessageList(props: MessageListProps) {
     onChange: (instance) => {
       if (!atLiveEdge() && instance.isAtEnd()) setLiveEdge(true);
     },
-    overscan: 6,
+    overscan: props.presentation === "mobile" ? 24 : 6,
   });
   const remeasure = () => {
     if (list?.isConnected !== true) return;
@@ -283,7 +287,11 @@ export function MessageList(props: MessageListProps) {
             { root: list },
           );
     const anchorGeometryChange = () => {
-      if (atLiveEdge()) virtualizer.scrollToEnd();
+      if (
+        atLiveEdge() &&
+        (list?.closest("[data-keyboard-motion-active='true']") ?? null) === null
+      )
+        virtualizer.scrollToEnd();
     };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
@@ -309,11 +317,13 @@ export function MessageList(props: MessageListProps) {
 
   return (
     <div class={styles.surface}>
-      <ol
+      {/* biome-ignore lint/a11y/useSemanticElements: the scroll owner wraps a separately animated semantic row layer */}
+      <div
         aria-label="Messages"
         class={styles.list}
         data-message-list="true"
         data-presentation={props.presentation ?? "desktop"}
+        role="list"
         onScroll={(event) => {
           if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
@@ -359,56 +369,62 @@ export function MessageList(props: MessageListProps) {
           copySelectedRows(event, event.currentTarget, toCopyRows(rows()))
         }
       >
-        <div
-          aria-hidden="true"
-          class={styles.spacer}
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
-        />
-        <div
-          aria-hidden="true"
-          class={styles.liveEdge}
-          data-live-edge-sentinel="true"
-          ref={(element) => {
-            liveEdgeSentinel = element;
-          }}
-          style={{ top: `${Math.max(virtualizer.getTotalSize() - 1, 0)}px` }}
-        />
-        <For each={virtualizer.getVirtualItems()}>
-          {(virtualRow) => {
-            const row = () => rows()[virtualRow.index];
-            const selected = () => {
-              const item = row();
+        <ol
+          class={styles.motionLayer}
+          data-keyboard-motion-surface="true"
+          role="presentation"
+        >
+          <li
+            aria-hidden="true"
+            class={styles.spacer}
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          />
+          <li
+            aria-hidden="true"
+            class={styles.liveEdge}
+            data-live-edge-sentinel="true"
+            ref={(element) => {
+              liveEdgeSentinel = element;
+            }}
+            style={{ top: `${Math.max(virtualizer.getTotalSize() - 1, 0)}px` }}
+          />
+          <For each={virtualizer.getVirtualItems()}>
+            {(virtualRow) => {
+              const row = () => rows()[virtualRow.index];
+              const selected = () => {
+                const item = row();
+                return (
+                  item?.kind === "message" &&
+                  item.message.id === selectedMessage()
+                );
+              };
               return (
-                item?.kind === "message" &&
-                item.message.id === selectedMessage()
+                <li
+                  class={styles.virtualRow}
+                  data-copy-row-index={virtualRow.index}
+                  data-index={virtualRow.index}
+                  data-row-key={String(virtualRow.key)}
+                  data-selected={selected()}
+                  ref={(element) => measureRow(element, virtualRow.index)}
+                  style={{
+                    transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
+                  }}
+                >
+                  <TimelineRowView
+                    index={virtualRow.index}
+                    nickLookup={nickLookup()}
+                    onOpenChannel={props.onOpenChannel}
+                    onOpenDirect={props.onOpenDirect}
+                    onOpenExternal={props.onOpenExternal}
+                    onRetry={props.onRetry}
+                    row={row()}
+                  />
+                </li>
               );
-            };
-            return (
-              <li
-                class={styles.virtualRow}
-                data-copy-row-index={virtualRow.index}
-                data-index={virtualRow.index}
-                data-row-key={String(virtualRow.key)}
-                data-selected={selected()}
-                ref={(element) => measureRow(element, virtualRow.index)}
-                style={{
-                  transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
-                }}
-              >
-                <TimelineRowView
-                  index={virtualRow.index}
-                  nickLookup={nickLookup()}
-                  onOpenChannel={props.onOpenChannel}
-                  onOpenDirect={props.onOpenDirect}
-                  onOpenExternal={props.onOpenExternal}
-                  onRetry={props.onRetry}
-                  row={row()}
-                />
-              </li>
-            );
-          }}
-        </For>
-      </ol>
+            }}
+          </For>
+        </ol>
+      </div>
       {unseen() > 0 && (
         <button class={styles.jump} onClick={jumpToBottom} type="button">
           {unseen()} new {unseen() === 1 ? "message" : "messages"} ↓

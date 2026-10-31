@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
 
@@ -117,37 +118,73 @@ test.describe("mobile text field zoom", () => {
   }) => {
     await installVisualViewportHook(page);
     await openChannel(page);
-    const root = page.locator("#root");
-    const composer = page.locator("[data-composer]");
-    const messages = page.locator("[data-message-list]");
-    await root.evaluate((element) => {
-      element.style.setProperty("--wl-safe-bottom", "34px");
-    });
-    await expect(root).toHaveAttribute("data-keyboard", "closed");
-    await expect(composer).toHaveCSS("padding-bottom", "34px");
-    await messages.press("End");
-    await expect.poll(() => liveEdgeGap(messages)).toBeLessThanOrEqual(2);
-    await page
-      .getByRole("textbox", { name: "Message #weblounge-test" })
-      .focus();
-
-    const layoutHeight = await page.evaluate(() => innerHeight);
-    const opening = await sampleKeyboardTransition(
-      page,
-      "open",
-      layoutHeight - 358,
+    const suffix = Date.now().toString(36);
+    const bots = await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        IrcClient.connect(
+          `keyboard-motion-${index}-${suffix}`,
+          "weblounge-bot",
+          "weblounge-bot-test",
+          "#weblounge-test",
+        ),
+      ),
     );
-    expectKeyboardMotion(opening, "up");
-    await expect(root).toHaveAttribute("data-keyboard", "open");
-    await expect(composer).toHaveCSS("padding-bottom", "14px");
+    try {
+      for (let round = 0; round < 4; round += 1)
+        await Promise.all(
+          bots.map((bot, index) =>
+            bot.privmsgConfirmed(
+              "#weblounge-test",
+              `keyboard motion row ${round * bots.length + index} ${suffix}`,
+            ),
+          ),
+        );
+      const root = page.locator("#root");
+      const composer = page.locator("[data-composer]");
+      const messages = page.locator("[data-message-list]");
+      await messages.press("End");
+      await expect(
+        page.getByText(`keyboard motion row 39 ${suffix}`, { exact: true }),
+      ).toBeVisible();
+      await root.evaluate((element) => {
+        element.style.setProperty("--wl-safe-bottom", "34px");
+      });
+      await expect(root).toHaveAttribute("data-keyboard", "closed");
+      await expect(composer).toHaveCSS("padding-bottom", "34px");
+      await expect.poll(() => liveEdgeGap(messages)).toBeLessThanOrEqual(2);
+      await page
+        .getByRole("textbox", { name: "Message #weblounge-test" })
+        .tap();
 
-    const closing = await sampleKeyboardTransition(page, "close", layoutHeight);
-    expectKeyboardMotion(closing, "down");
-    await expect(root).toHaveAttribute("data-keyboard", "closed");
-    await expect(composer).toHaveCSS("padding-bottom", "34px");
+      const layoutHeight = await page.evaluate(() => innerHeight);
+      const opening = await sampleKeyboardTransition(
+        page,
+        "open",
+        layoutHeight - 358,
+      );
+      expectKeyboardMotion(opening, "up");
+      await expect(root).toHaveAttribute("data-keyboard", "open");
+      await expect(composer).toHaveCSS("padding-bottom", "14px");
 
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await expect(composer).toHaveCSS("transition-duration", "0s");
+      const closing = await sampleKeyboardTransition(
+        page,
+        "close",
+        layoutHeight,
+      );
+      expectKeyboardMotion(closing, "down");
+      expect(
+        Math.abs(
+          (closing.at(-1)?.composerTop ?? 0) - (opening[0]?.composerTop ?? 0),
+        ),
+      ).toBeLessThanOrEqual(0.5);
+      await expect(root).toHaveAttribute("data-keyboard", "closed");
+      await expect(composer).toHaveCSS("padding-bottom", "34px");
+
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(composer).toHaveCSS("transition-duration", "0s");
+    } finally {
+      for (const bot of bots) bot.close();
+    }
   });
 
   test("keeps drawer fields at the initial scale", async ({ page }) => {
@@ -319,12 +356,17 @@ async function openChannel(page: Page, query = "") {
 }
 
 interface KeyboardFrame {
-  readonly adjacency: number;
   readonly composerTop: number;
+  readonly composerVisible: boolean;
+  readonly headerTop: number;
   readonly liveEdgeGap: number;
+  readonly newestGap: number;
   readonly offsetTop: number;
   readonly rootTop: number;
+  readonly scrollerTop: number;
+  readonly scrollTop: number;
   readonly scrollY: number;
+  readonly visibleRows: number;
 }
 
 type ViewportTiming = "live" | "stale";
@@ -565,6 +607,9 @@ async function sampleKeyboardTransition(
       const messages = document.querySelector<HTMLElement>(
         "[data-message-list]",
       );
+      const scrollerFrame = messages?.parentElement?.parentElement;
+      const header =
+        surface.parentElement?.querySelector<HTMLElement>("header");
       const field = composer?.querySelector("textarea");
       const viewport = window.visualViewport;
       const setViewport = window.__setVisualViewport;
@@ -573,6 +618,10 @@ async function sampleKeyboardTransition(
         surface === null ||
         composer === null ||
         messages === null ||
+        scrollerFrame === null ||
+        scrollerFrame === undefined ||
+        header === null ||
+        header === undefined ||
         field === null ||
         viewport === null ||
         setViewport === undefined
@@ -581,36 +630,48 @@ async function sampleKeyboardTransition(
       const frames: KeyboardFrame[] = [];
       let sawAnimation = false;
       let suppliedClosedGeometry = false;
-      // WebKit samples a running transform animation at the moment of each
-      // getBoundingClientRect call, so two rects read in one frame can disagree
-      // by a millisecond of motion. Both elements share the animated surface,
-      // so their adjacency is a layout fact below that transform.
-      const surfaceLayoutTop = (element: HTMLElement) => {
-        let top = 0;
-        for (
-          let node: Element | null = element;
-          node instanceof HTMLElement && surface.contains(node);
-          node = node.offsetParent
-        )
-          top += node.offsetTop;
-        return top;
-      };
       const sample = () => {
         const composerRect = composer.getBoundingClientRect();
+        const headerRect = header.getBoundingClientRect();
+        let scrollerTop = 0;
+        for (
+          let element: HTMLElement | null = scrollerFrame;
+          element !== null && element !== root;
+          element = element.offsetParent as HTMLElement | null
+        )
+          scrollerTop += element.offsetTop;
+        const rowRoot =
+          document.querySelector<HTMLElement>(
+            "[data-keyboard-motion-overlay]",
+          ) ?? messages;
+        const rows = [
+          ...rowRoot.querySelectorAll<HTMLElement>("li[data-index]"),
+        ];
+        const rowRects = rows.map((row) => row.getBoundingClientRect());
+        const newest = rowRects.at(-1);
         frames.push({
-          adjacency: Math.abs(
-            surfaceLayoutTop(messages) +
-              messages.offsetHeight -
-              surfaceLayoutTop(composer),
-          ),
           composerTop: composerRect.top,
+          composerVisible:
+            composerRect.bottom > headerRect.bottom &&
+            composerRect.top < innerHeight,
+          headerTop: headerRect.top,
           liveEdgeGap: Math.max(
             0,
             messages.scrollHeight - messages.clientHeight - messages.scrollTop,
           ),
+          newestGap:
+            newest === undefined
+              ? Number.POSITIVE_INFINITY
+              : composerRect.top - newest.bottom,
           offsetTop: viewport.offsetTop,
           rootTop: root.getBoundingClientRect().top,
+          scrollerTop,
+          scrollTop: messages.scrollTop,
           scrollY: window.scrollY,
+          visibleRows: rowRects.filter(
+            (row) =>
+              row.bottom > headerRect.bottom && row.top < composerRect.top,
+          ).length,
         });
       };
       sample();
@@ -624,9 +685,7 @@ async function sampleKeyboardTransition(
           if (
             nextDirection === "close" &&
             sawAnimation &&
-            !suppliedClosedGeometry &&
-            animations.length > 0 &&
-            animations.every((animation) => animation.playState === "finished")
+            !suppliedClosedGeometry
           ) {
             suppliedClosedGeometry = true;
             setViewport(nextHeight);
@@ -767,7 +826,10 @@ function expectKeyboardMotion(
   expect(frames.length).toBeGreaterThan(2);
   const start = frames[0]?.composerTop ?? 0;
   const end = frames.at(-1)?.composerTop ?? 0;
-  expect(Math.abs(end - start)).toBeGreaterThan(100);
+  expect(
+    Math.abs(end - start),
+    JSON.stringify(frames.map(({ composerTop }) => composerTop)),
+  ).toBeGreaterThan(100);
   expect(
     frames.every((frame, index) => {
       const previous = frames[index - 1]?.composerTop;
@@ -776,19 +838,36 @@ function expectKeyboardMotion(
         ? frame.composerTop <= previous + 0.5
         : frame.composerTop + 0.5 >= previous;
     }),
-    JSON.stringify(frames.map(({ composerTop }) => composerTop)),
+    JSON.stringify(frames),
   ).toBe(true);
+  const headerTop = frames[0]?.headerTop ?? 0;
+  const scrollerTop = frames[0]?.scrollerTop ?? 0;
   expect(
     frames.every(
       (frame) =>
         frame.composerTop >= Math.min(start, end) - 0.5 &&
         frame.composerTop <= Math.max(start, end) + 0.5 &&
-        frame.adjacency <= 1 &&
-        frame.liveEdgeGap <= 2 &&
+        frame.composerVisible &&
+        frame.visibleRows > 0 &&
+        Math.abs(frame.headerTop - headerTop) <= 0.5 &&
+        Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
         Math.abs(frame.rootTop) <= 0.5 &&
         Math.abs(frame.offsetTop) <= 0.5 &&
         Math.abs(frame.scrollY) <= 0.5,
     ),
     JSON.stringify(frames),
   ).toBe(true);
+  expect(
+    frames.every(({ newestGap }) => Math.abs(newestGap) <= 8),
+    JSON.stringify(frames),
+  ).toBe(true);
+  expect(frames[0]?.liveEdgeGap).toBeLessThanOrEqual(2);
+  expect(frames.at(-1)?.liveEdgeGap).toBeLessThanOrEqual(2);
+  if (direction === "down")
+    expect(
+      frames
+        .slice(0, 3)
+        .every(({ scrollTop }) => scrollTop === frames[0]?.scrollTop),
+      JSON.stringify(frames.slice(0, 3)),
+    ).toBe(true);
 }
