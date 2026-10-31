@@ -72,6 +72,27 @@ it("omits the default network label and uses a subtle unread dot", () => {
   expect(screen.queryByText("3")).not.toBeInTheDocument();
 });
 
+it("sizes avatar text from density and colours direct initials by nick", () => {
+  const { container } = render(() => (
+    <MobileChatRow
+      buffer={buffer({
+        kind: "direct",
+        title: "mel",
+        nick_color_index: 7,
+      })}
+      onOpen={vi.fn()}
+      onPressStart={() => {}}
+      previews={true}
+    />
+  ));
+
+  const avatar = container.querySelector<HTMLElement>(
+    "[data-nick-color-index='7']",
+  );
+  expect(avatar).toHaveTextContent("M");
+  expect(avatar).toHaveStyle({ color: "var(--wl-nick-1)" });
+});
+
 it("uses the same locale time in chat previews and message rows", () => {
   const { container } = render(() => (
     <>

@@ -917,6 +917,10 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     !isOneOf(value.kind, ["server", "channel", "direct"]) ||
     typeof value.title !== "string" ||
     typeof value.draft_key !== "string" ||
+    !(
+      value.nick_color_index === undefined ||
+      typeof value.nick_color_index === "number"
+    ) ||
     !(value.topic === null || typeof value.topic === "string") ||
     !(
       value.member_count === undefined || typeof value.member_count === "number"
@@ -933,6 +937,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     network_id: value.network_id,
     kind: value.kind,
     title: value.title,
+    ...(value.nick_color_index === undefined
+      ? {}
+      : { nick_color_index: value.nick_color_index }),
     draft_key: value.draft_key,
     topic: value.topic,
     ...(value.member_count === undefined

@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../features/composer/strings";
+import { nickColor } from "../../features/conversation/nick-color";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
@@ -26,7 +27,17 @@ export function MobileChatRow(props: MobileChatRowProps) {
       onPointerDown={props.onPressStart}
       type="button"
     >
-      <span aria-hidden="true" class={styles.avatar}>
+      <span
+        aria-hidden="true"
+        class={styles.avatar}
+        data-nick-color-index={props.buffer.nick_color_index}
+        style={
+          props.buffer.kind === "direct" &&
+          props.buffer.nick_color_index !== undefined
+            ? { color: nickColor(props.buffer.nick_color_index) }
+            : undefined
+        }
+      >
         {props.buffer.kind === "channel"
           ? "#"
           : props.buffer.title.slice(0, 1).toUpperCase()}

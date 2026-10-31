@@ -204,6 +204,10 @@ pub struct BufferProjection {
     pub kind: BufferKind,
     /// Current channel or nick display name.
     pub title: String,
+    /// Stable theme palette index for a direct-message peer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub nick_color_index: Option<u32>,
     /// Session draft identity derived from the network and IRC-casemapped name.
     pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.

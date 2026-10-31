@@ -454,6 +454,35 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("decodes direct-buffer nick palette indexes", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "buffer_added",
+      buffer: {
+        id: 4,
+        network_id: 1,
+        kind: "direct",
+        title: "mel",
+        nick_color_index: 7,
+        draft_key: "5:Local:rfc1459:mel",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buffer: expect.objectContaining({ nick_color_index: 7 }),
+      }),
+    );
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

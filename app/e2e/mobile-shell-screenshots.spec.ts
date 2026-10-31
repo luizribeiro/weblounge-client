@@ -63,6 +63,23 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       await expect(
         page.getByRole("button", { name: "mel-mobile" }),
       ).toContainText("delightfully calm");
+      const avatarPresentation = await page
+        .getByRole("button", { name: "mel-mobile" })
+        .locator("[data-nick-color-index]")
+        .evaluate((avatar) => {
+          const index = avatar.getAttribute("data-nick-color-index");
+          const style = getComputedStyle(avatar);
+          return {
+            color: style.color,
+            inlineStyle: avatar.getAttribute("style"),
+            index,
+            fontSize: Number.parseFloat(style.fontSize),
+          };
+        });
+      expect(avatarPresentation.index).not.toBeNull();
+      expect(avatarPresentation.inlineStyle).toMatch(/var\(--wl-nick-\d+\)/u);
+      expect(avatarPresentation.color).not.toBe("");
+      expect(avatarPresentation.fontSize).toBeGreaterThanOrEqual(22);
       await mkdir(screenshotDirectory, { recursive: true });
       await page.screenshot({
         path: path.join(screenshotDirectory, "mobile-chats-light.png"),

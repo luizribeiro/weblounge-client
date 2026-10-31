@@ -210,6 +210,7 @@ impl NetworkModel {
                 network_id: id,
                 kind: BufferKind::Server,
                 title: label.clone(),
+                nick_color_index: None,
                 draft_key: draft_key(&label, &label, casemapping),
                 topic: None,
                 member_count: None,
@@ -1252,6 +1253,8 @@ impl NetworkModel {
             network_id: self.network.id,
             kind,
             title: key.title(),
+            nick_color_index: (kind == BufferKind::Direct)
+                .then(|| nick_color_index(self.casemapping, &key.title())),
             draft_key: draft_key(&self.network.label, &key.title(), self.casemapping),
             topic,
             member_count: (kind == BufferKind::Channel).then_some(0),
@@ -2259,6 +2262,22 @@ mod tests {
         assert_ne!(
             nick_color_index(papo::Casemapping::Ascii, "Alice["),
             nick_color_index(papo::Casemapping::Ascii, "ALICE{")
+        );
+    }
+
+    #[test]
+    fn direct_buffer_projects_the_peer_nick_palette_index() {
+        let (mut model, state) = model(10);
+        let buffer = model.add_buffer(
+            NameKey::Direct(nick_name(&state, "Alice[")),
+            BufferKind::Direct,
+            None,
+            None,
+        );
+
+        assert_eq!(
+            buffer.nick_color_index,
+            Some(nick_color_index(state.casemapping(), "Alice["))
         );
     }
 

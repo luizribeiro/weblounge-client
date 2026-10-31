@@ -26,6 +26,10 @@ kind: BufferKind,
  */
 title: string,
 /**
+ * Stable theme palette index for a direct-message peer.
+ */
+nick_color_index?: number,
+/**
  * Session draft identity derived from the network and IRC-casemapped name.
  */
 draft_key: string,

@@ -20,9 +20,11 @@
   color: var(--wl-color-fg);
   display: flex;
   flex: 0 0 var(--wl-density-mobile-avatar);
+  font-size: calc(var(--wl-density-mobile-avatar) * 0.5);
   font-weight: 650;
   height: var(--wl-density-mobile-avatar);
   justify-content: center;
+  line-height: 1;
 }
 
 .content {
