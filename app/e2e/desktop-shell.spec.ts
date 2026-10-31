@@ -347,26 +347,22 @@ async function expectFullBleedHighlight(
   page: import("@playwright/test").Page,
   text: string,
 ): Promise<void> {
-  const row = page
-    .locator("[data-message-row]")
-    .filter({ has: page.getByText(text, { exact: true }) });
-  await expect(row).toBeVisible();
-  const geometry = await row.evaluate((element) => {
-    const list = element.closest<HTMLElement>("[data-message-list]");
-    if (list === null) throw new Error("highlight geometry is missing");
-    const rowRect = element.getBoundingClientRect();
-    const listRect = list.getBoundingClientRect();
-    return {
-      background: getComputedStyle(element).backgroundColor,
-      listLeft: listRect.left,
-      listRight: listRect.left + list.clientWidth,
-      rowLeft: rowRect.left,
-      rowRight: rowRect.right,
-    };
+  const list = page.getByRole("list", { name: "Messages" });
+  const row = list.locator("[data-message-row]").filter({ hasText: text });
+  const listWidth = await list.evaluate((element) => element.clientWidth);
+  const highlightBackground = await page.locator("html").evaluate((element) => {
+    const sample = document.createElement("div");
+    sample.style.background = getComputedStyle(element).getPropertyValue(
+      "--wl-color-mention-bg",
+    );
+    document.body.append(sample);
+    const background = getComputedStyle(sample).backgroundColor;
+    sample.remove();
+    return background;
   });
-  expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
-  expect(geometry.rowLeft).toBeCloseTo(geometry.listLeft, 0);
-  expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
+  await expect(row).toHaveAttribute("data-message-text", text);
+  await expect(row).toHaveCSS("background-color", highlightBackground);
+  await expect(row).toHaveCSS("width", `${listWidth}px`);
 }
 
 async function expectDesktopGeometry(

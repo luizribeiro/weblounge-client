@@ -25,7 +25,7 @@ test.describe("connection resilience against local Ergo", () => {
       const composer = await openChannel(page, testInfo.project.name);
       const list = page.locator("[data-message-list]");
       const mobile = isMobile(testInfo.project.name);
-      const seedCount = mobile ? 20 : 14;
+      const seedCount = 20;
       const seedTail = mobile ? "" : " wrapped message".repeat(10);
       for (let index = 0; index < seedCount; index += 1)
         await bot.privmsgConfirmed(channel, `resume seed ${index}${seedTail}`);
@@ -34,10 +34,14 @@ test.describe("connection resilience against local Ergo", () => {
           exact: true,
         }),
       ).toHaveCount(1);
+      const scrollDistance = mobile ? 3 : 40;
+      await expect
+        .poll(() => messageListScrollRange(list))
+        .toBeGreaterThan(scrollDistance * 3);
       const scrollTop = await scrollAwayFromLiveEdge(page, list, {
-        distance: mobile ? 3 : 40,
+        distance: scrollDistance,
         input: mobile ? "touch" : "wheel",
-        wheelDelta: 40,
+        wheelDelta: scrollDistance * 2,
       });
       expect(scrollTop).toBeGreaterThan(0);
       const scrollAnchor = await visibleScrollAnchor(list);
@@ -304,6 +308,12 @@ async function visibleScrollAnchor(list: ReturnType<Page["locator"]>) {
       text: row.dataset.messageText ?? "",
     };
   });
+}
+
+async function messageListScrollRange(list: Locator): Promise<number> {
+  return list.evaluate(
+    (element) => element.scrollHeight - element.clientHeight,
+  );
 }
 
 async function expectShellToRemain(page: Page, heading: string): Promise<void> {
