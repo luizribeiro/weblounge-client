@@ -36,8 +36,14 @@ it("records the keyboard geometry needed for an on-device frame trace", () => {
   expect(summarizeKeyboardTrace([frame])).toContain("1 frames · tap to copy");
 });
 
-it("traces for one second after a tap or focusout and removes its listeners", () => {
+it("traces taps and composer focusout but ignores unrelated focusout", () => {
   const root = document.createElement("div");
+  const composer = document.createElement("div");
+  composer.dataset.composer = "true";
+  const field = document.createElement("textarea");
+  const unrelatedButton = document.createElement("button");
+  composer.append(field);
+  root.append(composer, unrelatedButton);
   document.body.append(root);
   let callback: FrameRequestCallback | undefined;
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((next) => {
@@ -55,7 +61,11 @@ it("traces for one second after a tap or focusout and removes its listeners", ()
   expect(overlay?.textContent).toContain("trigger: pointerup");
   expect(overlay?.textContent).toContain("frames · tap to copy full trace");
 
-  window.dispatchEvent(new FocusEvent("focusout"));
+  unrelatedButton.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  expect(overlay?.textContent).toContain("trigger: pointerup");
+
+  field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  expect(overlay?.textContent).toContain("trigger: focusout");
   stop();
   expect(cancel).toHaveBeenCalledWith(7);
   expect(document.querySelector("[data-debug-overlay]")).toBeNull();

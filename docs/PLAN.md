@@ -141,7 +141,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     WebKit coverage proves monotonic motion through late geometry retargets by clearing canceled
     compositor transforms, a fixed root, and an adjacent live-edge transcript
     (#69 follow-up, awaiting on-device motion confirmation). The mobile shell clips instead of
-    hiding overflow so WebKit's focus reveal cannot scroll it under the keyboard motion.
+    hiding overflow so WebKit's focus reveal cannot scroll it under the keyboard motion. Keyboard
+    traces ignore focus leaving unrelated mobile chrome, so a late push transition cannot replace
+    the tap capture.
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.

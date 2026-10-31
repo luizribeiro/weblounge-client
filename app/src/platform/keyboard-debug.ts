@@ -86,7 +86,7 @@ export function installKeyboardDebug(
       overlay?.addEventListener("pointerup", stopTraceTap);
       overlay?.addEventListener("click", copyTrace);
       const record = (event: Event) => {
-        if (event.type === "pointerup" && !primaryPointer(event)) return;
+        if (!startsKeyboardTrace(event)) return;
         if (animationFrame !== 0)
           browserWindow.cancelAnimationFrame(animationFrame);
         const startedAt = browserWindow.performance.now();
@@ -129,6 +129,15 @@ export function installKeyboardDebug(
 
 function primaryPointer(event: Event): boolean {
   return !(event instanceof PointerEvent) || event.isPrimary;
+}
+
+function startsKeyboardTrace(event: Event): boolean {
+  if (event.type === "pointerup") return primaryPointer(event);
+  return (
+    event.type === "focusout" &&
+    event.target instanceof Element &&
+    event.target.closest("[data-composer]") !== null
+  );
 }
 
 function formatFrame(frame: KeyboardTraceFrame): string {
