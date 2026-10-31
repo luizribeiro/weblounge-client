@@ -72,7 +72,8 @@ export function Composer(props: ComposerProps) {
     const candidates = result.candidates.filter((candidate) =>
       candidateMatches(candidate, query),
     );
-    return candidates.length > 0 ? { ...result, candidates } : result;
+    if (candidates.length > 0) return { ...result, candidates };
+    return result.input === input ? result : undefined;
   });
   const confirmationText = () => {
     const command = pendingConfirmation();

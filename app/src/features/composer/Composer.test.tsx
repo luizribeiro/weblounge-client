@@ -338,6 +338,40 @@ it("keeps previous suggestions visible while the next result is pending", () => 
   expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
 });
 
+it("sends typed arguments instead of a stale command suggestion", async () => {
+  const onSend = vi.fn(() => true);
+  render(() => (
+    <Composer
+      bufferId={9}
+      bufferTitle="#rust"
+      completion={{
+        ...completion("/debug", [
+          {
+            type: "command",
+            name: "debug",
+            usage: "cmd.debug.usage",
+            description: "cmd.debug.description",
+          },
+        ]),
+        buffer_id: 9,
+        trigger: "command",
+        replace_start: 1,
+        replacement_prefix: "/",
+        replacement_suffix: " ",
+      }}
+      draftKey="test:stale-completion"
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "/debug viewport" } });
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  fireEvent.keyDown(input, { key: "Enter" });
+
+  expect(onSend).toHaveBeenCalledWith("/debug viewport");
+  await waitFor(() => expect(input).toHaveValue(""));
+});
+
 it("submits when Enter would only add a completion separator", async () => {
   const onSend = vi.fn(() => true);
   render(() => (
