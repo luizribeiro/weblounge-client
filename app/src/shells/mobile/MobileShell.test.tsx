@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
@@ -18,6 +19,11 @@ const buffer: BufferProjection = {
 };
 
 afterEach(() => window.history.replaceState({}, "", "/"));
+
+it("clips the shell instead of letting focus reveal scroll it", () => {
+  const css = readFileSync("src/shells/mobile/MobileShell.module.css", "utf8");
+  expect(css).toMatch(/\.shell \{[^}]*overflow: clip;/u);
+});
 
 it("starts a root route on the chats list", () => {
   vi.stubGlobal(

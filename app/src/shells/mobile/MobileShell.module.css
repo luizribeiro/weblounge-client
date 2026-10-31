@@ -1,7 +1,12 @@
+/*
+ * WebKit reveals a focused field by scrolling its nearest overflow:hidden
+ * ancestor, including while keyboard motion translates the composer below the
+ * shell; clip keeps the shell from being a scroll container at all.
+ */
 .shell {
   background: var(--wl-color-surface);
   height: 100%;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
   touch-action: pan-y;
 }
