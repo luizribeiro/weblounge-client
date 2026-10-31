@@ -3,11 +3,11 @@
   --wl-motion-drawer-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
   --wl-motion-drawer-open: 340ms;
   --wl-motion-fade: 200ms;
+  --wl-motion-pop: 280ms;
+  --wl-motion-pop-curve: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --wl-motion-preview-fade: 420ms;
   --wl-motion-push-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
   --wl-motion-push-in: 280ms;
-  --wl-motion-push-out: 230ms;
-  --wl-motion-settle-curve: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --wl-motion-suggestions: 120ms;
   --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -112,9 +112,9 @@
     --wl-motion-drawer-close: 0ms;
     --wl-motion-drawer-open: 0ms;
     --wl-motion-fade: 0ms;
+    --wl-motion-pop: 0ms;
     --wl-motion-preview-fade: 0ms;
     --wl-motion-push-in: 0ms;
-    --wl-motion-push-out: 0ms;
     --wl-motion-suggestions: 0ms;
   }
 }

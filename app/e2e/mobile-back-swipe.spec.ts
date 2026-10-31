@@ -57,8 +57,8 @@ test("mobile Back button animates the chat over the visible list", async ({
     expectTransitionMatches(
       frame.transition,
       "transform",
-      frame.pushOutDuration,
-      frame.pushCurve,
+      frame.popDuration,
+      frame.popCurve,
     );
   const list = frames[0]?.chatsRect;
   expect(list).not.toBeNull();
@@ -259,8 +259,8 @@ interface PopFrame {
   } | null;
   readonly chatsVisible: boolean;
   readonly popping: boolean;
-  readonly pushCurve: string;
-  readonly pushOutDuration: string;
+  readonly popCurve: string;
+  readonly popDuration: string;
   readonly transition: TransitionStyle;
 }
 
@@ -305,10 +305,8 @@ async function startPopRecording(page: Page): Promise<void> {
             visibilityProperty: true,
           }) ?? false,
         popping: chat?.dataset.motion === "closing",
-        pushCurve: rootStyle.getPropertyValue("--wl-motion-push-curve").trim(),
-        pushOutDuration: rootStyle
-          .getPropertyValue("--wl-motion-push-out")
-          .trim(),
+        popCurve: rootStyle.getPropertyValue("--wl-motion-pop-curve").trim(),
+        popDuration: rootStyle.getPropertyValue("--wl-motion-pop").trim(),
         transition: {
           duration: chatStyle?.transitionDuration ?? "0s",
           property: chatStyle?.transitionProperty ?? "all",

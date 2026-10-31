@@ -27,6 +27,30 @@ export function expectTransitionMatches(
   );
 }
 
+export function expectDistanceScaledTransition(
+  transition: TransitionStyle,
+  property: string,
+  durationToken: string,
+  curveToken: string,
+  remainingDistance: number,
+  allowShorter = false,
+): void {
+  expect(transition.property).toBe(property);
+  expect(normalizedCurve(transition.timingFunction)).toBe(
+    normalizedCurve(curveToken),
+  );
+  const expectedDuration = durationMs(durationToken) * remainingDistance;
+  const actualDuration = durationMs(transition.duration);
+  if (allowShorter) {
+    expect(actualDuration).toBeGreaterThan(0);
+    expect(actualDuration).toBeLessThan(expectedDuration);
+  } else {
+    expect(Math.abs(actualDuration - expectedDuration)).toBeLessThanOrEqual(
+      0.001,
+    );
+  }
+}
+
 export function normalizedCurve(curve: string): string {
   return curve.replace(/\s+/g, "").replace(/(^|[(,])\./g, "$10.");
 }

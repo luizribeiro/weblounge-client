@@ -4,7 +4,7 @@
   display: flex;
   gap: 8px;
   padding: 10px 14px max(14px, var(--wl-safe-bottom-effective));
-  transition: padding-bottom var(--wl-motion-push-out)
+  transition: padding-bottom var(--wl-motion-pop)
     var(--wl-motion-standard-curve);
 }
 
@@ -12,7 +12,7 @@
   border-top: 1px solid var(--wl-color-border);
   padding: 8px 14px max(14px, var(--wl-safe-bottom-effective));
   position: relative;
-  transition: padding-bottom var(--wl-motion-push-out)
+  transition: padding-bottom var(--wl-motion-pop)
     var(--wl-motion-standard-curve);
 }
 

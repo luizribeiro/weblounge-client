@@ -21,8 +21,8 @@
 }
 
 .screen[data-motion] {
-  --wl-push-curve: var(--wl-motion-push-curve);
-  --wl-push-duration: var(--wl-motion-push-out);
+  --wl-push-curve: var(--wl-motion-pop-curve);
+  --wl-push-duration: var(--wl-motion-pop);
   transform: translate3d(
     calc(
       var(--wl-push-offset) *
@@ -36,13 +36,14 @@
 }
 .screen[data-motion="entering"],
 .screen[data-motion="opening"] {
+  --wl-push-curve: var(--wl-motion-push-curve);
   --wl-push-duration: var(--wl-motion-push-in);
 }
 .screen[data-motion="returning"],
 .screen[data-motion="completing"] {
-  --wl-push-curve: var(--wl-motion-settle-curve);
+  --wl-push-curve: var(--wl-motion-pop-curve);
   --wl-push-duration: calc(
-    var(--wl-motion-push-out) *
+    var(--wl-motion-pop) *
     var(--wl-push-settle-scale, 1)
   );
 }

@@ -86,11 +86,11 @@ export const motionTokens = {
   drawerCurve: "cubic-bezier(0.2, 0.9, 0.25, 1)",
   drawerOpen: "340ms",
   fade: "200ms",
+  pop: "280ms",
+  popCurve: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
   previewFade: "420ms",
   pushCurve: "cubic-bezier(0.2, 0.9, 0.25, 1)",
   pushIn: "280ms",
-  pushOut: "230ms",
-  settleCurve: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
   suggestions: "120ms",
   standardCurve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
 } as const;

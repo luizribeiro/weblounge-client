@@ -1,12 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emulateStandalone } from "./mobile-platform";
 import {
-  durationMs,
+  expectDistanceScaledTransition,
   expectNoTransformOrTransition,
   expectStepsFollowCurve,
   expectTransitionMatches,
   hasIntermediatePosition,
-  normalizedCurve,
   type TransitionStyle,
 } from "./motion-assertions";
 
@@ -49,9 +48,9 @@ test("tap Back slides the chat off a still chats list", async ({ page }) => {
   expect(hasIntermediatePosition(moving.map(left), 0, viewport(page))).toBe(
     true,
   );
-  expectPushTransition(moving, "pushOutDuration", "pushCurve");
+  expectPushTransition(moving, "popDuration", "popCurve");
   expectShadowWhileMoving(moving);
-  expect(moving.at(-1)?.chatLeft).toBeGreaterThanOrEqual(viewport(page) - 0.5);
+  expect(moving.at(-1)?.chatLeft).toBeGreaterThanOrEqual(viewport(page) - 1.5);
   expect(frames.at(-1)?.chatLeft).toBeNull();
 });
 
@@ -98,16 +97,10 @@ test("swipe released past halfway continues closed from the finger", async ({
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 });
 
-test("a flick completes sooner than a slow release, still animated", async ({
+test("a flick shortens its distance-scaled finish, still animated", async ({
   page,
 }) => {
   await openShell(page);
-  await openChat(page);
-  const slow = await swipeAndRelease(page, [
-    { at: 0, x: 5 },
-    { at: 900, x: 250 },
-    { at: 1_000, x: 262 },
-  ]);
   await openChat(page);
   const flick = await swipeAndRelease(page, [
     { at: 0, x: 5 },
@@ -115,10 +108,7 @@ test("a flick completes sooner than a slow release, still animated", async ({
     { at: 100, x: 160 },
   ]);
 
-  expectSettlesFromFinger(flick, viewport(page));
-  expect(settleDuration(flick, viewport(page))).toBeLessThan(
-    settleDuration(slow, viewport(page)),
-  );
+  expectSettlesFromFinger(flick, viewport(page), true);
 });
 
 test("swipe released short springs back open from the finger", async ({
@@ -166,6 +156,7 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
   const shell = document.querySelector("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
   const start = base ?? performance.now();
+  const triggeredAt = performance.now();
   steps.forEach((step, index) => {
     const type = release
       ? "pointerup"
@@ -187,7 +178,7 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
   return {
     base: start,
     chatLeft: chat?.getBoundingClientRect().left ?? null,
-    now: performance.now(),
+    now: triggeredAt,
   };
 }
 
@@ -220,7 +211,11 @@ async function swipeAndRelease(
   };
 }
 
-function expectSettlesFromFinger(settle: Settle, restingLeft: number): void {
+function expectSettlesFromFinger(
+  settle: Settle,
+  restingLeft: number,
+  allowShorter = false,
+): void {
   const { releaseLeft } = settle;
   const moving = present(settle.frames);
   const path = [releaseLeft, ...moving.map(left)];
@@ -234,7 +229,12 @@ function expectSettlesFromFinger(settle: Settle, restingLeft: number): void {
   expect(
     hasIntermediatePosition(moving.map(left), releaseLeft, restingLeft),
   ).toBe(true);
-  expectReleasedTransition(moving);
+  const width = settle.frames[0]?.list?.width ?? Number.NaN;
+  expectReleasedTransition(
+    moving,
+    Math.abs(restingLeft - releaseLeft) / width,
+    allowShorter,
+  );
   expectStepsFollowCurve(
     moving.map((frame) => ({ position: left(frame), time: frame.time })),
     { position: releaseLeft, time: settle.releasedAt },
@@ -244,14 +244,6 @@ function expectSettlesFromFinger(settle: Settle, restingLeft: number): void {
   const final = moving.at(-1)?.chatLeft ?? Number.NaN;
   expect(Math.abs(final - restingLeft)).toBeLessThan(1.5);
   expectShadowWhileMoving(moving);
-}
-
-function settleDuration(settle: Settle, restingLeft: number): number {
-  const arrived = settle.frames.find(
-    (frame) =>
-      frame.chatLeft === null || Math.abs(frame.chatLeft - restingLeft) < 1.5,
-  );
-  return (arrived?.time ?? Number.POSITIVE_INFINITY) - settle.releasedAt;
 }
 
 interface Rect {
@@ -277,8 +269,8 @@ interface Frame {
   readonly tokens: {
     readonly pushCurve: string;
     readonly pushInDuration: string;
-    readonly pushOutDuration: string;
-    readonly settleCurve: string;
+    readonly popCurve: string;
+    readonly popDuration: string;
   };
   readonly transition: TransitionStyle;
 }
@@ -359,12 +351,8 @@ async function recordMotion(
           pushInDuration: rootStyle
             .getPropertyValue("--wl-motion-push-in")
             .trim(),
-          pushOutDuration: rootStyle
-            .getPropertyValue("--wl-motion-push-out")
-            .trim(),
-          settleCurve: rootStyle
-            .getPropertyValue("--wl-motion-settle-curve")
-            .trim(),
+          popCurve: rootStyle.getPropertyValue("--wl-motion-pop-curve").trim(),
+          popDuration: rootStyle.getPropertyValue("--wl-motion-pop").trim(),
         },
         transition: {
           duration: chatStyle?.transitionDuration ?? "0s",
@@ -425,8 +413,8 @@ function expectListStill(frames: readonly Frame[]): void {
 
 function expectPushTransition(
   frames: readonly Frame[],
-  duration: "pushInDuration" | "pushOutDuration",
-  curve: "pushCurve" | "settleCurve",
+  duration: "popDuration" | "pushInDuration",
+  curve: "popCurve" | "pushCurve",
 ): void {
   const moving = frames.filter((frame) => frame.motion !== null);
   expect(moving.length).toBeGreaterThan(0);
@@ -439,20 +427,22 @@ function expectPushTransition(
     );
 }
 
-function expectReleasedTransition(frames: readonly Frame[]): void {
+function expectReleasedTransition(
+  frames: readonly Frame[],
+  remainingDistance: number,
+  allowShorter: boolean,
+): void {
   const moving = frames.filter((frame) => frame.motion !== null);
   expect(moving.length).toBeGreaterThan(0);
-  for (const frame of moving) {
-    expect(frame.transition.property).toBe("transform");
-    expect(normalizedCurve(frame.transition.timingFunction)).toBe(
-      normalizedCurve(frame.tokens.settleCurve),
+  for (const frame of moving)
+    expectDistanceScaledTransition(
+      frame.transition,
+      "transform",
+      frame.tokens.popDuration,
+      frame.tokens.popCurve,
+      remainingDistance,
+      allowShorter,
     );
-    const scale =
-      durationMs(frame.transition.duration) /
-      durationMs(frame.tokens.pushOutDuration);
-    expect(scale).toBeGreaterThanOrEqual(1.3 - 0.001);
-    expect(scale).toBeLessThanOrEqual(1.8 + 0.001);
-  }
 }
 
 function expectShadowWhileMoving(frames: readonly Frame[]): void {

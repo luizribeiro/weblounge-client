@@ -132,6 +132,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     (#59, awaiting Luiz's on-device check). Motion coverage verifies the computed token
     configuration, monotonic intermediate movement, and elapsed-time curve bounds without assuming
     a runner frame rate.
+  - [x] Give tap-Back and released swipe-back one 280ms pop speed and curve. Swipe settlement scales
+    by remaining distance, with release velocity allowed only to shorten it (#61, awaiting Luiz's
+    on-device check).
   - [x] Close the narrow-desktop member panel through the shared drawer exit motion.
   - [x] Extend transcript mention, hover, and selected-row surfaces edge to edge without moving their content.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)

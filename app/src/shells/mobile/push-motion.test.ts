@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMobileStack, popChat, pushChat } from "./mobile-navigation";
 import {
-  bezierStartSlope,
   milliseconds,
   pushOffset,
   releasedSwipe,
@@ -36,25 +35,22 @@ describe("mobile push motion", () => {
     expect(pushOffset({ durationScale: 1, phase: "completing" })).toBe(1);
   });
 
-  it("settles a flick sooner than a slow release, within bounds", () => {
+  it("scales settlement by remaining distance and only shortens a flick", () => {
     const slow = settleDurationScale(0.5, 0.0002);
-    const flick = settleDurationScale(0.5, 0.0025);
+    const flick = settleDurationScale(0.5, 0.005);
     const fastest = settleDurationScale(0.5, 1);
 
-    expect(slow).toBe(1.8);
-    expect(flick).toBeGreaterThan(1.3);
+    expect(slow).toBe(0.5);
+    expect(flick).toBeCloseTo(0.5 / (0.005 * 280));
     expect(flick).toBeLessThan(slow);
-    expect(fastest).toBe(1.3);
-    expect(settleDurationScale(0.5, 0)).toBe(1.8);
-    expect(settleDurationScale(0.5, -0.004)).toBe(1.8);
-    expect(settleDurationScale(0.5, Number.NaN)).toBe(1.8);
+    expect(fastest).toBeCloseTo(0.5 / 280);
+    expect(settleDurationScale(0.5, 0)).toBe(0.5);
+    expect(settleDurationScale(0.5, -0.004)).toBe(0.5);
+    expect(settleDurationScale(0.5, Number.NaN)).toBe(0.5);
   });
 
-  it("reads the settle timing from motion tokens strictly", () => {
-    expect(bezierStartSlope("cubic-bezier(0.25, 0.46, 0.45, 0.94)")).toBe(1.84);
-    expect(() => bezierStartSlope("cubic-bezier(0, 1, 0.4, 1)")).toThrow();
-    expect(() => bezierStartSlope("ease-out")).toThrow();
-    expect(milliseconds("230ms")).toBe(230);
+  it("reads the pop duration from motion tokens strictly", () => {
+    expect(milliseconds("280ms")).toBe(280);
     expect(() => milliseconds("0.23s")).toThrow();
   });
 
@@ -67,7 +63,7 @@ describe("mobile push motion", () => {
       durationScale: settleDurationScale(0.3, 0.004),
       phase: "returning",
     });
-    expect(releasedSwipe("returning", 0.3, 0.004).durationScale).toBe(1.8);
+    expect(releasedSwipe("returning", 0.3, 0.004).durationScale).toBe(0.3);
   });
 
   it("settles only phases that transition to a resting offset", () => {

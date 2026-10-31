@@ -242,10 +242,13 @@ it("continues a completed swipe closed before unmounting the chat", async () => 
   ));
   const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
+  vi.spyOn(shell, "getBoundingClientRect").mockReturnValue({
+    width: 1_000,
+  } as DOMRect);
 
   fireEvent.pointerDown(shell, { clientX: 5, pointerId: 9 });
-  fireEvent.pointerMove(shell, { clientX: 900, pointerId: 9 });
-  fireEvent.pointerUp(shell, { clientX: 900, pointerId: 9 });
+  fireEvent.pointerMove(shell, { clientX: 600, pointerId: 9 });
+  fireEvent.pointerUp(shell, { clientX: 600, pointerId: 9 });
   const completing = document.querySelector<HTMLElement>(
     '[data-motion="completing"]',
   );

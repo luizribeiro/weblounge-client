@@ -42,11 +42,7 @@ export function stackMotion(
   return { phase: painted ? "opening" : "entering" };
 }
 
-// Above 1.3x one 60Hz frame of the settle curve covers less than a sixth of the
-// remaining travel; 1.8x keeps a near-stationary release from dragging on.
-const settleScaleBounds = { min: 1.3, max: 1.8 } as const;
-const settleStartSlope = bezierStartSlope(motionTokens.settleCurve);
-const settleBaseMs = milliseconds(motionTokens.pushOut);
+const popBaseMs = milliseconds(motionTokens.pop);
 
 export function releasedSwipe(
   phase: ReleasedSwipe["phase"],
@@ -61,29 +57,13 @@ export function releasedSwipe(
   };
 }
 
-// Sized so the settle curve starts at the finger's release speed: a flick
-// finishes sooner, a slow release eases, and neither leaves the finger with a jump.
 export function settleDurationScale(
   remaining: number,
   velocity: number,
 ): number {
-  if (!(velocity > 0)) return settleScaleBounds.max;
-  const matched = (settleStartSlope * remaining) / velocity / settleBaseMs;
-  return Math.min(
-    settleScaleBounds.max,
-    Math.max(settleScaleBounds.min, matched),
-  );
-}
-
-export function bezierStartSlope(curve: string): number {
-  const points = /^cubic-bezier\(([\d.]+), ([\d.]+), [\d.]+, [\d.]+\)$/.exec(
-    curve,
-  );
-  const x1 = Number(points?.[1]);
-  const y1 = Number(points?.[2]);
-  if (!(x1 > 0) || Number.isNaN(y1))
-    throw new Error(`settle curve has no finite start slope: ${curve}`);
-  return y1 / x1;
+  if (!(velocity > 0)) return remaining;
+  const velocityMatched = remaining / velocity / popBaseMs;
+  return Math.min(remaining, velocityMatched);
 }
 
 export function milliseconds(duration: string): number {
