@@ -37,31 +37,42 @@ test.describe("mobile text field zoom", () => {
     const composer = page.getByRole("textbox", {
       name: "Message #weblounge-test",
     });
+    const root = page.locator("#root");
+
+    const drag = await touchMove(composer, 400, 400, {
+      endX: 240,
+      startX: 200,
+    });
+    expect(drag.endAllowed).toBe(true);
+    await expect(composer).not.toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+
+    const longPress = await touchMove(composer, 400, 400, { duration: 500 });
+    expect(longPress.endAllowed).toBe(true);
+    await expect(composer).not.toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
 
     await composer.tap();
     await expect(composer).toBeFocused();
-    await expect(page.locator("#root")).toHaveAttribute(
-      "data-keyboard",
-      "open",
-    );
+    await expect(root).toHaveAttribute("data-keyboard", "open");
     const opening = await sampleAppPosition(page, 8);
     expect(opening).toEqual(
       opening.map(() => ({ appTop: 0, offsetTop: 0, scrollY: 0 })),
     );
 
-    const headerMoveAllowed = await touchMove(
+    const headerMove = await touchMove(
       page.getByRole("button", { name: "Back to chats" }),
       200,
       120,
     );
-    if (headerMoveAllowed)
+    if (headerMove.moveAllowed)
       await setVisualViewport(
         page,
         await page.evaluate(() => innerHeight - 358),
         80,
       );
     const dragged = await sampleAppPosition(page, 8);
-    expect(headerMoveAllowed).toBe(false);
+    expect(headerMove.moveAllowed).toBe(false);
     expect(dragged).toEqual(
       dragged.map(() => ({ appTop: 0, offsetTop: 0, scrollY: 0 })),
     );
@@ -69,7 +80,7 @@ test.describe("mobile text field zoom", () => {
     const messages = page.locator("[data-message-list]");
     await makeTranscriptScrollable(messages);
     const before = await messages.evaluate((element) => element.scrollTop);
-    expect(await touchMove(messages, 500, 300)).toBe(true);
+    expect((await touchMove(messages, 500, 300)).moveAllowed).toBe(true);
     await messages.evaluate((element) => element.scrollBy(0, 100));
     expect(await messages.evaluate((element) => element.scrollTop)).toBe(
       before + 100,
@@ -526,12 +537,22 @@ async function touchMove(
   target: ReturnType<Page["locator"]>,
   startY: number,
   endY: number,
-): Promise<boolean> {
+  options: {
+    readonly duration?: number;
+    readonly endX?: number;
+    readonly startX?: number;
+  } = {},
+): Promise<{ readonly endAllowed: boolean; readonly moveAllowed: boolean }> {
   return target.evaluate(
-    (element, points) => {
-      const event = (type: string, clientY: number) => {
+    (element, gesture) => {
+      const event = (
+        type: string,
+        clientX: number,
+        clientY: number,
+        timeStamp: number,
+      ) => {
         const touch = {
-          clientX: 200,
+          clientX,
           clientY,
           identifier: 71,
         };
@@ -543,16 +564,33 @@ async function touchMove(
         Object.defineProperties(touchEvent, {
           changedTouches: { value: [touch] },
           targetTouches: { value: type === "touchend" ? [] : [touch] },
+          timeStamp: { value: timeStamp },
           touches: { value: type === "touchend" ? [] : [touch] },
         });
         return element.dispatchEvent(touchEvent);
       };
-      event("touchstart", points.startY);
-      const moveAllowed = event("touchmove", points.endY);
-      event("touchend", points.endY);
-      return moveAllowed;
+      event("touchstart", gesture.startX, gesture.startY, 100);
+      const moveAllowed = event(
+        "touchmove",
+        gesture.endX,
+        gesture.endY,
+        100 + gesture.duration / 2,
+      );
+      const endAllowed = event(
+        "touchend",
+        gesture.endX,
+        gesture.endY,
+        100 + gesture.duration,
+      );
+      return { endAllowed, moveAllowed };
     },
-    { endY, startY },
+    {
+      duration: options.duration ?? 100,
+      endX: options.endX ?? 200,
+      endY,
+      startX: options.startX ?? 200,
+      startY,
+    },
   );
 }
 

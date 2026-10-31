@@ -17,3 +17,61 @@ export function focusWithoutViewportPan(
     });
   }
 }
+
+interface TouchPoint {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly identifier: number;
+}
+
+interface TouchStart extends TouchPoint {
+  readonly time: number;
+}
+
+const tapSlop = 10;
+const longPressMilliseconds = 500;
+
+export class TouchTapGesture {
+  #start: TouchStart | undefined;
+  #moved = false;
+
+  begin(touch: TouchPoint, time: number): void {
+    this.#start = { ...touch, time };
+    this.#moved = false;
+  }
+
+  move(touch: TouchPoint): void {
+    const start = this.#start;
+    if (start === undefined || touch.identifier !== start.identifier) {
+      this.cancel();
+      return;
+    }
+    this.#moved ||= distance(start, touch) > tapSlop;
+  }
+
+  end(touch: TouchPoint, time: number): boolean {
+    const start = this.#start;
+    const moved =
+      this.#moved || (start !== undefined && distance(start, touch) > tapSlop);
+    this.cancel();
+    return (
+      start !== undefined &&
+      touch.identifier === start.identifier &&
+      !moved &&
+      time - start.time >= 0 &&
+      time - start.time < longPressMilliseconds
+    );
+  }
+
+  cancel(): void {
+    this.#start = undefined;
+    this.#moved = false;
+  }
+}
+
+function distance(start: TouchPoint, current: TouchPoint): number {
+  return Math.hypot(
+    current.clientX - start.clientX,
+    current.clientY - start.clientY,
+  );
+}

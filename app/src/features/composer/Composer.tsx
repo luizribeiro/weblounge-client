@@ -5,7 +5,10 @@ import type {
   CompletionResult,
 } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
-import { focusWithoutViewportPan } from "../../platform/focus-without-pan";
+import {
+  focusWithoutViewportPan,
+  TouchTapGesture,
+} from "../../platform/focus-without-pan";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
@@ -45,6 +48,7 @@ export function Composer(props: ComposerProps) {
   let composing = false;
   let pendingTabInput: string | undefined;
   let tabCycle: TabCycle | undefined;
+  const touchFocus = new TouchTapGesture();
   let currentBuffer = props.bufferId;
   let currentDraftKey = props.draftKey;
   const [text, setText] = createSignal(readDraft(currentDraftKey));
@@ -252,17 +256,16 @@ export function Composer(props: ComposerProps) {
       props.onSelectLast?.();
     }
   };
-  const focusFromTouch = (
-    event: PointerEvent | TouchEvent,
-    field: HTMLTextAreaElement,
-    preventDefault: boolean,
-  ) => {
+  const focusFromTap = (event: TouchEvent, field: HTMLTextAreaElement) => {
+    const touch = event.changedTouches[0];
     if (
+      touch === undefined ||
+      !touchFocus.end(touch, event.timeStamp) ||
       platform.environment().input !== "touch" ||
       document.activeElement === field
     )
       return;
-    if (preventDefault) event.preventDefault();
+    event.preventDefault();
     focusWithoutViewportPan(field);
   };
 
@@ -351,15 +354,18 @@ export function Composer(props: ComposerProps) {
               request(value, event.currentTarget.selectionStart, false);
           }}
           onKeyDown={keydown}
-          onPointerDown={(event) => {
-            if (event.pointerType === "touch")
-              focusFromTouch(event, event.currentTarget, false);
+          onTouchCancel={() => touchFocus.cancel()}
+          onTouchEnd={(event) => focusFromTap(event, event.currentTarget)}
+          onTouchMove={(event) => {
+            const touch = event.touches[0];
+            if (event.touches.length === 1 && touch !== undefined)
+              touchFocus.move(touch);
+            else touchFocus.cancel();
           }}
           onTouchStart={(event) =>
-            focusFromTouch(event, event.currentTarget, false)
-          }
-          onTouchEnd={(event) =>
-            focusFromTouch(event, event.currentTarget, true)
+            event.touches.length === 1 && event.touches[0] !== undefined
+              ? touchFocus.begin(event.touches[0], event.timeStamp)
+              : touchFocus.cancel()
           }
           placeholder={`Message ${props.bufferTitle}`}
           ref={(element) => {

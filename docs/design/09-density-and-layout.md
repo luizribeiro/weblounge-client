@@ -79,10 +79,12 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   unpainted band.
 - Keyboard open (the visual viewport over 120px shorter than the layout viewport, pinch zoom
   excluded), `#root` takes the visual viewport's height from `--wl-app-height` and keeps
-  `--wl-app-top` at zero. Touch focus moves the composer field above the viewport synchronously,
-  focuses it with `preventScroll`, and restores it the next frame, following [React Aria's iOS
+  `--wl-app-top` at zero. A short touch that ends within 10px and under 500ms moves the composer field
+  above the viewport synchronously, focuses it with `preventScroll`, and restores it the next
+  frame, following [React Aria's iOS
   technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
-  This prevents WebKit's focus pan rather than following its curve. A platform-owned non-passive
+  This leaves drags and long-press callouts native while preventing WebKit's focus pan rather than
+  following its curve. A platform-owned non-passive
   vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
   textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
   and an inner scroller that can still move in the gesture direction. The transcript uses
