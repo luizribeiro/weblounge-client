@@ -40,7 +40,7 @@ import {
   readLastViewedPath,
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
-import { setViewportDebugEnabled } from "./platform/viewport-debug";
+import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
 import {
   contextMenuRegistry,
@@ -121,14 +121,14 @@ export function App(props: AppProps) {
           },
         });
       },
-      "debug.viewport": (context) => {
-        if (context.debugViewport === undefined) {
-          setComposerNotice("Usage: /debug viewport or /debug off");
+      "debug.overlay": (context) => {
+        if (context.debugOverlay === undefined) {
+          setComposerNotice("Usage: /debug <viewport|gestures|off>");
           return;
         }
         const root = document.getElementById("root");
         if (root === null) return;
-        setViewportDebugEnabled(root, window, context.debugViewport);
+        setDebugOverlayEnabled(root, window, context.debugOverlay);
         setComposerNotice(undefined);
       },
     },

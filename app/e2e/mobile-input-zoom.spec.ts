@@ -241,7 +241,7 @@ test.describe("viewport diagnostics overlay", () => {
     page,
   }) => {
     await openChannel(page, "&debug=viewport");
-    const overlay = page.locator("[data-viewport-debug]");
+    const overlay = page.locator("[data-debug-overlay]");
     await expect(overlay).toContainText("inner: 402×874");
     await expect(overlay).toContainText("data-keyboard: closed");
     await page

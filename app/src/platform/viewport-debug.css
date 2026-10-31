@@ -1,4 +1,4 @@
-[data-viewport-debug] {
+[data-debug-overlay] {
   background: var(--wl-color-panel);
   border: 1px solid var(--wl-color-panel-border);
   border-radius: var(--wl-radius-control);

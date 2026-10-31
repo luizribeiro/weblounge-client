@@ -7,7 +7,7 @@ export type UiActionId =
   | "buffer.open"
   | "buffer.open-direct"
   | "buffer.previous"
-  | "debug.viewport"
+  | "debug.overlay"
   | "list.next"
   | "list.open"
   | "list.previous"
@@ -28,7 +28,7 @@ export type Platform = "macos" | "other";
 export interface ActionContext {
   readonly bufferCount: number;
   readonly connected?: boolean;
-  readonly debugViewport?: boolean;
+  readonly debugOverlay?: "gestures" | "off" | "viewport";
   readonly features?: readonly string[];
   readonly listActive: boolean;
   readonly permission?: CommandPermission;
@@ -90,7 +90,7 @@ const specs: readonly ActionSpec[] = [
     mod("k", "⌘K", "Ctrl+K"),
   ),
   {
-    ...command("debug.viewport", "Viewport diagnostics", alwaysAvailable),
+    ...command("debug.overlay", "Debug diagnostics", alwaysAvailable),
     discoverable: false,
   },
   command("settings.open", "Settings", alwaysAvailable, {
@@ -249,10 +249,10 @@ export class ActionRegistry {
     const match = input.trim().match(/^\/debug(?:\s+(\S+))?(?:\s.*)?$/iu);
     if (match === null) return undefined;
     const mode = match[1]?.toLocaleLowerCase();
-    return this.run("debug.viewport", {
+    return this.run("debug.overlay", {
       ...context,
-      ...(mode === "viewport" || mode === "off"
-        ? { debugViewport: mode === "viewport" }
+      ...(mode === "viewport" || mode === "gestures" || mode === "off"
+        ? { debugOverlay: mode }
         : {}),
     });
   }

@@ -1,11 +1,5 @@
-import "./viewport-debug.css";
+import { type DebugReading, installDebugSection } from "./debug-overlay";
 
-export type ViewportReading = readonly [label: string, value: string];
-type FlagStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
-
-const flagParameter = "debug";
-const flagValue = "viewport";
-const storageKey = "weblounge.debug.viewport";
 const refreshInterval = 250;
 const insets = ["top", "right", "bottom", "left"] as const;
 const appProperties = ["--wl-app-height", "--wl-app-top"] as const;
@@ -15,67 +9,11 @@ const trackedElements = [
   ["composer", "[data-composer]"],
 ] as const;
 const refreshEvents = ["resize", "scroll", "focusin", "focusout"] as const;
-let activeStop: (() => void) | undefined;
-
-// Home Screen apps launch at the manifest start_url and hosted sign-in
-// redirects drop the query, so the flag must outlive the URL that set it.
-export function viewportDebugRequested(
-  url: URL,
-  storage: FlagStorage | null,
-): boolean {
-  const requested = url.searchParams.get(flagParameter);
-  return (
-    attempt(() => {
-      if (requested === flagValue) storage?.setItem(storageKey, "on");
-      if (requested === "off") storage?.removeItem(storageKey);
-      return storage?.getItem(storageKey) === "on";
-    }) === true || requested === flagValue
-  );
-}
-
-export function installRequestedViewportDebug(
-  root: HTMLElement,
-  browserWindow: Window,
-): () => void {
-  const url = new URL(browserWindow.location.href);
-  const storage = attempt(() => browserWindow.localStorage) ?? null;
-  if (!viewportDebugRequested(url, storage)) return () => {};
-  return enableViewportDebug(root, browserWindow);
-}
-
-export function setViewportDebugEnabled(
-  root: HTMLElement,
-  browserWindow: Window,
-  enabled: boolean,
-): void {
-  const storage = attempt(() => browserWindow.localStorage) ?? null;
-  attempt(() => {
-    if (enabled) storage?.setItem(storageKey, "on");
-    else storage?.removeItem(storageKey);
-  });
-  activeStop?.();
-  activeStop = undefined;
-  if (enabled) activeStop = installViewportDebug(root, browserWindow);
-}
-
-function enableViewportDebug(
-  root: HTMLElement,
-  browserWindow: Window,
-): () => void {
-  activeStop?.();
-  const stop = installViewportDebug(root, browserWindow);
-  activeStop = stop;
-  return () => {
-    if (activeStop === stop) activeStop = undefined;
-    stop();
-  };
-}
-
 export function readViewportDiagnostics(
   browserWindow: Window,
   root: HTMLElement,
   insetProbe: HTMLElement,
-): readonly ViewportReading[] {
+): readonly DebugReading[] {
   const { document: doc, screen, visualViewport: viewport } = browserWindow;
   const { documentElement } = doc;
   const probe = getComputedStyle(insetProbe);
@@ -97,13 +35,13 @@ export function readViewportDiagnostics(
     ["standalone", String(matchesStandalone(browserWindow))],
     ["data-keyboard", root.dataset.keyboard ?? "unset"],
     ...appProperties.map(
-      (name): ViewportReading => [
+      (name): DebugReading => [
         name,
         rootStyle.getPropertyValue(name).trim() || "unset",
       ],
     ),
     ...trackedElements.map(
-      ([label, selector]): ViewportReading => [
+      ([label, selector]): DebugReading => [
         label,
         describeRect(doc.querySelector(selector)),
       ],
@@ -116,43 +54,46 @@ export function installViewportDebug(
   browserWindow: Window,
 ): () => void {
   const doc = browserWindow.document;
-  const overlay = doc.createElement("pre");
-  overlay.dataset.viewportDebug = "true";
-  overlay.setAttribute("aria-hidden", "true");
   const insetProbe = doc.createElement("div");
   insetProbe.dataset.viewportDebugProbe = "true";
-  doc.body.append(overlay, insetProbe);
+  doc.body.append(insetProbe);
   let lastEvent = "install";
-  const render = () => {
-    const rows = readViewportDiagnostics(browserWindow, root, insetProbe);
-    overlay.textContent = [["event", lastEvent] as const, ...rows]
-      .map(([label, value]) => `${label}: ${value}`)
-      .join("\n");
-  };
-  const onEvent = (event: Event) => {
-    lastEvent = event.type;
-    render();
-  };
-  const targets = [browserWindow.visualViewport, browserWindow].filter(
-    (target): target is VisualViewport | Window => target != null,
-  );
-  for (const target of targets)
-    for (const type of refreshEvents) target.addEventListener(type, onEvent);
-  const timer = browserWindow.setInterval(render, refreshInterval);
-  render();
+  const stopSection = installDebugSection(browserWindow, {
+    id: "viewport",
+    title: "viewport",
+    read: () => [
+      ["event", lastEvent],
+      ...readViewportDiagnostics(browserWindow, root, insetProbe),
+    ],
+    subscribe: (render) => {
+      const onEvent = (event: Event) => {
+        lastEvent = event.type;
+        render();
+      };
+      const targets = [browserWindow.visualViewport, browserWindow].filter(
+        (target): target is VisualViewport | Window => target != null,
+      );
+      for (const target of targets)
+        for (const type of refreshEvents)
+          target.addEventListener(type, onEvent);
+      const timer = browserWindow.setInterval(render, refreshInterval);
+      return () => {
+        browserWindow.clearInterval(timer);
+        for (const target of targets)
+          for (const type of refreshEvents)
+            target.removeEventListener(type, onEvent);
+      };
+    },
+  });
   return () => {
-    browserWindow.clearInterval(timer);
-    for (const target of targets)
-      for (const type of refreshEvents)
-        target.removeEventListener(type, onEvent);
-    overlay.remove();
+    stopSection();
     insetProbe.remove();
   };
 }
 
 function visualViewportReadings(
   viewport: VisualViewport | null | undefined,
-): readonly ViewportReading[] {
+): readonly DebugReading[] {
   if (viewport == null) return [["vv", "none"]];
   return [
     ["vv w×h", `${px(viewport.width)}×${px(viewport.height)}`],
@@ -184,12 +125,4 @@ function describeRect(element: Element | null): string {
 
 function px(value: number): string {
   return String(Math.round(value * 10) / 10);
-}
-
-function attempt<T>(read: () => T): T | undefined {
-  try {
-    return read();
-  } catch {
-    return undefined;
-  }
 }

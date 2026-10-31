@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  debugOverlayRequested,
+  setDebugOverlayEnabled,
+} from "./debug-overlays";
+import {
   installViewportDebug,
   readViewportDiagnostics,
-  setViewportDebugEnabled,
-  viewportDebugRequested,
 } from "./viewport-debug";
 
 const flagKey = "weblounge.debug.viewport";
@@ -37,13 +39,18 @@ describe("viewport debug flag", () => {
   it("turns on from the URL and remembers it after the query is gone", () => {
     const storage = new MemoryStorage();
     expect(
-      viewportDebugRequested(
+      debugOverlayRequested(
+        "viewport",
         new URL("https://beta.weblounge.org/?debug=viewport"),
         storage,
       ),
     ).toBe(true);
     expect(
-      viewportDebugRequested(new URL("https://beta.weblounge.org/"), storage),
+      debugOverlayRequested(
+        "viewport",
+        new URL("https://beta.weblounge.org/"),
+        storage,
+      ),
     ).toBe(true);
   });
 
@@ -51,16 +58,22 @@ describe("viewport debug flag", () => {
     const storage = new MemoryStorage();
     storage.setItem(flagKey, "on");
     expect(
-      viewportDebugRequested(
+      debugOverlayRequested(
+        "viewport",
         new URL("https://beta.weblounge.org/?debug=off"),
         storage,
       ),
     ).toBe(false);
     expect(
-      viewportDebugRequested(new URL("https://beta.weblounge.org/"), storage),
+      debugOverlayRequested(
+        "viewport",
+        new URL("https://beta.weblounge.org/"),
+        storage,
+      ),
     ).toBe(false);
     expect(
-      viewportDebugRequested(
+      debugOverlayRequested(
+        "viewport",
         new URL("https://beta.weblounge.org/?debug=other"),
         null,
       ),
@@ -69,17 +82,32 @@ describe("viewport debug flag", () => {
 
   it("still honours the URL when storage throws", () => {
     expect(
-      viewportDebugRequested(
+      debugOverlayRequested(
+        "viewport",
         new URL("https://beta.weblounge.org/?debug=viewport"),
         throwingStorage,
       ),
     ).toBe(true);
     expect(
-      viewportDebugRequested(
+      debugOverlayRequested(
+        "viewport",
         new URL("https://beta.weblounge.org/"),
         throwingStorage,
       ),
     ).toBe(false);
+  });
+
+  it("remembers gesture diagnostics independently", () => {
+    const storage = new MemoryStorage();
+    expect(
+      debugOverlayRequested(
+        "gestures",
+        new URL("https://beta.weblounge.org/?debug=gestures"),
+        storage,
+      ),
+    ).toBe(true);
+    expect(storage.getItem("weblounge.debug.gestures")).toBe("on");
+    expect(storage.getItem(flagKey)).toBeNull();
   });
 });
 
@@ -118,9 +146,7 @@ describe("viewport diagnostics", () => {
     const input = document.createElement("input");
     document.body.append(root, input);
     const stop = installViewportDebug(root, window);
-    const overlay = document.querySelector<HTMLElement>(
-      "[data-viewport-debug]",
-    );
+    const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
 
     expect(overlay?.getAttribute("aria-hidden")).toBe("true");
     expect(overlay?.textContent).toContain("event: install");
@@ -129,7 +155,7 @@ describe("viewport diagnostics", () => {
     expect(overlay?.textContent).toContain("event: focusin");
 
     stop();
-    expect(document.querySelector("[data-viewport-debug]")).toBeNull();
+    expect(document.querySelector("[data-debug-overlay]")).toBeNull();
     expect(document.querySelector("[data-viewport-debug-probe]")).toBeNull();
   });
 
@@ -137,12 +163,12 @@ describe("viewport diagnostics", () => {
     const root = document.createElement("div");
     document.body.append(root);
 
-    setViewportDebugEnabled(root, window, true);
+    setDebugOverlayEnabled(root, window, "viewport");
     expect(localStorage.getItem(flagKey)).toBe("on");
-    expect(document.querySelector("[data-viewport-debug]")).not.toBeNull();
+    expect(document.querySelector("[data-debug-overlay]")).not.toBeNull();
 
-    setViewportDebugEnabled(root, window, false);
+    setDebugOverlayEnabled(root, window, "off");
     expect(localStorage.getItem(flagKey)).toBeNull();
-    expect(document.querySelector("[data-viewport-debug]")).toBeNull();
+    expect(document.querySelector("[data-debug-overlay]")).toBeNull();
   });
 });

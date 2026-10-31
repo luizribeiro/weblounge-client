@@ -166,7 +166,7 @@ describe("ActionRegistry", () => {
 
   it("keeps viewport diagnostics hidden until the exact slash command", () => {
     const debug = vi.fn();
-    const registry = new ActionRegistry({ "debug.viewport": debug }, "other");
+    const registry = new ActionRegistry({ "debug.overlay": debug }, "other");
 
     expect(registry.palette(context)).toEqual([]);
     expect(registry.help(context)).toEqual([]);
@@ -177,12 +177,17 @@ describe("ActionRegistry", () => {
     expect(registry.runInput("/debug viewport", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith({
       ...context,
-      debugViewport: true,
+      debugOverlay: "viewport",
+    });
+    expect(registry.runInput("/debug gestures", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith({
+      ...context,
+      debugOverlay: "gestures",
     });
     expect(registry.runInput("/debug off", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith({
       ...context,
-      debugViewport: false,
+      debugOverlay: "off",
     });
     expect(registry.runInput("/debug invalid", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith(context);

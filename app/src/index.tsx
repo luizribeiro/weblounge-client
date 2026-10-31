@@ -21,7 +21,7 @@ import {
 } from "./platform/environment";
 import "./platform/platform.css";
 import { installPageZoomGuard } from "./page-zoom";
-import { installRequestedViewportDebug } from "./platform/viewport-debug";
+import { installRequestedDebugOverlays } from "./platform/debug-overlays";
 import "./styles/base.css";
 import { installTheme } from "./theme/theme-controller";
 
@@ -204,7 +204,7 @@ if (root === null) {
 }
 
 installPlatformEnvironment(root, window);
-installRequestedViewportDebug(root, window);
+installRequestedDebugOverlays(root, window);
 const splash = root.querySelector<HTMLElement>("[data-initial-splash]");
 if (splash === null) {
   throw new Error("missing initial splash");
