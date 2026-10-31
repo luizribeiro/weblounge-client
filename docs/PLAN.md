@@ -136,7 +136,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     curves on the transcript/composer surface. `/debug keyboard` records a copyable frame trace;
     WebKit coverage proves monotonic motion through late geometry retargets by clearing canceled
     compositor transforms, a fixed root, and an adjacent live-edge transcript
-    (#69 follow-up, awaiting on-device motion confirmation).
+    (#69 follow-up, awaiting on-device motion confirmation). The mobile shell clips instead of
+    hiding overflow so WebKit's focus reveal cannot scroll it under the keyboard motion.
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.
@@ -188,7 +189,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     composer focus; mobile taps preserve the closed keyboard and nickname-originated swipes keep
     Back gesture ownership.
     user-owned wheel input, and preserve the visual row anchor across reconnects and late
-    font-driven virtualizer remeasurement.
+    font-driven virtualizer remeasurement. Leaving the live edge freezes the unread line where the
+    reader sees it, so the virtualizer never writes scroll over the reader's wheel scroll.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
