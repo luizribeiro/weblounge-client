@@ -100,6 +100,7 @@ export class KeyboardMotionController {
       !this.#reducedMotion();
     this.#cancelPendingClose();
     this.#cancelAnimation();
+    if (surface !== null) this.#clearCompositorTransform(surface);
     if (animate) surface.dataset.keyboardMotionActive = "true";
     commit();
     if (!animate || surface === null) return;
@@ -235,5 +236,11 @@ export class KeyboardMotionController {
     if (this.#animatedSurface !== undefined)
       delete this.#animatedSurface.dataset.keyboardMotionActive;
     this.#animatedSurface = undefined;
+  }
+
+  #clearCompositorTransform(surface: HTMLElement): void {
+    surface.style.transform = "none";
+    surface.getBoundingClientRect();
+    surface.style.removeProperty("transform");
   }
 }

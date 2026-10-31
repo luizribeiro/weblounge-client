@@ -134,7 +134,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep the tapped composer outside WebKit's delayed reveal until measured keyboard geometry,
     cache open heights per orientation, and own open/close motion with platform-matched transform
     curves on the transcript/composer surface. `/debug keyboard` records a copyable frame trace;
-    WebKit coverage proves monotonic motion, a fixed root, and an adjacent live-edge transcript
+    WebKit coverage proves monotonic motion through late geometry retargets by clearing canceled
+    compositor transforms, a fixed root, and an adjacent live-edge transcript
     (#69 follow-up, awaiting on-device motion confirmation).
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
