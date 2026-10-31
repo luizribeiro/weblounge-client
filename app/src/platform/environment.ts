@@ -1,4 +1,5 @@
 import { type Accessor, createSignal } from "solid-js";
+import { observeViewportGeometry } from "./viewport-geometry";
 
 export const desktopPanelBoundary = 760;
 
@@ -29,11 +30,6 @@ export interface InstallOptions {
   readonly observeWidth?: WidthObserver;
 }
 
-export interface KeyboardGeometry {
-  readonly inset: number;
-  readonly state: "closed" | "open";
-}
-
 type WidthObserver = (
   element: Element,
   onWidth: (width: number) => void,
@@ -43,7 +39,6 @@ const touchQuery = "(hover: none) and (pointer: coarse)";
 const standaloneQuery = "(display-mode: standalone)";
 const darkQuery = "(prefers-color-scheme: dark)";
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
-const keyboardInsetThreshold = 120;
 
 let installed: PlatformController | undefined;
 
@@ -94,7 +89,11 @@ export function installPlatformEnvironment(
       publish();
     },
   );
-  const stopKeyboardObserver = observeKeyboardInset(root, browserWindow);
+  const stopViewportObserver = observeViewportGeometry(
+    root,
+    browserWindow,
+    () => standalone.matches,
+  );
   publish();
 
   const controller: PlatformController = {
@@ -105,14 +104,12 @@ export function installPlatformEnvironment(
     dispose() {
       for (const query of media)
         query.removeEventListener("change", mediaChanged);
-      stopKeyboardObserver();
+      stopViewportObserver();
       stopWidthObserver();
       delete root.dataset.input;
       delete root.dataset.display;
       delete root.dataset.shell;
       delete root.dataset.desktopPanels;
-      delete root.dataset.keyboard;
-      root.style.removeProperty("--wl-keyboard-inset");
       if (installed === controller) installed = undefined;
     },
   };
@@ -182,41 +179,6 @@ function observeWidth(
   });
   observer.observe(element);
   return () => observer.disconnect();
-}
-
-function observeKeyboardInset(
-  root: HTMLElement,
-  browserWindow: Window,
-): () => void {
-  const viewport = browserWindow.visualViewport;
-  if (viewport === null || viewport === undefined) return () => {};
-  const update = () => {
-    const keyboard = resolveKeyboardGeometry(
-      browserWindow.innerHeight,
-      viewport,
-    );
-    root.dataset.keyboard = keyboard.state;
-    root.style.setProperty("--wl-keyboard-inset", `${keyboard.inset}px`);
-  };
-  viewport.addEventListener("resize", update);
-  update();
-  return () => {
-    viewport.removeEventListener("resize", update);
-  };
-}
-
-export function resolveKeyboardGeometry(
-  layoutHeight: number,
-  viewport: Pick<VisualViewport, "height" | "offsetTop">,
-): KeyboardGeometry {
-  const measuredInset = Math.max(
-    0,
-    layoutHeight - viewport.offsetTop - viewport.height,
-  );
-  if (measuredInset <= keyboardInsetThreshold) {
-    return { inset: 0, state: "closed" };
-  }
-  return { inset: measuredInset, state: "open" };
 }
 
 function mediaQuery(browserWindow: Window, query: string): MediaQueryList {

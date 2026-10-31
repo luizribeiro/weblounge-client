@@ -3,7 +3,6 @@ import {
   desktopPanelBoundary,
   installPlatformEnvironment,
   resolveEnvironment,
-  resolveKeyboardGeometry,
   resolveShortcutPlatform,
 } from "./environment";
 
@@ -73,21 +72,6 @@ describe("platform environment", () => {
   it("centralizes shortcut-label platform adaptation", () => {
     expect(resolveShortcutPlatform({ platform: "MacIntel" })).toBe("macos");
     expect(resolveShortcutPlatform({ platform: "Linux x86_64" })).toBe("other");
-  });
-
-  it("maps visual viewport geometry to keyboard state", () => {
-    expect(resolveKeyboardGeometry(874, { height: 874, offsetTop: 0 })).toEqual(
-      { inset: 0, state: "closed" },
-    );
-    expect(resolveKeyboardGeometry(874, { height: 812, offsetTop: 0 })).toEqual(
-      { inset: 0, state: "closed" },
-    );
-    expect(
-      resolveKeyboardGeometry(874, { height: 516, offsetTop: 42 }),
-    ).toEqual({ inset: 316, state: "open" });
-    expect(resolveKeyboardGeometry(874, { height: 900, offsetTop: 0 })).toEqual(
-      { inset: 0, state: "closed" },
-    );
   });
 
   it("publishes capability changes without treating width as shell selection", () => {
