@@ -36,5 +36,9 @@ test("aligns real-font sigil and mode columns", async ({ page }) => {
     members,
     "[data-member-prefix]",
     "[data-member-name]",
+    {
+      avatarSelector: "[data-member-avatar]",
+      gapProperty: "--wl-space-list-gap",
+    },
   );
 });

@@ -32,6 +32,7 @@ export function MemberRow(props: MemberRowProps) {
       <span
         aria-hidden="true"
         class={styles.avatar}
+        data-member-avatar="true"
         style={{ background: color() }}
       >
         {initial(props.member.nick)}

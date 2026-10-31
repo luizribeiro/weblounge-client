@@ -13,6 +13,7 @@
   grid-template-columns: subgrid;
   height: var(--wl-density-sidebar-member-row-height);
   padding-block: 1px;
+  padding-inline: 0;
   text-align: start;
   width: 100%;
 }
@@ -49,13 +50,13 @@
   display: flex;
   flex: 1;
   gap: var(--wl-space-list-gap);
-  grid-column: 3;
+  grid-column: 4;
   min-width: 0;
 }
 
 .mode {
   color: var(--wl-color-muted);
-  grid-column: 2;
+  grid-column: 3;
   justify-self: stretch;
   text-align: right;
 }

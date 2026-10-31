@@ -10,10 +10,16 @@ interface PrefixGeometry {
   readonly prefixRight: number | undefined;
 }
 
+interface PrefixColumnOptions {
+  readonly avatarSelector: string;
+  readonly gapProperty: string;
+}
+
 export async function expectAlignedPrefixColumn(
   container: Locator,
   prefixSelector: string,
   nameSelector: string,
+  options?: PrefixColumnOptions,
 ): Promise<void> {
   await expectInterFont(
     container.locator(`${prefixSelector}, ${nameSelector}`),
@@ -110,6 +116,39 @@ export async function expectAlignedPrefixColumn(
   );
   for (const { columnWidth } of geometry)
     expect(columnWidth).toBeCloseTo(expectedWidth, 0);
+
+  if (options !== undefined) {
+    const avatarGaps = await container.locator(nameSelector).evaluateAll(
+      (names, selectors) =>
+        names
+          .filter((name) => name.getClientRects().length > 0)
+          .map((name) => {
+            const row = name.closest("button");
+            const avatar = row?.querySelector<HTMLElement>(selectors.avatar);
+            const prefix = row?.querySelector<HTMLElement>(selectors.prefix);
+            if (row === null || avatar == null || prefix == null)
+              throw new Error("avatar-prefix geometry is missing");
+            return {
+              actual:
+                prefix.getBoundingClientRect().left -
+                avatar.getBoundingClientRect().right,
+              expected: Number.parseFloat(
+                getComputedStyle(row).getPropertyValue(selectors.gapProperty),
+              ),
+            };
+          }),
+      {
+        avatar: options.avatarSelector,
+        gapProperty: options.gapProperty,
+        prefix: prefixSelector,
+      },
+    );
+    for (const gap of avatarGaps)
+      expect(gap.actual, JSON.stringify(avatarGaps)).toBeCloseTo(
+        gap.expected,
+        0,
+      );
+  }
 }
 
 function spread(values: readonly number[]): number {

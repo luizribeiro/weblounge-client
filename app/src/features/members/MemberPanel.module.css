@@ -85,7 +85,7 @@
   display: grid;
   flex: 1;
   grid-template-columns:
-    calc(var(--wl-density-sidebar-avatar) + var(--wl-space-list-gap)) max-content
+    var(--wl-density-sidebar-avatar) var(--wl-space-list-gap) max-content
     minmax(0, 1fr);
   list-style: none;
   margin: 0;

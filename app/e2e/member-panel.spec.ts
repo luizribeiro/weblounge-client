@@ -102,6 +102,10 @@ test.describe("desktop members against local Ergo", () => {
         panel,
         "[data-member-prefix]",
         "[data-member-name]",
+        {
+          avatarSelector: "[data-member-avatar]",
+          gapProperty: "--wl-space-list-gap",
+        },
       );
       await expectMemberRowsUseDensityPitch(panel);
       await bot.mode(memberChannel, "-o", "weblounge");
