@@ -32,8 +32,8 @@ describe("mobile push motion", () => {
 
   it("follows the finger while dragging and settles from there", () => {
     expect(pushOffset({ phase: "dragging", progress: 0.37 })).toBe(0.37);
-    expect(pushOffset({ phase: "returning" })).toBe(0);
-    expect(pushOffset({ phase: "completing" })).toBe(1);
+    expect(pushOffset({ durationScale: 1, phase: "returning" })).toBe(0);
+    expect(pushOffset({ durationScale: 1, phase: "completing" })).toBe(1);
   });
 
   it("settles a flick sooner than a slow release, within bounds", () => {

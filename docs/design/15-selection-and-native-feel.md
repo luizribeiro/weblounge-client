@@ -95,8 +95,9 @@ independent media queries or timers.
 Drawers use the drawer curve (fast start, soft settle) for their panel, scrim, and drag return;
 pushed mobile screens use the push curve, the same native settle. A released swipe-back settles with
 the gentler-starting settle curve, so it leaves the finger's position without a jump, over
-`push-out` scaled between 1× and 1.6× to match the release velocity. Other motion uses the standard
-curve. Drawers move with state-driven CSS transitions:
+`push-out` scaled between 1.3× and 1.8×: matched to the release velocity, but never so short that a
+single frame covers more than about a sixth of the remaining distance. Other motion uses the
+standard curve. Drawers move with state-driven CSS transitions:
 the panel mounts at its off-screen offset with the scrim transparent, the open state is set two
 animation frames later so the start state is painted, and closing transitions back to the same
 offset. One offset variable drives both the panel transform and the scrim opacity, so a drag and the

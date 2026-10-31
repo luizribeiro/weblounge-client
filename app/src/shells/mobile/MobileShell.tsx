@@ -1,4 +1,5 @@
 import {
+  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -9,7 +10,7 @@ import {
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
 import { mobileHistoryPolicy } from "../../platform/mobile-history";
-import { createHorizontalPan } from "../../ui/horizontal-pan";
+import { createHorizontalPan, type PanRelease } from "../../ui/horizontal-pan";
 import { afterStartStatePaints } from "../../ui/transform-motion";
 import { MobileMemberDrawer } from "./MobileMemberDrawer";
 import { MobileScreen, type MobileShellData } from "./MobileScreen";
@@ -25,7 +26,13 @@ import {
   previousScreen,
   pushChat,
 } from "./mobile-navigation";
-import { type PushMotion, type SwipeMotion, stackMotion } from "./push-motion";
+import {
+  type PushMotion,
+  type ReleasedSwipe,
+  releasedSwipe,
+  type SwipeMotion,
+  stackMotion,
+} from "./push-motion";
 
 interface MobileShellProps extends MobileShellData {
   readonly focusRequest?: { readonly bufferId: number } | undefined;
@@ -83,7 +90,7 @@ export function MobileShell(props: MobileShellProps) {
   let memberOpenTarget: "closed" | "open" | undefined;
   let pendingDirect: { networkId: number; nick: string } | undefined;
   let drawerCloseAwaitingHistory = false;
-  let pendingHistoryPopInstant = false;
+  let completedBeforePop = false;
   let pushNextFocus = false;
   let suppressCompletedSwipeClick = false;
   let shellElement: HTMLElement | undefined;
@@ -140,7 +147,9 @@ export function MobileShell(props: MobileShellProps) {
       return { active: chats ?? { kind: "chats" }, back: [] };
     });
   };
+  const completingSwipe = () => swipe()?.phase === "completing";
   const resetSwipe = () => {
+    completedBeforePop = false;
     swipeGesture.reset();
     setSwipe(undefined);
   };
@@ -188,9 +197,7 @@ export function MobileShell(props: MobileShellProps) {
       finishDrawerClose();
     }
   };
-  const requestBack = () => popScreen(false);
-  const finishBackSwipe = () => popScreen(true);
-  const popScreen = (instant: boolean) => {
+  const requestBack = () => {
     if (drawerBufferId() !== undefined) {
       setDrawerHistoryClosing(true);
       return;
@@ -199,10 +206,9 @@ export function MobileShell(props: MobileShellProps) {
       historyPolicy === "stack" &&
       window.history.state?.webloungeMobileChat === true
     ) {
-      pendingHistoryPopInstant = instant;
       window.history.back();
     } else {
-      dispatchBack(instant || reducedMotion());
+      dispatchBack(reducedMotion() && !completingSwipe());
     }
   };
   const openMembers = (bufferId: number) => {
@@ -255,6 +261,7 @@ export function MobileShell(props: MobileShellProps) {
       stack().active.kind === "chat" &&
       stack().transition === undefined &&
       swipe() === undefined &&
+      drawerBufferId() === undefined &&
       target.closest(
         "[data-selectable], input, textarea, [data-horizontal-scroll]",
       ) === null
@@ -283,10 +290,15 @@ export function MobileShell(props: MobileShellProps) {
     memberOpenBufferId = buffer.id;
     memberOpenGesture.begin(event, width);
   };
-  const returnSwipe = () => {
+  const releaseSwipe = (phase: ReleasedSwipe["phase"], release: PanRelease) => {
+    const current = swipe();
+    const progress = current?.phase === "dragging" ? current.progress : 0;
+    setSwipe(releasedSwipe(phase, progress, release.progressPerMs));
+  };
+  const returnSwipe = (release: PanRelease) => {
     const current = swipe();
     if (current?.phase === "dragging" && current.progress > 0)
-      setSwipe({ phase: "returning" });
+      releaseSwipe("returning", release);
     else resetSwipe();
   };
   const swipeGesture = createHorizontalPan({
@@ -295,10 +307,10 @@ export function MobileShell(props: MobileShellProps) {
     direction: "right",
     preventDefaultOnStart: true,
     onCancel: returnSwipe,
-    onCommit: () => {
+    onCommit: (release) => {
       suppressCompletedSwipeClick = true;
-      setSwipe(undefined);
-      finishBackSwipe();
+      releaseSwipe("completing", release);
+      requestBack();
     },
     onProgress: (progress) => setSwipe({ phase: "dragging", progress }),
   });
@@ -364,15 +376,38 @@ export function MobileShell(props: MobileShellProps) {
   };
   const motion = (): PushMotion | undefined => {
     const transition = stack().transition;
-    return transition === undefined
-      ? swipe()
-      : stackMotion(transition, paintedPush() === transition);
+    const current = swipe();
+    if (transition === undefined) return current;
+    if (transition.direction === "pop" && current?.phase === "completing")
+      return current;
+    return stackMotion(transition, paintedPush() === transition);
   };
   const settleMotion = () => {
     const current = motion();
     if (current?.phase === "opening" || current?.phase === "closing")
       setStack(finishTransition);
     else if (current?.phase === "returning") resetSwipe();
+    else if (current?.phase === "completing") settleCompletedSwipe();
+  };
+  const settleCompletedSwipe = () => {
+    if (stack().transition?.direction !== "pop") {
+      completedBeforePop = true;
+      return;
+    }
+    batch(() => {
+      setStack(finishTransition);
+      resetSwipe();
+    });
+  };
+  const popCompletedSwipe = () => {
+    if (!completedBeforePop) {
+      dispatchBack(false);
+      return;
+    }
+    batch(() => {
+      dispatchBack(true);
+      resetSwipe();
+    });
   };
   const screenIsRetained = (screen: MobileScreenState) => {
     const current = stack();
@@ -392,11 +427,12 @@ export function MobileShell(props: MobileShellProps) {
         replaceWithRoot();
         return;
       }
+      if (completingSwipe()) {
+        popCompletedSwipe();
+        return;
+      }
       const browserHandledSwipe =
-        pendingHistoryPopInstant ||
-        swipeGesture.active() ||
-        swipe() !== undefined;
-      pendingHistoryPopInstant = false;
+        swipeGesture.active() || swipe() !== undefined;
       resetSwipe();
       if (drawerBufferId() === undefined)
         dispatchBack(browserHandledSwipe || reducedMotion());

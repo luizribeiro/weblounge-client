@@ -21,6 +21,7 @@
 }
 
 .screen[data-motion] {
+  --wl-push-curve: var(--wl-motion-push-curve);
   --wl-push-duration: var(--wl-motion-push-out);
   transform: translate3d(
     calc(
@@ -30,12 +31,20 @@
     0,
     0
   );
-  transition: transform var(--wl-push-duration) var(--wl-motion-push-curve);
+  transition: transform var(--wl-push-duration) var(--wl-push-curve);
   z-index: 1;
 }
 .screen[data-motion="entering"],
 .screen[data-motion="opening"] {
   --wl-push-duration: var(--wl-motion-push-in);
+}
+.screen[data-motion="returning"],
+.screen[data-motion="completing"] {
+  --wl-push-curve: var(--wl-motion-settle-curve);
+  --wl-push-duration: calc(
+    var(--wl-motion-push-out) *
+    var(--wl-push-settle-scale, 1)
+  );
 }
 .screen[data-motion]::before {
   box-shadow: var(--wl-effect-overlay-shadow);
@@ -45,7 +54,7 @@
   opacity: calc(1 - var(--wl-push-offset));
   pointer-events: none;
   position: absolute;
-  transition: opacity var(--wl-push-duration) var(--wl-motion-push-curve);
+  transition: opacity var(--wl-push-duration) var(--wl-push-curve);
 }
 .screen[data-motion="dragging"],
 .screen[data-motion="dragging"]::before {

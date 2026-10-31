@@ -96,6 +96,10 @@ export function MobileScreen(props: MobileScreenProps) {
       style={{
         "--wl-push-offset":
           props.motion === undefined ? undefined : pushOffset(props.motion),
+        "--wl-push-settle-scale":
+          props.motion !== undefined && "durationScale" in props.motion
+            ? props.motion.durationScale
+            : undefined,
       }}
     >
       {props.screen.kind === "chats" ? (

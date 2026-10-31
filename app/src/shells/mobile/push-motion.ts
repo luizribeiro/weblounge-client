@@ -8,7 +8,7 @@ export interface ReleasedSwipe {
 
 export type SwipeMotion =
   | { readonly phase: "dragging"; readonly progress: number }
-  | { readonly phase: "returning" | "completing" };
+  | ReleasedSwipe;
 
 export type PushMotion =
   | SwipeMotion

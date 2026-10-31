@@ -218,6 +218,91 @@ it("clears an in-flight swipe when browser history or visibility wins", async ()
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
 });
 
+it("continues a completed swipe closed before unmounting the chat", async () => {
+  history.replaceState(null, "", "/Local/mel");
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={2}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
+  if (shell === null) throw new Error("mobile shell is missing");
+
+  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 9 });
+  fireEvent.pointerMove(shell, { clientX: 900, pointerId: 9 });
+  fireEvent.pointerUp(shell, { clientX: 900, pointerId: 9 });
+  const completing = document.querySelector<HTMLElement>(
+    '[data-motion="completing"]',
+  );
+  expect(completing?.style.getPropertyValue("--wl-push-offset")).toBe("1");
+  expect(
+    Number(completing?.style.getPropertyValue("--wl-push-settle-scale")),
+  ).toBeGreaterThan(0);
+
+  await settledMotion();
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  expect(document.querySelector("[data-mobile-chat]")).toBeNull();
+});
+
+it("pops a completed swipe through history exactly once", async () => {
+  history.replaceState({ webloungeMobileChat: true }, "", "/Local/mel");
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  const back = vi.spyOn(history, "back").mockImplementation(() => {});
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={2}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  const shell = document.querySelector<HTMLElement>("[data-mobile-shell]");
+  if (shell === null) throw new Error("mobile shell is missing");
+
+  fireEvent.pointerDown(shell, { clientX: 5, pointerId: 10 });
+  fireEvent.pointerMove(shell, { clientX: 900, pointerId: 10 });
+  fireEvent.pointerUp(shell, { clientX: 900, pointerId: 10 });
+  await Promise.resolve();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(back).toHaveBeenCalledOnce();
+  expect(
+    document.querySelector('[data-motion="completing"] [data-mobile-chat]'),
+  ).not.toBeNull();
+
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  await settledMotion();
+  expect(back).toHaveBeenCalledOnce();
+  expect(document.querySelector("[data-mobile-chat]")).toBeNull();
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  back.mockRestore();
+});
+
 it("does not open members from a pan on a direct chat", () => {
   history.replaceState(null, "", "/Local/mel");
   vi.stubGlobal(
