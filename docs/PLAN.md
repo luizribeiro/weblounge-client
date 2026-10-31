@@ -54,6 +54,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     CHATHISTORY responses instead of also emitting them as `Replay` events. The engine therefore
     accepts unrequested playback again, including when the server supports CHATHISTORY. A tab
     attaching to a running shared engine receives each buffer's retained rows.
+  - [x] Pin papo `feaac6e` so registration and reconnect sends wait for numeric 001, guarded DMs
+    wait for server-proven account state, and channel replies survive the own-JOIN race. Connection
+    status and command gating already follow papo's post-001 `Connected` event; composer sends made
+    during a failed reconnect now leave their optimistic row in an explicit failed state.
   - D2. [x] Rebuild the DM list from a 30-day `CHATHISTORY TARGETS` window on connect and
     reconnect, capped at 100 direct conversations and ordered by server-reported recent activity.
     Latest history hydrates desktop and mobile previews without disturbing older-page cursors.
