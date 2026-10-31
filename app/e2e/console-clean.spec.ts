@@ -13,6 +13,7 @@ const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 test("keeps normal desktop and mobile flows console-clean", async ({
   baseURL,
   browser,
+  browserName,
   page,
 }) => {
   test.skip(
@@ -30,7 +31,7 @@ test("keeps normal desktop and mobile flows console-clean", async ({
     channel,
   );
   let phase = "load";
-  const issues = observeConsole(page, baseURL, () => phase);
+  const issues = observeConsole(page, baseURL, browserName, () => phase);
   let mobileContext: BrowserContext | undefined;
   try {
     await page.setViewportSize({ width: 1280, height: 600 });
@@ -76,7 +77,12 @@ test("keeps normal desktop and mobile flows console-clean", async ({
     });
     const mobile = await mobileContext.newPage();
     let mobilePhase = "mobile load";
-    const mobileIssues = observeConsole(mobile, baseURL, () => mobilePhase);
+    const mobileIssues = observeConsole(
+      mobile,
+      baseURL,
+      browserName,
+      () => mobilePhase,
+    );
     await mobile.goto("/?irc-password=weblounge-test");
     await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
     mobilePhase = "open mobile chat";
@@ -108,12 +114,14 @@ interface ConsoleIssue {
 function observeConsole(
   page: Page,
   baseURL: string,
+  browserName: string,
   phase: () => string,
 ): ConsoleIssue[] {
   const origin = new URL(baseURL).origin;
   const issues: ConsoleIssue[] = [];
   page.on("console", (message) => {
     if (message.type() !== "warning" && message.type() !== "error") return;
+    if (isWebKitFontPreloadFalsePositive(browserName, message.text())) return;
     const location = message.location().url;
     if (location !== "" && new URL(location).origin !== origin) return;
     issues.push(consoleIssue(message, phase()));
@@ -127,6 +135,19 @@ function observeConsole(
     });
   });
   return issues;
+}
+
+function isWebKitFontPreloadFalsePositive(
+  browserName: string,
+  message: string,
+): boolean {
+  // WebKit does not associate its same-origin CSS font load with the CORS preload.
+  return (
+    browserName === "webkit" &&
+    /inter-latin-[^/]+\.woff2 was preloaded using link preload but not used/iu.test(
+      message,
+    )
+  );
 }
 
 function consoleIssue(message: ConsoleMessage, phase: string): ConsoleIssue {
