@@ -16,6 +16,17 @@ interface ActiveTouch {
 }
 
 const scrollEpsilon = 1;
+const horizontalClaims = new Map<Element, number>();
+
+export function claimHorizontalTouchMove(target: Element | null): () => void {
+  if (target === null) return () => {};
+  horizontalClaims.set(target, (horizontalClaims.get(target) ?? 0) + 1);
+  return () => {
+    const remaining = (horizontalClaims.get(target) ?? 1) - 1;
+    if (remaining === 0) horizontalClaims.delete(target);
+    else horizontalClaims.set(target, remaining);
+  };
+}
 
 export function shouldLockTouchMove({
   browserWindow,
@@ -65,6 +76,10 @@ export function observeTouchMoveLock(
       (candidate) => candidate.identifier === start.identifier,
     );
     if (touch === undefined) return;
+    if (horizontalClaimCovers(start.startTarget)) {
+      event.preventDefault();
+      return;
+    }
     if (
       shouldLockTouchMove({
         browserWindow,
@@ -86,8 +101,15 @@ export function observeTouchMoveLock(
     active = undefined;
   };
 
-  // iOS can pan the document despite overflow and overscroll locks while the
-  // keyboard is open. Remove this once these WebKit bugs are fixed:
+  // WebKit only waits for a cancellable touchmove when a non-passive listener
+  // covered touchstart. Pointermove runs first, so a horizontal pan can claim
+  // the deciding move here before WebKit cancels its pointer stream:
+  // https://github.com/w3c/pointerevents/issues/303
+  // https://github.com/WebKit/WebKit/blob/b1964c8/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L4498-L4518
+  // https://github.com/WebKit/WebKit/blob/b1964c8/Source/WebKit/UIProcess/ios/WKContentViewInteraction.mm#L2487-L2493
+  // https://github.com/WebKit/WebKit/blob/b1964c8/Source/WebKit/UIProcess/ios/WKContentViewInteraction.mm#L4130-L4136
+  // The same listener also prevents keyboard-open document pans. Remove that
+  // policy once these WebKit bugs are fixed:
   // https://bugs.webkit.org/show_bug.cgi?id=240860
   // https://bugs.webkit.org/show_bug.cgi?id=271773
   // https://bugs.webkit.org/show_bug.cgi?id=244232
@@ -113,6 +135,14 @@ export function observeTouchMoveLock(
     document.removeEventListener("touchend", clear, true);
     document.removeEventListener("touchcancel", clear, true);
   };
+}
+
+function horizontalClaimCovers(startTarget: Element | null): boolean {
+  if (startTarget === null) return false;
+  for (const target of horizontalClaims.keys()) {
+    if (target === startTarget || target.contains(startTarget)) return true;
+  }
+  return false;
 }
 
 function canScrollInDirection(

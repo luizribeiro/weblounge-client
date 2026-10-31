@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { shouldLockTouchMove } from "./touch-move-lock";
+import {
+  claimHorizontalTouchMove,
+  observeTouchMoveLock,
+  shouldLockTouchMove,
+} from "./touch-move-lock";
 
 afterEach(() => document.body.replaceChildren());
 
 describe("touch move lock", () => {
+  it("cancels the touchmove after a horizontal gesture claims it", () => {
+    const { root, target } = surfaces();
+    const stop = observeTouchMoveLock(root, window);
+    target.dispatchEvent(touchEvent("touchstart", target, 10, 20));
+    const release = claimHorizontalTouchMove(root);
+    const move = touchEvent("touchmove", target, 70, 50);
+
+    target.dispatchEvent(move);
+
+    expect(move.defaultPrevented).toBe(true);
+    release();
+    stop();
+  });
+
   it("locks a vertical drag that starts on non-scrolling chrome", () => {
     const { root, target } = surfaces();
     expect(decide(root, target, 2, 40)).toBe(true);
@@ -42,6 +60,26 @@ describe("touch move lock", () => {
     expect(decide(root, target, 0, 40, false, false)).toBe(false);
   });
 });
+
+function touchEvent(
+  type: "touchstart" | "touchmove",
+  target: Element,
+  clientX: number,
+  clientY: number,
+): TouchEvent {
+  const event = new Event(type, {
+    bubbles: true,
+    cancelable: true,
+  }) as TouchEvent;
+  const touch = {
+    clientX,
+    clientY,
+    identifier: 1,
+    target,
+  } as unknown as Touch;
+  Object.defineProperty(event, "touches", { value: [touch] });
+  return event;
+}
 
 function surfaces() {
   const root = document.createElement("main");
