@@ -130,7 +130,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Animate mobile button, keyboard, and Android Back through the same pop transition while swipe completion remains gesture-owned.
   - [x] Keep the chats list still while a pushed chat slides over it on push, pop, and swipe-back;
     a released swipe continues from the finger to closed or back open with velocity-sized timing
-    (#59, awaiting Luiz's on-device check).
+    (#59, awaiting Luiz's on-device check). Motion coverage verifies the computed token
+    configuration, monotonic intermediate movement, and elapsed-time curve bounds without assuming
+    a runner frame rate.
   - [x] Close the narrow-desktop member panel through the shared drawer exit motion.
   - [x] Extend transcript mention, hover, and selected-row surfaces edge to edge without moving their content.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)

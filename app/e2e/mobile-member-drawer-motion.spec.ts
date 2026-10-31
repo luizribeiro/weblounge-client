@@ -4,6 +4,12 @@ import {
   openDrawer,
   openStandaloneChannel,
 } from "./member-drawer";
+import {
+  expectStepsFollowCurve,
+  expectTransitionMatches,
+  hasIntermediatePosition,
+  type TransitionStyle,
+} from "./motion-assertions";
 
 test.beforeEach(async ({ browserName, page }) => {
   await openStandaloneChannel(page, browserName);
@@ -18,12 +24,15 @@ test("opens with a fast start, anchored right, over a painted chat", async ({
   if (final?.left == null || final.right == null || final.width == null)
     throw new Error("the drawer never painted");
   const start = final.left + final.width;
-  const travelled = ((moving[0]?.left ?? start) - start) / (final.left - start);
 
-  expect(travelled).toBeLessThanOrEqual(0.35);
-  expect(distinct(moving.map((frame) => frame.left))).toBeGreaterThanOrEqual(
-    12,
-  );
+  expect(
+    hasIntermediatePosition(
+      moving.map((frame) => frame.left ?? start),
+      start,
+      final.left,
+    ),
+  ).toBe(true);
+  expectDrawerTransition(moving, "drawerOpenDuration");
   expect(
     monotonic(
       moving.map((frame) => frame.left ?? 0),
@@ -78,13 +87,26 @@ test("hands a released drag to the transition without jumping", async ({
   const dragLeft = settle.before.drawerLeft;
   const openLeft = settle.frames.at(-1)?.left ?? 0;
   expect(dragLeft - openLeft).toBeCloseTo(60, 0);
-  expect(settle.frames[0]?.left ?? 0).toBeGreaterThan(openLeft + 30);
+  const returning = settle.frames.filter(
+    (frame): frame is MotionFrame & { left: number } => frame.left !== null,
+  );
   expect(
-    monotonic(
-      settle.frames.map((frame) => frame.left ?? 0),
-      "down",
+    hasIntermediatePosition(
+      returning.map((frame) => frame.left),
+      dragLeft,
+      openLeft,
     ),
   ).toBe(true);
+  expect(
+    monotonic([dragLeft, ...returning.map((frame) => frame.left)], "down"),
+  ).toBe(true);
+  expectDrawerTransition(returning, "drawerOpenDuration");
+  expectStepsFollowCurve(
+    returning.map((frame) => ({ position: frame.left, time: frame.time })),
+    { position: dragLeft, time: settle.triggeredAt },
+    openLeft,
+    returning[0]?.drawerTransition ?? missingTransition(),
+  );
 
   await drawerPointer(page, "pointerdown", 100, 300, 1_000, 2);
   await drawerPointer(page, "pointermove", 200, 300, 1_100, 2);
@@ -96,16 +118,29 @@ test("hands a released drag to the transition without jumping", async ({
   });
   const present = close.frames.filter((frame) => frame.left !== null);
   expect(close.before.drawerLeft - openLeft).toBeCloseTo(100, 0);
-  expect(present[0]?.left ?? 0).toBeGreaterThanOrEqual(close.before.drawerLeft);
-  expect(present[0]?.left ?? 0).toBeLessThan(
-    close.before.drawerLeft + (close.before.viewportWidth - openLeft) / 2,
-  );
+  expect(
+    hasIntermediatePosition(
+      present.map((frame) => frame.left ?? 0),
+      close.before.drawerLeft,
+      close.before.viewportWidth,
+    ),
+  ).toBe(true);
   expect(
     monotonic(
-      present.map((frame) => frame.left ?? 0),
+      [close.before.drawerLeft, ...present.map((frame) => frame.left ?? 0)],
       "up",
     ),
   ).toBe(true);
+  expectDrawerTransition(present, "drawerCloseDuration");
+  expectStepsFollowCurve(
+    present.map((frame) => ({
+      position: frame.left ?? close.before.viewportWidth,
+      time: frame.time,
+    })),
+    { position: close.before.drawerLeft, time: close.triggeredAt },
+    close.before.viewportWidth,
+    present[0]?.drawerTransition ?? missingTransition(),
+  );
   expect(present.at(-1)?.left ?? 0).toBeGreaterThanOrEqual(
     close.before.viewportWidth - 0.5,
   );
@@ -129,11 +164,19 @@ interface Box {
 }
 
 interface MotionFrame {
+  readonly drawerTransition: TransitionStyle;
   readonly header: Box;
   readonly left: number | null;
   readonly list: Box;
   readonly right: number | null;
   readonly scrim: number;
+  readonly scrimTransition: TransitionStyle;
+  readonly time: number;
+  readonly tokens: {
+    readonly drawerCloseDuration: string;
+    readonly drawerCurve: string;
+    readonly drawerOpenDuration: string;
+  };
   readonly width: number | null;
 }
 
@@ -147,6 +190,7 @@ interface MotionBefore {
 interface MotionRecording {
   readonly before: MotionBefore;
   readonly frames: readonly MotionFrame[];
+  readonly triggeredAt: number;
 }
 
 async function recordMotion(
@@ -174,7 +218,21 @@ async function recordMotion(
           const drawer = overlay?.querySelector("[role=dialog]");
           const scrim = overlay?.querySelector("[data-overlay-scrim]");
           const rect = drawer?.getBoundingClientRect();
+          const drawerStyle =
+            drawer === null || drawer === undefined
+              ? null
+              : getComputedStyle(drawer);
+          const scrimStyle =
+            scrim === null || scrim === undefined
+              ? null
+              : getComputedStyle(scrim);
+          const rootStyle = getComputedStyle(document.documentElement);
           return {
+            drawerTransition: {
+              duration: drawerStyle?.transitionDuration ?? "0s",
+              property: drawerStyle?.transitionProperty ?? "all",
+              timingFunction: drawerStyle?.transitionTimingFunction ?? "ease",
+            },
             header: box("[data-mobile-chat] header"),
             left: rect?.left ?? null,
             list: box("[data-message-list]"),
@@ -183,6 +241,23 @@ async function recordMotion(
               scrim === null || scrim === undefined
                 ? 0
                 : Number(getComputedStyle(scrim).opacity),
+            scrimTransition: {
+              duration: scrimStyle?.transitionDuration ?? "0s",
+              property: scrimStyle?.transitionProperty ?? "all",
+              timingFunction: scrimStyle?.transitionTimingFunction ?? "ease",
+            },
+            time: performance.now(),
+            tokens: {
+              drawerCloseDuration: rootStyle
+                .getPropertyValue("--wl-motion-drawer-close")
+                .trim(),
+              drawerCurve: rootStyle
+                .getPropertyValue("--wl-motion-drawer-curve")
+                .trim(),
+              drawerOpenDuration: rootStyle
+                .getPropertyValue("--wl-motion-drawer-open")
+                .trim(),
+            },
             width: rect?.width ?? null,
           };
         };
@@ -249,11 +324,11 @@ async function recordMotion(
           }
         }
         const frames: MotionFrame[] = [];
-        const startedAt = performance.now();
+        const triggeredAt = performance.now();
         const step = () => {
           frames.push(sample());
-          if (settled()) resolve({ before, frames });
-          else if (performance.now() - startedAt > 3_000)
+          if (settled()) resolve({ before, frames, triggeredAt });
+          else if (performance.now() - triggeredAt > 3_000)
             reject(new Error(`motion did not settle: ${frames.length} frames`));
           else requestAnimationFrame(step);
         };
@@ -270,9 +345,14 @@ async function expectSlidesClosed(
   const { before, frames } = await recordMotion(page, { kind });
   const present = frames.filter((frame) => frame.left !== null);
 
-  expect(distinct(present.map((frame) => frame.left))).toBeGreaterThanOrEqual(
-    7,
-  );
+  expect(
+    hasIntermediatePosition(
+      present.map((frame) => frame.left ?? before.viewportWidth),
+      before.drawerLeft,
+      before.viewportWidth,
+    ),
+  ).toBe(true);
+  expectDrawerTransition(present, "drawerCloseDuration");
   expect(
     monotonic(
       present.map((frame) => frame.left ?? 0),
@@ -303,8 +383,29 @@ function expectChatStill(
   expect(before.list.visible).toBe(true);
 }
 
-function distinct(values: readonly (number | null)[]): number {
-  return new Set(values.map((value) => value?.toFixed(1))).size;
+function expectDrawerTransition(
+  frames: readonly MotionFrame[],
+  duration: "drawerCloseDuration" | "drawerOpenDuration",
+): void {
+  expect(frames.length).toBeGreaterThan(0);
+  for (const frame of frames) {
+    expectTransitionMatches(
+      frame.drawerTransition,
+      "transform",
+      frame.tokens[duration],
+      frame.tokens.drawerCurve,
+    );
+    expectTransitionMatches(
+      frame.scrimTransition,
+      "opacity",
+      frame.tokens[duration],
+      frame.tokens.drawerCurve,
+    );
+  }
+}
+
+function missingTransition(): TransitionStyle {
+  throw new Error("drawer transition was not sampled");
 }
 
 function monotonic(values: readonly number[], direction: "up" | "down") {

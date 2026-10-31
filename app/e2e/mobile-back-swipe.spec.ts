@@ -1,6 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
+import {
+  expectNoTransformOrTransition,
+  expectTransitionMatches,
+  hasIntermediatePosition,
+  type TransitionStyle,
+} from "./motion-assertions";
 
 test.beforeEach(async ({ browserName, page }) => {
   test.skip(
@@ -37,15 +43,30 @@ test("mobile Back button animates the chat over the visible list", async ({
   await startPopRecording(page);
   await page.getByRole("button", { name: "Back to chats" }).tap();
   const frames = await finishPopRecording(page);
+  const moving = frames.filter(
+    (frame) => frame.chatLeft !== null && frame.popping,
+  );
   const positions = frames
     .filter((frame) => frame.chatLeft !== null)
     .map((frame) => frame.chatLeft ?? 0);
-  const intermediate = positions.filter(
-    (position) => position > 0.5 && position < 401.5,
-  );
 
-  expect(new Set(intermediate.map(Math.round)).size).toBeGreaterThanOrEqual(8);
+  expect(hasIntermediatePosition(positions, 0, 402)).toBe(true);
   expect(monotonic(positions)).toBe(true);
+  expect(moving.length).toBeGreaterThan(0);
+  for (const frame of moving)
+    expectTransitionMatches(
+      frame.transition,
+      "transform",
+      frame.pushOutDuration,
+      frame.pushCurve,
+    );
+  const list = frames[0]?.chatsRect;
+  expect(list).not.toBeNull();
+  for (const frame of frames) {
+    expect(frame.chatsRect).toEqual(list);
+    if (frame.chatsStyle !== null)
+      expectNoTransformOrTransition(frame.chatsStyle);
+  }
   expect(
     frames
       .filter((frame) => frame.popping || frame.chatLeft === null)
@@ -226,8 +247,21 @@ async function expectAligned(page: Page): Promise<void> {
 
 interface PopFrame {
   readonly chatLeft: number | null;
+  readonly chatsRect: {
+    readonly height: number;
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+  } | null;
+  readonly chatsStyle: {
+    readonly transform: string;
+    readonly transitionDuration: string;
+  } | null;
   readonly chatsVisible: boolean;
   readonly popping: boolean;
+  readonly pushCurve: string;
+  readonly pushOutDuration: string;
+  readonly transition: TransitionStyle;
 }
 
 async function startPopRecording(page: Page): Promise<void> {
@@ -243,14 +277,43 @@ async function startPopRecording(page: Page): Promise<void> {
           "[data-mobile-chat]",
         )?.parentElement;
       const chats = document.querySelector<HTMLElement>("[data-mobile-chats]");
+      const chatsRect = chats?.getBoundingClientRect();
+      const chatStyle = chat === undefined ? null : getComputedStyle(chat);
+      const chatsStyle = chats === null ? null : getComputedStyle(chats);
+      const rootStyle = getComputedStyle(document.documentElement);
       recording.frames.push({
         chatLeft: chat?.getBoundingClientRect().left ?? null,
+        chatsRect:
+          chatsRect === undefined
+            ? null
+            : {
+                height: chatsRect.height,
+                left: chatsRect.left,
+                top: chatsRect.top,
+                width: chatsRect.width,
+              },
+        chatsStyle:
+          chatsStyle === null
+            ? null
+            : {
+                transform: chatsStyle.transform,
+                transitionDuration: chatsStyle.transitionDuration,
+              },
         chatsVisible:
           chats?.checkVisibility({
             opacityProperty: true,
             visibilityProperty: true,
           }) ?? false,
         popping: chat?.dataset.motion === "closing",
+        pushCurve: rootStyle.getPropertyValue("--wl-motion-push-curve").trim(),
+        pushOutDuration: rootStyle
+          .getPropertyValue("--wl-motion-push-out")
+          .trim(),
+        transition: {
+          duration: chatStyle?.transitionDuration ?? "0s",
+          property: chatStyle?.transitionProperty ?? "all",
+          timingFunction: chatStyle?.transitionTimingFunction ?? "ease",
+        },
       });
       if (chat === undefined || chat === null) recording.done = true;
       else requestAnimationFrame(sample);
