@@ -157,6 +157,11 @@ export class KeyboardMotionController {
     this.#finishClose(pending);
   }
 
+  keepOpen(): void {
+    this.#cancelPendingClose();
+    this.#cancelAnimation();
+  }
+
   cancel(): void {
     this.#cancelPendingClose();
     this.#cancelAnimation();

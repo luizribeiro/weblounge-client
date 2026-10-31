@@ -1,5 +1,6 @@
-import { createMemo, For } from "solid-js";
+import { createMemo, For, onCleanup } from "solid-js";
 import type { CompletionCandidate } from "../../engine/protocol";
+import { TouchTapGesture } from "../../platform/focus-without-pan";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import { Line } from "../../ui/Line";
 import styles from "../conversation/SimpleComposer.module.css";
@@ -31,13 +32,21 @@ export function SuggestionList(props: SuggestionListProps) {
         <For each={candidateIds()}>
           {(id, index) => {
             const candidate = () => candidateById(id);
+            const touchTap = new TouchTapGesture();
+            let acceptedByTouch = false;
             return (
               <div
                 aria-selected={index() === props.selected}
                 class={styles.candidate}
                 data-selected={index() === props.selected}
                 id={props.optionId(index())}
-                onClick={() => props.onAccept(index())}
+                onClick={() => {
+                  if (acceptedByTouch) {
+                    acceptedByTouch = false;
+                    return;
+                  }
+                  props.onAccept(index());
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -45,7 +54,28 @@ export function SuggestionList(props: SuggestionListProps) {
                   }
                 }}
                 onMouseEnter={() => props.onSelect(index())}
-                onPointerDown={(event) => event.preventDefault()}
+                onPointerCancel={(event) => {
+                  if (event.pointerType === "touch") touchTap.cancel();
+                }}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  if (event.pointerType === "touch")
+                    touchTap.begin(pointerTouch(event), event.timeStamp);
+                }}
+                onPointerMove={(event) => {
+                  if (event.pointerType === "touch")
+                    touchTap.move(pointerTouch(event));
+                }}
+                onPointerUp={(event) => {
+                  if (
+                    event.pointerType !== "touch" ||
+                    !touchTap.end(pointerTouch(event), event.timeStamp)
+                  )
+                    return;
+                  acceptedByTouch = true;
+                  props.onAccept(index());
+                }}
+                ref={preventTouchFocus}
                 role="option"
                 tabIndex={-1}
               >
@@ -69,6 +99,22 @@ export function SuggestionList(props: SuggestionListProps) {
       </div>
     </div>
   );
+}
+
+function preventTouchFocus(element: HTMLElement): void {
+  // WebKit treats delegated document touch listeners as passive, so this row
+  // must own the cancellable listener that keeps focus on the composer.
+  const prevent = (event: TouchEvent) => event.preventDefault();
+  element.addEventListener("touchstart", prevent, { passive: false });
+  onCleanup(() => element.removeEventListener("touchstart", prevent));
+}
+
+function pointerTouch(event: PointerEvent) {
+  return {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    identifier: event.pointerId,
+  };
 }
 
 function candidateIsBot(candidate: CompletionCandidate | undefined): boolean {

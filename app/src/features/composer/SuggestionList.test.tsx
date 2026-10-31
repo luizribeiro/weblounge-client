@@ -56,8 +56,24 @@ it("renders rich options and routes pointer selection", () => {
     "true",
   );
   expect(screen.getByText("BOT")).toBeVisible();
-  fireEvent.mouseEnter(screen.getByRole("option", { name: /#papo/u }));
-  fireEvent.click(screen.getByRole("option", { name: /#papo/u }));
+  const channel = screen.getByRole("option", { name: /#papo/u });
+  const pointerDown = new Event("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+  });
+  const touchStart = new Event("touchstart", {
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(touchStart, "touches", {
+    value: [{ clientX: 0, clientY: 0, identifier: 1 }],
+  });
+  channel.dispatchEvent(pointerDown);
+  channel.dispatchEvent(touchStart);
+  expect(pointerDown.defaultPrevented).toBe(true);
+  expect(touchStart.defaultPrevented).toBe(true);
+  fireEvent.mouseEnter(channel);
+  fireEvent.click(channel);
   expect(select).toHaveBeenCalledWith(3);
   expect(accept).toHaveBeenCalledWith(3);
 });

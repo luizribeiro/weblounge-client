@@ -5,6 +5,7 @@ import {
   observeViewportGeometry,
   requestCachedKeyboardOpen,
   resolveViewportGeometry,
+  shouldBeginKeyboardClose,
   type ViewportMeasurements,
   type ViewportObserverOptions,
 } from "./viewport-geometry";
@@ -71,6 +72,23 @@ describe("document pan", () => {
     expect(documentPanned(withViewport(476, 0.4))).toBe(false);
     expect(documentPanned({ ...iphone, scrollY: -40 })).toBe(false);
     expect(documentPanned(withViewport(406, 200, 2))).toBe(false);
+  });
+});
+
+describe("keyboard close decision", () => {
+  it("waits for focus to remain outside keyboard fields", () => {
+    const field = document.createElement("textarea");
+    const nextField = document.createElement("input");
+    const button = document.createElement("button");
+
+    expect(shouldBeginKeyboardClose(field, button, button, true)).toBe(true);
+    expect(shouldBeginKeyboardClose(field, nextField, button, true)).toBe(
+      false,
+    );
+    expect(shouldBeginKeyboardClose(field, button, nextField, true)).toBe(
+      false,
+    );
+    expect(shouldBeginKeyboardClose(field, button, button, false)).toBe(false);
   });
 });
 
@@ -212,7 +230,7 @@ describe("viewport geometry observer", () => {
     );
   });
 
-  it("starts close motion on focusout before closed geometry arrives", () => {
+  it("starts close motion one frame after focusout before closed geometry arrives", async () => {
     const surface = document.createElement("div");
     surface.dataset.keyboardMotion = "true";
     document.body.append(surface);
@@ -228,11 +246,85 @@ describe("viewport geometry observer", () => {
 
     field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
 
+    expect(animate).not.toHaveBeenCalled();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(animate).toHaveBeenCalledOnce();
     expect(animate.mock.calls[0]?.[0]).toEqual([
       { transform: "translateY(0px)" },
       { transform: "translateY(300px)" },
     ]);
+    expect(root.dataset.keyboard).toBe("open");
+  });
+
+  it("keeps the keyboard still when focus returns before the close frame", async () => {
+    const surface = document.createElement("div");
+    surface.dataset.keyboardMotion = "true";
+    document.body.append(surface);
+    const animate = vi.fn().mockReturnValue({
+      cancel: vi.fn(),
+      finished: new Promise<void>(() => {}),
+    });
+    surface.animate = animate;
+    const { viewport } = observe();
+    const field = textField();
+    const button = document.createElement("button");
+    document.body.append(button);
+    viewport.set(window.innerHeight - 300, 0, "resize");
+    animate.mockClear();
+
+    field.focus();
+    button.focus();
+    field.focus();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("cancels close motion when refocus proves the keyboard stayed open", async () => {
+    const surface = document.createElement("div");
+    surface.dataset.keyboardMotion = "true";
+    document.body.append(surface);
+    const cancel = vi.fn();
+    const animate = vi.fn().mockReturnValue({
+      cancel,
+      finished: new Promise<void>(() => {}),
+    });
+    surface.animate = animate;
+    const { root, viewport } = observe();
+    const field = textField();
+    viewport.set(window.innerHeight - 300, 0, "resize");
+    animate.mockClear();
+
+    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    cancel.mockClear();
+    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(surface.dataset.keyboardMotionActive).toBeUndefined();
+    expect(root.dataset.keyboard).toBe("open");
+  });
+
+  it("cancels close motion when resize still measures an open keyboard", async () => {
+    const surface = document.createElement("div");
+    surface.dataset.keyboardMotion = "true";
+    document.body.append(surface);
+    const cancel = vi.fn();
+    surface.animate = vi.fn().mockReturnValue({
+      cancel,
+      finished: new Promise<void>(() => {}),
+    });
+    const { root, viewport } = observe();
+    const field = textField();
+    viewport.set(window.innerHeight - 300, 0, "resize");
+
+    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    cancel.mockClear();
+    viewport.dispatchEvent(new Event("resize"));
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(surface.dataset.keyboardMotionActive).toBeUndefined();
     expect(root.dataset.keyboard).toBe("open");
   });
 

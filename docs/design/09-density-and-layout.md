@@ -100,10 +100,11 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
   On open, the first height step commits final layout and synchronously anchors the transcript, then
   a transform-only Web Animation moves the transcript/composer wrapper from its old position to
-  zero while the header stays fixed. On focusout, close motion starts before the late height step;
-  final layout commits after motion, and an intervening geometry step retargets from the current
-  computed transform. A nonzero visual-viewport offset is first undone and never compounded with
-  app motion.
+  zero while the header stays fixed. On focusout, close motion waits one frame to confirm focus did
+  not return to a keyboard field, then starts before the late height step. A resize or refocus that
+  still shows open geometry cancels the close at the open position. Final layout commits after a
+  real close motion, and an intervening geometry step retargets from the current computed transform.
+  A nonzero visual-viewport offset is first undone and never compounded with app motion.
 - iOS 26 uses a 383ms sampled critically damped spring based on [Telegram's matching keyboard
   animation](https://github.com/TelegramMessenger/Telegram-iOS/blob/master/submodules/Display/Source/CAAnimationUtils.swift);
   earlier iOS uses 500ms `cubic-bezier(0.38, 0.7, 0.125, 1)`. Android requests

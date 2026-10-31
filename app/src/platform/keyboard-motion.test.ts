@@ -95,6 +95,30 @@ it("waits for both close motion and closed geometry before committing", async ()
   expect(cancel).toHaveBeenCalledOnce();
 });
 
+it("settles an interrupted close back to the open position", () => {
+  const surface = document.createElement("div");
+  surface.dataset.keyboardMotion = "true";
+  document.body.append(surface);
+  const cancel = vi.fn();
+  surface.animate = vi.fn().mockReturnValue({
+    cancel,
+    finished: new Promise<void>(() => {}),
+  });
+  const commit = vi.fn();
+  const controller = new KeyboardMotionController(
+    window,
+    selectKeyboardMotion("iPhone OS 18_0", false),
+    () => false,
+  );
+
+  controller.beginClose(358, commit);
+  controller.keepOpen();
+
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(commit).not.toHaveBeenCalled();
+  expect(surface.dataset.keyboardMotionActive).toBeUndefined();
+});
+
 it("clears a stale compositor transform before retargeting open geometry", () => {
   const surface = document.createElement("div");
   surface.dataset.keyboardMotion = "true";

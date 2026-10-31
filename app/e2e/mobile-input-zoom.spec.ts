@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
 
@@ -27,6 +27,31 @@ test.describe("mobile text field zoom", () => {
       page.getByRole("textbox", { name: "Message #weblounge-test" }),
     ).toBeVisible();
     await auditMobileTextFieldZoom(page);
+  });
+
+  test("keeps the composer still and focused when a suggestion is tapped", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page, true);
+    await openChannel(page);
+    const root = page.locator("#root");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    await composer.tap();
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await composer.fill("/jo");
+    const suggestion = page.getByRole("option", { name: /\/join/u });
+    await expect(suggestion).toBeVisible();
+
+    const frames = await sampleSuggestionTap(page, suggestion);
+
+    await expect(composer).toHaveValue("/join ");
+    await expect(composer).toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    expect(frames.every(({ focused }) => focused)).toBe(true);
+    const tops = frames.map(({ composerTop }) => composerTop);
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(0.5);
   });
 
   test("keeps keyboard focus and touch drags from panning the app", async ({
@@ -312,7 +337,61 @@ type ViewportSetter = (
 declare global {
   interface Window {
     __setVisualViewport?: ViewportSetter;
+    __suggestionTapFrames?: SuggestionTapFrame[];
   }
+}
+
+interface SuggestionTapFrame {
+  readonly composerTop: number;
+  readonly focused: boolean;
+}
+
+async function sampleSuggestionTap(
+  page: Page,
+  suggestion: Locator,
+): Promise<readonly SuggestionTapFrame[]> {
+  const frameCount = 16;
+  await page.evaluate((count) => {
+    window.__suggestionTapFrames = [];
+    document.addEventListener(
+      "touchstart",
+      (event) => {
+        if (
+          !(event.target instanceof Element) ||
+          event.target.closest('[role="option"]') === null
+        )
+          return;
+        const field = document.querySelector<HTMLTextAreaElement>(
+          "[data-composer] textarea",
+        );
+        const composer = document.querySelector<HTMLElement>("[data-composer]");
+        if (field === null || composer === null)
+          throw new Error("composer tap surfaces are missing");
+        const sample = () => {
+          window.__suggestionTapFrames?.push({
+            composerTop: composer.getBoundingClientRect().top,
+            focused: document.activeElement === field,
+          });
+        };
+        let remaining = count;
+        const next = () => {
+          sample();
+          remaining -= 1;
+          if (remaining > 0) requestAnimationFrame(next);
+        };
+        sample();
+        // wait-ok: this samples a fixed frame window for unintended keyboard motion.
+        requestAnimationFrame(next);
+      },
+      { capture: true, once: true },
+    );
+  }, frameCount);
+
+  await suggestion.tap();
+  await expect
+    .poll(() => page.evaluate(() => window.__suggestionTapFrames?.length ?? 0))
+    .toBe(frameCount + 1);
+  return page.evaluate(() => window.__suggestionTapFrames ?? []);
 }
 
 // Emulates WebKit: a visual viewport that iOS pans for the keyboard, that
