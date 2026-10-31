@@ -37,7 +37,8 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
   };
   const gesture = createHorizontalPan({
     commitRatio: 0.4,
-    commitVelocity: 0.5,
+    commitVelocity: 0.25,
+    debugRegion: "member-close",
     direction: "right",
     onCancel: returnDrawer,
     onCommit: () => requestClose(),
@@ -84,6 +85,7 @@ export function MobileMemberDrawer(props: MobileMemberDrawerProps) {
           <div
             class={styles.content}
             data-member-drawer="true"
+            onLostPointerCapture={gesture.lostCapture}
             onPointerCancel={gesture.cancel}
             onPointerDown={begin}
             onPointerMove={gesture.move}
@@ -116,5 +118,5 @@ export function swipeClosesDrawer(
   width: number,
   velocity: number,
 ): boolean {
-  return panCommits(distance, width, velocity, 0.4, 0.5);
+  return panCommits(distance, width, velocity, 0.4, 0.25);
 }

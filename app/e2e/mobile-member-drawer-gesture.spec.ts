@@ -17,6 +17,7 @@ test("member drawer pans, springs back, and closes before the chat", async ({
   const drawer = page.getByRole("dialog", { name: "Members" });
 
   await drawerPointer(page, "pointerdown", 100, 300, 0);
+  await drawerPointer(page, "pointermove", 115, 304, 100);
   await drawerPointer(page, "pointermove", 160, 304, 400);
   await expect
     .poll(() =>
@@ -24,7 +25,7 @@ test("member drawer pans, springs back, and closes before the chat", async ({
         Math.round(new DOMMatrix(getComputedStyle(element).transform).m41),
       ),
     )
-    .toBe(60);
+    .toBe(45);
   await drawerPointer(page, "pointerup", 160, 304, 500);
   await expect(drawer).not.toHaveAttribute("data-dragging", "true");
   await expect(drawer).toBeVisible();
@@ -36,8 +37,9 @@ test("member drawer pans, springs back, and closes before the chat", async ({
   await expect(drawer).toBeVisible();
 
   await drawerPointer(page, "pointerdown", 100, 300, 1_000, 3);
-  await drawerPointer(page, "pointermove", 140, 300, 1_040, 3);
-  await drawerPointer(page, "pointerup", 140, 300, 1_050, 3);
+  await drawerPointer(page, "pointermove", 115, 300, 1_010, 3);
+  await drawerPointer(page, "pointermove", 155, 300, 1_040, 3);
+  await drawerPointer(page, "pointerup", 155, 300, 1_050, 3);
   await expect(drawer).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "#weblounge-test" }),
@@ -45,8 +47,9 @@ test("member drawer pans, springs back, and closes before the chat", async ({
 
   await openDrawer(page);
   await drawerPointer(page, "pointerdown", 100, 300, 2_000, 4);
-  await drawerPointer(page, "pointermove", 230, 300, 2_400, 4);
-  await drawerPointer(page, "pointerup", 230, 300, 2_500, 4);
+  await drawerPointer(page, "pointermove", 115, 300, 2_100, 4);
+  await drawerPointer(page, "pointermove", 245, 300, 2_400, 4);
+  await drawerPointer(page, "pointerup", 245, 300, 2_500, 4);
   await expect(drawer).toHaveCount(0);
 
   await openDrawer(page);
@@ -82,15 +85,17 @@ test("opens the channel drawer from a protected mid-screen pan", async ({
   await page.evaluate(() => getSelection()?.removeAllRanges());
 
   await shellPointer(page, "pointerdown", 250, 300, 600, 12);
-  await shellPointer(page, "pointermove", 210, 300, 1_000, 12);
+  await shellPointer(page, "pointermove", 235, 300, 700, 12);
+  await shellPointer(page, "pointermove", 195, 300, 1_000, 12);
   await expect(drawer).toBeVisible();
   await expect(drawer.getByPlaceholder("Filter members")).not.toBeFocused();
   await shellPointer(page, "pointerup", 210, 300, 1_100, 12);
   await expect(drawer).toHaveCount(0);
 
   await shellPointer(page, "pointerdown", 250, 300, 1_200, 13);
-  await shellPointer(page, "pointermove", 210, 300, 1_240, 13);
-  await shellPointer(page, "pointerup", 210, 300, 1_250, 13);
+  await shellPointer(page, "pointermove", 235, 300, 1_220, 13);
+  await shellPointer(page, "pointermove", 195, 300, 1_240, 13);
+  await shellPointer(page, "pointerup", 195, 300, 1_250, 13);
   await expect(drawer).toBeVisible();
   await expect(page.locator("[data-overlay-drawer]")).not.toHaveAttribute(
     "data-drag-returning",

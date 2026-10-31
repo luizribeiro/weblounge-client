@@ -81,7 +81,9 @@ async function dispatchPointer(
       cancelable: true,
       clientX: pointer.clientX,
       clientY: pointer.clientY,
+      isPrimary: true,
       pointerId: pointer.pointerId,
+      pointerType: "touch",
     });
     Object.defineProperty(event, "timeStamp", { value: pointer.timeStamp });
     element.dispatchEvent(event);
