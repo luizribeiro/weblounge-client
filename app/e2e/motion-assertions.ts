@@ -22,7 +22,13 @@ export function expectTransitionMatches(
     durationMs(durationToken),
     5,
   );
-  expect(transition.timingFunction).toBe(curveToken);
+  expect(normalizedCurve(transition.timingFunction)).toBe(
+    normalizedCurve(curveToken),
+  );
+}
+
+function normalizedCurve(curve: string): string {
+  return curve.replace(/\s+/g, "").replace(/(^|[(,])\./g, "$10.");
 }
 
 export function expectNoTransformOrTransition(style: {
