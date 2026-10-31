@@ -4964,6 +4964,25 @@ mod tests {
         .expect("recent direct buffers arrive");
         assert_eq!(ordered, ["Test", "carol", "alice", "Bob"]);
 
+        let mut latest_targets = Vec::new();
+        while latest_targets.len() < 3 {
+            let request = tokio::time::timeout(Duration::from_secs(1), wire.next_sent())
+                .await
+                .expect("direct latest history starts without waiting for presence lookup");
+            if request.contains(" CHATHISTORY LATEST ") {
+                let target = request
+                    .split_whitespace()
+                    .nth(3)
+                    .expect("latest history target is present")
+                    .to_owned();
+                latest_targets.push(target);
+                let label = request_label(&request);
+                send_history_page(&mut wire, label, &[]).await;
+            }
+        }
+        latest_targets.sort();
+        assert_eq!(latest_targets, ["Bob", "alice", "carol"]);
+
         drain.abort();
     }
 
