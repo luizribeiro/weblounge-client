@@ -59,6 +59,7 @@ interface PanSample {
 }
 
 const axisLockThreshold = 10;
+const distanceCommitVelocityTolerance = -0.05;
 const releaseVelocityWindow = 100;
 
 export function createHorizontalPan(
@@ -253,6 +254,7 @@ export function panCommits(
   return (
     distance > 0 &&
     (velocity >= velocityThreshold ||
-      (distance > width * distanceRatio && velocity >= 0))
+      (distance > width * distanceRatio &&
+        velocity >= distanceCommitVelocityTolerance))
   );
 }

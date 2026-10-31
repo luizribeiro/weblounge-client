@@ -196,6 +196,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     Back gesture ownership.
   - [x] Keep claimed mobile Back and member-drawer pans moving through WebKit's bubbling implicit
     capture-loss event without transferring pointer capture away from the touched child (#73).
+  - [x] Let a past-halfway mobile pan commit through iOS's tiny lift-off rollback while a deliberate
+    backward flick still cancels (#73).
     user-owned wheel input, and preserve the visual row anchor across reconnects and late
     font-driven virtualizer remeasurement. Leaving the live edge freezes the unread line where the
     reader sees it, so the virtualizer never writes scroll over the reader's wheel scroll.

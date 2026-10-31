@@ -62,7 +62,8 @@ describe("mobile stack navigation", () => {
     expect(swipeBackCompletes(202, 402, 0)).toBe(true);
     expect(swipeBackCompletes(80, 402, 0.25)).toBe(true);
     expect(swipeBackCompletes(80, 402, 0.24)).toBe(false);
-    expect(swipeBackCompletes(202, 402, -0.01)).toBe(false);
+    expect(swipeBackCompletes(202, 402, -0.05)).toBe(true);
+    expect(swipeBackCompletes(202, 402, -0.06)).toBe(false);
     expect(swipeBackCompletes(-20, 402, 1)).toBe(false);
   });
 });
