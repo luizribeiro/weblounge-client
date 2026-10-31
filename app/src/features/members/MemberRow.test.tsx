@@ -8,7 +8,7 @@ const member: Member = {
   mode_symbol: "@",
   away: false,
   bot: true,
-  account: "concierge",
+  account: { state: "logged_in", name: "concierge" },
   nick_color_index: 8,
   is_you: false,
 };
@@ -44,4 +44,16 @@ it("dims away members and can hide mode symbols", () => {
   expect(container.querySelector("[data-away='true']")).not.toBeNull();
   expect(screen.queryByText("@")).not.toBeInTheDocument();
   expect(screen.getByText("you")).toBeInTheDocument();
+});
+
+it("keeps unknown identity facts distinct from proven negatives", () => {
+  const { container } = render(() => (
+    <MemberRow
+      member={{ ...member, account: { state: "unknown" }, bot: null }}
+      onOpenDirect={() => {}}
+    />
+  ));
+  const row = container.querySelector("[data-account-state='unknown']");
+  expect(row).toHaveAttribute("data-bot-known", "false");
+  expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });

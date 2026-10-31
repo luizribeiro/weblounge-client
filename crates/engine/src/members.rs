@@ -1,4 +1,6 @@
-use crate::{BufferId, EngineToUi, MemberGroup, MemberProjection, state::nick_color_index};
+use crate::{
+    AccountProjection, BufferId, EngineToUi, MemberGroup, MemberProjection, state::nick_color_index,
+};
 
 pub(crate) const WINDOW_SIZE: u32 = 256;
 
@@ -90,8 +92,8 @@ pub(crate) fn project(
         .map(|member| {
             let user = state.user(member.nick());
             let away = user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. }));
-            let bot = user.and_then(papo::User::is_bot) == Some(true);
-            let group = classify(member, away, bot);
+            let bot = user.and_then(papo::User::is_bot);
+            let group = classify(member, away, bot == Some(true));
             (group, member, user, away, bot)
         })
         .collect::<Vec<_>>();
@@ -119,9 +121,7 @@ pub(crate) fn project(
             mode_symbol: member.prefixes().first().map(|prefix| prefix.symbol()),
             away,
             bot,
-            account: user
-                .and_then(|user| user.account().name())
-                .map(ToString::to_string),
+            account: account_projection(user.map(papo::User::account)),
             nick_color_index: nick_color_index(state.casemapping(), member.nick()),
             is_you: member.nick() == state.nick(),
         })
@@ -137,6 +137,16 @@ pub(crate) fn project(
         members,
         filter: (!filter.is_empty()).then(|| filter.to_owned()),
     })
+}
+
+fn account_projection(account: Option<&papo::Account>) -> AccountProjection {
+    match account {
+        Some(papo::Account::LoggedOut) => AccountProjection::LoggedOut,
+        Some(papo::Account::LoggedIn(name)) => AccountProjection::LoggedIn {
+            name: name.to_string(),
+        },
+        Some(_) | None => AccountProjection::Unknown,
+    }
 }
 
 fn classify(member: &papo::Member, away: bool, bot: bool) -> MemberGroup {
@@ -168,7 +178,7 @@ mod tests {
     use papo_testing::wire;
 
     use super::{Changes, project};
-    use crate::{BufferId, EngineToUi, MemberGroup};
+    use crate::{AccountProjection, BufferId, EngineToUi, MemberGroup};
 
     fn channel(state: &papo::State, name: &str) -> papo::ChannelName {
         state
@@ -187,6 +197,7 @@ mod tests {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&[
+            "account-tag",
             "account-notify",
             "away-notify",
             "message-tags",
@@ -205,7 +216,8 @@ mod tests {
         wire.server(":Alpha!u@h ACCOUNT alice").await;
         wire.server(":charlie!u@h AWAY :lunch").await;
         wire.server("@bot :service!u@h PRIVMSG #room :ready").await;
-        for _ in 0..3 {
+        wire.server(":service!u@h ACCOUNT *").await;
+        for _ in 0..4 {
             _ = events.next().await;
         }
 
@@ -231,6 +243,88 @@ mod tests {
         assert_eq!(members[0].group, MemberGroup::Operators);
         assert_eq!(members[1].mode_symbol, Some('+'));
         assert!(members[2].away);
+        assert_eq!(members[1].bot, None);
+        assert_eq!(members[1].account, AccountProjection::Unknown);
+        assert_eq!(members[3].bot, Some(true));
+        assert_eq!(members[3].account, AccountProjection::LoggedOut);
+    }
+
+    #[tokio::test]
+    async fn retains_realname_actor_facts_and_timestamps() {
+        let (_client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[
+            "account-tag",
+            "draft/oper-tag",
+            "message-tags",
+            "server-time",
+            "setname",
+        ])
+        .await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server("@account=alice;bot;draft/oper=network-admin;time=2026-10-30T12:34:56.789Z :alice!u@h SETNAME :Alice Smith")
+            .await;
+
+        let changed = loop {
+            if let Some(papo::Event::RealnameChanged(changed)) = events.next().await {
+                break changed;
+            }
+        };
+        assert_eq!(changed.actor.nick(), "alice");
+        assert!(
+            matches!(changed.actor.account(), papo::Account::LoggedIn(account) if account == "alice")
+        );
+        assert_eq!(changed.actor.is_bot(), Some(true));
+        assert_eq!(
+            changed.actor.oper().and_then(|oper| oper.name.as_deref()),
+            Some("network-admin")
+        );
+        assert_eq!(changed.new, "Alice Smith");
+        assert_eq!(changed.authorship, papo::Authorship::Other);
+        assert!(changed.server_time.is_some());
+        assert!(changed.received_at >= changed.server_time.expect("server time"));
+    }
+
+    #[tokio::test]
+    async fn whois_and_who_keep_unknown_bot_and_account_facts() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+
+        let whois = tokio::spawn({
+            let client = client.clone();
+            async move { client.whois("alice").await }
+        });
+        assert_eq!(wire.next_sent().await, "WHOIS alice");
+        wire.server(":offline.test 311 weblounge alice ~alice host * :Alice Example")
+            .await;
+        wire.server(":offline.test 318 weblounge alice :End of /WHOIS list")
+            .await;
+        let whois = whois.await.expect("WHOIS task").expect("WHOIS reply");
+        assert_eq!(whois.account, papo::Account::Unknown);
+        assert_eq!(whois.is_bot, None);
+
+        let who = tokio::spawn({
+            let client = client.clone();
+            async move { client.who("#room").await }
+        });
+        let request = wire.next_sent().await;
+        assert!(request.starts_with("WHO #room"));
+        if request.contains('%') {
+            wire.server(
+                ":offline.test 354 weblounge 152 #room ~alice host 0 H@ alice :Alice Example",
+            )
+            .await;
+        } else {
+            wire.server(":offline.test 352 weblounge #room ~alice host offline.test alice H@ :0 Alice Example")
+                .await;
+        }
+        wire.server(":offline.test 315 weblounge #room :End of WHO list")
+            .await;
+        let who = who.await.expect("WHO task").expect("WHO reply");
+        assert_eq!(who[0].is_bot, None);
+        assert_eq!(who[0].rank(), Some(papo::Rank::Op));
     }
 
     #[tokio::test]

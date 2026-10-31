@@ -72,7 +72,7 @@ export function SuggestionList(props: SuggestionListProps) {
 }
 
 function candidateIsBot(candidate: CompletionCandidate | undefined): boolean {
-  return candidate?.type === "person" && candidate.bot;
+  return candidate?.type === "person" && candidate.bot === true;
 }
 
 function candidateId(candidate: CompletionCandidate): string {

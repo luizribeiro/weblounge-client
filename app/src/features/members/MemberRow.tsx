@@ -24,7 +24,9 @@ export function MemberRow(props: MemberRowProps) {
     <button
       aria-label={`Open direct message with ${props.member.nick}`}
       class={styles.row}
+      data-account-state={props.member.account.state}
       data-away={props.member.away ? "true" : "false"}
+      data-bot-known={props.member.bot === null ? "false" : "true"}
       hidden={props.hidden}
       onClick={() => props.onOpenDirect(props.member.nick)}
       type="button"
@@ -51,7 +53,7 @@ export function MemberRow(props: MemberRowProps) {
         >
           {props.member.nick}
         </Line>
-        {props.member.bot && (
+        {props.member.bot === true && (
           <span class={styles.bot} data-member-trailing="true">
             BOT
           </span>

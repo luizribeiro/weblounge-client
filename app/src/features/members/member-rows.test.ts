@@ -8,7 +8,7 @@ const online: Member = {
   mode_symbol: null,
   away: false,
   bot: false,
-  account: "mel",
+  account: { state: "logged_in", name: "mel" },
   nick_color_index: 1,
   is_you: false,
 };

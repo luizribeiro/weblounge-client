@@ -553,7 +553,7 @@ function MessageRow(props: {
                 value={message.author}
               />
             </span>
-            {message.bot && <span class={styles.bot}>BOT</span>}
+            {message.bot === true && <span class={styles.bot}>BOT</span>}
           </Line>
           <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
             <MessageText

@@ -463,7 +463,7 @@ impl NetworkModel {
                 papo::MessageKind::Action => MessageKind::Action,
                 _ => MessageKind::Text,
             },
-            bot: message.actor.is_bot() == Some(true),
+            bot: message.actor.is_bot(),
             mode_symbol,
             authorship: map_authorship(message.authorship),
             msgid: message.msgid().map(ToString::to_string),
@@ -504,7 +504,7 @@ impl NetworkModel {
             author,
             text: collapse_blank_lines(text),
             kind: MessageKind::Notice,
-            bot: false,
+            bot: Some(false),
             mode_symbol: None,
             authorship: MessageAuthorship::Own,
             nick_color_index: 0,
@@ -550,7 +550,7 @@ impl NetworkModel {
             author: self.network.nickname.clone(),
             text: collapse_blank_lines(text.clone()),
             kind,
-            bot: false,
+            bot: state.user(state.nick()).and_then(papo::User::is_bot),
             mode_symbol: actor_mode_symbol(state, &key, state.nick()),
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
@@ -1465,7 +1465,7 @@ struct Incoming {
     author: String,
     text: String,
     kind: MessageKind,
-    bot: bool,
+    bot: Option<bool>,
     mode_symbol: Option<char>,
     authorship: MessageAuthorship,
     msgid: Option<String>,
@@ -1633,7 +1633,7 @@ mod tests {
             author: "alice".into(),
             text: text.into(),
             kind: crate::MessageKind::Text,
-            bot: false,
+            bot: Some(false),
             mode_symbol: None,
             authorship: MessageAuthorship::Other,
             msgid: msgid.map(str::to_owned),
@@ -1707,7 +1707,7 @@ mod tests {
             author: nick.into(),
             text: text.into(),
             kind: crate::MessageKind::Text,
-            bot: false,
+            bot: Some(false),
             mode_symbol: None,
             authorship: MessageAuthorship::Other,
             msgid: Some(format!("{nick}-{server_time_ms}")),
@@ -1944,7 +1944,7 @@ mod tests {
             TimelineOrigin::Live,
         );
         message.kind = crate::MessageKind::Action;
-        message.bot = true;
+        message.bot = Some(true);
         message.mode_symbol = Some('@');
 
         let projection = model
@@ -1956,7 +1956,7 @@ mod tests {
             })
             .expect("message projection");
         assert_eq!(projection.kind, crate::MessageKind::Action);
-        assert!(projection.bot);
+        assert_eq!(projection.bot, Some(true));
         assert_eq!(projection.mode_symbol, Some('@'));
     }
 

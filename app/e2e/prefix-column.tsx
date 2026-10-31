@@ -111,7 +111,7 @@ function member(
     mode_symbol: modeSymbol,
     away: false,
     bot: false,
-    account: null,
+    account: { state: "unknown" },
     nick_color_index: 0,
     is_you: false,
   };

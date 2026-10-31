@@ -10,7 +10,7 @@ const member: Member = {
   mode_symbol: "@",
   away: false,
   bot: false,
-  account: "weblounge",
+  account: { state: "logged_in", name: "weblounge" },
   nick_color_index: 0,
   is_you: true,
 };

@@ -351,6 +351,39 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("preserves unknown member identity facts", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const message = {
+      type: "members_changed",
+      buffer_id: 4,
+      view_id: "port-1:desktop:main",
+      version: 7,
+      window_size: 256,
+      offset: 0,
+      total: 1,
+      counts: [0, 0, 1, 0, 0],
+      members: [
+        {
+          group: "online",
+          nick: "alice",
+          mode_symbol: null,
+          away: false,
+          bot: null,
+          account: { state: "unknown" },
+          nick_color_index: 2,
+          is_you: false,
+        },
+      ],
+    };
+
+    port.emit(message);
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(message);
+  });
+
   it("rejects unversioned member windows", () => {
     const { client, port } = fixture();
     const listener = vi.fn();

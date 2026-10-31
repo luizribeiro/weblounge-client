@@ -24,7 +24,7 @@ const members: Member[] = groups.flatMap((group, groupIndex) =>
     mode_symbol: group === "operators" ? "@" : group === "voiced" ? "+" : null,
     away: group === "away",
     bot: group === "bots",
-    account: null,
+    account: { state: "unknown" },
     nick_color_index: index,
     is_you: groupIndex === 2 && index === 0,
   })),

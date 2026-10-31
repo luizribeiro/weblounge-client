@@ -3,4 +3,4 @@
 /**
  * One engine-ranked composer suggestion with presentation facts.
  */
-export type CompletionCandidate = { "type": "command", name: string, usage: string, description: string, } | { "type": "person", nick: string, nick_color_index: number, away: boolean, bot: boolean, } | { "type": "channel", name: string, };
+export type CompletionCandidate = { "type": "command", name: string, usage: string, description: string, } | { "type": "person", nick: string, nick_color_index: number, away: boolean, bot: boolean | null, } | { "type": "channel", name: string, };

@@ -11,13 +11,13 @@ mod state;
 use tokio::sync::mpsc;
 
 pub use protocol::{
-    BufferId, BufferKind, BufferProjection, CompletionCandidate, CompletionTrigger,
-    ConnectionFailureReason, DeploymentConfig, EngineRequest, EngineRequestEnvelope, EngineToUi,
-    Hello, HostedNetworkConfig, HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection,
-    MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
-    MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
-    NoticeAction, NoticeTone, OfflineReason, RedactedSecret, SaslCredentials, ShellKind,
-    UiToEngine,
+    AccountProjection, BufferId, BufferKind, BufferProjection, CompletionCandidate,
+    CompletionTrigger, ConnectionFailureReason, DeploymentConfig, EngineRequest,
+    EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig, HostedOAuthConfig, LocalSendId,
+    MemberGroup, MemberProjection, MembershipKind, MembershipProjection, MessageAuthorship,
+    MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
+    NetworkProjection, NoticeAction, NoticeTone, OfflineReason, RedactedSecret, SaslCredentials,
+    ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.

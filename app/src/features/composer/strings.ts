@@ -10,6 +10,7 @@ export const messageKeys = [
   "composer.missing_argument",
   "composer.unknown_command",
   "engine.join_banned",
+  "engine.join_refused",
   "engine.buffer_not_sendable",
   "engine.channel_recreated",
   "engine.channel_required",
@@ -104,6 +105,8 @@ export function t(key: string, values: MessageValues = {}): string {
       return `Unknown command ${commandFrom(values.input)}.`;
     case "engine.join_banned":
       return `Couldn't join ${joinTargetFrom(values.input)}: you're banned.`;
+    case "engine.join_refused":
+      return `Couldn't join ${joinTargetFrom(values.input)}: that channel isn't available.`;
     case "engine.buffer_not_sendable":
       return "Messages can't be sent to this conversation.";
     case "engine.channel_recreated":

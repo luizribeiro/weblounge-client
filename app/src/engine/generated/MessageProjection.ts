@@ -28,7 +28,7 @@ kind: MessageKind,
 /**
  * Whether IRC metadata identifies the author as a bot.
  */
-bot: boolean,
+bot: boolean | null,
 /**
  * Highest channel membership prefix known when the message arrived.
  */

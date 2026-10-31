@@ -5,6 +5,7 @@ import type { CommandSpec } from "./CommandSpec";
 import type { CompletionCandidate } from "./CompletionCandidate";
 import type { CompletionTrigger } from "./CompletionTrigger";
 import type { LocalSendId } from "./LocalSendId";
+import type { MemberProjection } from "./MemberProjection";
 import type { MembershipProjection } from "./MembershipProjection";
 import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
@@ -188,7 +189,7 @@ buffer_id: BufferId,
 /**
  * Complete current projection for the run.
  */
-membership: MembershipProjection, } | { "type": "members_changed", buffer_id: BufferId, view_id: string, version: number, window_size: number, offset: number, total: number, counts: [number, number, number, number, number], members: Array<{ group: "operators" | "voiced" | "online" | "away" | "bots", nick: string, mode_symbol: string | null, away: boolean, bot: boolean, account: string | null, nick_color_index: number, is_you: boolean }>, filter?: string, } | { "type": "message_confirmed",
+membership: MembershipProjection, } | { "type": "members_changed", buffer_id: BufferId, view_id: string, version: number, window_size: number, offset: number, total: number, counts: [number, number, number, number, number], members: Array<MemberProjection>, filter?: string, } | { "type": "message_confirmed",
 /**
  * Destination buffer.
  */

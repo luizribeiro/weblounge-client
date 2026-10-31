@@ -281,7 +281,7 @@ pub enum CompletionCandidate {
         #[ts(type = "number")]
         nick_color_index: u32,
         away: bool,
-        bot: bool,
+        bot: Option<bool>,
     },
     Channel {
         name: String,
@@ -312,7 +312,7 @@ pub struct MessageProjection {
     /// Whether the message is regular text or an action.
     pub kind: MessageKind,
     /// Whether IRC metadata identifies the author as a bot.
-    pub bot: bool,
+    pub bot: Option<bool>,
     /// Highest channel membership prefix known when the message arrived.
     pub mode_symbol: Option<char>,
     /// Authorship relative to this client.
@@ -377,6 +377,16 @@ pub enum MemberGroup {
     Bots,
 }
 
+/// Account fact retained from papo without guessing when the server is silent.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "state", rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum AccountProjection {
+    Unknown,
+    LoggedOut,
+    LoggedIn { name: String },
+}
+
 /// One row in a bounded channel-member window.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[allow(missing_docs)]
@@ -386,8 +396,8 @@ pub struct MemberProjection {
     pub nick: String,
     pub mode_symbol: Option<char>,
     pub away: bool,
-    pub bot: bool,
-    pub account: Option<String>,
+    pub bot: Option<bool>,
+    pub account: AccountProjection,
     #[ts(type = "number")]
     pub nick_color_index: u32,
     pub is_you: bool,
@@ -741,9 +751,6 @@ pub enum EngineToUi {
         total: u32,
         #[ts(type = "[number, number, number, number, number]")]
         counts: [u32; 5],
-        #[ts(
-            type = "Array<{ group: \"operators\" | \"voiced\" | \"online\" | \"away\" | \"bots\", nick: string, mode_symbol: string | null, away: boolean, bot: boolean, account: string | null, nick_color_index: number, is_you: boolean }>"
-        )]
         members: Vec<MemberProjection>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -812,8 +819,8 @@ impl EngineToUi {
 #[cfg(test)]
 mod tests {
     use super::{
-        BufferId, CompletionCandidate, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
-        MemberGroup, MemberProjection, SaslCredentials, ShellKind, UiToEngine,
+        AccountProjection, BufferId, CompletionCandidate, EngineRequest, EngineRequestEnvelope,
+        EngineToUi, Hello, MemberGroup, MemberProjection, SaslCredentials, ShellKind, UiToEngine,
     };
 
     #[test]
@@ -865,8 +872,8 @@ mod tests {
                 nick: "mel".into(),
                 mode_symbol: None,
                 away: false,
-                bot: false,
-                account: Some("mel".into()),
+                bot: Some(false),
+                account: AccountProjection::LoggedIn { name: "mel".into() },
                 nick_color_index: 3,
                 is_you: false,
             }],
@@ -886,7 +893,7 @@ mod tests {
             nick: "ana".into(),
             nick_color_index: 4,
             away: true,
-            bot: false,
+            bot: Some(false),
         };
 
         assert_eq!(

@@ -765,7 +765,7 @@ function decodeCompletionCandidate(
     typeof value.nick === "string" &&
     typeof value.nick_color_index === "number" &&
     typeof value.away === "boolean" &&
-    typeof value.bot === "boolean"
+    (value.bot === null || typeof value.bot === "boolean")
   )
     return {
       type: "person",
@@ -786,8 +786,8 @@ function decodeMember(value: unknown): MemberProjection | undefined {
     typeof value.nick !== "string" ||
     !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
     typeof value.away !== "boolean" ||
-    typeof value.bot !== "boolean" ||
-    !(value.account === null || typeof value.account === "string") ||
+    !(value.bot === null || typeof value.bot === "boolean") ||
+    !isAccountProjection(value.account) ||
     typeof value.nick_color_index !== "number" ||
     typeof value.is_you !== "boolean"
   )
@@ -802,6 +802,17 @@ function decodeMember(value: unknown): MemberProjection | undefined {
     nick_color_index: value.nick_color_index,
     is_you: value.is_you,
   };
+}
+
+function isAccountProjection(
+  value: unknown,
+): value is MemberProjection["account"] {
+  return (
+    isRecord(value) &&
+    (value.state === "unknown" ||
+      value.state === "logged_out" ||
+      (value.state === "logged_in" && typeof value.name === "string"))
+  );
 }
 
 function decodeMemberCounts(
@@ -959,7 +970,7 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     typeof value.author !== "string" ||
     typeof value.text !== "string" ||
     !isOneOf(value.kind, ["text", "action", "notice"]) ||
-    typeof value.bot !== "boolean" ||
+    !(value.bot === null || typeof value.bot === "boolean") ||
     !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
     typeof value.nick_color_index !== "number" ||

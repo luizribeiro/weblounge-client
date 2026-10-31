@@ -19,6 +19,9 @@ describe("composer strings", () => {
     expect(t("engine.join_banned", { input: "/join #garden secret" })).toBe(
       "Couldn't join #garden: you're banned.",
     );
+    expect(t("engine.join_refused", { input: "/join #garden secret" })).toBe(
+      "Couldn't join #garden: that channel isn't available.",
+    );
   });
 
   it("explains when a guarded direct recipient is gone", () => {

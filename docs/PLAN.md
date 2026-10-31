@@ -58,6 +58,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     wait for server-proven account state, and channel replies survive the own-JOIN race. Connection
     status and command gating already follow papo's post-001 `Connected` event; composer sends made
     during a failed reconnect now leave their optimistic row in an explicit failed state.
+  - [x] Update papo to `d2c0db8`: live and replayed actor facts now share one projection, unknown
+    bot/account facts remain distinct from proven negatives, browser-only endpoint rejection is
+    human-readable, server-specific JOIN refusals finish without leaving a channel buffer, and
+    post-registration SASL failures remain nonfatal warnings.
   - D2. [x] Rebuild the DM list from a 30-day `CHATHISTORY TARGETS` window on connect and
     reconnect, capped at 100 direct conversations and ordered by server-reported recent activity.
     Latest history hydrates desktop and mobile previews without disturbing older-page cursors.
@@ -206,9 +210,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `9ca82d9`. Guarded directs, split-send reconciliation, exact live
+- **papo:** papo 0.1 pinned at `d2c0db8`. Guarded directs, split-send reconciliation, exact live
   and nested-history multiline concatenation, server name rules, lag diagnostics,
-  channel-recreation warnings, hardened typed inputs, and correlated history responses are
-  integrated.
+  channel-recreation warnings, hardened typed inputs, correlated history responses, exact live
+  actor facts, tri-state account/bot evidence, and completed JOIN refusals are integrated.
   - Follow-up: adopt papo's planned `watch()` / free `direct()` operation with a per-send proof
     round trip so a full MONITOR list can still send without bypassing guarded-recipient safety.

@@ -1628,10 +1628,7 @@ fn person_candidates(
                     || user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. })),
                     |member| member.away,
                 ),
-                bot: member.map_or_else(
-                    || user.and_then(papo::User::is_bot) == Some(true),
-                    |member| member.bot,
-                ),
+                bot: member.map_or_else(|| user.and_then(papo::User::is_bot), |member| member.bot),
                 nick,
             }
         })
@@ -2636,7 +2633,11 @@ fn history_timeline_event(
 }
 
 fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
-    endpoint.starts_with("wss://") || (allow_insecure && endpoint.starts_with("ws://"))
+    let Ok(endpoint) = endpoint.parse::<papo::Endpoint>() else {
+        return false;
+    };
+    matches!(endpoint.kind(), papo::EndpointKind::SecureWebSocket)
+        || (allow_insecure && matches!(endpoint.kind(), papo::EndpointKind::WebSocket))
 }
 
 fn channel_target(
@@ -2695,6 +2696,8 @@ fn join_error_key(error: &papo::Error) -> &'static str {
         papo::Error::Server(error) if error.refusal() == papo::Refusal::BannedFromChannel
     ) {
         "engine.join_banned"
+    } else if matches!(error, papo::Error::Server(_)) {
+        "engine.join_refused"
     } else {
         "engine.command_refused"
     }
@@ -2901,6 +2904,33 @@ mod tests {
         assert_eq!(connection_failure_notice(&disconnected, false), None);
     }
 
+    #[test]
+    fn unsupported_browser_scheme_is_a_human_connection_rejection() {
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::new(outbound);
+
+        assert_eq!(
+            runtime.request(EngineRequestEnvelope {
+                id: "unsupported-scheme".into(),
+                request: EngineRequest::Connect {
+                    label: "Test".into(),
+                    endpoint: "irc://offline.test".into(),
+                    nickname: "weblounge".into(),
+                    sasl: SaslCredentials {
+                        account: "weblounge".into(),
+                        password: "secret".into(),
+                    },
+                    autojoin: Vec::new(),
+                    allow_insecure: false,
+                },
+            }),
+            [EngineToUi::CommandRejected {
+                id: "unsupported-scheme".into(),
+                message_key: "engine.invalid_endpoint".into(),
+            }]
+        );
+    }
+
     #[tokio::test]
     async fn hosted_authentication_uses_papos_redacting_oauth_bearer() {
         let sasl = ConnectionAuthentication::HostedOAuth {
@@ -2927,6 +2957,42 @@ mod tests {
             wire.next_sent().await,
             "AUTHENTICATE biwsAWF1dGg9QmVhcmVyIG9hdXRoLXRva2VuLTczOTEBAQ=="
         );
+    }
+
+    #[tokio::test]
+    async fn post_registration_sasl_failure_warning_keeps_the_network_online() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        mark_runtime_online(&runtime);
+
+        wire.server(":offline.test 904 weblounge :SASL authentication failed")
+            .await;
+        let warning = next_matching(&mut events, |event| {
+            matches!(
+                event,
+                papo::Event::Warning(papo::event::Warning::AuthenticationFailed { .. })
+            )
+        })
+        .await;
+        process_runtime_event(&runtime, warning);
+
+        assert_eq!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .expect("network remains running")
+                .model
+                .connection(),
+            &crate::NetworkConnectionState::Online
+        );
+        assert!(collect(&mut receiver).is_empty());
     }
 
     #[test]
@@ -4352,6 +4418,83 @@ mod tests {
                 message_key: "engine.join_banned".into(),
             }
         );
+    }
+
+    #[tokio::test]
+    async fn server_specific_join_refusals_do_not_leave_a_channel_buffer() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(RuntimeState {
+                next_network_id: 2,
+                next_instance: 2,
+                member_views: MemberViews::default(),
+                network: Some(RunningNetwork {
+                    instance: 1,
+                    authentication_kind: AuthenticationKind::SaslPlain,
+                    connection_attempt: 1,
+                    device_online: true,
+                    pending_sends: VecDeque::new(),
+                    flushing_sends: false,
+                    client,
+                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+                }),
+            })),
+            outbound,
+        };
+        mark_runtime_online(&runtime);
+
+        for (numeric, channel) in [(448, "#forbidden"), (479, "#invalid")] {
+            let id = format!("join-{numeric}");
+            assert!(
+                runtime
+                    .request(EngineRequestEnvelope {
+                        id: id.clone(),
+                        request: EngineRequest::SubmitInput {
+                            buffer_id: BufferId(1),
+                            input: format!("/join {channel}"),
+                        },
+                    })
+                    .is_empty()
+            );
+            assert_eq!(wire.next_sent().await, format!("JOIN {channel}"));
+            wire.server(format!(
+                ":irc.test {numeric} weblounge {channel} :Channel unavailable"
+            ))
+            .await;
+
+            let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                .await
+                .expect("join rejection resolves")
+                .expect("runtime remains subscribed");
+            assert_eq!(
+                result,
+                EngineToUi::CommandRejected {
+                    id,
+                    message_key: "engine.join_refused".into(),
+                }
+            );
+            let channel = known_channel(
+                &lock(&runtime.state)
+                    .network
+                    .as_ref()
+                    .expect("network remains running")
+                    .client,
+                channel,
+            );
+            assert!(
+                lock(&runtime.state)
+                    .network
+                    .as_ref()
+                    .expect("network remains running")
+                    .model
+                    .buffer_id_for_channel(&channel)
+                    .is_none()
+            );
+        }
     }
 
     async fn next_matching(
@@ -6290,6 +6433,17 @@ mod tests {
             .collect()
     }
 
+    fn timeline_messages(events: &[EngineToUi]) -> Vec<&crate::MessageProjection> {
+        events
+            .iter()
+            .flat_map(|event| match event {
+                EngineToUi::MessagesAppended { messages, .. }
+                | EngineToUi::MessagesPrepended { messages, .. } => messages.as_slice(),
+                _ => &[],
+            })
+            .collect()
+    }
+
     const HISTORY_CAPS: &str = "draft/chathistory labeled-response batch server-time message-tags";
 
     #[tokio::test]
@@ -6393,6 +6547,59 @@ mod tests {
         assert_eq!(
             timeline_texts(&output, false),
             ["server playback", "live after playback"]
+        );
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn live_and_replayed_actor_bot_facts_match_without_guessing_unknown() {
+        let mut harness = ReplayHarness::joined(
+            "draft/chathistory labeled-response batch server-time message-tags account-tag draft/oper-tag",
+        )
+        .await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(&mut harness.wire, &latest, &[]).await;
+        _ = harness.page_output("initial-sentinel").await;
+
+        harness
+            .wire
+            .server(":offline.test BATCH +playback chathistory #room")
+            .await;
+        harness
+            .wire
+            .server("@batch=playback;account=service;bot;draft/oper=network-admin;time=2026-10-27T12:00:00.000Z;msgid=replay-bot :service!s@host PRIVMSG #room :replayed bot")
+            .await;
+        harness.wire.server(":offline.test BATCH -playback").await;
+        harness
+            .wire
+            .server("@account=service;bot;draft/oper=network-admin;time=2026-10-27T13:00:00.000Z;msgid=live-bot :service!s@host PRIVMSG #room :live bot")
+            .await;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:01:00.000Z;msgid=unknown :person!p@host PRIVMSG #room :unknown bot")
+            .await;
+
+        let output = harness
+            .timeline_output(&["replayed bot", "live bot", "unknown bot"])
+            .await;
+        let projected = timeline_messages(&output);
+        for text in ["replayed bot", "live bot"] {
+            assert_eq!(
+                projected
+                    .iter()
+                    .find(|message| message.text == text)
+                    .expect("bot row")
+                    .bot,
+                Some(true)
+            );
+        }
+        assert_eq!(
+            projected
+                .iter()
+                .find(|message| message.text == "unknown bot")
+                .expect("unknown row")
+                .bot,
+            None
         );
         harness.drain.abort();
     }

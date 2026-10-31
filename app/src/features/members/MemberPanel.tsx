@@ -243,8 +243,8 @@ const loadingMember: Member = {
   nick: "",
   mode_symbol: null,
   away: false,
-  bot: false,
-  account: null,
+  bot: null,
+  account: { state: "unknown" },
   nick_color_index: 0,
   is_you: false,
 };
