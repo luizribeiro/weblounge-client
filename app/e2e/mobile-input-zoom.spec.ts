@@ -81,61 +81,68 @@ test.describe("mobile text field zoom", () => {
   });
 });
 
-test.describe("iOS standalone viewport geometry", () => {
-  test.use({
-    hasTouch: true,
-    isMobile: true,
-    screen: { width: 402, height: 874 },
-    viewport: { width: 402, height: 812 },
+for (const layout of [
+  { name: "a status-bar-short", height: 812 },
+  { name: "a full-screen", height: 874 },
+] as const) {
+  test.describe(`iOS standalone with ${layout.name} layout viewport`, () => {
+    test.use({
+      hasTouch: true,
+      isMobile: true,
+      screen: { width: 402, height: 874 },
+      viewport: { width: 402, height: layout.height },
+    });
+    test.skip(
+      process.env.WEBLOUNGE_E2E_ERGO !== "1",
+      "requires the flake's local Ergo fixture",
+    );
+
+    test.beforeEach(async ({ page }) => {
+      await emulateStandalone(page);
+      await emulateSafeTop(page, 62);
+      await installVisualViewportHook(page);
+    });
+
+    test("asks WebKit for the full screen and keeps the composer whole", async ({
+      page,
+    }) => {
+      await openChannel(page);
+      await expect(page.locator("#root")).toHaveAttribute(
+        "data-keyboard",
+        "closed",
+      );
+      expect(await documentHeight(page)).toBe(
+        Math.min(await largeViewportHeight(page), layout.height + 62),
+      );
+      await expect
+        .poll(() => shellBottomError(page, layout.height))
+        .toBeLessThanOrEqual(1);
+      expect(await composerBottom(page)).toBeLessThanOrEqual(layout.height);
+      await attemptDocumentScroll(page);
+      await expect.poll(() => documentScroll(page)).toBe(0);
+    });
+
+    test("keeps the composer on an open keyboard while iOS pans", async ({
+      page,
+    }) => {
+      await openChannel(page);
+      const root = page.locator("#root");
+      await page
+        .getByRole("textbox", { name: "Message #weblounge-test" })
+        .focus();
+
+      await setVisualViewport(page, 476, 336);
+      await expect(root).toHaveAttribute("data-keyboard", "open");
+      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+
+      await setVisualViewport(page, layout.height, 0);
+      await expect(root).toHaveAttribute("data-keyboard", "closed");
+      await expect
+        .poll(() => shellBottomError(page, layout.height))
+        .toBeLessThanOrEqual(1);
+    });
   });
-  test.skip(
-    process.env.WEBLOUNGE_E2E_ERGO !== "1",
-    "requires the flake's local Ergo fixture",
-  );
-
-  test.beforeEach(async ({ page }) => {
-    await emulateStandalone(page);
-    await emulateSafeTop(page, 62);
-    await installVisualViewportHook(page);
-  });
-
-  test("fills the screen below a status-bar-short layout viewport", async ({
-    page,
-  }) => {
-    await openChannel(page);
-    const root = page.locator("#root");
-
-    await expect(root).toHaveAttribute("data-keyboard", "closed");
-    await expect.poll(() => shellBottomError(page, 874)).toBeLessThanOrEqual(1);
-    expect(await documentScrollAfterAttempts(page)).toBe(0);
-  });
-
-  test("keeps the composer on an open keyboard while iOS pans", async ({
-    page,
-  }) => {
-    await openChannel(page);
-    const root = page.locator("#root");
-    const composer = page.locator("[data-composer]");
-    await page
-      .getByRole("textbox", { name: "Message #weblounge-test" })
-      .focus();
-
-    await setVisualViewport(page, 476, 0);
-    await expect(root).toHaveAttribute("data-keyboard", "open");
-    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
-    await expect.poll(() => shellBottomError(page, 476)).toBeLessThanOrEqual(1);
-
-    await setVisualViewport(page, 476, 336);
-    await expect(root).toHaveAttribute("data-keyboard", "open");
-    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
-    expect(await documentScrollAfterAttempts(page)).toBe(0);
-    await expect(composer).toHaveCSS("padding-bottom", "14px");
-
-    await setVisualViewport(page, 812, 0);
-    await expect(root).toHaveAttribute("data-keyboard", "closed");
-    await expect.poll(() => shellBottomError(page, 874)).toBeLessThanOrEqual(1);
-  });
-});
+}
 
 test.describe("viewport diagnostics overlay", () => {
   test.use({
@@ -182,7 +189,12 @@ interface KeyboardFrame {
   readonly padding: number;
 }
 
-type ViewportSetter = (height: number, offsetTop?: number) => void;
+type ViewportTiming = "live" | "stale";
+type ViewportSetter = (
+  height: number,
+  offsetTop?: number,
+  timing?: ViewportTiming,
+) => void;
 
 declare global {
   interface Window {
@@ -190,6 +202,8 @@ declare global {
   }
 }
 
+// Emulates WebKit: a visual viewport that iOS pans for the keyboard, that
+// window.scrollTo(0, 0) pans back, and whose events can precede its values.
 async function installVisualViewportHook(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const viewport = new EventTarget();
@@ -198,7 +212,7 @@ async function installVisualViewportHook(page: Page): Promise<void> {
       height: { get: () => geometry.height ?? innerHeight },
       offsetTop: { get: () => geometry.offsetTop },
       pageLeft: { get: () => 0 },
-      pageTop: { get: () => 0 },
+      pageTop: { get: () => geometry.offsetTop + scrollY },
       scale: { get: () => 1 },
       width: { get: () => innerWidth },
     });
@@ -206,13 +220,25 @@ async function installVisualViewportHook(page: Page): Promise<void> {
       configurable: true,
       value: viewport,
     });
-    window.__setVisualViewport = (height, offsetTop = 0) => {
+    const nativeScrollTo = window.scrollTo.bind(window);
+    window.scrollTo = ((...args: Parameters<typeof window.scrollTo>) => {
+      nativeScrollTo(...args);
+      const top = typeof args[0] === "number" ? args[1] : args[0]?.top;
+      if (top !== 0 || geometry.offsetTop === 0) return;
+      geometry.offsetTop = 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    }) as typeof window.scrollTo;
+    window.__setVisualViewport = (height, offsetTop = 0, timing = "live") => {
       const resized = height !== geometry.height;
       const panned = offsetTop !== geometry.offsetTop;
-      geometry.height = height;
-      geometry.offsetTop = offsetTop;
+      const apply = () => {
+        geometry.height = height;
+        geometry.offsetTop = offsetTop;
+      };
+      if (timing === "live") apply();
       if (resized) viewport.dispatchEvent(new Event("resize"));
       if (panned) viewport.dispatchEvent(new Event("scroll"));
+      if (timing === "stale") apply();
     };
   });
 }
@@ -220,7 +246,7 @@ async function installVisualViewportHook(page: Page): Promise<void> {
 async function emulateSafeTop(page: Page, inset: number): Promise<void> {
   await page.addInitScript((top) => {
     const sheet = new CSSStyleSheet();
-    sheet.replaceSync(`#root { --wl-safe-top: ${top}px !important; }`);
+    sheet.replaceSync(`:root { --wl-safe-top: ${top}px !important; }`);
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   }, inset);
 }
@@ -229,15 +255,16 @@ async function setVisualViewport(
   page: Page,
   height: number,
   offsetTop: number,
+  timing: ViewportTiming = "live",
 ): Promise<void> {
   await page.evaluate(
-    ([nextHeight, nextOffsetTop]) => {
+    ([nextHeight, nextOffsetTop, nextTiming]) => {
       const setViewport = window.__setVisualViewport;
       if (setViewport === undefined)
         throw new Error("viewport hook is missing");
-      setViewport(nextHeight, nextOffsetTop);
+      setViewport(nextHeight, nextOffsetTop, nextTiming);
     },
-    [height, offsetTop] as const,
+    [height, offsetTop, timing] as const,
   );
 }
 
@@ -266,14 +293,41 @@ async function composerKeyboardGap(page: Page): Promise<number> {
   });
 }
 
-async function documentScrollAfterAttempts(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    const scroller = document.scrollingElement;
+async function attemptDocumentScroll(page: Page): Promise<void> {
+  await page.evaluate(() => {
     document.querySelector("[data-composer]")?.scrollIntoView();
-    scroller?.scrollBy(0, 400);
+    document.scrollingElement?.scrollBy(0, 400);
     window.scrollBy(0, 400);
-    return (scroller?.scrollTop ?? 0) + window.scrollY;
   });
+}
+
+async function documentScroll(page: Page): Promise<number> {
+  return page.evaluate(
+    () => (document.scrollingElement?.scrollTop ?? 0) + window.scrollY,
+  );
+}
+
+async function documentHeight(page: Page): Promise<number> {
+  return page.evaluate(() =>
+    Math.round(document.documentElement.getBoundingClientRect().height),
+  );
+}
+
+async function largeViewportHeight(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.setProperty("block-size", "100lvh");
+    document.body.append(probe);
+    const height = Math.round(probe.getBoundingClientRect().height);
+    probe.remove();
+    return height;
+  });
+}
+
+async function composerBottom(page: Page): Promise<number> {
+  return page
+    .locator("[data-composer]")
+    .evaluate((composer) => composer.getBoundingClientRect().bottom);
 }
 
 async function sampleKeyboardTransition(

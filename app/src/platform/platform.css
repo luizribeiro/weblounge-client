@@ -1,9 +1,22 @@
-#root {
+:root {
   --wl-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --wl-safe-bottom-effective: var(--wl-safe-bottom);
   --wl-safe-left: env(safe-area-inset-left, 0px);
   --wl-safe-right: env(safe-area-inset-right, 0px);
   --wl-safe-top: env(safe-area-inset-top, 0px);
+}
+
+/*
+ * iOS 26 Home Screen apps with a black-translucent status bar size the
+ * viewport short by the top inset (WebKit 301108) and paint nothing below it,
+ * but only while the document is shorter than the screen. The cap keeps
+ * opaque-status-bar and already-fixed viewports at 100%.
+ */
+:root:has(> body > #root[data-display="standalone"]) {
+  min-block-size: min(100lvh, calc(100% + var(--wl-safe-top)));
+}
+
+#root {
+  --wl-safe-bottom-effective: var(--wl-safe-bottom);
 }
 
 #root[data-shell] {

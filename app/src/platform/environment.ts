@@ -89,11 +89,7 @@ export function installPlatformEnvironment(
       publish();
     },
   );
-  const stopViewportObserver = observeViewportGeometry(
-    root,
-    browserWindow,
-    () => standalone.matches,
-  );
+  const stopViewportObserver = observeViewportGeometry(root, browserWindow);
   publish();
 
   const controller: PlatformController = {
