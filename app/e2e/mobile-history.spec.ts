@@ -99,16 +99,25 @@ async function swipeBack(page: import("@playwright/test").Page): Promise<void> {
   await shell.dispatchEvent("pointerdown", {
     clientX: 5,
     clientY: 300,
+    isPrimary: true,
+    pointerId: 1,
+  });
+  await shell.dispatchEvent("pointermove", {
+    clientX: 20,
+    clientY: 300,
+    isPrimary: true,
     pointerId: 1,
   });
   await shell.dispatchEvent("pointermove", {
     clientX: 360,
     clientY: 300,
+    isPrimary: true,
     pointerId: 1,
   });
   await shell.dispatchEvent("pointerup", {
     clientX: 360,
     clientY: 300,
+    isPrimary: true,
     pointerId: 1,
   });
 }

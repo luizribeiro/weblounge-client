@@ -322,17 +322,26 @@ test.describe("mobile shell against local Ergo", () => {
       await shell.dispatchEvent("pointerdown", {
         clientX: 5,
         clientY: 300,
+        isPrimary: true,
         pointerId: 7,
       });
       await shell.dispatchEvent("pointermove", {
-        clientX: 45,
+        clientX: 20,
         clientY: 300,
+        isPrimary: true,
+        pointerId: 7,
+      });
+      await shell.dispatchEvent("pointermove", {
+        clientX: 150,
+        clientY: 300,
+        isPrimary: true,
         pointerId: 7,
       });
       await page.waitForTimeout(150); // wait-ok: hold sets low velocity for returning-swipe coverage.
       await shell.dispatchEvent("pointerup", {
-        clientX: 45,
+        clientX: 150,
         clientY: 300,
+        isPrimary: true,
         pointerId: 7,
       });
       const returningScreen = page.locator('[data-motion="returning"]');
@@ -347,16 +356,25 @@ test.describe("mobile shell against local Ergo", () => {
       await shell.dispatchEvent("pointerdown", {
         clientX: 5,
         clientY: 300,
+        isPrimary: true,
+        pointerId: 8,
+      });
+      await shell.dispatchEvent("pointermove", {
+        clientX: 20,
+        clientY: 300,
+        isPrimary: true,
         pointerId: 8,
       });
       await shell.dispatchEvent("pointermove", {
         clientX: 260,
         clientY: 300,
+        isPrimary: true,
         pointerId: 8,
       });
       await shell.dispatchEvent("pointerup", {
         clientX: 260,
         clientY: 300,
+        isPrimary: true,
         pointerId: 8,
       });
       await expect(page.locator("[data-mobile-chats]")).toBeVisible();
