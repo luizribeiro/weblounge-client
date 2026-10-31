@@ -23,6 +23,7 @@ import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
+import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import styles from "./MessageList.module.css";
 import { MessageText } from "./MessageText";
@@ -74,8 +75,6 @@ export function MessageList(props: MessageListProps) {
   let liveEdgeSentinel: HTMLDivElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
-  let userScrollIntent = false;
-  let userScrollSequence = false;
   let followEndQueued = false;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
@@ -113,14 +112,17 @@ export function MessageList(props: MessageListProps) {
     if (live) setUnseen(0);
     props.onLiveEdgeChange?.(live);
   };
-  const markUserScrollIntent = (continuesThroughScrollEnd: boolean) => {
-    userScrollIntent = true;
-    userScrollSequence = continuesThroughScrollEnd;
+  const userScrollIntent = new ScrollIntentTracker(() => list?.scrollTop ?? 0, {
+    request: (callback) => window.requestAnimationFrame(callback),
+    cancel: (handle) => window.cancelAnimationFrame(handle),
+  });
+  const markPointerScrollIntent = (event: PointerEvent) => {
+    if (event.isPrimary && event.button === 0) userScrollIntent.beginPointer();
   };
-  const markPointerScrollIntent = () => markUserScrollIntent(true);
-  const markWheelScrollIntent = () => markUserScrollIntent(false);
+  const endPointerScrollIntent = () => userScrollIntent.endPointer();
+  const markWheelScrollIntent = () => userScrollIntent.beginDiscrete();
   const markScrollKeyIntent = (event: KeyboardEvent) => {
-    if (scrollKeys.has(event.key)) markUserScrollIntent(true);
+    if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
   };
   const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
     get count() {
@@ -289,8 +291,11 @@ export function MessageList(props: MessageListProps) {
       liveEdgeObserver?.disconnect();
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
       list?.removeEventListener("keydown", markScrollKeyIntent);
-      list?.removeEventListener("pointermove", markPointerScrollIntent);
+      list?.removeEventListener("pointerdown", markPointerScrollIntent);
       list?.removeEventListener("wheel", markWheelScrollIntent);
+      window.removeEventListener("pointerup", endPointerScrollIntent);
+      window.removeEventListener("pointercancel", endPointerScrollIntent);
+      userScrollIntent.dispose();
     });
     queueMicrotask(jumpToBottom);
   });
@@ -303,18 +308,14 @@ export function MessageList(props: MessageListProps) {
         data-message-list="true"
         data-presentation={props.presentation ?? "desktop"}
         onScroll={(event) => {
-          if (!userScrollIntent && event.isTrusted) return;
+          if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
           setLiveEdge(
             element.scrollHeight - element.scrollTop - element.clientHeight <=
               liveEdgeTolerance,
           );
-          if (!userScrollSequence) userScrollIntent = false;
         }}
-        onScrollEnd={() => {
-          userScrollIntent = false;
-          userScrollSequence = false;
-        }}
+        onScrollEnd={() => userScrollIntent.settle()}
         onKeyDown={(event) => {
           if (event.key !== "End") return;
           event.preventDefault();
@@ -323,10 +324,16 @@ export function MessageList(props: MessageListProps) {
         ref={(element) => {
           list = element;
           element.addEventListener("keydown", markScrollKeyIntent);
-          element.addEventListener("pointermove", markPointerScrollIntent, {
+          element.addEventListener("pointerdown", markPointerScrollIntent, {
             passive: true,
           });
           element.addEventListener("wheel", markWheelScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("pointerup", endPointerScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("pointercancel", endPointerScrollIntent, {
             passive: true,
           });
         }}
