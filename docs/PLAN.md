@@ -204,6 +204,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     without exposing attribute values or message content (#73).
   - [x] Keep long debug-overlay readings inside the mobile viewport by wrapping them within the
     available inline width (#73).
+  - [x] Preserve failed Playwright traces and print bounded action timelines and error contexts
+    from both Nix e2e checks before their sandboxes disappear.
     user-owned wheel input, and preserve the visual row anchor across reconnects and late
     font-driven virtualizer remeasurement. Leaving the live edge freezes the unread line where the
     reader sees it, so the virtualizer never writes scroll over the reader's wheel scroll.

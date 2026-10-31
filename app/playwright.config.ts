@@ -11,6 +11,7 @@ const serverCommand = devServer
   : `WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite preview --host 127.0.0.1 --port ${port}${outDir}`;
 
 export default defineConfig({
+  reporter: [["line"], ["./e2e/failure-diagnostics-reporter.ts"]],
   projects: [
     {
       name: "chromium",
@@ -113,6 +114,7 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     ignoreHTTPSErrors: process.env.WEBLOUNGE_E2E_SECURE_ERGO === "1",
+    trace: "retain-on-failure",
   },
   webServer: [
     {

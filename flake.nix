@@ -169,6 +169,18 @@
             WEBLOUNGE_VITEST_TEST_TIMEOUT=${toString vitestEnvironment.testTimeout} \
             ${command}
         '';
+        playwrightCommand = ''
+          playwright_status=0
+          pnpm --filter @weblounge/app e2e || playwright_status=$?
+          if [[ "$playwright_status" -ne 0 ]]; then
+            while IFS= read -r -d $'\0' context; do
+              echo "Playwright error context: $context"
+              head --bytes=32768 "$context"
+              echo
+            done < <(find app/test-results -type f -name error-context.md -print0)
+            exit "$playwright_status"
+          fi
+        '';
         appCheck =
           name: command:
           pkgs.stdenvNoCC.mkDerivation {
@@ -255,7 +267,7 @@
               cat ergo.log >&2
               exit 1
             fi
-            pnpm --filter @weblounge/app e2e
+            ${playwrightCommand}
             runHook postBuild
           '';
           installPhase = "touch $out";
@@ -278,7 +290,7 @@
           WEBLOUNGE_E2E_DEV = "1";
           buildPhase = ''
             runHook preBuild
-            pnpm --filter @weblounge/app e2e
+            ${playwrightCommand}
             runHook postBuild
           '';
           installPhase = "touch $out";
