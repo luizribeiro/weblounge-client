@@ -11,13 +11,14 @@ export interface GestureDebugHandle {
   rejectAngle(): void;
   up(committed: boolean, release: GestureReleaseDebug): void;
   pointerCancel(deltaX: number, deltaY: number, time: number): void;
-  lostCapture(): void;
+  lostCapture(target: EventTarget | null): void;
   reset(reason: "visibility" | "popstate"): void;
 }
 
 interface GestureRecord {
   readonly start: string;
   lock: string;
+  captureLoss?: string;
   end?: string;
   claimedAt?: number;
 }
@@ -64,8 +65,9 @@ export function beginGestureDebug(
           ` claim+${round(time - (record.claimedAt ?? time))}ms`,
       );
     },
-    lostCapture() {
-      finish("lostcapture");
+    lostCapture(target) {
+      record.captureLoss = `lostcapture ${gestureTarget(target)}`;
+      publish();
     },
     reset(reason) {
       finish(`reset:${reason}`);
@@ -118,7 +120,9 @@ export function readGestureDiagnostics(
     ...records.map(
       (record, index): DebugReading => [
         String(index + 1),
-        `${record.start} | ${record.lock} | ${record.end ?? "active"}`,
+        `${record.start} | ${record.lock}` +
+          (record.captureLoss === undefined ? "" : ` | ${record.captureLoss}`) +
+          ` | ${record.end ?? "active"}`,
       ],
     ),
   ];
@@ -139,4 +143,14 @@ function round(value: number): number {
 
 function speed(value: number): string {
   return round(value).toFixed(1);
+}
+
+function gestureTarget(target: EventTarget | null): string {
+  if (!(target instanceof Element)) return "unknown";
+  const dataAttribute = target
+    .getAttributeNames()
+    .find((attribute) => attribute.startsWith("data-"));
+  return `${target.tagName.toLowerCase()}${
+    dataAttribute === undefined ? "" : `[${dataAttribute}]`
+  }`;
 }

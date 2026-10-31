@@ -225,11 +225,11 @@ export function createHorizontalPan(
       if (current === undefined || current.pointerId !== event.pointerId)
         return;
       if (current.axis === "horizontal") {
-        current.debug?.lostCapture();
+        current.debug?.lostCapture(event.target);
       } else {
         state = undefined;
         release(current);
-        current.debug?.lostCapture();
+        current.debug?.lostCapture(event.target);
         options.onCancel(emptyRelease());
       }
     },

@@ -54,6 +54,26 @@ it("renders lock and release details in the shared overlay", () => {
   expect(document.querySelector("[data-debug-overlay]")).toBeNull();
 });
 
+it("retains the capture-loss target without its data value", () => {
+  const root = document.createElement("div");
+  const row = document.createElement("span");
+  row.dataset.messageText = "private message contents";
+  const trace = beginGestureDebug("swipe-back", pointer(20, 30, 1_000));
+
+  trace.claim(12, 1, 1_010);
+  trace.lostCapture(row);
+  trace.up(true, {
+    averageVelocity: 0.4,
+    distance: 220,
+    releaseVelocity: 0.3,
+  });
+
+  const reading = readGestureDiagnostics(root)[1]?.[1];
+  expect(reading).toContain("lostcapture span[data-message-text]");
+  expect(reading).toContain("up-commit");
+  expect(reading).not.toContain("private message contents");
+});
+
 function pointer(clientX: number, clientY: number, timeStamp: number) {
   return { clientX, clientY, timeStamp } as PointerEvent;
 }
