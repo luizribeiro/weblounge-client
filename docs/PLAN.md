@@ -180,7 +180,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     mid-return retries, and expose gesture decisions through `/debug gestures` (#71, awaiting
     Luiz's on-device confirmation).
   - [x] Align desktop channel sigils and member mode prefixes in content-sized columns, with bare
-    names sharing one left edge and normal in-word spacing (#68).
+    names sharing one left edge and normal in-word, theme-independent spacing (#68).
   - [x] Keep resilience scroll-preservation journeys between both transcript edges with one
     user-owned wheel input, and preserve the visual row anchor across reconnects and late
     font-driven virtualizer remeasurement.

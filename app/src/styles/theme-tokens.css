@@ -1,6 +1,4 @@
 :root {
-  --wl-space-list-gap: 6px;
-  --wl-space-list-inset: 8px;
   --wl-motion-drawer-close: 260ms;
   --wl-motion-drawer-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
   --wl-motion-drawer-open: 340ms;
