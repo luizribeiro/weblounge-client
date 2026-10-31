@@ -135,8 +135,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep the chats list still while a pushed chat slides over it on push, pop, and swipe-back;
     a released swipe continues from the finger to closed or back open with velocity-sized timing
     (#59, awaiting Luiz's on-device check). Motion coverage verifies the computed token
-    configuration, monotonic intermediate movement, and elapsed-time curve bounds without assuming
-    a runner frame rate.
+    configuration, monotonic intermediate movement, transition-end positions, and elapsed-time
+    curve bounds without assuming a runner frame rate.
   - [x] Give tap-Back and released swipe-back one 280ms pop speed and curve. Swipe settlement scales
     by remaining distance, with release velocity allowed only to shorten it (#61, awaiting Luiz's
     on-device check).
