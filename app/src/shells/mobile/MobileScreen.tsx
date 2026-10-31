@@ -1,4 +1,4 @@
-import type { Accessor } from "solid-js";
+import { type Accessor, createEffect, on } from "solid-js";
 import type {
   BufferProjection,
   CommandSpec,
@@ -7,14 +7,17 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { movingTransform } from "../../ui/transform-motion";
 import { MobileChatList } from "./MobileChatList";
 import { MobileConversation } from "./MobileConversation";
 import styles from "./MobileShell.module.css";
 import type { ChatFilter } from "./mobile-chats";
-import type {
-  MobileTransition,
-  MobileScreen as Screen,
-} from "./mobile-navigation";
+import type { MobileScreen as Screen } from "./mobile-navigation";
+import {
+  type PushMotion,
+  pushOffset,
+  settlesByTransition,
+} from "./push-motion";
 
 export interface MobileShellData {
   readonly networks: readonly NetworkProjection[];
@@ -44,25 +47,36 @@ interface MobileScreenProps extends MobileShellData {
   readonly chatsScrollTop: Accessor<number | undefined>;
   readonly chatsScrollVersion: Accessor<number>;
   readonly filter: ChatFilter;
-  readonly position?: "from" | "to" | undefined;
+  readonly motion?: PushMotion | undefined;
   readonly query: string;
   readonly retained?: boolean | undefined;
   readonly screen: Screen;
-  readonly swipe?: "chat" | "chats" | undefined;
-  readonly swipeProgress?: number | undefined;
-  readonly swipeReturning?: boolean | undefined;
-  readonly transition?: MobileTransition["direction"] | undefined;
   readonly onBack: () => void;
   readonly onFilter: (filter: ChatFilter) => void;
   readonly onOpen: (bufferId: number, scrollTop: number) => void;
   readonly onQuery: (query: string) => void;
   readonly onScroll: (scrollTop: number) => void;
-  readonly onSwipeReturnEnd: () => void;
-  readonly onTransitionCancel: () => void;
-  readonly onTransitionEnd: () => void;
+  readonly onMotionEnd: () => void;
 }
 
 export function MobileScreen(props: MobileScreenProps) {
+  let element: HTMLDivElement | undefined;
+  const settleUnlessMoving = () => {
+    if (!movingTransform(element)) props.onMotionEnd();
+  };
+  const settleSoon = () => queueMicrotask(settleUnlessMoving);
+  const onOwnTransform = (handler: () => void) => (event: TransitionEvent) => {
+    if (event.target === element && event.propertyName === "transform")
+      handler();
+  };
+  createEffect(
+    on(
+      () => props.motion?.phase,
+      (phase) => {
+        if (phase !== undefined && settlesByTransition(phase)) settleSoon();
+      },
+    ),
+  );
   const buffer = () => {
     const screen = props.screen;
     return screen.kind === "chat"
@@ -75,15 +89,18 @@ export function MobileScreen(props: MobileScreenProps) {
       class={styles.screen}
       data-retained={props.retained || undefined}
       inert={props.retained ?? false}
-      data-position={props.position}
-      data-swipe={props.swipe}
-      data-swipe-returning={props.swipeReturning}
-      data-transition={props.transition}
-      onAnimationCancel={props.onTransitionCancel}
-      onAnimationEnd={props.onTransitionEnd}
-      onTransitionCancel={props.onTransitionCancel}
-      onTransitionEnd={props.onSwipeReturnEnd}
-      style={{ "--wl-swipe-progress": props.swipeProgress }}
+      data-motion={props.motion?.phase}
+      onTransitionCancel={onOwnTransform(settleSoon)}
+      onTransitionEnd={onOwnTransform(settleUnlessMoving)}
+      ref={element}
+      style={{
+        "--wl-push-offset":
+          props.motion === undefined ? undefined : pushOffset(props.motion),
+        "--wl-push-settle-scale":
+          props.motion !== undefined && "durationScale" in props.motion
+            ? props.motion.durationScale
+            : undefined,
+      }}
     >
       {props.screen.kind === "chats" ? (
         <MobileChatList

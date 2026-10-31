@@ -98,7 +98,7 @@ async function verifyProfile(
   await expect(
     page.getByRole("textbox", { name: "Message #weblounge-test" }),
   ).toBeVisible();
-  await expect(page.locator("[data-position]")).toHaveCount(0);
+  await expect(page.locator("[data-motion]")).toHaveCount(0);
   const composerBottomPadding = Math.max(14, profile.bottom);
   await expect(page.locator("[data-composer]")).toHaveCSS(
     "padding-bottom",

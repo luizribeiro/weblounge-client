@@ -63,10 +63,19 @@ export function finishTransition(state: MobileStack): MobileStack {
     : { active: state.active, back: state.back };
 }
 
-export function mountedScreens(state: MobileStack): readonly MobileScreen[] {
-  return state.transition === undefined
-    ? [state.active]
-    : [state.transition.from, state.transition.to];
+export function layeredScreens(
+  state: MobileStack,
+  swiping: boolean,
+): readonly MobileScreen[] {
+  const transition = state.transition;
+  if (transition !== undefined)
+    return transition.direction === "push"
+      ? [transition.from, transition.to]
+      : [transition.to, transition.from];
+  const under = state.back.at(-1);
+  return swiping && under !== undefined
+    ? [under, state.active]
+    : [state.active];
 }
 
 export function previousScreen(state: MobileStack): MobileScreen {

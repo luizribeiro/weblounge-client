@@ -84,6 +84,8 @@ Motion is a global semantic token layer owned by subsystem 08, not by individual
 --wl-motion-fade: 200ms;
 --wl-motion-preview-fade: 420ms;
 --wl-motion-drawer-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
+--wl-motion-push-curve: cubic-bezier(0.2, 0.9, 0.25, 1);
+--wl-motion-settle-curve: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 --wl-motion-standard-curve: cubic-bezier(0.2, 0.8, 0.2, 1);
 ```
 
@@ -91,7 +93,11 @@ Components may transition only `transform` and `opacity`. Under `prefers-reduced
 every duration token (any token whose value is in `ms`) becomes `0ms`; components do not add
 independent media queries or timers.
 Drawers use the drawer curve (fast start, soft settle) for their panel, scrim, and drag return;
-other motion uses the standard curve. Drawers move with state-driven CSS transitions:
+pushed mobile screens use the push curve, the same native settle. A released swipe-back settles with
+the gentler-starting settle curve, so it leaves the finger's position without a jump, over
+`push-out` scaled between 1.3× and 1.8×: matched to the release velocity, but never so short that a
+single frame covers more than about a sixth of the remaining distance. Other motion uses the
+standard curve. Drawers move with state-driven CSS transitions:
 the panel mounts at its off-screen offset with the scrim transparent, the open state is set two
 animation frames later so the start state is painted, and closing transitions back to the same
 offset. One offset variable drives both the panel transform and the scrim opacity, so a drag and the

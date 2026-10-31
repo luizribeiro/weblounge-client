@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createMobileStack,
   finishTransition,
-  mountedScreens,
+  layeredScreens,
   popChat,
   previousScreen,
   pushChat,
@@ -10,15 +10,22 @@ import {
 } from "./mobile-navigation";
 
 describe("mobile stack navigation", () => {
-  it("keeps only the active screen and one transition neighbour", () => {
+  it("layers the moving screen above the still one", () => {
     const pushed = pushChat(createMobileStack(), 7, false);
 
     expect(pushed.transition).toMatchObject({
       direction: "push",
       duration: 280,
     });
-    expect(mountedScreens(pushed)).toHaveLength(2);
-    expect(mountedScreens(finishTransition(pushed))).toEqual([
+    expect(layeredScreens(pushed, false)).toEqual([
+      { kind: "chats" },
+      { kind: "chat", bufferId: 7 },
+    ]);
+    expect(layeredScreens(finishTransition(pushed), false)).toEqual([
+      { kind: "chat", bufferId: 7 },
+    ]);
+    expect(layeredScreens(finishTransition(pushed), true)).toEqual([
+      { kind: "chats" },
       { kind: "chat", bufferId: 7 },
     ]);
 
@@ -27,7 +34,14 @@ describe("mobile stack navigation", () => {
       direction: "pop",
       duration: 230,
     });
+    expect(layeredScreens(popped, false)).toEqual([
+      { kind: "chats" },
+      { kind: "chat", bufferId: 7 },
+    ]);
     expect(finishTransition(popped).active).toEqual({ kind: "chats" });
+    expect(layeredScreens(createMobileStack(), true)).toEqual([
+      { kind: "chats" },
+    ]);
   });
 
   it("commits pushes and pops immediately under reduced motion", () => {

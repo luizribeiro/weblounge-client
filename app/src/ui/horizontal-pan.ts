@@ -1,11 +1,15 @@
+export interface PanRelease {
+  readonly progressPerMs: number;
+}
+
 export interface HorizontalPanOptions {
   readonly direction: "left" | "right";
   readonly commitRatio: number;
   readonly commitVelocity: number;
   readonly preventDefaultOnStart?: boolean | undefined;
   readonly onProgress: (progress: number) => void;
-  readonly onCommit: () => void;
-  readonly onCancel: () => void;
+  readonly onCommit: (release: PanRelease) => void;
+  readonly onCancel: (release: PanRelease) => void;
 }
 
 export interface HorizontalPanGesture {
@@ -25,9 +29,16 @@ interface PanState {
   readonly target: Element | null;
   readonly width: number;
   axis: "pending" | "horizontal";
+  samples: readonly PanSample[];
+}
+
+interface PanSample {
+  readonly x: number;
+  readonly time: number;
 }
 
 const axisLockThreshold = 10;
+const releaseVelocityWindow = 100;
 
 export function createHorizontalPan(
   options: HorizontalPanOptions,
@@ -50,7 +61,19 @@ export function createHorizontalPan(
   const abandon = (current: PanState) => {
     release(current);
     state = undefined;
-    options.onCancel();
+    options.onCancel({ progressPerMs: 0 });
+  };
+  const recentSamples = (current: PanState, event: PointerEvent) =>
+    [...current.samples, { time: event.timeStamp, x: event.clientX }].filter(
+      (sample) => event.timeStamp - sample.time <= releaseVelocityWindow,
+    );
+  const releaseVelocity = (current: PanState, event: PointerEvent) => {
+    const samples = recentSamples(current, event);
+    const oldest = samples[0];
+    const elapsed = event.timeStamp - (oldest?.time ?? event.timeStamp);
+    if (oldest === undefined || elapsed <= 0) return 0;
+    const sign = options.direction === "right" ? 1 : -1;
+    return (sign * (event.clientX - oldest.x)) / elapsed;
   };
 
   return {
@@ -59,6 +82,7 @@ export function createHorizontalPan(
       state = {
         axis: "pending",
         pointerId: event.pointerId,
+        samples: [{ time: event.timeStamp, x: event.clientX }],
         startX: event.clientX,
         startY: event.clientY,
         startedAt: event.timeStamp,
@@ -90,6 +114,7 @@ export function createHorizontalPan(
         }
       }
       event.preventDefault();
+      current.samples = recentSamples(current, event);
       options.onProgress(
         Math.min(1, signedDistance(event, current) / current.width),
       );
@@ -101,6 +126,9 @@ export function createHorizontalPan(
       const distance = signedDistance(event, current);
       const velocity =
         distance / Math.max(1, event.timeStamp - current.startedAt);
+      const settle = {
+        progressPerMs: releaseVelocity(current, event) / current.width,
+      };
       release(current);
       state = undefined;
       if (
@@ -113,8 +141,8 @@ export function createHorizontalPan(
           options.commitVelocity,
         )
       )
-        options.onCommit();
-      else options.onCancel();
+        options.onCommit(settle);
+      else options.onCancel(settle);
     },
     cancel: (event) => {
       const current = state;

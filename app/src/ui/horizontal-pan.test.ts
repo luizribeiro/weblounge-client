@@ -48,6 +48,37 @@ it("yields vertical motion and supports mirrored pans", () => {
   expect(progress).toHaveBeenLastCalledWith(0.1);
 });
 
+it("reports release progress velocity from the last 100ms of motion", () => {
+  const commit = vi.fn();
+  const cancel = vi.fn();
+  const gesture = createHorizontalPan({
+    commitRatio: 0.5,
+    commitVelocity: 0.5,
+    direction: "right",
+    onCancel: cancel,
+    onCommit: commit,
+    onProgress: vi.fn(),
+  });
+
+  gesture.begin(pointer(1, 0, 100, 0), 400);
+  gesture.move(pointer(1, 200, 100, 1_000));
+  gesture.move(pointer(1, 240, 100, 1_050));
+  gesture.move(pointer(1, 300, 100, 1_100));
+  gesture.end(pointer(1, 300, 100, 1_100));
+  expect(commit).toHaveBeenCalledWith({ progressPerMs: 0.0025 });
+
+  gesture.begin(pointer(2, 0, 100, 2_000), 400);
+  gesture.move(pointer(2, 150, 100, 2_100));
+  gesture.move(pointer(2, 120, 100, 2_500));
+  gesture.end(pointer(2, 100, 100, 2_550));
+  expect(cancel).toHaveBeenCalledWith({ progressPerMs: -0.001 });
+
+  gesture.begin(pointer(3, 0, 100, 3_000), 400);
+  gesture.move(pointer(3, 5, 100, 3_000));
+  gesture.end(pointer(3, 5, 100, 3_000));
+  expect(cancel).toHaveBeenLastCalledWith({ progressPerMs: 0 });
+});
+
 it("uses distance or forward velocity, never zero distance", () => {
   expect(panCommits(119, 300, 0.2, 0.4, 0.5)).toBe(false);
   expect(panCommits(120, 300, 0.2, 0.4, 0.5)).toBe(true);

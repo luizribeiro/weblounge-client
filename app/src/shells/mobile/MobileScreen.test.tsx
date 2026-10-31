@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
 import { MobileScreen } from "./MobileScreen";
 import type { MobileScreen as Screen } from "./mobile-navigation";
+import type { PushMotion } from "./push-motion";
 
 vi.mock("./MobileChatList", () => ({
   MobileChatList: (props: { readonly onOpen: (bufferId: number) => void }) => (
@@ -59,10 +60,66 @@ it("renders no destination for a stale chat buffer id", () => {
   ).not.toBeInTheDocument();
 });
 
+it("exposes its motion phase and the shared offset", async () => {
+  const settled = vi.fn();
+  renderRoute(
+    { kind: "chat", bufferId: 2 },
+    [buffer],
+    vi.fn(),
+    { phase: "dragging", progress: 0.4 },
+    settled,
+  );
+  const element = document.querySelector<HTMLElement>("[data-motion]");
+
+  expect(element).toHaveAttribute("data-motion", "dragging");
+  expect(element?.style.getPropertyValue("--wl-push-offset")).toBe("0.4");
+  await Promise.resolve();
+  expect(settled).not.toHaveBeenCalled();
+});
+
+it("settles a resting phase when no transform transition runs", async () => {
+  const settled = vi.fn();
+  renderRoute(
+    { kind: "chat", bufferId: 2 },
+    [buffer],
+    vi.fn(),
+    { phase: "closing" },
+    settled,
+  );
+
+  await Promise.resolve();
+  expect(settled).toHaveBeenCalledOnce();
+});
+
+it("settles only on its own transform transition", () => {
+  const settled = vi.fn();
+  renderRoute(
+    { kind: "chat", bufferId: 2 },
+    [buffer],
+    vi.fn(),
+    { phase: "entering" },
+    settled,
+  );
+  const element = document.querySelector("[data-motion]");
+  if (element === null) throw new Error("moving screen is missing");
+  const transitionEnd = (propertyName: string) =>
+    Object.assign(new Event("transitionend", { bubbles: true }), {
+      propertyName,
+    });
+
+  element.dispatchEvent(transitionEnd("opacity"));
+  element.firstElementChild?.dispatchEvent(transitionEnd("transform"));
+  expect(settled).not.toHaveBeenCalled();
+  element.dispatchEvent(transitionEnd("transform"));
+  expect(settled).toHaveBeenCalledOnce();
+});
+
 function renderRoute(
   route: Screen,
   buffers: readonly BufferProjection[],
   onOpen = vi.fn(),
+  motion?: PushMotion,
+  onMotionEnd = vi.fn(),
 ) {
   return render(() => (
     <MobileScreen
@@ -84,9 +141,8 @@ function renderRoute(
       onRequestCompletion={() => {}}
       onScroll={() => {}}
       onSend={async () => true}
-      onSwipeReturnEnd={() => {}}
-      onTransitionCancel={() => {}}
-      onTransitionEnd={() => {}}
+      motion={motion}
+      onMotionEnd={onMotionEnd}
       query=""
       screen={route}
     />

@@ -32,6 +32,7 @@ describe("theme registry", () => {
     expect(motionTokens.drawerCurve).toBe("cubic-bezier(0.2, 0.9, 0.25, 1)");
     expect(motionTokens.drawerOpen).toBe("340ms");
     expect(motionTokens.drawerClose).toBe("260ms");
+    expect(motionTokens.pushCurve).toBe("cubic-bezier(0.2, 0.9, 0.25, 1)");
     expect(motionTokens.pushIn).toBe("280ms");
     expect(motionTokens.suggestions).toBe("120ms");
     expect(themeStyleSheet()).toContain("--wl-motion-push-in:280ms");
@@ -39,6 +40,10 @@ describe("theme registry", () => {
     expect(themeStyleSheet()).toContain("--wl-motion-suggestions:0ms");
     expect(themeStyleSheet()).toContain("--wl-motion-drawer-open:0ms");
     expect(themeStyleSheet()).not.toContain("--wl-motion-drawer-curve:0ms");
+    expect(themeStyleSheet()).not.toContain("--wl-motion-push-curve:0ms");
+    expect(themeStyleSheet()).toContain(
+      "--wl-motion-settle-curve:cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+    );
   });
 });
 
