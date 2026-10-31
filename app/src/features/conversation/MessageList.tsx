@@ -26,6 +26,7 @@ import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
+import { preserveVisualScrollAnchor } from "../../ui/visual-scroll-anchor";
 import styles from "./MessageList.module.css";
 import { MessageText } from "./MessageText";
 import {
@@ -193,11 +194,13 @@ export function MessageList(props: MessageListProps) {
   });
   const remeasure = () => {
     if (list?.isConnected !== true) return;
-    virtualizer.measure();
-    for (const element of list.querySelectorAll<HTMLLIElement>(
-      "li[data-index]",
-    ))
-      virtualizer.measureElement(element);
+    preserveVisualScrollAnchor(list, () => {
+      virtualizer.measure();
+      for (const element of list?.querySelectorAll<HTMLLIElement>(
+        "li[data-index]",
+      ) ?? [])
+        virtualizer.measureElement(element);
+    });
   };
   const measureRow = (element: HTMLLIElement, index: number) => {
     element.dataset.index = String(index);
