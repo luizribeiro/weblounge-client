@@ -58,8 +58,28 @@ async function verifySplash(
         source: string;
       }>;
       __webloungeReleaseEngine: () => void;
+      __webloungeSplashBackgrounds: string[];
+      __webloungeSplashMarkTops: number[];
     };
     observed.__webloungeCspViolations = [];
+    observed.__webloungeSplashBackgrounds = [];
+    observed.__webloungeSplashMarkTops = [];
+    const sampleSplashMark = () => {
+      const mark = document.querySelector("[data-splash-mark]");
+      if (mark !== null) {
+        observed.__webloungeSplashBackgrounds.push(
+          getComputedStyle(mark.closest("[data-initial-splash]") ?? mark)
+            .backgroundColor,
+        );
+        observed.__webloungeSplashMarkTops.push(
+          mark.getBoundingClientRect().top,
+        );
+      }
+      if (mark !== null || document.readyState === "loading") {
+        requestAnimationFrame(sampleSplashMark);
+      }
+    };
+    requestAnimationFrame(sampleSplashMark);
     document.addEventListener("securitypolicyviolation", (event) => {
       observed.__webloungeCspViolations.push({
         blocked: event.blockedURI,
@@ -120,9 +140,11 @@ async function verifySplash(
     }
   });
   const consoleErrors: string[] = [];
-  let fontRequests = 0;
+  const fontUrls = new Set<string>();
   page.on("request", (request) => {
-    if (request.url().endsWith("/fonts/inter-latin.woff2")) fontRequests += 1;
+    if (/\/assets\/inter-latin-[^/]+\.woff2$/u.test(request.url())) {
+      fontUrls.add(request.url());
+    }
   });
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") {
@@ -148,6 +170,33 @@ async function verifySplash(
     );
     const splash = page.locator("[data-initial-splash]");
     await expect(splash).toBeVisible();
+    await expect(page.locator('meta[name="color-scheme"]')).toHaveAttribute(
+      "content",
+      "light dark",
+    );
+    const splashStyle = page.locator("style[data-initial-splash-style]");
+    await expect(splashStyle).toHaveCount(1);
+    const fontPreload = page.locator(
+      'link[rel="preload"][as="font"][type="font/woff2"]',
+    );
+    await expect(fontPreload).toHaveAttribute("crossorigin", "");
+    await expect(fontPreload).toHaveAttribute(
+      "href",
+      /\/assets\/inter-latin-[^/]+\.woff2$/u,
+    );
+    expect(
+      await splashStyle.evaluate((element) => {
+        const blocking = document.head.querySelector(
+          'link[rel="stylesheet"], script[src]',
+        );
+        return (
+          blocking === null ||
+          (element.compareDocumentPosition(blocking) &
+            Node.DOCUMENT_POSITION_FOLLOWING) !==
+            0
+        );
+      }),
+    ).toBe(true);
     await expect(page.getByRole("heading", { name: "weblounge" })).toHaveCount(
       0,
     );
@@ -171,7 +220,7 @@ async function verifySplash(
     expect(contrastRatio(colors.background, colors.fill)).toBeGreaterThan(3);
 
     await page.evaluate(() => document.fonts.ready);
-    expect(fontRequests).toBe(1);
+    expect(fontUrls.size).toBe(1);
     expect(
       await page.evaluate(
         () =>
@@ -203,6 +252,21 @@ async function verifySplash(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
     await expect(splash).toHaveCount(0);
+    const markTops = await page.evaluate(
+      () =>
+        (window as unknown as { __webloungeSplashMarkTops: number[] })
+          .__webloungeSplashMarkTops,
+    );
+    expect(markTops.length).toBeGreaterThan(1);
+    expect(Math.max(...markTops) - Math.min(...markTops)).toBeLessThanOrEqual(
+      0.5,
+    );
+    const splashBackgrounds = await page.evaluate(
+      () =>
+        (window as unknown as { __webloungeSplashBackgrounds: string[] })
+          .__webloungeSplashBackgrounds,
+    );
+    expect([...new Set(splashBackgrounds)]).toEqual([appearance.background]);
     expect(
       consoleErrors.filter((message) => /preload.*not used/iu.test(message)),
     ).toEqual([]);

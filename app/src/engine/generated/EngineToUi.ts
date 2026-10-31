@@ -117,7 +117,11 @@ network_id: NetworkId,
 /**
  * Complete ordered buffer projection.
  */
-buffers: Array<BufferProjection>, } | { "type": "buffer_added",
+buffers: Array<BufferProjection>, } | { "type": "recent_directs_ready",
+/**
+ * Network whose recent direct targets have been discovered.
+ */
+network_id: NetworkId, } | { "type": "buffer_added",
 /**
  * New buffer projection.
  */

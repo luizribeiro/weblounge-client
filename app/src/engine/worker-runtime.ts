@@ -1,3 +1,5 @@
+import wasmBinaryUrl from "@weblounge-engine-wasm";
+
 export interface WorkerHostPort {
   postMessage(message: unknown): void;
   addEventListener(
@@ -22,7 +24,6 @@ interface WasmModule {
 
 type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
 
-const wasmBinaryUrl = "/engine_bg.wasm";
 let sharedRuntime: EngineWorkerRuntime | undefined;
 
 export function attachEnginePort(port: WorkerHostPort): void {

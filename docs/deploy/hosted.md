@@ -109,11 +109,6 @@ location = /socket {
     proxy_send_timeout 1d;
 }
 
-location = /engine_bg.wasm {
-    try_files $uri =404;
-    add_header Cache-Control "no-cache" always;
-}
-
 location /assets/ {
     try_files $uri =404;
     add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -130,10 +125,8 @@ location / {
 }
 ```
 
-The root document, runtime config, fixed-name wasm file, fonts, and brand assets are revalidated;
-everything under `/assets/`, including the hashed worker and wasm-glue files, is immutable. Moving
-`engine_bg.wasm` under a hashed `/assets/` URL would let the large wasm payload use the same
-year-long cache policy; that is a follow-up, not part of this deployment. The UI and worker exchange
+The root document, runtime config, fonts, and brand assets are revalidated; everything under
+`/assets/`, including the hashed worker, wasm binary, and wasm-glue files, is immutable. The UI and worker exchange
 a build ID and reload once if an old worker meets a new UI. The production build explicitly disables
 source maps, fails if debug IRC configuration or the `?irc-password` hook survives tree-shaking,
 and verifies that both workers use emitted same-origin `/assets/*.js` URLs rather than `data:` or
@@ -148,7 +141,9 @@ connect-src 'self' wss://beta.weblounge.org/socket https://members.weblounge.org
   https://files.weblounge.org/upload; img-src 'self'
 ```
 
-Scripts remain nonce-free and do not allow inline execution. The built-app Playwright suite runs
+Scripts remain nonce-free and do not allow inline execution. The startup splash is the sole inline
+style and requires its generated `sha256-…` hash in `style-src`; obtain the current value from the
+built app's Playwright CSP header before deploying a new client build. The built-app Playwright suite runs
 with this policy (plus its loopback fake OAuth origin), and the production verifier checks that
 Vite emitted same-origin worker files compatible with `worker-src 'self'`.
 

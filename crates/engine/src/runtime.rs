@@ -1189,7 +1189,13 @@ impl Runtime {
 /// Another tab sharing this engine starts with no rows, so it receives the running network's
 /// retained timelines along with the buffer list.
 fn attach_shell(model: &NetworkModel, command_id: String) -> Vec<EngineToUi> {
-    let mut output = vec![model.network_event(), model.buffers_event()];
+    let mut output = vec![
+        model.network_event(),
+        model.buffers_event(),
+        EngineToUi::RecentDirectsReady {
+            network_id: model.id(),
+        },
+    ];
     output.extend(model.snapshot_events());
     output.push(EngineToUi::CommandResult { id: command_id });
     output
@@ -1954,11 +1960,15 @@ fn spawn_recent_direct_restore(
     instance: u64,
 ) {
     spawn_task(async move {
+        let Some(network_id) = running_network_id(&state, instance) else {
+            return;
+        };
         let until = papo::time::now();
         let since = until
             .checked_sub(RECENT_DIRECT_WINDOW)
             .unwrap_or(SystemTime::UNIX_EPOCH);
         let Ok(recent) = client.recent_conversations(since, until).await else {
+            send_recent_directs_ready(&state, &outbound, instance, network_id);
             return;
         };
         let snapshot = client.state();
@@ -1986,6 +1996,7 @@ fn spawn_recent_direct_restore(
         directs.truncate(RECENT_DIRECT_LIMIT);
         drop(snapshot);
         if directs.is_empty() {
+            send_recent_directs_ready(&state, &outbound, instance, network_id);
             return;
         }
 
@@ -2024,6 +2035,7 @@ fn spawn_recent_direct_restore(
             return;
         };
         output.push(buffers);
+        output.push(EngineToUi::RecentDirectsReady { network_id });
         send_events(&outbound, output);
         for fetch in fetches {
             spawn_history_fetch(
@@ -2044,6 +2056,29 @@ fn spawn_recent_direct_restore(
             });
         }
     });
+}
+
+fn running_network_id(state: &Arc<Mutex<RuntimeState>>, instance: u64) -> Option<NetworkId> {
+    lock(state)
+        .network
+        .as_ref()
+        .filter(|running| running.instance == instance)
+        .map(|running| running.model.id())
+}
+
+fn send_recent_directs_ready(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+    network_id: NetworkId,
+) {
+    if lock(state)
+        .network
+        .as_ref()
+        .is_some_and(|running| running.instance == instance)
+    {
+        let _ = outbound.send(EngineToUi::RecentDirectsReady { network_id });
+    }
 }
 
 fn apply_direct_resolution(
@@ -3636,6 +3671,7 @@ mod tests {
             [
                 EngineToUi::NetworkStateChanged { .. },
                 EngineToUi::BuffersChanged { .. },
+                EngineToUi::RecentDirectsReady { .. },
                 EngineToUi::BufferSnapshot { .. },
                 EngineToUi::CommandResult { id },
             ] if id == "connect-again"
@@ -3708,6 +3744,7 @@ mod tests {
             [
                 EngineToUi::NetworkStateChanged { .. },
                 EngineToUi::BuffersChanged { .. },
+                EngineToUi::RecentDirectsReady { .. },
                 EngineToUi::BufferSnapshot { .. },
                 EngineToUi::CommandResult { id },
             ] if id == "second-tab"
@@ -4963,6 +5000,31 @@ mod tests {
         .await
         .expect("recent direct buffers arrive");
         assert_eq!(ordered, ["Test", "carol", "alice", "Bob"]);
+
+        let mut latest_targets = Vec::new();
+        while latest_targets.len() < 3 {
+            let request = tokio::time::timeout(Duration::from_secs(1), wire.next_sent())
+                .await
+                .expect("direct latest history starts without waiting for presence lookup");
+            if request.contains(" CHATHISTORY LATEST ") {
+                let target = request
+                    .split_whitespace()
+                    .nth(3)
+                    .expect("latest history target is present")
+                    .to_owned();
+                latest_targets.push(target);
+                let label = request_label(&request);
+                send_history_page(&mut wire, label, &[]).await;
+            }
+        }
+        latest_targets.sort();
+        assert_eq!(latest_targets, ["Bob", "alice", "carol"]);
+        assert!(matches!(
+            receiver.recv().await,
+            Some(EngineToUi::RecentDirectsReady {
+                network_id: NetworkId(1)
+            })
+        ));
 
         drain.abort();
     }

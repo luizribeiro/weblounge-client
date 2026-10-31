@@ -33,7 +33,7 @@ Each task is one fresh codex session, reviewed before the next starts. The orche
 7c. [x] Mobile members drawer.
 7d. [ ] Mobile and PWA polish, iPhone 16 Pro as the reference device (Android first-class too): manifest, icons and iOS launch images, standalone display, status-bar colour per theme under the Dynamic Island (`theme-color` per light/dark, translucent iOS status bar), safe areas from `env()` only (Dynamic Island, home indicator, landscape), `100dvh` fixed root, composer above the keyboard on iOS and Android, no input zoom/double-tap zoom/rubber-band/pull-to-refresh/callouts on chrome, swipe-back not fighting Safari's edge swipe, Android back via the stack, Dynamic Type/font scaling, minimal app-shell service worker. Tested with Playwright WebKit (iPhone 16 Pro profile) and an Android profile; Luiz's phone is the final check once beta.weblounge.org exists.
 7e. [x] Perf scenarios run several times and report the median (single runs quantise to whole frames and are noisy under throttling).
-7f. [ ] First paint and loading: inline splash (theme background, large tinted chair mark), metrics-matched font fallback, ≤200ms cross-fade, CI filmstrip test (no blank/white frames, no font shift; light/dark, Chromium+WebKit, slow network).
+7f. [x] First paint and loading: inline splash (theme background, large tinted chair mark), metrics-matched font fallback, ≤200ms cross-fade, CI filmstrip test (no blank/white frames, no font shift; light/dark, Chromium+WebKit, slow network).
 8. [ ] Production-shaped local Ergo profile and `wss://` TLS proxy are available through `nix run .#ergo-weblounge`; origin-refused connections now show a human error. The profile matches SASL-required registration, always-on, persistent channel and opt-out DM history, read markers, and the production command policy. Read-marker sync between independent browser contexts and paging through 1,000+ production-profile messages are covered. Remaining scenarios: WSS/SASL/autojoin, always-on channel and DM catch-up, channel and DM history across an Ergo restart, and the profile-level origin-refusal assertion. Redaction remains optional until client support exists. Testing against the real server waits for beta.weblounge.org (milestone 4).
 8b. [ ] End-to-end perf scenarios through the engine and worker: cold/warm start, buffer switch, 2,000-message burst, reconnect, typing latency (doc 21 budgets).
 
@@ -101,6 +101,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Disable shell-level pinch and double-tap zoom while preserving root text scaling.
   - [x] Linkify safe message URLs and channel names on desktop and mobile.
   - [x] Keep a theme-correct loading splash until fonts and the engine snapshot are ready.
+  - [x] Paint the themed splash from the inline head before blocking resources, keep its chair
+    stationary through standalone safe-area discovery, and preload content-hashed Inter and engine
+    Wasm assets. The mobile header chair is bundled, the worker prewarms during hosted discovery,
+    and startup reveals channel and recent-DM previews only after their latest history settles or
+    the fixed 400ms cap expires. Filmstrip, local-Ergo first-reveal, and stalled-history coverage
+    protect the complete path.
   - [x] Keep touch WebKit navigation replace-only in Safari tabs and standalone PWAs while Android retains a platform Back stack.
   - [x] Show an explicit Sign in again action when a hosted OAuth callback is missing state, has
     mismatched state, or reaches an expired authorization code instead of leaving a splash stalled.

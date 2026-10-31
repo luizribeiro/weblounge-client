@@ -55,13 +55,13 @@ test("publishes self-hosted install metadata", async ({ page, request }) => {
   );
   const manifest = (await response.json()) as InstallManifest;
   expect(manifest).toMatchObject({
-    background_color: "#efe8d8",
+    background_color: "#f3f1e9",
     display: "standalone",
     name: "weblounge",
     scope: "/",
     short_name: "weblounge",
     start_url: "/",
-    theme_color: "#15231c",
+    theme_color: "#18221e",
   });
   expect(manifest.icons).toEqual([
     {

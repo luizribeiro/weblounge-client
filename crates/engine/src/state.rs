@@ -1387,8 +1387,8 @@ fn derive_read_projection(buffer: &mut BufferState) {
     buffer.projection.last_message = buffer
         .timeline
         .iter()
-        .rev()
-        .find(|record| record.projection.kind != MessageKind::Notice)
+        .filter(|record| record.projection.kind != MessageKind::Notice)
+        .max_by_key(|record| order_key(record))
         .map(|record| record.projection.clone());
     buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
         buffer
@@ -1595,7 +1595,7 @@ mod tests {
 
     use super::{
         HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin,
-        collapse_blank_lines, draft_key, nick_color_index, time_millis,
+        collapse_blank_lines, derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
 
@@ -1819,6 +1819,50 @@ mod tests {
             .expect("latest message is projected for the buffer list");
         assert_eq!(preview.text, "later");
         assert_eq!(preview.author, "alice");
+    }
+
+    #[test]
+    fn buffer_preview_chooses_message_time_independently_of_timeline_position() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(
+            incoming(
+                &state,
+                "older",
+                Some("older"),
+                Some(1_000),
+                30,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        model.receive_incoming(
+            incoming(
+                &state,
+                "newer",
+                Some("newer"),
+                Some(2_000),
+                20,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        let buffer = model
+            .buffers
+            .values_mut()
+            .find(|buffer| buffer.projection.title == "#room")
+            .expect("channel buffer exists");
+        buffer.timeline.reverse();
+
+        derive_read_projection(buffer);
+
+        assert_eq!(
+            buffer
+                .projection
+                .last_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("newer")
+        );
     }
 
     #[test]

@@ -511,6 +511,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "recent_directs_ready":
+      if (typeof value.network_id === "number") {
+        return { type: messageType, network_id: value.network_id };
+      }
+      break;
     case "buffer_added":
     case "buffer_updated": {
       const buffer = decodeBuffer(value.buffer);
@@ -698,6 +703,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "completion_result" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
+    value === "recent_directs_ready" ||
     value === "buffer_added" ||
     value === "buffer_updated" ||
     value === "focus_buffer_requested" ||

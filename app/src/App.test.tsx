@@ -167,7 +167,35 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     },
   });
   expect(await screen.findByText("1 network")).toBeVisible();
-  expect(onReady).toHaveBeenCalledOnce();
+  expect(onReady).not.toHaveBeenCalled();
+  client.emit({
+    type: "buffers_changed",
+    network_id: 1,
+    buffers: [
+      {
+        id: 2,
+        network_id: 1,
+        kind: "channel",
+        title: "#lounge",
+        draft_key: "test:#lounge",
+        topic: null,
+        member_count: 0,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    ],
+  });
+  expect(onReady).not.toHaveBeenCalled();
+  client.emit({ type: "recent_directs_ready", network_id: 1 });
+  expect(onReady).not.toHaveBeenCalled();
+  client.emit({
+    type: "history_state_changed",
+    buffer_id: 2,
+    loading: false,
+    at_start: false,
+  });
+  await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
   client.emit({
     type: "network_state_changed",
     network: {
@@ -194,6 +222,60 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     id: expect.any(String),
     request: { type: "expire_hosted_authentication", network_id: 1 },
   });
+});
+
+it("caps startup history hydration at 400ms", async () => {
+  vi.useFakeTimers();
+  const client = new FakeEngineClient();
+  const onReady = vi.fn();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: ["#lounge"],
+        },
+        token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
+      }}
+      onReady={onReady}
+    />
+  ));
+  await vi.advanceTimersByTimeAsync(0);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: "online",
+    },
+  });
+  client.emit({
+    type: "buffers_changed",
+    network_id: 1,
+    buffers: [
+      {
+        id: 2,
+        network_id: 1,
+        kind: "channel",
+        title: "#lounge",
+        draft_key: "test:#lounge",
+        topic: null,
+        member_count: 0,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    ],
+  });
+
+  await vi.advanceTimersByTimeAsync(399);
+  expect(onReady).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(onReady).toHaveBeenCalledOnce();
+  vi.useRealTimers();
 });
 
 it("lists projected networks, buffers, and messages", async () => {

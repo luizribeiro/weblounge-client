@@ -2,6 +2,8 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
 import { installDensity } from "./density/density";
+import { createEngineClient } from "./engine/createEngineClient";
+import type { EngineClient } from "./engine/EngineClient";
 import type { DeploymentConfig } from "./engine/generated/DeploymentConfig";
 import { AppErrorBoundary } from "./hosted/AppErrorBoundary";
 import { loadDeploymentConfig } from "./hosted/deployment-config";
@@ -27,11 +29,26 @@ import { installTheme } from "./theme/theme-controller";
 
 type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
 
+let prewarmedEngine:
+  | { readonly type: "client"; readonly client: EngineClient }
+  | { readonly type: "error"; readonly error: unknown }
+  | undefined;
+try {
+  prewarmedEngine = { type: "client", client: createEngineClient() };
+} catch (error: unknown) {
+  prewarmedEngine = { type: "error", error };
+}
+
 type BootstrapState =
   | { type: "starting"; message: string }
   | { type: "error"; message: string; retryLabel: string }
-  | { type: "app"; attempt: number }
-  | { type: "hosted"; config: HostedConfig; session: HostedSession };
+  | { type: "app"; attempt: number; engineClient: EngineClient }
+  | {
+      type: "hosted";
+      config: HostedConfig;
+      session: HostedSession;
+      engineClient: EngineClient;
+    };
 
 interface BootstrapProps {
   readonly beforeReveal: () => Promise<void>;
@@ -61,7 +78,11 @@ function Bootstrap(props: BootstrapProps) {
     try {
       const config = await loadDeploymentConfig();
       if (config.mode === "app") {
-        setState({ type: "app", attempt: 1 });
+        setState({
+          type: "app",
+          attempt: 1,
+          engineClient: takePrewarmedEngineClient(),
+        });
         return;
       }
       requireCurrentRedirect(config);
@@ -90,6 +111,7 @@ function Bootstrap(props: BootstrapProps) {
       setState({
         type: "hosted",
         config,
+        engineClient: takePrewarmedEngineClient(),
         session: {
           network: config.network,
           token: new OneShotAccessToken(token.accessToken, token.expiresAt),
@@ -152,10 +174,15 @@ function Bootstrap(props: BootstrapProps) {
             {(attempt) => (
               <App
                 beforeReveal={props.beforeReveal}
+                engineClient={current.engineClient}
                 onReady={props.onReady}
-                onRetryStartup={() =>
-                  setState({ type: "app", attempt: attempt + 1 })
-                }
+                onRetryStartup={() => {
+                  setState({
+                    type: "app",
+                    attempt: attempt + 1,
+                    engineClient: createEngineClient(),
+                  });
+                }}
               />
             )}
           </Show>
@@ -164,6 +191,7 @@ function Bootstrap(props: BootstrapProps) {
         return (
           <App
             beforeReveal={props.beforeReveal}
+            engineClient={current.engineClient}
             hostedSession={current.session}
             onReady={props.onReady}
             onHostedAuthorizationRequired={() =>
@@ -179,6 +207,14 @@ function Bootstrap(props: BootstrapProps) {
     }
   };
   return <AppErrorBoundary>{content()}</AppErrorBoundary>;
+}
+
+function takePrewarmedEngineClient(): EngineClient {
+  const warmed = prewarmedEngine;
+  prewarmedEngine = undefined;
+  if (warmed === undefined) return createEngineClient();
+  if (warmed.type === "error") throw warmed.error;
+  return warmed.client;
 }
 
 function requireCurrentRedirect(config: HostedConfig): void {
@@ -241,7 +277,9 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       if (!active) return;
       active = false;
       window.clearTimeout(timeout);
-      splash.querySelector("[data-splash-status]")?.remove();
+      splash
+        .querySelector<HTMLElement>("[data-splash-status]")
+        ?.setAttribute("data-hidden", "true");
       splash.setAttribute("aria-hidden", "true");
       splash.dataset.state = "leaving";
       const animations = splash.getAnimations();

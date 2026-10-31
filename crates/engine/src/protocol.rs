@@ -673,6 +673,11 @@ pub enum EngineToUi {
         /// Complete ordered buffer projection.
         buffers: Vec<BufferProjection>,
     },
+    /// Report that initial recent-direct discovery cannot add more buffers.
+    RecentDirectsReady {
+        /// Network whose recent direct targets have been discovered.
+        network_id: NetworkId,
+    },
     /// Append one newly discovered buffer.
     BufferAdded {
         /// New buffer projection.

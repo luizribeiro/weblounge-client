@@ -63,6 +63,22 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
     complete();
   });
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => Reflect.get(globalThis, "hostedStartupSequence")),
+  ).toEqual(expect.arrayContaining(["worker", "config"]));
+  expect(
+    await page.evaluate(() =>
+      (Reflect.get(globalThis, "hostedStartupSequence") as string[]).indexOf(
+        "worker",
+      ),
+    ),
+  ).toBeLessThan(
+    await page.evaluate(() =>
+      (Reflect.get(globalThis, "hostedStartupSequence") as string[]).indexOf(
+        "config",
+      ),
+    ),
+  );
   await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
   await page.goBack();
   await expect(page).toHaveURL("http://127.0.0.1:4174/health");
@@ -244,6 +260,21 @@ async function expectHostedConnection(page: Page): Promise<void> {
 async function installFakeEngine(page: Page, holdConnection = false) {
   await page.addInitScript((holdHostedConnection) => {
     Reflect.set(globalThis, "hostedEngineRequests", []);
+    Reflect.set(globalThis, "hostedStartupSequence", []);
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (new URL(url, location.href).pathname === "/config.json") {
+        const sequence = Reflect.get(globalThis, "hostedStartupSequence");
+        if (Array.isArray(sequence)) sequence.push("config");
+      }
+      return originalFetch(input, init);
+    };
     class FakePort extends EventTarget {
       postMessage(message: unknown) {
         if (typeof message !== "object" || message === null) return;
@@ -331,6 +362,11 @@ async function installFakeEngine(page: Page, holdConnection = false) {
 
     class FakeSharedWorker {
       readonly port = new FakePort();
+
+      constructor() {
+        const sequence = Reflect.get(globalThis, "hostedStartupSequence");
+        if (Array.isArray(sequence)) sequence.push("worker");
+      }
     }
     Reflect.set(globalThis, "SharedWorker", FakeSharedWorker);
   }, holdConnection);

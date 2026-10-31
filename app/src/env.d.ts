@@ -21,3 +21,8 @@ declare module "@weblounge-engine" {
     handle(message: string): string;
   }
 }
+
+declare module "@weblounge-engine-wasm" {
+  const url: string;
+  export default url;
+}
