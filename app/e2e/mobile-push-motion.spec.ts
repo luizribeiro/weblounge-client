@@ -287,6 +287,7 @@ async function openShell(page: Page): Promise<void> {
   await expect(
     page.getByRole("button", { name: "#weblounge-test" }),
   ).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 }
 
 async function openChat(page: Page): Promise<void> {
