@@ -163,6 +163,30 @@ describe("ActionRegistry", () => {
     expect(registry.run("command.join", context, "typed")).toBe("ran");
     expect(registry.run("command.join", context, "menu", true)).toBe("ran");
   });
+
+  it("keeps viewport diagnostics hidden until the exact slash command", () => {
+    const debug = vi.fn();
+    const registry = new ActionRegistry({ "debug.viewport": debug }, "other");
+
+    expect(registry.palette(context)).toEqual([]);
+    expect(registry.help(context)).toEqual([]);
+    expect(registry.completeInput("one", 7, "/deb", 4)).toBeUndefined();
+    expect(registry.completeInput("two", 7, "/debug", 6)?.candidates).toEqual([
+      expect.objectContaining({ type: "command", name: "debug" }),
+    ]);
+    expect(registry.runInput("/debug viewport", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith({
+      ...context,
+      debugViewport: true,
+    });
+    expect(registry.runInput("/debug off", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith({
+      ...context,
+      debugViewport: false,
+    });
+    expect(registry.runInput("/debug invalid", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith(context);
+  });
 });
 
 function keydown(key: string, target: Element): KeyboardEvent {

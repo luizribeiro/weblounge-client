@@ -40,6 +40,7 @@ import {
   readLastViewedPath,
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
+import { setViewportDebugEnabled } from "./platform/viewport-debug";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
 import {
   contextMenuRegistry,
@@ -119,6 +120,16 @@ export function App(props: AppProps) {
             nick: context.targetNick,
           },
         });
+      },
+      "debug.viewport": (context) => {
+        if (context.debugViewport === undefined) {
+          setComposerNotice("Usage: /debug viewport or /debug off");
+          return;
+        }
+        const root = document.getElementById("root");
+        if (root === null) return;
+        setViewportDebugEnabled(root, window, context.debugViewport);
+        setComposerNotice(undefined);
       },
     },
     "other",
@@ -471,6 +482,12 @@ export function App(props: AppProps) {
           onSend={(bufferId, text) => {
             if (client === undefined) return Promise.resolve(false);
             setComposerNotice(undefined);
+            const uiResult = noticeActions.runInput(text, {
+              bufferCount: buffers().length,
+              listActive: false,
+            });
+            if (uiResult !== undefined)
+              return Promise.resolve(uiResult === "ran");
             return client
               .send({
                 id: crypto.randomUUID(),
@@ -494,6 +511,16 @@ export function App(props: AppProps) {
             if (client === undefined) return;
             const id = crypto.randomUUID();
             latestCompletionRequest = id;
+            const uiCompletion = noticeActions.completeInput(
+              id,
+              bufferId,
+              input,
+              cursor,
+            );
+            if (uiCompletion !== undefined) {
+              setCompletion(uiCompletion);
+              return;
+            }
             void client
               .send({
                 id,

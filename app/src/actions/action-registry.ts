@@ -1,5 +1,5 @@
 import type { CommandPermission } from "../engine/generated/CommandPermission";
-import type { CommandSpec } from "../engine/protocol";
+import type { CommandSpec, CompletionResult } from "../engine/protocol";
 import { t } from "../features/composer/strings";
 
 export type UiActionId =
@@ -7,6 +7,7 @@ export type UiActionId =
   | "buffer.open"
   | "buffer.open-direct"
   | "buffer.previous"
+  | "debug.viewport"
   | "list.next"
   | "list.open"
   | "list.previous"
@@ -27,6 +28,7 @@ export type Platform = "macos" | "other";
 export interface ActionContext {
   readonly bufferCount: number;
   readonly connected?: boolean;
+  readonly debugViewport?: boolean;
   readonly features?: readonly string[];
   readonly listActive: boolean;
   readonly permission?: CommandPermission;
@@ -69,6 +71,7 @@ interface ActionSpec {
   readonly title: string;
   readonly availability: (context: ActionContext) => ActionAvailability;
   readonly binding?: Binding;
+  readonly discoverable?: boolean;
 }
 
 const alwaysAvailable = (): ActionAvailability => ({ state: "available" });
@@ -86,6 +89,10 @@ const specs: readonly ActionSpec[] = [
     alwaysAvailable,
     mod("k", "⌘K", "Ctrl+K"),
   ),
+  {
+    ...command("debug.viewport", "Viewport diagnostics", alwaysAvailable),
+    discoverable: false,
+  },
   command("settings.open", "Settings", alwaysAvailable, {
     ...mod(",", "⇧⌘,", "Ctrl+Shift+,"),
     shift: true,
@@ -238,6 +245,48 @@ export class ActionRegistry {
     return this.#entries(context, "help");
   }
 
+  runInput(input: string, context: ActionContext): ActionRunResult | undefined {
+    const match = input.trim().match(/^\/debug(?:\s+(\S+))?(?:\s.*)?$/iu);
+    if (match === null) return undefined;
+    const mode = match[1]?.toLocaleLowerCase();
+    return this.run("debug.viewport", {
+      ...context,
+      ...(mode === "viewport" || mode === "off"
+        ? { debugViewport: mode === "viewport" }
+        : {}),
+    });
+  }
+
+  completeInput(
+    commandId: string,
+    bufferId: number,
+    input: string,
+    cursor: number,
+  ): CompletionResult | undefined {
+    if (input.slice(0, cursor).trimStart().toLocaleLowerCase() !== "/debug")
+      return undefined;
+    return {
+      type: "completion_result",
+      command_id: commandId,
+      buffer_id: bufferId,
+      input,
+      replace_start: input.indexOf("/"),
+      replace_end: cursor,
+      trigger: "command",
+      argument_hint: null,
+      replacement_prefix: "/",
+      replacement_suffix: " ",
+      candidates: [
+        {
+          type: "command",
+          name: "debug",
+          usage: "cmd.debug.usage",
+          description: "cmd.debug.description",
+        },
+      ],
+    };
+  }
+
   #entries(
     context: ActionContext,
     surface: "palette" | "help",
@@ -245,6 +294,7 @@ export class ActionRegistry {
     const ui = specs
       .filter(
         (spec) =>
+          spec.discoverable !== false &&
           this.#handlers[spec.id] !== undefined &&
           spec.availability(context).state === "available",
       )

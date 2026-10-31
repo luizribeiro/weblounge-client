@@ -18,6 +18,28 @@ test.describe("mobile shell against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
+  test("toggles viewport diagnostics from the hidden debug command", async ({
+    page,
+  }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+
+    await composer.fill("/deb");
+    await expect(page.locator("[data-composer-suggestions]")).toHaveCount(0);
+    await composer.fill("/debug");
+    await expect(page.getByRole("option", { name: /\/debug/u })).toBeVisible();
+    await composer.fill("/debug viewport");
+    await composer.press("Enter");
+    await expect(page.locator("[data-viewport-debug]")).toBeVisible();
+
+    await composer.fill("/debug off");
+    await composer.press("Enter");
+    await expect(page.locator("[data-viewport-debug]")).toHaveCount(0);
+  });
+
   test("confirms typed quit before mobile execution", async ({ page }) => {
     await page.goto("/?irc-password=weblounge-test");
     await page.getByRole("button", { name: "#weblounge-test" }).click();

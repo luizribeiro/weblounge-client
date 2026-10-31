@@ -15,6 +15,7 @@ const trackedElements = [
   ["composer", "[data-composer]"],
 ] as const;
 const refreshEvents = ["resize", "scroll", "focusin", "focusout"] as const;
+let activeStop: (() => void) | undefined;
 
 // Home Screen apps launch at the manifest start_url and hosted sign-in
 // redirects drop the query, so the flag must outlive the URL that set it.
@@ -39,7 +40,35 @@ export function installRequestedViewportDebug(
   const url = new URL(browserWindow.location.href);
   const storage = attempt(() => browserWindow.localStorage) ?? null;
   if (!viewportDebugRequested(url, storage)) return () => {};
-  return installViewportDebug(root, browserWindow);
+  return enableViewportDebug(root, browserWindow);
+}
+
+export function setViewportDebugEnabled(
+  root: HTMLElement,
+  browserWindow: Window,
+  enabled: boolean,
+): void {
+  const storage = attempt(() => browserWindow.localStorage) ?? null;
+  attempt(() => {
+    if (enabled) storage?.setItem(storageKey, "on");
+    else storage?.removeItem(storageKey);
+  });
+  activeStop?.();
+  activeStop = undefined;
+  if (enabled) activeStop = installViewportDebug(root, browserWindow);
+}
+
+function enableViewportDebug(
+  root: HTMLElement,
+  browserWindow: Window,
+): () => void {
+  activeStop?.();
+  const stop = installViewportDebug(root, browserWindow);
+  activeStop = stop;
+  return () => {
+    if (activeStop === stop) activeStop = undefined;
+    stop();
+  };
 }
 
 export function readViewportDiagnostics(

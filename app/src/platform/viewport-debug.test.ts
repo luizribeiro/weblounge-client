@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   installViewportDebug,
   readViewportDiagnostics,
+  setViewportDebugEnabled,
   viewportDebugRequested,
 } from "./viewport-debug";
 
@@ -130,5 +131,18 @@ describe("viewport diagnostics", () => {
     stop();
     expect(document.querySelector("[data-viewport-debug]")).toBeNull();
     expect(document.querySelector("[data-viewport-debug-probe]")).toBeNull();
+  });
+
+  it("toggles the remembered overlay immediately", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+
+    setViewportDebugEnabled(root, window, true);
+    expect(localStorage.getItem(flagKey)).toBe("on");
+    expect(document.querySelector("[data-viewport-debug]")).not.toBeNull();
+
+    setViewportDebugEnabled(root, window, false);
+    expect(localStorage.getItem(flagKey)).toBeNull();
+    expect(document.querySelector("[data-viewport-debug]")).toBeNull();
   });
 });
