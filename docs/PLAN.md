@@ -127,6 +127,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     composer swipes and long-presses gesture-owned; never publish a stale visual-viewport top, and
     re-anchor the live-edge transcript with the app-height change before paint (#69 and #70,
     awaiting on-device motion confirmation).
+  - [x] Keep the tapped composer outside WebKit's delayed reveal until measured keyboard geometry,
+    cache open heights per orientation, and own open/close motion with platform-matched transform
+    curves on the transcript/composer surface. `/debug keyboard` records a copyable frame trace;
+    WebKit coverage proves monotonic motion, a fixed root, and an adjacent live-edge transcript
+    (#69 follow-up, awaiting on-device motion confirmation).
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.

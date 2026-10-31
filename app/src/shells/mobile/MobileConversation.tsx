@@ -165,7 +165,7 @@ export function MobileConversation(props: MobileConversationProps) {
           <span aria-hidden="true" />
         )}
       </header>
-      <div class={styles.conversation}>
+      <div class={styles.conversation} data-keyboard-motion="true">
         <MessageList
           bufferId={props.buffer.id}
           messages={props.messages}

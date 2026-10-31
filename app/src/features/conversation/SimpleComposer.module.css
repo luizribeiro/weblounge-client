@@ -9,6 +9,7 @@
 }
 
 .wrap {
+  background: var(--wl-color-surface);
   border-top: 1px solid var(--wl-color-border);
   padding: 8px 14px max(14px, var(--wl-safe-bottom-effective));
   position: relative;
@@ -16,9 +17,17 @@
     var(--wl-motion-standard-curve);
 }
 
+:global([data-keyboard-motion]) .wrap {
+  box-shadow: 0 100vh 0 100vh var(--wl-color-surface);
+}
+
 .wrap .form {
   border: 0;
   padding: 0;
+}
+
+:global([data-keyboard-motion-active="true"]) .wrap {
+  transition: none;
 }
 
 .input {

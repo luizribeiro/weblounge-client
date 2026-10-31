@@ -70,6 +70,7 @@ afterEach(() => {
 it("marks the latest committed message read after a 500ms live-edge dwell", () => {
   const markRead = vi.fn();
   renderConversation(markRead);
+  expect(document.querySelector("[data-keyboard-motion]")).not.toBeNull();
 
   vi.advanceTimersByTime(499);
   expect(markRead).not.toHaveBeenCalled();

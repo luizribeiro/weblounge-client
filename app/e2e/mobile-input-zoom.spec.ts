@@ -87,7 +87,7 @@ test.describe("mobile text field zoom", () => {
     );
   });
 
-  test("animates away the home-indicator inset with the keyboard", async ({
+  test("moves the composer and transcript monotonically with the keyboard", async ({
     page,
   }) => {
     await installVisualViewportHook(page);
@@ -107,21 +107,17 @@ test.describe("mobile text field zoom", () => {
       .focus();
 
     const layoutHeight = await page.evaluate(() => innerHeight);
-    const opening = await sampleKeyboardTransition(page, layoutHeight - 358);
-    expectPaddingMotion(opening, "down", 34, 14);
-    expect(opening.every((frame) => frame.liveEdgeGap <= 2)).toBe(true);
-    expect(
-      Math.max(...opening.slice(1).map((frame) => frame.bottomError)),
-    ).toBeLessThanOrEqual(1);
+    const opening = await sampleKeyboardTransition(
+      page,
+      "open",
+      layoutHeight - 358,
+    );
+    expectKeyboardMotion(opening, "up");
     await expect(root).toHaveAttribute("data-keyboard", "open");
     await expect(composer).toHaveCSS("padding-bottom", "14px");
 
-    const closing = await sampleKeyboardTransition(page, layoutHeight);
-    expectPaddingMotion(closing, "up", 14, 34);
-    expect(closing.every((frame) => frame.liveEdgeGap <= 2)).toBe(true);
-    expect(
-      Math.max(...closing.slice(1).map((frame) => frame.bottomError)),
-    ).toBeLessThanOrEqual(1);
+    const closing = await sampleKeyboardTransition(page, "close", layoutHeight);
+    expectKeyboardMotion(closing, "down");
     await expect(root).toHaveAttribute("data-keyboard", "closed");
     await expect(composer).toHaveCSS("padding-bottom", "34px");
 
@@ -195,6 +191,7 @@ for (const layout of [
       await expect.poll(() => viewportOffsetTop(page)).toBe(0);
       await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
       expect(await headerTop(page)).toBeGreaterThanOrEqual(0);
+      expect(await documentHeight(page)).toBe(layout.height);
       await expect(composer).toHaveCSS("padding-bottom", "14px");
 
       await attemptDocumentScroll(page);
@@ -282,9 +279,12 @@ async function openChannel(page: Page, query = "") {
 }
 
 interface KeyboardFrame {
-  readonly bottomError: number;
+  readonly adjacency: number;
+  readonly composerTop: number;
   readonly liveEdgeGap: number;
-  readonly padding: number;
+  readonly offsetTop: number;
+  readonly rootTop: number;
+  readonly scrollY: number;
 }
 
 type ViewportTiming = "live" | "stale";
@@ -458,57 +458,85 @@ async function headerTop(page: Page): Promise<number> {
 
 async function sampleKeyboardTransition(
   page: Page,
+  direction: "close" | "open",
   height: number,
 ): Promise<readonly KeyboardFrame[]> {
-  return page.evaluate(async (nextHeight) => {
-    const composer = document.querySelector<HTMLElement>("[data-composer]");
-    const messages = document.querySelector<HTMLElement>("[data-message-list]");
-    const viewport = window.visualViewport;
-    const setViewport = window.__setVisualViewport;
-    if (
-      composer === null ||
-      messages === null ||
-      viewport === null ||
-      setViewport === undefined
-    )
-      throw new Error("keyboard test surfaces are missing");
-    const frames: KeyboardFrame[] = [];
-    let sawAnimation = false;
-    const sample = () => {
-      const style = getComputedStyle(composer);
-      frames.push({
-        bottomError: Math.abs(
-          composer.getBoundingClientRect().bottom -
-            viewport.offsetTop -
-            viewport.height,
-        ),
-        liveEdgeGap: Math.max(
-          0,
-          messages.scrollHeight - messages.clientHeight - messages.scrollTop,
-        ),
-        padding: Number.parseFloat(style.paddingBottom),
-      });
-    };
-    sample();
-    setViewport(nextHeight);
-    await new Promise<void>((resolve) => {
-      const next = () => {
-        sample();
-        const animations = composer.getAnimations();
-        if (animations.length > 0) sawAnimation = true;
-        if (
-          sawAnimation &&
-          animations.every((animation) => animation.playState === "finished")
-        ) {
-          resolve();
-          return;
-        }
-        requestAnimationFrame(next);
+  return page.evaluate(
+    async ([nextDirection, nextHeight]) => {
+      const root = document.querySelector<HTMLElement>("#root");
+      const surface = document.querySelector<HTMLElement>(
+        "[data-keyboard-motion]",
+      );
+      const composer = document.querySelector<HTMLElement>("[data-composer]");
+      const messages = document.querySelector<HTMLElement>(
+        "[data-message-list]",
+      );
+      const field = composer?.querySelector("textarea");
+      const viewport = window.visualViewport;
+      const setViewport = window.__setVisualViewport;
+      if (
+        root === null ||
+        surface === null ||
+        composer === null ||
+        messages === null ||
+        field === null ||
+        viewport === null ||
+        setViewport === undefined
+      )
+        throw new Error("keyboard test surfaces are missing");
+      const frames: KeyboardFrame[] = [];
+      let sawAnimation = false;
+      let suppliedClosedGeometry = false;
+      const sample = () => {
+        const composerRect = composer.getBoundingClientRect();
+        frames.push({
+          adjacency: Math.abs(
+            messages.getBoundingClientRect().bottom - composerRect.top,
+          ),
+          composerTop: composerRect.top,
+          liveEdgeGap: Math.max(
+            0,
+            messages.scrollHeight - messages.clientHeight - messages.scrollTop,
+          ),
+          offsetTop: viewport.offsetTop,
+          rootTop: root.getBoundingClientRect().top,
+          scrollY: window.scrollY,
+        });
       };
-      requestAnimationFrame(next);
-    });
-    return frames;
-  }, height);
+      sample();
+      if (nextDirection === "open") setViewport(nextHeight);
+      else field.blur();
+      await new Promise<void>((resolve) => {
+        const next = () => {
+          sample();
+          const animations = surface.getAnimations({ subtree: true });
+          if (animations.length > 0) sawAnimation = true;
+          if (
+            nextDirection === "close" &&
+            sawAnimation &&
+            !suppliedClosedGeometry &&
+            animations.length > 0 &&
+            animations.every((animation) => animation.playState === "finished")
+          ) {
+            suppliedClosedGeometry = true;
+            setViewport(nextHeight);
+          }
+          if (
+            sawAnimation &&
+            animations.length === 0 &&
+            (nextDirection === "open" || suppliedClosedGeometry)
+          ) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(next);
+        };
+        requestAnimationFrame(next);
+      });
+      return frames;
+    },
+    [direction, height] as const,
+  );
 }
 
 async function liveEdgeGap(locator: ReturnType<Page["locator"]>) {
@@ -622,25 +650,35 @@ async function makeTranscriptScrollable(
   });
 }
 
-function expectPaddingMotion(
+function expectKeyboardMotion(
   frames: readonly KeyboardFrame[],
   direction: "down" | "up",
-  from: number,
-  to: number,
 ): void {
   expect(frames.length).toBeGreaterThan(2);
-  expect(Math.round(frames[0]?.padding ?? -1)).toBe(from);
-  expect(Math.round(frames.at(-1)?.padding ?? -1)).toBe(to);
-  expect(
-    frames.some((frame) => frame.padding !== from && frame.padding !== to),
-  ).toBe(true);
+  const start = frames[0]?.composerTop ?? 0;
+  const end = frames.at(-1)?.composerTop ?? 0;
+  expect(Math.abs(end - start)).toBeGreaterThan(100);
   expect(
     frames.every((frame, index) => {
-      const previous = frames[index - 1]?.padding;
+      const previous = frames[index - 1]?.composerTop;
       if (previous === undefined) return true;
-      return direction === "down"
-        ? frame.padding <= previous + 0.1
-        : frame.padding + 0.1 >= previous;
+      return direction === "up"
+        ? frame.composerTop <= previous + 0.5
+        : frame.composerTop + 0.5 >= previous;
     }),
+    JSON.stringify(frames.map(({ composerTop }) => composerTop)),
+  ).toBe(true);
+  expect(
+    frames.every(
+      (frame) =>
+        frame.composerTop >= Math.min(start, end) - 0.5 &&
+        frame.composerTop <= Math.max(start, end) + 0.5 &&
+        frame.adjacency <= 1 &&
+        frame.liveEdgeGap <= 2 &&
+        Math.abs(frame.rootTop) <= 0.5 &&
+        Math.abs(frame.offsetTop) <= 0.5 &&
+        Math.abs(frame.scrollY) <= 0.5,
+    ),
+    JSON.stringify(frames),
   ).toBe(true);
 }

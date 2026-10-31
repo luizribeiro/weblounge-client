@@ -75,6 +75,7 @@ export class KeyboardMotionController {
   readonly #config: KeyboardMotionConfig;
   readonly #reducedMotion: () => boolean;
   #animation: Animation | undefined;
+  #animatedSurface: HTMLElement | undefined;
   #generation = 0;
   #pendingClose: PendingClose | undefined;
 
@@ -92,12 +93,30 @@ export class KeyboardMotionController {
     const surface = this.#surface();
     const current =
       surface === null ? 0 : readTranslateY(surface, this.#browserWindow);
+    const anchorBefore = this.#anchor()?.getBoundingClientRect().top;
+    const animate =
+      surface !== null &&
+      Math.abs(change.viewportOffsetTop) < 1 &&
+      !this.#reducedMotion();
     this.#cancelPendingClose();
     this.#cancelAnimation();
+    if (animate) surface.dataset.keyboardMotionActive = "true";
     commit();
-    if (surface === null) return;
-    const from = openingTranslate(current, change);
-    if (from === 0 || this.#reducedMotion()) return;
+    if (!animate || surface === null) return;
+    const anchorAfter = this.#anchor()?.getBoundingClientRect().top;
+    const from = openingTranslate(current, {
+      ...change,
+      ...(anchorBefore === undefined || anchorAfter === undefined
+        ? {}
+        : {
+            beforeHeight: anchorBefore - current,
+            afterHeight: anchorAfter,
+          }),
+    });
+    if (from === 0) {
+      delete surface.dataset.keyboardMotionActive;
+      return;
+    }
     this.#animate(surface, from, 0);
   }
 
@@ -146,6 +165,10 @@ export class KeyboardMotionController {
     return this.#browserWindow.document.querySelector("[data-keyboard-motion]");
   }
 
+  #anchor(): HTMLElement | null {
+    return this.#browserWindow.document.querySelector("[data-composer]");
+  }
+
   #animate(
     surface: HTMLElement,
     from: number,
@@ -153,6 +176,8 @@ export class KeyboardMotionController {
     finish?: () => void,
   ): void {
     const generation = ++this.#generation;
+    surface.dataset.keyboardMotionActive = "true";
+    this.#animatedSurface = surface;
     // WKWebView receives only UIKeyboardFrameEndUserInfoKey, so CSS cannot
     // observe native progress. Match the platform transform instead:
     // https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790
@@ -174,6 +199,10 @@ export class KeyboardMotionController {
       () => {
         if (generation !== this.#generation) return;
         finish?.();
+        if (finish === undefined) {
+          delete surface.dataset.keyboardMotionActive;
+          this.#cancelAnimation();
+        }
       },
       () => {},
     );
@@ -203,5 +232,8 @@ export class KeyboardMotionController {
     this.#generation += 1;
     this.#animation?.cancel();
     this.#animation = undefined;
+    if (this.#animatedSurface !== undefined)
+      delete this.#animatedSurface.dataset.keyboardMotionActive;
+    this.#animatedSurface = undefined;
   }
 }

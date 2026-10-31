@@ -18,6 +18,10 @@
   min-block-size: min(100lvh, calc(100% + var(--wl-safe-top)));
 }
 
+:root:has(> body > #root[data-display="standalone"][data-keyboard="open"]) {
+  min-block-size: 100%;
+}
+
 #root {
   --wl-safe-bottom-effective: var(--wl-safe-bottom);
 }

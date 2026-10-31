@@ -115,6 +115,7 @@ export function observeViewportGeometry(
   let expectedKeyboard: ViewportGeometry["keyboard"] | undefined;
   let pointerMayFocus = false;
   let awaitingMeasuredOpen = false;
+  let correctingPan = false;
   const measure = (): ViewportMeasurements => {
     const keyboardHeight = keyboard?.boundingRect.height ?? 0;
     return {
@@ -127,7 +128,11 @@ export function observeViewportGeometry(
               offsetTop: 0,
               scale: 1,
             }
-          : viewport,
+          : {
+              height: viewport.height,
+              offsetTop: viewport.offsetTop,
+              scale: viewport.scale,
+            },
     };
   };
   // iOS can reveal a focused field by panning instead of resizing, while WebKit
@@ -157,7 +162,11 @@ export function observeViewportGeometry(
   const update = () => {
     const initial = measure();
     const panned = documentPanned(initial);
-    if (panned) browserWindow.scrollTo(0, 0);
+    if (panned) {
+      correctingPan = true;
+      browserWindow.scrollTo(0, 0);
+      correctingPan = false;
+    }
     const measured = measure();
     const geometry = resolveViewportGeometry(
       measured,
@@ -175,7 +184,9 @@ export function observeViewportGeometry(
         {
           afterHeight: geometry.height,
           beforeHeight: root.getBoundingClientRect().height,
-          viewportOffsetTop: panned ? initial.viewport.offsetTop : 0,
+          viewportOffsetTop: panned
+            ? Math.max(1, initial.viewport.offsetTop, initial.scrollY)
+            : 0,
         },
         commit,
       );
@@ -202,6 +213,11 @@ export function observeViewportGeometry(
     }
   };
   const onChange = () => {
+    if (correctingPan) {
+      stableFrames = 0;
+      if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
+      return;
+    }
     update();
     stableFrames = 0;
     if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
@@ -247,7 +263,7 @@ export function observeViewportGeometry(
       expectKeyboard("closed");
       if (publishedGeometry.keyboard === "open")
         motion.beginClose(
-          Math.max(0, browserWindow.innerHeight - publishedGeometry.height),
+          closeDistance(root, publishedGeometry, browserWindow),
           () => publish({ keyboard: "closed" }),
         );
     }
@@ -329,6 +345,27 @@ function applyGeometry(root: HTMLElement, geometry: ViewportGeometry): void {
 function clearOpenGeometry(root: HTMLElement): void {
   root.style.removeProperty("--wl-app-height");
   root.style.removeProperty("--wl-app-top");
+}
+
+function closeDistance(
+  root: HTMLElement,
+  open: Extract<ViewportGeometry, { keyboard: "open" }>,
+  browserWindow: Window,
+): number {
+  const surface = browserWindow.document.querySelector<HTMLElement>(
+    "[data-keyboard-motion]",
+  );
+  const composer =
+    browserWindow.document.querySelector<HTMLElement>("[data-composer]");
+  const fallback = Math.max(0, browserWindow.innerHeight - open.height);
+  if (surface === null || composer === null) return fallback;
+  surface.dataset.keyboardMotionActive = "true";
+  const before = composer.getBoundingClientRect().top;
+  applyGeometry(root, { keyboard: "closed" });
+  const after = composer.getBoundingClientRect().top;
+  applyGeometry(root, open);
+  delete surface.dataset.keyboardMotionActive;
+  return after > before ? after - before : fallback;
 }
 
 function zoomed(viewport: Pick<VisualViewport, "scale">): boolean {
