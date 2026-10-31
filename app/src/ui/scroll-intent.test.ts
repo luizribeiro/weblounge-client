@@ -8,22 +8,26 @@ it("does not claim a layout scroll after pointer hover", () => {
   expect(tracker.consumeScroll()).toBe(false);
 });
 
-it("owns touch momentum until the offset settles", () => {
+it("owns a browser-cancelled touch pan and its momentum until settling", () => {
   let offset = 20;
   const frames = new ControlledFrames();
   const tracker = new ScrollIntentTracker(() => offset, frames);
 
   tracker.beginPointer();
+  tracker.beginTouch();
+  tracker.cancelPointer();
+  offset = 30;
   expect(tracker.consumeScroll()).toBe(true);
-  tracker.endPointer();
   offset = 40;
-  frames.flush();
-  offset = 55;
-  frames.flush();
   expect(tracker.consumeScroll()).toBe(true);
-  tracker.endPointer();
+  tracker.endTouch();
+  offset = 55;
+  expect(tracker.consumeScroll()).toBe(true);
+  offset = 65;
+  expect(tracker.consumeScroll()).toBe(true);
   frames.flush();
   frames.flush();
+  offset = 50;
   expect(tracker.consumeScroll()).toBe(false);
 });
 

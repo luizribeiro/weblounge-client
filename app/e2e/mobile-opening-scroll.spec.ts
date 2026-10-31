@@ -93,18 +93,15 @@ test("opens a mobile channel at the live edge and respects a user scroll away", 
       .toBeGreaterThan(4);
     await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(3);
 
-    for (let pageUp = 1; pageUp <= 4; pageUp += 1) {
-      await list.press("PageUp");
-      await expect
-        .poll(() => distanceFromBottom(list))
-        .toBeGreaterThan(pageUp * 25);
-    }
+    await touchPanAway(list);
     await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
+    const anchorBeforeArrival = await visibleAnchor(list);
     await bot.privmsgConfirmed(channel, `later live message ${suffix}`);
     await expect(
       page.getByRole("button", { name: /1 new message/ }),
     ).toBeVisible();
     await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
+    await expect.poll(() => visibleAnchor(list)).toEqual(anchorBeforeArrival);
   } finally {
     await context.close();
     for (const bot of bots) bot.close();
@@ -124,6 +121,88 @@ function distanceFromBottom(list: Locator): Promise<number> {
     (element) =>
       element.scrollHeight - element.scrollTop - element.clientHeight,
   );
+}
+
+function visibleAnchor(list: Locator) {
+  return list.evaluate((element) => {
+    const viewport = element.getBoundingClientRect();
+    const row = [...element.querySelectorAll<HTMLElement>("li[data-index]")]
+      .map((candidate) => ({
+        candidate,
+        rect: candidate.getBoundingClientRect(),
+      }))
+      .filter(({ rect }) => rect.bottom > viewport.top)
+      .sort((left, right) => left.rect.top - right.rect.top)[0];
+    if (row === undefined) return null;
+    return {
+      key: row.candidate.dataset.rowKey,
+      offset: Math.round(row.rect.top - viewport.top),
+    };
+  });
+}
+
+async function touchPanAway(list: Locator): Promise<void> {
+  // Playwright's Touchscreen API only supports tap, so WebKit touch drags use
+  // the documented fallback of dispatched legacy Touch events.
+  const bounds = await list.boundingBox();
+  if (bounds === null) throw new Error("message list has no touch target");
+  const clientX = bounds.x + bounds.width / 2;
+  const touchAt = (clientY: number) => ({
+    clientX,
+    clientY,
+    force: 1,
+    identifier: 47,
+    pageX: clientX,
+    pageY: clientY,
+    radiusX: 1,
+    radiusY: 1,
+    rotationAngle: 0,
+    screenX: clientX,
+    screenY: clientY,
+  });
+  const start = touchAt(bounds.y + bounds.height * 0.3);
+  const moved = touchAt(bounds.y + bounds.height * 0.8);
+  await list.dispatchEvent("pointerdown", {
+    button: 0,
+    clientX: start.clientX,
+    clientY: start.clientY,
+    isPrimary: true,
+    pointerId: start.identifier,
+    pointerType: "touch",
+  });
+  await list.dispatchEvent("touchstart", {
+    changedTouches: [start],
+    targetTouches: [start],
+    touches: [start],
+  });
+  await list.dispatchEvent("pointercancel", {
+    button: 0,
+    clientX: start.clientX,
+    clientY: start.clientY,
+    isPrimary: true,
+    pointerId: start.identifier,
+    pointerType: "touch",
+  });
+  await list.dispatchEvent("touchmove", {
+    changedTouches: [moved],
+    targetTouches: [moved],
+    touches: [moved],
+  });
+  await list.evaluate((element) => {
+    element.scrollTop = Math.max(0, element.scrollTop - 600);
+  });
+  await list.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
+  await list.dispatchEvent("touchend", {
+    changedTouches: [moved],
+    targetTouches: [],
+    touches: [],
+  });
+  await list.evaluate((element) => {
+    element.scrollTop = Math.max(0, element.scrollTop - 200);
+  });
 }
 
 function backlogMessage(suffix: string, index: number): string {

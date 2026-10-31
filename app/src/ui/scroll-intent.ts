@@ -11,6 +11,7 @@ export class ScrollIntentTracker {
   #active = false;
   #pending = false;
   #pointerDown = false;
+  #touchDown = false;
   #frame: number | undefined;
   #lastOffset = 0;
   #stableFrames = 0;
@@ -28,8 +29,25 @@ export class ScrollIntentTracker {
 
   endPointer(): void {
     this.#pointerDown = false;
+    this.#endGesture();
+  }
+
+  cancelPointer(): void {
+    this.#pointerDown = false;
+    if (this.#touchDown) return;
     if (this.#active) this.#watchForSettle();
-    else this.#pending = false;
+    else this.#watchForPendingScroll();
+  }
+
+  beginTouch(): void {
+    this.#cancelFrame();
+    this.#touchDown = true;
+    this.#pending = true;
+  }
+
+  endTouch(): void {
+    this.#touchDown = false;
+    this.#endGesture();
   }
 
   beginDiscrete(): void {
@@ -38,15 +56,15 @@ export class ScrollIntentTracker {
   }
 
   consumeScroll(): boolean {
-    if (!this.#pending && !this.#active && !this.#pointerDown) return false;
+    if (!this.#pending && !this.#active && !this.#gestureDown()) return false;
     this.#active = true;
     this.#pending = false;
-    if (!this.#pointerDown) this.#watchForSettle();
+    if (!this.#gestureDown()) this.#watchForSettle();
     return true;
   }
 
   settle(): void {
-    if (this.#pointerDown) return;
+    if (this.#gestureDown()) return;
     this.#cancelFrame();
     this.#active = false;
     this.#pending = false;
@@ -56,12 +74,22 @@ export class ScrollIntentTracker {
     this.#cancelFrame();
   }
 
+  #endGesture(): void {
+    if (this.#gestureDown()) return;
+    if (this.#active) this.#watchForSettle();
+    else this.#pending = false;
+  }
+
+  #gestureDown(): boolean {
+    return this.#pointerDown || this.#touchDown;
+  }
+
   #watchForPendingScroll(): void {
     this.#cancelFrame();
     let remainingFrames = stableFrameCount;
     const expire = () => {
       this.#frame = undefined;
-      if (this.#active || this.#pointerDown) return;
+      if (this.#active || this.#gestureDown()) return;
       remainingFrames -= 1;
       if (remainingFrames === 0) {
         this.#pending = false;
@@ -78,7 +106,7 @@ export class ScrollIntentTracker {
     this.#stableFrames = 0;
     const sample = () => {
       this.#frame = undefined;
-      if (this.#pointerDown) return;
+      if (this.#gestureDown()) return;
       const offset = this.#readOffset();
       if (offset === this.#lastOffset) this.#stableFrames += 1;
       else this.#stableFrames = 0;

@@ -119,6 +119,14 @@ export function MessageList(props: MessageListProps) {
     if (event.isPrimary && event.button === 0) userScrollIntent.beginPointer();
   };
   const endPointerScrollIntent = () => userScrollIntent.endPointer();
+  const cancelPointerScrollIntent = (event: PointerEvent) => {
+    if (event.pointerType === "touch") userScrollIntent.cancelPointer();
+    else userScrollIntent.endPointer();
+  };
+  const markTouchScrollIntent = () => userScrollIntent.beginTouch();
+  const endTouchScrollIntent = (event: TouchEvent) => {
+    if (event.touches.length === 0) userScrollIntent.endTouch();
+  };
   const markWheelScrollIntent = () => userScrollIntent.beginDiscrete();
   const markScrollKeyIntent = (event: KeyboardEvent) => {
     if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
@@ -281,9 +289,12 @@ export function MessageList(props: MessageListProps) {
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
       list?.removeEventListener("keydown", markScrollKeyIntent);
       list?.removeEventListener("pointerdown", markPointerScrollIntent);
+      list?.removeEventListener("touchstart", markTouchScrollIntent);
       list?.removeEventListener("wheel", markWheelScrollIntent);
       window.removeEventListener("pointerup", endPointerScrollIntent);
-      window.removeEventListener("pointercancel", endPointerScrollIntent);
+      window.removeEventListener("pointercancel", cancelPointerScrollIntent);
+      window.removeEventListener("touchend", endTouchScrollIntent);
+      window.removeEventListener("touchcancel", endTouchScrollIntent);
       userScrollIntent.dispose();
     });
     queueMicrotask(jumpToBottom);
@@ -316,13 +327,22 @@ export function MessageList(props: MessageListProps) {
           element.addEventListener("pointerdown", markPointerScrollIntent, {
             passive: true,
           });
+          element.addEventListener("touchstart", markTouchScrollIntent, {
+            passive: true,
+          });
           element.addEventListener("wheel", markWheelScrollIntent, {
             passive: true,
           });
           window.addEventListener("pointerup", endPointerScrollIntent, {
             passive: true,
           });
-          window.addEventListener("pointercancel", endPointerScrollIntent, {
+          window.addEventListener("pointercancel", cancelPointerScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("touchend", endTouchScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("touchcancel", endTouchScrollIntent, {
             passive: true,
           });
         }}
