@@ -428,6 +428,50 @@ it("keeps the New boundary frozen while the live marker advances", async () => {
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("keeps the unread line in place when the reader leaves the live edge", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const messages = Array.from({ length: 3 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    text: `message ${index + 1}`,
+  }));
+  const [shown, setShown] = createSignal(messages.slice(0, 1));
+  const { container } = render(() => (
+    <MessageList messages={shown()} readThrough={1} />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 50 },
+    scrollHeight: { configurable: true, value: 500 },
+  });
+  setShown(messages);
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  expect(container.querySelector("[data-new-line]")).not.toBeNull();
+  const removedLines: Node[] = [];
+  new MutationObserver((records) => {
+    for (const record of records)
+      for (const node of record.removedNodes)
+        if (
+          node instanceof HTMLElement &&
+          (node.matches("[data-new-line]") ||
+            node.querySelector("[data-new-line]") !== null)
+        )
+          removedLines.push(node);
+  }).observe(list, { childList: true, subtree: true });
+
+  fireEvent.wheel(list, { deltaY: -100 });
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(removedLines).toEqual([]);
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "message 2",
+  );
+});
+
 it("restacks measured rows when the New boundary moves past a long row", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(

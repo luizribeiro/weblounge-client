@@ -82,9 +82,7 @@ export function MessageList(props: MessageListProps) {
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadThrough = props.readThrough ?? null;
-  let boundaryFrozen =
-    initialReadThrough !== null &&
-    props.messages.some((message) => message.id > initialReadThrough);
+  let boundaryFrozen = hasUnreadAfter(props.messages, initialReadThrough);
   const [frozenReadThrough, setFrozenReadThrough] = createSignal(
     props.readThrough ?? null,
   );
@@ -106,7 +104,8 @@ export function MessageList(props: MessageListProps) {
       const lastSeen = props.messages.at(-1)?.id;
       if (lastSeen !== undefined) {
         boundaryFrozen = true;
-        setFrozenReadThrough(lastSeen);
+        if (!hasUnreadAfter(props.messages, frozenReadThrough()))
+          setFrozenReadThrough(lastSeen);
       }
     }
     setAtLiveEdge(live);
@@ -246,8 +245,7 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const marker = props.readThrough ?? null;
-    const hasUnread =
-      marker !== null && props.messages.some((message) => message.id > marker);
+    const hasUnread = hasUnreadAfter(props.messages, marker);
     if (!boundaryFrozen) setFrozenReadThrough(marker);
     if (
       hasUnread &&
@@ -637,6 +635,15 @@ function Delivery(props: {
     );
   }
   return null;
+}
+
+function hasUnreadAfter(
+  messages: readonly MessageProjection[],
+  readThrough: number | null,
+): boolean {
+  return (
+    readThrough !== null && messages.some((message) => message.id > readThrough)
+  );
 }
 
 function timelineRows(
