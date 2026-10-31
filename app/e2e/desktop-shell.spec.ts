@@ -347,23 +347,23 @@ async function expectFullBleedHighlight(
   page: import("@playwright/test").Page,
   text: string,
 ): Promise<void> {
-  const geometry = await page
-    .locator("[data-message-list]")
-    .evaluate((list, messageText) => {
-      const row = [
-        ...list.querySelectorAll<HTMLElement>("[data-message-row]"),
-      ].find((candidate) => candidate.dataset.messageText === messageText);
-      if (row === undefined) throw new Error("highlight geometry is missing");
-      const rowRect = row.getBoundingClientRect();
-      const listRect = list.getBoundingClientRect();
-      return {
-        background: getComputedStyle(row).backgroundColor,
-        listLeft: listRect.left,
-        listRight: listRect.left + list.clientWidth,
-        rowLeft: rowRect.left,
-        rowRight: rowRect.right,
-      };
-    }, text);
+  const row = page
+    .locator("[data-message-row]")
+    .filter({ has: page.getByText(text, { exact: true }) });
+  await expect(row).toBeVisible();
+  const geometry = await row.evaluate((element) => {
+    const list = element.closest<HTMLElement>("[data-message-list]");
+    if (list === null) throw new Error("highlight geometry is missing");
+    const rowRect = element.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    return {
+      background: getComputedStyle(element).backgroundColor,
+      listLeft: listRect.left,
+      listRight: listRect.left + list.clientWidth,
+      rowLeft: rowRect.left,
+      rowRight: rowRect.right,
+    };
+  });
   expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
   expect(geometry.rowLeft).toBeCloseTo(geometry.listLeft, 0);
   expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
