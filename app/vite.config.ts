@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => {
     mode === "test"
       ? resolve(import.meta.dirname, "src/engine/wasm-test-stub.ts")
       : resolve(wasmDirectory, "engine.js");
+  const splashCss = readFileSync(
+    resolve(import.meta.dirname, "src/styles/splash.css"),
+    "utf8",
+  );
 
   if (mode !== "test" && !existsSync(wasmPath)) {
     throw new Error("engine wasm is missing; run `nix build .#engine-wasm`");
@@ -67,6 +71,7 @@ export default defineConfig(({ mode }) => {
         : {}),
     },
     plugins: [
+      inlineSplash(splashCss),
       solid(),
       engineWasmAsset(wasmPath),
       ...(appConfigHarness ? [testAppConfig()] : []),
@@ -105,6 +110,11 @@ export default defineConfig(({ mode }) => {
 });
 
 function testContentSecurityPolicy(devServer: boolean): string {
+  const splashCss = readFileSync(
+    resolve(import.meta.dirname, "src/styles/splash.css"),
+    "utf8",
+  );
+  const splashHash = createHash("sha256").update(splashCss).digest("base64");
   return [
     "default-src 'none'",
     "base-uri 'none'",
@@ -112,12 +122,29 @@ function testContentSecurityPolicy(devServer: boolean): string {
     "frame-ancestors 'none'",
     "manifest-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval'",
-    `style-src 'self'${devServer ? " 'unsafe-inline'" : ""}`,
+    `style-src 'self' 'sha256-${splashHash}'${devServer ? " 'unsafe-inline'" : ""}`,
     "worker-src 'self'",
     "font-src 'self'",
     "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://127.0.0.1:8068 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",
     "img-src 'self'",
   ].join("; ");
+}
+
+function inlineSplash(css: string): Plugin {
+  return {
+    name: "weblounge-inline-splash",
+    transformIndexHtml: {
+      order: "post",
+      handler: () => [
+        {
+          tag: "style",
+          attrs: { "data-initial-splash-style": "" },
+          children: css,
+          injectTo: "head-prepend",
+        },
+      ],
+    },
+  };
 }
 
 function engineWasmAsset(wasmPath: string): Plugin {

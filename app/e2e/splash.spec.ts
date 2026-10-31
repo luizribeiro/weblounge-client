@@ -58,13 +58,19 @@ async function verifySplash(
         source: string;
       }>;
       __webloungeReleaseEngine: () => void;
+      __webloungeSplashBackgrounds: string[];
       __webloungeSplashMarkTops: number[];
     };
     observed.__webloungeCspViolations = [];
+    observed.__webloungeSplashBackgrounds = [];
     observed.__webloungeSplashMarkTops = [];
     const sampleSplashMark = () => {
       const mark = document.querySelector("[data-splash-mark]");
       if (mark !== null) {
+        observed.__webloungeSplashBackgrounds.push(
+          getComputedStyle(mark.closest("[data-initial-splash]") ?? mark)
+            .backgroundColor,
+        );
         observed.__webloungeSplashMarkTops.push(
           mark.getBoundingClientRect().top,
         );
@@ -162,6 +168,25 @@ async function verifySplash(
     );
     const splash = page.locator("[data-initial-splash]");
     await expect(splash).toBeVisible();
+    await expect(page.locator('meta[name="color-scheme"]')).toHaveAttribute(
+      "content",
+      "light dark",
+    );
+    const splashStyle = page.locator("style[data-initial-splash-style]");
+    await expect(splashStyle).toHaveCount(1);
+    expect(
+      await splashStyle.evaluate((element) => {
+        const blocking = document.head.querySelector(
+          'link[rel="stylesheet"], script[src]',
+        );
+        return (
+          blocking === null ||
+          (element.compareDocumentPosition(blocking) &
+            Node.DOCUMENT_POSITION_FOLLOWING) !==
+            0
+        );
+      }),
+    ).toBe(true);
     await expect(page.getByRole("heading", { name: "weblounge" })).toHaveCount(
       0,
     );
@@ -226,6 +251,12 @@ async function verifySplash(
     expect(Math.max(...markTops) - Math.min(...markTops)).toBeLessThanOrEqual(
       0.5,
     );
+    const splashBackgrounds = await page.evaluate(
+      () =>
+        (window as unknown as { __webloungeSplashBackgrounds: string[] })
+          .__webloungeSplashBackgrounds,
+    );
+    expect([...new Set(splashBackgrounds)]).toEqual([appearance.background]);
     expect(
       consoleErrors.filter((message) => /preload.*not used/iu.test(message)),
     ).toEqual([]);

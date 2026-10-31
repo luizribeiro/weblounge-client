@@ -108,7 +108,9 @@ connect-src 'self' wss://beta.weblounge.org/socket https://members.weblounge.org
   https://files.weblounge.org/upload; img-src 'self'
 ```
 
-Scripts remain nonce-free and do not allow inline execution. The built-app Playwright suite runs
+Scripts remain nonce-free and do not allow inline execution. The startup splash is the sole inline
+style and requires its generated `sha256-…` hash in `style-src`; obtain the current value from the
+built app's Playwright CSP header before deploying a new client build. The built-app Playwright suite runs
 with this policy (plus its loopback fake OAuth origin), and the production verifier checks that
 Vite emitted same-origin worker files compatible with `worker-src 'self'`.
 
