@@ -189,7 +189,9 @@ Hardware-keyboard and accessible controls dispatch `mobile.tab-chats`, `mobile.t
 `navigation.escape`. Activity's control dispatches `activity.mark-all-read`. Subsystem 14 owns
 their bindings and resolves the shared command IDs against the mobile scope.
 
-Forward push is 280ms and pop is 230ms using the brief's transform/opacity motion. Reduced motion
+Forward push is 280ms and pop is 230ms. As on iOS, the screen underneath stays still: only the
+pushed screen moves, sliding in from the trailing edge over it with a leading-edge shadow, and a pop
+slides it back out before it unmounts (doc 15 has the transition mechanics). Reduced motion
 commits immediately. Swipe-back begins at the logical leading edge and yields to selection or a
 horizontal child scroller. Only the active screen and one transition neighbour remain mounted.
 
