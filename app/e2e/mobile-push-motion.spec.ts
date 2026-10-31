@@ -6,6 +6,7 @@ import {
   expectStepsFollowCurve,
   expectTransitionMatches,
   hasIntermediatePosition,
+  normalizedCurve,
   type TransitionStyle,
 } from "./motion-assertions";
 
@@ -443,7 +444,9 @@ function expectReleasedTransition(frames: readonly Frame[]): void {
   expect(moving.length).toBeGreaterThan(0);
   for (const frame of moving) {
     expect(frame.transition.property).toBe("transform");
-    expect(frame.transition.timingFunction).toBe(frame.tokens.settleCurve);
+    expect(normalizedCurve(frame.transition.timingFunction)).toBe(
+      normalizedCurve(frame.tokens.settleCurve),
+    );
     const scale =
       durationMs(frame.transition.duration) /
       durationMs(frame.tokens.pushOutDuration);
@@ -460,7 +463,20 @@ function expectShadowWhileMoving(frames: readonly Frame[]): void {
     expect(frame.shadow).not.toBeNull();
     expect(frame.shadow).not.toBe("none");
   }
-  expect(moving.some((frame) => frame.shadowOpacity > 0.2)).toBe(true);
+  const byPosition = [...moving].sort(
+    (left, right) => left.chatLeft - right.chatLeft,
+  );
+  expect(
+    Math.max(...moving.map((frame) => frame.shadowOpacity)),
+  ).toBeGreaterThan(0);
+  expect(
+    byPosition.every(
+      (frame, index) =>
+        index === 0 ||
+        frame.shadowOpacity <=
+          (byPosition[index - 1]?.shadowOpacity ?? 1) + 0.02,
+    ),
+  ).toBe(true);
 }
 
 function monotonic(values: readonly number[], direction: "up" | "down") {

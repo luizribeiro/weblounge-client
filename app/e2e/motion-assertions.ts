@@ -27,7 +27,7 @@ export function expectTransitionMatches(
   );
 }
 
-function normalizedCurve(curve: string): string {
+export function normalizedCurve(curve: string): string {
   return curve.replace(/\s+/g, "").replace(/(^|[(,])\./g, "$10.");
 }
 
