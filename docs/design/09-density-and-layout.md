@@ -80,11 +80,12 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
 - Keyboard open (the visual viewport over 120px shorter than the layout viewport, pinch zoom
   excluded), `#root` takes the visual viewport's height from `--wl-app-height` and keeps
   `--wl-app-top` at zero. A short touch that ends within 10px and under 500ms moves the composer field
-  above the viewport synchronously, focuses it with `preventScroll`, and restores it the next
-  frame, following [React Aria's iOS
+  above the viewport synchronously and focuses it with `preventScroll`, following [React Aria's iOS
   technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
-  This leaves drags and long-press callouts native while preventing WebKit's focus pan rather than
-  following its curve. A platform-owned non-passive
+  The field stays translated until the first keyboard-height step, with a bounded fallback, because
+  iOS may decide its reveal pan several frames after focus. A successful open height is cached per
+  orientation and may be applied before later focus; cold focus waits for measured geometry.
+  Drags and long-press callouts remain native. A platform-owned non-passive
   vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
   textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
   and an inner scroller that can still move in the gesture direction. The transcript uses
@@ -92,12 +93,28 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   240860](https://bugs.webkit.org/show_bug.cgi?id=240860), [271773](https://bugs.webkit.org/show_bug.cgi?id=271773),
   and [244232](https://bugs.webkit.org/show_bug.cgi?id=244232).
 - A surviving iOS pan is still undone with `scrollTo(0, 0)`, but its stale `offsetTop` is never
-  published. Because WebKit can fire viewport events before updating their values, each event
-  re-measures on following frames until geometry holds for two of them. App-height publication
-  synchronously signals a live-edge transcript to re-anchor after the new height takes effect and
-  before paint; the later `ResizeObserver` notification is not the first correction.
+  published. The WebKit 301108 document-height workaround is disabled while the keyboard is open,
+  removing its extra scroll range. Because WebKit can fire viewport events before updating their
+  values, each event re-measures on following frames until geometry holds for two of them.
+- `visualViewport.height` is geometry, not animation progress: WKWebView consumes the keyboard's
+  final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
+  On open, the first height step commits final layout and synchronously anchors the transcript, then
+  a transform-only Web Animation moves the transcript/composer wrapper from its old position to
+  zero while the header stays fixed. On focusout, close motion starts before the late height step;
+  final layout commits after motion, and an intervening geometry step retargets from the current
+  computed transform. A nonzero visual-viewport offset is first undone and never compounded with
+  app motion.
+- iOS 26 uses a 383ms sampled critically damped spring based on [Telegram's matching keyboard
+  animation](https://github.com/TelegramMessenger/Telegram-iOS/blob/master/submodules/Display/Source/CAAnimationUtils.swift);
+  earlier iOS uses 500ms `cubic-bezier(0.38, 0.7, 0.125, 1)`. Android requests
+  `virtualKeyboard.overlaysContent`, follows `geometrychange`, and uses 285ms
+  `cubic-bezier(0.2, 0, 0, 1)`, matching AOSP's [synchronized IME duration and
+  interpolator](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/view/InsetsController.java).
+  Orientation changes cancel and snap. Reduced motion may snap but never shortens the duration and
+  desynchronizes the app from a moving keyboard.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
+  `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout.
 
 `--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard
 is closed and becomes zero under `data-keyboard="open"`, so components never interpret keyboard
