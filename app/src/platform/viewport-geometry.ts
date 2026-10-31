@@ -74,18 +74,27 @@ export function observeViewportGeometry(
     stableFrames = 0;
     if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
   };
+  const onWindowChange = (event: Event) => {
+    if (
+      event.type === "scroll" &&
+      event.target !== browserWindow &&
+      event.target !== browserWindow.document
+    )
+      return;
+    onChange();
+  };
   const viewportEvents = ["resize", "scroll"] as const;
   const windowEvents = ["resize", "scroll", "focusin", "focusout"] as const;
   for (const type of viewportEvents) viewport.addEventListener(type, onChange);
   for (const type of windowEvents)
-    browserWindow.addEventListener(type, onChange);
+    browserWindow.addEventListener(type, onWindowChange);
   update();
   return () => {
     if (frame !== 0) browserWindow.cancelAnimationFrame(frame);
     for (const type of viewportEvents)
       viewport.removeEventListener(type, onChange);
     for (const type of windowEvents)
-      browserWindow.removeEventListener(type, onChange);
+      browserWindow.removeEventListener(type, onWindowChange);
     delete root.dataset.keyboard;
     clearOpenGeometry(root);
   };

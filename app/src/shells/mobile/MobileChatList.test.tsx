@@ -51,7 +51,11 @@ it("updates chat filters and search through accessible controls", () => {
   const list = direct.parentElement;
   if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
   list.scrollTop = 37;
-  fireEvent.pointerDown(direct);
+  fireEvent.wheel(list);
+  fireEvent.scroll(list);
+  list.scrollTop = 0;
+  fireEvent.scroll(list);
+  fireEvent(list, new Event("scrollend"));
   fireEvent.click(direct);
   expect(open).toHaveBeenCalledWith(3, 37);
 });
@@ -111,6 +115,52 @@ it("restores the retained chat list after returning from a conversation", async 
   setRestoreVersion(1);
 
   await waitFor(() => expect(list.scrollTop).toBe(57));
+});
+
+it("does not overwrite a user scroll with a pending restore frame", () => {
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 1;
+  const requestFrame = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      const frame = nextFrame;
+      nextFrame += 1;
+      frames.set(frame, callback);
+      return frame;
+    });
+  const cancelFrame = vi
+    .spyOn(window, "cancelAnimationFrame")
+    .mockImplementation((frame) => {
+      frames.delete(frame);
+    });
+  const onScroll = vi.fn();
+  render(() => (
+    <MobileChatList
+      buffers={buffers}
+      filter="all"
+      networks={[]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={onScroll}
+      query=""
+      restoreScroll={() => 57}
+      restoreVersion={() => 0}
+    />
+  ));
+  const list = screen.getByRole("button", { name: "mel" }).parentElement;
+  if (!(list instanceof HTMLElement)) throw new Error("chat list missing");
+
+  fireEvent.wheel(list);
+  list.scrollTop = 23;
+  fireEvent.scroll(list);
+  for (const callback of frames.values()) callback(0);
+
+  expect(list.scrollTop).toBe(23);
+  expect(onScroll).toHaveBeenCalledWith(23);
+  expect(cancelFrame).toHaveBeenCalled();
+  requestFrame.mockRestore();
+  cancelFrame.mockRestore();
 });
 
 it("omits the preview element at compact mobile density", () => {
