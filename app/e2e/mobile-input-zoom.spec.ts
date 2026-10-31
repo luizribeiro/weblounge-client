@@ -149,6 +149,22 @@ for (const layout of [
         .poll(() => shellBottomError(page, layout.height))
         .toBeLessThanOrEqual(1);
     });
+
+    test("settles on the keyboard when iOS reports it a frame late", async ({
+      page,
+    }) => {
+      await openChannel(page);
+      await page
+        .getByRole("textbox", { name: "Message #weblounge-test" })
+        .focus();
+
+      await setVisualViewport(page, 476, 0, "stale");
+      await expect(page.locator("#root")).toHaveAttribute(
+        "data-keyboard",
+        "open",
+      );
+      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    });
   });
 }
 

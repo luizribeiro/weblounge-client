@@ -13,6 +13,7 @@ export interface ViewportMeasurements {
 }
 
 const keyboardThreshold = 120;
+const settledFrames = 2;
 
 export function resolveViewportGeometry({
   layoutHeight,
@@ -42,26 +43,44 @@ export function observeViewportGeometry(
   const viewport = browserWindow.visualViewport;
   if (viewport === null || viewport === undefined) return () => {};
   let published = "";
+  let frame = 0;
+  let stableFrames = 0;
   const measure = (): ViewportMeasurements => ({
     layoutHeight: browserWindow.innerHeight,
     scrollY: browserWindow.scrollY,
     viewport,
   });
-  const onChange = () => {
+  const update = () => {
     if (documentPanned(measure())) browserWindow.scrollTo(0, 0);
     const geometry = resolveViewportGeometry(measure());
     const key = JSON.stringify(geometry);
-    if (key === published) return;
+    if (key === published) return false;
     published = key;
     applyGeometry(root, geometry);
+    return true;
+  };
+  // WebKit can fire viewport events before it updates the values they report,
+  // so re-measure on the following frames until the geometry stops changing.
+  const settle = () => {
+    frame = 0;
+    stableFrames = update() ? 0 : stableFrames + 1;
+    if (stableFrames < settledFrames) {
+      frame = browserWindow.requestAnimationFrame(settle);
+    }
+  };
+  const onChange = () => {
+    update();
+    stableFrames = 0;
+    if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
   };
   const viewportEvents = ["resize", "scroll"] as const;
   const windowEvents = ["resize", "scroll", "focusin", "focusout"] as const;
   for (const type of viewportEvents) viewport.addEventListener(type, onChange);
   for (const type of windowEvents)
     browserWindow.addEventListener(type, onChange);
-  onChange();
+  update();
   return () => {
+    if (frame !== 0) browserWindow.cancelAnimationFrame(frame);
     for (const type of viewportEvents)
       viewport.removeEventListener(type, onChange);
     for (const type of windowEvents)

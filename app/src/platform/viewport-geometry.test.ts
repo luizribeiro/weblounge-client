@@ -125,6 +125,17 @@ describe("viewport geometry observer", () => {
     expect(root.style.getPropertyValue("--wl-app-top")).toBe("336px");
   });
 
+  it("re-measures on later frames when an event reported stale values", async () => {
+    const { root, viewport } = observe();
+    viewport.dispatchEvent(new Event("resize"));
+    viewport.height = window.innerHeight - 300;
+
+    await vi.waitFor(() => expect(root.dataset.keyboard).toBe("open"));
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 300}px`,
+    );
+  });
+
   it("re-measures on focus changes", () => {
     const { root, viewport } = observe();
     viewport.height = window.innerHeight - 300;
