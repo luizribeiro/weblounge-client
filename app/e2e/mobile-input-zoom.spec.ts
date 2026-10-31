@@ -488,11 +488,27 @@ async function sampleKeyboardTransition(
       const frames: KeyboardFrame[] = [];
       let sawAnimation = false;
       let suppliedClosedGeometry = false;
+      // WebKit samples a running transform animation at the moment of each
+      // getBoundingClientRect call, so two rects read in one frame can disagree
+      // by a millisecond of motion. Both elements share the animated surface,
+      // so their adjacency is a layout fact below that transform.
+      const surfaceLayoutTop = (element: HTMLElement) => {
+        let top = 0;
+        for (
+          let node: Element | null = element;
+          node instanceof HTMLElement && surface.contains(node);
+          node = node.offsetParent
+        )
+          top += node.offsetTop;
+        return top;
+      };
       const sample = () => {
         const composerRect = composer.getBoundingClientRect();
         frames.push({
           adjacency: Math.abs(
-            messages.getBoundingClientRect().bottom - composerRect.top,
+            surfaceLayoutTop(messages) +
+              messages.offsetHeight -
+              surfaceLayoutTop(composer),
           ),
           composerTop: composerRect.top,
           liveEdgeGap: Math.max(
