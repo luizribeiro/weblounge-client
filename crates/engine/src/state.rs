@@ -439,7 +439,7 @@ impl NetworkModel {
         state: &papo::State,
         direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
-        let Some(conversation) = NameKey::from_conversation(&message.conversation) else {
+        let Some(conversation) = NameKey::from_conversation(message.conversation()) else {
             return vec![EngineToUi::notice("engine.unsupported_conversation")];
         };
         let origin = if history {
@@ -464,7 +464,7 @@ impl NetworkModel {
             bot: message.actor.is_bot() == Some(true),
             mode_symbol,
             authorship: map_authorship(message.authorship),
-            msgid: message.msgid.as_ref().map(ToString::to_string),
+            msgid: message.msgid().map(ToString::to_string),
             server_time_ms: message.server_time.map(time_millis),
             received_at_ms: time_millis(message.received_at),
             origin,
@@ -650,7 +650,7 @@ impl NetworkModel {
             .iter()
             .position(|record| record.projection.local_send_id == Some(pending.local_send_id))?;
         let record = buffer.timeline.remove(index);
-        let (lines, server_time) = match &sent.outcome {
+        let (lines, server_time) = match sent.outcome() {
             papo::SentOutcome::Confirmed {
                 lines, server_time, ..
             } if !lines.is_empty() => (Some(lines), server_time.map(time_millis)),

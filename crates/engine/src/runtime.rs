@@ -161,7 +161,7 @@ impl Runtime {
                     nickname,
                     authentication: ConnectionAuthentication::SaslPlain {
                         account: sasl.account,
-                        password: papo::Secret::from(sasl.password.into_inner()),
+                        password: papo::Secret::new(sasl.password.into_inner()),
                     },
                     autojoin,
                     allow_insecure,
@@ -180,7 +180,7 @@ impl Runtime {
                     endpoint,
                     nickname,
                     authentication: ConnectionAuthentication::HostedOAuth {
-                        token: papo::Secret::from(oauth_token.into_inner()),
+                        token: papo::Secret::new(oauth_token.into_inner()),
                     },
                     autojoin,
                     allow_insecure: false,
@@ -745,7 +745,12 @@ impl Runtime {
                     continue;
                 }
                 let result = match target.key {
-                    Some(key) => client.join(target.channel).key(key).await,
+                    Some(key) => {
+                        client
+                            .join(target.channel)
+                            .key(papo::Secret::new(key))
+                            .await
+                    }
                     None => client.join(target.channel).await,
                 };
                 if let Err(error) = result {
@@ -1672,7 +1677,7 @@ async fn drain_events(
         let direct_message = match &event {
             papo::Event::Message(message)
                 if message.authorship != papo::Authorship::Own
-                    && matches!(message.conversation, papo::Conversation::Private(_)) =>
+                    && matches!(message.conversation(), papo::Conversation::Private(_)) =>
             {
                 Some(message.clone())
             }
@@ -2880,7 +2885,7 @@ mod tests {
     #[tokio::test]
     async fn hosted_authentication_uses_papos_redacting_oauth_bearer() {
         let sasl = ConnectionAuthentication::HostedOAuth {
-            token: "oauth-token-7391".into(),
+            token: papo::Secret::new("oauth-token-7391"),
         }
         .into_sasl();
         assert!(!format!("{sasl:?}").contains("oauth-token-7391"));
