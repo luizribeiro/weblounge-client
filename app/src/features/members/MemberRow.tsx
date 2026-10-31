@@ -32,20 +32,36 @@ export function MemberRow(props: MemberRowProps) {
       <span
         aria-hidden="true"
         class={styles.avatar}
+        data-member-avatar="true"
         style={{ background: color() }}
       >
         {initial(props.member.nick)}
       </span>
-      <Line class={styles.identity} title={props.member.nick}>
-        {props.showModeSymbol !== false && (
-          <span class={styles.mode}>{props.member.mode_symbol ?? ""}</span>
-        )}
-        <span class={styles.nick} style={{ color: color() }}>
-          {props.member.nick}
+      {props.showModeSymbol !== false && (
+        <span aria-hidden="true" class={styles.mode} data-member-prefix="true">
+          {props.member.mode_symbol ?? ""}
         </span>
-      </Line>
-      {props.member.bot && <span class={styles.bot}>BOT</span>}
-      {props.member.is_you && <span class={styles.you}>you</span>}
+      )}
+      <span class={styles.identity}>
+        <Line
+          class={styles.nick}
+          data-member-name="true"
+          style={{ color: color() }}
+          title={props.member.nick}
+        >
+          {props.member.nick}
+        </Line>
+        {props.member.bot && (
+          <span class={styles.bot} data-member-trailing="true">
+            BOT
+          </span>
+        )}
+        {props.member.is_you && (
+          <span class={styles.you} data-member-trailing="true">
+            you
+          </span>
+        )}
+      </span>
     </button>
   );
 }

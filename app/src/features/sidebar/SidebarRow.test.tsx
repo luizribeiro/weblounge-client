@@ -68,10 +68,17 @@ describe("SidebarRow", () => {
       />
     ));
 
-    expect(screen.getByText(title)).toHaveAttribute(
-      "data-sidebar-name",
-      "true",
+    const prefix = kind === "channel" ? title.slice(0, 1) : "";
+    const name = kind === "channel" ? title.slice(1) : title;
+    expect(container.querySelector("button")).toHaveAttribute(
+      "aria-label",
+      `${title}, 2 mentions`,
     );
-    expect(container.querySelectorAll("[aria-hidden='true']")).toHaveLength(0);
+    expect(container.querySelector("[data-sidebar-prefix]")).toHaveTextContent(
+      prefix,
+    );
+    expect(container.querySelector("[data-sidebar-name]")).toHaveTextContent(
+      name,
+    );
   });
 });

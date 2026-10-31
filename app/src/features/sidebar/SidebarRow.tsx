@@ -16,6 +16,12 @@ export interface SidebarRowProps {
 
 export function SidebarRow(props: SidebarRowProps) {
   const showBadges = () => props.badgesSuppressed !== true;
+  const prefix = () =>
+    props.buffer.kind === "channel" ? props.buffer.title.slice(0, 1) : "";
+  const name = () =>
+    props.buffer.kind === "channel"
+      ? props.buffer.title.slice(1)
+      : props.buffer.title;
   return (
     <button
       aria-label={rowLabel(props.buffer, showBadges())}
@@ -33,8 +39,15 @@ export function SidebarRow(props: SidebarRowProps) {
       tabIndex={props.tabIndex}
       type="button"
     >
-      <Line class={styles.title} data-sidebar-name="true">
-        {props.buffer.title}
+      <span aria-hidden="true" class={styles.prefix} data-sidebar-prefix="true">
+        {prefix()}
+      </span>
+      <Line
+        class={styles.title}
+        data-sidebar-name="true"
+        title={props.buffer.title}
+      >
+        {name()}
       </Line>
       {showBadges() && props.buffer.mentions > 0 ? (
         <Line class={styles.mention}>{props.buffer.mentions}</Line>

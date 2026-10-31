@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
@@ -81,11 +82,12 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       expect(avatarPresentation.color).not.toBe("");
       expect(avatarPresentation.fontSize).toBeGreaterThanOrEqual(22);
       await mkdir(screenshotDirectory, { recursive: true });
-      await page.screenshot({
+      const chats = page.locator("[data-mobile-chats]");
+      await screenshotWithInter(chats, {
         path: path.join(screenshotDirectory, "mobile-chats-light.png"),
       });
       await page.emulateMedia({ colorScheme: "dark" });
-      await page.screenshot({
+      await screenshotWithInter(chats, {
         path: path.join(screenshotDirectory, "mobile-chats-dark.png"),
       });
 
@@ -122,15 +124,16 @@ test.describe("mobile shell screenshots against local Ergo", () => {
           ),
         )
         .toBe(false);
-      await page.screenshot({
+      const messageList = page.locator("[data-message-list]");
+      await screenshotWithInter(messageList, {
         path: path.join(screenshotDirectory, "mobile-chat-light.png"),
       });
-      const lightWithoutScrim = await sampleScrimPixel(page);
+      const lightWithoutScrim = await sampleScrimPixel(page, messageList);
       await page.emulateMedia({ colorScheme: "dark" });
-      await page.screenshot({
+      await screenshotWithInter(messageList, {
         path: path.join(screenshotDirectory, "mobile-chat-dark.png"),
       });
-      const darkWithoutScrim = await sampleScrimPixel(page);
+      const darkWithoutScrim = await sampleScrimPixel(page, messageList);
       await page.getByRole("button", { name: "Show members" }).click();
       await expect(
         page.getByRole("button", {
@@ -146,8 +149,11 @@ test.describe("mobile shell screenshots against local Ergo", () => {
         "data-theme",
         "lounge",
       );
-      expect(await sampleScrimPixel(page)).toBeLessThan(lightWithoutScrim);
-      await page.screenshot({
+      const memberNames = page.locator("[data-member-name]");
+      expect(await sampleScrimPixel(page, memberNames)).toBeLessThan(
+        lightWithoutScrim,
+      );
+      await screenshotWithInter(memberNames, {
         path: path.join(screenshotDirectory, "mobile-members-light.png"),
       });
       await page.emulateMedia({ colorScheme: "dark" });
@@ -155,8 +161,10 @@ test.describe("mobile shell screenshots against local Ergo", () => {
         "data-theme",
         "lounge-night",
       );
-      expect(await sampleScrimPixel(page)).toBeLessThan(darkWithoutScrim);
-      await page.screenshot({
+      expect(await sampleScrimPixel(page, memberNames)).toBeLessThan(
+        darkWithoutScrim,
+      );
+      await screenshotWithInter(memberNames, {
         path: path.join(screenshotDirectory, "mobile-members-dark.png"),
       });
     } finally {
@@ -191,8 +199,11 @@ async function expectFullBleedHighlight(
   expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
 }
 
-async function sampleScrimPixel(page: Page): Promise<number> {
-  const image = await page.screenshot({
+async function sampleScrimPixel(
+  page: Page,
+  fontTarget: Locator,
+): Promise<number> {
+  const image = await screenshotWithInter(fontTarget, {
     clip: { x: 32, y: 430, width: 1, height: 1 },
   });
   return page.evaluate(async (encoded) => {
