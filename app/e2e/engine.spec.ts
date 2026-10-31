@@ -74,6 +74,44 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("keeps an ordinary incoming DM row unhighlighted", async ({ page }) => {
+    const bot = await IrcClient.connect(
+      "plain-dm",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const text = `ordinary direct message ${Date.now()}`;
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: /#weblounge-test/u }),
+      ).toBeVisible();
+      bot.privmsg("weblounge", text);
+      const direct = page.getByRole("button", {
+        name: /^plain-dm, 1 mentions$/u,
+      });
+      await expect(direct).toBeVisible();
+      await direct.click();
+      const colors = await page
+        .getByText(text, { exact: true })
+        .evaluate((node) => {
+          const row = node.closest<HTMLElement>("[data-message-row]");
+          if (row === null) throw new Error("direct-message row is missing");
+          const highlight = document.createElement("span");
+          highlight.style.background = "var(--wl-color-mention-bg)";
+          document.body.append(highlight);
+          const expected = getComputedStyle(highlight).backgroundColor;
+          highlight.remove();
+          return { expected, row: getComputedStyle(row).backgroundColor };
+        });
+
+      expect(colors.row).not.toBe(colors.expected);
+    } finally {
+      bot.close();
+    }
+  });
+
   test("keeps our operator prefix through send confirmation", async ({
     page,
   }) => {

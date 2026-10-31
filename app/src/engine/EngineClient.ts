@@ -956,7 +956,7 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
     typeof value.nick_color_index !== "number" ||
-    typeof value.mentioned !== "boolean" ||
+    typeof value.highlighted !== "boolean" ||
     !isOneOf(value.delivery, [
       "received",
       "optimistic",
@@ -983,7 +983,7 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     mode_symbol: value.mode_symbol,
     authorship: value.authorship,
     nick_color_index: value.nick_color_index,
-    mentioned: value.mentioned,
+    highlighted: value.highlighted,
     delivery: value.delivery,
     local_send_id: value.local_send_id,
     server_ids: value.server_ids,

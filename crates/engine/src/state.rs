@@ -28,6 +28,7 @@ struct FallbackKey {
 #[derive(Clone, Debug)]
 struct TimelineRecord {
     projection: MessageProjection,
+    counts_as_mention: bool,
     send_text: Option<String>,
     sequence: u64,
     dedup: DedupReferences,
@@ -506,7 +507,7 @@ impl NetworkModel {
             mode_symbol: None,
             authorship: MessageAuthorship::Own,
             nick_color_index: 0,
-            mentioned: false,
+            highlighted: false,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
@@ -552,7 +553,7 @@ impl NetworkModel {
             mode_symbol: actor_mode_symbol(state, &key, state.nick()),
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
-            mentioned: false,
+            highlighted: false,
             delivery: MessageDelivery::Optimistic,
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
@@ -1151,9 +1152,8 @@ impl NetworkModel {
                 .then(|| self.reveal_buffer(buffer_id))
                 .flatten()
         });
-        let mentioned = incoming.authorship != MessageAuthorship::Own
-            && (matches!(incoming.conversation, NameKey::Direct(_))
-                || mentions_own_nick(&incoming.text, state));
+        let highlighted = incoming.authorship != MessageAuthorship::Own
+            && matches_highlight_rules(&incoming.text, state);
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
         let message = MessageProjection {
             id: self.allocate_message_id(),
@@ -1164,7 +1164,7 @@ impl NetworkModel {
             mode_symbol: incoming.mode_symbol,
             authorship: incoming.authorship,
             nick_color_index,
-            mentioned,
+            highlighted,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.into_iter().collect(),
@@ -1309,12 +1309,15 @@ impl NetworkModel {
         send_text: Option<String>,
         dedup: DedupReferences,
     ) -> Result<bool, StateError> {
-        if !self.buffers.contains_key(&buffer_id) {
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
             self.release_dedup(dedup);
             return Err(StateError::MissingBuffer(buffer_id));
-        }
+        };
+        let counts_as_mention = projection.authorship != MessageAuthorship::Own
+            && (buffer.projection.kind == BufferKind::Direct || projection.highlighted);
         let record = TimelineRecord {
             projection,
+            counts_as_mention,
             send_text,
             sequence: self.next_sequence,
             dedup,
@@ -1404,10 +1407,7 @@ fn derive_read_projection(buffer: &mut BufferState) {
                     .is_none_or(|marker| message_time(&record.projection) > marker)
         })
         .fold((0, 0), |(unread, mentions), record| {
-            (
-                unread + 1,
-                mentions + u64::from(record.projection.mentioned),
-            )
+            (unread + 1, mentions + u64::from(record.counts_as_mention))
         });
     buffer.projection.unread = unread;
     buffer.projection.mentions = mentions;
@@ -1494,7 +1494,7 @@ fn actor_mode_symbol(
         .map(|prefix| prefix.symbol())
 }
 
-fn mentions_own_nick(text: &str, state: &papo::State) -> bool {
+fn matches_highlight_rules(text: &str, state: &papo::State) -> bool {
     text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty())
         .any(|word| is_own_nick(state, word))
@@ -2389,13 +2389,31 @@ mod tests {
     }
 
     #[test]
-    fn every_incoming_direct_message_is_a_mention() {
-        let (mut model, state) = model(10);
-        model.receive_incoming(direct_incoming(&state, "alice", "hello", 1), &state);
-        let id = *model.names.values().next().expect("direct buffer exists");
+    fn mention_badges_and_row_highlights_are_distinct() {
+        let cases = [
+            ("direct without nick", true, "hello", 1, false),
+            ("direct with nick", true, "hello weblounge", 1, true),
+            ("channel with nick", false, "hello weblounge", 1, true),
+            ("channel without nick", false, "hello", 0, false),
+        ];
+        for (name, direct, text, expected_mentions, expected_highlight) in cases {
+            let (mut model, state) = model(10);
+            let message = if direct {
+                direct_incoming(&state, "alice", text, 1)
+            } else {
+                incoming(&state, text, Some(name), None, 1, TimelineOrigin::Live)
+            };
+            model.receive_incoming(message, &state);
+            let id = *model.names.values().next().expect("buffer exists");
+            let buffer = &model.buffers[&id];
 
-        assert_eq!(model.buffers[&id].projection.unread, 1);
-        assert_eq!(model.buffers[&id].projection.mentions, 1);
+            assert_eq!(buffer.projection.unread, 1, "{name}");
+            assert_eq!(buffer.projection.mentions, expected_mentions, "{name}");
+            assert_eq!(
+                buffer.timeline[0].projection.highlighted, expected_highlight,
+                "{name}"
+            );
+        }
     }
 
     #[test]

@@ -31,7 +31,7 @@ const messages = Array.from({ length: 10_000 }, (_, index) => {
     mode_symbol: author.nick === "luiz" ? "@" : null,
     authorship: author.authorship,
     nick_color_index: author.color,
-    mentioned: author.authorship === "other" && index % 97 === 0,
+    highlighted: author.authorship === "other" && index % 97 === 0,
     delivery: "received",
     local_send_id: null,
     server_ids: [`render-only-${index + 1}`],

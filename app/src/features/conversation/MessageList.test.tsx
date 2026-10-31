@@ -53,7 +53,7 @@ const message: MessageProjection = {
   mode_symbol: null,
   authorship: "other",
   nick_color_index: 7,
-  mentioned: true,
+  highlighted: true,
   delivery: "failed",
   local_send_id: null,
   server_ids: [],
@@ -61,11 +61,12 @@ const message: MessageProjection = {
   received_at_ms: 1,
 };
 
-it("renders mention, nick colour, and failed delivery presentation", () => {
+it("renders highlight, nick colour, and failed delivery presentation", () => {
   render(() => <MessageList messages={[message]} />);
 
   const row = screen.getByText("hello weblounge").closest("[data-message-row]");
   expect(row).toHaveAttribute("data-delivery", "failed");
+  expect(row?.className).toContain("highlighted");
   expect(screen.getByText("alice")).toHaveStyle({
     color: "var(--wl-nick-1)",
   });
@@ -292,7 +293,7 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           ...message,
           id: 1,
           text: "first",
-          mentioned: false,
+          highlighted: false,
           delivery: "received",
         },
         {
@@ -303,7 +304,7 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           bot: true,
           delivery: "optimistic",
           kind: "action",
-          mentioned: false,
+          highlighted: false,
           mode_symbol: "@",
           text: "waves",
           received_at_ms: 3,
@@ -314,7 +315,7 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           author: "concierge",
           bot: true,
           delivery: "received",
-          mentioned: false,
+          highlighted: false,
           mode_symbol: "@",
           text: "welcome",
           received_at_ms: 4,
@@ -326,7 +327,7 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           authorship: "own",
           delivery: "received",
           kind: "notice",
-          mentioned: false,
+          highlighted: false,
           server_time_ms: Date.UTC(2026, 9, 28, 12),
           text: "A quiet room",
           received_at_ms: 5,

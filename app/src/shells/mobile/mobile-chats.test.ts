@@ -84,7 +84,7 @@ function buffer(
             mode_symbol: null,
             authorship: "other" as const,
             nick_color_index: 0,
-            mentioned: false,
+            highlighted: false,
             delivery: "received" as const,
             local_send_id: null,
             server_ids: [],

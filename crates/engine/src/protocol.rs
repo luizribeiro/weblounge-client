@@ -316,8 +316,8 @@ pub struct MessageProjection {
     /// Stable palette index derived with the network's IRC name rules.
     #[ts(type = "number")]
     pub nick_color_index: u32,
-    /// Whether this row mentions the current nickname.
-    pub mentioned: bool,
+    /// Whether this row matches the user's highlight rules.
+    pub highlighted: bool,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.

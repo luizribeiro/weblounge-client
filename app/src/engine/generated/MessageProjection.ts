@@ -42,9 +42,9 @@ authorship: MessageAuthorship,
  */
 nick_color_index: number,
 /**
- * Whether this row mentions the current nickname.
+ * Whether this row matches the user's highlight rules.
  */
-mentioned: boolean,
+highlighted: boolean,
 /**
  * Current delivery state.
  */

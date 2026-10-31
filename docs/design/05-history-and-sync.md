@@ -40,10 +40,13 @@ moves forward. Without server support, `MarkRead` advances the local marker.
 
 Visible conversation instances remain the source of read intent. A foreground instance at the
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that
-row to a server time and calls `Client::mark_read`; it does not poll. DMs classify every incoming
-message as a mention, while channels classify only messages containing the current nick as an IRC
-casemapped word. The shells project unread-only state as a subtle dot and mentions as an accent
-count badge.
+row to a server time and calls `Client::mark_read`; it does not poll. For badge counts, DMs classify
+every incoming message as a mention, while channels classify only messages matching the highlight
+rules. Row highlighting is independent of that DM badge policy: in every conversation, a row is
+highlighted only when its text matches the rules. The initial rule is the current nick as an
+IRC-casemapped word; later user-defined keywords extend the engine matcher without changing the UI
+projection. The shells project unread-only state as a subtle dot and mentions as an accent count
+badge.
 
 ## Boundaries
 
@@ -57,7 +60,7 @@ notification policy, or background push delivery.
 ## Testing
 
 - Pure engine tests cover empty/non-empty terminal pages, cursor survival across bounded eviction,
-  channel mentions, and the DM-equals-mention rule.
+  and the badge/highlight matrix for direct messages and channels with and without a nick match.
 - Scripted papo transcripts page through more than 1,000 same-time messages and assert every msgid
   is delivered once in chronological order. Separate transcripts cover initial marker fetch,
   marker sends, and live remote advances.
@@ -68,7 +71,8 @@ notification policy, or background push delivery.
   on every animation frame during the first second after history appears.
 - Playwright uses two independent browser contexts signed in to the same account: reading at the
   live edge in one clears the unread and mention indicators in the other. Native-feel idle and
-  hidden-tab audits remain green.
+  hidden-tab audits remain green. A direct message without a nick match keeps its mention badge but
+  has no transcript highlight background.
 
 ## Out of scope
 

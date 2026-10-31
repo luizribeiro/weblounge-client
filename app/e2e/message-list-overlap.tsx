@@ -37,7 +37,7 @@ function harnessMessage(id: number, text: string): MessageProjection {
     mode_symbol: id % 2 === 0 ? null : "@",
     authorship: "other",
     nick_color_index: id * 7_919,
-    mentioned: false,
+    highlighted: false,
     delivery: "received",
     local_send_id: null,
     server_ids: [`overlap-${id}`],

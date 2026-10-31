@@ -415,7 +415,7 @@ function MessageRow(props: {
       : { color: nickColor(message.nick_color_index) };
   return (
     <div
-      class={`${styles.row} ${message.mentioned ? styles.mentioned : ""} ${message.kind === "action" ? styles.action : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.kind === "action" ? styles.action : ""}`}
       data-delivery={message.delivery}
       data-message-row="true"
       data-message-text={message.text}

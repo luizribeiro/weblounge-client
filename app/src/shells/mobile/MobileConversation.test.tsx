@@ -41,7 +41,7 @@ const message: MessageProjection = {
   mode_symbol: null,
   authorship: "other",
   nick_color_index: 0,
-  mentioned: false,
+  highlighted: false,
   delivery: "received",
   local_send_id: null,
   server_ids: ["eight"],

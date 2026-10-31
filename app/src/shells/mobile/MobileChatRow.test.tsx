@@ -16,7 +16,7 @@ const lastMessage: MessageProjection = {
   mode_symbol: null,
   authorship: "other",
   nick_color_index: 0,
-  mentioned: true,
+  highlighted: true,
   delivery: "received",
   local_send_id: null,
   server_ids: ["eight"],
