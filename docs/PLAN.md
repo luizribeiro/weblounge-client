@@ -206,6 +206,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     available inline width (#73).
   - [x] Preserve failed Playwright traces and print bounded action timelines and error contexts
     from both Nix e2e checks before their sandboxes disappear.
+  - [x] Name every bounded IRC bot wait and phase the long mobile-shell journey so a timeout
+    identifies both the external event and the active user flow.
     user-owned wheel input, and preserve the visual row anchor across reconnects and late
     font-driven virtualizer remeasurement. Leaving the live edge freezes the unread line where the
     reader sees it, so the virtualizer never writes scroll over the reader's wheel scroll.

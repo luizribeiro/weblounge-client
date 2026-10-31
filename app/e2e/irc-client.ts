@@ -34,9 +34,12 @@ export class IrcClient {
     client.send("CAP LS 302");
     client.send(`NICK ${nickname}`);
     client.send(`USER ${nickname} 0 * :${nickname}`);
-    await client.waitFor((line) => line.includes(" CAP * LS "));
+    await client.waitFor("capability list", (line) =>
+      line.includes(" CAP * LS "),
+    );
     client.send("CAP REQ :batch draft/multiline echo-message sasl server-time");
     await client.waitFor(
+      "requested capability acknowledgement",
       (line) =>
         line.includes(" CAP * ACK ") &&
         line.includes("batch") &&
@@ -46,17 +49,25 @@ export class IrcClient {
         line.includes("server-time"),
     );
     client.send("AUTHENTICATE PLAIN");
-    await client.waitFor((line) => line === "AUTHENTICATE +");
+    await client.waitFor(
+      "SASL PLAIN authentication prompt",
+      (line) => line === "AUTHENTICATE +",
+    );
     const credentials = Buffer.from(`\0${account}\0${password}`).toString(
       "base64",
     );
     client.send(`AUTHENTICATE ${credentials}`);
-    await client.waitFor((line) => line.includes(" 903 "));
+    await client.waitFor("SASL success numeric", (line) =>
+      line.includes(" 903 "),
+    );
     client.send("CAP END");
-    const welcome = await client.waitFor((line) => line.includes(" 001 "));
+    const welcome = await client.waitFor("welcome numeric", (line) =>
+      line.includes(" 001 "),
+    );
     client.#nickname = welcome.match(/ 001 (\S+) /u)?.[1] ?? nickname;
     client.send(`JOIN ${channel}`);
     await client.waitFor(
+      `JOIN confirmation for ${channel}`,
       (line) => line.includes(`!`) && line.includes(` JOIN ${channel}`),
     );
     return client;
@@ -72,7 +83,7 @@ export class IrcClient {
 
   async privmsgConfirmed(channel: string, text: string): Promise<string> {
     this.privmsg(channel, text);
-    return this.waitFor((line) =>
+    return this.waitFor(`echoed PRIVMSG to ${channel}`, (line) =>
       line.includes(` PRIVMSG ${channel} :${text}`),
     );
   }
@@ -105,7 +116,7 @@ export class IrcClient {
     this.send(`BATCH -${reference}`);
     const finalText = text.split("\n").findLast((segment) => segment !== "");
     if (finalText !== undefined)
-      await this.waitFor((line) =>
+      await this.waitFor(`final multiline echo to ${channel}`, (line) =>
         line.includes(` PRIVMSG ${channel} :${finalText}`),
       );
   }
@@ -117,14 +128,16 @@ export class IrcClient {
   async mode(target: string, change: string, nick?: string): Promise<void> {
     const argument = nick === undefined ? "" : ` ${nick}`;
     this.send(`MODE ${target} ${change}${argument}`);
-    await this.waitFor((line) =>
+    await this.waitFor(`MODE confirmation for ${target}`, (line) =>
       line.includes(` MODE ${target} ${change}${argument}`),
     );
   }
 
   async part(channel: string): Promise<void> {
     this.send(`PART ${channel} :screenshot seed complete`);
-    await this.waitFor((line) => line.includes(` PART ${channel} `));
+    await this.waitFor(`PART confirmation for ${channel}`, (line) =>
+      line.includes(` PART ${channel} `),
+    );
   }
 
   close(): void {
@@ -140,7 +153,10 @@ export class IrcClient {
     this.#socket.write(`${line}\r\n`);
   }
 
-  private async waitFor(predicate: (line: string) => boolean): Promise<string> {
+  private async waitFor(
+    description: string,
+    predicate: (line: string) => boolean,
+  ): Promise<string> {
     const signal = AbortSignal.timeout(ircTimeoutMilliseconds);
     try {
       for (;;) {
@@ -151,7 +167,7 @@ export class IrcClient {
     } catch (error) {
       if (!signal.aborted) throw error;
       throw new Error(
-        `IRC response timed out; received ${this.#lines.join(" | ")}`,
+        `IRC response timed out waiting for ${description} as ${this.#nickname}; received ${this.#lines.join(" | ")}`,
         { cause: error },
       );
     }
