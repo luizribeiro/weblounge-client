@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
 
@@ -122,11 +123,11 @@ test.describe("desktop shell against local Ergo", () => {
       await composer.press("Tab");
       await expect(composer).toHaveValue("composer: ");
       await mkdir(screenshotDirectory, { recursive: true });
-      await page.screenshot({
+      await screenshotWithInter(composer, {
         path: path.join(screenshotDirectory, "composer-completion-light.png"),
       });
       await page.emulateMedia({ colorScheme: "dark" });
-      await page.screenshot({
+      await screenshotWithInter(composer, {
         path: path.join(screenshotDirectory, "composer-completion-dark.png"),
       });
 
@@ -315,7 +316,8 @@ test.describe("desktop shell against local Ergo", () => {
         "[data-sidebar-name]",
       );
       await mkdir(screenshotDirectory, { recursive: true });
-      await screenshotPage.screenshot({
+      const screenshotBody = screenshotPage.locator("body");
+      await screenshotWithInter(screenshotBody, {
         path: path.join(screenshotDirectory, "desktop-shell-light.png"),
       });
 
@@ -330,7 +332,7 @@ test.describe("desktop shell against local Ergo", () => {
           })),
         )
         .toEqual({ background: "#18221e", theme: "lounge-night" });
-      await screenshotPage.screenshot({
+      await screenshotWithInter(screenshotBody, {
         path: path.join(screenshotDirectory, "desktop-shell-dark.png"),
       });
     } finally {

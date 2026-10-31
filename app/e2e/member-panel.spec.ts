@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, test } from "@playwright/test";
+import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 import {
   installNativeFeelInstrumentation,
@@ -124,11 +125,12 @@ test.describe("desktop members against local Ergo", () => {
       await nativeFeelAudit(page);
 
       await mkdir(screenshots, { recursive: true });
-      await page.screenshot({
+      const memberNames = panel.locator("[data-member-name]");
+      await screenshotWithInter(memberNames, {
         path: path.join(screenshots, "member-panel-light.png"),
       });
       await page.emulateMedia({ colorScheme: "dark" });
-      await page.screenshot({
+      await screenshotWithInter(memberNames, {
         path: path.join(screenshots, "member-panel-dark.png"),
       });
 

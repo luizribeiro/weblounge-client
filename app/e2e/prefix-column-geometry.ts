@@ -1,4 +1,5 @@
 import { expect, type Locator } from "@playwright/test";
+import { expectInterFont } from "./inter-font";
 
 interface PrefixGeometry {
   readonly columnWidth: number;
@@ -14,7 +15,9 @@ export async function expectAlignedPrefixColumn(
   prefixSelector: string,
   nameSelector: string,
 ): Promise<void> {
-  await container.page().evaluate(() => document.fonts.ready);
+  await expectInterFont(
+    container.locator(`${prefixSelector}, ${nameSelector}`),
+  );
   const geometry: readonly PrefixGeometry[] = await container
     .locator(nameSelector)
     .evaluateAll(
