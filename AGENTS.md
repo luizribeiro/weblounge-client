@@ -14,6 +14,7 @@ A modern IRCv3 client (web/PWA, Tauri desktop, Tauri iOS/Android) built on papo.
 ## Process
 - Design first: every subsystem in brief §7 gets a short doc in `docs/design/` (problem, types, boundaries, out of scope, testing) **before** implementation. Large work waits for Luiz's review of its design.
 - Build vertically: one thin end-to-end slice before widening.
+- Run project tools through the dev shell (`nix develop -c pnpm …`, `nix develop -c cargo …`); they are not on PATH outside it. Build the app with `nix build --no-link .#app` (the flake has no default package). Never pass options that override Nix safety (min-free/max-free, sandbox), hooks or signing, and never use `nix build --rebuild` (clippy output isn't deterministic).
 - Make invalid states unrepresentable; one source of truth per concern; DRY.
 
 ## Code standards
@@ -30,5 +31,5 @@ Tests wait for conditions, never for time: no fixed sleeps, retries, `test.slow(
 - One commit = one idea. If the message needs "and", split it.
 - Commit after each small unit (a function with its tests, a single doc, a single fix). Aim for < ~5 files and < ~100 changed lines per commit (design docs may be longer, but one doc per commit).
 - Tests go in the **same** commit as the code they test.
-- Before each commit, run the fast checks that cover the change: the pre-commit hook (formatting, lint, clippy, typecheck, generated protocol types), unit tests for the touched code, and the Playwright specs for the touched feature. The full suites run in GitHub Actions on every push; a red CI is fixed before any new work.
+- Before each commit, run the fast checks that cover the change: the pre-commit hook (formatting, lint, clippy, typecheck, generated protocol types), unit tests for the touched code, and every Playwright spec file for each area you touched (not only your new tests: running too few has repeatedly broken CI). The full suites run in GitHub Actions on every push; a red CI is fixed before any new work.
 - Never push, never rewrite history.
