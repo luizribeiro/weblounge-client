@@ -81,6 +81,7 @@
 }
 
 .list {
+  align-content: start;
   display: grid;
   flex: 1;
   grid-template-columns:

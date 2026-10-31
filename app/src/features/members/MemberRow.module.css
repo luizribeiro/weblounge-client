@@ -40,6 +40,8 @@
   grid-column: 1;
   height: var(--wl-density-sidebar-avatar);
   justify-content: center;
+  justify-self: start;
+  width: var(--wl-density-sidebar-avatar);
 }
 
 .identity {

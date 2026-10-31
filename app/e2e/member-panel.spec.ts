@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import {
   installNativeFeelInstrumentation,
@@ -26,6 +26,7 @@ test.describe("desktop members against local Ergo", () => {
       memberChannel,
     );
     let voice: IrcClient | undefined;
+    const plainMembers: IrcClient[] = [];
     try {
       await bot.mode("member-bot", "+B");
       await installNativeFeelInstrumentation(page);
@@ -84,6 +85,15 @@ test.describe("desktop members against local Ergo", () => {
         memberChannel,
       );
       await bot.mode(memberChannel, "+v", voice.nickname);
+      for (const nick of ["member-alex", "member-casey", "member-drew"])
+        plainMembers.push(
+          await IrcClient.connect(
+            nick,
+            "weblounge-bot",
+            "weblounge-bot-test",
+            memberChannel,
+          ),
+        );
       await expect(
         panel.locator("[data-member-prefix]", { hasText: "+" }),
       ).toBeVisible();
@@ -92,8 +102,11 @@ test.describe("desktop members against local Ergo", () => {
         "[data-member-prefix]",
         "[data-member-name]",
       );
+      await expectMemberRowsUseDensityPitch(panel);
       await bot.mode(memberChannel, "-o", "weblounge");
-      await expect(panel.getByText("Online — 1")).toBeVisible();
+      await expect(panel.getByText("Online — 4")).toBeVisible();
+      await bot.mode(memberChannel, "+o", "weblounge");
+      await expect(panel.getByText("Operators — 1")).toBeVisible();
 
       await page.keyboard.press("Control+Period");
       await expect(panel).toHaveCount(0);
@@ -130,6 +143,7 @@ test.describe("desktop members against local Ergo", () => {
       ).toBeFocused();
       await expect(panel).toHaveCount(0);
     } finally {
+      for (const member of plainMembers) member.close();
       voice?.close();
       bot.close();
     }
@@ -236,6 +250,46 @@ test.describe("desktop members against local Ergo", () => {
     await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
   });
 });
+
+async function expectMemberRowsUseDensityPitch(panel: Locator) {
+  const rows = await panel
+    .locator("[data-member-row-kind]")
+    .evaluateAll((elements) => {
+      const panelElement = elements[0]?.closest<HTMLElement>("aside");
+      if (panelElement === undefined || panelElement === null) return [];
+      const styles = getComputedStyle(panelElement);
+      const heights = {
+        group: Number.parseFloat(
+          styles.getPropertyValue("--wl-member-group-row-height"),
+        ),
+        member: Number.parseFloat(
+          styles.getPropertyValue("--wl-density-sidebar-member-row-height"),
+        ),
+      };
+      return elements.map((element) => {
+        const row = element as HTMLElement;
+        const kind = row.dataset.memberRowKind;
+        const box = row.getBoundingClientRect();
+        return {
+          top: box.top,
+          height: box.height,
+          expectedHeight: kind === "group" ? heights.group : heights.member,
+        };
+      });
+    });
+
+  expect(rows.length).toBeGreaterThanOrEqual(4);
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row === undefined) continue;
+    expect(Math.abs(row.height - row.expectedHeight)).toBeLessThanOrEqual(0.5);
+    const next = rows[index + 1];
+    if (next !== undefined)
+      expect(
+        Math.abs(next.top - row.top - row.expectedHeight),
+      ).toBeLessThanOrEqual(0.5);
+  }
+}
 
 async function recordPanelClose(
   page: import("@playwright/test").Page,

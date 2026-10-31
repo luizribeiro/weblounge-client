@@ -164,6 +164,7 @@ export function MemberPanel(props: MemberPanelProps) {
             {(rendered) => (
               <li
                 class={styles.virtualRow}
+                data-member-row-kind={rendered().row?.kind}
                 style={{ height: `${rendered().virtual.size}px` }}
               >
                 <MemberListRowView
