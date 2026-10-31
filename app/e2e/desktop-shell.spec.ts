@@ -348,12 +348,12 @@ async function expectFullBleedHighlight(
   text: string,
 ): Promise<void> {
   const geometry = await page
-    .getByText(text, { exact: true })
-    .evaluate((node) => {
-      const row = node.closest<HTMLElement>("[data-message-row]");
-      const list = node.closest<HTMLElement>("[data-message-list]");
-      if (row === null || list === null)
-        throw new Error("highlight geometry is missing");
+    .locator("[data-message-list]")
+    .evaluate((list, messageText) => {
+      const row = [
+        ...list.querySelectorAll<HTMLElement>("[data-message-row]"),
+      ].find((candidate) => candidate.dataset.messageText === messageText);
+      if (row === undefined) throw new Error("highlight geometry is missing");
       const rowRect = row.getBoundingClientRect();
       const listRect = list.getBoundingClientRect();
       return {
@@ -363,7 +363,7 @@ async function expectFullBleedHighlight(
         rowLeft: rowRect.left,
         rowRight: rowRect.right,
       };
-    });
+    }, text);
   expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
   expect(geometry.rowLeft).toBeCloseTo(geometry.listLeft, 0);
   expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
