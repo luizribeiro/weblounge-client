@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  documentPanned,
   observeViewportGeometry,
   resolveViewportGeometry,
   type ViewportMeasurements,
@@ -7,6 +8,7 @@ import {
 
 const iphone: ViewportMeasurements = {
   layoutHeight: 874,
+  scrollY: 0,
   viewport: { height: 874, offsetTop: 0, scale: 1 },
 };
 
@@ -57,9 +59,24 @@ describe("viewport geometry", () => {
   });
 });
 
+describe("document pan", () => {
+  it("is detected through either the visual viewport or the document scroll", () => {
+    expect(documentPanned(iphone)).toBe(false);
+    expect(documentPanned(withViewport(476, 336))).toBe(true);
+    expect(documentPanned({ ...withViewport(476), scrollY: 336 })).toBe(true);
+    expect(documentPanned({ ...iphone, scrollY: 62 })).toBe(true);
+  });
+
+  it("ignores sub-pixel noise and pinch zoom", () => {
+    expect(documentPanned(withViewport(476, 0.4))).toBe(false);
+    expect(documentPanned(withViewport(406, 200, 2))).toBe(false);
+  });
+});
+
 describe("viewport geometry observer", () => {
   afterEach(() => {
     document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
   it("publishes the open keyboard and clears it when the keyboard closes", () => {
@@ -84,6 +101,37 @@ describe("viewport geometry observer", () => {
     expect(root.dataset.keyboard).toBeUndefined();
     viewport.set(window.innerHeight - 300, 0, "resize");
     expect(root.dataset.keyboard).toBeUndefined();
+  });
+
+  it("undoes an iOS pan and lands at the top of the visual viewport", () => {
+    const { root, viewport } = observe();
+    const scrollTo = vi
+      .spyOn(window, "scrollTo")
+      .mockImplementation(() => viewport.set(viewport.height, 0, "scroll"));
+
+    viewport.set(window.innerHeight - 300, 336, "resize");
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
+  });
+
+  it("follows a pan that cannot be undone", () => {
+    const { root, viewport } = observe();
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+
+    viewport.set(window.innerHeight - 300, 336, "resize");
+
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("336px");
+  });
+
+  it("re-measures on focus changes", () => {
+    const { root, viewport } = observe();
+    viewport.height = window.innerHeight - 300;
+
+    window.dispatchEvent(new FocusEvent("focusin"));
+
+    expect(root.dataset.keyboard).toBe("open");
   });
 
   it("does nothing without a visual viewport", () => {

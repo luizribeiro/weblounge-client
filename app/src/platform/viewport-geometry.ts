@@ -8,6 +8,7 @@ export type ViewportGeometry =
 
 export interface ViewportMeasurements {
   readonly layoutHeight: number;
+  readonly scrollY: number;
   readonly viewport: Pick<VisualViewport, "height" | "offsetTop" | "scale">;
 }
 
@@ -23,29 +24,48 @@ export function resolveViewportGeometry({
   return { keyboard: "open", height: viewport.height, top: viewport.offsetTop };
 }
 
+// iOS reveals a focused field by panning the visual viewport or scrolling the
+// document, even when nothing overflows; the app is already sized to the
+// visible area, so any pan only hides the header and must be undone.
+export function documentPanned({
+  scrollY,
+  viewport,
+}: ViewportMeasurements): boolean {
+  if (zoomed(viewport)) return false;
+  return Math.abs(scrollY) >= 1 || Math.abs(viewport.offsetTop) >= 1;
+}
+
 export function observeViewportGeometry(
   root: HTMLElement,
   browserWindow: Window,
 ): () => void {
   const viewport = browserWindow.visualViewport;
   if (viewport === null || viewport === undefined) return () => {};
-  const update = () => {
-    applyGeometry(
-      root,
-      resolveViewportGeometry({
-        layoutHeight: browserWindow.innerHeight,
-        viewport,
-      }),
-    );
+  let published = "";
+  const measure = (): ViewportMeasurements => ({
+    layoutHeight: browserWindow.innerHeight,
+    scrollY: browserWindow.scrollY,
+    viewport,
+  });
+  const onChange = () => {
+    if (documentPanned(measure())) browserWindow.scrollTo(0, 0);
+    const geometry = resolveViewportGeometry(measure());
+    const key = JSON.stringify(geometry);
+    if (key === published) return;
+    published = key;
+    applyGeometry(root, geometry);
   };
-  viewport.addEventListener("resize", update);
-  viewport.addEventListener("scroll", update);
-  browserWindow.addEventListener("resize", update);
-  update();
+  const viewportEvents = ["resize", "scroll"] as const;
+  const windowEvents = ["resize", "scroll", "focusin", "focusout"] as const;
+  for (const type of viewportEvents) viewport.addEventListener(type, onChange);
+  for (const type of windowEvents)
+    browserWindow.addEventListener(type, onChange);
+  onChange();
   return () => {
-    viewport.removeEventListener("resize", update);
-    viewport.removeEventListener("scroll", update);
-    browserWindow.removeEventListener("resize", update);
+    for (const type of viewportEvents)
+      viewport.removeEventListener(type, onChange);
+    for (const type of windowEvents)
+      browserWindow.removeEventListener(type, onChange);
     delete root.dataset.keyboard;
     clearOpenGeometry(root);
   };

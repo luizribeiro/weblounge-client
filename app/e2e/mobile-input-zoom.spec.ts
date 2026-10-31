@@ -122,17 +122,25 @@ for (const layout of [
       await expect.poll(() => documentScroll(page)).toBe(0);
     });
 
-    test("keeps the composer on an open keyboard while iOS pans", async ({
+    test("keeps the composer on the keyboard and the header on screen while iOS pans", async ({
       page,
     }) => {
       await openChannel(page);
       const root = page.locator("#root");
+      const composer = page.locator("[data-composer]");
       await page
         .getByRole("textbox", { name: "Message #weblounge-test" })
         .focus();
 
       await setVisualViewport(page, 476, 336);
       await expect(root).toHaveAttribute("data-keyboard", "open");
+      await expect.poll(() => viewportOffsetTop(page)).toBe(0);
+      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+      expect(await headerTop(page)).toBeGreaterThanOrEqual(0);
+      await expect(composer).toHaveCSS("padding-bottom", "14px");
+
+      await attemptDocumentScroll(page);
+      await expect.poll(() => documentScroll(page)).toBe(0);
       await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
 
       await setVisualViewport(page, layout.height, 0);
@@ -324,10 +332,20 @@ async function largeViewportHeight(page: Page): Promise<number> {
   });
 }
 
+async function viewportOffsetTop(page: Page): Promise<number> {
+  return page.evaluate(() => window.visualViewport?.offsetTop ?? -1);
+}
+
 async function composerBottom(page: Page): Promise<number> {
   return page
     .locator("[data-composer]")
     .evaluate((composer) => composer.getBoundingClientRect().bottom);
+}
+
+async function headerTop(page: Page): Promise<number> {
+  return page
+    .getByRole("button", { name: "Back to chats" })
+    .evaluate((back) => back.getBoundingClientRect().top);
 }
 
 async function sampleKeyboardTransition(
