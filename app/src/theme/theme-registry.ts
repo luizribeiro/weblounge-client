@@ -87,6 +87,7 @@ export const motionTokens = {
   drawerOpen: "340ms",
   fade: "200ms",
   previewFade: "420ms",
+  pushCurve: "cubic-bezier(0.2, 0.9, 0.25, 1)",
   pushIn: "280ms",
   pushOut: "230ms",
   suggestions: "120ms",
