@@ -53,3 +53,25 @@ test("renders the chair glyph instead of a flat mask", async ({ page }) => {
   expect(panelPixels).toBeGreaterThan(0.1);
   expect(panelPixels).toBeLessThan(0.7);
 });
+
+test.describe("mobile header brand", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 402, height: 874 },
+  });
+
+  test("bundles its chair into the first shell stylesheet", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const mark = page.locator("[data-mobile-logo-mark]");
+    await expect(mark).toBeVisible();
+    await expect
+      .poll(() =>
+        mark.evaluate((element) => getComputedStyle(element).maskImage),
+      )
+      .toMatch(/^url\(["']?data:image\/svg\+xml/iu);
+  });
+});

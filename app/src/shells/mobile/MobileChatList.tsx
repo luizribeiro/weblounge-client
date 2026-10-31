@@ -111,7 +111,7 @@ export function MobileChatList(props: MobileChatListProps) {
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
       <header class={styles.header}>
         <span aria-hidden="true" class={styles.logo}>
-          <span class={styles.logoMark} />
+          <span class={styles.logoMark} data-mobile-logo-mark="true" />
         </span>
         <span class={styles.identity}>
           <h1>
