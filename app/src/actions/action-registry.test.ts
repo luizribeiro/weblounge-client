@@ -184,6 +184,11 @@ describe("ActionRegistry", () => {
       ...context,
       debugOverlay: "gestures",
     });
+    expect(registry.runInput("/debug keyboard", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith({
+      ...context,
+      debugOverlay: "keyboard",
+    });
     expect(registry.runInput("/debug off", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith({
       ...context,

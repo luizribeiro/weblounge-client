@@ -1,11 +1,12 @@
 import { installGestureDebug } from "./gesture-debug";
+import { installKeyboardDebug } from "./keyboard-debug";
 import { installViewportDebug } from "./viewport-debug";
 
-export type DebugOverlay = "gestures" | "viewport";
+export type DebugOverlay = "gestures" | "keyboard" | "viewport";
 type DebugMode = DebugOverlay | "off";
 type FlagStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const overlays = ["viewport", "gestures"] as const;
+const overlays = ["viewport", "gestures", "keyboard"] as const;
 const activeStops = new Map<DebugOverlay, () => void>();
 
 // Home Screen apps launch at the manifest start_url and hosted sign-in
@@ -64,12 +65,20 @@ function enable(
   overlay: DebugOverlay,
 ): void {
   disable(overlay);
-  activeStops.set(
-    overlay,
-    overlay === "viewport"
-      ? installViewportDebug(root, browserWindow)
-      : installGestureDebug(root, browserWindow),
-  );
+  activeStops.set(overlay, installerFor(overlay)(root, browserWindow));
+}
+
+function installerFor(
+  overlay: DebugOverlay,
+): (root: HTMLElement, browserWindow: Window) => () => void {
+  switch (overlay) {
+    case "gestures":
+      return installGestureDebug;
+    case "keyboard":
+      return installKeyboardDebug;
+    case "viewport":
+      return installViewportDebug;
+  }
 }
 
 function disable(overlay: DebugOverlay): void {

@@ -123,7 +123,7 @@ export function App(props: AppProps) {
       },
       "debug.overlay": (context) => {
         if (context.debugOverlay === undefined) {
-          setComposerNotice("Usage: /debug <viewport|gestures|off>");
+          setComposerNotice("Usage: /debug <viewport|gestures|keyboard|off>");
           return;
         }
         const root = document.getElementById("root");

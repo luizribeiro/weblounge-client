@@ -57,7 +57,7 @@ const commandStrings: Readonly<Record<string, string>> = {
   "cmd.cycle.description": "Leave and rejoin a channel",
   "cmd.cycle.usage": "/cycle [channel] [reason]",
   "cmd.debug.description": "Show or hide viewport and gesture diagnostics",
-  "cmd.debug.usage": "/debug <viewport|gestures|off>",
+  "cmd.debug.usage": "/debug <viewport|gestures|keyboard|off>",
   "cmd.help.description": "Show available commands or command help",
   "cmd.help.usage": "/help [command]",
   "cmd.identify.description": "Identify with NickServ",

@@ -258,6 +258,22 @@ test.describe("viewport diagnostics overlay", () => {
     ).toBeVisible();
     await expect(overlay).toHaveCount(0);
   });
+
+  test("captures a copyable keyboard frame trace after a tap", async ({
+    page,
+  }) => {
+    await openChannel(page, "&debug=keyboard");
+    const overlay = page.locator("[data-debug-overlay]");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+
+    await composer.tap();
+
+    await expect(overlay).toContainText("[keyboard]");
+    await expect(overlay).toContainText("trigger: pointerup");
+    await expect(overlay).toContainText("trace: ms sy vo vh ih rt rh ct");
+  });
 });
 
 async function openChannel(page: Page, query = "") {
