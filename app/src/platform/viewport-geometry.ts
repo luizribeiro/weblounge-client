@@ -71,14 +71,16 @@ export function observeViewportGeometry(
     scrollY: browserWindow.scrollY,
     viewport,
   });
-  // iOS reveals a focused field by panning the document instead of resizing it,
-  // and WebKit has neither interactive-widget nor the VirtualKeyboard API, so we
-  // undo the pan and size to the visual viewport. Its events can report stale
-  // values, or stop before the keyboard settles, hence the re-measuring on the
-  // following frames.
-  // https://bugs.webkit.org/show_bug.cgi?id=254861
-  // https://bugs.webkit.org/show_bug.cgi?id=259770
-  // https://bugs.webkit.org/show_bug.cgi?id=230225
+  // iOS can reveal a focused field by panning instead of resizing, while WebKit
+  // exposes neither interactive-widget nor the VirtualKeyboard API. We undo the
+  // pan, size to the visual viewport, and re-measure after its events because
+  // their geometry can be stale. Pointer-activated text focus gets a bounded
+  // fallback until the expected keyboard state is stable; other changes stop
+  // after the normal two stable frames.
+  // Upstream WebKit bugs:
+  // - https://bugs.webkit.org/show_bug.cgi?id=254861
+  // - https://bugs.webkit.org/show_bug.cgi?id=259770
+  // - https://bugs.webkit.org/show_bug.cgi?id=230225
   const update = () => {
     if (documentPanned(measure())) browserWindow.scrollTo(0, 0);
     const geometry = resolveViewportGeometry(measure());
