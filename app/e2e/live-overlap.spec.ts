@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { firstLongMessage, secondLongMessage } from "./timeline-fixtures";
 import {
   framesPerSecond,
@@ -38,14 +39,20 @@ test("keeps long live messages apart when the read boundary passes one", async (
     await list.press("End");
     await expect(active).toHaveAttribute("data-unread", "0");
 
-    await scrollAwayFromLiveEdge(list);
+    await scrollAwayFromLiveEdge(page, list, {
+      distance: 3,
+      wheelDelta: 40,
+    });
     await bot.privmsgConfirmed(channel, firstLongMessage);
     await expect(messageRow(page, firstLongMessage)).toBeVisible();
     await expect(page.getByText("New", { exact: true })).toBeVisible();
 
     await list.press("End");
     await expect(active).toHaveAttribute("data-unread", "0");
-    await scrollAwayFromLiveEdge(list);
+    await scrollAwayFromLiveEdge(page, list, {
+      distance: 3,
+      wheelDelta: 40,
+    });
     await bot.privmsgConfirmed(channel, secondLongMessage);
 
     await expect(
@@ -69,25 +76,4 @@ async function expectNewDividerBetween(
   const divider = await index(page.locator("[data-new-line]"));
   expect(divider).toBe((await index(messageRow(page, before))) + 1);
   expect(divider).toBe((await index(messageRow(page, after))) - 1);
-}
-
-async function scrollAwayFromLiveEdge(list: Locator): Promise<void> {
-  await list.evaluate(async (element) => {
-    const sentinel = element.querySelector("[data-live-edge-sentinel]");
-    if (sentinel === null) throw new Error("live-edge sentinel is missing");
-    const hidden = new Promise<void>((resolve) => {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries.some((entry) => !entry.isIntersecting)) {
-            observer.disconnect();
-            resolve();
-          }
-        },
-        { root: element },
-      );
-      observer.observe(sentinel);
-    });
-    element.scrollTop -= 40;
-    await hidden;
-  });
 }

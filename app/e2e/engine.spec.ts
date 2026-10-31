@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import {
+  distanceFromBottom,
+  scrollAwayFromLiveEdge,
+} from "./message-list-scroll";
 
 const ready = "Engine ready: wasm worker round trip complete";
 const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
@@ -436,11 +440,7 @@ test.describe("local Ergo user flow", () => {
         timeout: 3_000,
       });
 
-      await list.evaluate((element) => {
-        element.scrollTop = 0;
-        element.dispatchEvent(new Event("scroll"));
-      });
-      await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
+      await scrollAwayFromLiveEdge(page, list);
       const away = `while away ${Date.now()}`;
       await bot.privmsgConfirmed(channel, away);
       await expect(
@@ -497,10 +497,21 @@ test.describe("local Ergo user flow", () => {
       "#weblounge-test",
     );
     try {
-      await secondTab.locator("[data-message-list]").evaluate((element) => {
-        element.scrollTop = 0;
-        element.dispatchEvent(new Event("scroll"));
-      });
+      const scrollSeeds = Array.from(
+        { length: 12 },
+        (_, index) =>
+          `shared read seed ${index} ${"wrapped message ".repeat(12)}`,
+      );
+      for (const seed of scrollSeeds)
+        await bot.privmsgConfirmed("#weblounge-test", seed);
+      await expect(
+        secondTab.getByText(scrollSeeds.at(-1) ?? "", { exact: true }),
+      ).toBeVisible();
+      await scrollAwayFromLiveEdge(
+        secondTab,
+        secondTab.locator("[data-message-list]"),
+        { distance: 40 },
+      );
       await firstTab.bringToFront();
       await firstTab.keyboard.press("End");
       bot.privmsg("#weblounge-test", `read sync ${Date.now()}`);
@@ -598,14 +609,5 @@ async function observedDeliveries(
     () =>
       (window as Window & { observedDeliveries?: string[] })
         .observedDeliveries ?? [],
-  );
-}
-
-async function distanceFromBottom(
-  list: import("@playwright/test").Locator,
-): Promise<number> {
-  return list.evaluate(
-    (element) =>
-      element.scrollHeight - element.scrollTop - element.clientHeight,
   );
 }

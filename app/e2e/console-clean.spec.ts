@@ -6,6 +6,7 @@ import {
   test,
 } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 
 const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
@@ -51,11 +52,7 @@ test("keeps normal desktop and mobile flows console-clean", async ({
     await bot.privmsgConfirmed(channel, finalSeed);
     await expect(page.getByText(finalSeed, { exact: true })).toBeVisible();
     phase = "scroll messages";
-    await list.evaluate((element) => {
-      element.scrollTop = 0;
-      element.dispatchEvent(new Event("scroll"));
-    });
-    await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
+    await scrollAwayFromLiveEdge(page, list);
 
     phase = "send message";
     const sent = `console send ${suffix}`;
@@ -139,13 +136,4 @@ function consoleIssue(message: ConsoleMessage, phase: string): ConsoleIssue {
     text: message.text(),
     type: message.type(),
   };
-}
-
-async function distanceFromBottom(
-  list: import("@playwright/test").Locator,
-): Promise<number> {
-  return list.evaluate(
-    (element) =>
-      element.scrollHeight - element.scrollTop - element.clientHeight,
-  );
 }

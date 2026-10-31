@@ -1,5 +1,6 @@
 import { devices, expect, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 
 const { defaultBrowserType: _iphoneBrowser, ...iphone } =
   devices["iPhone 16 Pro"];
@@ -56,11 +57,9 @@ test.describe("platform shell selection against local Ergo", () => {
         element.setAttribute("data-scroll-probe", "stable");
       });
       await firstComposer.fill("draft survives desktop resize");
-      const initialScroll = await messages.evaluate((element) => {
-        element.scrollTop = Math.floor(
-          (element.scrollHeight - element.clientHeight) / 2,
-        );
-        return element.scrollTop;
+      const initialScroll = await scrollAwayFromLiveEdge(page, messages, {
+        distance: 3,
+        wheelDelta: 10,
       });
       expect(initialScroll).toBeGreaterThan(0);
 

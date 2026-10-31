@@ -158,6 +158,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep newly opened conversations at the live edge through delayed history, stale offset
     delivery, and row remeasurement; preserve touch-pan intent through native pointer cancellation;
     and request mobile history only once per buffer (#66).
+  - [x] Drive transcript scroll-away journeys with user-owned wheel input so live-edge coverage
+    follows the same intent boundary as the app.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.

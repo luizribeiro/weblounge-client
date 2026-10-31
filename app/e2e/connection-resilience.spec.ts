@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 
 const channel = "#weblounge-test";
@@ -33,10 +34,10 @@ test.describe("connection resilience against local Ergo", () => {
           exact: true,
         }),
       ).toHaveCount(1);
-      const scrollTop = await list.evaluate((element) => {
-        element.scrollTop = Math.floor(element.scrollHeight / 3);
-        element.dispatchEvent(new Event("scroll"));
-        return element.scrollTop;
+      const scrollTop = await scrollAwayFromLiveEdge(page, list, {
+        distance: mobile ? 3 : 40,
+        input: mobile ? "touch" : "wheel",
+        wheelDelta: 40,
       });
       expect(scrollTop).toBeGreaterThan(0);
       const scrollAnchor = await visibleScrollAnchor(list);

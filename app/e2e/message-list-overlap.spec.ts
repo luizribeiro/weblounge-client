@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import {
   firstLongMessage,
   harnessHistoryLength,
@@ -25,8 +26,10 @@ test.beforeEach(async ({ page }) => {
     page.getByText(`earlier message ${lastHistoryId}`),
   ).toBeVisible();
   const list = page.locator("[data-message-list]");
-  await list.hover();
-  await page.mouse.wheel(0, -40);
+  await scrollAwayFromLiveEdge(page, list, {
+    distance: 3,
+    wheelDelta: 40,
+  });
   await expect(page.locator("[data-overlap-harness]")).toHaveAttribute(
     "data-live-edge",
     "false",

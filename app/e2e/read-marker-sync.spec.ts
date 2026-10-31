@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 
 test.describe("IRCv3 read markers", () => {
   test.skip(
@@ -55,8 +56,8 @@ test.describe("IRCv3 read markers", () => {
       const secondList = second.locator("[data-message-list]");
       await expect.poll(() => scrollRange(firstList)).toBeGreaterThan(100);
       await expect.poll(() => scrollRange(secondList)).toBeGreaterThan(100);
-      await firstList.evaluate(scrollToStart);
-      await secondList.evaluate(scrollToStart);
+      await scrollAwayFromLiveEdge(first, firstList);
+      await scrollAwayFromLiveEdge(second, secondList);
 
       const mention = `weblounge cross-device marker ${Date.now()}`;
       await bot.privmsgConfirmed("#weblounge-test", mention);
@@ -90,9 +91,4 @@ async function scrollRange(
   return list.evaluate(
     (element) => element.scrollHeight - element.clientHeight,
   );
-}
-
-function scrollToStart(element: HTMLElement): void {
-  element.scrollTop = 0;
-  element.dispatchEvent(new Event("scroll"));
 }
