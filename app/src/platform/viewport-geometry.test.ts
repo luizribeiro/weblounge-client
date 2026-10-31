@@ -4,6 +4,7 @@ import {
   observeViewportGeometry,
   resolveViewportGeometry,
   type ViewportMeasurements,
+  type ViewportObserverOptions,
 } from "./viewport-geometry";
 
 const iphone: ViewportMeasurements = {
@@ -76,6 +77,7 @@ describe("document pan", () => {
 
 describe("viewport geometry observer", () => {
   afterEach(() => {
+    for (const stop of running.splice(0)) stop();
     document.body.replaceChildren();
     vi.restoreAllMocks();
   });
@@ -176,6 +178,18 @@ describe("viewport geometry observer", () => {
     );
   });
 
+  it("settles in a couple of frames after focus changes without an on-screen keyboard", async () => {
+    const frames = vi.spyOn(window, "requestAnimationFrame");
+    observe({ onScreenKeyboard: () => false });
+
+    window.dispatchEvent(new FocusEvent("focusin"));
+    await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
+    for (let frame = 0; frame < 3; frame += 1)
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(frames).toHaveBeenCalledTimes(5);
+  });
+
   it("never treats a nested scroller as a document pan", () => {
     const { viewport } = observe();
     const scrollTo = vi.spyOn(window, "scrollTo");
@@ -196,11 +210,14 @@ describe("viewport geometry observer", () => {
   });
 });
 
-function observe() {
+const running: (() => void)[] = [];
+
+function observe(options?: ViewportObserverOptions) {
   const root = document.createElement("div");
   document.body.append(root);
   const viewport = new FakeVisualViewport(window.innerHeight);
-  const stop = observeViewportGeometry(root, fakeWindow(viewport));
+  const stop = observeViewportGeometry(root, fakeWindow(viewport), options);
+  running.push(stop);
   return { root, viewport, stop };
 }
 

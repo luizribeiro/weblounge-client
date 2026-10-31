@@ -89,7 +89,9 @@ export function installPlatformEnvironment(
       publish();
     },
   );
-  const stopViewportObserver = observeViewportGeometry(root, browserWindow);
+  const stopViewportObserver = observeViewportGeometry(root, browserWindow, {
+    onScreenKeyboard: () => environment().input === "touch",
+  });
   publish();
 
   const controller: PlatformController = {

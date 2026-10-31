@@ -40,9 +40,14 @@ export function documentPanned({
   return scrollY >= 1 || viewport.offsetTop >= 1;
 }
 
+export interface ViewportObserverOptions {
+  readonly onScreenKeyboard?: () => boolean;
+}
+
 export function observeViewportGeometry(
   root: HTMLElement,
   browserWindow: Window,
+  { onScreenKeyboard = () => true }: ViewportObserverOptions = {},
 ): () => void {
   const viewport = browserWindow.visualViewport;
   if (viewport === null || viewport === undefined) return () => {};
@@ -100,7 +105,10 @@ export function observeViewportGeometry(
       event.target !== browserWindow.document
     )
       return;
-    if (event.type === "focusin" || event.type === "focusout")
+    if (
+      (event.type === "focusin" || event.type === "focusout") &&
+      onScreenKeyboard()
+    )
       settleUntil = browserWindow.performance.now() + focusSettleMilliseconds;
     onChange();
   };
