@@ -33,10 +33,9 @@ export function SidebarRow(props: SidebarRowProps) {
       tabIndex={props.tabIndex}
       type="button"
     >
-      <span aria-hidden="true" class={styles.kind}>
-        {props.buffer.kind === "channel" ? "#" : "@"}
-      </span>
-      <Line class={styles.title}>{props.buffer.title.replace(/^#/, "")}</Line>
+      <Line class={styles.title} data-sidebar-name="true">
+        {props.buffer.title}
+      </Line>
       {showBadges() && props.buffer.mentions > 0 ? (
         <Line class={styles.mention}>{props.buffer.mentions}</Line>
       ) : (

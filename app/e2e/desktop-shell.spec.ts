@@ -269,6 +269,10 @@ test.describe("desktop shell against local Ergo", () => {
         "#weblounge-test",
         "weblounge: history on open is working",
       );
+      await seedClients[0]?.privmsgConfirmed(
+        "weblounge",
+        "A direct conversation belongs in the sidebar",
+      );
       await seedClients[2]?.part("#weblounge-test");
 
       const origin = new URL(page.url()).origin;
@@ -301,6 +305,17 @@ test.describe("desktop shell against local Ergo", () => {
         screenshotPage,
         "weblounge: history on open is working",
       );
+      await expect(
+        screenshotPage.getByRole("button", { name: /^ana/u }),
+      ).toBeVisible();
+      const sidebarNameLefts = await screenshotPage
+        .locator("[data-sidebar-name]")
+        .evaluateAll((names) =>
+          names.map((name) => name.getBoundingClientRect().left),
+        );
+      expect(
+        Math.max(...sidebarNameLefts) - Math.min(...sidebarNameLefts),
+      ).toBeLessThan(0.5);
       await mkdir(screenshotDirectory, { recursive: true });
       await screenshotPage.screenshot({
         path: path.join(screenshotDirectory, "desktop-shell-light.png"),

@@ -52,4 +52,26 @@ describe("SidebarRow", () => {
       screen.getByRole("button", { name: "#lounge, 4 unread" }),
     ).toHaveAttribute("data-muted", "true");
   });
+
+  it.each([
+    ["channel", "#ops"],
+    ["channel", "&help"],
+    ["channel", "##linux"],
+    ["direct", "mel"],
+  ] as const)("renders the exact %s name %s without an icon", (kind, title) => {
+    const { container } = render(() => (
+      <SidebarRow
+        active={false}
+        buffer={{ ...buffer, kind, title }}
+        onClick={() => {}}
+        tabIndex={-1}
+      />
+    ));
+
+    expect(screen.getByText(title)).toHaveAttribute(
+      "data-sidebar-name",
+      "true",
+    );
+    expect(container.querySelectorAll("[aria-hidden='true']")).toHaveLength(0);
+  });
 });

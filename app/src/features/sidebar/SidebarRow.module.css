@@ -9,7 +9,7 @@
   font: inherit;
   font-size: var(--wl-density-sidebar-font-size);
   gap: 6px;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   height: var(--wl-density-sidebar-row-height);
   padding: 0 8px;
   text-align: start;
@@ -33,12 +33,6 @@
 
 .muted {
   opacity: 0.55;
-}
-
-.kind {
-  color: var(--wl-color-panel-muted);
-  font-family: var(--wl-font-mono);
-  text-align: center;
 }
 
 .title {
