@@ -7,11 +7,13 @@
   inset-block-start: calc(env(safe-area-inset-top, 0px) + 56px);
   inset-inline-end: 4px;
   margin: 0;
+  max-inline-size: calc(100vw - 8px);
   opacity: 0.88;
+  overflow-wrap: anywhere;
   padding: 4px 6px;
   pointer-events: none;
   position: fixed;
-  white-space: pre;
+  white-space: pre-wrap;
   z-index: 2147483647;
 }
 

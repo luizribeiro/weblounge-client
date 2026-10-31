@@ -241,6 +241,20 @@ test.describe("viewport diagnostics overlay", () => {
     const overlay = page.locator("[data-debug-overlay]");
     await expect(overlay).toContainText("inner: 402×874");
     await expect(overlay).toContainText("data-keyboard: closed");
+    const overlayBounds = await overlay.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        contentOverflow: element.scrollWidth - element.clientWidth,
+        left: bounds.left,
+        right: bounds.right,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(overlayBounds.left).toBeGreaterThanOrEqual(3);
+    expect(overlayBounds.right).toBeLessThanOrEqual(
+      overlayBounds.viewportWidth - 3,
+    );
+    expect(overlayBounds.contentOverflow).toBeLessThanOrEqual(0);
     await page
       .getByRole("textbox", { name: "Message #weblounge-test" })
       .focus();
