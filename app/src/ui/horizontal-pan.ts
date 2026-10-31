@@ -45,7 +45,6 @@ interface PanState {
   readonly width: number;
   readonly debug: GestureDebugHandle | undefined;
   axis: "pending" | "horizontal";
-  captured: boolean;
   originX: number;
   claimedAt: number;
   lastX: number;
@@ -75,15 +74,6 @@ export function createHorizontalPan(
     );
   const release = (current: PanState) => {
     current.releaseTouchMove();
-    try {
-      if (
-        current.captured &&
-        current.target?.hasPointerCapture(current.pointerId) === true
-      )
-        current.target.releasePointerCapture(current.pointerId);
-    } catch {
-      // Synthetic pointer fixtures do not establish browser capture.
-    }
   };
   const emptyRelease = (): PanRelease => ({
     averageVelocity: 0,
@@ -149,7 +139,6 @@ export function createHorizontalPan(
       if (state !== undefined || event.isPrimary === false) return;
       state = {
         axis: "pending",
-        captured: false,
         claimedAt: event.timeStamp,
         debug:
           options.debugRegion === undefined
@@ -193,12 +182,6 @@ export function createHorizontalPan(
         current.samples = [{ time: event.timeStamp, x: event.clientX }];
         current.releaseTouchMove = claimHorizontalTouchMove(current.target);
         current.debug?.claim(deltaX, deltaY, event.timeStamp);
-        try {
-          current.target?.setPointerCapture(current.pointerId);
-          current.captured = current.target !== null;
-        } catch {
-          // Synthetic pointer fixtures do not establish browser capture.
-        }
       }
       event.preventDefault();
       current.lastX = event.clientX;
@@ -242,7 +225,6 @@ export function createHorizontalPan(
         return;
       if (current.axis === "horizontal") {
         current.debug?.lostCapture();
-        finish(current, current.lastX, current.lastTime, false);
       } else {
         state = undefined;
         release(current);

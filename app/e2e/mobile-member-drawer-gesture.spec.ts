@@ -58,6 +58,36 @@ test("member drawer pans, springs back, and closes before the chat", async ({
   await expect(page.locator("[data-mobile-chats]")).toBeVisible();
 });
 
+test("member drawer pan survives bubbling child capture loss", async ({
+  page,
+}) => {
+  await openDrawer(page);
+  await page.evaluate(() => {
+    const target = document.elementFromPoint(150, 300);
+    if (target === null) throw new Error("drawer gesture target is missing");
+    const dispatch = (type: string, clientX: number, timeStamp: number) => {
+      const event = new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY: 300,
+        isPrimary: true,
+        pointerId: 21,
+        pointerType: "touch",
+      });
+      Object.defineProperty(event, "timeStamp", { value: timeStamp });
+      target.dispatchEvent(event);
+    };
+    dispatch("pointerdown", 150, 1_000);
+    dispatch("pointermove", 165, 1_010);
+    dispatch("lostpointercapture", 165, 1_020);
+    dispatch("pointermove", 350, 1_100);
+    dispatch("pointerup", 350, 1_110);
+  });
+
+  await expect(page.getByRole("dialog", { name: "Members" })).toHaveCount(0);
+});
+
 test("opens the channel drawer from a protected mid-screen pan", async ({
   page,
 }) => {

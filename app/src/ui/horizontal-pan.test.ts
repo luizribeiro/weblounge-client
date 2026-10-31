@@ -114,25 +114,27 @@ it("treats pointer cancellation after claim as a release", () => {
   expect(gesture.active()).toBe(false);
 });
 
-it("settles from the last movement when pointer capture is lost", () => {
-  const cancel = vi.fn();
+it("keeps following a claimed pan after child capture is lost", () => {
+  const shell = document.createElement("main");
+  const row = document.createElement("div");
+  shell.append(row);
+  const commit = vi.fn();
   const gesture = createHorizontalPan({
     commitRatio: 0.5,
     commitVelocity: 0.25,
     direction: "right",
-    onCancel: cancel,
-    onCommit: vi.fn(),
+    onCancel: vi.fn(),
+    onCommit: commit,
     onProgress: vi.fn(),
   });
 
-  gesture.begin(pointer(6, 0, 100, 0), 300);
-  gesture.move(pointer(6, 20, 100, 10));
-  gesture.move(pointer(6, 80, 100, 500));
-  gesture.lostCapture(pointer(6, 0, 0, 900));
+  gesture.begin(pointer(6, 0, 100, 0, undefined, row, shell), 300);
+  gesture.move(pointer(6, 20, 100, 10, undefined, row, shell));
+  gesture.lostCapture(pointer(6, 20, 100, 20, undefined, row, shell));
+  gesture.move(pointer(6, 200, 100, 500, undefined, row, shell));
+  gesture.end(pointer(6, 200, 100, 600, undefined, row, shell));
 
-  expect(cancel).toHaveBeenCalledWith(
-    expect.objectContaining({ distance: 60, releaseVelocity: 0 }),
-  );
+  expect(commit).toHaveBeenCalledOnce();
   expect(gesture.active()).toBe(false);
 });
 
@@ -170,14 +172,17 @@ function pointer(
   clientY: number,
   timeStamp: number,
   isPrimary?: boolean,
+  target: EventTarget | null = null,
+  currentTarget: EventTarget | null = null,
 ): PointerEvent {
   return {
     clientX,
     clientY,
-    currentTarget: null,
+    currentTarget,
     isPrimary,
     pointerId,
     preventDefault: vi.fn(),
+    target,
     timeStamp,
   } as unknown as PointerEvent;
 }

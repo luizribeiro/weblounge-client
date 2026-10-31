@@ -49,6 +49,16 @@ test("mobile back gesture survives diagonal drift after locking", async ({
   await expectAligned(page);
 });
 
+test("mobile back gesture survives bubbling child capture loss", async ({
+  page,
+}) => {
+  await openChat(page);
+  await panThroughCaptureLoss(page, 100, 300, 390);
+
+  await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  await expectAligned(page);
+});
+
 test("mobile back uses release velocity and direction", async ({ page }) => {
   await openChat(page);
   await pointerSequence(page, [
@@ -393,6 +403,39 @@ async function panOverTranscript(
       dispatch("pointerup", endX, 1_000 + duration);
     },
     { clientY, duration, endX },
+  );
+}
+
+async function panThroughCaptureLoss(
+  page: Page,
+  startX: number,
+  clientY: number,
+  endX: number,
+): Promise<void> {
+  await page.evaluate(
+    ({ clientY, endX, startX }) => {
+      const target = document.elementFromPoint(startX, clientY);
+      if (target === null) throw new Error("gesture start target is missing");
+      const dispatch = (type: string, clientX: number, timeStamp: number) => {
+        const event = new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          isPrimary: true,
+          pointerId: 51,
+          pointerType: "touch",
+        });
+        Object.defineProperty(event, "timeStamp", { value: timeStamp });
+        target.dispatchEvent(event);
+      };
+      dispatch("pointerdown", startX, 1_000);
+      dispatch("pointermove", startX + 15, 1_010);
+      dispatch("lostpointercapture", startX + 15, 1_020);
+      dispatch("pointermove", endX, 1_100);
+      dispatch("pointerup", endX, 1_110);
+    },
+    { clientY, endX, startX },
   );
 }
 
