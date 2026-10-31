@@ -65,3 +65,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 57 | 2026-10-30 | Mobile: the Back button in a chat pops instantly; it should animate out like the push animates in. | fixed, local (the click event was entering the pop's `instant` parameter; button, keyboard, and Android history Back now use the 230ms pop) |
 | 58 | 2026-10-30 | The mention highlight background should fill the transcript width (no side margin). | fixed, local (mention, hover, and keyboard-selected row surfaces are full-bleed while content keeps its inset) |
 | 59 | 2026-10-30 | Mobile push/pop: the chats list should stay still while the chat slides over it (in, out, and swipe gestures alike). | queued (needs a recording) |
+| 60 | 2026-10-30 | Mobile: releasing a swipe-back mid-way jumps straight to the end state instead of animating there. | in progress (with #59) |
