@@ -98,14 +98,23 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   values, each event re-measures on following frames until geometry holds for two of them.
 - `visualViewport.height` is geometry, not animation progress: WKWebView consumes the keyboard's
   final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
-  On open, the first height step commits final layout and synchronously anchors the transcript, then
-  a transform-only Web Animation moves the transcript/composer wrapper from its old position to
-  zero while the header stays fixed. On focusout, close motion waits one frame to confirm focus did
-  not return to a keyboard field, then starts before the late height step. A resize or refocus that
-  still shows open geometry cancels the close at the open position. Final layout commits after a
-  real close motion, and an intervening geometry step retargets from the current computed transform.
-  A nonzero visual-viewport offset is first undone and never compounded with app motion.
-- iOS 26 uses a 383ms sampled critically damped spring based on [Telegram's matching keyboard
+  The first open signal starts compositor motion while `#root` remains at its closed geometry;
+  close likewise retains open geometry. The header and transcript scroller box therefore stay
+  fixed. Only the composer and an inner transcript-row layer move, with enough pixel overscan above
+  the viewport to keep close motion filled with rows. The shell clips horizontally but permits
+  vertical paint over the area the keyboard is covering, so neither moving surface is cut at the
+  target app height. When motion finishes, target root geometry, live-edge anchoring, and removal of
+  the compensating transforms commit together before paint.
+- The full WebKit-301108-corrected closed height is cached per orientation when open geometry is
+  measured. Close distance is that cached height minus open height; measuring it must never resize
+  the live transcript. A late close viewport step only verifies the target and does not delay the
+  layout commit. The standalone document keeps its corrected full height through that commit, so a
+  status-bar-short intermediate layout cannot paint. On focusout, close motion still waits one frame
+  to confirm focus did not return to a keyboard field; a resize or refocus that still proves open
+  geometry cancels the close at the open position. A nonzero visual-viewport offset is first undone
+  and never compounded with app motion.
+- iOS 26 uses a 333ms sampled critically damped spring, front-loaded to match the on-device keyboard
+  reaching about 95% of its travel in 200ms, based on [Telegram's matching keyboard
   animation](https://github.com/TelegramMessenger/Telegram-iOS/blob/master/submodules/Display/Source/CAAnimationUtils.swift);
   earlier iOS uses 500ms `cubic-bezier(0.38, 0.7, 0.125, 1)`. Android requests
   `virtualKeyboard.overlaysContent`, follows `geometrychange`, and uses 285ms
