@@ -5,11 +5,12 @@ export interface ViewportMeasurements {
   readonly screenHeight: number;
   readonly safeTop: number;
   readonly standalone: boolean;
-  readonly viewport: Pick<VisualViewport, "height" | "scale">;
+  readonly viewport: Pick<VisualViewport, "height" | "offsetTop" | "scale">;
 }
 
 export interface ViewportGeometry {
   readonly appHeight: number;
+  readonly appTop: number;
   readonly keyboard: KeyboardState;
 }
 
@@ -23,9 +24,13 @@ export function resolveViewportGeometry(
   const { viewport } = measurements;
   const zoomed = Math.abs(viewport.scale - 1) > 0.01;
   if (zoomed || fullHeight - viewport.height <= keyboardThreshold) {
-    return { appHeight: fullHeight, keyboard: "closed" };
+    return { appHeight: fullHeight, appTop: 0, keyboard: "closed" };
   }
-  return { appHeight: viewport.height, keyboard: "open" };
+  return {
+    appHeight: viewport.height,
+    appTop: viewport.offsetTop,
+    keyboard: "open",
+  };
 }
 
 // iOS standalone apps with a black-translucent status bar report a layout
@@ -54,19 +59,23 @@ export function observeViewportGeometry(
     });
     root.dataset.keyboard = geometry.keyboard;
     root.style.setProperty("--wl-app-height", `${geometry.appHeight}px`);
+    root.style.setProperty("--wl-app-top", `${geometry.appTop}px`);
   };
   const remeasure = () => {
     safeTop = isStandalone() ? measureSafeTop(root) : 0;
     update();
   };
   viewport.addEventListener("resize", update);
+  viewport.addEventListener("scroll", update);
   browserWindow.addEventListener("resize", remeasure);
   remeasure();
   return () => {
     viewport.removeEventListener("resize", update);
+    viewport.removeEventListener("scroll", update);
     browserWindow.removeEventListener("resize", remeasure);
     delete root.dataset.keyboard;
     root.style.removeProperty("--wl-app-height");
+    root.style.removeProperty("--wl-app-top");
   };
 }
 

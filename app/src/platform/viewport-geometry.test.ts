@@ -10,7 +10,7 @@ const iphoneStandalone: ViewportMeasurements = {
   screenHeight: 874,
   safeTop: 62,
   standalone: true,
-  viewport: { height: 812, scale: 1 },
+  viewport: { height: 812, offsetTop: 0, scale: 1 },
 };
 
 const iphoneTab: ViewportMeasurements = {
@@ -18,13 +18,14 @@ const iphoneTab: ViewportMeasurements = {
   screenHeight: 874,
   safeTop: 62,
   standalone: false,
-  viewport: { height: 760, scale: 1 },
+  viewport: { height: 760, offsetTop: 0, scale: 1 },
 };
 
 describe("viewport geometry", () => {
   it("fills the screen when iOS standalone shortens the layout viewport by the status bar", () => {
     expect(resolveViewportGeometry(iphoneStandalone)).toEqual({
       appHeight: 874,
+      appTop: 0,
       keyboard: "closed",
     });
     expect(
@@ -35,6 +36,7 @@ describe("viewport geometry", () => {
   it("keeps the layout viewport in a browser tab even when the screen is taller", () => {
     expect(resolveViewportGeometry(iphoneTab)).toEqual({
       appHeight: 760,
+      appTop: 0,
       keyboard: "closed",
     });
   });
@@ -47,9 +49,9 @@ describe("viewport geometry", () => {
       resolveViewportGeometry({
         ...iphoneStandalone,
         layoutHeight: 600,
-        viewport: { height: 600, scale: 1 },
+        viewport: { height: 600, offsetTop: 0, scale: 1 },
       }),
-    ).toEqual({ appHeight: 600, keyboard: "closed" });
+    ).toEqual({ appHeight: 600, appTop: 0, keyboard: "closed" });
     expect(
       resolveViewportGeometry({ ...iphoneStandalone, safeTop: 0 }),
     ).toMatchObject({ appHeight: 812 });
@@ -60,19 +62,19 @@ describe("viewport geometry", () => {
     expect(
       resolveViewportGeometry({
         ...full,
-        viewport: { height: 754, scale: 1 },
+        viewport: { height: 754, offsetTop: 0, scale: 1 },
       }),
-    ).toEqual({ appHeight: 874, keyboard: "closed" });
+    ).toEqual({ appHeight: 874, appTop: 0, keyboard: "closed" });
     expect(
       resolveViewportGeometry({
         ...full,
-        viewport: { height: 753, scale: 1 },
+        viewport: { height: 753, offsetTop: 0, scale: 1 },
       }),
-    ).toEqual({ appHeight: 753, keyboard: "open" });
+    ).toEqual({ appHeight: 753, appTop: 0, keyboard: "open" });
     expect(
       resolveViewportGeometry({
         ...full,
-        viewport: { height: 900, scale: 1 },
+        viewport: { height: 900, offsetTop: 0, scale: 1 },
       }),
     ).toMatchObject({ keyboard: "closed" });
   });
@@ -81,24 +83,33 @@ describe("viewport geometry", () => {
     expect(
       resolveViewportGeometry({
         ...iphoneStandalone,
-        viewport: { height: 476, scale: 1 },
+        viewport: { height: 476, offsetTop: 0, scale: 1 },
       }),
-    ).toEqual({ appHeight: 476, keyboard: "open" });
+    ).toEqual({ appHeight: 476, appTop: 0, keyboard: "open" });
     expect(
       resolveViewportGeometry({
         ...iphoneTab,
-        viewport: { height: 420, scale: 1 },
+        viewport: { height: 420, offsetTop: 0, scale: 1 },
       }),
-    ).toEqual({ appHeight: 420, keyboard: "open" });
+    ).toEqual({ appHeight: 420, appTop: 0, keyboard: "open" });
+  });
+
+  it("follows iOS panning the visual viewport while the keyboard is open", () => {
+    expect(
+      resolveViewportGeometry({
+        ...iphoneStandalone,
+        viewport: { height: 476, offsetTop: 336, scale: 1 },
+      }),
+    ).toEqual({ appHeight: 476, appTop: 336, keyboard: "open" });
   });
 
   it("does not mistake pinch zoom for a keyboard", () => {
     expect(
       resolveViewportGeometry({
         ...iphoneStandalone,
-        viewport: { height: 406, scale: 2 },
+        viewport: { height: 406, offsetTop: 200, scale: 2 },
       }),
-    ).toEqual({ appHeight: 874, keyboard: "closed" });
+    ).toEqual({ appHeight: 874, appTop: 0, keyboard: "closed" });
   });
 });
 
@@ -107,7 +118,7 @@ describe("viewport geometry observer", () => {
     document.body.replaceChildren();
   });
 
-  it("publishes geometry on viewport resize and clears it on dispose", () => {
+  it("publishes geometry on viewport resize and pan, and clears it on dispose", () => {
     const root = document.createElement("div");
     document.body.append(root);
     const viewport = new FakeVisualViewport(window.innerHeight);
@@ -119,16 +130,20 @@ describe("viewport geometry observer", () => {
       `${window.innerHeight}px`,
     );
 
-    viewport.set(window.innerHeight - 300);
+    viewport.set(window.innerHeight - 300, 0, "resize");
     expect(root.dataset.keyboard).toBe("open");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 300}px`,
     );
 
+    viewport.set(window.innerHeight - 300, 120, "scroll");
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("120px");
+
     stop();
     expect(root.dataset.keyboard).toBeUndefined();
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
-    viewport.set(window.innerHeight - 300);
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("");
+    viewport.set(window.innerHeight - 300, 0, "resize");
     expect(root.dataset.keyboard).toBeUndefined();
   });
 
@@ -142,6 +157,7 @@ describe("viewport geometry observer", () => {
 
 class FakeVisualViewport extends EventTarget {
   height: number;
+  offsetTop = 0;
   readonly scale = 1;
 
   constructor(height: number) {
@@ -149,9 +165,10 @@ class FakeVisualViewport extends EventTarget {
     this.height = height;
   }
 
-  set(height: number): void {
+  set(height: number, offsetTop: number, event: "resize" | "scroll"): void {
     this.height = height;
-    this.dispatchEvent(new Event("resize"));
+    this.offsetTop = offsetTop;
+    this.dispatchEvent(new Event(event));
   }
 }
 

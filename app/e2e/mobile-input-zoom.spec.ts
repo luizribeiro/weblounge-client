@@ -109,6 +109,32 @@ test.describe("iOS standalone viewport geometry", () => {
     await expect.poll(() => shellBottomError(page, 874)).toBeLessThanOrEqual(1);
     expect(await documentScrollAfterAttempts(page)).toBe(0);
   });
+
+  test("keeps the composer on an open keyboard while iOS pans", async ({
+    page,
+  }) => {
+    await openChannel(page);
+    const root = page.locator("#root");
+    const composer = page.locator("[data-composer]");
+    await page
+      .getByRole("textbox", { name: "Message #weblounge-test" })
+      .focus();
+
+    await setVisualViewport(page, 476, 0);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    await expect.poll(() => shellBottomError(page, 476)).toBeLessThanOrEqual(1);
+
+    await setVisualViewport(page, 476, 336);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    expect(await documentScrollAfterAttempts(page)).toBe(0);
+    await expect(composer).toHaveCSS("padding-bottom", "14px");
+
+    await setVisualViewport(page, 812, 0);
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await expect.poll(() => shellBottomError(page, 874)).toBeLessThanOrEqual(1);
+  });
 });
 
 async function openChannel(page: Page) {
@@ -165,6 +191,22 @@ async function emulateSafeTop(page: Page, inset: number): Promise<void> {
   }, inset);
 }
 
+async function setVisualViewport(
+  page: Page,
+  height: number,
+  offsetTop: number,
+): Promise<void> {
+  await page.evaluate(
+    ([nextHeight, nextOffsetTop]) => {
+      const setViewport = window.__setVisualViewport;
+      if (setViewport === undefined)
+        throw new Error("viewport hook is missing");
+      setViewport(nextHeight, nextOffsetTop);
+    },
+    [height, offsetTop] as const,
+  );
+}
+
 async function shellBottomError(
   page: Page,
   expectedBottom: number,
@@ -176,6 +218,18 @@ async function shellBottomError(
         Math.abs(shell.getBoundingClientRect().bottom - bottom),
       expectedBottom,
     );
+}
+
+async function composerKeyboardGap(page: Page): Promise<number> {
+  return page.locator("[data-composer]").evaluate((composer) => {
+    const viewport = window.visualViewport;
+    if (viewport === null) throw new Error("visual viewport is missing");
+    return Math.abs(
+      composer.getBoundingClientRect().bottom -
+        viewport.offsetTop -
+        viewport.height,
+    );
+  });
 }
 
 async function documentScrollAfterAttempts(page: Page): Promise<number> {
