@@ -24,9 +24,9 @@ test.beforeEach(async ({ page }) => {
   await expect(
     page.getByText(`earlier message ${lastHistoryId}`),
   ).toBeVisible();
-  await page.locator("[data-message-list]").evaluate((element) => {
-    element.scrollTop = element.scrollHeight - element.clientHeight - 40;
-  });
+  const list = page.locator("[data-message-list]");
+  await list.hover();
+  await page.mouse.wheel(0, -40);
   await expect(page.locator("[data-overlap-harness]")).toHaveAttribute(
     "data-live-edge",
     "false",

@@ -97,6 +97,12 @@ export function MobileShell(props: MobileShellProps) {
   let shellElement: HTMLElement | undefined;
   let chatsStable = true;
   let returnScrollTop = 0;
+  const requestedHistory = new Set<number>();
+  const requestHistoryOnce = (bufferId: number) => {
+    if (requestedHistory.has(bufferId)) return;
+    requestedHistory.add(bufferId);
+    props.onLoadHistory(bufferId);
+  };
 
   createEffect(() => {
     const nextInitialBufferId = props.initialBufferId;
@@ -525,7 +531,7 @@ export function MobileShell(props: MobileShellProps) {
             networks={props.networks}
             onBack={requestBack}
             onFilter={setFilter}
-            onLoadHistory={props.onLoadHistory}
+            onLoadHistory={requestHistoryOnce}
             onMarkRead={props.onMarkRead}
             onOpen={(bufferId, currentScrollTop) =>
               open(bufferId, false, currentScrollTop)

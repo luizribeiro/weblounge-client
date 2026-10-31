@@ -55,11 +55,10 @@ for (const shell of shells) {
 
       const list = page.locator("[data-message-list]");
       const older = [...seeded.older, seeded.ownMultiline];
+      await list.hover();
       await expect
         .poll(async () => {
-          await list.evaluate((element) => {
-            element.scrollTop = 0;
-          });
+          await page.mouse.wheel(0, -100_000);
           return renderedRowText(list, "first");
         })
         .toBe(older[0]);

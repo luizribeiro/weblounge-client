@@ -102,6 +102,7 @@ it("anchors the viewport when history rows are prepended", async () => {
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 40;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -246,6 +247,7 @@ it("anchors visible content when an overscanned row above it grows", async () =>
   for (const observer of observers) observer.flushTarget(list, 120);
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 600;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -485,6 +487,7 @@ it("offers new messages without moving a scrolled-away viewport", async () => {
     scrollHeight: { configurable: true, value: 1_300 },
   });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -531,6 +534,7 @@ it("reports the live edge from the bottom sentinel", async () => {
   const observer = observers[0];
   if (observer === undefined) throw new Error("live-edge observer is missing");
 
+  fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -572,6 +576,8 @@ it("reports the live edge once the virtualizer catches up with the sentinel", as
     scrollHeight: { configurable: true, value: 1_300 },
   });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  onLiveEdgeChange.mockClear();
+  fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -579,7 +585,7 @@ it("reports the live edge once the virtualizer catches up with the sentinel", as
   if (observer === undefined) throw new Error("live-edge observer is missing");
   observer.flush(false);
   observer.flush(true);
-  expect(onLiveEdgeChange.mock.calls).toEqual([[false], [false]]);
+  expect(onLiveEdgeChange.mock.calls).toEqual([[false]]);
 
   list.scrollTop = 800;
   list.dispatchEvent(new Event("scroll"));
@@ -590,10 +596,20 @@ it("reports the live edge once the virtualizer catches up with the sentinel", as
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  expect(onLiveEdgeChange).not.toHaveBeenCalled();
+  expect(onLiveEdgeChange).toHaveBeenLastCalledWith(false);
 });
 
 it("keeps following through a transient one-row render gap", async () => {
+  const observers: ControlledIntersectionObserver[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class extends ControlledIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
   const [messages, setMessages] = createSignal([message]);
   const { container } = render(() => <MessageList messages={messages()} />);
   const list = container.querySelector<HTMLOListElement>("[data-message-list]");
@@ -602,6 +618,9 @@ it("keeps following through a transient one-row render gap", async () => {
     clientHeight: { configurable: true, value: 500 },
     scrollHeight: { configurable: true, value: 1_300 },
   });
+  const observer = observers[0];
+  if (observer === undefined) throw new Error("live-edge observer is missing");
+  observer.flush(false);
   setMessages([
     message,
     { ...message, id: 2, text: "burst arrival", received_at_ms: 2 },

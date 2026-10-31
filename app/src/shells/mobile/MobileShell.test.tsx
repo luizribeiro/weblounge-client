@@ -150,6 +150,10 @@ it("keeps the chat list mounted without reloading history", async () => {
   expect(screen.getByRole("button", { name: "mel" })).toBe(chatRow);
   expect(loadHistory).toHaveBeenCalledTimes(1);
   expect(document.querySelectorAll("[data-mobile-chat]")).toHaveLength(0);
+  fireEvent.click(chatRow);
+  await settledMotion();
+  expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
+  expect(loadHistory).toHaveBeenCalledTimes(1);
 });
 
 it("commits a browser drawer close immediately under reduced motion", () => {

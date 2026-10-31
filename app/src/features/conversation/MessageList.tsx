@@ -23,6 +23,7 @@ import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
+import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import styles from "./MessageList.module.css";
 import { MessageText } from "./MessageText";
@@ -110,6 +111,26 @@ export function MessageList(props: MessageListProps) {
     if (live) setUnseen(0);
     props.onLiveEdgeChange?.(live);
   };
+  const userScrollIntent = new ScrollIntentTracker(() => list?.scrollTop ?? 0, {
+    request: (callback) => window.requestAnimationFrame(callback),
+    cancel: (handle) => window.cancelAnimationFrame(handle),
+  });
+  const markPointerScrollIntent = (event: PointerEvent) => {
+    if (event.isPrimary && event.button === 0) userScrollIntent.beginPointer();
+  };
+  const endPointerScrollIntent = () => userScrollIntent.endPointer();
+  const cancelPointerScrollIntent = (event: PointerEvent) => {
+    if (event.pointerType === "touch") userScrollIntent.cancelPointer();
+    else userScrollIntent.endPointer();
+  };
+  const markTouchScrollIntent = () => userScrollIntent.beginTouch();
+  const endTouchScrollIntent = (event: TouchEvent) => {
+    if (event.touches.length === 0) userScrollIntent.endTouch();
+  };
+  const markWheelScrollIntent = () => userScrollIntent.beginDiscrete();
+  const markScrollKeyIntent = (event: KeyboardEvent) => {
+    if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
+  };
   const virtualizer = createVirtualizer<HTMLOListElement, HTMLLIElement>({
     get count() {
       return rows().length;
@@ -161,10 +182,9 @@ export function MessageList(props: MessageListProps) {
     anchorTo: "end",
     followOnAppend: true,
     scrollEndThreshold: liveEdgeTolerance,
-    // The sentinel can report before the virtualizer has seen the scroll that
-    // reached the end, and stays visible afterwards, so arrival at the end is
-    // also taken from the virtualizer. Leaving stays sentinel-driven so a
-    // transient gap during an append cannot freeze the read boundary.
+    // The sentinel can report before the virtualizer has seen a scroll that
+    // reached the end. Arrival can therefore come from either source, while
+    // only user input can leave the edge; layout gaps must not freeze it.
     onChange: (instance) => {
       if (!atLiveEdge() && instance.isAtEnd()) setLiveEdge(true);
     },
@@ -184,10 +204,14 @@ export function MessageList(props: MessageListProps) {
     if (measured > 0) virtualizer.resizeItem(index, measured);
     virtualizer.measureElement(element);
   };
-  const reportLiveEdge = (sentinelVisible: boolean) =>
-    setLiveEdge(sentinelVisible && virtualizer.isAtEnd());
+  const reportLiveEdge = (sentinelVisible: boolean) => {
+    if (sentinelVisible && virtualizer.isAtEnd()) {
+      setLiveEdge(true);
+    }
+  };
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
+    setLiveEdge(true);
     virtualizer.scrollToEnd();
   };
   const selectLastOwn = () => {
@@ -212,6 +236,8 @@ export function MessageList(props: MessageListProps) {
       boundaryFrozen = false;
       renderedCount = 0;
       setUnseen(0);
+      setLiveEdge(true);
+      virtualizer.scrollToEnd();
     }
   });
   createEffect(() => {
@@ -233,6 +259,8 @@ export function MessageList(props: MessageListProps) {
     if (messages.length > previousCount && !atLiveEdge())
       setUnseen((count) => count + messages.length - previousCount);
     renderedCount = messages.length;
+    if (messages.length !== previousCount && atLiveEdge())
+      virtualizer.scrollToEnd();
   });
   onMount(() => {
     const fonts = document.fonts;
@@ -259,6 +287,15 @@ export function MessageList(props: MessageListProps) {
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
+      list?.removeEventListener("keydown", markScrollKeyIntent);
+      list?.removeEventListener("pointerdown", markPointerScrollIntent);
+      list?.removeEventListener("touchstart", markTouchScrollIntent);
+      list?.removeEventListener("wheel", markWheelScrollIntent);
+      window.removeEventListener("pointerup", endPointerScrollIntent);
+      window.removeEventListener("pointercancel", cancelPointerScrollIntent);
+      window.removeEventListener("touchend", endTouchScrollIntent);
+      window.removeEventListener("touchcancel", endTouchScrollIntent);
+      userScrollIntent.dispose();
     });
     queueMicrotask(jumpToBottom);
   });
@@ -270,6 +307,15 @@ export function MessageList(props: MessageListProps) {
         class={styles.list}
         data-message-list="true"
         data-presentation={props.presentation ?? "desktop"}
+        onScroll={(event) => {
+          if (!userScrollIntent.consumeScroll()) return;
+          const element = event.currentTarget;
+          setLiveEdge(
+            element.scrollHeight - element.scrollTop - element.clientHeight <=
+              liveEdgeTolerance,
+          );
+        }}
+        onScrollEnd={() => userScrollIntent.settle()}
         onKeyDown={(event) => {
           if (event.key !== "End") return;
           event.preventDefault();
@@ -277,6 +323,28 @@ export function MessageList(props: MessageListProps) {
         }}
         ref={(element) => {
           list = element;
+          element.addEventListener("keydown", markScrollKeyIntent);
+          element.addEventListener("pointerdown", markPointerScrollIntent, {
+            passive: true,
+          });
+          element.addEventListener("touchstart", markTouchScrollIntent, {
+            passive: true,
+          });
+          element.addEventListener("wheel", markWheelScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("pointerup", endPointerScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("pointercancel", cancelPointerScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("touchend", endTouchScrollIntent, {
+            passive: true,
+          });
+          window.addEventListener("touchcancel", endTouchScrollIntent, {
+            passive: true,
+          });
         }}
         style={{ "--wl-message-time-column": formattedTimeColumnWidth() }}
         tabindex="0"
@@ -341,6 +409,15 @@ export function MessageList(props: MessageListProps) {
     </div>
   );
 }
+
+const scrollKeys = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+]);
 
 function TimelineRowView(props: {
   readonly index: number;
