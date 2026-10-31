@@ -116,6 +116,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Fix `#root` to the platform-owned app geometry: add back the iOS standalone status-bar
     shortfall of the layout viewport, and size to and offset by the visual viewport while the
     keyboard is open so iOS's pan cannot lift the composer or scroll the page (#53, awaiting device).
+  - [x] Replace the status-bar shortfall with WebKit's own full-screen viewport (standalone `html`
+    at least screen tall), undo iOS keyboard pans instead of following them, re-measure on the
+    frames after viewport events, and add the `?debug=viewport` overlay (awaiting device).
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.
