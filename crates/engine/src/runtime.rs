@@ -40,8 +40,13 @@ struct RunningNetwork {
     model: NetworkModel,
     connection_attempt: u32,
     device_online: bool,
-    pending_sends: VecDeque<PendingSend>,
+    pending_sends: VecDeque<QueuedSend>,
     flushing_sends: bool,
+}
+
+struct QueuedSend {
+    pending: PendingSend,
+    retry_if_disconnected: bool,
 }
 
 struct JoinTarget {
@@ -670,8 +675,12 @@ impl Runtime {
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
         };
-        running.pending_sends.push_back(pending);
-        let should_flush = running.model.is_online() && !running.flushing_sends;
+        let retry_if_disconnected = !running.device_online || running.model.is_online();
+        running.pending_sends.push_back(QueuedSend {
+            pending,
+            retry_if_disconnected,
+        });
+        let should_flush = running.device_online && !running.flushing_sends;
         if should_flush {
             running.flushing_sends = true;
         }
@@ -1341,7 +1350,7 @@ async fn flush_pending_sends(
     instance: u64,
 ) {
     loop {
-        let pending = {
+        let queued = {
             let mut state = lock(state);
             let Some(running) = state
                 .network
@@ -1350,17 +1359,17 @@ async fn flush_pending_sends(
             else {
                 return;
             };
-            if !running.model.is_online() {
+            if !running.device_online {
                 running.flushing_sends = false;
                 return;
             }
-            let Some(pending) = running.pending_sends.pop_front() else {
+            let Some(queued) = running.pending_sends.pop_front() else {
                 running.flushing_sends = false;
                 return;
             };
-            pending
+            queued
         };
-        let result = send(client, &pending).await;
+        let result = send(client, &queued.pending).await;
         let events = {
             let mut state = lock(state);
             let Some(running) = state
@@ -1371,13 +1380,19 @@ async fn flush_pending_sends(
                 return;
             };
             match result {
-                Ok(sent) => running.model.confirm_send(&pending, &sent, &client.state()),
-                Err(SendError::Offline) => {
-                    running.pending_sends.push_front(pending);
+                Ok(sent) => running
+                    .model
+                    .confirm_send(&queued.pending, &sent, &client.state()),
+                Err(SendError::Offline) if queued.retry_if_disconnected => {
+                    running.pending_sends.push_front(queued);
                     running.flushing_sends = false;
                     return;
                 }
-                Err(error) => Some(running.model.fail_send(&pending, error.message_key())),
+                Err(error) => Some(
+                    running
+                        .model
+                        .fail_send(&queued.pending, error.message_key()),
+                ),
             }
         };
         for event in events.into_iter().flatten() {
@@ -2219,6 +2234,19 @@ fn process_disconnect(
     disconnected: &papo::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
+    let mut retained = VecDeque::new();
+    for queued in running.pending_sends.drain(..) {
+        if queued.retry_if_disconnected {
+            retained.push_back(queued);
+        } else {
+            output.extend(
+                running
+                    .model
+                    .fail_send(&queued.pending, "engine.send_failed"),
+            );
+        }
+    }
+    running.pending_sends = retained;
     let hosted_authentication_failed = running.authentication_kind
         == AuthenticationKind::HostedOAuth
         && is_sasl_failure(disconnected);
@@ -5406,6 +5434,95 @@ mod tests {
         process_event(&state, &outbound, &client, 1, connected);
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued one");
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued two");
+    }
+
+    #[tokio::test]
+    async fn direct_send_during_reconnect_fails_if_registration_disconnects() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room account :WebLounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        wire.server(":alice!a@host JOIN #room alice :Alice").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let direct = client.direct("alice").await.expect("shared user is direct");
+
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, connected);
+        let buffer_id = {
+            let mut state = lock(&state);
+            state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model
+                .open_direct(direct.nick(), DirectAvailability::Guarded(direct))
+                .0
+        };
+        _ = collect(&mut receiver);
+
+        wire.close().await;
+        let disconnected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Disconnected(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, disconnected);
+        client.reconnect().await.expect("manual reconnect starts");
+
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "reconnecting-direct".into(),
+            request: EngineRequest::SendMessage {
+                buffer_id,
+                text: "do not leave this pending".into(),
+            },
+        });
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].delivery == MessageDelivery::Optimistic
+        )));
+
+        assert_eq!(wire.next_sent().await, "CAP LS 302");
+        assert_eq!(wire.next_sent().await, "NICK weblounge");
+        assert_eq!(wire.next_sent().await, "USER weblounge 0 * weblounge");
+        wire.server(":offline.test CAP * LS :").await;
+        assert_eq!(wire.next_sent().await, "CAP END");
+        // wait-ok: measures the pre-welcome window in which application traffic must stay absent.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
+                .await
+                .is_err(),
+            "the direct send must wait for numeric 001"
+        );
+
+        wire.close().await;
+        let failure = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let event = receiver.recv().await.expect("runtime remains subscribed");
+                if matches!(event, EngineToUi::MessageFailed { .. }) {
+                    break event;
+                }
+            }
+        })
+        .await
+        .expect("the optimistic row fails when registration ends");
+        assert!(matches!(
+            failure,
+            EngineToUi::MessageFailed {
+                buffer_id: failed_buffer,
+                message_key,
+                ..
+            } if failed_buffer == buffer_id && message_key == "engine.send_failed"
+        ));
     }
 
     #[tokio::test]
