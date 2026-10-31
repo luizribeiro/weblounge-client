@@ -76,7 +76,15 @@ test("hands a released drag to the transition without jumping", async ({
   page,
 }) => {
   await openDrawer(page);
+  const openLeft = await page
+    .getByRole("dialog", { name: "Members" })
+    .evaluate((drawer) => drawer.getBoundingClientRect().left);
   await drawerPointer(page, "pointerdown", 100, 300, 0);
+  await drawerPointer(page, "pointermove", 115, 301, 100);
+  const claimedLeft = await page
+    .getByRole("dialog", { name: "Members" })
+    .evaluate((drawer) => drawer.getBoundingClientRect().left);
+  expect(claimedLeft).toBeCloseTo(openLeft, 0);
   await drawerPointer(page, "pointermove", 160, 304, 400);
   const settle = await recordMotion(page, {
     kind: "release",
@@ -85,8 +93,8 @@ test("hands a released drag to the transition without jumping", async ({
     timeStamp: 500,
   });
   const dragLeft = settle.before.drawerLeft;
-  const openLeft = settle.frames.at(-1)?.left ?? 0;
-  expect(dragLeft - openLeft).toBeCloseTo(60, 0);
+  expect(settle.frames.at(-1)?.left ?? 0).toBeCloseTo(openLeft, 0);
+  expect(dragLeft - openLeft).toBeCloseTo(45, 0);
   const returning = settle.frames.filter(
     (frame): frame is MotionFrame & { left: number } => frame.left !== null,
   );
@@ -109,6 +117,7 @@ test("hands a released drag to the transition without jumping", async ({
   );
 
   await drawerPointer(page, "pointerdown", 100, 300, 1_000, 2);
+  await drawerPointer(page, "pointermove", 115, 300, 1_050, 2);
   await drawerPointer(page, "pointermove", 200, 300, 1_100, 2);
   const close = await recordMotion(page, {
     kind: "release",
@@ -117,7 +126,7 @@ test("hands a released drag to the transition without jumping", async ({
     timeStamp: 1_150,
   });
   const present = close.frames.filter((frame) => frame.left !== null);
-  expect(close.before.drawerLeft - openLeft).toBeCloseTo(100, 0);
+  expect(close.before.drawerLeft - openLeft).toBeCloseTo(85, 0);
   expect(
     hasIntermediatePosition(
       present.map((frame) => frame.left ?? 0),

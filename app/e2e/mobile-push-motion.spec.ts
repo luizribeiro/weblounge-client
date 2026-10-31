@@ -89,6 +89,7 @@ test("swipe released past halfway continues closed from the finger", async ({
   await openChat(page);
   const settle = await swipeAndRelease(page, [
     { at: 0, x: 5 },
+    { at: 100, x: 20 },
     { at: 500, x: 150 },
     { at: 900, x: 250 },
     { at: 1_000, x: 262 },
@@ -106,6 +107,7 @@ test("a flick shortens its distance-scaled finish, still animated", async ({
   await openChat(page);
   const flick = await swipeAndRelease(page, [
     { at: 0, x: 5 },
+    { at: 10, x: 20 },
     { at: 50, x: 60 },
     { at: 100, x: 160 },
   ]);
@@ -120,6 +122,7 @@ test("swipe released short springs back open from the finger", async ({
   await openChat(page);
   const settle = await swipeAndRelease(page, [
     { at: 0, x: 5 },
+    { at: 100, x: 20 },
     { at: 800, x: 150 },
     { at: 1_000, x: 160 },
   ]);
@@ -170,6 +173,7 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
       cancelable: true,
       clientX: step.x,
       clientY: 300,
+      isPrimary: true,
       pointerId: 31,
       pointerType: "touch",
     });

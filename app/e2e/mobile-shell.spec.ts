@@ -33,11 +33,13 @@ test.describe("mobile shell against local Ergo", () => {
     await expect(page.getByRole("option", { name: /\/debug/u })).toBeVisible();
     await composer.fill("/debug viewport");
     await composer.press("Enter");
-    await expect(page.locator("[data-viewport-debug]")).toBeVisible();
+    const debugOverlay = page.locator("[data-debug-overlay]");
+    await expect(debugOverlay).toBeVisible();
+    await expect(debugOverlay).toContainText("[viewport]");
 
     await composer.fill("/debug off");
     await composer.press("Enter");
-    await expect(page.locator("[data-viewport-debug]")).toHaveCount(0);
+    await expect(debugOverlay).toHaveCount(0);
   });
 
   test("confirms typed quit before mobile execution", async ({ page }) => {
@@ -320,17 +322,26 @@ test.describe("mobile shell against local Ergo", () => {
       await shell.dispatchEvent("pointerdown", {
         clientX: 5,
         clientY: 300,
+        isPrimary: true,
         pointerId: 7,
       });
       await shell.dispatchEvent("pointermove", {
-        clientX: 45,
+        clientX: 20,
         clientY: 300,
+        isPrimary: true,
+        pointerId: 7,
+      });
+      await shell.dispatchEvent("pointermove", {
+        clientX: 150,
+        clientY: 300,
+        isPrimary: true,
         pointerId: 7,
       });
       await page.waitForTimeout(150); // wait-ok: hold sets low velocity for returning-swipe coverage.
       await shell.dispatchEvent("pointerup", {
-        clientX: 45,
+        clientX: 150,
         clientY: 300,
+        isPrimary: true,
         pointerId: 7,
       });
       const returningScreen = page.locator('[data-motion="returning"]');
@@ -345,16 +356,25 @@ test.describe("mobile shell against local Ergo", () => {
       await shell.dispatchEvent("pointerdown", {
         clientX: 5,
         clientY: 300,
+        isPrimary: true,
+        pointerId: 8,
+      });
+      await shell.dispatchEvent("pointermove", {
+        clientX: 20,
+        clientY: 300,
+        isPrimary: true,
         pointerId: 8,
       });
       await shell.dispatchEvent("pointermove", {
         clientX: 260,
         clientY: 300,
+        isPrimary: true,
         pointerId: 8,
       });
       await shell.dispatchEvent("pointerup", {
         clientX: 260,
         clientY: 300,
+        isPrimary: true,
         pointerId: 8,
       });
       await expect(page.locator("[data-mobile-chats]")).toBeVisible();
