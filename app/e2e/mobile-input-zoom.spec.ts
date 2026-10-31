@@ -29,6 +29,53 @@ test.describe("mobile text field zoom", () => {
     await auditMobileTextFieldZoom(page);
   });
 
+  test("keeps keyboard focus and touch drags from panning the app", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page, true);
+    await openChannel(page);
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+
+    await composer.tap();
+    await expect(composer).toBeFocused();
+    await expect(page.locator("#root")).toHaveAttribute(
+      "data-keyboard",
+      "open",
+    );
+    const opening = await sampleAppPosition(page, 8);
+    expect(opening).toEqual(
+      opening.map(() => ({ appTop: 0, offsetTop: 0, scrollY: 0 })),
+    );
+
+    const headerMoveAllowed = await touchMove(
+      page.getByRole("button", { name: "Back to chats" }),
+      200,
+      120,
+    );
+    if (headerMoveAllowed)
+      await setVisualViewport(
+        page,
+        await page.evaluate(() => innerHeight - 358),
+        80,
+      );
+    const dragged = await sampleAppPosition(page, 8);
+    expect(headerMoveAllowed).toBe(false);
+    expect(dragged).toEqual(
+      dragged.map(() => ({ appTop: 0, offsetTop: 0, scrollY: 0 })),
+    );
+
+    const messages = page.locator("[data-message-list]");
+    await makeTranscriptScrollable(messages);
+    const before = await messages.evaluate((element) => element.scrollTop);
+    expect(await touchMove(messages, 500, 300)).toBe(true);
+    await messages.evaluate((element) => element.scrollBy(0, 100));
+    expect(await messages.evaluate((element) => element.scrollTop)).toBe(
+      before + 100,
+    );
+  });
+
   test("animates away the home-indicator inset with the keyboard", async ({
     page,
   }) => {
@@ -228,8 +275,11 @@ declare global {
 
 // Emulates WebKit: a visual viewport that iOS pans for the keyboard, that
 // window.scrollTo(0, 0) pans back, and whose events can precede its values.
-async function installVisualViewportHook(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installVisualViewportHook(
+  page: Page,
+  openOnComposerFocus = false,
+): Promise<void> {
+  await page.addInitScript((simulateFocus) => {
     const viewport = new EventTarget();
     const geometry: { height?: number; offsetTop: number } = { offsetTop: 0 };
     Object.defineProperties(viewport, {
@@ -264,7 +314,22 @@ async function installVisualViewportHook(page: Page): Promise<void> {
       if (panned) viewport.dispatchEvent(new Event("scroll"));
       if (timing === "stale") apply();
     };
-  });
+    if (simulateFocus)
+      document.addEventListener(
+        "focusin",
+        (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLTextAreaElement)) return;
+          const focusWasProtected =
+            target.style.transform === "translateY(-2000px)";
+          geometry.height = innerHeight - 358;
+          geometry.offsetTop = focusWasProtected ? 0 : 336;
+          viewport.dispatchEvent(new Event("resize"));
+          if (!focusWasProtected) viewport.dispatchEvent(new Event("scroll"));
+        },
+        true,
+      );
+  }, openOnComposerFocus);
 }
 
 async function emulateSafeTop(page: Page, inset: number): Promise<void> {
@@ -426,6 +491,81 @@ async function liveEdgeGap(locator: ReturnType<Page["locator"]>) {
       messages.scrollHeight - messages.clientHeight - messages.scrollTop,
     ),
   );
+}
+
+interface AppPositionFrame {
+  readonly appTop: number;
+  readonly offsetTop: number;
+  readonly scrollY: number;
+}
+
+async function sampleAppPosition(
+  page: Page,
+  frameCount: number,
+): Promise<readonly AppPositionFrame[]> {
+  return page.evaluate(async (count) => {
+    const root = document.querySelector<HTMLElement>("#root");
+    if (root === null) throw new Error("app root is missing");
+    const frames: AppPositionFrame[] = [];
+    // wait-ok: this deliberately samples a fixed frame window for transient pan.
+    for (let frame = 0; frame < count; frame += 1) {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      frames.push({
+        appTop: Math.round(root.getBoundingClientRect().top),
+        offsetTop: Math.round(window.visualViewport?.offsetTop ?? -1),
+        scrollY: Math.round(window.scrollY),
+      });
+    }
+    return frames;
+  }, frameCount);
+}
+
+async function touchMove(
+  target: ReturnType<Page["locator"]>,
+  startY: number,
+  endY: number,
+): Promise<boolean> {
+  return target.evaluate(
+    (element, points) => {
+      const event = (type: string, clientY: number) => {
+        const touch = {
+          clientX: 200,
+          clientY,
+          identifier: 71,
+        };
+        const touchEvent = new Event(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        });
+        Object.defineProperties(touchEvent, {
+          changedTouches: { value: [touch] },
+          targetTouches: { value: type === "touchend" ? [] : [touch] },
+          touches: { value: type === "touchend" ? [] : [touch] },
+        });
+        return element.dispatchEvent(touchEvent);
+      };
+      event("touchstart", points.startY);
+      const moveAllowed = event("touchmove", points.endY);
+      event("touchend", points.endY);
+      return moveAllowed;
+    },
+    { endY, startY },
+  );
+}
+
+async function makeTranscriptScrollable(
+  messages: ReturnType<Page["locator"]>,
+): Promise<void> {
+  await messages.evaluate((element) => {
+    const fixture = document.createElement("li");
+    fixture.dataset.touchScrollFixture = "true";
+    fixture.style.height = "2000px";
+    element.append(fixture);
+    element.scrollTop = 100;
+  });
 }
 
 function expectPaddingMotion(

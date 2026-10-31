@@ -73,6 +73,16 @@ it("renders highlight, nick colour, and failed delivery presentation", () => {
   expect(screen.getByText("Failed")).toBeInTheDocument();
 });
 
+it("re-anchors the live edge synchronously with app geometry", () => {
+  render(() => <MessageList messages={[message]} />);
+  const list = screen.getByRole("list", { name: "Messages" });
+  const scrollTo = vi.spyOn(list, "scrollTo");
+
+  window.dispatchEvent(new Event("weblounge:app-geometry-change"));
+
+  expect(scrollTo).toHaveBeenCalledOnce();
+});
+
 it("offers Retry for a failed local send", () => {
   const retry = vi.fn();
   render(() => (

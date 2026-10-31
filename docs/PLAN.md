@@ -123,6 +123,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     frames after viewport events, and add the `?debug=viewport` overlay (awaiting device).
   - [x] Keep late iOS keyboard geometry polling around pointer-activated text focus only, and stop
     as soon as the expected open or closed state is stable so programmatic focus returns to idle.
+  - [x] Prevent iOS composer focus and keyboard-open drags from panning the document, never publish
+    a stale visual-viewport top, and re-anchor the live-edge transcript with the app-height change
+    before paint (#69 and #70, awaiting on-device motion confirmation).
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.

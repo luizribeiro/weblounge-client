@@ -3,8 +3,9 @@ export type ViewportGeometry =
   | {
       readonly keyboard: "open";
       readonly height: number;
-      readonly top: number;
     };
+
+export const appGeometryChangeEvent = "weblounge:app-geometry-change";
 
 export interface ViewportMeasurements {
   readonly layoutHeight: number;
@@ -34,7 +35,7 @@ export function resolveViewportGeometry({
   if (zoomed(viewport) || layoutHeight - viewport.height <= keyboardThreshold) {
     return { keyboard: "closed" };
   }
-  return { keyboard: "open", height: viewport.height, top: viewport.offsetTop };
+  return { keyboard: "open", height: viewport.height };
 }
 
 // iOS reveals a focused field by panning the visual viewport or scrolling the
@@ -73,10 +74,10 @@ export function observeViewportGeometry(
   });
   // iOS can reveal a focused field by panning instead of resizing, while WebKit
   // exposes neither interactive-widget nor the VirtualKeyboard API. We undo the
-  // pan, size to the visual viewport, and re-measure after its events because
-  // their geometry can be stale. Pointer-activated text focus gets a bounded
-  // fallback until the expected keyboard state is stable; other changes stop
-  // after the normal two stable frames.
+  // pan without ever publishing its stale offset, size to the visual viewport,
+  // and re-measure after its events because their geometry can be stale.
+  // Pointer-activated text focus gets a bounded fallback until the expected
+  // keyboard state is stable; other changes stop after two stable frames.
   // Upstream WebKit bugs:
   // - https://bugs.webkit.org/show_bug.cgi?id=254861
   // - https://bugs.webkit.org/show_bug.cgi?id=259770
@@ -88,6 +89,7 @@ export function observeViewportGeometry(
     if (key === published) return { changed: false, geometry };
     published = key;
     applyGeometry(root, geometry);
+    browserWindow.dispatchEvent(new Event(appGeometryChangeEvent));
     return { changed: true, geometry };
   };
   // WebKit can fire viewport events before it updates the values they report,
@@ -196,7 +198,7 @@ function applyGeometry(root: HTMLElement, geometry: ViewportGeometry): void {
     return;
   }
   root.style.setProperty("--wl-app-height", `${geometry.height}px`);
-  root.style.setProperty("--wl-app-top", `${geometry.top}px`);
+  root.style.setProperty("--wl-app-top", "0px");
 }
 
 function clearOpenGeometry(root: HTMLElement): void {

@@ -18,6 +18,7 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import { appGeometryChangeEvent } from "../../platform/viewport-geometry";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
@@ -280,13 +281,18 @@ export function MessageList(props: MessageListProps) {
             },
             { root: list },
           );
+    const anchorGeometryChange = () => {
+      if (atLiveEdge()) virtualizer.scrollToEnd();
+    };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
     void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
+    window.addEventListener(appGeometryChangeEvent, anchorGeometryChange);
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
+      window.removeEventListener(appGeometryChangeEvent, anchorGeometryChange);
       list?.removeEventListener("keydown", markScrollKeyIntent);
       list?.removeEventListener("pointerdown", markPointerScrollIntent);
       list?.removeEventListener("touchstart", markTouchScrollIntent);

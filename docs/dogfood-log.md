@@ -74,3 +74,5 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 66 | 2026-10-31 | Mobile: opening a channel sometimes lands far up in the scrollback, or a moment after opening the transcript goes blank until a small scroll, then shows at a random position. | fixed, live (0cc7171); please confirm |
 | 67 | 2026-10-31 | Composer: a command typed with arguments before suggestions refresh (e.g. /debug viewport + Enter) accepted the stale suggestion and dropped the arguments. Found by CI. | fixed, live (24b3dfa) |
 | 68 | 2026-10-31 | Desktop sidebar (and member list): names left-aligned in one column, prefix symbols right-aligned against them as if one word; DMs line up with channel names. | in progress (wl-codex-58) |
+| 69 | 2026-10-31 | iPhone: opening the keyboard makes the whole screen jump and glide out of sync; the composer is briefly hidden and the transcript jumps again after resize. | fixed, local; awaiting on-device motion confirmation |
+| 70 | 2026-10-31 | iPhone with keyboard open: dragging header, composer, or gaps scrolls the whole document and flashes before snapping back. | fixed, local; awaiting on-device motion confirmation |

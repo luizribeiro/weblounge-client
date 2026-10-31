@@ -78,12 +78,22 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   the viewport short anyway, the composer still sits whole inside the painted area above an
   unpainted band.
 - Keyboard open (the visual viewport over 120px shorter than the layout viewport, pinch zoom
-  excluded), `#root` takes the visual viewport's height from `--wl-app-height`. iOS still pans
-  the visual viewport or scrolls the document to reveal the focused field; the platform undoes
-  any pan with `scrollTo(0, 0)` on viewport, window-scroll and focus events, and follows
-  `offsetTop` through `--wl-app-top` only if a pan survives. Because WebKit can fire viewport
-  events before updating their values, each event re-measures on the following frames until the
-  geometry holds for two of them.
+  excluded), `#root` takes the visual viewport's height from `--wl-app-height` and keeps
+  `--wl-app-top` at zero. Touch focus moves the composer field above the viewport synchronously,
+  focuses it with `preventScroll`, and restores it the next frame, following [React Aria's iOS
+  technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
+  This prevents WebKit's focus pan rather than following its curve. A platform-owned non-passive
+  vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
+  textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
+  and an inner scroller that can still move in the gesture direction. The transcript uses
+  `overscroll-behavior: contain` at its own boundary. These compensate for [WebKit
+  240860](https://bugs.webkit.org/show_bug.cgi?id=240860), [271773](https://bugs.webkit.org/show_bug.cgi?id=271773),
+  and [244232](https://bugs.webkit.org/show_bug.cgi?id=244232).
+- A surviving iOS pan is still undone with `scrollTo(0, 0)`, but its stale `offsetTop` is never
+  published. Because WebKit can fire viewport events before updating their values, each event
+  re-measures on following frames until geometry holds for two of them. App-height publication
+  synchronously signals a live-edge transcript to re-anchor after the new height takes effect and
+  before paint; the later `ResizeObserver` notification is not the first correction.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
 
@@ -302,6 +312,11 @@ themes, or virtual-list behavior.
   (left/right 62px, bottom 21px), and Android gesture navigation (bottom 24px). They assert header,
   composer/tab bar, drawer, interactive controls, and text stay inside the safe content box, with
   light/dark screenshots for every profile.
+- Mobile WebKit taps the composer through an emulated focus pan and samples opening frames to keep
+  visual viewport, document, and app top at zero. With the keyboard open, vertical header drags
+  stay locked, horizontal gestures remain available, and the transcript still scrolls by touch.
+  Desktop WebKit cannot reproduce the real iOS software keyboard or its compositor pan, so these
+  tests prove the event policy and published geometry; an iPhone remains the final motion check.
 - Playwright also covers one through six panes, explicit/automatic zoom, chromeless mode, browser
   zoom, and theme × density combinations.
 - Accessibility tests cover focus rings, separators, and 44px touch targets.

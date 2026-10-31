@@ -1,4 +1,5 @@
 import { type Accessor, createSignal } from "solid-js";
+import { observeTouchMoveLock } from "./touch-move-lock";
 import { observeViewportGeometry } from "./viewport-geometry";
 
 export const desktopPanelBoundary = 760;
@@ -92,6 +93,7 @@ export function installPlatformEnvironment(
   const stopViewportObserver = observeViewportGeometry(root, browserWindow, {
     onScreenKeyboard: () => environment().input === "touch",
   });
+  const stopTouchMoveLock = observeTouchMoveLock(root, browserWindow);
   publish();
 
   const controller: PlatformController = {
@@ -103,6 +105,7 @@ export function installPlatformEnvironment(
       for (const query of media)
         query.removeEventListener("change", mediaChanged);
       stopViewportObserver();
+      stopTouchMoveLock();
       stopWidthObserver();
       delete root.dataset.input;
       delete root.dataset.display;

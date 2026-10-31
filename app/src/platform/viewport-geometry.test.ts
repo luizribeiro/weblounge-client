@@ -36,20 +36,17 @@ describe("viewport geometry", () => {
     expect(resolveViewportGeometry(withViewport(753))).toEqual({
       keyboard: "open",
       height: 753,
-      top: 0,
     });
   });
 
-  it("pins the app to the visual viewport above an open keyboard", () => {
+  it("pins the app height without following a visual viewport pan", () => {
     expect(resolveViewportGeometry(withViewport(476))).toEqual({
       keyboard: "open",
       height: 476,
-      top: 0,
     });
     expect(resolveViewportGeometry(withViewport(476, 336))).toEqual({
       keyboard: "open",
       height: 476,
-      top: 336,
     });
   });
 
@@ -119,13 +116,25 @@ describe("viewport geometry observer", () => {
     expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
   });
 
-  it("follows a pan that cannot be undone", () => {
+  it("never publishes a pan that cannot be undone immediately", () => {
     const { root, viewport } = observe();
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 
     viewport.set(window.innerHeight - 300, 336, "resize");
 
-    expect(root.style.getPropertyValue("--wl-app-top")).toBe("336px");
+    expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
+  });
+
+  it("announces geometry changes after publishing them", () => {
+    const changed = vi.fn();
+    window.addEventListener("weblounge:app-geometry-change", changed);
+    const { viewport } = observe();
+    changed.mockClear();
+
+    viewport.set(window.innerHeight - 300, 0, "resize");
+
+    expect(changed).toHaveBeenCalledOnce();
+    window.removeEventListener("weblounge:app-geometry-change", changed);
   });
 
   it("re-measures on later frames when an event reported stale values", async () => {

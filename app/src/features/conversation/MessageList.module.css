@@ -10,6 +10,7 @@
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
+  overscroll-behavior: contain;
   padding: 12px 0 22px;
   position: relative;
   touch-action: pan-y;
