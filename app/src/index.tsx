@@ -241,7 +241,9 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       if (!active) return;
       active = false;
       window.clearTimeout(timeout);
-      splash.querySelector("[data-splash-status]")?.remove();
+      splash
+        .querySelector<HTMLElement>("[data-splash-status]")
+        ?.setAttribute("data-hidden", "true");
       splash.setAttribute("aria-hidden", "true");
       splash.dataset.state = "leaving";
       const animations = splash.getAnimations();

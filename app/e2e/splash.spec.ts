@@ -58,8 +58,22 @@ async function verifySplash(
         source: string;
       }>;
       __webloungeReleaseEngine: () => void;
+      __webloungeSplashMarkTops: number[];
     };
     observed.__webloungeCspViolations = [];
+    observed.__webloungeSplashMarkTops = [];
+    const sampleSplashMark = () => {
+      const mark = document.querySelector("[data-splash-mark]");
+      if (mark !== null) {
+        observed.__webloungeSplashMarkTops.push(
+          mark.getBoundingClientRect().top,
+        );
+      }
+      if (mark !== null || document.readyState === "loading") {
+        requestAnimationFrame(sampleSplashMark);
+      }
+    };
+    requestAnimationFrame(sampleSplashMark);
     document.addEventListener("securitypolicyviolation", (event) => {
       observed.__webloungeCspViolations.push({
         blocked: event.blockedURI,
@@ -203,6 +217,15 @@ async function verifySplash(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
     await expect(splash).toHaveCount(0);
+    const markTops = await page.evaluate(
+      () =>
+        (window as unknown as { __webloungeSplashMarkTops: number[] })
+          .__webloungeSplashMarkTops,
+    );
+    expect(markTops.length).toBeGreaterThan(1);
+    expect(Math.max(...markTops) - Math.min(...markTops)).toBeLessThanOrEqual(
+      0.5,
+    );
     expect(
       consoleErrors.filter((message) => /preload.*not used/iu.test(message)),
     ).toEqual([]);

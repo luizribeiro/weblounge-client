@@ -31,6 +31,12 @@ body,
   margin: 0;
 }
 
+@media (display-mode: standalone) {
+  html {
+    min-block-size: min(100lvh, calc(100% + var(--wl-safe-top)));
+  }
+}
+
 [data-initial-splash] {
   align-items: center;
   background: var(--wl-splash-bg);
@@ -71,6 +77,10 @@ body,
   max-inline-size: min(32rem, calc(100% - 48px));
   opacity: 1;
   text-align: center;
+}
+
+[data-splash-status][data-hidden] {
+  visibility: hidden;
 }
 
 [data-splash-a11y] {
