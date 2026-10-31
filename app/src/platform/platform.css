@@ -9,7 +9,10 @@
  * iOS 26 Home Screen apps with a black-translucent status bar size the
  * viewport short by the top inset (WebKit 301108) and paint nothing below it,
  * but only while the document is shorter than the screen. The cap keeps
- * opaque-status-bar and already-fixed viewports at 100%.
+ * opaque-status-bar and already-fixed viewports at 100%. Remove once the
+ * WebKit bug is fixed in the iOS versions we support.
+ * https://bugs.webkit.org/show_bug.cgi?id=301108
+ * https://github.com/frappe/frappe-ui/pull/1289 (the min-height workaround)
  */
 :root:has(> body > #root[data-display="standalone"]) {
   min-block-size: min(100lvh, calc(100% + var(--wl-safe-top)));
