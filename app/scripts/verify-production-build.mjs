@@ -8,6 +8,17 @@ await verifyIcons(outputDirectory);
 
 if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
   const files = await descendants(outputDirectory);
+  const wasmFiles = files.filter((file) => file.endsWith(".wasm"));
+  if (
+    wasmFiles.length !== 1 ||
+    !/^engine_bg-[A-Za-z0-9_-]+\.wasm$/u.test(
+      wasmFiles[0]?.slice(resolve(outputDirectory, "assets").length + 1) ?? "",
+    )
+  ) {
+    throw new Error(
+      `expected one hashed engine wasm asset, found: ${wasmFiles.join(", ")}`,
+    );
+  }
   const sourceMaps = files.filter((file) => file.endsWith(".map"));
   if (sourceMaps.length > 0)
     throw new Error("production build contains source maps");

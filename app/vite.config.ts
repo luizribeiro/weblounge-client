@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => {
     mode === "test"
       ? resolve(import.meta.dirname, "src/engine/wasm-test-stub.ts")
       : resolve(wasmDirectory, "engine.js");
+  const wasmAssetPath =
+    mode === "test"
+      ? resolve(import.meta.dirname, "src/engine/wasm-test-stub.ts")
+      : wasmPath;
   const splashCss = readFileSync(
     resolve(import.meta.dirname, "src/styles/splash.css"),
     "utf8",
@@ -73,7 +77,6 @@ export default defineConfig(({ mode }) => {
     plugins: [
       inlineSplash(splashCss),
       solid(),
-      engineWasmAsset(wasmPath),
       ...(appConfigHarness ? [testAppConfig()] : []),
     ],
     ...(!cspEnabled
@@ -93,6 +96,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@weblounge-engine": wasmModulePath,
+        "@weblounge-engine-wasm": `${wasmAssetPath}?url`,
       },
     },
     test: {
@@ -143,25 +147,6 @@ function inlineSplash(css: string): Plugin {
           injectTo: "head-prepend",
         },
       ],
-    },
-  };
-}
-
-function engineWasmAsset(wasmPath: string): Plugin {
-  return {
-    name: "weblounge-engine-wasm",
-    configureServer(server) {
-      server.middlewares.use("/engine_bg.wasm", (_request, response) => {
-        response.setHeader("Content-Type", "application/wasm");
-        response.end(readFileSync(wasmPath));
-      });
-    },
-    generateBundle() {
-      this.emitFile({
-        type: "asset",
-        fileName: "engine_bg.wasm",
-        source: readFileSync(wasmPath),
-      });
     },
   };
 }
