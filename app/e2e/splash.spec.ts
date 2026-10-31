@@ -140,9 +140,11 @@ async function verifySplash(
     }
   });
   const consoleErrors: string[] = [];
-  let fontRequests = 0;
+  const fontUrls = new Set<string>();
   page.on("request", (request) => {
-    if (request.url().endsWith("/fonts/inter-latin.woff2")) fontRequests += 1;
+    if (/\/assets\/inter-latin-[^/]+\.woff2$/u.test(request.url())) {
+      fontUrls.add(request.url());
+    }
   });
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") {
@@ -174,6 +176,14 @@ async function verifySplash(
     );
     const splashStyle = page.locator("style[data-initial-splash-style]");
     await expect(splashStyle).toHaveCount(1);
+    const fontPreload = page.locator(
+      'link[rel="preload"][as="font"][type="font/woff2"]',
+    );
+    await expect(fontPreload).toHaveAttribute("crossorigin", "");
+    await expect(fontPreload).toHaveAttribute(
+      "href",
+      /\/assets\/inter-latin-[^/]+\.woff2$/u,
+    );
     expect(
       await splashStyle.evaluate((element) => {
         const blocking = document.head.querySelector(
@@ -210,7 +220,7 @@ async function verifySplash(
     expect(contrastRatio(colors.background, colors.fill)).toBeGreaterThan(3);
 
     await page.evaluate(() => document.fonts.ready);
-    expect(fontRequests).toBe(1);
+    expect(fontUrls.size).toBe(1);
     expect(
       await page.evaluate(
         () =>

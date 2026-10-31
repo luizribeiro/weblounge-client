@@ -1,3 +1,20 @@
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../public/fonts/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.2%;
+  descent-override: 22.48%;
+  line-gap-override: 0%;
+  size-adjust: 107.4%;
+}
+
 :root {
   --wl-space-list-gap: 6px;
   --wl-space-list-inset: 8px;
