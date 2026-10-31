@@ -57,10 +57,12 @@ describe("mobile stack navigation", () => {
     expect(popChat(direct, true).active).toEqual({ kind: "chat", bufferId: 8 });
   });
 
-  it("completes swipe-back by position or forward velocity", () => {
-    expect(swipeBackCompletes(201, 402, 0)).toBe(true);
-    expect(swipeBackCompletes(80, 402, 0.6)).toBe(true);
-    expect(swipeBackCompletes(80, 402, 0.2)).toBe(false);
+  it("uses claim-relative distance and release velocity for swipe-back", () => {
+    expect(swipeBackCompletes(201, 402, 0)).toBe(false);
+    expect(swipeBackCompletes(202, 402, 0)).toBe(true);
+    expect(swipeBackCompletes(80, 402, 0.25)).toBe(true);
+    expect(swipeBackCompletes(80, 402, 0.24)).toBe(false);
+    expect(swipeBackCompletes(202, 402, -0.01)).toBe(false);
     expect(swipeBackCompletes(-20, 402, 1)).toBe(false);
   });
 });

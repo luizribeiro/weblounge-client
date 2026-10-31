@@ -176,9 +176,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Drive transcript scroll-away journeys with user-owned wheel input so live-edge coverage
     follows the same intent boundary as the app.
   - [x] Keep iOS swipe-back claimed through diagonal finger drift with the shared non-passive
-    touch policy; use release velocity and a claim-relative origin, allow full-screen starts and
-    mid-return retries, and expose gesture decisions through `/debug gestures` (#71, awaiting
-    Luiz's on-device confirmation).
+    touch policy; use a 0.25px/ms release threshold and a claim-relative origin, allow full-screen
+    starts and mid-return retries, and expose gesture decisions through `/debug gestures` (#71,
+    awaiting Luiz's on-device confirmation).
   - [x] Align desktop channel sigils and member mode prefixes in content-sized columns, with bare
     names sharing one left edge and normal in-word, theme-independent spacing (#68).
   - [x] Keep resilience scroll-preservation journeys between both transcript edges with one
