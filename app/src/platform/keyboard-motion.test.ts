@@ -104,7 +104,7 @@ it("clears a stale compositor transform before retargeting open geometry", () =>
   let layoutTop = 800;
   let compositorTranslate = 0;
   vi.spyOn(surface, "getBoundingClientRect").mockImplementation(() => {
-    if (surface.style.transform === "none") compositorTranslate = 0;
+    compositorTranslate = 0;
     return rect(layoutTop + compositorTranslate);
   });
   vi.spyOn(composer, "getBoundingClientRect").mockImplementation(() =>
