@@ -12,10 +12,16 @@ export function observeVirtualizerOffset<
 ): () => void {
   let frame: number | undefined;
   const target = instance.targetWindow ?? window;
-  const dispose = observeElementOffset(instance, (offset, isScrolling) => {
+  const dispose = observeElementOffset(instance, (_offset, isScrolling) => {
     if (frame !== undefined) target.cancelAnimationFrame(frame);
     frame = target.requestAnimationFrame(() => {
       frame = undefined;
+      const element = instance.scrollElement;
+      if (element === null) return;
+      const { horizontal, isRtl } = instance.options;
+      const offset = horizontal
+        ? element.scrollLeft * (isRtl ? -1 : 1)
+        : element.scrollTop;
       callback(offset, isScrolling);
     });
   });

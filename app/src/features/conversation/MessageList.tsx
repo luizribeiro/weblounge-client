@@ -75,7 +75,6 @@ export function MessageList(props: MessageListProps) {
   let liveEdgeSentinel: HTMLDivElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
-  let followEndQueued = false;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
@@ -183,14 +182,6 @@ export function MessageList(props: MessageListProps) {
     },
     overscan: 6,
   });
-  const scheduleFollowEnd = () => {
-    if (followEndQueued || !atLiveEdge()) return;
-    followEndQueued = true;
-    queueMicrotask(() => {
-      followEndQueued = false;
-      if (list?.isConnected === true && atLiveEdge()) virtualizer.scrollToEnd();
-    });
-  };
   const remeasure = () => {
     if (list?.isConnected !== true) return;
     virtualizer.measure();
@@ -204,14 +195,11 @@ export function MessageList(props: MessageListProps) {
     const measured = measureElement(element, undefined, virtualizer);
     if (measured > 0) virtualizer.resizeItem(index, measured);
     virtualizer.measureElement(element);
-    scheduleFollowEnd();
   };
   const reportLiveEdge = (sentinelVisible: boolean) => {
     if (sentinelVisible && virtualizer.isAtEnd()) {
       setLiveEdge(true);
-      return;
     }
-    scheduleFollowEnd();
   };
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
@@ -241,7 +229,7 @@ export function MessageList(props: MessageListProps) {
       renderedCount = 0;
       setUnseen(0);
       setLiveEdge(true);
-      scheduleFollowEnd();
+      virtualizer.scrollToEnd();
     }
   });
   createEffect(() => {
@@ -263,7 +251,8 @@ export function MessageList(props: MessageListProps) {
     if (messages.length > previousCount && !atLiveEdge())
       setUnseen((count) => count + messages.length - previousCount);
     renderedCount = messages.length;
-    scheduleFollowEnd();
+    if (messages.length !== previousCount && atLiveEdge())
+      virtualizer.scrollToEnd();
   });
   onMount(() => {
     const fonts = document.fonts;
