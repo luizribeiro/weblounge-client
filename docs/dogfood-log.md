@@ -73,4 +73,3 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 65 | 2026-10-31 | Reloading a deep link like /weblounge/ops lands on /. | fixed, local; please confirm on device |
 | 66 | 2026-10-31 | Mobile: opening a channel sometimes lands far up in the scrollback, or a moment after opening the transcript goes blank until a small scroll, then shows at a random position. | in progress (wl-codex-55) |
 | 67 | 2026-10-31 | Composer: a command typed with arguments before suggestions refresh (e.g. /debug viewport + Enter) accepted the stale suggestion and dropped the arguments. Found by CI. | fixed, live (24b3dfa) |
-| 68 | 2026-10-31 | Desktop: align channel sigils and member mode prefixes in their own right-aligned columns so every bare name starts at the same x. | fixed, local; please confirm |
