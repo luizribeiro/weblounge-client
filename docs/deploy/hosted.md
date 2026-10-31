@@ -31,19 +31,59 @@ The beta preset is:
   "oauth": {
     "issuer": "https://members.weblounge.org",
     "client_id": "weblounge-client",
-    "redirect_uri": "https://beta.weblounge.org/"
+    "redirect_uri": "https://beta.weblounge.org/",
+    "session_token_endpoint": "https://members.weblounge.org/oauth/session-token"
   }
 }
 ```
 
 Concierge must register `weblounge-client` as a public authorization-code client with no secret,
 require S256 PKCE, and allow exactly `https://beta.weblounge.org/` as its redirect URI. Its RFC
-8414 metadata must advertise matching issuer, authorization, and token endpoints. Ergo must accept
-SASL OAUTHBEARER and introspect the resulting token against concierge through the existing private
-endpoint. Ergo's WebSocket allowed origins must include `https://beta.weblounge.org`.
+8414 metadata must advertise matching issuer, authorization, and token endpoints. The configured
+session-token URL must be HTTPS, share the issuer origin, and have no fragment; it is explicit
+rather than derived from issuer metadata. Ergo must accept SASL OAUTHBEARER and introspect the
+resulting token against concierge through the existing private endpoint. Ergo's WebSocket allowed
+origins must include `https://beta.weblounge.org`.
 The client requests the IRC wildcard nickname `*` during registration so Ergo can attach the
 authenticated member's existing always-on session instead of making every hosted client contend
 for a preset nickname.
+
+## Session-token contract
+
+Before every connect and reconnect, the hosted adapter makes this request at most once:
+
+```js
+fetch("https://members.weblounge.org/oauth/session-token", {
+  method: "POST",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: "{}",
+});
+```
+
+The live concierge endpoint accepts the exact registered origins `https://beta.weblounge.org` and
+`https://irc.weblounge.org`. Its preflight responds `204`, echoes the origin, enables credentials,
+allows `POST` and `Content-Type`, and advertises a 3,600-second maximum age. A successful request
+returns `200`, `Cache-Control: no-store`, and:
+
+```json
+{"access_token":"…","token_type":"Bearer","expires_in":900}
+```
+
+Concierge may renew the member cookie in the same response. The adapter validates the response and
+consumes the access token once as SASL OAUTHBEARER; it neither persists the token nor reuses it for
+a later reconnect. The worker and first token fetch may start in parallel, but IRC connection waits
+for the fresh credential.
+
+`401 {"error":"login_required"}` starts the full PKCE authorization-code flow. The token returned
+by that flow is used for the immediate connection; subsequent reconnects return to the
+session-token endpoint. `429 {"error":"invalid_request"}` and network failures are transient and
+back off without being reported as authentication failures. `403 invalid_client` identifies a bad
+or missing origin and intentionally has no CORS headers, so browsers can expose it only as the same
+opaque fetch failure as a network error; `415 invalid_request` identifies a client that did not
+send JSON. Those contract/configuration failures must never expose a response token or cause a
+tight retry loop. A token later rejected by Ergo is authentication failure and starts full
+authorization, never transport failure.
 
 ## Nginx shape
 
