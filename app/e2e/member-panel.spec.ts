@@ -105,6 +105,9 @@ test.describe("desktop members against local Ergo", () => {
         {
           avatarSelector: "[data-member-avatar]",
           gapProperty: "--wl-space-list-gap",
+          groupSelector: "[data-member-group]",
+          insetProperty: "--wl-space-list-inset",
+          trailingSelector: "[data-member-trailing]",
         },
       );
       await expectMemberRowsUseDensityPitch(panel);

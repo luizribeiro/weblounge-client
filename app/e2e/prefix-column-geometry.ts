@@ -13,6 +13,9 @@ interface PrefixGeometry {
 interface PrefixColumnOptions {
   readonly avatarSelector: string;
   readonly gapProperty: string;
+  readonly groupSelector: string;
+  readonly insetProperty: string;
+  readonly trailingSelector: string;
 }
 
 export async function expectAlignedPrefixColumn(
@@ -146,6 +149,60 @@ export async function expectAlignedPrefixColumn(
     for (const gap of avatarGaps)
       expect(gap.actual, JSON.stringify(avatarGaps)).toBeCloseTo(
         gap.expected,
+        0,
+      );
+
+    const groupLefts = await container
+      .locator(options.groupSelector)
+      .evaluateAll((groups) =>
+        groups
+          .filter((group) => group.getClientRects().length > 0)
+          .map((group) => {
+            const range = document.createRange();
+            range.selectNodeContents(group);
+            return range.getBoundingClientRect().left;
+          }),
+      );
+    const avatarLefts = await container
+      .locator(options.avatarSelector)
+      .evaluateAll((avatars) =>
+        avatars
+          .filter((avatar) => avatar.getClientRects().length > 0)
+          .map((avatar) => avatar.getBoundingClientRect().left),
+      );
+    expect(groupLefts.length).toBeGreaterThan(0);
+    expect(avatarLefts.length).toBeGreaterThan(0);
+    for (const left of [...groupLefts, ...avatarLefts])
+      expect(left, JSON.stringify({ avatarLefts, groupLefts })).toBeCloseTo(
+        groupLefts[0] ?? 0,
+        0,
+      );
+
+    const trailingInsets = await container
+      .locator(options.trailingSelector)
+      .evaluateAll(
+        (elements, insetProperty) =>
+          elements
+            .filter((element) => element.getClientRects().length > 0)
+            .map((element) => {
+              const row = element.closest("button");
+              if (row === null)
+                throw new Error("member trailing geometry is missing");
+              return {
+                actual:
+                  row.getBoundingClientRect().right -
+                  element.getBoundingClientRect().right,
+                expected: Number.parseFloat(
+                  getComputedStyle(row).getPropertyValue(insetProperty),
+                ),
+              };
+            }),
+        options.insetProperty,
+      );
+    expect(trailingInsets.length).toBeGreaterThan(0);
+    for (const inset of trailingInsets)
+      expect(inset.actual, JSON.stringify(trailingInsets)).toBeCloseTo(
+        inset.expected,
         0,
       );
   }

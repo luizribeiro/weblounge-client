@@ -80,9 +80,9 @@ function buffer(
 }
 
 const members: readonly Member[] = [
-  member("operators", "owner", "@"),
+  { ...member("operators", "owner", "@"), is_you: true },
   member("operators", "founder", "~"),
-  member("operators", "admin", "&"),
+  { ...member("operators", "admin", "&"), bot: true },
   member("operators", "halfop", "%"),
   member("voiced", "voice", "+"),
   member("online", "plain", null),

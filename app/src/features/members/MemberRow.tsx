@@ -51,8 +51,16 @@ export function MemberRow(props: MemberRowProps) {
         >
           {props.member.nick}
         </Line>
-        {props.member.bot && <span class={styles.bot}>BOT</span>}
-        {props.member.is_you && <span class={styles.you}>you</span>}
+        {props.member.bot && (
+          <span class={styles.bot} data-member-trailing="true">
+            BOT
+          </span>
+        )}
+        {props.member.is_you && (
+          <span class={styles.you} data-member-trailing="true">
+            you
+          </span>
+        )}
       </span>
     </button>
   );

@@ -39,6 +39,9 @@ test("aligns real-font sigil and mode columns", async ({ page }) => {
     {
       avatarSelector: "[data-member-avatar]",
       gapProperty: "--wl-space-list-gap",
+      groupSelector: "[data-member-group]",
+      insetProperty: "--wl-space-list-inset",
+      trailingSelector: "[data-member-trailing]",
     },
   );
 });

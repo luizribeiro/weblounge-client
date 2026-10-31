@@ -219,7 +219,11 @@ function MemberListRowView(props: {
   );
   return (
     <>
-      <div class={styles.group} hidden={props.row?.kind !== "group"}>
+      <div
+        class={styles.group}
+        data-member-group="true"
+        hidden={props.row?.kind !== "group"}
+      >
         {props.row?.kind === "group"
           ? `${memberGroupLabels[props.row.group]} — ${formatCount(props.row.count)}`
           : ""}
