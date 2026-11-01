@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
     },
     base: "/",
     build: {
+      assetsInlineLimit: 0,
       sourcemap: false,
       ...(performanceHarness
         ? {

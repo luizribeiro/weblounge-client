@@ -61,6 +61,15 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
 }
 
 async function verifyCspAssets(directory) {
+  const files = await descendants(directory);
+  for (const file of files.filter((path) =>
+    /\.(?:css|html|js|json|svg|webmanifest)$/u.test(path),
+  )) {
+    const content = await readFile(file, "utf8");
+    if (/data:(?:font|image)\//iu.test(content)) {
+      throw new Error(`production bundle contains an inline asset: ${file}`);
+    }
+  }
   const html = await readFile(resolve(directory, "index.html"), "utf8");
   const splashLink = html.match(
     /<link\s+[^>]*data-initial-splash-style[^>]*>/iu,

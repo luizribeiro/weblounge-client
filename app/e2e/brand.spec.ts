@@ -61,17 +61,21 @@ test.describe("mobile header brand", () => {
     viewport: { width: 402, height: 874 },
   });
 
-  test("bundles its chair into the first shell stylesheet", async ({
-    page,
-  }) => {
+  test("loads its chair from a same-origin asset", async ({ page }) => {
     await page.goto("/");
 
     const mark = page.locator("[data-mobile-logo-mark]");
     await expect(mark).toBeVisible();
-    await expect
-      .poll(() =>
-        mark.evaluate((element) => getComputedStyle(element).maskImage),
-      )
-      .toMatch(/^url\(["']?data:image\/svg\+xml/iu);
+    const mask = await mark.evaluate(
+      (element) => getComputedStyle(element).maskImage,
+    );
+    expect(mask).not.toContain("data:");
+    const url = /^url\(["']?([^"')]+)["']?\)$/u.exec(mask)?.[1];
+    expect(url).toBeDefined();
+    expect(new URL(url ?? "").pathname).toMatch(
+      process.env.WEBLOUNGE_E2E_DEV === "1"
+        ? /^\/src\/assets\/chair\.svg$/u
+        : /^\/assets\/chair-[^/]+\.svg$/u,
+    );
   });
 });
