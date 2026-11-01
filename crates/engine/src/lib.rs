@@ -54,6 +54,7 @@ impl Engine {
     pub fn with_events_and_storage(
         build_id: impl Into<String>,
         instance_id: impl Into<String>,
+        build_version: impl Into<String>,
         storage: Rc<storage::WebKv>,
         cached_snapshot: Option<Vec<u8>>,
     ) -> (Self, mpsc::UnboundedReceiver<EngineToUi>) {
@@ -62,7 +63,12 @@ impl Engine {
             Self {
                 build_id: build_id.into(),
                 instance_id: instance_id.into(),
-                runtime: runtime::Runtime::with_storage(outbound, storage, cached_snapshot),
+                runtime: runtime::Runtime::with_storage(
+                    outbound,
+                    storage,
+                    cached_snapshot,
+                    build_version.into(),
+                ),
             },
             events,
         )

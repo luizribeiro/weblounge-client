@@ -87,6 +87,8 @@ const commandStrings: Readonly<Record<string, string>> = {
   "cmd.say.usage": "/say <text>",
   "cmd.topic.description": "Show or change the channel topic",
   "cmd.topic.usage": "/topic [channel] [text]",
+  "cmd.version.description": "Show this app build",
+  "cmd.version.usage": "/version",
 };
 
 export function t(key: string, values: MessageValues = {}): string {

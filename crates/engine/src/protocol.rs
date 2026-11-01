@@ -522,6 +522,11 @@ pub enum EngineRequest {
         /// Browser connectivity hint; papo remains authoritative for the socket.
         online: bool,
     },
+    /// Record whether the browser has installed a newer app shell for the next launch.
+    SetUpdateReady {
+        /// Whether a waiting service worker is ready to activate after this session closes.
+        ready: bool,
+    },
     /// Send plain chat text to a channel or direct buffer.
     SendMessage {
         /// Destination buffer.

@@ -1,4 +1,5 @@
 import wasmBinaryUrl from "@weblounge-engine-wasm";
+import { buildVersion } from "../build-version";
 import {
   requiresAuthorization,
   SessionTokenError,
@@ -23,6 +24,7 @@ interface WasmModule {
   create_wasm_engine: (
     buildId: string,
     instanceId: string,
+    buildVersion: string,
     onEvent: (encoded: string) => void,
   ) => Promise<WasmEngine>;
 }
@@ -205,6 +207,7 @@ async function loadEngine(
   return imported.create_wasm_engine(
     __BUILD_ID__,
     crypto.randomUUID(),
+    buildVersion.text,
     onEvent,
   );
 }

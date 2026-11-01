@@ -45,6 +45,10 @@ import {
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
+import {
+  onServiceWorkerUpdateReady,
+  serviceWorkerUpdateIsReady,
+} from "./service-worker";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
 import {
   contextMenuRegistry,
@@ -384,6 +388,21 @@ export function App(props: AppProps) {
         );
       }
     });
+    let engineStarted = false;
+    let updateReady = serviceWorkerUpdateIsReady();
+    const publishUpdateReady = () => {
+      if (!engineStarted || !updateReady) return;
+      void mountedClient
+        .send({
+          id: crypto.randomUUID(),
+          request: { type: "set_update_ready", ready: true },
+        })
+        .catch(() => undefined);
+    };
+    const unsubscribeUpdateReady = onServiceWorkerUpdateReady(() => {
+      updateReady = true;
+      publishUpdateReady();
+    });
     const updateVisibility = () => {
       mountedClient.setVisibility(document.hidden ? "hidden" : "visible");
       if (!document.hidden) reconnectNetworks();
@@ -436,6 +455,8 @@ export function App(props: AppProps) {
       if (outcome === "failed") {
         setStartupError("Couldn't start weblounge.");
       }
+      engineStarted = outcome === "ready";
+      publishUpdateReady();
       setEngineReady(true);
     });
     onCleanup(() => {
@@ -448,6 +469,7 @@ export function App(props: AppProps) {
       window.removeEventListener("offline", updateConnectivity);
       window.removeEventListener("pageshow", handlePageShow);
       unsubscribe();
+      unsubscribeUpdateReady();
       void mountedClient.close();
     });
 

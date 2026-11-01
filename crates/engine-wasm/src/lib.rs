@@ -33,6 +33,7 @@ impl WasmEngine {
 pub async fn create_wasm_engine(
     build_id: String,
     instance_id: String,
+    build_version: String,
     on_event: Function,
 ) -> Result<WasmEngine, JsValue> {
     let storage = Rc::new(WebKv::open().await);
@@ -40,8 +41,13 @@ pub async fn create_wasm_engine(
         .get(Space::Cache, b"chat-list-snapshot")
         .await
         .unwrap_or(None);
-    let (engine, mut events) =
-        Engine::with_events_and_storage(build_id, instance_id, storage, cached_snapshot);
+    let (engine, mut events) = Engine::with_events_and_storage(
+        build_id,
+        instance_id,
+        build_version,
+        storage,
+        cached_snapshot,
+    );
     wasm_bindgen_futures::spawn_local(async move {
         while let Some(event) = events.recv().await {
             if let Ok(encoded) = serde_json::to_string(&event) {

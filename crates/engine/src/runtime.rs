@@ -134,6 +134,8 @@ struct RuntimeState {
     storage: RuntimeStorage,
     snapshot_generation: Arc<AtomicU64>,
     cached_snapshot: Option<Vec<u8>>,
+    build_version: String,
+    update_ready: bool,
 }
 
 #[derive(Clone)]
@@ -185,7 +187,7 @@ impl Runtime {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let storage = Arc::new(MemoryKv::default());
-            Self::with_storage(outbound, storage, None)
+            Self::with_storage(outbound, storage, None, "weblounge dev".into())
         }
     }
 
@@ -193,6 +195,7 @@ impl Runtime {
         outbound: mpsc::UnboundedSender<EngineToUi>,
         storage: RuntimeStorage,
         cached_snapshot: Option<Vec<u8>>,
+        build_version: String,
     ) -> Self {
         Self {
             state: Arc::new(Mutex::new(RuntimeState {
@@ -203,6 +206,8 @@ impl Runtime {
                 storage,
                 snapshot_generation: Arc::new(AtomicU64::new(0)),
                 cached_snapshot,
+                build_version,
+                update_ready: false,
             })),
             outbound,
         }
@@ -263,6 +268,10 @@ impl Runtime {
             EngineRequest::Reconnect { network_id } => self.reconnect(envelope.id, network_id),
             EngineRequest::SetDeviceOnline { network_id, online } => {
                 self.set_device_online(envelope.id, network_id, online)
+            }
+            EngineRequest::SetUpdateReady { ready } => {
+                lock(&self.state).update_ready = ready;
+                vec![EngineToUi::CommandResult { id: envelope.id }]
             }
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
@@ -382,9 +391,29 @@ impl Runtime {
                 },
                 EngineToUi::CommandResult { id },
             ],
+            Ok(Command::Version {}) => self.show_version(id, buffer_id),
             Ok(Command::Identify { password }) => self.identify(id, &password.0),
             Err(error) => rejected_command(id, error.message_key()),
         }
+    }
+
+    fn show_version(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let text = if state.update_ready {
+            format!("{} · update ready — restart the app", state.build_version)
+        } else {
+            state.build_version.clone()
+        };
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(event) = running
+            .model
+            .append_notice(buffer_id, text, "weblounge".into(), None)
+        else {
+            return rejected_command(command_id, "engine.buffer_not_sendable");
+        };
+        vec![event, EngineToUi::CommandResult { id: command_id }]
     }
 
     fn identify(&self, command_id: String, password: &str) -> Vec<EngineToUi> {
@@ -1372,7 +1401,11 @@ fn attach_shell(model: &NetworkModel, command_id: String) -> Vec<EngineToUi> {
 fn server_command(command: &Command) -> bool {
     !matches!(
         command,
-        Command::Say { .. } | Command::Me { .. } | Command::Help { .. } | Command::Quit { .. }
+        Command::Say { .. }
+            | Command::Me { .. }
+            | Command::Help { .. }
+            | Command::Version { .. }
+            | Command::Quit { .. }
     )
 }
 
@@ -3289,6 +3322,8 @@ mod tests {
             storage: Arc::default(),
             snapshot_generation: Arc::default(),
             cached_snapshot: None,
+            build_version: "weblounge test".into(),
+            update_ready: false,
             network: Some(network),
         }
     }
@@ -3927,6 +3962,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn version_posts_the_build_and_waiting_update_as_a_local_notice() {
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            }))),
+            outbound,
+        };
+
+        assert_version_notice(
+            &runtime.request(EngineRequestEnvelope {
+                id: "version-1".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id: BufferId(1),
+                    input: "/version".into(),
+                },
+            }),
+            "weblounge test",
+        );
+        _ = runtime.request(EngineRequestEnvelope {
+            id: "update-ready".into(),
+            request: EngineRequest::SetUpdateReady { ready: true },
+        });
+        assert_version_notice(
+            &runtime.request(EngineRequestEnvelope {
+                id: "version-2".into(),
+                request: EngineRequest::SubmitInput {
+                    buffer_id: BufferId(1),
+                    input: "/version".into(),
+                },
+            }),
+            "weblounge test · update ready — restart the app",
+        );
+    }
+
+    fn assert_version_notice(events: &[EngineToUi], text: &str) {
+        assert!(matches!(
+            events,
+            [EngineToUi::MessagesAppended { messages, .. }, EngineToUi::CommandResult { .. }]
+                if messages.len() == 1
+                    && messages[0].kind == crate::MessageKind::Notice
+                    && messages[0].text == text
+                    && messages[0].author == "weblounge"
+        ));
+    }
+
+    #[tokio::test]
     async fn query_focuses_new_and_existing_direct_buffers_once() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -4137,6 +4230,8 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                build_version: "weblounge test".into(),
+                update_ready: false,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -4221,6 +4316,8 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                build_version: "weblounge test".into(),
+                update_ready: false,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::HostedOAuth,
@@ -4568,6 +4665,8 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                build_version: "weblounge test".into(),
+                update_ready: false,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -4940,6 +5039,8 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                build_version: "weblounge test".into(),
+                update_ready: false,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -5009,6 +5110,8 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                build_version: "weblounge test".into(),
+                update_ready: false,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -5069,6 +5172,8 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                build_version: "weblounge test".into(),
+                update_ready: false,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -5276,6 +5381,8 @@ mod tests {
             storage: Arc::default(),
             snapshot_generation: Arc::default(),
             cached_snapshot: None,
+            build_version: "weblounge test".into(),
+            update_ready: false,
             network: Some(RunningNetwork {
                 instance: 1,
                 authentication_kind: AuthenticationKind::SaslPlain,
