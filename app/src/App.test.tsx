@@ -496,6 +496,8 @@ it("reveals and navigates a cached chat list before live synchronization", async
   if (!(progressLogo instanceof HTMLElement))
     throw new Error("missing connection progress logo");
   fireEvent.animationIteration(progressLogo);
+  expect(progressLogo).toHaveAttribute("data-connection-phase", "filling");
+  fireEvent.animationEnd(progressLogo);
   await waitFor(() =>
     expect(container.querySelector("[data-connection-progress]")).toBeNull(),
   );

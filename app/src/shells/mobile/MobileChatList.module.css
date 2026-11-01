@@ -7,9 +7,13 @@
 }
 
 .header {
+  --wl-connection-bg: var(--wl-color-bg);
+  --wl-connection-fg: var(--wl-color-fg);
+  --wl-connection-gap: 10px;
+  --wl-connection-logo-size: 36px;
   align-items: center;
   display: flex;
-  gap: 10px;
+  gap: var(--wl-connection-gap);
   min-height: 58px;
   padding: 7px 14px;
 }
@@ -30,18 +34,6 @@
   background: var(--wl-color-error);
 }
 
-.logo[data-connection-progress]::after {
-  animation: mobile-logo-shimmer var(--wl-motion-connection) infinite
-    var(--wl-motion-standard-curve);
-  background: var(--wl-color-surface);
-  content: "";
-  height: 150%;
-  opacity: 0.22;
-  position: absolute;
-  transform: translateX(-28px) rotate(18deg);
-  width: 12px;
-}
-
 .logoMark {
   background: var(--wl-color-surface);
   height: 26px;
@@ -57,22 +49,6 @@
   font-size: 18px;
   margin: 0;
 }
-@keyframes mobile-logo-shimmer {
-  to {
-    transform: translateX(28px) rotate(18deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .logo[data-connection-progress] {
-    opacity: 0.72;
-  }
-
-  .logo[data-connection-progress]::after {
-    animation: none;
-  }
-}
-
 .search {
   align-items: center;
   background: var(--wl-color-chip);

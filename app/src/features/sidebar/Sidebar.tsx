@@ -8,7 +8,10 @@ import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
-import { createConnectionProgress } from "../../ui/connection-progress";
+import {
+  createConnectionProgress,
+  readConnectionSweep,
+} from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
@@ -36,15 +39,17 @@ interface SidebarProps {
 
 export function Sidebar(props: SidebarProps) {
   const platform = platformEnvironment();
+  let brand: HTMLDivElement | undefined;
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
   const connection = () =>
     connectionPresentation(props.networks, props.hydrating);
-  const progress = createConnectionProgress(
-    () => connection().progressing,
-    () => connection().error !== undefined || platform.prefersReducedMotion(),
-  );
+  const progress = createConnectionProgress(() => connection().progressing, {
+    interrupted: () => connection().error !== undefined,
+    prefersReducedMotion: platform.prefersReducedMotion,
+    sweepPosition: () => readConnectionSweep(brand),
+  });
   const run = (id: UiActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
       ...props.commandContext,
@@ -92,17 +97,34 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <aside aria-label="Channel list" class={styles.sidebar} data-sidebar="true">
-      <div class={styles.brand}>
+      <div
+        class={styles.brand}
+        data-connection-brand="true"
+        data-connection-phase={
+          progress.phase() === "idle" ? undefined : progress.phase()
+        }
+        data-connection-progress={progress.active() || undefined}
+        data-connection-visible={platform.pageVisible() || undefined}
+        onAnimationEnd={progress.handleAnimationEnd}
+        onAnimationIteration={progress.handleAnimationIteration}
+        ref={brand}
+      >
         <div
           class={styles.logo}
           data-connection-error={connection().error !== undefined || undefined}
-          data-connection-progress={progress.active() || undefined}
-          onAnimationIteration={progress.finishSweep}
+          data-connection-logo="true"
         >
-          <span aria-hidden="true" class={styles.logoMark} />
+          <span
+            aria-hidden="true"
+            class={styles.logoMark}
+            data-connection-logo-mark="true"
+          />
+          <span aria-hidden="true" data-connection-fill="true">
+            <span class={styles.logoMark} data-connection-logo-mark="true" />
+          </span>
         </div>
         <div class={styles.brandText}>
-          <h1>
+          <h1 data-connection-title="true">
             <Line>weblounge</Line>
           </h1>
           <Line class={styles.summary}>{networkSummary(props.networks)}</Line>

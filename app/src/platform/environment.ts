@@ -20,6 +20,7 @@ export interface PlatformEnvironment {
 
 export interface PlatformController {
   readonly environment: Accessor<PlatformEnvironment>;
+  readonly pageVisible: Accessor<boolean>;
   readonly prefersDark: Accessor<boolean>;
   readonly prefersReducedMotion: Accessor<boolean>;
   readonly shortcutPlatform: ShortcutPlatform;
@@ -58,6 +59,9 @@ export function installPlatformEnvironment(
     resolveEnvironment(target, touch.matches, standalone.matches, panels),
   );
   const [prefersDark, setPrefersDark] = createSignal(dark.matches);
+  const [pageVisible, setPageVisible] = createSignal(
+    browserWindow.document.visibilityState === "visible",
+  );
   const [prefersReducedMotion, setPrefersReducedMotion] = createSignal(
     reducedMotion.matches,
   );
@@ -78,8 +82,14 @@ export function installPlatformEnvironment(
     root.dataset.desktopPanels = next.desktopPanels;
   };
   const mediaChanged = () => publish();
+  const visibilityChanged = () =>
+    setPageVisible(browserWindow.document.visibilityState === "visible");
   const media = [touch, standalone, dark, reducedMotion];
   for (const query of media) query.addEventListener("change", mediaChanged);
+  browserWindow.document.addEventListener(
+    "visibilitychange",
+    visibilityChanged,
+  );
 
   const stopWidthObserver = (options.observeWidth ?? observeWidth)(
     root,
@@ -98,12 +108,17 @@ export function installPlatformEnvironment(
 
   const controller: PlatformController = {
     environment,
+    pageVisible,
     prefersDark,
     prefersReducedMotion,
     shortcutPlatform: resolveShortcutPlatform(browserWindow.navigator),
     dispose() {
       for (const query of media)
         query.removeEventListener("change", mediaChanged);
+      browserWindow.document.removeEventListener(
+        "visibilitychange",
+        visibilityChanged,
+      );
       stopViewportObserver();
       stopTouchMoveLock();
       stopWidthObserver();

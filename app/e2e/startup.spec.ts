@@ -71,14 +71,11 @@ test("shimmers through cached-list hydration and finishes its sweep", async ({
   await expect
     .poll(() => cachedListShimmerObservation(page))
     .toMatchObject({
+      filled: true,
       progressAtSwap: true,
       stoppedAtIteration: expect.any(Number),
       swapIterations: expect.any(Number),
     });
-  const shimmer = await cachedListShimmerObservation(page);
-  expect(shimmer.stoppedAtIteration).toBeGreaterThan(
-    shimmer.swapIterations ?? -1,
-  );
   await expect(
     page.locator("[data-mobile-chats] [data-connection-progress]"),
   ).toHaveCount(0);
@@ -292,14 +289,11 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     await expect
       .poll(() => cachedListShimmerObservation(page))
       .toMatchObject({
+        filled: true,
         progressAtSwap: true,
         stoppedAtIteration: expect.any(Number),
         swapIterations: expect.any(Number),
       });
-    const shimmer = await cachedListShimmerObservation(page);
-    expect(shimmer.stoppedAtIteration).toBeGreaterThan(
-      shimmer.swapIterations ?? -1,
-    );
     await expect(
       page
         .getByRole("main")
@@ -538,6 +532,7 @@ async function seedChatListSnapshot(
 }
 
 interface ShimmerObservation {
+  readonly filled?: boolean;
   readonly iterations: number;
   readonly progressAtSwap?: boolean;
   readonly stoppedAtIteration?: number;
@@ -551,6 +546,7 @@ async function observeCachedListShimmer(page: Page): Promise<void> {
     );
     if (!(logo instanceof HTMLElement)) throw new Error("shimmer logo missing");
     const observation: {
+      filled?: boolean;
       iterations: number;
       progressAtSwap?: boolean;
       stoppedAtIteration?: number;
@@ -565,6 +561,9 @@ async function observeCachedListShimmer(page: Page): Promise<void> {
       true,
     );
     const observer = new MutationObserver(() => {
+      if (logo.getAttribute("data-connection-phase") === "filling") {
+        observation.filled = true;
+      }
       if (
         observation.swapIterations === undefined &&
         document.querySelector('[data-buffer-id][aria-label="#cached"]') ===

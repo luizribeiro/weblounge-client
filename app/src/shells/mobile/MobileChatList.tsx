@@ -18,7 +18,10 @@ import type {
 } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
-import { createConnectionProgress } from "../../ui/connection-progress";
+import {
+  createConnectionProgress,
+  readConnectionSweep,
+} from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatList.module.css";
 import { MobileChatRow } from "./MobileChatRow";
@@ -47,6 +50,7 @@ interface MobileChatListProps {
 
 export function MobileChatList(props: MobileChatListProps) {
   const platform = platformEnvironment();
+  let header: HTMLElement | undefined;
   let list: HTMLDivElement | undefined;
   let restoringScroll = false;
   let userScrollIntent = false;
@@ -84,10 +88,11 @@ export function MobileChatList(props: MobileChatListProps) {
   const chatIds = createMemo(() => [...chatsById().keys()]);
   const connection = () =>
     connectionPresentation(props.networks, props.hydrating);
-  const progress = createConnectionProgress(
-    () => connection().progressing,
-    () => connection().error !== undefined || platform.prefersReducedMotion(),
-  );
+  const progress = createConnectionProgress(() => connection().progressing, {
+    interrupted: () => connection().error !== undefined,
+    prefersReducedMotion: platform.prefersReducedMotion,
+    sweepPosition: () => readConnectionSweep(header),
+  });
   createEffect(() => {
     props.restoreVersion();
     const scrollTop = props.restoreScroll();
@@ -116,18 +121,35 @@ export function MobileChatList(props: MobileChatListProps) {
   });
   return (
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
-      <header class={styles.header}>
+      <header
+        class={styles.header}
+        data-connection-brand="true"
+        data-connection-phase={
+          progress.phase() === "idle" ? undefined : progress.phase()
+        }
+        data-connection-progress={progress.active() || undefined}
+        data-connection-visible={platform.pageVisible() || undefined}
+        onAnimationEnd={progress.handleAnimationEnd}
+        onAnimationIteration={progress.handleAnimationIteration}
+        ref={header}
+      >
         <span
           aria-hidden="true"
           class={styles.logo}
           data-connection-error={connection().error !== undefined || undefined}
-          data-connection-progress={progress.active() || undefined}
-          onAnimationIteration={progress.finishSweep}
+          data-connection-logo="true"
         >
-          <span class={styles.logoMark} data-mobile-logo-mark="true" />
+          <span
+            class={styles.logoMark}
+            data-connection-logo-mark="true"
+            data-mobile-logo-mark="true"
+          />
+          <span data-connection-fill="true">
+            <span class={styles.logoMark} data-connection-logo-mark="true" />
+          </span>
         </span>
         <span class={styles.identity}>
-          <h1>
+          <h1 data-connection-title="true">
             <Line>weblounge</Line>
           </h1>
         </span>

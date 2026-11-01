@@ -94,6 +94,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-logo-fill",
+      testMatch: "**/logo-fill-shimmer.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-history",
       testMatch: "**/mobile-history.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
