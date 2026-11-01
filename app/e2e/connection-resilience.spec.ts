@@ -88,7 +88,7 @@ test.describe("connection resilience against local Ergo", () => {
 
       bot.close();
       bot = await connectBot("resumed");
-      await sendUntilReceived(page, bot, `after resume ${Date.now()}`);
+      await sendAndExpectEcho(page, bot, `after resume ${Date.now()}`);
       await expectShellToRemain(page, channel);
     } finally {
       if (ergoStopped) {
@@ -180,7 +180,7 @@ test.describe("connection resilience against local Ergo", () => {
       );
       await expect(composer).toHaveValue(draft);
 
-      await sendUntilReceived(page, bot, `after worker restart ${Date.now()}`);
+      await sendAndExpectEcho(page, bot, `after worker restart ${Date.now()}`);
       await expectShellToRemain(page, channel);
     } finally {
       bot.close();
@@ -209,7 +209,7 @@ test.describe("connection resilience against local Ergo", () => {
       await expectOnline(page, testInfo.project.name);
       const bot = await connectBot("ergo");
       try {
-        await sendUntilReceived(page, bot, `after Ergo restart ${Date.now()}`);
+        await sendAndExpectEcho(page, bot, `after Ergo restart ${Date.now()}`);
         await expectShellToRemain(page, channel);
       } finally {
         bot.close();
@@ -298,7 +298,7 @@ async function connectBot(label: string): Promise<IrcClient> {
   );
 }
 
-async function sendUntilReceived(
+async function sendAndExpectEcho(
   page: Page,
   bot: IrcClient,
   prefix: string,
