@@ -83,12 +83,7 @@ pub(crate) fn project(
     let mut rows = state
         .channel(channel)?
         .members()
-        .filter(|member| {
-            state
-                .casemapping()
-                .fold(member.nick().as_ref())
-                .contains(folded_filter.as_ref())
-        })
+        .filter(|member| member_matches_filter(member.nick(), folded_filter.as_ref()))
         .map(|member| {
             let user = state.user(member.nick());
             let away = user.is_some_and(|user| matches!(user.away(), papo::Away::Away { .. }));
@@ -122,7 +117,7 @@ pub(crate) fn project(
             away,
             bot,
             account: account_projection(user.map(papo::User::account)),
-            nick_color_index: nick_color_index(state.casemapping(), member.nick()),
+            nick_color_index: nick_color_index(state.casemapping(), member.nick().key()),
             is_you: member.nick() == state.nick(),
         })
         .collect();
@@ -137,6 +132,10 @@ pub(crate) fn project(
         members,
         filter: (!filter.is_empty()).then(|| filter.to_owned()),
     })
+}
+
+fn member_matches_filter(nick: &papo::Nick, folded_filter: &str) -> bool {
+    nick.key().contains(folded_filter)
 }
 
 fn account_projection(account: Option<&papo::Account>) -> AccountProjection {
@@ -175,9 +174,9 @@ const fn order(group: MemberGroup) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use papo_testing::wire;
+    use papo_testing::{StateBuilder, wire};
 
-    use super::{Changes, project};
+    use super::{Changes, member_matches_filter, project};
     use crate::{AccountProjection, BufferId, EngineToUi, MemberGroup};
 
     fn channel(state: &papo::State, name: &str) -> papo::ChannelName {
@@ -190,6 +189,16 @@ mod tests {
     fn assert_channel_change(changes: &mut Changes, event: &papo::Event, state: &papo::State) {
         assert!(changes.record(event, state));
         assert_eq!(changes.drain(), [channel(state, "#room")]);
+    }
+
+    #[test]
+    fn folded_member_filter_uses_the_name_key_not_display_spelling() {
+        let state = StateBuilder::new("weblounge").build();
+        let nick = papo_testing::nick(state.casemapping(), "[Garden]");
+        let folded_filter = state.casemapping().fold("{garden}");
+
+        assert!(!nick.as_str().contains(folded_filter.as_ref()));
+        assert!(member_matches_filter(&nick, folded_filter.as_ref()));
     }
 
     #[tokio::test]

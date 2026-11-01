@@ -1975,24 +1975,19 @@ fn spawn_recent_direct_restore(
         let mut directs = recent
             .into_iter()
             .filter_map(|recent| match recent.conversation {
-                papo::Conversation::Private(nick) if !is_own_nick(&snapshot, nick.as_ref()) => {
+                papo::Conversation::Private(nick) if !is_own_nick(&snapshot, nick.as_str()) => {
                     Some((nick, recent.latest_server_time))
                 }
                 _ => None,
             })
             .collect::<Vec<_>>();
         directs.sort_by(|(first_nick, first_time), (second_nick, second_time)| {
-            second_time.cmp(first_time).then_with(|| {
-                snapshot
-                    .casemapping()
-                    .fold(first_nick.as_ref())
-                    .cmp(&snapshot.casemapping().fold(second_nick.as_ref()))
-            })
+            second_time
+                .cmp(first_time)
+                .then_with(|| first_nick.key().cmp(second_nick.key()))
         });
         let mut seen = HashSet::new();
-        directs.retain(|(nick, _)| {
-            seen.insert(snapshot.casemapping().fold(nick.as_ref()).into_owned())
-        });
+        directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
         directs.truncate(RECENT_DIRECT_LIMIT);
         drop(snapshot);
         if directs.is_empty() {
