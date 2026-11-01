@@ -30,15 +30,18 @@ protect sends to that nick, but it is not the thread key. Each row contains only
 
 - that durable channel or direct identity;
 - display name and explicit list order;
+- one optional last-activity timestamp in milliseconds since the Unix epoch, using the same value
+  that orders the live chat list;
 - the visible badge projection: none, unread dot, or mention count; and
 - an optional, single-line latest-message preview, already truncated by the UI's visible excerpt
   rule (currently 80 characters plus an ellipsis). Direct-message previews are included under the
   same bound.
 
-There is no transient `BufferId`, timestamp, topic, membership, read marker, message identifier,
-message body beyond the truncated preview, conversation transcript, or paging cursor. The record
-is not a history cache. Mobile Chats is the required consumer; desktop may render the same rows in
-its sidebar only if that reuses this record and the existing row geometry without a second schema.
+There is no transient `BufferId`, message timestamp beyond that single row activity value, topic,
+membership, read marker, message identifier, message body beyond the truncated preview,
+conversation transcript, or paging cursor. The record is not a history cache. Mobile Chats is the
+required consumer; desktop may render the same rows in its sidebar only if that reuses this record
+and the existing row geometry without a second schema.
 
 ## Write, read, and replacement
 
@@ -95,10 +98,11 @@ screen and at the top of the desktop sidebar. It contains a few words and one ac
 in again” or “Retry”, disappears when resolved, and gives the logo an error-token tint while shown.
 It is never duplicated in the Chats header or conversation header.
 
-Sign-out clears the snapshot as part of clearing device-local cache. A schema/version mismatch or
-decode failure is ignored rather than migrated. A configured-network identity mismatch is also
-ignored, preventing one account or network configuration from appearing under another; the next
-complete online projection may replace it.
+Sign-out clears the snapshot as part of clearing device-local cache. The timestamp addition bumps
+the schema version; records from the earlier version are ignored rather than migrated. Any other
+schema/version mismatch or decode failure is ignored too. A configured-network identity mismatch
+is also ignored, preventing one account or network configuration from appearing under another;
+the next complete online projection may replace it.
 
 The snapshot is ordinary device-local cache, not encrypted secret storage. A person or process
 with access to the browser profile or native app data can read chat names, badge state, and the
@@ -108,13 +112,15 @@ evicted at any time, and must never be required for a correct cold launch.
 ## Testing
 
 - Serialization and engine tests cover the exact bounded shape, DM preview truncation, atomic
-  whole-record writes, channel and nick keys scoped by network identity, throttling with an
+  whole-record writes, row activity round-tripping into the live ordering field, preserved row
+  order and rendered times, channel and nick keys scoped by network identity, throttling with an
   injected clock, and refusal to write partial, capped, or offline projections.
 - Validation tests ignore corrupt, unknown-version, and wrong-network records; sign-out clears the
   record and a following launch cannot paint it.
 - A Chromium and WebKit Playwright filmstrip starts with a seeded cache and delayed engine. Its
   first revealed app frame contains cached rows and previews in the normal shell, with only the
   token-driven logo treatment, then swaps once to live rows with no blank frame or layout shift.
+  When seeded and live state match, row text, order, and times do not change in the swap frame.
   Reduced-motion coverage sees a static dim and no animation.
 - Before live state arrives, Playwright taps a cached row and observes the quiet conversation
   state, submits a message, observes its optimistic pending row, and verifies FIFO delivery after
