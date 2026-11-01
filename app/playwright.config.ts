@@ -54,7 +54,7 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
-      name: "webkit-startup",
+      name: "webkit-startup-desktop",
       testMatch: "**/startup.spec.ts",
       use: { browserName: "webkit" },
     },
@@ -89,7 +89,7 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
-      name: "webkit-startup",
+      name: "webkit-startup-mobile",
       testMatch: "**/startup.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
