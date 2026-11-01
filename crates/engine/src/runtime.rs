@@ -1,8 +1,17 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, SystemTime},
 };
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use std::rc::Rc;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use wasm_bindgen::{JsCast, JsValue};
 
 use tokio::sync::mpsc;
 
@@ -10,12 +19,23 @@ use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineRequest,
     EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId, OfflineReason,
+    chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
     state::{
-        DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend, ReadAdvance,
-        SendTarget, is_own_nick, time_millis,
+        DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
+        PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
     },
 };
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use crate::storage::MemoryKv;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use crate::storage::WebKv;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+type RuntimeStorage = Rc<WebKv>;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+type RuntimeStorage = Arc<MemoryKv>;
 
 const DEFAULT_WINDOW_LIMIT: usize = 500;
 const HISTORY_PAGE_SIZE: usize = 100;
@@ -43,6 +63,7 @@ struct RunningNetwork {
     pending_sends: VecDeque<QueuedSend>,
     flushing_sends: bool,
     hosted_reconnect: Option<HostedReconnectConfig>,
+    chat_list: ChatListSync,
 }
 
 #[derive(Clone)]
@@ -52,9 +73,24 @@ struct HostedReconnectConfig {
     autojoin: Vec<String>,
 }
 
+#[derive(Default)]
+struct ChatListSync {
+    fingerprint: String,
+    recent_directs_ready: bool,
+    live: bool,
+    restored_from_cache: bool,
+}
+
 struct QueuedSend {
     pending: PendingSend,
     retry_if_disconnected: bool,
+    await_live_target: bool,
+}
+
+enum FlushNext {
+    Send(QueuedSend),
+    Fail(Vec<EngineToUi>),
+    Stop,
 }
 
 struct JoinTarget {
@@ -95,6 +131,9 @@ struct RuntimeState {
     next_instance: u64,
     network: Option<RunningNetwork>,
     member_views: MemberViews,
+    storage: RuntimeStorage,
+    snapshot_generation: Arc<AtomicU64>,
+    cached_snapshot: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -138,12 +177,32 @@ pub(crate) struct Runtime {
 
 impl Runtime {
     pub(crate) fn new(outbound: mpsc::UnboundedSender<EngineToUi>) -> Self {
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let _ = outbound;
+            unreachable!("web engines require IndexedDB storage");
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        {
+            let storage = Arc::new(MemoryKv::default());
+            Self::with_storage(outbound, storage, None)
+        }
+    }
+
+    pub(crate) fn with_storage(
+        outbound: mpsc::UnboundedSender<EngineToUi>,
+        storage: RuntimeStorage,
+        cached_snapshot: Option<Vec<u8>>,
+    ) -> Self {
         Self {
             state: Arc::new(Mutex::new(RuntimeState {
                 next_network_id: 1,
                 next_instance: 1,
                 network: None,
                 member_views: MemberViews::default(),
+                storage,
+                snapshot_generation: Arc::new(AtomicU64::new(0)),
+                cached_snapshot,
             })),
             outbound,
         }
@@ -223,6 +282,9 @@ impl Runtime {
             } => self.complete_input(envelope.id, buffer_id, input, cursor, explicit),
             EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
+            }
+            EngineRequest::MarkCachedRead { buffer_id } => {
+                self.mark_cached_read(envelope.id, buffer_id)
             }
             EngineRequest::MarkAllRead => self.mark_all_read(envelope.id),
             EngineRequest::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
@@ -449,6 +511,7 @@ impl Runtime {
         }
 
         let authentication_kind = config.authentication.kind();
+        let snapshot_fingerprint = chat_list_snapshot::fingerprint(&config.label, &config.endpoint);
         let mut state = lock(&self.state);
         if let Some(running) = state.network.as_ref() {
             if authentication_kind != running.authentication_kind {
@@ -468,18 +531,32 @@ impl Runtime {
                     autojoin: config.autojoin.clone(),
                 }
             });
-        let model = NetworkModel::new(
+        let mut model = NetworkModel::new(
             id,
             config.label.clone(),
             config.nickname.clone(),
             DEFAULT_WINDOW_LIMIT,
         );
         let (client, events, driver) = build_client(config);
-        let output = vec![
-            model.network_event(),
-            model.buffers_event(),
-            EngineToUi::CommandResult { id: command_id },
-        ];
+        let cached_snapshot = state
+            .cached_snapshot
+            .take()
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
+        let had_cached_chat_list = cached_snapshot.is_some();
+        if let Some(snapshot) = cached_snapshot {
+            model.restore_chat_list(snapshot);
+        }
+        let mut output = vec![model.network_event(), model.buffers_event()];
+        if had_cached_chat_list {
+            output.push(EngineToUi::ChatListSnapshotLoaded {
+                network_id: id,
+                buffers: match model.buffers_event() {
+                    EngineToUi::BuffersChanged { buffers, .. } => buffers,
+                    _ => Vec::new(),
+                },
+            });
+        }
+        output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
             instance,
             authentication_kind,
@@ -490,6 +567,11 @@ impl Runtime {
             pending_sends: VecDeque::new(),
             flushing_sends: false,
             hosted_reconnect,
+            chat_list: ChatListSync {
+                fingerprint: snapshot_fingerprint,
+                restored_from_cache: had_cached_chat_list,
+                ..ChatListSync::default()
+            },
         });
         drop(state);
 
@@ -704,9 +786,12 @@ impl Runtime {
         );
         let event = running.model.set_connection(next, None);
         let client = running.client;
+        let storage = state.storage.clone();
+        state.snapshot_generation.fetch_add(1, Ordering::Relaxed);
         drop(state);
         spawn_task(async move {
             let _ = client.quit(String::new()).await;
+            let _ = chat_list_snapshot::clear(storage.as_ref()).await;
         });
         vec![
             event,
@@ -726,6 +811,7 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
+        let await_live_target = running.model.is_cached_buffer(buffer_id);
         let pending = match kind {
             crate::MessageKind::Text => {
                 running
@@ -742,10 +828,13 @@ impl Runtime {
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
         };
-        let retry_if_disconnected = !running.device_online || running.model.is_online();
+        let retry_if_disconnected = running.model.is_cached_buffer(buffer_id)
+            || !running.device_online
+            || running.model.is_online();
         running.pending_sends.push_back(QueuedSend {
             pending,
             retry_if_disconnected,
+            await_live_target,
         });
         let should_flush = running.device_online && !running.flushing_sends;
         if should_flush {
@@ -1196,6 +1285,17 @@ impl Runtime {
         Vec::new()
     }
 
+    fn mark_cached_read(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(event) = running.model.mark_cached_read(buffer_id) else {
+            return rejected_command(command_id, "engine.read_marker_invalid");
+        };
+        vec![event, EngineToUi::CommandResult { id: command_id }]
+    }
+
     fn mark_all_read(&self, command_id: String) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
@@ -1460,7 +1560,7 @@ async fn flush_pending_sends(
     instance: u64,
 ) {
     loop {
-        let queued = {
+        let next = {
             let mut state = lock(state);
             let Some(running) = state
                 .network
@@ -1469,15 +1569,15 @@ async fn flush_pending_sends(
             else {
                 return;
             };
-            if !running.device_online {
-                running.flushing_sends = false;
-                return;
+            take_next_send(running)
+        };
+        let queued = match next {
+            FlushNext::Send(queued) => queued,
+            FlushNext::Fail(events) => {
+                send_events(outbound, events);
+                continue;
             }
-            let Some(queued) = running.pending_sends.pop_front() else {
-                running.flushing_sends = false;
-                return;
-            };
-            queued
+            FlushNext::Stop => return,
         };
         let result = send(client, &queued.pending).await;
         let events = {
@@ -1509,6 +1609,52 @@ async fn flush_pending_sends(
             let _ = outbound.send(event);
         }
     }
+}
+
+fn take_next_send(running: &mut RunningNetwork) -> FlushNext {
+    if !running.device_online {
+        running.flushing_sends = false;
+        return FlushNext::Stop;
+    }
+    let Some(queued) = running.pending_sends.front_mut() else {
+        running.flushing_sends = false;
+        return FlushNext::Stop;
+    };
+    if !queued.await_live_target {
+        return pop_send(running);
+    }
+    match running.model.prepare_cached_send(&mut queued.pending) {
+        PendingTargetState::Waiting => {
+            running.flushing_sends = false;
+            FlushNext::Stop
+        }
+        PendingTargetState::Ready => {
+            queued.await_live_target = false;
+            pop_send(running)
+        }
+        PendingTargetState::Gone => match running.pending_sends.pop_front() {
+            Some(queued) => {
+                let mut events = running
+                    .model
+                    .fail_send(&queued.pending, "engine.cached_target_gone");
+                events.push(EngineToUi::notice("engine.cached_target_gone"));
+                FlushNext::Fail(events)
+            }
+            None => stop_send_flush(running),
+        },
+    }
+}
+
+fn pop_send(running: &mut RunningNetwork) -> FlushNext {
+    match running.pending_sends.pop_front() {
+        Some(queued) => FlushNext::Send(queued),
+        None => stop_send_flush(running),
+    }
+}
+
+fn stop_send_flush(running: &mut RunningNetwork) -> FlushNext {
+    running.flushing_sends = false;
+    FlushNext::Stop
 }
 
 async fn finish_send(
@@ -2138,8 +2284,8 @@ fn spawn_recent_direct_restore(
             return;
         };
         output.push(buffers);
-        output.push(EngineToUi::RecentDirectsReady { network_id });
         send_events(&outbound, output);
+        send_recent_directs_ready(&state, &outbound, instance, network_id);
         for fetch in fetches {
             spawn_history_fetch(
                 Arc::clone(&state),
@@ -2175,13 +2321,29 @@ fn send_recent_directs_ready(
     instance: u64,
     network_id: NetworkId,
 ) {
-    if lock(state)
-        .network
-        .as_ref()
-        .is_some_and(|running| running.instance == instance)
-    {
-        let _ = outbound.send(EngineToUi::RecentDirectsReady { network_id });
+    let client = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        running.chat_list.recent_directs_ready = true;
+        running.model.mark_vanished_cached_rows();
+        if !running.pending_sends.is_empty() && !running.flushing_sends {
+            running.flushing_sends = true;
+            Some(running.client.clone())
+        } else {
+            None
+        }
+    };
+    let _ = outbound.send(EngineToUi::RecentDirectsReady { network_id });
+    if let Some(client) = client {
+        spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
     }
+    update_chat_list(state, outbound, instance);
 }
 
 fn apply_direct_resolution(
@@ -2196,16 +2358,32 @@ fn apply_direct_resolution(
         Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
         Err(_) => (DirectAvailability::Failed, false),
     };
-    let mut state = lock(state);
-    let Some(running) = state
-        .network
-        .as_mut()
-        .filter(|running| running.instance == instance)
-    else {
-        return;
+    let (client, read_advances) = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        running.model.resolve_direct(buffer_id, availability);
+        let (read_advances, events) = running.model.take_cached_read_advances();
+        send_events(outbound, events);
+        let client = if !running.pending_sends.is_empty() && !running.flushing_sends {
+            running.flushing_sends = true;
+            Some(running.client.clone())
+        } else {
+            None
+        };
+        (client, read_advances)
     };
-    running.model.resolve_direct(buffer_id, availability);
-    drop(state);
+    if let Some(client) = client {
+        spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
+    }
+    if !read_advances.is_empty() {
+        spawn_deferred_read_advances(state, outbound.clone(), instance, read_advances);
+    }
     if degraded {
         let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
     }
@@ -2325,6 +2503,7 @@ fn process_event_with_direct(
     }
     drop(state);
     send_events(outbound, output);
+    update_chat_list(&shared_state, outbound, instance);
     if flush_pending {
         spawn_send_flush(shared_state, outbound.clone(), client.clone(), instance);
     }
@@ -2662,6 +2841,7 @@ fn process_history(
     instance: u64,
     page: papo::HistoryPage,
 ) {
+    let shared_state = Arc::clone(state);
     let prepend = page.reason == papo::HistoryReason::Requested;
     let requested = requested_history_boundary(&page);
     let snapshot = client.state();
@@ -2747,10 +2927,138 @@ fn process_history(
             at_start,
         });
     }
+    let (read_advances, read_events) = running.model.take_cached_read_advances();
+    output.extend(read_events);
     drop(state);
-    for event in output {
+    send_events(outbound, output);
+    if !read_advances.is_empty() {
+        spawn_deferred_read_advances(&shared_state, outbound.clone(), instance, read_advances);
+    }
+    update_chat_list(&shared_state, outbound, instance);
+}
+
+fn spawn_deferred_read_advances(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+    advances: Vec<ReadAdvance>,
+) {
+    let client = lock(state)
+        .network
+        .as_ref()
+        .filter(|running| running.instance == instance)
+        .map(|running| running.client.clone());
+    let Some(client) = client else {
+        return;
+    };
+    spawn_task(async move {
+        if !client.state().supports(papo::Feature::ReadMarkers) {
+            return;
+        }
+        for advance in advances {
+            let result = match advance.target {
+                SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
+                SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
+            };
+            if result.is_err() {
+                let _ = outbound.send(EngineToUi::notice("engine.mark_read_failed"));
+                return;
+            }
+        }
+    });
+}
+
+fn update_chat_list(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+) {
+    let (live_event, snapshot, storage, generation) = {
+        let mut state = lock(state);
+        let storage = state.storage.clone();
+        let generation = Arc::clone(&state.snapshot_generation);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        if !running.chat_list.recent_directs_ready || !running.model.chat_list_complete() {
+            return;
+        }
+        let live_event = (!running.chat_list.live && running.chat_list.restored_from_cache)
+            .then(|| running.model.finish_cached_chat_list());
+        running.chat_list.live = true;
+        let snapshot = running
+            .model
+            .chat_list_snapshot(running.chat_list.fingerprint.clone());
+        (live_event, snapshot, storage, generation)
+    };
+    if let Some(event) = live_event {
         let _ = outbound.send(event);
     }
+    schedule_snapshot_write(storage, generation, snapshot);
+}
+
+fn schedule_snapshot_write(
+    storage: RuntimeStorage,
+    generation: Arc<AtomicU64>,
+    snapshot: ChatListSnapshot,
+) {
+    schedule_snapshot_write_after(storage, generation, snapshot, snapshot_write_delay());
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+async fn snapshot_write_delay() {
+    tokio::time::sleep(Duration::from_millis(750)).await;
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+async fn snapshot_write_delay() {
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        let timeout = js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("setTimeout"))
+            .ok()
+            .and_then(|value| value.dyn_into::<js_sys::Function>().ok());
+        if let Some(timeout) = timeout {
+            let _ = timeout.call2(&JsValue::NULL, &resolve, &JsValue::from_f64(750.0));
+        } else {
+            let _ = resolve.call0(&JsValue::NULL);
+        }
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn schedule_snapshot_write_after(
+    storage: RuntimeStorage,
+    generation: Arc<AtomicU64>,
+    snapshot: ChatListSnapshot,
+    delay: impl std::future::Future<Output = ()> + 'static,
+) {
+    let scheduled = generation.fetch_add(1, Ordering::Relaxed) + 1;
+    spawn_task(async move {
+        delay.await;
+        if generation.load(Ordering::Relaxed) == scheduled {
+            let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
+        }
+    });
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn schedule_snapshot_write_after(
+    storage: RuntimeStorage,
+    generation: Arc<AtomicU64>,
+    snapshot: ChatListSnapshot,
+    delay: impl std::future::Future<Output = ()> + Send + 'static,
+) {
+    let scheduled = generation.fetch_add(1, Ordering::Relaxed) + 1;
+    spawn_task(async move {
+        delay.await;
+        if generation.load(Ordering::Relaxed) == scheduled {
+            let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
+        }
+    });
 }
 
 fn requested_history_boundary(
@@ -2948,26 +3256,89 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
 mod tests {
     use std::{
         collections::VecDeque,
-        sync::{Arc, Mutex},
+        sync::{Arc, Mutex, atomic::AtomicU64},
         time::Duration,
     };
 
     use papo_testing::{Wire, wire};
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
 
     use super::{
-        AuthenticationKind, ConnectionAuthentication, ConnectionTransition, HostedReconnectConfig,
-        MemberViews, RunningNetwork, Runtime, RuntimeState, completion_context,
-        connection_failure_notice, drain_events, fetch_history, fetch_latest, lock,
-        next_connection_state, person_candidates, process_event, process_history,
-        spawn_history_fetch, spawn_read_marker_fetch, utf16_len,
+        AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
+        HostedReconnectConfig, MemberViews, RunningNetwork, Runtime, RuntimeState,
+        completion_context, connection_failure_notice, drain_events, fetch_history, fetch_latest,
+        lock, next_connection_state, person_candidates, process_event, process_history,
+        schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
         EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkId, SaslCredentials,
+        chat_list_snapshot::{
+            ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
+        },
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         state::{DirectAvailability, HistoryTarget, NetworkModel, PendingSend, SendTarget},
+        storage::MemoryKv,
     };
+
+    fn runtime_state(network: RunningNetwork) -> RuntimeState {
+        RuntimeState {
+            next_network_id: 2,
+            next_instance: 2,
+            member_views: MemberViews::default(),
+            storage: Arc::default(),
+            snapshot_generation: Arc::default(),
+            cached_snapshot: None,
+            network: Some(network),
+        }
+    }
+
+    #[tokio::test]
+    async fn snapshot_rewrites_are_trailing_and_coalesced_by_an_injected_clock() {
+        let storage = Arc::new(MemoryKv::default());
+        let generation = Arc::new(AtomicU64::new(0));
+        let first = ChatListSnapshot::new("network".into(), Vec::new());
+        let second = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#room".into(),
+                },
+                title: "#room".into(),
+                badge: SnapshotBadge::None,
+                preview: None,
+            }],
+        );
+        let (first_tick, first_clock) = oneshot::channel();
+        let (second_tick, second_clock) = oneshot::channel();
+        schedule_snapshot_write_after(
+            Arc::clone(&storage),
+            Arc::clone(&generation),
+            first,
+            async move {
+                let _ = first_clock.await;
+            },
+        );
+        schedule_snapshot_write_after(
+            Arc::clone(&storage),
+            Arc::clone(&generation),
+            second.clone(),
+            async move {
+                let _ = second_clock.await;
+            },
+        );
+
+        let _ = first_tick.send(());
+        tokio::task::yield_now().await;
+        assert_eq!(read(storage.as_ref()).await.expect("read"), None);
+        let _ = second_tick.send(());
+        tokio::task::yield_now().await;
+        let stored = read(storage.as_ref())
+            .await
+            .expect("read")
+            .expect("latest rewrite");
+        assert_eq!(ChatListSnapshot::decode(&stored, "network"), Some(second));
+    }
 
     #[test]
     fn connection_state_table_covers_resilient_transitions() {
@@ -3571,22 +3942,18 @@ mod tests {
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(RuntimeState {
-                next_network_id: 2,
-                next_instance: 2,
-                member_views: MemberViews::default(),
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    hosted_reconnect: None,
-                    client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
-            })),
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            }))),
             outbound,
         };
         mark_runtime_online(&runtime);
@@ -3767,6 +4134,9 @@ mod tests {
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
+                storage: Arc::default(),
+                snapshot_generation: Arc::default(),
+                cached_snapshot: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -3775,6 +4145,7 @@ mod tests {
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
                     hosted_reconnect: None,
+                    chat_list: ChatListSync::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -3847,6 +4218,9 @@ mod tests {
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
+                storage: Arc::default(),
+                snapshot_generation: Arc::default(),
+                cached_snapshot: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::HostedOAuth,
@@ -3859,6 +4233,7 @@ mod tests {
                         nickname: "*".into(),
                         autojoin: vec!["#lounge".into()],
                     }),
+                    chat_list: ChatListSync::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -3935,22 +4310,18 @@ mod tests {
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(RuntimeState {
-                next_network_id: 2,
-                next_instance: 2,
-                member_views: MemberViews::default(),
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    hosted_reconnect: None,
-                    client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
-            })),
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            }))),
             outbound,
         };
 
@@ -4087,22 +4458,18 @@ mod tests {
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
-            state: Arc::new(Mutex::new(RuntimeState {
-                next_network_id: 2,
-                next_instance: 2,
-                member_views: MemberViews::default(),
-                network: Some(RunningNetwork {
-                    instance: 1,
-                    authentication_kind: AuthenticationKind::SaslPlain,
-                    connection_attempt: 1,
-                    device_online: true,
-                    pending_sends: VecDeque::new(),
-                    flushing_sends: false,
-                    hosted_reconnect: None,
-                    client,
-                    model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
-                }),
-            })),
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
+            }))),
             outbound,
         };
         mark_runtime_online(&runtime);
@@ -4198,6 +4565,9 @@ mod tests {
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
+                storage: Arc::default(),
+                snapshot_generation: Arc::default(),
+                cached_snapshot: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -4206,6 +4576,7 @@ mod tests {
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
                     hosted_reconnect: None,
+                    chat_list: ChatListSync::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4500,6 +4871,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_join_reactivates_a_vanished_cached_channel() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        {
+            let mut state = lock(&state);
+            let model = &mut state.network.as_mut().expect("network").model;
+            model.restore_chat_list(ChatListSnapshot::new(
+                "network".into(),
+                vec![SnapshotRow {
+                    conversation: SnapshotConversation::Channel {
+                        key: "#room".into(),
+                    },
+                    title: "#room".into(),
+                    badge: SnapshotBadge::None,
+                    preview: None,
+                }],
+            ));
+            model.mark_vanished_cached_rows();
+        }
+        let runtime = Runtime { state, outbound };
+        mark_runtime_online(&runtime);
+
+        assert_no_output(&runtime.request(EngineRequestEnvelope {
+            id: "join-cached".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id: BufferId(1),
+                input: "/join #room".into(),
+            },
+        }));
+        assert_eq!(wire.next_sent().await, "JOIN #room");
+        wire.server(":weblounge!u@host JOIN #room").await;
+        wire.server(":offline.test 366 weblounge #room :End of NAMES")
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ChannelSynced(_))
+        })
+        .await;
+        let output = command_output(&mut receiver).await;
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer|
+                    buffer.title == "#room" && buffer.available != Some(false))
+        )));
+    }
+
+    #[tokio::test]
     async fn submit_join_preserves_each_channel_key_on_the_wire() {
         let (client, mut events, mut wire) = wire(
             papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
@@ -4512,6 +4937,9 @@ mod tests {
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
+                storage: Arc::default(),
+                snapshot_generation: Arc::default(),
+                cached_snapshot: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -4520,6 +4948,7 @@ mod tests {
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
                     hosted_reconnect: None,
+                    chat_list: ChatListSync::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4577,6 +5006,9 @@ mod tests {
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
+                storage: Arc::default(),
+                snapshot_generation: Arc::default(),
+                cached_snapshot: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -4585,6 +5017,7 @@ mod tests {
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
                     hosted_reconnect: None,
+                    chat_list: ChatListSync::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4633,6 +5066,9 @@ mod tests {
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
+                storage: Arc::default(),
+                snapshot_generation: Arc::default(),
+                cached_snapshot: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -4641,6 +5077,7 @@ mod tests {
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
                     hosted_reconnect: None,
+                    chat_list: ChatListSync::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4836,6 +5273,9 @@ mod tests {
             next_network_id: 2,
             next_instance: 2,
             member_views: MemberViews::default(),
+            storage: Arc::default(),
+            snapshot_generation: Arc::default(),
+            cached_snapshot: None,
             network: Some(RunningNetwork {
                 instance: 1,
                 authentication_kind: AuthenticationKind::SaslPlain,
@@ -4844,6 +5284,7 @@ mod tests {
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
                 hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
                 client,
                 model,
             }),

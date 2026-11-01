@@ -22,6 +22,14 @@ network_id: NetworkId,
  */
 kind: BufferKind,
 /**
+ * Whether this row was restored from the launch cache and is not live yet.
+ */
+cached?: boolean,
+/**
+ * Whether the configured conversation still exists in the complete live list.
+ */
+available?: boolean,
+/**
  * Current channel or nick display name.
  */
 title: string,
@@ -56,4 +64,8 @@ read_through: MessageId | null,
 /**
  * Latest timeline row for conversation-list previews.
  */
-last_message?: MessageProjection, };
+last_message?: MessageProjection,
+/**
+ * Already-formatted bounded preview used only by a cached launch row.
+ */
+cached_preview?: string, };

@@ -15,6 +15,7 @@ export const messageKeys = [
   "engine.channel_recreated",
   "engine.channel_required",
   "engine.command_refused",
+  "engine.cached_target_gone",
   "engine.connection_failed",
   "engine.hosted_auth_failed",
   "engine.dedicated_worker_fallback",
@@ -115,6 +116,8 @@ export function t(key: string, values: MessageValues = {}): string {
       return "That command only works in a channel.";
     case "engine.command_refused":
       return "The server refused that command.";
+    case "engine.cached_target_gone":
+      return "That conversation is no longer available, so the message was not sent.";
     case "engine.connection_failed":
       return "Couldn't connect to the server. Check the address, certificate, and whether this site is allowed.";
     case "engine.hosted_auth_failed":

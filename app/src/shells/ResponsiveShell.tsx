@@ -49,9 +49,13 @@ export function ResponsiveShell(props: DesktopShellProps) {
     if (current.priority === "initial" || current.priority === "explicit")
       return;
     const preferred =
-      props.buffers.find((buffer) => buffer.kind === "channel") ??
-      props.buffers.find((buffer) => buffer.kind === "direct") ??
-      props.buffers[0];
+      props.buffers.find(
+        (buffer) => buffer.kind === "channel" && buffer.available !== false,
+      ) ??
+      props.buffers.find(
+        (buffer) => buffer.kind === "direct" && buffer.available !== false,
+      ) ??
+      props.buffers.find((buffer) => buffer.available !== false);
     const selected = props.buffers.find(
       (buffer) => buffer.id === current.bufferId,
     );

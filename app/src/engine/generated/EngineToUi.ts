@@ -121,6 +121,22 @@ network_id: NetworkId,
 /**
  * Complete ordered buffer projection.
  */
+buffers: Array<BufferProjection>, } | { "type": "chat_list_snapshot_loaded",
+/**
+ * Network whose configured identity matched the record.
+ */
+network_id: NetworkId,
+/**
+ * Complete ordered cached rows with fresh session-only IDs.
+ */
+buffers: Array<BufferProjection>, } | { "type": "chat_list_live",
+/**
+ * Network whose live projection completed.
+ */
+network_id: NetworkId,
+/**
+ * Complete ordered live rows plus an unavailable selected-cache fallback.
+ */
 buffers: Array<BufferProjection>, } | { "type": "recent_directs_ready",
 /**
  * Network whose recent direct targets have been discovered.

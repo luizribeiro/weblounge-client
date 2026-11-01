@@ -170,6 +170,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     focus arrives.
   - [x] Keep unresolved buffer routes above provisional startup fallbacks while explicit engine
     focus and user navigation remain authoritative.
+  - [x] Present connection state once per shell: the brand mark carries transient progress,
+    actionable failures use one strip, and blocked composers explain queued delivery locally.
+  - [x] Restore a versioned engine-owned chat-list snapshot from the web Cache store before live
+    synchronization. Cached rows navigate, queue identity-safe sends, and defer explicit read
+    intent; the first complete online list replaces them wholesale and preserves vanished routes
+    as unavailable without retargeting queued work.
   - [x] Show the pointer cursor for clickable URL and channel tokens in messages.
   - [x] Keep composer suggestions mounted while Backspace shrinks a pending engine query.
   - [x] Apply engine-owned nick addressing to explicit Tab completion and preserve it while cycling.

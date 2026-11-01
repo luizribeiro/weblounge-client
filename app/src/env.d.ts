@@ -13,13 +13,14 @@ declare module "@weblounge-engine" {
   export default function initialize(module: string): Promise<unknown>;
 
   export class WasmEngine {
-    constructor(
-      buildId: string,
-      instanceId: string,
-      onEvent: (encoded: string) => void,
-    );
     handle(message: string): string;
   }
+
+  export function create_wasm_engine(
+    buildId: string,
+    instanceId: string,
+    onEvent: (encoded: string) => void,
+  ): Promise<WasmEngine>;
 }
 
 declare module "@weblounge-engine-wasm" {

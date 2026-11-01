@@ -1,0 +1,23 @@
+.strip {
+  align-items: center;
+  background: var(--wl-color-error);
+  color: var(--wl-color-accent-fg);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  gap: 10px;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 4px 12px;
+}
+
+.strip button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--wl-radius-control);
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  padding: 3px 7px;
+}

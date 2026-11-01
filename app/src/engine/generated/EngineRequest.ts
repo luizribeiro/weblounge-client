@@ -140,7 +140,11 @@ buffer_id: BufferId,
 /**
  * Latest fully visible committed row.
  */
-through: MessageId, } | { "type": "mark_all_read" } | { "type": "load_history",
+through: MessageId, } | { "type": "mark_cached_read",
+/**
+ * Cached conversation being cleared.
+ */
+buffer_id: BufferId, } | { "type": "mark_all_read" } | { "type": "load_history",
 /**
  * Conversation buffer to hydrate.
  */

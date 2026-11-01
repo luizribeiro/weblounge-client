@@ -1,5 +1,4 @@
 import { expect, it } from "vitest";
-import { connectionSummary } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -41,20 +40,9 @@ it("searches names and engine-projected previews locally", () => {
   ]);
 });
 
-it("labels only non-default networks and summarizes connection state", () => {
+it("labels only non-default networks", () => {
   expect(networkLabel(networks, 1)).toBeUndefined();
   expect(networkLabel(networks, 2)).toBe("Libera");
-  expect(connectionSummary(networks)).toBe("");
-  expect(
-    connectionSummary([
-      {
-        id: 1,
-        label: "Local",
-        nickname: "me",
-        state: { offline: { reason: "device_offline" } },
-      },
-    ]),
-  ).toBe("Offline");
 });
 
 function buffer(

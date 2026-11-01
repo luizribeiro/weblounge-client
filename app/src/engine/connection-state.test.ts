@@ -1,30 +1,52 @@
 import { expect, it } from "vitest";
-import { connectionPresentation } from "./connection-state";
+import {
+  connectionPresentation,
+  connectionStateKind,
+} from "./connection-state";
 import type { NetworkProjection } from "./protocol";
 
-it("maps every connection state to one label and color token", () => {
-  const cases: readonly [
-    NetworkProjection["state"],
-    string,
-    "online" | "muted",
-  ][] = [
-    ["connecting", "Connecting…", "muted"],
-    ["registering", "Connecting…", "muted"],
-    ["online", "Online", "online"],
-    [
-      { reconnecting: { attempt: 2, next_retry_at_ms: 1_000 } },
-      "Reconnecting…",
-      "muted",
-    ],
-    [{ offline: { reason: "device_offline" } }, "Offline", "muted"],
-    [
-      { failed: { reason: "transport", message_key: "engine.failed" } },
-      "Offline · Retry",
-      "muted",
-    ],
-  ];
-
-  for (const [state, label, colorToken] of cases) {
-    expect(connectionPresentation(state)).toMatchObject({ label, colorToken });
-  }
+it("projects transient state without user-facing connection copy", () => {
+  const connecting = network("connecting");
+  expect(connectionStateKind(connecting.state)).toBe("connecting");
+  expect(connectionPresentation([connecting])).toEqual({
+    error: undefined,
+    progressing: true,
+    sendsBlocked: true,
+  });
+  expect(connectionPresentation([network("online")])).toEqual({
+    error: undefined,
+    progressing: false,
+    sendsBlocked: false,
+  });
 });
+
+it("gives terminal failures one deterministic action", () => {
+  expect(
+    connectionPresentation([
+      network({
+        failed: {
+          reason: "authentication",
+          message_key: "engine.hosted_auth_failed",
+        },
+      }),
+    ]),
+  ).toEqual({
+    error: {
+      action: "sign_in",
+      message: "Session expired",
+      networkId: 1,
+    },
+    progressing: false,
+    sendsBlocked: true,
+  });
+});
+
+it("keeps hydration progress active after transport is online", () => {
+  expect(connectionPresentation([network("online")], true).progressing).toBe(
+    true,
+  );
+});
+
+function network(state: NetworkProjection["state"]): NetworkProjection {
+  return { id: 1, label: "Local", nickname: "me", state };
+}

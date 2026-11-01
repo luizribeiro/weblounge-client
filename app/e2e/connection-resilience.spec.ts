@@ -55,22 +55,13 @@ test.describe("connection resilience against local Ergo", () => {
       await bot.waitForDisconnect();
       await setVisibility(page, false);
       await dispatchPersistedPageShow(page);
-      const reconnecting = isMobile(testInfo.project.name)
-        ? page
-            .locator("[data-mobile-chat]")
-            .getByText("Reconnecting…", { exact: true })
-        : page.locator('[data-connection-status="Reconnecting…"]');
-      await expect(reconnecting).toBeVisible();
-      await expect(reconnecting).toHaveCount(1);
+      await expectTransientConnectionPresentation(
+        page,
+        isMobile(testInfo.project.name),
+      );
       await expectShellToRemain(page, channel);
 
       if (!isMobile(testInfo.project.name)) {
-        await expectMutedIndicator(
-          page.locator('[data-connection-indicator="account"]'),
-        );
-        await expectMutedIndicator(
-          page.locator('[data-connection-indicator="network"]'),
-        );
         await page.emulateMedia({ colorScheme: "light" });
         await page.screenshot({
           path: "e2e/screenshots/connection-reconnecting-light.png",
@@ -115,10 +106,13 @@ test.describe("connection resilience against local Ergo", () => {
     const composer = await openChannel(page, testInfo.project.name);
 
     await context.setOffline(true);
-    const offline = isMobile(testInfo.project.name)
-      ? page.locator("[data-mobile-chat]").getByText("Offline", { exact: true })
-      : page.locator('[data-connection-status="Offline"]');
-    await expect(offline).toBeVisible();
+    const queueHint = page.getByText("Will send when connected", {
+      exact: true,
+    });
+    await expect(queueHint).toBeVisible();
+    await expect(
+      page.getByText(/Connecting|Reconnecting|Offline/u),
+    ).toHaveCount(0);
     const texts = [`offline one ${Date.now()}`, `offline two ${Date.now()}`];
     for (const text of texts) {
       await composer.fill(text);
@@ -140,7 +134,7 @@ test.describe("connection resilience against local Ergo", () => {
     expect(order.indexOf(texts[0] ?? "")).toBeLessThan(
       order.indexOf(texts[1] ?? ""),
     );
-    await expect(offline).toHaveCount(0);
+    await expect(queueHint).toHaveCount(0);
     await expectShellToRemain(page, channel);
   });
 
@@ -198,9 +192,7 @@ test.describe("connection resilience against local Ergo", () => {
     try {
       process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
       ergoStopped = true;
-      await expect(
-        page.locator('[data-connection-status="Reconnecting…"]'),
-      ).toBeVisible();
+      await expectTransientConnectionPresentation(page, false);
       process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
       await expectErgoReady();
       await dispatchPersistedPageShow(page);
@@ -222,20 +214,38 @@ test.describe("connection resilience against local Ergo", () => {
   });
 });
 
-async function expectMutedIndicator(indicator: Locator) {
-  await expect(indicator).toHaveAttribute("data-connection-color", "muted");
-  const [actual, expected] = await indicator.evaluate((element) => {
-    const probe = document.createElement("span");
-    probe.style.background = "var(--wl-color-panel-muted)";
-    document.body.append(probe);
-    const colors = [
-      getComputedStyle(element).backgroundColor,
-      getComputedStyle(probe).backgroundColor,
-    ];
-    probe.remove();
-    return colors;
-  });
-  expect(actual).toBe(expected);
+async function expectTransientConnectionPresentation(
+  page: Page,
+  mobile: boolean,
+): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate((mobileShell) => {
+        const progress = document.querySelectorAll(
+          "[data-connection-progress]",
+        );
+        const visible = [...progress].some(
+          (element) => element.getClientRects().length > 0,
+        );
+        return {
+          errors: document.querySelectorAll("[data-connection-error]").length,
+          indicators: document.querySelectorAll("[data-connection-indicator]")
+            .length,
+          progress: progress.length,
+          statusCopy: /Connecting|Reconnecting|Offline/u.test(
+            document.body.innerText,
+          ),
+          visible: mobileShell || visible,
+        };
+      }, mobile),
+    )
+    .toEqual({
+      errors: 0,
+      indicators: 0,
+      progress: 1,
+      statusCopy: false,
+      visible: true,
+    });
 }
 
 async function openChannel(page: Page, projectName: string) {
@@ -247,7 +257,7 @@ async function openChannel(page: Page, projectName: string) {
       .poll(
         async () =>
           (await channelButton.count()) +
-          (await page.getByText("Connecting…", { exact: true }).count()),
+          (await page.locator("[data-connection-progress]").count()),
       )
       .toBeGreaterThan(0);
     await expect(channelButton).toBeVisible();

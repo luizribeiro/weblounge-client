@@ -29,6 +29,7 @@ export interface MobileShellData {
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onOpenMembers?: ((bufferId: number) => void) | undefined;
   readonly onOpenDirect?:
@@ -114,6 +115,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onOpen={props.onOpen}
           onQuery={props.onQuery}
           onRetryNetwork={props.onRetryNetwork}
+          showConnectionError={!props.retained}
           onScroll={props.onScroll}
           query={props.query}
           restoreScroll={() => props.chatsScrollTop() ?? 0}
@@ -137,12 +139,14 @@ export function MobileScreen(props: MobileScreenProps) {
           onBack={props.onBack}
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}
+          onMarkCachedRead={props.onMarkCachedRead}
           onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
           onOpenDirect={(nick) =>
             props.onOpenDirect?.(buffer()?.network_id ?? 0, nick)
           }
           onRequestCompletion={props.onRequestCompletion}
           onRetryNetwork={props.onRetryNetwork}
+          showConnectionError={!props.retained}
           onRetry={props.onRetry}
           onSend={props.onSend}
         />
