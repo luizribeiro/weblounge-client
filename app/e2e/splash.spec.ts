@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
 
 const fontAssetPattern =
   process.env.WEBLOUNGE_E2E_DEV === "1"
@@ -174,8 +175,8 @@ async function verifySplash(
 
   try {
     const response = await page.goto("/");
-    expect(response?.headers()["content-security-policy"]).toContain(
-      "style-src 'self'",
+    expect(response?.headers()["content-security-policy"]).toBe(
+      BETA_CONTENT_SECURITY_POLICY,
     );
     const splash = page.locator("[data-initial-splash]");
     await expect(splash).toBeVisible();
@@ -243,17 +244,38 @@ async function verifySplash(
       ),
     ).toEqual([]);
 
-    const screenshot = await page.screenshot();
+    const screenshot = await page.screenshot({ caret: "initial" });
     await testInfo.attach(
       `${appearance.name}-${testInfo.title.includes("mobile") ? "mobile" : "desktop"}-splash`,
       { body: screenshot, contentType: "image/png" },
     );
+    await page.evaluate(() => {
+      // WebKit reports Playwright's screenshot helper as an inline-style violation.
+      // The assertion immediately before the capture covers the splash itself.
+      (
+        window as unknown as { __webloungeCspViolations: unknown[] }
+      ).__webloungeCspViolations.length = 0;
+    });
 
     await releaseEngine();
     await expect(
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
     await expect(splash).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __webloungeCspViolations: Array<{
+                blocked: string;
+                directive: string;
+                source: string;
+              }>;
+            }
+          ).__webloungeCspViolations,
+      ),
+    ).toEqual([]);
     const markTops = await page.evaluate(
       () =>
         (window as unknown as { __webloungeSplashMarkTops: number[] })

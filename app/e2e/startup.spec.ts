@@ -1,10 +1,51 @@
 import { expect, type Page, test } from "@playwright/test";
+import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
 import { IrcClient } from "./irc-client";
 
 test.use({
   hasTouch: true,
   isMobile: true,
   viewport: { width: 402, height: 874 },
+});
+
+test("starts under the beta CSP without a policy violation", async ({
+  page,
+}) => {
+  await installHistoryStallEngine(page);
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "startupCspViolations", []);
+    document.addEventListener("securitypolicyviolation", (event) => {
+      const violations = Reflect.get(globalThis, "startupCspViolations");
+      if (Array.isArray(violations)) {
+        violations.push({
+          blocked: event.blockedURI,
+          directive: event.violatedDirective,
+          source: event.sourceFile,
+        });
+      }
+    });
+  });
+  const consoleViolations: string[] = [];
+  page.on("console", (message) => {
+    if (
+      (message.type() === "error" || message.type() === "warning") &&
+      /content security policy/iu.test(message.text())
+    ) {
+      consoleViolations.push(message.text());
+    }
+  });
+
+  const response = await page.goto("/");
+
+  expect(response?.headers()["content-security-policy"]).toBe(
+    BETA_CONTENT_SECURITY_POLICY,
+  );
+  await expect(page.locator("[data-app-root]")).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => Reflect.get(globalThis, "startupCspViolations")),
+  ).toEqual([]);
+  expect(consoleViolations).toEqual([]);
 });
 
 test("reveals local Ergo rows with channel and direct previews", async ({

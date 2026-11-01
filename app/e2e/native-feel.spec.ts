@@ -49,17 +49,31 @@ test.describe("native feel against local Ergo", () => {
         page.locator('[data-buffer-id][aria-current="page"]'),
       ).toHaveAttribute("data-unread", "0");
 
-      await page.evaluate(() => {
+      await page.route("**/__native-feel-probe.css", (route) =>
+        route.fulfill({
+          contentType: "text/css",
+          body: "[data-app-root] * { cursor: inherit; user-select: none; }",
+        }),
+      );
+      await page.evaluate(async () => {
         const metrics = (
           window as Window & {
             __nativeFeelMetrics?: { layoutShift: number };
           }
         ).__nativeFeelMetrics;
         if (metrics !== undefined) metrics.layoutShift = 0;
-        const reorderedChromeRule = document.createElement("style");
-        reorderedChromeRule.textContent =
-          "[data-app-root] * { cursor: inherit; user-select: none; }";
-        document.head.append(reorderedChromeRule);
+        const reorderedChromeRule = document.createElement("link");
+        reorderedChromeRule.rel = "stylesheet";
+        reorderedChromeRule.href = "/__native-feel-probe.css";
+        await new Promise<void>((resolve, reject) => {
+          reorderedChromeRule.addEventListener("load", () => resolve(), {
+            once: true,
+          });
+          reorderedChromeRule.addEventListener("error", () => reject(), {
+            once: true,
+          });
+          document.head.append(reorderedChromeRule);
+        });
       });
       await nativeFeelAudit(page);
 

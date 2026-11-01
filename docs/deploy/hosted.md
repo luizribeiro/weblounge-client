@@ -132,23 +132,25 @@ source maps, fails if debug IRC configuration or the `?irc-password` hook surviv
 and verifies that both workers use emitted same-origin `/assets/*.js` URLs rather than `data:` or
 `blob:` URLs.
 
-This CSP is sufficient for the current app. Keep the concierge origin in `connect-src` because
+This is the client's tested production CSP. Keep the concierge origin in `connect-src` because
 metadata discovery and token exchange are browser requests:
 
 ```text
-script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; font-src 'self';
-connect-src 'self' wss://beta.weblounge.org/socket https://members.weblounge.org
-  https://files.weblounge.org/upload; img-src 'self'
+base-uri 'none'; connect-src 'self' wss://beta.weblounge.org/socket
+  https://members.weblounge.org https://files.weblounge.org/upload;
+default-src 'none'; font-src 'self'; form-action 'self'; frame-ancestors 'none';
+img-src 'self'; manifest-src 'self'; script-src 'self' 'wasm-unsafe-eval';
+style-src 'self'; worker-src 'self'
 ```
 
-Scripts remain nonce-free and do not allow inline execution. The startup splash is the sole inline
-style and requires its generated `sha256-…` hash in `style-src`; obtain the current value from the
-built app's Playwright CSP header before deploying a new client build. The built-app Playwright suite runs
-with this policy (plus its loopback fake OAuth origin), and the production verifier checks that
-Vite emitted same-origin worker files compatible with `worker-src 'self'`.
+Scripts and styles remain nonce-free and do not allow inline execution. The startup stylesheet is
+the first render-blocking head resource and Vite emits it under a content-hashed `/assets/` URL.
+The production verifier rejects inline image and font URLs as well as unsafe worker URLs. Dev and
+built-app Playwright suites run with the policy above; local IRC uses a same-origin WebSocket proxy,
+and hosted tests intercept the allowed concierge origin rather than relaxing `connect-src`.
 
-The browser test uses a small standards-shaped OAuth server and a mocked engine through the
-one-shot hosted request. Pointing the local Ergo profile at a per-test fake introspection endpoint
+The browser test uses a small standards-shaped intercepted OAuth fixture and a mocked engine
+through the one-shot hosted request. Pointing the local Ergo profile at a per-test fake introspection endpoint
 would replace its production-shaped static settings, so the real SASL boundary is instead covered
 by the native `papo_testing::wire()` transcript, including the exact OAUTHBEARER payload and papo's
 secret redaction. The deployed concierge-to-Ergo introspection remains a weblounge-side integration

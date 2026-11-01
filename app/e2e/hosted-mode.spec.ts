@@ -1,4 +1,5 @@
 import { expect, type Page, type Route, test } from "@playwright/test";
+import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 
 test("retries startup without reloading when production config was missing", async ({
   page,
@@ -34,7 +35,7 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   await installFakeEngine(page, true);
   const redirectUri = await installHostedConfig(page);
 
-  await page.goto("http://127.0.0.1:4174/health");
+  await page.goto(`${oauthIssuer}/health`);
   await page.goto("/");
   // A cold CI browser completes two cross-origin OAuth navigations before returning.
   await expect(page).toHaveURL(redirectUri());
@@ -81,7 +82,7 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   );
   await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
   await page.goBack();
-  await expect(page).toHaveURL("http://127.0.0.1:4174/health");
+  await expect(page).toHaveURL(`${oauthIssuer}/health`);
 });
 
 test("cleans the callback URL before a failed token exchange", async ({
@@ -89,7 +90,7 @@ test("cleans the callback URL before a failed token exchange", async ({
 }) => {
   await installFakeEngine(page);
   const redirectUri = await installHostedConfig(page);
-  await page.route("http://127.0.0.1:4174/token", (route) =>
+  await page.route(`${oauthIssuer}/token`, (route) =>
     route.fulfill({
       status: 400,
       contentType: "application/json",
@@ -123,7 +124,7 @@ test("recovers from a state mismatch with a fresh sign-in", async ({
     callback.searchParams.set("state", "wrong-state");
     await route.fulfill({ status: 302, headers: { Location: callback.href } });
   };
-  await page.route("http://127.0.0.1:4174/authorize**", mismatch);
+  await page.route(`${oauthIssuer}/authorize**`, mismatch);
 
   await page.goto("/");
   await expect(page.getByRole("alert")).toContainText("did not match this tab");
@@ -132,7 +133,7 @@ test("recovers from a state mismatch with a fresh sign-in", async ({
     page.getByRole("button", { name: "Sign in again" }),
   ).toBeVisible();
 
-  await page.unroute("http://127.0.0.1:4174/authorize**", mismatch);
+  await page.unroute(`${oauthIssuer}/authorize**`, mismatch);
   await page.getByRole("button", { name: "Sign in again" }).click();
   await expectHostedConnection(page);
 });
@@ -141,10 +142,10 @@ test("returns to sign-in when the hosted token expires", async ({ page }) => {
   await installFakeEngine(page);
   await installHostedConfig(page);
   let authorizationCount = 0;
-  await page.route("http://127.0.0.1:4174/authorize**", async (route) => {
+  await page.route(`${oauthIssuer}/authorize**`, async (route) => {
     authorizationCount += 1;
     if (authorizationCount === 1) {
-      await route.continue();
+      await route.fallback();
       return;
     }
     await route.fulfill({
@@ -152,7 +153,7 @@ test("returns to sign-in when the hosted token expires", async ({ page }) => {
       body: "<main>Hosted sign-in requested after expiry</main>",
     });
   });
-  await page.route("http://127.0.0.1:4174/token", (route) =>
+  await page.route(`${oauthIssuer}/token`, (route) =>
     route.fulfill({
       contentType: "application/json",
       headers: { "Access-Control-Allow-Origin": "*" },
@@ -197,9 +198,9 @@ for (const shell of [
       await installFakeEngine(page);
       await installHostedConfig(page);
       let authorizationCount = 0;
-      await page.route("http://127.0.0.1:4174/authorize**", async (route) => {
+      await page.route(`${oauthIssuer}/authorize**`, async (route) => {
         authorizationCount += 1;
-        await route.continue();
+        await route.fallback();
       });
 
       await page.goto("/weblounge/ops");
@@ -222,6 +223,7 @@ for (const shell of [
 
 async function installHostedConfig(page: Page): Promise<() => string> {
   let redirectUri = "";
+  await installFakeOAuth(page);
   await page.route("**/config.json", async (route) => {
     redirectUri = new URL("/", route.request().url()).href;
     await route.fulfill({
@@ -234,7 +236,7 @@ async function installHostedConfig(page: Page): Promise<() => string> {
           autojoin: ["#lounge"],
         },
         oauth: {
-          issuer: "http://127.0.0.1:4174",
+          issuer: oauthIssuer,
           client_id: "weblounge-client",
           redirect_uri: redirectUri,
         },

@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
 import { defineConfig } from "vitest/config";
+import { BETA_CONTENT_SECURITY_POLICY } from "./csp.ts";
 import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
 
 export default defineConfig(({ mode }) => {
@@ -71,6 +72,7 @@ export default defineConfig(({ mode }) => {
         : {}),
     },
     plugins: [
+      ...(cspEnabled ? [cspDevStyles()] : []),
       solid(),
       prioritizeSplashStylesheet(),
       ...(appConfigHarness ? [testAppConfig()] : []),
@@ -80,13 +82,15 @@ export default defineConfig(({ mode }) => {
       : {
           server: {
             headers: {
-              "Content-Security-Policy": testContentSecurityPolicy(true),
+              "Content-Security-Policy": BETA_CONTENT_SECURITY_POLICY,
             },
+            proxy: testWebSocketProxy(),
           },
           preview: {
             headers: {
-              "Content-Security-Policy": testContentSecurityPolicy(false),
+              "Content-Security-Policy": BETA_CONTENT_SECURITY_POLICY,
             },
+            proxy: testWebSocketProxy(),
           },
         }),
     resolve: {
@@ -109,27 +113,70 @@ export default defineConfig(({ mode }) => {
   };
 });
 
-function testContentSecurityPolicy(devServer: boolean): string {
-  const splashCss = readFileSync(
-    resolve(import.meta.dirname, "src/styles/splash.css"),
-    "utf8",
-  );
-  const splashHash = createHash("sha256").update(splashCss).digest("base64");
-  return [
-    "default-src 'none'",
-    "base-uri 'none'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "manifest-src 'self'",
-    "script-src 'self' 'wasm-unsafe-eval'",
-    `style-src 'self'${
-      devServer ? " 'unsafe-inline'" : ` 'sha256-${splashHash}'`
-    }`,
-    "worker-src 'self'",
-    "font-src 'self'",
-    "connect-src 'self' http://127.0.0.1:4174 ws://127.0.0.1:8067 wss://127.0.0.1:8068 wss://beta.weblounge.org/socket https://members.weblounge.org https://files.weblounge.org/upload",
-    "img-src 'self' data:",
-  ].join("; ");
+function testWebSocketProxy() {
+  return {
+    "/socket": {
+      target: "ws://127.0.0.1:8067",
+      ws: true,
+    },
+  };
+}
+
+function cspDevStyles(): Plugin {
+  const publicId = "virtual:weblounge-csp-dev-styles";
+  const resolvedId = `\0${publicId}`;
+  return {
+    name: "weblounge-csp-dev-styles",
+    enforce: "post",
+    resolveId(id) {
+      return id === publicId ? resolvedId : undefined;
+    },
+    load(id) {
+      if (id !== resolvedId) return undefined;
+      return `
+const links = new Map();
+let revision = 0;
+
+export function updateStyle(id) {
+  const current = links.get(id);
+  const link = current ?? document.createElement("link");
+  const loaded = new Promise((resolve, reject) => {
+    link.onload = resolve;
+    link.onerror = reject;
+  });
+  const href = new URL(\`/@fs\${id}\`, location.href);
+  href.searchParams.set("direct", "");
+  href.searchParams.set("v", String(revision++));
+  link.rel = "stylesheet";
+  link.href = href.href;
+  if (current === undefined) {
+    links.set(id, link);
+    document.head.append(link);
+  }
+  return loaded;
+}
+
+export function removeStyle(id) {
+  links.get(id)?.remove();
+  links.delete(id);
+}
+`;
+    },
+    transform(code, id) {
+      if (!/\.css(?:$|\?)/u.test(id) || !code.includes("__vite__updateStyle")) {
+        return undefined;
+      }
+      const external = code.replace(
+        /import \{ updateStyle as __vite__updateStyle, removeStyle as __vite__removeStyle \} from "\/@vite\/client"/u,
+        `import { updateStyle as __vite__updateStyle, removeStyle as __vite__removeStyle } from "${publicId}"`,
+      );
+      if (external === code) return undefined;
+      return external.replace(
+        "__vite__updateStyle(__vite__id, __vite__css)",
+        "await __vite__updateStyle(__vite__id, __vite__css)",
+      );
+    },
+  };
 }
 
 function prioritizeSplashStylesheet(): Plugin {

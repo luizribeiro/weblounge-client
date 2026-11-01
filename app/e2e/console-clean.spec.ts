@@ -144,7 +144,7 @@ function isWebKitFontPreloadFalsePositive(
   // WebKit does not associate its same-origin CSS font load with the CORS preload.
   return (
     browserName === "webkit" &&
-    /inter-latin-[^/]+\.woff2 was preloaded using link preload but not used/iu.test(
+    /(?:inter-latin-[^/]+|src\/assets\/inter-latin)\.woff2 was preloaded using link preload but not used/iu.test(
       message,
     )
   );
