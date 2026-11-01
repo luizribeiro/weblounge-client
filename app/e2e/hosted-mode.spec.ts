@@ -85,6 +85,110 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   await expect(page).toHaveURL(`${oauthIssuer}/health`);
 });
 
+test("uses the member session without navigating away from the app", async ({
+  page,
+}) => {
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  let authorizationRequests = 0;
+  await page.route(`${oauthIssuer}/authorize**`, async (route) => {
+    authorizationRequests += 1;
+    await route.fallback();
+  });
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
+    await expect(
+      route.request().headerValue("content-type"),
+    ).resolves.toContain("application/json");
+    expect(route.request().postData()).toBe("{}");
+    await route.fulfill({
+      contentType: "application/json",
+      headers: sessionCors(new URL(redirectUri()).origin),
+      body: JSON.stringify({
+        access_token: "session-token",
+        token_type: "Bearer",
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expectHostedToken(page, "session-token");
+  await expect(page).toHaveURL(redirectUri());
+  expect(authorizationRequests).toBe(0);
+});
+
+test("falls back to PKCE when the member session needs login", async ({
+  page,
+}) => {
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      headers: sessionCors(new URL(redirectUri()).origin),
+      body: JSON.stringify({ error: "login_required" }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expectHostedToken(page, "fake-hosted-access-token");
+  await expect(page).toHaveURL(redirectUri());
+});
+
+test("keeps a network failure on-origin for a transient retry", async ({
+  page,
+}) => {
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  await page.route(`${oauthIssuer}/oauth/session-token`, (route) =>
+    route.abort("failed"),
+  );
+
+  await page.goto("/");
+
+  await expect(page.getByRole("alert")).toContainText(
+    "Couldn't reach the sign-in service",
+  );
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page).toHaveURL(redirectUri());
+});
+
+test("falls back to PKCE while the session endpoint is undeployed", async ({
+  page,
+}) => {
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+      return;
+    }
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      headers: sessionCors(new URL(redirectUri()).origin),
+      body: JSON.stringify({ error: "not_found" }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expectHostedToken(page, "fake-hosted-access-token");
+  await expect(page).toHaveURL(redirectUri());
+});
+
 test("cleans the callback URL before a failed token exchange", async ({
   page,
 }) => {
@@ -136,41 +240,6 @@ test("recovers from a state mismatch with a fresh sign-in", async ({
   await page.unroute(`${oauthIssuer}/authorize**`, mismatch);
   await page.getByRole("button", { name: "Sign in again" }).click();
   await expectHostedConnection(page);
-});
-
-test("returns to sign-in when the hosted token expires", async ({ page }) => {
-  await installFakeEngine(page);
-  await installHostedConfig(page);
-  let authorizationCount = 0;
-  await page.route(`${oauthIssuer}/authorize**`, async (route) => {
-    authorizationCount += 1;
-    if (authorizationCount === 1) {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      contentType: "text/html",
-      body: "<main>Hosted sign-in requested after expiry</main>",
-    });
-  });
-  await page.route(`${oauthIssuer}/token`, (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({
-        access_token: "short-lived-hosted-token",
-        token_type: "Bearer",
-        expires_in: 0.2,
-      }),
-    }),
-  );
-
-  await page.goto("/");
-
-  await expect(
-    page.getByText("Hosted sign-in requested after expiry"),
-  ).toBeVisible();
-  expect(authorizationCount).toBe(2);
 });
 
 for (const shell of [
@@ -239,6 +308,7 @@ async function installHostedConfig(page: Page): Promise<() => string> {
           issuer: oauthIssuer,
           client_id: "weblounge-client",
           redirect_uri: redirectUri,
+          session_token_endpoint: `${oauthIssuer}/oauth/session-token`,
         },
       }),
     });
@@ -257,6 +327,43 @@ async function expectHostedConnection(page: Page): Promise<void> {
         .catch(() => []),
     )
     .toContainEqual(expect.objectContaining({ type: "connect_hosted" }));
+}
+
+async function expectHostedToken(page: Page, token: string): Promise<void> {
+  await expect
+    .poll(async () =>
+      page
+        .evaluate(() => {
+          const requests = Reflect.get(globalThis, "hostedEngineRequests");
+          return Array.isArray(requests) ? requests : [];
+        })
+        .catch(() => []),
+    )
+    .toContainEqual(
+      expect.objectContaining({ type: "connect_hosted", oauth_token: token }),
+    );
+}
+
+async function fulfillSessionPreflight(
+  route: Route,
+  origin: string,
+): Promise<void> {
+  await route.fulfill({
+    status: 204,
+    headers: {
+      ...sessionCors(origin),
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "POST",
+      "Access-Control-Max-Age": "3600",
+    },
+  });
+}
+
+function sessionCors(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Origin": origin,
+  };
 }
 
 async function installFakeEngine(page: Page, holdConnection = false) {

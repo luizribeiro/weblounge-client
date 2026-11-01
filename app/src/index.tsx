@@ -18,6 +18,10 @@ import {
   HostedAuthorizationError,
 } from "./hosted/oauth";
 import {
+  requiresAuthorization,
+  SessionTokenProvider,
+} from "./hosted/session-token";
+import {
   installPlatformEnvironment,
   platformEnvironment,
 } from "./platform/environment";
@@ -89,8 +93,17 @@ function Bootstrap(props: BootstrapProps) {
       requireCurrentRedirect(config);
       const currentUrl = new URL(window.location.href);
       const authorization = consumeAuthorizationCallback(currentUrl);
-      const metadata = await discoverOAuthMetadata(config.oauth);
       if (authorization === null) {
+        try {
+          const token = await new SessionTokenProvider(
+            config.oauth.session_token_endpoint,
+          ).acquire();
+          setHostedState(config, token);
+          return;
+        } catch (error: unknown) {
+          if (!requiresAuthorization(error)) throw error;
+        }
+        const metadata = await discoverOAuthMetadata(config.oauth);
         setState({ type: "starting", message: "Opening sign in…" });
         window.location.replace(
           await createAuthorizationUrl(
@@ -101,6 +114,7 @@ function Bootstrap(props: BootstrapProps) {
         );
         return;
       }
+      const metadata = await discoverOAuthMetadata(config.oauth);
       const token = await exchangeAuthorizationCode(
         metadata,
         config.oauth,
@@ -109,16 +123,7 @@ function Bootstrap(props: BootstrapProps) {
       if (authorization.returnPath !== undefined) {
         history.replaceState(history.state, "", authorization.returnPath);
       }
-      setState({
-        type: "hosted",
-        config,
-        engineClient: takePrewarmedEngineClient(),
-        session: {
-          network: config.network,
-          sessionTokenEndpoint: config.oauth.session_token_endpoint,
-          token: new OneShotAccessToken(token.accessToken, token.expiresAt),
-        },
-      });
+      setHostedState(config, token);
     } catch (error: unknown) {
       setState({
         type: "error",
@@ -132,6 +137,22 @@ function Bootstrap(props: BootstrapProps) {
     } finally {
       starting = false;
     }
+  }
+
+  function setHostedState(
+    config: HostedConfig,
+    token: { readonly accessToken: string; readonly expiresAt: number },
+  ): void {
+    setState({
+      type: "hosted",
+      config,
+      engineClient: takePrewarmedEngineClient(),
+      session: {
+        network: config.network,
+        sessionTokenEndpoint: config.oauth.session_token_endpoint,
+        token: new OneShotAccessToken(token.accessToken, token.expiresAt),
+      },
+    });
   }
 
   async function restartAuthorization(config: HostedConfig): Promise<void> {

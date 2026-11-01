@@ -19,6 +19,30 @@ export async function installFakeOAuth(page: Page): Promise<void> {
       await route.fulfill({ body: "OAuth fixture", headers });
       return;
     }
+    if (url.pathname === "/oauth/session-token") {
+      const cors = {
+        ...headers,
+        "Access-Control-Allow-Credentials": "true",
+      };
+      if (request.method() === "OPTIONS") {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            ...cors,
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Methods": "POST",
+          },
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        headers: cors,
+        body: JSON.stringify({ error: "not_found" }),
+      });
+      return;
+    }
     if (url.pathname === "/.well-known/oauth-authorization-server") {
       await route.fulfill({
         contentType: "application/json",

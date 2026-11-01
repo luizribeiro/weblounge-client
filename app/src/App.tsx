@@ -61,7 +61,7 @@ interface AppProps {
   hostedSession?: HostedSession;
   onReady?: () => void;
   onHostedAuthorizationRequired?: (
-    reason: "expired" | "revoked" | "worker_restarted",
+    reason: "revoked" | "worker_restarted",
   ) => void;
   onRetryStartup?: (() => void) | undefined;
 }
@@ -105,7 +105,6 @@ export function App(props: AppProps) {
   let client: EngineClient | undefined;
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
-  let cancelTokenExpiry = () => {};
   let restartingHostedAuthorization = false;
   let engineInstance: string | undefined;
   let disposed = false;
@@ -415,16 +414,9 @@ export function App(props: AppProps) {
         setStartupError("Couldn't start weblounge.");
       }
       setEngineReady(true);
-      if (outcome === "ready" && props.hostedSession !== undefined) {
-        cancelTokenExpiry = scheduleExpiry(
-          props.hostedSession.token.expiresAt,
-          () => void restartHostedAuthorization("expired"),
-        );
-      }
     });
     onCleanup(() => {
       disposed = true;
-      cancelTokenExpiry();
       clearStartupWaits();
       unregisterContextSurface();
       removeContextMenuHandler();
@@ -437,11 +429,10 @@ export function App(props: AppProps) {
     });
 
     async function restartHostedAuthorization(
-      reason: "expired" | "revoked" | "worker_restarted",
+      reason: "revoked" | "worker_restarted",
     ): Promise<void> {
       if (restartingHostedAuthorization) return;
       restartingHostedAuthorization = true;
-      cancelTokenExpiry();
       setHostedError(
         reason === "worker_restarted"
           ? "Restoring the chat…"
@@ -843,22 +834,6 @@ async function connectDebugNetwork(
       allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
     },
   });
-}
-
-function scheduleExpiry(expiresAt: number, expire: () => void): () => void {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const arm = () => {
-    const remaining = expiresAt - Date.now();
-    if (remaining <= 0) {
-      expire();
-      return;
-    }
-    timeout = setTimeout(arm, Math.min(remaining, 2_147_000_000));
-  };
-  arm();
-  return () => {
-    if (timeout !== undefined) clearTimeout(timeout);
-  };
 }
 
 function applyDebugEvent(
