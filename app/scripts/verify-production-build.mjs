@@ -26,8 +26,13 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
   const sourceMaps = files.filter((file) => file.endsWith(".map"));
   if (sourceMaps.length > 0)
     throw new Error("production build contains source maps");
+  const typeScriptAssets = files.filter((file) => file.endsWith(".ts"));
+  if (typeScriptAssets.length > 0) {
+    throw new Error(
+      `production build contains TypeScript assets: ${typeScriptAssets.join(", ")}`,
+    );
+  }
   let workerConstructorCount = 0;
-  const workerUrls = [];
   for (const file of files) {
     const content = await readFile(file);
     const text = content.toString("utf8");
@@ -40,26 +45,22 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
     workerConstructorCount += [
       ...text.matchAll(/new\s+(?:SharedWorker|Worker)\s*\(/gu),
     ].length;
-    for (const match of text.matchAll(
-      /new\s+(?:SharedWorker|Worker)\s*\(\s*new\s+URL\(\s*([`'"])([^`'"]+)\1/gu,
-    )) {
-      workerUrls.push(match[2]);
+    if (/\/assets\/[^\s`'"]+\.ts(?:[\s`'"]|$)/u.test(text)) {
+      throw new Error(
+        `production bundle references a TypeScript asset: ${file}`,
+      );
     }
     if (text.includes("URL.createObjectURL(")) {
       throw new Error(`production bundle creates a blob URL: ${file}`);
     }
   }
-  if (workerConstructorCount !== 2 || workerUrls.length !== 2) {
+  const workerAssets = files.filter((file) =>
+    /engine\.(?:shared|dedicated)-worker-[^/]+\.js$/u.test(file),
+  );
+  if (workerConstructorCount !== 2 || workerAssets.length !== 2) {
     throw new Error(
-      `expected two statically emitted worker URLs, found ${workerUrls.length} of ${workerConstructorCount} constructors`,
+      `expected two statically emitted workers, found ${workerAssets.length} assets and ${workerConstructorCount} constructors`,
     );
-  }
-  for (const workerUrl of workerUrls) {
-    if (!/^\/assets\/[^/]+\.js$/u.test(workerUrl)) {
-      throw new Error(
-        `production bundle contains an unsafe worker URL: ${workerUrl}`,
-      );
-    }
   }
 }
 
@@ -198,6 +199,9 @@ async function verifyServiceWorker(directory) {
     throw new Error("service worker build metadata is missing");
   }
   const urls = JSON.parse(manifest);
+  if (urls.some((url) => url.endsWith(".ts"))) {
+    throw new Error("service worker precache manifest contains TypeScript");
+  }
   const expectedUrls = (await descendants(directory))
     .filter((path) => path !== workerPath)
     .map((path) => `/${path.slice(directory.length + 1)}`)

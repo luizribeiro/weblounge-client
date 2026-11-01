@@ -3,6 +3,8 @@ import {
   type EnginePort,
   WorkerEngineClient,
 } from "./EngineClient";
+import dedicatedWorkerUrl from "./engine.dedicated-worker.ts?worker&url";
+import sharedWorkerUrl from "./engine.shared-worker.ts?worker&url";
 
 interface SharedWorkerHandle {
   port: EnginePort & { close(): void };
@@ -22,14 +24,14 @@ export function createEngineClient(
 ): WorkerEngineClient {
   if (constructors === undefined) return createBrowserEngineClient();
 
-  const sharedUrl = new URL("./engine.shared-worker.ts", import.meta.url);
+  const sharedUrl = workerUrl(sharedWorkerUrl);
   if (constructors.openShared !== undefined) {
     const openShared = constructors.openShared;
     const open = () => sharedConnection(openShared(sharedUrl));
     return new WorkerEngineClient(open(), undefined, [], open);
   }
 
-  const dedicatedUrl = new URL("./engine.dedicated-worker.ts", import.meta.url);
+  const dedicatedUrl = workerUrl(dedicatedWorkerUrl);
   const open = () =>
     dedicatedConnection(constructors.openDedicated(dedicatedUrl));
   return dedicatedEngineClient(open(), open);
@@ -39,25 +41,26 @@ function createBrowserEngineClient(): WorkerEngineClient {
   if (typeof SharedWorker !== "undefined") {
     const open = () =>
       sharedConnection(
-        new SharedWorker(
-          new URL("./engine.shared-worker.ts", import.meta.url),
-          {
-            name: "weblounge-engine",
-            type: "module",
-          },
-        ),
+        new SharedWorker(workerUrl(sharedWorkerUrl), {
+          name: "weblounge-engine",
+          type: "module",
+        }),
       );
     return new WorkerEngineClient(open(), undefined, [], open);
   }
 
   const open = () =>
     dedicatedConnection(
-      new Worker(new URL("./engine.dedicated-worker.ts", import.meta.url), {
+      new Worker(workerUrl(dedicatedWorkerUrl), {
         name: "weblounge-engine",
         type: "module",
       }),
     );
   return dedicatedEngineClient(open(), open);
+}
+
+function workerUrl(path: string): URL {
+  return new URL(path, import.meta.url);
 }
 
 function dedicatedEngineClient(
