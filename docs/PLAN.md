@@ -288,7 +288,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - B1e. [x] Keep hosted token fetches callable in WebKit windows and workers. Signed-out members
     promptly enter PKCE, signed-in members reach `#lounge` on-origin, transient failures back off
     behind a visible retry state, and invalid responses or a bounded startup stall stay human.
-    Production worker URLs and the offline precache contain JavaScript only, never TypeScript.
+    Production worker URLs and the offline precache contain JavaScript only, never TypeScript. The
+    anonymous startup font preload precedes the stylesheet; mobile WebKit coverage verifies the
+    loaded face without depending on its delayed preload diagnostic.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.

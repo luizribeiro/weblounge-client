@@ -192,7 +192,7 @@ async function verifySplash(
     const fontPreload = page.locator(
       'link[rel="preload"][as="font"][type="font/woff2"]',
     );
-    await expect(fontPreload).toHaveAttribute("crossorigin", "");
+    await expect(fontPreload).toHaveAttribute("crossorigin", "anonymous");
     await expect(fontPreload).toHaveAttribute("href", fontAssetPattern);
     expect(
       await splashStyle.evaluate((element) => {
@@ -223,6 +223,11 @@ async function verifySplash(
     expect(contrastRatio(colors.background, colors.fill)).toBeGreaterThan(3);
 
     await page.evaluate(() => document.fonts.ready);
+    expect(
+      await page.evaluate(() =>
+        document.fonts.check("400 13px Inter", "Connecting to weblounge…"),
+      ),
+    ).toBe(true);
     expect(fontUrls.size).toBe(1);
     expect(
       await page.evaluate(
@@ -239,9 +244,7 @@ async function verifySplash(
       ),
     ).toEqual([]);
     expect(
-      consoleErrors.filter((message) =>
-        /content security policy|preload.*not used/iu.test(message),
-      ),
+      unexpectedStartupErrors(consoleErrors, testInfo.project.name),
     ).toEqual([]);
 
     const screenshot = await page.screenshot({ caret: "initial" });
@@ -292,11 +295,37 @@ async function verifySplash(
     );
     expect([...new Set(splashBackgrounds)]).toEqual([appearance.background]);
     expect(
-      consoleErrors.filter((message) => /preload.*not used/iu.test(message)),
+      unexpectedFontPreloadWarnings(consoleErrors, testInfo.project.name),
     ).toEqual([]);
   } finally {
     await releaseEngine().catch(() => undefined);
   }
+}
+
+function unexpectedStartupErrors(
+  messages: readonly string[],
+  projectName: string,
+): string[] {
+  return messages.filter(
+    (message) =>
+      /content security policy/iu.test(message) ||
+      unexpectedFontPreloadWarnings([message], projectName).length > 0,
+  );
+}
+
+function unexpectedFontPreloadWarnings(
+  messages: readonly string[],
+  projectName: string,
+): string[] {
+  return messages.filter((message) => {
+    if (!/preload.*not used/iu.test(message)) return false;
+    return !(
+      projectName.startsWith("webkit") &&
+      /inter-latin-[^/]+\.woff2 was preloaded using link preload but not used/iu.test(
+        message,
+      )
+    );
+  });
 }
 
 function contrastRatio(background: string, foreground: string): number {

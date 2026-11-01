@@ -88,6 +88,16 @@ async function verifyCspAssets(directory) {
   if (script !== undefined && html.indexOf(splashLink) > html.indexOf(script)) {
     throw new Error("startup stylesheet appears after an application script");
   }
+  const fontPreload = html.match(
+    /<link\s+[^>]*rel="preload"[^>]*as="font"[^>]*>/iu,
+  )?.[0];
+  if (
+    fontPreload === undefined ||
+    !/crossorigin="anonymous"/u.test(fontPreload) ||
+    html.indexOf(fontPreload) > html.indexOf(splashLink)
+  ) {
+    throw new Error("startup font preload does not precede the stylesheet");
+  }
 }
 
 async function verifyIcons(directory) {

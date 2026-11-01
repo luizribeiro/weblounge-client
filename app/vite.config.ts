@@ -284,16 +284,19 @@ function prioritizeSplashStylesheet(): Plugin {
       if (stylesheet === undefined) {
         throw new Error("production stylesheet link is missing");
       }
+      const fontPreload = html.source.match(
+        /<link\s+[^>]*rel="preload"[^>]*as="font"[^>]*>/u,
+      )?.[0];
+      if (fontPreload === undefined) {
+        throw new Error("production font preload is missing");
+      }
       const tagged = stylesheet.replace(
         "<link ",
         "<link data-initial-splash-style ",
       );
       html.source = html.source
         .replace(stylesheet, "")
-        .replace(
-          '<meta name="color-scheme" content="light dark" />',
-          `<meta name="color-scheme" content="light dark" />\n    ${tagged}`,
-        );
+        .replace(fontPreload, `${fontPreload}\n    ${tagged}`);
     },
   };
 }
