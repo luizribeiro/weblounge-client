@@ -1,6 +1,6 @@
 # 03 — Transport and connection lifecycle
 
-Status: proposed for milestone 4 hosted session-token review; awaiting Luiz's sign-off.
+Status: approved by Luiz; milestone 4 hosted session-token path implemented.
 
 ## Problem
 

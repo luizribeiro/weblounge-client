@@ -268,6 +268,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - B1c. [x] Match beta's strict CSP in dev and built-app browser tests. Startup styles, brand
     images, fonts, workers, and Wasm are same-origin files; startup and console journeys reject
     policy violations in Chromium, Firefox, and WebKit.
+  - B1d. [x] Exchange the member cookie for an attempt-scoped IRC token before hosted startup and
+    every reconnect. Login-required and missing-endpoint responses fall back to PKCE; rate limits
+    and network failures remain retryable without reusing a bearer token.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.
