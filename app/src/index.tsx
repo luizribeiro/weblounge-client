@@ -20,6 +20,7 @@ import {
 } from "./hosted/oauth";
 import {
   requiresAuthorization,
+  type SessionAccessToken,
   SessionTokenError,
   SessionTokenProvider,
 } from "./hosted/session-token";
@@ -35,6 +36,20 @@ import "./styles/base.css";
 import { installTheme } from "./theme/theme-controller";
 
 type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
+type InitialSessionResult =
+  | { readonly type: "token"; readonly token: SessionAccessToken }
+  | { readonly type: "error"; readonly error: unknown };
+
+type DeploymentAttempt =
+  | {
+      readonly type: "app";
+      readonly config: Extract<DeploymentConfig, { mode: "app" }>;
+    }
+  | {
+      readonly type: "hosted";
+      readonly config: HostedConfig;
+      readonly session: Promise<InitialSessionResult> | null;
+    };
 
 let prewarmedEngine:
   | { readonly type: "client"; readonly client: EngineClient }
@@ -63,6 +78,8 @@ interface BootstrapProps {
 }
 
 function Bootstrap(props: BootstrapProps) {
+  let deploymentAttempt: Promise<DeploymentAttempt> | undefined =
+    loadDeploymentAttempt();
   const platform = platformEnvironment();
   const theme = installTheme(document, platform.prefersDark());
   const removeDensity = installDensity(document);
@@ -93,8 +110,10 @@ function Bootstrap(props: BootstrapProps) {
     }
     starting = true;
     try {
-      const config = await loadDeploymentConfig();
-      if (config.mode === "app") {
+      const attempt = deploymentAttempt ?? loadDeploymentAttempt();
+      deploymentAttempt = undefined;
+      const deployment = await attempt;
+      if (deployment.type === "app") {
         setState({
           type: "app",
           attempt: 1,
@@ -102,15 +121,16 @@ function Bootstrap(props: BootstrapProps) {
         });
         return;
       }
+      const { config } = deployment;
       requireCurrentRedirect(config);
       const currentUrl = new URL(window.location.href);
       const authorization = consumeAuthorizationCallback(currentUrl);
       if (authorization === null) {
         try {
-          const token = await new SessionTokenProvider(
-            config.oauth.session_token_endpoint,
-          ).acquire();
-          setHostedState(config, token);
+          const result = await (deployment.session ??
+            acquireSession(config.oauth.session_token_endpoint));
+          if (result.type === "error") throw result.error;
+          setHostedState(config, result.token);
           return;
         } catch (error: unknown) {
           if (!requiresAuthorization(error)) throw error;
@@ -259,6 +279,28 @@ function takePrewarmedEngineClient(): EngineClient {
   if (warmed === undefined) return createEngineClient();
   if (warmed.type === "error") throw warmed.error;
   return warmed.client;
+}
+
+async function loadDeploymentAttempt(): Promise<DeploymentAttempt> {
+  const config = await loadDeploymentConfig();
+  if (config.mode === "app") return { type: "app", config };
+  requireCurrentRedirect(config);
+  const url = new URL(window.location.href);
+  if (url.searchParams.has("code") || url.searchParams.has("error")) {
+    return { type: "hosted", config, session: null };
+  }
+  return {
+    type: "hosted",
+    config,
+    session: acquireSession(config.oauth.session_token_endpoint),
+  };
+}
+
+function acquireSession(endpoint: string): Promise<InitialSessionResult> {
+  return new SessionTokenProvider(endpoint).acquire().then(
+    (token): InitialSessionResult => ({ type: "token", token }),
+    (error: unknown): InitialSessionResult => ({ type: "error", error }),
+  );
 }
 
 function requireCurrentRedirect(config: HostedConfig): void {

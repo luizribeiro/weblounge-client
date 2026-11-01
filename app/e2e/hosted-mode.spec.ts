@@ -4,6 +4,7 @@ import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 test("retries startup without reloading when production config was missing", async ({
   page,
 }) => {
+  await installFakeEngine(page);
   test.skip(
     process.env.WEBLOUNGE_E2E_DEV === "1",
     "development intentionally permits missing config",
@@ -173,6 +174,138 @@ for (const worker of ["shared", "dedicated"] as const) {
       new RegExp(`^${oauthIssuer}/authorize\\?`, "u"),
     );
     await expect(page.getByText("Member sign in")).toBeVisible();
+  });
+}
+
+for (const worker of ["shared", "dedicated"] as const) {
+  test(`redirects a signed-out member before a slow real ${worker} worker starts`, async ({
+    browserName,
+    context,
+    page,
+  }, testInfo) => {
+    if (browserName === "chromium") {
+      const session = await context.newCDPSession(page);
+      await session.send("Emulation.setCPUThrottlingRate", { rate: 6 });
+    }
+    if (worker === "dedicated") await disableSharedWorker(page);
+    const redirectUri = await installHostedConfig(page);
+    let workerAssetRequests = 0;
+    let releaseWorker = () => undefined;
+    const workerCanStart = new Promise<void>((resolve) => {
+      releaseWorker = resolve;
+    });
+    let wasmAssetRequests = 0;
+    let releaseWasm = () => undefined;
+    const wasmCanStart = new Promise<void>((resolve) => {
+      releaseWasm = resolve;
+    });
+    await page.route(
+      /\/assets\/engine\.(?:shared|dedicated)-worker-[^/]+\.js$/u,
+      async (route) => {
+        workerAssetRequests += 1;
+        await workerCanStart;
+        await route.continue();
+      },
+    );
+    await page.route(/\/assets\/engine_bg-[^/]+\.wasm$/u, async (route) => {
+      wasmAssetRequests += 1;
+      await wasmCanStart;
+      await route.continue();
+    });
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+        return;
+      }
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        headers: sessionCors(new URL(redirectUri()).origin),
+        body: JSON.stringify({ error: "login_required" }),
+      });
+    });
+    await page.route(`${oauthIssuer}/authorize**`, (route) =>
+      route.fulfill({ contentType: "text/html", body: "Member sign in" }),
+    );
+
+    const startedAt = performance.now();
+    await page.goto("/");
+    await expect(page).toHaveURL(
+      new RegExp(`^${oauthIssuer}/authorize\\?`, "u"),
+    );
+    const elapsed = performance.now() - startedAt;
+    testInfo.annotations.push({
+      type: "signed-out-redirect-ms",
+      description: elapsed.toFixed(0),
+    });
+    const measurement = {
+      browser: browserName,
+      elapsedMilliseconds: Math.round(elapsed),
+      wasmAssetRequests,
+      worker,
+      workerAssetRequests,
+    };
+    await testInfo.attach("signed-out-redirect-timing", {
+      body: JSON.stringify(measurement),
+      contentType: "application/json",
+    });
+    console.info(`signed-out-redirect ${JSON.stringify(measurement)}`);
+    releaseWorker();
+    releaseWasm();
+
+    expect(elapsed).toBeLessThan(2_000);
+    expect(workerAssetRequests).toBe(1);
+    expect(wasmAssetRequests).toBe(0);
+    await expect(page.getByText("Member sign in")).toBeVisible();
+  });
+}
+
+for (const failure of ["rate limit", "network failure"] as const) {
+  test(`backs off after a ${failure}, then redirects immediately on login-required`, async ({
+    page,
+  }, testInfo) => {
+    const redirectUri = await installHostedConfig(page);
+    let attempts = 0;
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+        return;
+      }
+      attempts += 1;
+      if (attempts === 1 && failure === "network failure") {
+        await route.abort("failed");
+        return;
+      }
+      const status = attempts === 1 ? 429 : 401;
+      await route.fulfill({
+        status,
+        contentType: "application/json",
+        headers: sessionCors(new URL(redirectUri()).origin),
+        body: JSON.stringify({
+          error: status === 429 ? "invalid_request" : "login_required",
+        }),
+      });
+    });
+    await page.route(`${oauthIssuer}/authorize**`, (route) =>
+      route.fulfill({ contentType: "text/html", body: "Member sign in" }),
+    );
+
+    await page.goto("/");
+    const retry = page.getByRole("button", { name: "Retry" });
+    await expect(retry).toBeVisible();
+    const retryStartedAt = performance.now();
+    await retry.click();
+    await expect(page).toHaveURL(
+      new RegExp(`^${oauthIssuer}/authorize\\?`, "u"),
+    );
+    const elapsed = performance.now() - retryStartedAt;
+    testInfo.annotations.push({
+      type: "later-login-required-redirect-ms",
+      description: elapsed.toFixed(0),
+    });
+
+    expect(attempts).toBe(2);
+    expect(elapsed).toBeLessThan(2_000);
   });
 }
 
