@@ -6,6 +6,32 @@ import {
 
 const traceMilliseconds = 1000;
 const header = "ms sy vo vh ih rt rh ct";
+export const keyboardInteractionEvent = "weblounge:keyboard-interaction";
+
+export type KeyboardInteractionLabel =
+  | "focus:landed"
+  | "focus:refused"
+  | "focusin:composer"
+  | "touchcancel"
+  | "touchend:rejected"
+  | "touchend:tap"
+  | "touchstart";
+
+interface KeyboardInteraction {
+  readonly at: number;
+  readonly label: KeyboardInteractionLabel;
+}
+
+export function reportKeyboardInteraction(
+  label: KeyboardInteractionLabel,
+  browserWindow: Window = window,
+): void {
+  browserWindow.dispatchEvent(
+    new CustomEvent<KeyboardInteraction>(keyboardInteractionEvent, {
+      detail: { at: browserWindow.performance.now(), label },
+    }),
+  );
+}
 
 export interface KeyboardTraceFrame {
   readonly composerTop: number;
@@ -66,6 +92,8 @@ export function installKeyboardDebug(
 ): () => void {
   let frames: readonly KeyboardTraceFrame[] = [];
   let commits: readonly string[] = [];
+  let interactions: readonly string[] = [];
+  let interactionStartedAt = 0;
   let trigger = "waiting for tap/focusout";
   let animationFrame = 0;
   const stopSection = installDebugSection(browserWindow, {
@@ -74,6 +102,7 @@ export function installKeyboardDebug(
     read: (): readonly DebugReading[] => [
       ["trigger", trigger],
       ["commits", commits.join(" · ") || "waiting"],
+      ["interactions", interactions.join(" · ") || "waiting"],
       ["trace", summarizeKeyboardTrace(frames)],
     ],
     subscribe: (render) => {
@@ -85,7 +114,12 @@ export function installKeyboardDebug(
       const copyTrace = (event: Event) => {
         event.stopPropagation();
         void browserWindow.navigator.clipboard?.writeText(
-          formatKeyboardTrace(frames),
+          [
+            "[interactions]",
+            ...interactions,
+            "[frames]",
+            formatKeyboardTrace(frames),
+          ].join("\n"),
         );
       };
       overlay?.addEventListener("pointerdown", stopTraceTap);
@@ -125,17 +159,48 @@ export function installKeyboardDebug(
         ].slice(-5);
         render();
       };
+      const recordInteraction = (event: Event) => {
+        const { at, label } = (event as CustomEvent<KeyboardInteraction>)
+          .detail;
+        if (label === "touchstart" || interactions.length === 0) {
+          interactionStartedAt = at;
+          interactions = [];
+        }
+        interactions = [
+          ...interactions,
+          `${compact(at - interactionStartedAt)} ${label}`,
+        ].slice(-12);
+        render();
+      };
+      const recordComposerFocus = (event: FocusEvent) => {
+        if (
+          !(event.target instanceof Element) ||
+          event.target.closest("[data-composer]") === null
+        )
+          return;
+        reportKeyboardInteraction("focusin:composer", browserWindow);
+      };
       browserWindow.addEventListener("pointerup", record);
       browserWindow.addEventListener("focusout", record);
+      browserWindow.addEventListener("focusin", recordComposerFocus);
       browserWindow.addEventListener(keyboardLayoutCommitEvent, recordCommit);
+      browserWindow.addEventListener(
+        keyboardInteractionEvent,
+        recordInteraction,
+      );
       return () => {
         if (animationFrame !== 0)
           browserWindow.cancelAnimationFrame(animationFrame);
         browserWindow.removeEventListener("pointerup", record);
         browserWindow.removeEventListener("focusout", record);
+        browserWindow.removeEventListener("focusin", recordComposerFocus);
         browserWindow.removeEventListener(
           keyboardLayoutCommitEvent,
           recordCommit,
+        );
+        browserWindow.removeEventListener(
+          keyboardInteractionEvent,
+          recordInteraction,
         );
         overlay?.removeEventListener("pointerdown", stopTraceTap);
         overlay?.removeEventListener("pointerup", stopTraceTap);

@@ -3,7 +3,7 @@ import { keyboardGeometryMeasuredEvent } from "./viewport-geometry";
 export function focusWithoutViewportPan(
   field: HTMLElement,
   browserWindow: Window = window,
-): void {
+): boolean {
   const previousTransform = field.style.transform;
   let restored = false;
   let fallback = 0;
@@ -25,7 +25,9 @@ export function focusWithoutViewportPan(
   fallback = browserWindow.setTimeout(restore, 1000);
   try {
     field.focus({ preventScroll: true });
-    if (browserWindow.document.activeElement !== field) restore();
+    const focused = browserWindow.document.activeElement === field;
+    if (!focused) restore();
+    return focused;
   } catch (error: unknown) {
     restore();
     throw error;

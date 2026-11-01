@@ -235,7 +235,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Commit cached keyboard geometry only after a composer tap actually focuses, roll cancelled
     taps and drags back by the next frame, and reconcile warm opens to stable measured viewport
     geometry while refreshing the orientation cache. `/debug keyboard` identifies cached,
-    measured, and rollback commits (beta feedback on `40ee783`, awaiting on-device confirmation).
+    measured, and rollback commits and traces composer touch start/end/cancel, tap classification,
+    focusin, and post-focus active state (beta feedback on `40ee783`, awaiting on-device
+    confirmation).
   - [x] Route global keyboard geometry only to the surface owning the focused field. The mobile
     member drawer follows measured keyboard inset while the scrimmed chat retains its root height,
     safe-area padding, composer position, transcript offset, and visible row; owner-scoped geometry

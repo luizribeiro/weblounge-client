@@ -9,6 +9,7 @@ import {
   focusWithoutViewportPan,
   TouchTapGesture,
 } from "../../platform/focus-without-pan";
+import { reportKeyboardInteraction } from "../../platform/keyboard-debug";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
@@ -263,15 +264,18 @@ export function Composer(props: ComposerProps) {
   };
   const focusFromTap = (event: TouchEvent, field: HTMLTextAreaElement) => {
     const touch = event.changedTouches[0];
+    const tap = touch !== undefined && touchFocus.end(touch, event.timeStamp);
+    reportKeyboardInteraction(tap ? "touchend:tap" : "touchend:rejected");
     if (
-      touch === undefined ||
-      !touchFocus.end(touch, event.timeStamp) ||
+      !tap ||
       platform.environment().input !== "touch" ||
       document.activeElement === field
     )
       return;
     event.preventDefault();
-    focusWithoutViewportPan(field);
+    reportKeyboardInteraction(
+      focusWithoutViewportPan(field) ? "focus:landed" : "focus:refused",
+    );
   };
 
   return (
@@ -359,7 +363,10 @@ export function Composer(props: ComposerProps) {
               request(value, event.currentTarget.selectionStart, false);
           }}
           onKeyDown={keydown}
-          onTouchCancel={() => touchFocus.cancel()}
+          onTouchCancel={() => {
+            reportKeyboardInteraction("touchcancel");
+            touchFocus.cancel();
+          }}
           onTouchEnd={(event) => focusFromTap(event, event.currentTarget)}
           onTouchMove={(event) => {
             const touch = event.touches[0];
@@ -367,11 +374,12 @@ export function Composer(props: ComposerProps) {
               touchFocus.move(touch);
             else touchFocus.cancel();
           }}
-          onTouchStart={(event) =>
-            event.touches.length === 1 && event.touches[0] !== undefined
-              ? touchFocus.begin(event.touches[0], event.timeStamp)
-              : touchFocus.cancel()
-          }
+          onTouchStart={(event) => {
+            reportKeyboardInteraction("touchstart");
+            if (event.touches.length === 1 && event.touches[0] !== undefined)
+              touchFocus.begin(event.touches[0], event.timeStamp);
+            else touchFocus.cancel();
+          }}
           placeholder={`Message ${props.bufferTitle}`}
           ref={(element) => {
             textarea = element;

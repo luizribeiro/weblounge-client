@@ -8,7 +8,7 @@ it("focuses above the viewport until measured keyboard geometry arrives", () => 
   document.body.append(field);
   const focus = vi.spyOn(field, "focus");
 
-  focusWithoutViewportPan(field, window);
+  expect(focusWithoutViewportPan(field, window)).toBe(true);
 
   expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   expect(field.style.transform).toBe("translateY(-2000px)");
@@ -21,7 +21,7 @@ it("restores the field immediately when WebKit refuses focus", () => {
   field.style.transform = "scale(1)";
   vi.spyOn(field, "focus").mockImplementation(() => {});
 
-  focusWithoutViewportPan(field, window);
+  expect(focusWithoutViewportPan(field, window)).toBe(false);
 
   expect(document.activeElement).not.toBe(field);
   expect(field.style.transform).toBe("scale(1)");

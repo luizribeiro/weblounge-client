@@ -495,6 +495,9 @@ test.describe("viewport diagnostics overlay", () => {
 
     await expect(overlay).toContainText("[keyboard]");
     await expect(overlay).toContainText("trigger: pointerup");
+    await expect(overlay).toContainText("touchstart");
+    await expect(overlay).toContainText(/touchend:(?:tap|rejected)/);
+    await expect(overlay).toContainText("focusin:composer");
     await expect(overlay).toContainText("frames · tap to copy full trace");
     await expect(overlay).toHaveCSS("user-select", "text");
   });
