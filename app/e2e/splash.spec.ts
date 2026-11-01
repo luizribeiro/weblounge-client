@@ -321,7 +321,7 @@ function unexpectedFontPreloadWarnings(
     if (!/preload.*not used/iu.test(message)) return false;
     return !(
       projectName.startsWith("webkit") &&
-      /inter-latin-[^/]+\.woff2 was preloaded using link preload but not used/iu.test(
+      /(?:inter-latin-[^/]+|src\/assets\/inter-latin)\.woff2 was preloaded using link preload but not used/iu.test(
         message,
       )
     );
