@@ -1,10 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { devices, expect, test } from "@playwright/test";
+import { emulateStandalone } from "./mobile-platform";
+
+test.use({
+  ...devices["iPhone 16 Pro"],
+  screen: { height: 874, width: 402 },
+  viewport: { height: 874, width: 402 },
+});
 
 for (const appearance of ["light", "dark"] as const) {
-  test(`iPhone 16 Pro ${appearance} launch chair matches the inline splash`, async ({
+  test(`iPhone 16 Pro mobile ${appearance} launch chair matches every startup layout`, async ({
     page,
   }) => {
-    await page.setViewportSize({ height: 874, width: 402 });
+    await emulateStandalone(page);
     await page.emulateMedia({ colorScheme: appearance });
     let releaseConfig = () => undefined;
     const configGate = new Promise<void>((resolve) => {
@@ -22,6 +29,10 @@ for (const appearance of ["light", "dark"] as const) {
       await page.goto("/");
       const splash = page.locator("[data-initial-splash]");
       await expect(splash).toBeVisible();
+      await expect(page.locator("#root")).toHaveAttribute(
+        "data-display",
+        "standalone",
+      );
       const launch = page.locator(
         `link[rel="apple-touch-startup-image"][href="/startup/iphone-16-pro-portrait-${appearance}.png"]`,
       );
@@ -30,17 +41,11 @@ for (const appearance of ["light", "dark"] as const) {
         `(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: ${appearance})`,
       );
 
-      const positions = await page.evaluate(
+      const launchRect = await page.evaluate(
         async (launchHref) => {
           const mark =
             document.querySelector<SVGSVGElement>("[data-splash-mark]");
           if (mark === null) throw new Error("inline splash mark is missing");
-          const markRect = mark.getBoundingClientRect();
-          const pathBounds = [...mark.querySelectorAll("path")].map((path) =>
-            path.getBBox(),
-          );
-          const vectorLeft = Math.min(...pathBounds.map((box) => box.x));
-          const vectorTop = Math.min(...pathBounds.map((box) => box.y));
           const markColor = rgb(getComputedStyle(mark).color);
           const background = rgb(
             getComputedStyle(mark.closest("[data-initial-splash]") ?? mark)
@@ -59,14 +64,10 @@ for (const appearance of ["light", "dark"] as const) {
           );
 
           return {
-            inline: {
-              left: markRect.left + (vectorLeft / 16) * markRect.width,
-              top: markRect.top + (vectorTop / 16) * markRect.height,
-            },
-            launch: {
-              left: launchBox.left / 3,
-              top: launchBox.top / 3,
-            },
+            bottom: launchBox.bottom / 3,
+            left: launchBox.left / 3,
+            right: launchBox.right / 3,
+            top: launchBox.top / 3,
           };
 
           async function loadImage(src: string): Promise<HTMLImageElement> {
@@ -114,7 +115,9 @@ for (const appearance of ["light", "dark"] as const) {
             ) => boolean,
           ) {
             let left = width;
+            let right = 0;
             let top = data.length / 4 / width;
+            let bottom = 0;
             for (let index = 0; index < data.length; index += 4) {
               if (
                 !includes(
@@ -127,9 +130,11 @@ for (const appearance of ["light", "dark"] as const) {
                 continue;
               const pixel = index / 4;
               left = Math.min(left, pixel % width);
+              right = Math.max(right, (pixel % width) + 1);
               top = Math.min(top, Math.floor(pixel / width));
+              bottom = Math.max(bottom, Math.floor(pixel / width) + 1);
             }
-            return { left, top };
+            return { bottom, left, right, top };
           }
 
           function distance(
@@ -152,8 +157,53 @@ for (const appearance of ["light", "dark"] as const) {
         },
         await launch.getAttribute("href"),
       );
-      expect(positions.launch.left).toBeCloseTo(positions.inline.left, 0);
-      expect(positions.launch.top).toBeCloseTo(positions.inline.top, 0);
+      const inlineRects = [];
+      for (const layout of [
+        { containingBlockHeight: 874, minHeight: true },
+        { containingBlockHeight: 812, minHeight: true },
+        { containingBlockHeight: 812, minHeight: false },
+      ]) {
+        inlineRects.push(
+          await page.locator("[data-splash-mark]").evaluate((mark, value) => {
+            const documentRoot = document.documentElement;
+            const appRoot = document.querySelector<HTMLElement>("#root");
+            if (appRoot === null) throw new Error("app root is missing");
+            documentRoot.style.setProperty("--wl-safe-top", "62px");
+            documentRoot.style.setProperty(
+              "--wl-splash-screen-block-size",
+              "100lvh",
+            );
+            documentRoot.style.minBlockSize = value.minHeight ? "" : "100%";
+            appRoot.style.blockSize = `${value.containingBlockHeight}px`;
+            // A transformed ancestor models WebKit's short fixed containing block without shrinking the screen's 100lvh.
+            appRoot.style.transform = "translateZ(0)";
+            const markRect = mark.getBoundingClientRect();
+            const pathBounds = [...mark.querySelectorAll("path")].map((path) =>
+              (path as SVGGraphicsElement).getBBox(),
+            );
+            const left = Math.min(...pathBounds.map((box) => box.x));
+            const right = Math.max(
+              ...pathBounds.map((box) => box.x + box.width),
+            );
+            const top = Math.min(...pathBounds.map((box) => box.y));
+            const bottom = Math.max(
+              ...pathBounds.map((box) => box.y + box.height),
+            );
+            return {
+              bottom: markRect.top + (bottom / 16) * markRect.height,
+              left: markRect.left + (left / 16) * markRect.width,
+              right: markRect.left + (right / 16) * markRect.width,
+              top: markRect.top + (top / 16) * markRect.height,
+            };
+          }, layout),
+        );
+      }
+      for (const inlineRect of inlineRects) {
+        expect(inlineRect).toEqual(inlineRects[0]);
+        for (const edge of ["bottom", "left", "right", "top"] as const) {
+          expect(launchRect[edge]).toBeCloseTo(inlineRect[edge], 0);
+        }
+      }
     } finally {
       releaseConfig();
     }

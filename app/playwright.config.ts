@@ -85,7 +85,7 @@ export default defineConfig({
     {
       name: "webkit-splash-mobile",
       grep: /mobile/,
-      testMatch: "**/splash.spec.ts",
+      testMatch: ["**/launch-images.spec.ts", "**/splash.spec.ts"],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
