@@ -48,6 +48,17 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "webkit-hosted",
+      grep: /member session through|real (?:shared|dedicated) worker|backs off after|shows (?:a network|an unrecoverable token) failure/,
+      testMatch: "**/hosted-mode.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
+      name: "webkit-startup",
+      testMatch: "**/startup.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-back",
       testMatch: [
         "**/mobile-back-swipe.spec.ts",

@@ -48,6 +48,18 @@ test("starts under the beta CSP without a policy violation", async ({
   expect(consoleViolations).toEqual([]);
 });
 
+test("turns a stalled startup into a human error", async ({ page }) => {
+  await page.clock.install();
+  await page.route("**/config.json", () => new Promise(() => {}));
+
+  await page.goto("/");
+  await page.clock.fastForward(15_000);
+
+  const status = page.locator("[data-splash-status]");
+  await expect(status).toHaveAttribute("data-error", "true");
+  await expect(status).toContainText("couldn't finish starting weblounge");
+});
+
 test("reveals local Ergo rows with channel and direct previews", async ({
   page,
 }) => {

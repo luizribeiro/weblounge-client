@@ -19,6 +19,7 @@ import {
 } from "./hosted/oauth";
 import {
   requiresAuthorization,
+  SessionTokenError,
   SessionTokenProvider,
 } from "./hosted/session-token";
 import {
@@ -74,11 +75,21 @@ function Bootstrap(props: BootstrapProps) {
     message: "Starting…",
   });
   let starting = false;
+  let hostedRetry = 0;
+  let hostedRetryTimer: number | undefined;
+
+  onCleanup(() => {
+    if (hostedRetryTimer !== undefined) window.clearTimeout(hostedRetryTimer);
+  });
 
   onMount(() => void start());
 
   async function start(): Promise<void> {
     if (starting) return;
+    if (hostedRetryTimer !== undefined) {
+      window.clearTimeout(hostedRetryTimer);
+      hostedRetryTimer = undefined;
+    }
     starting = true;
     try {
       const config = await loadDeploymentConfig();
@@ -134,6 +145,14 @@ function Bootstrap(props: BootstrapProps) {
       await Promise.resolve();
       await props.beforeReveal();
       props.onReady();
+      if (isTransientSessionFailure(error)) {
+        const delay = Math.min(1_000 * 2 ** hostedRetry, 30_000);
+        hostedRetry += 1;
+        hostedRetryTimer = window.setTimeout(() => {
+          hostedRetryTimer = undefined;
+          void start();
+        }, delay);
+      }
     } finally {
       starting = false;
     }
@@ -143,6 +162,7 @@ function Bootstrap(props: BootstrapProps) {
     config: HostedConfig,
     token: { readonly accessToken: string; readonly expiresAt: number },
   ): void {
+    hostedRetry = 0;
     setState({
       type: "hosted",
       config,
@@ -256,6 +276,10 @@ function userFacingError(error: unknown): string {
   return "Couldn't start the app.";
 }
 
+function isTransientSessionFailure(error: unknown): boolean {
+  return error instanceof SessionTokenError && error.kind === "transient";
+}
+
 const root = document.getElementById("root");
 
 if (root === null) {
@@ -286,10 +310,11 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
     .catch(() => []);
   const timeout = window.setTimeout(() => {
     if (!active) return;
-    active = false;
     const status = splash.querySelector<HTMLElement>("[data-splash-status]");
     if (status === null) return;
-    status.textContent = "Still starting weblounge…";
+    status.dataset.error = "true";
+    status.textContent =
+      "We couldn't finish starting weblounge. Check your connection and reload.";
   }, 15_000);
 
   return {

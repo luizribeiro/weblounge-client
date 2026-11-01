@@ -85,43 +85,38 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   await expect(page).toHaveURL(`${oauthIssuer}/health`);
 });
 
-test("uses the member session without navigating away from the app", async ({
-  page,
-}) => {
-  await installFakeEngine(page);
-  const redirectUri = await installHostedConfig(page);
-  let authorizationRequests = 0;
-  await page.route(`${oauthIssuer}/authorize**`, async (route) => {
-    authorizationRequests += 1;
-    await route.fallback();
-  });
-  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
-    if (route.request().method() === "OPTIONS") {
-      await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
-      return;
-    }
-    expect(route.request().method()).toBe("POST");
-    await expect(
-      route.request().headerValue("content-type"),
-    ).resolves.toContain("application/json");
-    expect(route.request().postData()).toBe("{}");
-    await route.fulfill({
-      contentType: "application/json",
-      headers: sessionCors(new URL(redirectUri()).origin),
-      body: JSON.stringify({
-        access_token: "session-token",
-        token_type: "Bearer",
-        expires_in: 900,
-      }),
+for (const worker of ["shared", "dedicated"] as const) {
+  test(`uses the member session through the ${worker} worker`, async ({
+    page,
+  }) => {
+    await installFakeEngine(page, false, worker);
+    const redirectUri = await installHostedConfig(page);
+    let authorizationRequests = 0;
+    await page.route(`${oauthIssuer}/authorize**`, async (route) => {
+      authorizationRequests += 1;
+      await route.fallback();
     });
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+        return;
+      }
+      expect(route.request().method()).toBe("POST");
+      await expect(
+        route.request().headerValue("content-type"),
+      ).resolves.toContain("application/json");
+      expect(route.request().postData()).toBe("{}");
+      await fulfillSessionToken(route, redirectUri(), "session-token");
+    });
+
+    await page.goto("/");
+
+    await expectHostedToken(page, "session-token");
+    await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
+    await expect(page).toHaveURL(redirectUri());
+    expect(authorizationRequests).toBe(0);
   });
-
-  await page.goto("/");
-
-  await expectHostedToken(page, "session-token");
-  await expect(page).toHaveURL(redirectUri());
-  expect(authorizationRequests).toBe(0);
-});
+}
 
 test("falls back to PKCE when the member session needs login", async ({
   page,
@@ -147,23 +142,119 @@ test("falls back to PKCE when the member session needs login", async ({
   await expect(page).toHaveURL(redirectUri());
 });
 
-test("keeps a network failure on-origin for a transient retry", async ({
-  page,
-}) => {
-  await installFakeEngine(page);
-  const redirectUri = await installHostedConfig(page);
-  await page.route(`${oauthIssuer}/oauth/session-token`, (route) =>
-    route.abort("failed"),
-  );
+for (const worker of ["shared", "dedicated"] as const) {
+  test(`redirects a signed-out member with the real ${worker} worker`, async ({
+    page,
+  }) => {
+    if (worker === "dedicated") await disableSharedWorker(page);
+    const redirectUri = await installHostedConfig(page);
+    const sessionRequests: string[] = [];
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      sessionRequests.push(route.request().method());
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+        return;
+      }
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        headers: sessionCors(new URL(redirectUri()).origin),
+        body: JSON.stringify({ error: "login_required" }),
+      });
+    });
+    await page.route(`${oauthIssuer}/authorize**`, (route) =>
+      route.fulfill({ contentType: "text/html", body: "Member sign in" }),
+    );
 
-  await page.goto("/");
+    await page.goto("/");
 
-  await expect(page.getByRole("alert")).toContainText(
-    "Couldn't reach the sign-in service",
-  );
-  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
-  await expect(page).toHaveURL(redirectUri());
-});
+    await expect.poll(() => sessionRequests).toContain("POST");
+    await expect(page).toHaveURL(
+      new RegExp(`^${oauthIssuer}/authorize\\?`, "u"),
+    );
+    await expect(page.getByText("Member sign in")).toBeVisible();
+  });
+}
+
+for (const worker of ["shared", "dedicated"] as const) {
+  for (const failure of ["rate limit", "network"] as const) {
+    const behavior = failure === "rate limit" ? "backs off after" : "shows";
+    test(`${behavior} a ${failure} failure with the ${worker} worker`, async ({
+      page,
+    }) => {
+      await page.clock.install();
+      await installFakeEngine(page, false, worker);
+      const redirectUri = await installHostedConfig(page);
+      let authorizationRequests = 0;
+      let attempts = 0;
+      await page.route(`${oauthIssuer}/authorize**`, async (route) => {
+        authorizationRequests += 1;
+        await route.fallback();
+      });
+      await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+        if (route.request().method() === "OPTIONS") {
+          await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+          return;
+        }
+        attempts += 1;
+        if (failure === "rate limit") {
+          await route.fulfill({
+            status: 429,
+            contentType: "application/json",
+            headers: sessionCors(new URL(redirectUri()).origin),
+            body: JSON.stringify({ error: "invalid_request" }),
+          });
+          return;
+        }
+        if (attempts === 1) {
+          await route.abort("failed");
+          return;
+        }
+        await fulfillSessionToken(route, redirectUri(), "recovered-token");
+      });
+
+      await page.goto("/");
+
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+      await page.clock.fastForward(1_000);
+      await expect.poll(() => attempts).toBeGreaterThanOrEqual(2);
+      expect(authorizationRequests).toBe(0);
+      await expect(page).toHaveURL(redirectUri());
+      if (failure === "rate limit") return;
+      await expectHostedToken(page, "recovered-token");
+      await expect(
+        page.getByRole("heading", { name: "#lounge" }),
+      ).toBeVisible();
+    });
+  }
+}
+
+for (const worker of ["shared", "dedicated"] as const) {
+  test(`shows an unrecoverable token failure with the ${worker} worker`, async ({
+    page,
+  }) => {
+    await installFakeEngine(page, false, worker);
+    const redirectUri = await installHostedConfig(page);
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+        return;
+      }
+      await route.fulfill({
+        contentType: "application/json",
+        headers: sessionCors(new URL(redirectUri()).origin),
+        body: JSON.stringify({ token_type: "Bearer", expires_in: 900 }),
+      });
+    });
+
+    await page.goto("/");
+
+    await expect(page.getByRole("alert")).toContainText("invalid access token");
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await expect(page).toHaveURL(redirectUri());
+  });
+}
 
 test("falls back to PKCE while the session endpoint is undeployed", async ({
   page,
@@ -366,24 +457,50 @@ function sessionCors(origin: string): Record<string, string> {
   };
 }
 
-async function installFakeEngine(page: Page, holdConnection = false) {
+async function fulfillSessionToken(
+  route: Route,
+  redirectUri: string,
+  token: string,
+): Promise<void> {
+  await route.fulfill({
+    contentType: "application/json",
+    headers: sessionCors(new URL(redirectUri).origin),
+    body: JSON.stringify({
+      access_token: token,
+      token_type: "Bearer",
+      expires_in: 900,
+    }),
+  });
+}
+
+async function installFakeEngine(
+  page: Page,
+  holdConnection = false,
+  worker: "shared" | "dedicated" = "shared",
+) {
+  await page.addInitScript((workerKind) => {
+    Reflect.set(globalThis, "hostedWorkerKind", workerKind);
+  }, worker);
   await page.addInitScript((holdHostedConnection) => {
+    const workerKind = Reflect.get(globalThis, "hostedWorkerKind");
     Reflect.set(globalThis, "hostedEngineRequests", []);
     Reflect.set(globalThis, "hostedStartupSequence", []);
-    const originalFetch = globalThis.fetch.bind(globalThis);
-    globalThis.fetch = (input, init) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
-      if (new URL(url, location.href).pathname === "/config.json") {
-        const sequence = Reflect.get(globalThis, "hostedStartupSequence");
-        if (Array.isArray(sequence)) sequence.push("config");
-      }
-      return originalFetch(input, init);
-    };
+    if (holdHostedConnection) {
+      const originalFetch = globalThis.fetch.bind(globalThis);
+      globalThis.fetch = (input, init) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (new URL(url, location.href).pathname === "/config.json") {
+          const sequence = Reflect.get(globalThis, "hostedStartupSequence");
+          if (Array.isArray(sequence)) sequence.push("config");
+        }
+        return originalFetch(input, init);
+      };
+    }
     class FakePort extends EventTarget {
       postMessage(message: unknown) {
         if (typeof message !== "object" || message === null) return;
@@ -441,6 +558,18 @@ async function installFakeEngine(page: Page, holdConnection = false) {
                   id: 2,
                   network_id: 1,
                   kind: "channel",
+                  title: "#lounge",
+                  draft_key: "10:weblounge:rfc1459:#lounge",
+                  topic: null,
+                  member_count: 0,
+                  unread: 0,
+                  mentions: 0,
+                  read_through: null,
+                },
+                {
+                  id: 3,
+                  network_id: 1,
+                  kind: "channel",
                   title: "#ops",
                   draft_key: "10:weblounge:rfc1459:#ops",
                   topic: null,
@@ -477,6 +606,26 @@ async function installFakeEngine(page: Page, holdConnection = false) {
         if (Array.isArray(sequence)) sequence.push("worker");
       }
     }
-    Reflect.set(globalThis, "SharedWorker", FakeSharedWorker);
+    if (workerKind === "shared") {
+      Reflect.set(globalThis, "SharedWorker", FakeSharedWorker);
+      return;
+    }
+    class FakeDedicatedWorker extends FakePort {
+      terminate() {}
+    }
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+    Reflect.set(globalThis, "Worker", FakeDedicatedWorker);
   }, holdConnection);
+}
+
+async function disableSharedWorker(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
 }

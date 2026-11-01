@@ -29,7 +29,7 @@ export class SessionTokenProvider {
   async acquire(): Promise<SessionAccessToken> {
     let response: Response;
     try {
-      response = await this.fetchToken(this.endpoint, {
+      response = await this.fetchToken.call(globalThis, this.endpoint, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

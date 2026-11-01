@@ -279,6 +279,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - B1d. [x] Exchange the member cookie for an attempt-scoped IRC token before hosted startup and
     every reconnect. Login-required and missing-endpoint responses fall back to PKCE; rate limits
     and network failures remain retryable without reusing a bearer token.
+  - B1e. [x] Keep hosted token fetches callable in WebKit windows and workers. Signed-out members
+    promptly enter PKCE, signed-in members reach `#lounge` on-origin, transient failures back off
+    behind a visible retry state, and invalid responses or a bounded startup stall stay human.
+    Production worker URLs and the offline precache contain JavaScript only, never TypeScript.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.

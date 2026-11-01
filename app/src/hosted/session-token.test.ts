@@ -9,13 +9,16 @@ const endpoint = "https://members.weblounge.org/oauth/session-token";
 
 describe("hosted session token provider", () => {
   it("posts an empty credentialed JSON request and validates the bearer", async () => {
-    const fetchToken = vi.fn(async () =>
-      Response.json({
-        access_token: "session-access-token",
-        token_type: "Bearer",
-        expires_in: 900,
-      }),
-    );
+    const fetchToken = vi.fn(function (this: unknown) {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(
+        Response.json({
+          access_token: "session-access-token",
+          token_type: "Bearer",
+          expires_in: 900,
+        }),
+      );
+    });
     const provider = new SessionTokenProvider(endpoint, fetchToken, () => 50);
 
     await expect(provider.acquire()).resolves.toEqual({
