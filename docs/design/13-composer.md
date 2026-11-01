@@ -49,8 +49,10 @@ through its guarded `DirectTarget`; a conversation name is never treated as a se
 owns splitting and `draft/multiline`, and `Sent` confirms every optimistic row.
 
 The UI owns textarea geometry, the active completion session, focus, and per-buffer drafts. The
-engine projects each draft key from the configured network identity and buffer name folded with
-the server's active name rules; process-local buffer IDs never enter storage. Guarded
+engine projects each draft key from the configured network identity and durable conversation key:
+the folded channel name, the folded account name for a known DM account, or the folded nickname
+otherwise. Process-local buffer IDs never enter storage. When a DM gains an account identity, the
+engine tells the UI to migrate the prior nick-keyed draft even when the buffer is closed. Guarded
 `sessionStorage` access caps each draft and the total draft collection, so buffer switches and tab
 reloads survive while devices and unrelated tabs do not share unsent text. The UI removes a draft
 only after submission is accepted and keeps it on typed rejection.
