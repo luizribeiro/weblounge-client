@@ -160,4 +160,12 @@ network_id: NetworkId,
 /**
  * Current nickname selected from the member projection.
  */
-nick: string, };
+nick: string, } | { "type": "trust_direct_identity",
+/**
+ * Direct-message buffer whose current peer should be trusted.
+ */
+buffer_id: BufferId, } | { "type": "defer_direct_identity",
+/**
+ * Direct-message buffer whose decision should be deferred.
+ */
+buffer_id: BufferId, };

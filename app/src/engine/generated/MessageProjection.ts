@@ -46,6 +46,10 @@ nick_color_index: number,
  */
 highlighted: boolean,
 /**
+ * Whether this direct-message row came from a sender whose identity was not verified.
+ */
+unverified_sender?: boolean,
+/**
  * Current delivery state.
  */
 delivery: MessageDelivery,

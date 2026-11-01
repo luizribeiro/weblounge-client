@@ -195,6 +195,24 @@ pub enum BufferKind {
     Direct,
 }
 
+/// Identity state for a direct-message peer.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectIdentityState {
+    /// No durable account identity is currently available.
+    Unverified,
+    /// The current peer matches the stored account pin.
+    Verified,
+    /// The nick is now held by a different account.
+    DifferentAccount,
+    /// The current peer cannot be proven to match the stored pin.
+    CannotVerify,
+    /// The user deferred a different-account decision.
+    DeferredDifferentAccount,
+    /// The user deferred an unverifiable-peer decision.
+    DeferredCannotVerify,
+}
+
 /// UI projection of one engine buffer.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct BufferProjection {
@@ -218,6 +236,10 @@ pub struct BufferProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub nick_color_index: Option<u32>,
+    /// Current verification state for a direct-message peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub direct_identity: Option<DirectIdentityState>,
     /// Session draft identity derived from the network and durable conversation identity.
     pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.
@@ -340,6 +362,10 @@ pub struct MessageProjection {
     pub nick_color_index: u32,
     /// Whether this row matches the user's highlight rules.
     pub highlighted: bool,
+    /// Whether this direct-message row came from a sender whose identity was not verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub unverified_sender: Option<bool>,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.
@@ -603,6 +629,16 @@ pub enum EngineRequest {
         network_id: NetworkId,
         /// Current nickname selected from the member projection.
         nick: String,
+    },
+    /// Replace a direct thread's pin with the identity currently holding its nick.
+    TrustDirectIdentity {
+        /// Direct-message buffer whose current peer should be trusted.
+        buffer_id: BufferId,
+    },
+    /// Keep a mismatched direct thread read-only without making a trust decision.
+    DeferDirectIdentity {
+        /// Direct-message buffer whose decision should be deferred.
+        buffer_id: BufferId,
     },
 }
 

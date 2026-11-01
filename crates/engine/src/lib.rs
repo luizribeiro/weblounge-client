@@ -17,12 +17,12 @@ use std::rc::Rc;
 
 pub use protocol::{
     AccountProjection, BufferId, BufferKind, BufferProjection, CompletionCandidate,
-    CompletionTrigger, ConnectionFailureReason, DeploymentConfig, EngineRequest,
-    EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig, HostedOAuthConfig, LocalSendId,
-    MemberGroup, MemberProjection, MembershipKind, MembershipProjection, MessageAuthorship,
-    MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeTone, OfflineReason, RedactedSecret, SaslCredentials,
-    ShellKind, UiToEngine,
+    CompletionTrigger, ConnectionFailureReason, DeploymentConfig, DirectIdentityState,
+    EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig,
+    HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
+    MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
+    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
+    NoticeTone, OfflineReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.

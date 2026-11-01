@@ -265,10 +265,7 @@ impl Runtime {
             EngineRequest::SetDeviceOnline { network_id, online } => {
                 self.set_device_online(envelope.id, network_id, online)
             }
-            EngineRequest::SetUpdateReady { ready } => {
-                lock(&self.state).update_ready = ready;
-                vec![EngineToUi::CommandResult { id: envelope.id }]
-            }
+            EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
             }
@@ -308,6 +305,12 @@ impl Runtime {
             EngineRequest::OpenDirect { network_id, nick } => {
                 self.open_direct(envelope.id, network_id, nick)
             }
+            EngineRequest::TrustDirectIdentity { buffer_id } => {
+                self.trust_direct_identity(envelope.id, buffer_id)
+            }
+            EngineRequest::DeferDirectIdentity { buffer_id } => {
+                self.defer_direct_identity(envelope.id, buffer_id)
+            }
         }
     }
 
@@ -319,6 +322,11 @@ impl Runtime {
             },
             EngineToUi::CommandResult { id: command_id },
         ]
+    }
+
+    fn set_update_ready(&self, command_id: String, ready: bool) -> Vec<EngineToUi> {
+        lock(&self.state).update_ready = ready;
+        vec![EngineToUi::CommandResult { id: command_id }]
     }
 
     fn submit_input(&self, id: String, buffer_id: BufferId, input: &str) -> Vec<EngineToUi> {
@@ -455,6 +463,55 @@ impl Runtime {
         let instance = running.instance;
         drop(state);
         self.capture_direct(command_id, client, instance, nick, None, true);
+        Vec::new()
+    }
+
+    fn defer_direct_identity(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(event) = running.model.defer_direct_identity(buffer_id) else {
+            return rejected_command(command_id, "engine.buffer_not_sendable");
+        };
+        vec![event, EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn trust_direct_identity(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+        let state = lock(&self.state);
+        let Some(running) = state.network.as_ref() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(nick) = running.model.direct_trust_target(buffer_id) else {
+            return rejected_command(command_id, "engine.buffer_not_sendable");
+        };
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let Ok(direct) = client.direct(&nick).await else {
+                let _ = outbound.send(EngineToUi::CommandRejected {
+                    id: command_id,
+                    message_key: "engine.direct_unavailable".into(),
+                });
+                return;
+            };
+            let event = {
+                let mut state = lock(&state);
+                state
+                    .network
+                    .as_mut()
+                    .filter(|running| running.instance == instance)
+                    .and_then(|running| running.model.trust_direct_identity(buffer_id, direct))
+            };
+            let Some(event) = event else {
+                return;
+            };
+            let _ = outbound.send(event);
+            let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        });
         Vec::new()
     }
 
@@ -1560,6 +1617,7 @@ enum AuthenticationKind {
 enum SendError {
     Protocol,
     DirectTargetGone,
+    PeerPinMismatch(papo::PeerPinMismatch),
     Offline,
 }
 
@@ -1568,6 +1626,7 @@ impl SendError {
         match self {
             Self::Protocol | Self::Offline => "engine.send_failed",
             Self::DirectTargetGone => "engine.direct_target_gone",
+            Self::PeerPinMismatch(_) => "engine.direct_identity_mismatch",
         }
     }
 }
@@ -1581,15 +1640,31 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
             client.privmsg(channel, pending.text.clone()).await
         }
         .map_err(|error| classify_send_error(&error)),
-        SendTarget::Direct { recipient, .. } => match recipient {
-            Some(recipient) => {
+        SendTarget::Direct {
+            nick,
+            recipient,
+            pin,
+        } => {
+            let recipient = if let Some(pin) = pin {
+                match client.direct_pinned(&nick, &pin).await {
+                    Ok(recipient) => recipient,
+                    Err(papo::Error::PeerPinMismatch(mismatch)) => {
+                        return Err(SendError::PeerPinMismatch(mismatch));
+                    }
+                    Err(error) => return Err(classify_send_error(&error)),
+                }
+            } else if let Some(recipient) = recipient {
+                recipient
+            } else {
+                return Err(SendError::Protocol);
+            };
+            {
                 if action {
                     client.action(recipient, pending.text.clone()).await
                 } else {
                     client.privmsg(recipient, pending.text.clone()).await
                 }
             }
-            None => return Err(SendError::Protocol),
         }
         .map_err(|error| classify_send_error(&error)),
     }
@@ -1737,6 +1812,19 @@ async fn finish_send(
         };
         match result {
             Ok(sent) => running.model.confirm_send(pending, &sent, &client.state()),
+            Err(SendError::PeerPinMismatch(mismatch)) => {
+                let mut events = running
+                    .model
+                    .record_direct_mismatch(pending.buffer_id, &mismatch)
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                events.extend(
+                    running
+                        .model
+                        .fail_send(pending, "engine.direct_identity_mismatch"),
+                );
+                Some(events)
+            }
             Err(error) => Some(running.model.fail_send(pending, error.message_key())),
         }
     };
@@ -2701,7 +2789,7 @@ fn process_nick_change(
     if changed.authorship == papo::Authorship::Own {
         output.push(model.set_nickname(changed.new.to_string()));
     }
-    output.extend(model.rename_direct(changed.actor.nick(), &changed.new));
+    output.extend(model.note_direct_rename(changed.actor.nick(), &changed.new, changed.peer_key()));
 }
 
 enum ConnectionTransition {
@@ -3372,6 +3460,7 @@ mod tests {
                 last_activity_ms: None,
                 badge: SnapshotBadge::None,
                 preview: None,
+                peer_pin: None,
             }],
         );
         let (first_tick, first_clock) = oneshot::channel();
@@ -4101,6 +4190,7 @@ mod tests {
         assert!(matches!(output.as_slice(), [
             EngineToUi::BufferAdded { buffer },
             EngineToUi::BuffersChanged { .. },
+            EngineToUi::DraftKeyChanged { .. },
             EngineToUi::FocusBufferRequested { buffer_id, .. },
             EngineToUi::CommandResult { .. },
         ] if buffer.kind == BufferKind::Direct && buffer.title == "mel" && buffer.id == *buffer_id));
@@ -4792,6 +4882,7 @@ mod tests {
             target: SendTarget::Direct {
                 nick: changed.new,
                 recipient: Some(direct),
+                pin: None,
             },
             text: "still you".into(),
             kind: crate::MessageKind::Text,
@@ -4871,7 +4962,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guarded_direct_refuses_a_reused_nick() {
+    async fn pinned_direct_mismatch_sends_nothing_and_blocks_the_thread() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["extended-join"]).await;
@@ -4907,11 +4998,21 @@ mod tests {
         wire.server(":alice!other@host JOIN #room alice-two :Other Alice")
             .await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let Err(super::SendError::PeerPinMismatch(mismatch)) = super::send(&client, &pending).await
+        else {
+            panic!("reused nick must fail its pin check")
+        };
         assert!(matches!(
-            super::send(&client, &pending).await,
-            Err(super::SendError::DirectTargetGone)
+            model.record_direct_mismatch(buffer_id, &mismatch),
+            Some(EngineToUi::BufferUpdated { buffer })
+                if buffer.direct_identity == Some(crate::DirectIdentityState::CannotVerify)
         ));
-        let failures = model.fail_send(&pending, "engine.direct_target_gone");
+        assert!(
+            model
+                .begin_send(buffer_id, "still blocked".into(), &client.state())
+                .is_none()
+        );
+        let failures = model.fail_send(&pending, "engine.direct_identity_mismatch");
         assert!(matches!(
             failures.as_slice(),
             [
@@ -5047,6 +5148,7 @@ mod tests {
                     last_activity_ms: None,
                     badge: SnapshotBadge::None,
                     preview: None,
+                    peer_pin: None,
                 }],
             ));
             model.mark_vanished_cached_rows();
@@ -6498,7 +6600,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn casemapping_channel_and_nick_changes_rebuild_stable_buffers() {
+    async fn casemapping_and_channel_renames_rebuild_keys_while_nicks_start_threads() {
         let caps = ["draft/channel-rename", "message-tags"];
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -6573,10 +6675,22 @@ mod tests {
         })
         .await;
         process_event(&state, &outbound, &client, 1, changed);
-        assert!(collect(&mut receiver).iter().any(|event| matches!(
+        assert!(!collect(&mut receiver).iter().any(|event| matches!(
             event,
             EngineToUi::BuffersChanged { buffers, .. }
                 if buffers.iter().any(|buffer| buffer.id == direct_id && buffer.title == "alicia")
+        )));
+        wire.server(":alicia!a@host PRIVMSG weblounge :new nick, new thread")
+            .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::BufferAdded { buffer }
+                if buffer.id != direct_id && buffer.title == "alicia"
         )));
 
         wire.server(":offline.test 005 weblounge CASEMAPPING=ascii CHANTYPES=# :are supported")

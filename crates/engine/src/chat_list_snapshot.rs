@@ -2,7 +2,8 @@ use crate::storage::{KvBackend, Operation, Space, StorageError};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SNAPSHOT_KEY: &[u8] = b"chat-list-snapshot";
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
+const ACCOUNT_KEY_SCHEMA: u32 = 2;
 pub(crate) const PREVIEW_LIMIT: usize = 80;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -22,7 +23,13 @@ impl ChatListSnapshot {
     }
 
     pub(crate) fn decode(bytes: &[u8], expected: &str) -> Option<Self> {
-        let snapshot = serde_json::from_slice::<Self>(bytes).ok()?;
+        let mut snapshot = serde_json::from_slice::<Self>(bytes).ok()?;
+        if snapshot.schema == ACCOUNT_KEY_SCHEMA {
+            snapshot.schema = SCHEMA_VERSION;
+            for row in &mut snapshot.rows {
+                row.peer_pin = None;
+            }
+        }
         (snapshot.schema == SCHEMA_VERSION && snapshot.fingerprint == expected).then_some(snapshot)
     }
 
@@ -38,6 +45,8 @@ pub(crate) struct SnapshotRow {
     pub(crate) last_activity_ms: Option<i64>,
     pub(crate) badge: SnapshotBadge,
     pub(crate) preview: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) peer_pin: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -113,6 +122,7 @@ mod tests {
                     last_activity_ms: Some(1_700_000_000_000),
                     badge: SnapshotBadge::Unread,
                     preview: Some("mel: hello".into()),
+                    peer_pin: None,
                 },
                 SnapshotRow {
                     conversation: SnapshotConversation::Direct {
@@ -122,6 +132,7 @@ mod tests {
                     last_activity_ms: Some(1_700_000_000_001),
                     badge: SnapshotBadge::Mentions(3),
                     preview: Some(truncate_preview(&"é".repeat(81))),
+                    peer_pin: Some("papo-peer-v1;scope=server%3Aexample;account=alice".into()),
                 },
             ],
         )
@@ -133,7 +144,7 @@ mod tests {
         let encoded = snapshot.encode().expect("encode");
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
 
-        assert_eq!(value["schema"], 2);
+        assert_eq!(value["schema"], 3);
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
         assert_eq!(
             value["rows"][1]["preview"]
@@ -164,6 +175,25 @@ mod tests {
                 .is_none()
         );
         assert!(ChatListSnapshot::decode(&snapshot.encode().expect("encode"), "other").is_none());
+    }
+
+    #[test]
+    fn account_key_schema_migrates_without_inventing_peer_pins() {
+        let snapshot = snapshot();
+        let expected = fingerprint("Lounge", "wss://irc.example");
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&snapshot.encode().expect("encode")).expect("json");
+        legacy["schema"] = 2.into();
+        for row in legacy["rows"].as_array_mut().expect("rows") {
+            row.as_object_mut().expect("row").remove("peer_pin");
+        }
+
+        let migrated =
+            ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected)
+                .expect("schema 2 migrates");
+
+        assert_eq!(migrated.schema, 3);
+        assert!(migrated.rows.iter().all(|row| row.peer_pin.is_none()));
     }
 
     #[tokio::test]
