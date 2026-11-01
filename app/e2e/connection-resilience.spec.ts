@@ -104,12 +104,15 @@ test.describe("connection resilience against local Ergo", () => {
   }, testInfo) => {
     await installNativeFeelInstrumentation(page);
     const composer = await openChannel(page, testInfo.project.name);
+    const list = page.locator("[data-message-list]");
+    const listWidth = await elementWidth(list);
 
     await context.setOffline(true);
     const queueHint = page.getByText("Will send when connected", {
       exact: true,
     });
     await expect(queueHint).toBeVisible();
+    expect(await elementWidth(list)).toBe(listWidth);
     await expect(
       page.getByText(/Connecting|Reconnecting|Offline/u),
     ).toHaveCount(0);
@@ -379,6 +382,10 @@ async function scrollAnchorOffset(
       ? null
       : row.getBoundingClientRect().top - element.getBoundingClientRect().top;
   }, text);
+}
+
+async function elementWidth(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => element.getBoundingClientRect().width);
 }
 
 async function messageListScrollRange(list: Locator): Promise<number> {
