@@ -57,6 +57,25 @@ it("renders preview, non-default network, time, and mention badge", () => {
   expect(document.querySelector("time")).toBeInTheDocument();
 });
 
+it("renders cached activity without a live message", () => {
+  const activity = lastMessage.server_time_ms ?? lastMessage.received_at_ms;
+  const { last_message: _, ...cachedBuffer } = buffer({
+    cached: true,
+    last_activity_ms: activity,
+    cached_preview: "mel: See you there",
+  });
+  render(() => (
+    <MobileChatRow buffer={cachedBuffer} onOpen={vi.fn()} previews={true} />
+  ));
+
+  expect(document.querySelector("time")).toHaveTextContent(
+    new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(activity),
+  );
+});
+
 it("omits the default network label and uses a subtle unread dot", () => {
   render(() => (
     <MobileChatRow

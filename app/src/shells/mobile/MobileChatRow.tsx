@@ -20,6 +20,10 @@ interface MobileChatRowProps {
 
 export function MobileChatRow(props: MobileChatRowProps) {
   const message = () => props.buffer.last_message;
+  const activityTime = () =>
+    props.buffer.last_activity_ms ??
+    message()?.server_time_ms ??
+    message()?.received_at_ms;
   const visiblePreview = () =>
     props.buffer.cached_preview ?? preview(props.buffer);
   return (
@@ -52,14 +56,9 @@ export function MobileChatRow(props: MobileChatRowProps) {
           {props.networkLabel !== undefined && (
             <Line class={styles.network}>{props.networkLabel}</Line>
           )}
-          {message() !== undefined && (
-            <time
-              class={styles.time}
-              dateTime={dateTime(message()?.received_at_ms)}
-            >
-              {formatTime(
-                message()?.server_time_ms ?? message()?.received_at_ms ?? 0,
-              )}
+          {activityTime() !== undefined && (
+            <time class={styles.time} dateTime={dateTime(activityTime())}>
+              {formatTime(activityTime() ?? 0)}
             </time>
           )}
         </span>

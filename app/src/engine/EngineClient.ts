@@ -973,6 +973,10 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     !(value.read_through === null || typeof value.read_through === "number") ||
     (value.last_message !== undefined && lastMessage === undefined) ||
     !(
+      value.last_activity_ms === undefined ||
+      typeof value.last_activity_ms === "number"
+    ) ||
+    !(
       value.cached_preview === undefined ||
       typeof value.cached_preview === "string"
     )
@@ -998,6 +1002,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     mentions: value.mentions,
     read_through: value.read_through,
     ...(lastMessage === undefined ? {} : { last_message: lastMessage }),
+    ...(value.last_activity_ms === undefined
+      ? {}
+      : { last_activity_ms: value.last_activity_ms }),
     ...(value.cached_preview === undefined
       ? {}
       : { cached_preview: value.cached_preview }),
