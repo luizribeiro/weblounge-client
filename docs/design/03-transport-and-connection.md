@@ -89,14 +89,17 @@ ID, exact webchat root as redirect URI, the preconfigured WebSocket endpoint, an
 hostname sniffing or onboarding chooses these values. The session-token endpoint is configuration,
 not a path derived from the issuer.
 
-The adapter's normal credential path posts an empty JSON object to the configured session-token
-endpoint with `credentials: "include"`. It validates the bearer response and yields the token once
-to the engine. The provider works in both the window bootstrap and SharedWorker adapter, so startup
-may fetch the first token in parallel with worker initialization and reconnects do not require a
-live UI tab. Live projection waits for both startup operations. A valid chat-list snapshot may
-reveal the shell while they continue; without one, the splash remains until a usable shell or an
-actionable failure can render. Each connect attempt makes at most one request; the provider does
-not cache bearer tokens or run its own retry loop.
+The window's credential path posts an empty JSON object to the configured session-token endpoint
+with `credentials: "include"`. It validates the bearer response and yields the token once to the
+engine. The endpoint and member cookie never enter a worker: worker fetches do not inherit the
+page's test-CA exception in Playwright WebKit, and browser credential behavior must have one owner.
+Startup begins the page fetch in parallel with worker initialization. On reconnect the engine's
+typed token-required event is routed to one active page, which performs the same one-shot exchange
+and returns a fresh token. With no live page, the engine enters a credential-unavailable failure
+instead of retrying silently. Live projection waits for both startup operations. A valid chat-list
+snapshot may reveal the shell while they continue; without one, the splash remains until a usable
+shell or an actionable failure can render. Each connect attempt makes at most one request; the
+provider does not cache bearer tokens or run its own retry loop.
 
 The engine asks the adapter again before every reconnect, even while the preceding token is still
 within its advertised lifetime. Connection construction maps that attempt's `HostedOAuth` to
@@ -111,8 +114,8 @@ Credential outcomes remain distinct:
 | Valid session token | Consume it for exactly one connect attempt. |
 | `401 login_required` | Start full OAuth authorization: the redirect flow today, replaced by the in-app sign-in screen tracked in GitHub issue #2. |
 | Token rejected by IRC/concierge | Treat it as invalid authentication and start full authorization; never classify it as transport failure. |
-| Fetch/network failure | Keep or enter the transient reconnect path and retry with backoff; never clear the member session or start authorization. |
-| `429 invalid_request` | Treat it as transient and back off; never issue more than one fetch per connection attempt. |
+| Fetch/network failure | Show Retry immediately. If no connection exists yet, fall back to PKCE after a fixed three-second recovery window; an established shell enters credential-unavailable failure for the same window. |
+| `429 invalid_request` | Treat it like a fetch failure; never issue more than one fetch per connection attempt. |
 | Invalid endpoint response or deployment contract | Fail visibly as a hosted deployment error; do not send an unvalidated value to papo. |
 
 Full authorization remains concierge's RFC 8414 authorization-code flow. The client generates
@@ -174,9 +177,9 @@ Connecting → Registering → Online → Reconnecting → Online
 Papo's exponential reconnect policy owns transport delay and jitter: immediate, then approximately
 1s, 2s, 5s, up to 30s. The engine reflects `Connecting.attempt`, `Connecting.phase`, and
 `Disconnected.reconnect_in`; it does not run a competing transport retry timer. A hosted attempt
-is gated on one adapter credential request before papo connects, including after a transient token
-fetch failure; the provider itself never retries. “Reconnect now” first obtains a hosted token and
-then reconnects on browser `online`, visible `visibilitychange`, and persisted `pageshow`.
+is gated on one page-owned credential request before papo connects. The provider itself never
+retries. “Reconnect now” asks one active page for a hosted token and then reconnects on browser
+`online`, visible `visibilitychange`, and persisted `pageshow`.
 The hosted connection owner must not let an automatic papo reconnect bypass that credential gate
 with the preceding attempt's token; papo remains authoritative for transport failure
 classification and the reported retry schedule.
@@ -297,8 +300,10 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
 - OAuth state, PKCE, callback, one-shot secret transfer, and redaction have pure or mocked HTTP
   tests. Provider tests cover success, `401` authorization, transient network and `429` failures,
   invalid responses, and one fresh fetch per connect and reconnect. Browser coverage checks the
-  session-token happy path does not navigate off-origin and callback failures show an explicit
-  sign-in retry. The existing weblounge VM remains the manual end-to-end concierge/Ergo check.
+  session-token happy path does not navigate off-origin, a network-level failure shows Retry and
+  reaches PKCE within three seconds, reconnect acquisition originates in a page rather than a
+  worker, and callback failures show an explicit sign-in retry. The existing weblounge VM remains
+  the manual end-to-end concierge/Ergo check.
 - State-machine table tests cover every transition, papo-projected retry timing, fresh hosted
   credentials per attempt, and authentication rejection versus transient credential/transport
   failure.
@@ -341,6 +346,10 @@ certificate-management UI, and gateway deployment are separate designs.
   affected sends through a composer-local queue hint.
 - Acquire at most one fresh hosted token before every connection attempt; never reconnect with a
   cached token merely because it has not expired.
+- Luiz, 2026-11-01: only a live page may call the hosted session-token endpoint. The worker routes
+  token-required events and never owns the endpoint or member-cookie fetch. Missing page ownership
+  and page-level network failures become visible failures, with a three-second PKCE fallback when
+  a page is present.
 - Expose only TLS TCP and secure WebSocket in production onboarding.
 - Use `ws://` only for explicit loopback test fixtures.
 - Luiz, 2026-10-31: hosted auth normally exchanges the concierge member cookie for a short-lived
