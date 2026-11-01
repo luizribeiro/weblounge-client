@@ -69,7 +69,7 @@ export function SuggestionList(props: SuggestionListProps) {
                 onPointerUp={(event) => {
                   if (
                     event.pointerType !== "touch" ||
-                    !touchTap.end(pointerTouch(event), event.timeStamp)
+                    !touchTap.end(pointerTouch(event), event.timeStamp).accepted
                   )
                     return;
                   acceptedByTouch = true;

@@ -3,6 +3,7 @@ const SHELL_CACHE = `weblounge-shell-${SHELL_VERSION}`;
 const CONFIG_CACHE = "weblounge-runtime-config";
 const PRECACHE_URLS = Object.freeze(/* __PRECACHE_URLS__ */);
 const PRECACHE_PATHS = new Set(PRECACHE_URLS);
+const PRECACHE_BATCH_SIZE = 2;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(precacheShell());
@@ -10,8 +11,15 @@ self.addEventListener("install", (event) => {
 
 async function precacheShell() {
   const cache = await caches.open(SHELL_CACHE);
-  for (let offset = 0; offset < PRECACHE_URLS.length; offset += 6) {
-    await cache.addAll(PRECACHE_URLS.slice(offset, offset + 6));
+  const requests = PRECACHE_URLS.map(
+    (url) => new Request(url, { priority: "low" }),
+  );
+  for (
+    let offset = 0;
+    offset < requests.length;
+    offset += PRECACHE_BATCH_SIZE
+  ) {
+    await cache.addAll(requests.slice(offset, offset + PRECACHE_BATCH_SIZE));
   }
 }
 

@@ -16,16 +16,20 @@ durable IRC state remain later work.
 Vite emits a small handwritten service worker beside `index.html`. The production build writes a
 content-derived version and an exact precache manifest into it after all output names are final.
 The manifest contains `index.html`, hashed application CSS and JavaScript, workers, Inter, engine
-Wasm, the manifest and icons, and every iOS startup image. Installation fails if any required entry
-cannot be fetched, so an incomplete worker never becomes the offline authority.
+Wasm, the manifest, and icons. iOS startup images are launch metadata rather than runtime shell
+assets: only the real app document declares them, and the browser fetches the one matching the
+device without the worker downloading every device variant. Installation fails if any required
+shell entry cannot be fetched, so an incomplete worker never becomes the offline authority.
 
 The cache is named `weblounge-shell-<build version>`. Activation deletes every older
 `weblounge-shell-` cache. Cache entries use same-origin root-relative URLs so the build remains
 auditable and compatible with beta's `default-src 'none'`, `script-src 'self'`, and
 `worker-src 'self'` policy.
 
-Development does not register a service worker. Production registration happens after page load;
-registration failure is nonfatal because an online launch still works.
+Development does not register a service worker. Production registration is scheduled after page
+load and the first interactive frame, during browser idle time. Shell requests use low fetch
+priority and bounded concurrency so installation does not compete with first-launch interaction.
+Registration failure is nonfatal because an online launch still works.
 
 ## Request policy
 

@@ -133,26 +133,28 @@ function injectStartupImageLinks(): Plugin {
     name: "weblounge-startup-images",
     transformIndexHtml: {
       order: "pre",
-      handler: () =>
-        devices.flatMap((device) =>
-          (["portrait", "landscape"] as const).flatMap((orientation) =>
-            (["light", "dark"] as const).map((appearance) => ({
-              tag: "link",
-              attrs: {
-                href: `/startup/${device.name}-${orientation}-${appearance}.png`,
-                media: [
-                  `(device-width: ${device.width}px)`,
-                  `(device-height: ${device.height}px)`,
-                  `(-webkit-device-pixel-ratio: ${device.ratio})`,
-                  `(orientation: ${orientation})`,
-                  `(prefers-color-scheme: ${appearance})`,
-                ].join(" and "),
-                rel: "apple-touch-startup-image",
-              },
-              injectTo: "head" as const,
-            })),
-          ),
-        ),
+      handler: (_html, context) =>
+        context.path === "/index.html"
+          ? devices.flatMap((device) =>
+              (["portrait", "landscape"] as const).flatMap((orientation) =>
+                (["light", "dark"] as const).map((appearance) => ({
+                  tag: "link",
+                  attrs: {
+                    href: `/startup/${device.name}-${orientation}-${appearance}.png`,
+                    media: [
+                      `(device-width: ${device.width}px)`,
+                      `(device-height: ${device.height}px)`,
+                      `(-webkit-device-pixel-ratio: ${device.ratio})`,
+                      `(orientation: ${orientation})`,
+                      `(prefers-color-scheme: ${appearance})`,
+                    ].join(" and "),
+                    rel: "apple-touch-startup-image",
+                  },
+                  injectTo: "head" as const,
+                })),
+              ),
+            )
+          : [],
     },
   };
 }
@@ -191,8 +193,7 @@ function appShellUrls(directory: string): string[] {
         url === "/index.html" ||
         url === "/manifest.webmanifest" ||
         url.startsWith("/assets/") ||
-        url.startsWith("/icons/") ||
-        url.startsWith("/startup/"),
+        url.startsWith("/icons/"),
     )
     .sort();
 }

@@ -16,9 +16,19 @@ export function onServiceWorkerUpdateReady(
 
 export function registerProductionServiceWorker(): void {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
-  const register = () => void registerAfterLoad(navigator.serviceWorker);
+  const register = () => scheduleRegistration(navigator.serviceWorker);
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register, { once: true });
+}
+
+function scheduleRegistration(container: ServiceWorkerContainer): void {
+  requestAnimationFrame(() => {
+    if (window.requestIdleCallback === undefined) {
+      void registerAfterLoad(container);
+      return;
+    }
+    window.requestIdleCallback(() => void registerAfterLoad(container));
+  });
 }
 
 async function registerAfterLoad(container: ServiceWorkerContainer) {

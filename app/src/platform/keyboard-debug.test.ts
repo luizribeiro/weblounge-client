@@ -59,6 +59,7 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   window.dispatchEvent(new PointerEvent("pointerup", { isPrimary: true }));
   reportKeyboardInteraction("touchstart");
   reportKeyboardInteraction("touchend:tap");
+  reportKeyboardInteraction("touchend:rejected(moved 14px)");
   field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
   reportKeyboardInteraction("focus:landed");
   window.dispatchEvent(
@@ -76,6 +77,7 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   expect(overlay?.textContent).toContain("commits: measured:476");
   expect(overlay?.textContent).toContain("touchstart");
   expect(overlay?.textContent).toContain("touchend:tap");
+  expect(overlay?.textContent).toContain("touchend:rejected(moved 14px)");
   expect(overlay?.textContent).toContain("focusin:composer");
   expect(overlay?.textContent).toContain("focus:landed");
   expect(overlay?.textContent).toContain("frames · tap to copy full trace");
