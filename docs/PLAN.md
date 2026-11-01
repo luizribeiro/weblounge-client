@@ -261,6 +261,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     losing focus, follows the iPhone accessory Done blur through close, and taps open again without
     retaining tracker, rollback, expected-state, or cached-height interference (beta feedback on
     `57531c6`, awaiting on-device confirmation).
+  - [x] Preserve prototype-backed browser touch coordinates and identifiers when classifying
+    composer taps, and report both identifiers for a changed touch. Keyboard rollback callbacks
+    now cancel on focus or measured-open geometry and otherwise reconcile live field ownership
+    with the visual viewport, so stale callbacks cannot close an open keyboard layout (beta
+    feedback on `cc1a339`, awaiting on-device confirmation).
   - [x] Route global keyboard geometry only to the surface owning the focused field. The mobile
     member drawer follows measured keyboard inset while the scrimmed chat retains its root height,
     safe-area padding, composer position, transcript offset, and visible row; owner-scoped geometry

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TouchTapGesture } from "./focus-without-pan";
 import {
   type AppGeometryChange,
   cacheKeyboardHeight,
@@ -374,6 +375,85 @@ describe("viewport geometry observer", () => {
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
   });
 
+  it("keeps measured open reality when rejected-tap rollbacks fire late", () => {
+    const frames = new ManualAnimationFrames(true);
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport, undefined, frames);
+    const root = document.createElement("div");
+    const field = textField();
+    document.body.append(root);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+    const tap = new TouchTapGesture();
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    tap.begin(touch(81), 0);
+    expect(tap.end(touch(87), 81)).toEqual({
+      accepted: false,
+      reason: "touch changed from 81 to 87",
+    });
+    field.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    field.focus();
+    viewport.set(471, 0, "resize");
+    frames.flush();
+
+    expect(document.activeElement).toBe(field);
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.dataset.keyboardOwner).toBe("true");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+    expect(root.style.getPropertyValue("--wl-keyboard-inset")).toBe(
+      `${window.innerHeight - 471}px`,
+    );
+  });
+
+  it("matches focused open reality across tap and event-order permutations", () => {
+    const orders = [
+      ["focus", "viewport"],
+      ["viewport", "focus"],
+    ] as const;
+    for (const accepted of [true, false]) {
+      for (const order of orders) {
+        for (const rollbackAfter of [0, 1, 2]) {
+          document.body.replaceChildren();
+          const frames = new ManualAnimationFrames(true);
+          const viewport = new FakeVisualViewport(window.innerHeight);
+          const browserWindow = fakeWindow(viewport, undefined, frames);
+          const root = document.createElement("div");
+          const field = textField();
+          document.body.append(root);
+          const stop = observeViewportGeometry(root, browserWindow);
+          const tap = new TouchTapGesture();
+          const endIdentifier = accepted ? 81 : 87;
+
+          field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+          tap.begin(touch(81), 0);
+          expect(tap.end(touch(endIdentifier), 81).accepted).toBe(accepted);
+          field.dispatchEvent(new Event("pointerup", { bubbles: true }));
+          for (const [index, action] of order.entries()) {
+            if (rollbackAfter === index) frames.flush();
+            if (action === "focus") field.focus();
+            else viewport.set(471, 0, "resize");
+          }
+          if (rollbackAfter === order.length) frames.flush();
+          frames.flush();
+
+          const focusedAndOpen =
+            document.activeElement === field && viewport.height === 471;
+          expect(
+            root.dataset.keyboard,
+            scenario(accepted, order, rollbackAfter),
+          ).toBe(focusedAndOpen ? "open" : "closed");
+          expect(
+            root.style.getPropertyValue("--wl-app-height"),
+            scenario(accepted, order, rollbackAfter),
+          ).toBe(focusedAndOpen ? "471px" : "");
+          stop();
+          frames.clear();
+        }
+      }
+    }
+  });
+
   it("ignores open viewport geometry without a focused keyboard field", () => {
     const { root, viewport } = observe();
 
@@ -597,10 +677,15 @@ class FakeVirtualKeyboard extends EventTarget {
 function fakeWindow(
   viewport: FakeVisualViewport | null,
   keyboard?: FakeVirtualKeyboard,
+  frames?: ManualAnimationFrames,
 ): Window {
   return new Proxy(window, {
     get(target, property) {
       if (property === "visualViewport") return viewport;
+      if (property === "requestAnimationFrame" && frames !== undefined)
+        return frames.request;
+      if (property === "cancelAnimationFrame" && frames !== undefined)
+        return frames.cancel;
       if (property === "navigator" && keyboard !== undefined)
         return new Proxy(target.navigator, {
           get(navigator, navigatorProperty) {
@@ -612,6 +697,49 @@ function fakeWindow(
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+class ManualAnimationFrames {
+  readonly #callbacks = new Map<number, FrameRequestCallback>();
+  readonly #keepCanceled: boolean;
+  #next = 1;
+
+  constructor(keepCanceled = false) {
+    this.#keepCanceled = keepCanceled;
+  }
+
+  readonly request = (callback: FrameRequestCallback): number => {
+    const id = this.#next;
+    this.#next += 1;
+    this.#callbacks.set(id, callback);
+    return id;
+  };
+
+  readonly cancel = (id: number): void => {
+    if (!this.#keepCanceled) this.#callbacks.delete(id);
+  };
+
+  flush(): void {
+    const callbacks = [...this.#callbacks.values()];
+    this.#callbacks.clear();
+    for (const callback of callbacks) callback(performance.now());
+  }
+
+  clear(): void {
+    this.#callbacks.clear();
+  }
+}
+
+function touch(identifier: number) {
+  return { clientX: 20, clientY: 40, identifier };
+}
+
+function scenario(
+  accepted: boolean,
+  order: readonly ["focus" | "viewport", "focus" | "viewport"],
+  rollbackAfter: number,
+): string {
+  return JSON.stringify({ accepted, order, rollbackAfter });
 }
 
 function rect(top: number, height: number): DOMRectReadOnly {
