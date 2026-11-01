@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import type { ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
@@ -80,6 +86,7 @@ export default defineConfig(({ mode }) => {
       solid(),
       injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
+      emitServiceWorker(),
       ...(appConfigHarness ? [testAppConfig()] : []),
     ],
     ...(!cspEnabled
@@ -148,6 +155,53 @@ function injectStartupImageLinks(): Plugin {
         ),
     },
   };
+}
+
+function emitServiceWorker(): Plugin {
+  return {
+    name: "weblounge-service-worker",
+    apply: "build",
+    writeBundle(options) {
+      const directory = resolve(
+        options.dir ?? resolve(import.meta.dirname, "dist"),
+      );
+      const urls = appShellUrls(directory);
+      const hash = createHash("sha256");
+      for (const url of urls) {
+        hash.update(url).update(readFileSync(resolve(directory, `.${url}`)));
+      }
+      const version = hash.digest("hex").slice(0, 16);
+      const template = readFileSync(
+        resolve(import.meta.dirname, "service-worker.js"),
+        "utf8",
+      );
+      const worker = template
+        .replace("__SHELL_VERSION__", version)
+        .replace("/* __PRECACHE_URLS__ */", JSON.stringify(urls));
+      writeFileSync(resolve(directory, "service-worker.js"), worker);
+    },
+  };
+}
+
+function appShellUrls(directory: string): string[] {
+  return descendants(directory)
+    .map((path) => `/${path.slice(directory.length + 1)}`)
+    .filter(
+      (url) =>
+        url === "/index.html" ||
+        url === "/manifest.webmanifest" ||
+        url.startsWith("/assets/") ||
+        url.startsWith("/icons/") ||
+        url.startsWith("/startup/"),
+    )
+    .sort();
+}
+
+function descendants(directory: string): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    const path = resolve(directory, entry);
+    return statSync(path).isDirectory() ? descendants(path) : [path];
+  });
 }
 
 function testWebSocketProxy() {

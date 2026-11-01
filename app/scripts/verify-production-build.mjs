@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { inflateSync } from "node:zlib";
@@ -6,6 +7,7 @@ const outputDirectory = resolve(import.meta.dirname, "../dist");
 
 await verifyIcons(outputDirectory);
 await verifyStartupImages(outputDirectory);
+await verifyServiceWorker(outputDirectory);
 await verifyCspAssets(outputDirectory);
 
 if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
@@ -182,6 +184,52 @@ async function verifyStartupImages(directory) {
   }
   if (expectedLinks.size !== 0) {
     throw new Error("production HTML is missing startup image links");
+  }
+}
+
+async function verifyServiceWorker(directory) {
+  const workerPath = resolve(directory, "service-worker.js");
+  const worker = await readFile(workerPath, "utf8");
+  const version = worker.match(/const SHELL_VERSION = "([0-9a-f]{16})";/u)?.[1];
+  const manifest = worker.match(
+    /const PRECACHE_URLS = Object\.freeze\((\[[^;]+\])\);/u,
+  )?.[1];
+  if (version === undefined || manifest === undefined) {
+    throw new Error("service worker build metadata is missing");
+  }
+  const urls = JSON.parse(manifest);
+  const expectedUrls = (await descendants(directory))
+    .filter((path) => path !== workerPath)
+    .map((path) => `/${path.slice(directory.length + 1)}`)
+    .filter(
+      (url) =>
+        url === "/index.html" ||
+        url === "/manifest.webmanifest" ||
+        url.startsWith("/assets/") ||
+        url.startsWith("/icons/") ||
+        url.startsWith("/startup/"),
+    )
+    .sort();
+  if (JSON.stringify(urls) !== JSON.stringify(expectedUrls)) {
+    throw new Error(
+      "service worker precache manifest does not match the build",
+    );
+  }
+  const hash = createHash("sha256");
+  for (const url of expectedUrls) {
+    hash.update(url).update(await readFile(resolve(directory, `.${url}`)));
+  }
+  if (version !== hash.digest("hex").slice(0, 16)) {
+    throw new Error(
+      "service worker cache version does not match the build hash",
+    );
+  }
+  if (
+    urls.includes("/config.json") ||
+    worker.includes("skipWaiting") ||
+    !worker.includes('name.startsWith("weblounge-shell-")')
+  ) {
+    throw new Error("service worker cache or update policy is unsafe");
   }
 }
 

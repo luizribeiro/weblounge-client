@@ -7,7 +7,7 @@ const appOnly = process.env.WEBLOUNGE_E2E_APP_ONLY === "1";
 const defaultPort = devServer ? 5173 : 4173;
 const port = Number(process.env.WEBLOUNGE_E2E_PORT ?? defaultPort);
 const serverCommand = devServer
-  ? `pnpm icons && WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite --host 127.0.0.1 --port ${port}`
+  ? `pnpm assets && WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite --host 127.0.0.1 --port ${port}`
   : `WEBLOUNGE_E2E_APP_CONFIG=1 WEBLOUNGE_E2E_CSP=1 vite preview --host 127.0.0.1 --port ${port}${outDir}`;
 
 export default defineConfig({

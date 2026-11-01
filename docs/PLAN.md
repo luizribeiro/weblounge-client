@@ -82,6 +82,13 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the build. The self-hosted install manifest and Apple metadata ship in the hosted artifact;
     production validation covers image dimensions and Apple opacity, and the browser fetches every
     declared asset under the app's CSP.
+  - [x] Generate light and dark iOS startup images for current iPhone and iPad viewport families
+    from the inline splash's colors, chair, and geometry. Exact device, scale, orientation, and
+    appearance media queries bridge the home-screen icon to the stationary splash.
+  - [x] Precache the versioned web app shell, engine Wasm, fonts, icons, and startup images with a
+    small same-origin service worker. Deployment config stays network-first with offline fallback;
+    API, OAuth, session-token, and WebSocket traffic bypasses it, and updates activate on a later
+    launch without reloading a live session.
   - [x] Centralize platform adaptation behind one capability environment. Primary input selects the
     shell while the 760px breakpoint only changes desktop panel presentation; narrow desktop uses
     one mirrored overlay drawer without remounting conversation state. Safe-area and keyboard
