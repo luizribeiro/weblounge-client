@@ -108,6 +108,101 @@ test("reveals local Ergo rows with channel and direct previews", async ({
   }
 });
 
+test("reveals an interactive IndexedDB chat list before reconnecting", async ({
+  context,
+  page,
+}) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's startup connection configuration",
+  );
+  test.skip(
+    process.env.WEBLOUNGE_ERGO_CONTROL_PID === undefined,
+    "requires the restartable Ergo fixture",
+  );
+  await page.addInitScript(() => {
+    Reflect.deleteProperty(globalThis, "SharedWorker");
+  });
+  await page.goto("/");
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await expect
+    .poll(() =>
+      page.evaluate(() => navigator.serviceWorker.controller !== null),
+    )
+    .toBe(true);
+  await seedChatListSnapshot(page, {
+    schema: 1,
+    fingerprint: fingerprint("Local Ergo", "ws://127.0.0.1:4173/socket"),
+    rows: [
+      {
+        conversation: { kind: "channel", key: "#cached" },
+        title: "#cached",
+        badge: { kind: "unread" },
+        preview: "alice: cached before the socket",
+      },
+    ],
+  });
+  await recordFirstReveal(page);
+  let ergoStopped = false;
+  try {
+    process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
+    ergoStopped = true;
+    await expectErgoRunning(false);
+    await context.setOffline(true);
+
+    await page.goto("/?irc-password=weblounge-test");
+
+    const rows = await firstRevealRows(page);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        title: "#cached",
+        text: expect.stringContaining("cached before the socket"),
+      }),
+    ]);
+    await page.getByRole("button", { name: "#cached" }).click();
+    await expect(page.locator("[data-mobile-chat]")).toBeVisible();
+    await page.getByRole("button", { name: "Mark as read" }).click();
+    await expect(
+      page.getByRole("button", { name: "Mark as read" }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Will send when connected")).toBeVisible();
+    await page.getByRole("textbox").fill("queued from cache");
+    await page.getByRole("textbox").press("Enter");
+    await expect(page.getByText("queued from cache")).toBeVisible();
+
+    process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
+    await expectErgoRunning(true);
+    ergoStopped = false;
+    await context.setOffline(false);
+    await expect(
+      page.locator('[data-mobile-chat][data-network-state="online"]'),
+    ).toBeVisible();
+    await expect(page.getByText("Will send when connected")).toHaveCount(0);
+    await expect(
+      page.getByText("This conversation is not available."),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("main")
+        .getByText(
+          "That conversation is no longer available, so the message was not sent.",
+        ),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Back to Chats", exact: true })
+      .click();
+    await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+    if (ergoStopped) {
+      process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
+      await expectErgoRunning(true);
+    }
+  }
+});
+
 test("reveals after the hydration cap when latest history stalls", async ({
   page,
 }) => {
@@ -190,6 +285,53 @@ async function firstRevealRows(
         text: string;
       }>,
   );
+}
+
+async function seedChatListSnapshot(
+  page: Page,
+  snapshot: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(async (record) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("cache"))
+          request.result.createObjectStore("cache");
+      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("cache", "readwrite");
+      transaction
+        .objectStore("cache")
+        .put(
+          new TextEncoder().encode(JSON.stringify(record)),
+          new TextEncoder().encode("chat-list-snapshot"),
+        );
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+  }, snapshot);
+}
+
+function fingerprint(label: string, endpoint: string): string {
+  return `${label.length}:${label}${endpoint.length}:${endpoint}`;
+}
+
+async function expectErgoRunning(expected: boolean): Promise<void> {
+  await expect
+    .poll(async () => {
+      try {
+        await fetch("http://127.0.0.1:8089/");
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .toBe(expected);
 }
 
 async function installHistoryStallEngine(

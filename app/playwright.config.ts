@@ -78,6 +78,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-startup",
+      testMatch: "**/startup.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-history",
       testMatch: "**/mobile-history.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },

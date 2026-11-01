@@ -1,6 +1,6 @@
 # Startup chat-list snapshot
 
-Status: revised after Luiz's 2026-10-31 review; awaiting implementation sign-off.
+Status: implemented 2026-11-01 from Luiz's approved revision.
 
 ## Problem
 
