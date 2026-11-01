@@ -169,11 +169,12 @@ test("reveals local Ergo rows with channel and direct previews", async ({
 });
 
 test("keeps seeded rows unchanged through the cached-to-live frame", async ({
+  baseURL,
   page,
 }) => {
   const snapshot = {
     schema: 2,
-    fingerprint: fingerprint("Local Ergo", "ws://127.0.0.1:4173/socket"),
+    fingerprint: fingerprint("Local Ergo", websocketEndpoint(baseURL)),
     rows: [
       {
         conversation: { kind: "direct", key: "zeta" },
@@ -208,6 +209,7 @@ test("keeps seeded rows unchanged through the cached-to-live frame", async ({
 });
 
 test("reveals an interactive IndexedDB chat list before reconnecting", async ({
+  baseURL,
   context,
   page,
 }) => {
@@ -233,7 +235,7 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     .toBe(true);
   await seedChatListSnapshot(page, {
     schema: 2,
-    fingerprint: fingerprint("Local Ergo", "ws://127.0.0.1:4173/socket"),
+    fingerprint: fingerprint("Local Ergo", websocketEndpoint(baseURL)),
     rows: [
       {
         conversation: { kind: "channel", key: "#cached" },
@@ -600,6 +602,13 @@ async function cachedListShimmerObservation(
 
 function fingerprint(label: string, endpoint: string): string {
   return `${label.length}:${label}${endpoint.length}:${endpoint}`;
+}
+
+function websocketEndpoint(baseURL: string | undefined): string {
+  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
+  const endpoint = new URL("/socket", baseURL);
+  endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+  return endpoint.href;
 }
 
 async function expectErgoRunning(expected: boolean): Promise<void> {
