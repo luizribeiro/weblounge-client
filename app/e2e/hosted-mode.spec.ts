@@ -1,6 +1,20 @@
 import { expect, type Page, type Route, test } from "@playwright/test";
 import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
 
+const engineWasmRequest = /\/engine_bg(?:-[^/?]+)?\.wasm(?:\?.*)?$/u;
+const builtEngineWorkerRequest =
+  /\/engine\.(?:shared|dedicated)-worker-[^/]+\.js$/u;
+const developmentEngineWorkerRequest =
+  /\/engine\.(?:shared|dedicated)-worker\.ts$/u;
+
+function isEngineWorkerRequest(url: URL): boolean {
+  return (
+    builtEngineWorkerRequest.test(url.pathname) ||
+    (developmentEngineWorkerRequest.test(url.pathname) &&
+      url.searchParams.has("worker_file"))
+  );
+}
+
 test("retries startup without reloading when production config was missing", async ({
   page,
 }) => {
@@ -212,15 +226,12 @@ for (const worker of ["shared", "dedicated"] as const) {
     const wasmCanStart = new Promise<void>((resolve) => {
       releaseWasm = resolve;
     });
-    await page.route(
-      /\/assets\/engine\.(?:shared|dedicated)-worker-[^/]+\.js$/u,
-      async (route) => {
-        workerAssetRequests += 1;
-        await workerCanStart;
-        await route.continue();
-      },
-    );
-    await page.route(/\/assets\/engine_bg-[^/]+\.wasm$/u, async (route) => {
+    await page.route(isEngineWorkerRequest, async (route) => {
+      workerAssetRequests += 1;
+      await workerCanStart;
+      await route.continue();
+    });
+    await page.route(engineWasmRequest, async (route) => {
       wasmAssetRequests += 1;
       await wasmCanStart;
       await route.continue();

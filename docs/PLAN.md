@@ -304,6 +304,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     workers only route token demand and retain a visible failed network when no page is available.
     Network and TLS failures expose Retry, then enter PKCE after three seconds. Chromium and WebKit
     abort a fresh session request at the network layer and verify the bounded redirect.
+  - B1h. [x] Exercise the signed-out redirect against stalled real worker assets in both Vite
+    development and production builds without relying on production-only hashed URLs.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.
