@@ -125,7 +125,10 @@ export function MemberPanel(props: MemberPanelProps) {
         </button>
       </header>
       <div class={styles.content} data-member-buffer={props.bufferTitle}>
-        {props.onFilter !== undefined ? (
+        <div class={styles.following} data-member-following={props.bufferTitle}>
+          Following <strong>{props.bufferTitle}</strong>
+        </div>
+        {props.onFilter !== undefined && (
           <label class={styles.filter}>
             <span class="visually-hidden">Filter members</span>
             <span aria-hidden="true">⌕</span>
@@ -139,10 +142,6 @@ export function MemberPanel(props: MemberPanelProps) {
               value={props.filter ?? ""}
             />
           </label>
-        ) : (
-          <div class={styles.following}>
-            Following <strong>{props.bufferTitle}</strong>
-          </div>
         )}
         <ul
           aria-label={`Members of ${props.bufferTitle}`}

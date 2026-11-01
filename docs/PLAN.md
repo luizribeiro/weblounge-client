@@ -97,6 +97,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     buffer updates or requesting history. Scroll restoration follows user input, ignores focus and
     visibility adjustments, and iOS document-pan correction never handles inner scrollers.
   - [x] Resubscribe desktop member windows when the active channel changes.
+  - [x] Keep the mobile member drawer subscribed to its owning channel across list navigation,
+    deep-link reloads, DMs, swipe-back, and retained-screen transitions (#77).
   - [x] Keep every touch text field at 16px or larger so focusing never zooms the page.
   - [x] Disable shell-level pinch and double-tap zoom while preserving root text scaling.
   - [x] Linkify safe message URLs and channel names on desktop and mobile.

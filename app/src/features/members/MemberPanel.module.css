@@ -135,6 +135,10 @@
   padding-inline: 10px;
 }
 
+.following + .filter {
+  margin-top: 4px;
+}
+
 .filter input {
   background: transparent;
   border: 0;

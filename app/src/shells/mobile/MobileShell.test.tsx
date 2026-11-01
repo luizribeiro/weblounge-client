@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BufferProjection } from "../../engine/protocol";
+import type { MemberWindow } from "../../features/members/MemberPanel";
 import { installPlatformEnvironment } from "../../platform/environment";
 import { MobileShell } from "./MobileShell";
 
@@ -218,6 +219,67 @@ it("commits a browser drawer close immediately under reduced motion", () => {
   expect(screen.getByRole("heading", { name: "#room" })).toBeVisible();
   window.dispatchEvent(new PopStateEvent("popstate"));
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+});
+
+it("requests the active channel instead of reusing another channel's window", async () => {
+  history.replaceState(null, "", "/Local/two");
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query === "(prefers-reduced-motion: reduce)",
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof matchMedia,
+  );
+  installPlatformEnvironment(document.body, window);
+  const first = {
+    ...buffer,
+    id: 3,
+    kind: "channel" as const,
+    title: "#one",
+  };
+  const second = { ...first, id: 4, title: "#two" };
+  const staleWindow: MemberWindow = {
+    type: "members_changed",
+    buffer_id: first.id,
+    view_id: "test-port:mobile:drawer",
+    version: 1,
+    window_size: 256,
+    offset: 0,
+    total: 0,
+    counts: [0, 0, 0, 0, 0],
+    members: [],
+  };
+  const requestMembers = vi.fn();
+  render(() => (
+    <MobileShell
+      buffers={[first, second]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={second.id}
+      memberships={new Map()}
+      memberViewScope="test-port"
+      memberWindows={new Map([[staleWindow.view_id, staleWindow]])}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onRequestMembers={requestMembers}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+  await waitFor(() =>
+    expect(requestMembers).toHaveBeenCalledWith(
+      "test-port:mobile:drawer",
+      second.id,
+      0,
+      "",
+    ),
+  );
 });
 
 it("clears an in-flight swipe when browser history or visibility wins", async () => {

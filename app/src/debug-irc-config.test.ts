@@ -1,5 +1,8 @@
 import { expect, it, vi } from "vitest";
-import { buildDebugIrcConfig, consumeDebugPassword } from "./debug-irc-config";
+import {
+  buildDebugIrcConfig,
+  consumeDebugConnection,
+} from "./debug-irc-config";
 
 it.each([
   "WEBLOUNGE_IRC_ENDPOINT",
@@ -34,12 +37,15 @@ it("keeps the runtime password out of build-time debug config", () => {
   ).not.toHaveProperty("password");
 });
 
-it("consumes and removes the runtime password from the URL", () => {
+it("consumes runtime connection fields and removes them from the URL", () => {
   const replace = vi.fn();
   const url = new URL(
-    "http://127.0.0.1:5173/?irc-password=runtime-secret&keep=yes#channel",
+    "http://127.0.0.1:5173/?irc-password=runtime-secret&irc-autojoin=%23two&irc-autojoin=&keep=yes#channel",
   );
 
-  expect(consumeDebugPassword(url, replace)).toBe("runtime-secret");
+  expect(consumeDebugConnection(url, replace)).toEqual({
+    password: "runtime-secret",
+    additionalAutojoin: ["#two"],
+  });
   expect(replace).toHaveBeenCalledWith("/?keep=yes#channel");
 });
