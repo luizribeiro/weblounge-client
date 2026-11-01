@@ -93,8 +93,9 @@ The adapter's normal credential path posts an empty JSON object to the configure
 endpoint with `credentials: "include"`. It validates the bearer response and yields the token once
 to the engine. The provider works in both the window bootstrap and SharedWorker adapter, so startup
 may fetch the first token in parallel with worker initialization and reconnects do not require a
-live UI tab. Connection waits for both startup operations, and the splash remains until it succeeds
-or a human error is available. Each connect attempt makes at most one request; the provider does
+live UI tab. Live projection waits for both startup operations. A valid chat-list snapshot may
+reveal the shell while they continue; without one, the splash remains until a usable shell or an
+actionable failure can render. Each connect attempt makes at most one request; the provider does
 not cache bearer tokens or run its own retry loop.
 
 The engine asks the adapter again before every reconnect, even while the preceding token is still
@@ -198,18 +199,54 @@ drops the task. Mobile backgrounding does not replace the shell or deliberately 
 and papo connection remain authoritative for as long as the platform keeps them alive. Foreground
 requests an immediate reconnect/liveness check, and papo history catch-up repairs the gap.
 
-Once the UI has rendered a usable shell, connection changes never replace it with startup or error
-UI. The last projection, navigation, scroll position, and drafts stay mounted. `Reconnecting` and
-`Offline` render quiet shell indicators; only `Failed` offers retry. Transient disconnects never
-become buffer notices. Hosted authentication failure is distinct: a rejected token restarts full
-sign-in, while token-fetch and transport failures remain transient in the mounted shell.
+### Shell presentation
+
+Once the UI can render a usable shell, connection changes never replace it with startup or error
+UI. The last projection, navigation, scroll position, and drafts stay mounted. There is no visible
+“Connecting…”, “Reconnecting…”, or “Offline” status copy in normal chrome.
+
+The weblounge logo is the sole transient progress indicator: the logo in the mobile Chats header
+and desktop sidebar shimmers subtly while connecting, registering, reconnecting, or hydrating the
+first complete live projection. A transient drop that recovers produces only this treatment. The
+logo is still at all other times. With reduced motion, progress uses a gentle static dim instead of
+animation. The shimmer uses theme colour/opacity tokens and moves a pseudo-element with the shared
+motion tokens through `transform` and `opacity`; it introduces no raw colours or independent timing.
+
+The shared presentation projection exposes semantic progress, one optional actionable error, and
+whether sends are blocked; it no longer exposes a user-facing connection label. Any network still
+connecting, reconnecting, or hydrating keeps aggregate progress active unless an actionable error
+owns the logo tint.
+
+| Situation | Logo | Shared error strip | Composer |
+|---|---|---|---|
+| Connecting, reconnecting, or hydrating | Shimmer; static dim with reduced motion | None | Queue hint only when sends are affected |
+| Online and hydrated | Still, normal colour | None | No connection hint |
+| User action required | Still, error-token tint | A few words and one action | Queue hint when sends remain affected |
+
+Authentication expiry or refusal, a server that remains unreachable after retries, and another
+typed terminal failure project one actionable error for the shell. Mobile renders one shared strip
+immediately below the active screen's top bar on Chats and conversation screens; desktop renders it
+at the top of the sidebar. It contains short copy and exactly one action, such as “Sign in again” or
+“Retry”, and disappears as soon as the condition resolves. Multiple network failures still produce
+one deterministic shell projection, not one strip per network. The error tint exists only while the
+strip is present.
+
+This replaces the mobile Chats status line/dot and inline retry, the mobile conversation subtitle's
+connection status/retry, the desktop sidebar's connection suffix/retry, and the footer connection
+dot. Connection/authentication paths that currently use full-screen hosted status move to the
+shared strip once the shell exists; a host failure that prevents constructing any shell remains a
+startup recovery error. Conversation subtitles return to topic/type content. Transient states never
+become buffer notices or live-region chatter; the shell may expose `aria-busy` without announcing a
+repeating status string. The actionable strip uses alert semantics.
 
 Sends submitted outside `Online` become ordered pending records owned by the engine and flush in
-order after `Connected`. Server-dependent commands reject with a short offline reason. A worker
-host uses `messageerror`, a heartbeat, and a bounded request timeout to detect termination, rebuild
-the worker, repeat `Hello`, and request a snapshot. Persisting queued sends across that new engine
-instance waits for the storage subsystem; the UI must state this limitation rather than duplicate
-the queue.
+order after `Connected`. While delivery is blocked, the active composer shows a short contextual
+hint beside its input, such as “Will send when connected”; it clears when the queue can flush or the
+send reaches a terminal failure. Server-dependent commands reject with a short offline reason. A
+worker host uses `messageerror`, a heartbeat, and a bounded request timeout to detect termination,
+rebuild the worker, repeat `Hello`, and request a snapshot. Persisting queued sends across that new
+engine instance waits for the storage subsystem; the UI must state this limitation rather than
+duplicate the queue.
 
 The milestone-2 single-network runtime rejects a second `Connect` while a client exists with the
 typed `engine.network_already_connected` command error. It never replaces a live client implicitly;
@@ -266,8 +303,15 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
   credentials per attempt, and authentication rejection versus transient credential/transport
   failure.
 - Playwright desktop and mobile WebKit tests preserve the mounted shell through offline/online,
-  visibility, socket loss, Ergo restart, and worker replacement; they also cover ordered pending
-  sends and hosted reauthorization.
+  visibility, socket loss, Ergo restart, and worker replacement. Transient recovery shows only the
+  logo treatment and never connection copy or an error strip. Reduced-motion coverage asserts a
+  static dim with no animation.
+- Presentation tests keep exactly one actionable strip while navigating between mobile Chats and a
+  conversation, place the desktop strip at the sidebar top, exercise Sign in again and Retry, tint
+  the logo, and remove the strip and tint on resolution. Per-header status/retry components and the
+  footer connection dot are absent.
+- Ordered pending-send coverage asserts the composer hint appears only while delivery is blocked
+  and disappears when the queue flushes; hosted reauthorization uses the shared strip.
 
 ## Out of scope
 
@@ -292,6 +336,9 @@ certificate-management UI, and gateway deployment are separate designs.
 - Treat hosted token rejection as reauthorization, never as a transient transport failure.
 - Treat hosted token acquisition failure as transient, never as token rejection or a reason to
   clear the member session.
+- Luiz, 2026-10-31: use the shell logo as the only transient connection/hydration indicator, with a
+  reduced-motion static dim; route user-actionable failures through one shared error strip and
+  affected sends through a composer-local queue hint.
 - Acquire at most one fresh hosted token before every connection attempt; never reconnect with a
   cached token merely because it has not expired.
 - Expose only TLS TCP and secure WebSocket in production onboarding.
