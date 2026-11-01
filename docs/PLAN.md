@@ -286,6 +286,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;
     connection-local `DirectRef` values are used only as live send handles and refreshed after reconnect.
+  - [x] Update papo to `e774925` and replace account-keyed DMs with one thread per folded nick plus
+    an independently persisted account `PeerKey` pin. Incoming and outgoing identity checks now
+    upgrade matching pins, block mismatches without sending, mark unverified rows, and offer Trust
+    new identity or a read-only Not now state in both shells. Legacy account draft keys and schema-2
+    chat-list rows migrate to nick threads without inventing pins; two nicks on one account remain
+    separate, and verified rename continuity adds a note without merging their histories.
   - [x] Bake the Nix revision and UTC source timestamp into production builds, with `dev` in the
     development server. `/version`, every `/debug` overlay section, and `window.weblounge.version`
     expose the same line; `/version` also reports a waiting service-worker update.
@@ -331,10 +337,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `0070f15`. Guarded directs with stable captured identity, explicit
+- **papo:** papo 0.1 pinned at `e774925`. Persistable TLS-host-scoped peer identity pins,
+  per-send `direct_pinned` verification, post-registration SASL account-state hardening, explicit
   display spelling and folded storage keys, split-send reconciliation, exact live
   and nested-history multiline concatenation, server name rules, lag diagnostics,
   channel-recreation warnings, hardened typed inputs, correlated history responses, exact live
   actor facts, tri-state account/bot evidence, and completed JOIN refusals are integrated.
-  - Follow-up: adopt papo's planned `watch()` / free `direct()` operation with a per-send proof
-    round trip so a full MONITOR list can still send without bypassing guarded-recipient safety.
