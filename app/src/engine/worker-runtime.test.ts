@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { SessionTokenError } from "../hosted/session-token";
 import { EngineWorkerRuntime, type WorkerHostPort } from "./worker-runtime";
 
@@ -21,12 +21,12 @@ it("broadcasts optimistic state to every shared port", async () => {
   runtime.attach(second);
 
   first.receive({ type: "request", payload: { id: "send-1" } });
-  await Promise.resolve();
-  await Promise.resolve();
-
-  expect(first.sent).toContainEqual(
-    expect.objectContaining({ type: "messages_appended" }),
+  await vi.waitFor(() =>
+    expect(first.sent).toContainEqual(
+      expect.objectContaining({ type: "messages_appended" }),
+    ),
   );
+
   expect(second.sent).toContainEqual(
     expect.objectContaining({ type: "messages_appended" }),
   );
@@ -39,15 +39,20 @@ it("routes asynchronous buffer focus requests only to the submitting port", asyn
   const first = new FakePort();
   const second = new FakePort();
   let emit: ((encoded: string) => void) | undefined;
+  let requestHandled = false;
   const runtime = new EngineWorkerRuntime(async (onEvent) => {
     emit = onEvent;
-    return { handle: () => "[]" };
+    return {
+      handle: () => {
+        requestHandled = true;
+        return "[]";
+      },
+    };
   });
   runtime.attach(first);
   runtime.attach(second);
   first.receive({ type: "request", payload: { id: "join-1" } });
-  await Promise.resolve();
-  await Promise.resolve();
+  await vi.waitFor(() => expect(requestHandled).toBe(true));
 
   emit?.(
     JSON.stringify({
@@ -122,12 +127,12 @@ it("acquires a fresh hosted token for every engine reconnect", async () => {
   );
   runtime.attach(port);
   port.receive(hostedConnect("initial-token"));
-  await settle();
+  await vi.waitFor(() => expect(handled).toHaveLength(1));
 
   emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await settle();
+  await vi.waitFor(() => expect(handled).toHaveLength(2));
   emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await settle();
+  await vi.waitFor(() => expect(handled).toHaveLength(3));
 
   expect(handled).toContainEqual(
     expect.objectContaining({
@@ -175,10 +180,10 @@ it("turns login-required into hosted reauthorization", async () => {
   );
   runtime.attach(port);
   port.receive(hostedConnect("initial-token"));
-  await settle();
+  await vi.waitFor(() => expect(handled).toHaveLength(1));
 
   emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await settle();
+  await vi.waitFor(() => expect(handled).toHaveLength(2));
 
   expect(handled).toContainEqual(
     expect.objectContaining({
@@ -197,10 +202,16 @@ it("backs off after a transient hosted token failure", async () => {
   let emit: ((encoded: string) => void) | undefined;
   let retry: (() => void) | undefined;
   let attempts = 0;
+  let connected = false;
   const runtime = new EngineWorkerRuntime(
     async (onEvent) => {
       emit = onEvent;
-      return { handle: () => "[]" };
+      return {
+        handle: () => {
+          connected = true;
+          return "[]";
+        },
+      };
     },
     () => ({
       acquire: async () => {
@@ -215,12 +226,11 @@ it("backs off after a transient hosted token failure", async () => {
   );
   runtime.attach(port);
   port.receive(hostedConnect("initial-token"));
-  await settle();
+  await vi.waitFor(() => expect(connected).toBe(true));
 
   emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await settle();
+  await vi.waitFor(() => expect(retry).toBeTypeOf("function"));
   expect(attempts).toBe(1);
-  expect(retry).toBeTypeOf("function");
 });
 
 function hostedConnect(token: string): unknown {
@@ -236,10 +246,6 @@ function hostedConnect(token: string): unknown {
       },
     },
   };
-}
-
-async function settle(): Promise<void> {
-  for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
 }
 
 class FakePort implements WorkerHostPort {
