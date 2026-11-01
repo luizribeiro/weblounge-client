@@ -168,6 +168,45 @@ test("reveals local Ergo rows with channel and direct previews", async ({
   }
 });
 
+test("keeps seeded rows unchanged through the cached-to-live frame", async ({
+  page,
+}) => {
+  const snapshot = {
+    schema: 2,
+    fingerprint: fingerprint("Local Ergo", "ws://127.0.0.1:4173/socket"),
+    rows: [
+      {
+        conversation: { kind: "direct", key: "zeta" },
+        title: "zeta",
+        last_activity_ms: 1_700_000_300_000,
+        badge: { kind: "mentions", count: 2 },
+        preview: "newest",
+      },
+      {
+        conversation: { kind: "direct", key: "alpha" },
+        title: "alpha",
+        last_activity_ms: 1_700_000_200_000,
+        badge: { kind: "none" },
+        preview: "older",
+      },
+    ],
+  };
+  await page.goto("/config.json");
+  await seedChatListSnapshot(page, snapshot);
+  await installSnapshotSwapEngine(page, snapshot);
+  await recordChatListSwap(page);
+
+  await page.goto("/?irc-password=weblounge-test");
+
+  const filmstrip = await chatListSwapFilmstrip(page);
+  expect(filmstrip[0]?.cached).toBe(true);
+  expect(filmstrip.at(-1)?.cached).toBe(false);
+  const firstFrame = filmstrip[0]?.rows;
+  expect(firstFrame).toBeDefined();
+  for (const frame of filmstrip) expect(frame.rows).toEqual(firstFrame);
+  expect(firstFrame?.map((row) => row.title)).toEqual(["zeta", "alpha"]);
+});
+
 test("reveals an interactive IndexedDB chat list before reconnecting", async ({
   context,
   page,
@@ -193,12 +232,13 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     )
     .toBe(true);
   await seedChatListSnapshot(page, {
-    schema: 1,
+    schema: 2,
     fingerprint: fingerprint("Local Ergo", "ws://127.0.0.1:4173/socket"),
     rows: [
       {
         conversation: { kind: "channel", key: "#cached" },
         title: "#cached",
+        last_activity_ms: 1_700_000_000_000,
         badge: { kind: "unread" },
         preview: "alice: cached before the socket",
       },
@@ -362,6 +402,109 @@ async function firstRevealRows(
   );
 }
 
+interface ChatListFrame {
+  readonly cached: boolean;
+  readonly rows: Array<{
+    readonly text: string;
+    readonly time: string | null;
+    readonly title: string | null;
+  }>;
+}
+
+async function recordChatListSwap(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "chatListSwapFilmstrip", undefined);
+    const frames: ChatListFrame[] = [];
+    let sawCached = false;
+    const sample = () => {
+      const elements = [
+        ...document.querySelectorAll<HTMLElement>(
+          "[data-mobile-chat-list] [data-buffer-id]",
+        ),
+      ];
+      const cached = elements.some((row) => row.dataset.cached === "true");
+      if (elements.length > 0 && (cached || sawCached)) {
+        sawCached ||= cached;
+        frames.push({
+          cached,
+          rows: elements.map((row) => ({
+            text: row.textContent ?? "",
+            time: row.querySelector("time")?.textContent ?? null,
+            title: row.getAttribute("aria-label"),
+          })),
+        });
+      }
+      if (sawCached && !cached) {
+        Reflect.set(globalThis, "chatListSwapFilmstrip", frames);
+      } else {
+        requestAnimationFrame(sample);
+      }
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+async function chatListSwapFilmstrip(page: Page): Promise<ChatListFrame[]> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => Reflect.get(globalThis, "chatListSwapFilmstrip")),
+    )
+    .not.toBeUndefined();
+  return page.evaluate(
+    () => Reflect.get(globalThis, "chatListSwapFilmstrip") as ChatListFrame[],
+  );
+}
+
+async function installSnapshotSwapEngine(
+  page: Page,
+  snapshot: {
+    readonly rows: ReadonlyArray<{
+      readonly badge: { readonly kind: string; readonly count?: number };
+      readonly last_activity_ms: number;
+      readonly preview: string;
+      readonly title: string;
+    }>;
+  },
+): Promise<void> {
+  const cached = snapshot.rows.map((row, index) => ({
+    id: index + 2,
+    network_id: 1,
+    kind: "direct",
+    cached: true,
+    title: row.title,
+    draft_key: `Local Ergo:${row.title}`,
+    topic: null,
+    unread: row.badge.kind === "none" ? 0 : (row.badge.count ?? 1),
+    mentions: row.badge.kind === "mentions" ? (row.badge.count ?? 1) : 0,
+    read_through: null,
+    last_activity_ms: row.last_activity_ms,
+    cached_preview: row.preview,
+  }));
+  const live = cached.map((buffer, index) => {
+    const { cached: _, cached_preview: text, ...projection } = buffer;
+    return {
+      ...projection,
+      last_message: {
+        id: index + 1,
+        author: buffer.title,
+        text,
+        kind: "text",
+        bot: false,
+        mode_symbol: null,
+        authorship: "other",
+        nick_color_index: 0,
+        highlighted: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: [`snapshot-${index}`],
+        server_time_ms: buffer.last_activity_ms,
+        received_at_ms: buffer.last_activity_ms,
+      },
+    };
+  });
+  await installHistoryStallEngine(page, { cached, live });
+}
+
 async function seedChatListSnapshot(
   page: Page,
   snapshot: Record<string, unknown>,
@@ -474,8 +617,12 @@ async function expectErgoRunning(expected: boolean): Promise<void> {
 
 async function installHistoryStallEngine(
   page: import("@playwright/test").Page,
+  swap?: {
+    readonly cached: readonly unknown[];
+    readonly live: readonly unknown[];
+  },
 ) {
-  await page.addInitScript(() => {
+  await page.addInitScript((swap) => {
     class StartupPort extends EventTarget {
       postMessage(message: unknown): void {
         if (!isRecord(message)) return;
@@ -499,6 +646,42 @@ async function installHistoryStallEngine(
         }
         if (isRecord(request) && request.type === "connect") {
           Reflect.set(globalThis, "startupOnlineAt", performance.now());
+          if (swap !== undefined) {
+            this.emit({
+              type: "network_state_changed",
+              network: {
+                id: 1,
+                label: "Local Ergo",
+                nickname: "weblounge",
+                state: "connecting",
+              },
+            });
+            this.emit({
+              type: "chat_list_snapshot_loaded",
+              network_id: 1,
+              buffers: swap.cached,
+            });
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                this.emit({
+                  type: "network_state_changed",
+                  network: {
+                    id: 1,
+                    label: "Local Ergo",
+                    nickname: "weblounge",
+                    state: "online",
+                  },
+                });
+                this.emit({
+                  type: "chat_list_live",
+                  network_id: 1,
+                  buffers: swap.live,
+                });
+              }),
+            );
+            this.emit({ type: "command_result", id: payload.id });
+            return;
+          }
           this.emit({
             type: "network_state_changed",
             network: {
@@ -548,7 +731,7 @@ async function installHistoryStallEngine(
     function isRecord(value: unknown): value is Record<string, unknown> {
       return typeof value === "object" && value !== null;
     }
-  });
+  }, swap);
 }
 
 async function installDelayedLiveListEngine(page: Page): Promise<void> {

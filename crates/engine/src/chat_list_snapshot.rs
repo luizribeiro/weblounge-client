@@ -2,7 +2,7 @@ use crate::storage::{KvBackend, Operation, Space, StorageError};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SNAPSHOT_KEY: &[u8] = b"chat-list-snapshot";
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 pub(crate) const PREVIEW_LIMIT: usize = 80;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -35,6 +35,7 @@ impl ChatListSnapshot {
 pub(crate) struct SnapshotRow {
     pub(crate) conversation: SnapshotConversation,
     pub(crate) title: String,
+    pub(crate) last_activity_ms: Option<i64>,
     pub(crate) badge: SnapshotBadge,
     pub(crate) preview: Option<String>,
 }
@@ -109,6 +110,7 @@ mod tests {
                         key: "#rust".into(),
                     },
                     title: "#Rust".into(),
+                    last_activity_ms: Some(1_700_000_000_000),
                     badge: SnapshotBadge::Unread,
                     preview: Some("mel: hello".into()),
                 },
@@ -117,6 +119,7 @@ mod tests {
                         key: "alice".into(),
                     },
                     title: "Alice".into(),
+                    last_activity_ms: Some(1_700_000_000_001),
                     badge: SnapshotBadge::Mentions(3),
                     preview: Some(truncate_preview(&"é".repeat(81))),
                 },
@@ -130,7 +133,8 @@ mod tests {
         let encoded = snapshot.encode().expect("encode");
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
 
-        assert_eq!(value["schema"], 1);
+        assert_eq!(value["schema"], 2);
+        assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
         assert_eq!(
             value["rows"][1]["preview"]
                 .as_str()
@@ -154,7 +158,7 @@ mod tests {
 
         let mut unknown: serde_json::Value =
             serde_json::from_slice(&snapshot.encode().expect("encode")).expect("json");
-        unknown["schema"] = 2.into();
+        unknown["schema"] = 1.into();
         assert!(
             ChatListSnapshot::decode(&serde_json::to_vec(&unknown).expect("json"), &expected)
                 .is_none()

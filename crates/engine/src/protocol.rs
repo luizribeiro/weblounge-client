@@ -238,6 +238,10 @@ pub struct BufferProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_message: Option<MessageProjection>,
+    /// Latest conversation activity in Unix milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub last_activity_ms: Option<i64>,
     /// Already-formatted bounded preview used only by a cached launch row.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

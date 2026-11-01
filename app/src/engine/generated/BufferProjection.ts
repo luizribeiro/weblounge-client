@@ -66,6 +66,10 @@ read_through: MessageId | null,
  */
 last_message?: MessageProjection,
 /**
+ * Latest conversation activity in Unix milliseconds.
+ */
+last_activity_ms?: number,
+/**
  * Already-formatted bounded preview used only by a cached launch row.
  */
 cached_preview?: string, };

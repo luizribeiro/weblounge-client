@@ -145,6 +145,80 @@ it("keeps row elements when buffer projections are replaced", () => {
   expect(screen.getByLabelText("1 unread")).toBeVisible();
 });
 
+it("keeps direct order and rendered times across the cached-to-live swap", () => {
+  const times = [1_700_000_300_000, 1_700_000_200_000] as const;
+  const cached: BufferProjection[] = [
+    {
+      ...base,
+      id: 3,
+      kind: "direct",
+      title: "alice",
+      cached: true,
+      cached_preview: "newest",
+      last_activity_ms: times[0],
+    },
+    {
+      ...base,
+      id: 4,
+      kind: "direct",
+      title: "carol",
+      cached: true,
+      cached_preview: "middle",
+      last_activity_ms: times[1],
+    },
+  ];
+  const live: BufferProjection[] = cached.map((buffer, index) => {
+    const { cached_preview: _, ...liveBuffer } = buffer;
+    const activity = buffer.last_activity_ms ?? 0;
+    return {
+      ...liveBuffer,
+      cached: false,
+      last_message: {
+        id: index + 1,
+        author: buffer.title,
+        text: index === 0 ? "newest" : "middle",
+        kind: "text",
+        bot: false,
+        mode_symbol: null,
+        authorship: "other",
+        nick_color_index: 0,
+        highlighted: false,
+        delivery: "received",
+        local_send_id: null,
+        server_ids: [`message-${index}`],
+        server_time_ms: activity,
+        received_at_ms: activity,
+      },
+    };
+  });
+  const [current, setCurrent] =
+    createSignal<readonly BufferProjection[]>(cached);
+  render(() => (
+    <MobileChatList
+      buffers={current()}
+      filter="all"
+      networks={[]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={() => {}}
+      query=""
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
+    />
+  ));
+  const visibleRows = () =>
+    [...document.querySelectorAll<HTMLElement>("[data-buffer-id]")].map(
+      (row) => ({ title: row.ariaLabel, text: row.textContent }),
+    );
+  const cachedRows = visibleRows();
+
+  setCurrent(live);
+
+  expect(visibleRows()).toEqual(cachedRows);
+  expect(visibleRows().map((row) => row.title)).toEqual(["alice", "carol"]);
+});
+
 it("restores the retained chat list after returning from a conversation", async () => {
   const [restoreScroll, setRestoreScroll] = createSignal(0);
   const [restoreVersion, setRestoreVersion] = createSignal(0);
