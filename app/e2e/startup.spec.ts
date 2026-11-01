@@ -51,13 +51,25 @@ test("starts under the beta CSP without a policy violation", async ({
 test("turns a stalled startup into a human error", async ({ page }) => {
   await page.clock.install();
   await page.route("**/config.json", () => new Promise(() => {}));
+  const startupErrors: string[] = [];
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      message.text().startsWith("[weblounge startup]")
+    ) {
+      startupErrors.push(message.text());
+    }
+  });
 
   await page.goto("/");
-  await page.clock.fastForward(15_000);
+  await page.clock.fastForward(10_000);
 
-  const status = page.locator("[data-splash-status]");
-  await expect(status).toHaveAttribute("data-error", "true");
-  await expect(status).toContainText("couldn't finish starting weblounge");
+  await expect(page.getByRole("alert")).toContainText(
+    "Invalid /config.json: could not be loaded in time",
+  );
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await expect.poll(() => startupErrors).toHaveLength(1);
+  expect(startupErrors[0]).toContain("/config.json");
 });
 
 test("reveals local Ergo rows with channel and direct previews", async ({

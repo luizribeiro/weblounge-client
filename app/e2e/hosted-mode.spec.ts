@@ -15,34 +15,83 @@ function isEngineWorkerRequest(url: URL): boolean {
   );
 }
 
-test("retries startup without reloading when production config was missing", async ({
-  page,
-}) => {
-  await installFakeEngine(page);
-  test.skip(
-    process.env.WEBLOUNGE_E2E_DEV === "1",
-    "development intentionally permits missing config",
-  );
-  let configRequests = 0;
-  await page.route("**/config.json", (route) => {
-    configRequests += 1;
-    return configRequests === 1
-      ? route.fulfill({ status: 404 })
-      : route.fulfill({
+for (const failure of [
+  {
+    name: "missing session token endpoint",
+    expected: "oauth.session_token_endpoint",
+    response: "missing-session-endpoint",
+  },
+  {
+    name: "invalid issuer",
+    expected: "oauth.issuer",
+    response: "invalid-issuer",
+  },
+  {
+    name: "missing config",
+    expected: "/config.json",
+    response: "404",
+  },
+  {
+    name: "failed config request",
+    expected: "server returned 500",
+    response: "500",
+  },
+] as const) {
+  test(`shows a deployment config error for a ${failure.name}`, async ({
+    page,
+  }) => {
+    await installFakeEngine(page);
+    const startupErrors: string[] = [];
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        message.text().startsWith("[weblounge startup]")
+      ) {
+        startupErrors.push(message.text());
+      }
+    });
+    let configRequests = 0;
+    await page.route("**/config.json", async (route) => {
+      configRequests += 1;
+      if (configRequests > 1) {
+        await route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({ mode: "app" }),
         });
+        return;
+      }
+      if (failure.response === "404" || failure.response === "500") {
+        await route.fulfill({ status: Number(failure.response) });
+        return;
+      }
+      const config = hostedConfig(route.request().url());
+      if (failure.response === "missing-session-endpoint") {
+        config.oauth.session_token_endpoint = undefined;
+      } else {
+        config.oauth.issuer = "not a URL";
+      }
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(config),
+      });
+    });
+
+    const startedAt = performance.now();
+    await page.goto("/");
+
+    const error = page.getByRole("alert");
+    await expect(error).toContainText(failure.expected);
+    expect(performance.now() - startedAt).toBeLessThan(4_000);
+    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await expect.poll(() => startupErrors).toHaveLength(1);
+    expect(startupErrors[0]).toContain(failure.expected);
+
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
   });
-
-  await page.goto("/");
-
-  const error = page.getByText("This deployment is misconfigured");
-  await expect(error).toBeVisible();
-  await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
-  expect(configRequests).toBe(2);
-  await expect(page).toHaveURL(/\/$/u);
-});
+}
 
 test("authorizes with PKCE and hands the bearer token once to the engine", async ({
   page,
@@ -590,23 +639,29 @@ async function installHostedConfig(page: Page): Promise<() => string> {
     redirectUri = new URL("/", route.request().url()).href;
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({
-        mode: "hosted",
-        network: {
-          name: "weblounge",
-          endpoint: "wss://beta.weblounge.org/socket",
-          autojoin: ["#lounge"],
-        },
-        oauth: {
-          issuer: oauthIssuer,
-          client_id: "weblounge-client",
-          redirect_uri: redirectUri,
-          session_token_endpoint: `${oauthIssuer}/oauth/session-token`,
-        },
-      }),
+      body: JSON.stringify(hostedConfig(route.request().url())),
     });
   });
   return () => redirectUri;
+}
+
+function hostedConfig(requestUrl: string) {
+  return {
+    mode: "hosted",
+    network: {
+      name: "weblounge",
+      endpoint: "wss://beta.weblounge.org/socket",
+      autojoin: ["#lounge"],
+    },
+    oauth: {
+      issuer: oauthIssuer,
+      client_id: "weblounge-client",
+      redirect_uri: new URL("/", requestUrl).href,
+      session_token_endpoint: `${oauthIssuer}/oauth/session-token` as
+        | string
+        | undefined,
+    },
+  };
 }
 
 async function expectHostedConnection(page: Page): Promise<void> {

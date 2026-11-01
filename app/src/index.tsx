@@ -25,6 +25,7 @@ import {
   SessionTokenError,
   SessionTokenProvider,
 } from "./hosted/session-token";
+import { withStartupDeadline } from "./hosted/startup-deadline";
 import {
   installPlatformEnvironment,
   platformEnvironment,
@@ -166,9 +167,11 @@ function Bootstrap(props: BootstrapProps) {
       }
       setHostedState(config, token);
     } catch (error: unknown) {
+      const message = userFacingError(error);
+      console.error(`[weblounge startup] ${message}`);
       setState({
         type: "error",
-        message: userFacingError(error),
+        message,
         retryLabel:
           error instanceof HostedAuthorizationError ? "Sign in again" : "Retry",
       });
@@ -227,9 +230,11 @@ function Bootstrap(props: BootstrapProps) {
         ),
       );
     } catch (error: unknown) {
+      const message = userFacingError(error);
+      console.error(`[weblounge startup] ${message}`);
       setState({
         type: "error",
-        message: userFacingError(error),
+        message,
         retryLabel: "Sign in again",
       });
     }
@@ -385,9 +390,11 @@ render(
 
 function createStartupGate(splash: HTMLElement): BootstrapProps {
   let active = true;
-  const fontReady = document.fonts
-    .load("400 13px Inter", "Connecting to weblounge…")
-    .catch(() => []);
+  const fontReady = withStartupDeadline(
+    () => document.fonts.load("400 13px Inter", "Connecting to weblounge…"),
+    () => new Error("startup font did not load in time"),
+    1_000,
+  ).catch(() => []);
   const timeout = window.setTimeout(() => {
     if (!active) return;
     const status = splash.querySelector<HTMLElement>("[data-splash-status]");

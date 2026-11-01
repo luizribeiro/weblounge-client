@@ -1,4 +1,5 @@
 import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
+import { withStartupDeadline } from "./startup-deadline";
 
 export class DeploymentConfigError extends Error {
   constructor(message: string) {
@@ -9,28 +10,30 @@ export class DeploymentConfigError extends Error {
 
 export async function loadDeploymentConfig(
   fetchConfig: typeof fetch = fetch,
-  requireExplicitConfig = import.meta.env.PROD,
 ): Promise<DeploymentConfig> {
   let response: Response;
   try {
-    response = await fetchConfig("/config.json", {
-      cache: "no-cache",
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    });
-  } catch {
+    response = await withStartupDeadline(
+      (signal) =>
+        fetchConfig("/config.json", {
+          cache: "no-cache",
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+          signal,
+        }),
+      () => new DeploymentConfigError("could not be loaded in time"),
+    );
+  } catch (error: unknown) {
+    if (error instanceof DeploymentConfigError) throw error;
     throw new DeploymentConfigError("could not be loaded");
   }
   const missingConfig =
     response.status === 404 ||
     response.headers.get("Content-Type")?.includes("text/html");
-  if (missingConfig && requireExplicitConfig) {
+  if (missingConfig) {
     throw new DeploymentConfigError(
       'expected an explicit {"mode":"app"} or hosted configuration',
     );
-  }
-  if (missingConfig) {
-    return { mode: "app" };
   }
   if (!response.ok) {
     throw new DeploymentConfigError(`server returned ${response.status}`);

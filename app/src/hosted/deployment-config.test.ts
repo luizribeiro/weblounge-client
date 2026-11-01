@@ -26,23 +26,43 @@ describe("deployment config", () => {
   });
 
   it.each([
-    [{}, '"mode" must be'],
-    [{ mode: "app", network: {} }, "unknown field"],
-    [{ ...hosted, extra: true }, "unknown field"],
+    [
+      {},
+      'This deployment is misconfigured. Invalid /config.json: "mode" must be "app" or "hosted"',
+    ],
+    [
+      { mode: "app", network: {} },
+      'This deployment is misconfigured. Invalid /config.json: app configuration has unknown field "network"',
+    ],
+    [
+      { ...hosted, extra: true },
+      'This deployment is misconfigured. Invalid /config.json: hosted configuration has unknown field "extra"',
+    ],
     [
       {
         ...hosted,
         network: { ...hosted.network, endpoint: "ws://example.com" },
       },
-      "must use wss",
+      'This deployment is misconfigured. Invalid /config.json: "network.endpoint" must use wss',
     ],
     [
       { ...hosted, oauth: { ...hosted.oauth, client_id: "" } },
-      "nonempty string",
+      'This deployment is misconfigured. Invalid /config.json: "oauth.client_id" must be a nonempty string',
     ],
     [
       { ...hosted, oauth: { ...hosted.oauth, redirect_uri: "javascript:x" } },
-      "must use https",
+      'This deployment is misconfigured. Invalid /config.json: "oauth.redirect_uri" must use https',
+    ],
+    [
+      { ...hosted, oauth: { ...hosted.oauth, issuer: "not a URL" } },
+      'This deployment is misconfigured. Invalid /config.json: "oauth.issuer" must be a URL',
+    ],
+    [
+      {
+        ...hosted,
+        oauth: { ...hosted.oauth, session_token_endpoint: undefined },
+      },
+      'This deployment is misconfigured. Invalid /config.json: "oauth.session_token_endpoint" must be a URL',
     ],
     [
       {
@@ -52,17 +72,17 @@ describe("deployment config", () => {
           session_token_endpoint: "https://tokens.example.test/session-token",
         },
       },
-      "must use the issuer origin",
+      'This deployment is misconfigured. Invalid /config.json: "oauth.session_token_endpoint" must use the issuer origin',
     ],
   ])("rejects malformed input", (value, message) => {
     expect(() => decodeDeploymentConfig(value)).toThrow(message);
   });
 
-  it("allows a missing config only outside production", async () => {
+  it("requires an explicit config", async () => {
     const missing = vi.fn(async () => new Response(null, { status: 404 }));
-    await expect(loadDeploymentConfig(missing, false)).resolves.toEqual({
-      mode: "app",
-    });
+    await expect(loadDeploymentConfig(missing)).rejects.toThrow(
+      'expected an explicit {"mode":"app"} or hosted configuration',
+    );
     expect(missing).toHaveBeenCalledWith(
       "/config.json",
       expect.objectContaining({
@@ -74,26 +94,12 @@ describe("deployment config", () => {
     const spaFallback = vi.fn(async () =>
       Response.json({}, { headers: { "Content-Type": "text/html" } }),
     );
-    await expect(loadDeploymentConfig(spaFallback, false)).resolves.toEqual({
-      mode: "app",
-    });
-  });
-
-  it("requires an explicit config in production", async () => {
-    for (const response of [
-      new Response(null, { status: 404 }),
-      Response.json({}, { headers: { "Content-Type": "text/html" } }),
-    ]) {
-      await expect(
-        loadDeploymentConfig(
-          vi.fn(async () => response),
-          true,
-        ),
-      ).rejects.toThrow("This deployment is misconfigured");
-    }
+    await expect(loadDeploymentConfig(spaFallback)).rejects.toThrow(
+      "This deployment is misconfigured",
+    );
 
     const appMode = vi.fn(async () => Response.json({ mode: "app" }));
-    await expect(loadDeploymentConfig(appMode, true)).resolves.toEqual({
+    await expect(loadDeploymentConfig(appMode)).resolves.toEqual({
       mode: "app",
     });
   });
