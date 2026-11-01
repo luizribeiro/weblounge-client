@@ -136,14 +136,15 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout and records
   whether each layout decision came from cached geometry, measured geometry, or rollback.
 
-`--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard is closed and becomes
-zero under `data-keyboard="open"`, so components never interpret keyboard state themselves.
-`--wl-keyboard-inset` is zero while closed and the measured obstruction while open. Tests can
-replace those custom properties on the root without impersonating a device. The web adapter derives
-display mode from `(display-mode: standalone)` and keyboard geometry from `visualViewport`; Tauri
-injects the same contract from its target and keyboard plugin. Theme and motion code consumes
-platform-owned preference observers or token-file media queries rather than issuing its own
-`matchMedia` calls.
+`--wl-safe-bottom-effective` follows the bottom safe inset except inside the active keyboard owner,
+where it becomes zero under `data-keyboard="open"`; the scrimmed background therefore retains its
+closed safe-area geometry while an overlay owns focus. Components never interpret keyboard state
+themselves. `--wl-keyboard-inset` is zero while closed and the measured obstruction while open.
+Tests can replace those custom properties on the root without impersonating a device. The web
+adapter derives display mode from `(display-mode: standalone)` and keyboard geometry from
+`visualViewport`; Tauri injects the same contract from its target and keyboard plugin. Theme and
+motion code consumes platform-owned preference observers or token-file media queries rather than
+issuing its own `matchMedia` calls.
 
 Components consume only these attributes and properties. A repository check rejects
 `env(safe-area`, `matchMedia(`, `navigator.userAgent`, `navigator.platform`, and media-query
