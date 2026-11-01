@@ -264,10 +264,15 @@ export function Composer(props: ComposerProps) {
   };
   const focusFromTap = (event: TouchEvent, field: HTMLTextAreaElement) => {
     const touch = event.changedTouches[0];
-    const tap = touch !== undefined && touchFocus.end(touch, event.timeStamp);
-    reportKeyboardInteraction(tap ? "touchend:tap" : "touchend:rejected");
+    const tap =
+      touch === undefined
+        ? { accepted: false as const, reason: "no changed touch" }
+        : touchFocus.end(touch, event.timeStamp);
+    reportKeyboardInteraction(
+      tap.accepted ? "touchend:tap" : `touchend:rejected(${tap.reason})`,
+    );
     if (
-      !tap ||
+      !tap.accepted ||
       platform.environment().input !== "touch" ||
       document.activeElement === field
     )

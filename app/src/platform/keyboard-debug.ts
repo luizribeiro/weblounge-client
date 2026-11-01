@@ -13,7 +13,7 @@ export type KeyboardInteractionLabel =
   | "focus:refused"
   | "focusin:composer"
   | "touchcancel"
-  | "touchend:rejected"
+  | `touchend:rejected(${string})`
   | "touchend:tap"
   | "touchstart";
 
