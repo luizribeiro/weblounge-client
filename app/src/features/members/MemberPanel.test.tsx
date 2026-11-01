@@ -76,6 +76,7 @@ it("uses touch-sized virtual rows in the mobile presentation", async () => {
   const { container } = render(() => (
     <MemberPanel
       bufferTitle="#room"
+      onFilter={() => {}}
       onClose={() => {}}
       onOpenDirect={() => {}}
       onRequestRange={() => {}}
@@ -88,6 +89,9 @@ it("uses touch-sized virtual rows in the mobile presentation", async () => {
   expect(container.querySelector("[data-member-virtual-size]")).toHaveStyle({
     height: "440056px",
   });
+  expect(screen.getByText("Following").parentElement).toHaveTextContent(
+    "Following #room",
+  );
 });
 
 it("requests the first window while loading", () => {

@@ -83,6 +83,16 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-members",
+      testMatch: "**/mobile-member-drawer-follow.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "chromium-mobile-members",
+      testMatch: "**/mobile-member-drawer-follow.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
       name: "webkit-mobile-opening",
       grep: /opens a mobile channel at the live edge/,
       testMatch: "**/mobile-opening-scroll.spec.ts",

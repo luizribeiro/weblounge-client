@@ -86,6 +86,10 @@ export function MobileShell(props: MobileShellProps) {
   const drawerBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === drawerBufferId()),
   );
+  const drawerMemberWindow = createMemo(() => {
+    const current = props.memberWindows?.get(memberViewId);
+    return current?.buffer_id === drawerBufferId() ? current : undefined;
+  });
   let handledFocusRequest: { readonly bufferId: number } | undefined;
   let acceptedInitialBuffer = initialBufferId !== undefined;
   let memberOpenBufferId: number | undefined;
@@ -610,7 +614,7 @@ export function MobileShell(props: MobileShellProps) {
           }
           openProgress={memberOpenProgress()}
           openReturning={memberOpenReturning() || undefined}
-          window={props.memberWindows?.get(memberViewId)}
+          window={drawerMemberWindow()}
         />
       )}
     </main>
