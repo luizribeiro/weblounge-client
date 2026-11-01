@@ -186,14 +186,17 @@ export function observeViewportGeometry(
     if (sameLayout) {
       if (geometry.keyboard === "closed") {
         applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
-        setKeyboardOwner(undefined);
+        publishedOwner?.removeAttribute("data-keyboard-owner");
         publishedOwner = undefined;
       }
       if (source !== "measured") announce();
       return false;
     }
     published = key;
-    if (geometry.keyboard === "open") setKeyboardOwner(eventOwner);
+    if (geometry.keyboard === "open" && publishedOwner !== eventOwner) {
+      publishedOwner?.removeAttribute("data-keyboard-owner");
+      eventOwner.setAttribute("data-keyboard-owner", "true");
+    }
     applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
     publishedOwner = geometry.keyboard === "open" ? eventOwner : undefined;
     browserWindow.dispatchEvent(
@@ -201,18 +204,14 @@ export function observeViewportGeometry(
         detail: { geometry, owner: eventOwner },
       }),
     );
-    if (geometry.keyboard === "closed") setKeyboardOwner(undefined);
+    if (geometry.keyboard === "closed")
+      eventOwner.removeAttribute("data-keyboard-owner");
     announce();
     return true;
   };
-  const setKeyboardOwner = (next: HTMLElement | undefined) => {
-    if (owner === next) return;
-    owner?.removeAttribute("data-keyboard-owner");
-    owner = next;
-    owner?.setAttribute("data-keyboard-owner", "true");
-  };
   const acceptMeasuredOpen = (height: number) => {
     awaitingMeasuredOpen = false;
+    expectedKeyboard = undefined;
     cacheKeyboardHeight(browserWindow, height);
     browserWindow.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
   };
@@ -229,6 +228,11 @@ export function observeViewportGeometry(
       measured,
       keyboard !== undefined ? 0 : undefined,
     );
+    const focusedField = keyboardField(browserWindow.document.activeElement);
+    if (geometry.keyboard === "open" && !focusedField)
+      return { changed: false, geometry };
+    if (focusedField && owner === undefined)
+      owner = keyboardSurfaceOwner(browserWindow.document.activeElement, root);
     const key = JSON.stringify(geometry);
     if (
       geometry.keyboard === "open" &&
@@ -277,7 +281,6 @@ export function observeViewportGeometry(
     if (expectedKeyboard === "closed") expectedKeyboard = undefined;
     const measured = resolveViewportGeometry(measure());
     if (measured.keyboard === "open") publish(measured, "measured");
-    else if (owner === root) requestCachedKeyboardOpen(browserWindow);
   };
   const onChange = () => {
     if (correctingPan) {
@@ -337,15 +340,24 @@ export function observeViewportGeometry(
       event.target !== browserWindow.document
     )
       return;
-    if (event.type === "focusin" && keyboardField(event.target)) {
-      setKeyboardOwner(keyboardSurfaceOwner(event.target, root));
-      if (closeFrame !== 0 || closing) {
-        keepKeyboardOpen();
-        expectKeyboard("open");
-      } else if (pointerMayFocus) {
-        expectKeyboard("open");
-        if (owner === root) requestCachedKeyboardOpen(browserWindow);
+    if (
+      onScreenKeyboard() &&
+      event.type === "focusin" &&
+      keyboardField(event.target)
+    ) {
+      const nextOwner = keyboardSurfaceOwner(event.target, root);
+      if (owner !== nextOwner) {
+        owner?.removeAttribute("data-keyboard-owner");
+        owner = nextOwner;
+        owner.setAttribute("data-keyboard-owner", "true");
       }
+      const resumesClosingKeyboard = closeFrame !== 0 || closing;
+      if (resumesClosingKeyboard) {
+        keepKeyboardOpen();
+      }
+      if (pointerMayFocus || resumesClosingKeyboard) expectKeyboard("open");
+      if (pointerMayFocus && owner === root)
+        requestCachedKeyboardOpen(browserWindow);
       pointerMayFocus = false;
     }
     const mayClose =
@@ -369,6 +381,8 @@ export function observeViewportGeometry(
         )
           return;
         closing = true;
+        owner?.removeAttribute("data-keyboard-owner");
+        owner = undefined;
         expectKeyboard("closed");
         publish({ keyboard: "closed" }, "rollback");
         onChange();
@@ -415,7 +429,10 @@ export function observeViewportGeometry(
     browserWindow.removeEventListener("orientationchange", onOrientationChange);
     if (keyboard !== undefined && previousOverlay !== undefined)
       keyboard.overlaysContent = previousOverlay;
-    setKeyboardOwner(undefined);
+    owner?.removeAttribute("data-keyboard-owner");
+    publishedOwner?.removeAttribute("data-keyboard-owner");
+    owner = undefined;
+    publishedOwner = undefined;
     delete root.dataset.keyboard;
     clearOpenGeometry(root);
   };

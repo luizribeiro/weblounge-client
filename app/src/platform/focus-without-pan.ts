@@ -44,45 +44,77 @@ interface TouchStart extends TouchPoint {
   readonly time: number;
 }
 
+type TouchTapRejection =
+  | "clock changed"
+  | "no start"
+  | "touch changed"
+  | `held ${number}ms`
+  | `moved ${number}px`;
+
+export type TouchTapResult =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reason: TouchTapRejection };
+
 const tapSlop = 10;
 const longPressMilliseconds = 500;
 
 export class TouchTapGesture {
   #start: TouchStart | undefined;
-  #moved = false;
+  #movement = 0;
+  #rejection: TouchTapRejection | undefined;
 
   begin(touch: TouchPoint, time: number): void {
     this.#start = { ...touch, time };
-    this.#moved = false;
+    this.#movement = 0;
+    this.#rejection = undefined;
   }
 
   move(touch: TouchPoint): void {
     const start = this.#start;
-    if (start === undefined || touch.identifier !== start.identifier) {
-      this.cancel();
+    if (start === undefined) return;
+    if (touch.identifier !== start.identifier) {
+      this.#rejection = "touch changed";
       return;
     }
-    this.#moved ||= distance(start, touch) > tapSlop;
+    this.#movement = Math.max(this.#movement, distance(start, touch));
+    if (outsideTapSlop(start, touch))
+      this.#rejection = `moved ${Math.round(this.#movement)}px`;
   }
 
-  end(touch: TouchPoint, time: number): boolean {
+  end(touch: TouchPoint, time: number): TouchTapResult {
     const start = this.#start;
-    const moved =
-      this.#moved || (start !== undefined && distance(start, touch) > tapSlop);
+    if (start === undefined) return { accepted: false, reason: "no start" };
+    const duration = time - start.time;
+    this.#movement = Math.max(this.#movement, distance(start, touch));
+    const rejection =
+      this.#rejection ??
+      (touch.identifier !== start.identifier
+        ? "touch changed"
+        : outsideTapSlop(start, touch)
+          ? `moved ${Math.round(this.#movement)}px`
+          : duration < 0
+            ? "clock changed"
+            : duration >= longPressMilliseconds
+              ? `held ${Math.round(duration)}ms`
+              : undefined);
     this.cancel();
-    return (
-      start !== undefined &&
-      touch.identifier === start.identifier &&
-      !moved &&
-      time - start.time >= 0 &&
-      time - start.time < longPressMilliseconds
-    );
+    return rejection === undefined
+      ? { accepted: true }
+      : { accepted: false, reason: rejection };
   }
 
   cancel(): void {
     this.#start = undefined;
-    this.#moved = false;
+    this.#movement = 0;
+    this.#rejection = undefined;
   }
+}
+
+function outsideTapSlop(start: TouchPoint, current: TouchPoint): boolean {
+  return (
+    Math.abs(current.clientX - start.clientX) > tapSlop ||
+    Math.abs(current.clientY - start.clientY) > tapSlop
+  );
 }
 
 function distance(start: TouchPoint, current: TouchPoint): number {

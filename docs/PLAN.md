@@ -245,6 +245,14 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     measured, and rollback commits and traces composer touch start/end/cancel, tap classification,
     focusin, and post-focus active state (beta feedback on `40ee783`, awaiting on-device
     confirmation).
+  - [x] Let native keyboard focus recover from a rejected composer tap: focused-field ownership
+    survives the closed-layout rollback, and the first measured open viewport commits its exact
+    height for that owner. Composer tap slop is axis-bounded so ordinary diagonal jitter remains a
+    tap, and rejected interactions include their movement, duration, or touch-state reason in
+    `/debug keyboard`. Warm-cycle coverage opens the keyboard, sends the debug command without
+    losing focus, follows the iPhone accessory Done blur through close, and taps open again without
+    retaining tracker, rollback, expected-state, or cached-height interference (beta feedback on
+    `57531c6`, awaiting on-device confirmation).
   - [x] Route global keyboard geometry only to the surface owning the focused field. The mobile
     member drawer follows measured keyboard inset while the scrimmed chat retains its root height,
     safe-area padding, composer position, transcript offset, and visible row; owner-scoped geometry
