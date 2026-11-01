@@ -71,20 +71,26 @@ pub struct Buffer {
 pub enum BufferKind {
     Server,
     Channel { conversation: ConversationKey },
-    Direct { peer: PeerIdentity },
+    Direct { peer: DirectKey },
 }
 
-pub struct PeerIdentity {
-    pub current_nick: String,
-    pub account: Option<String>,
+pub enum DirectKey {
+    Account(String),
+    Nick(String),
 }
 ```
 
-`BufferId` survives channel and proven nick changes. DM continuity prefers account identity, then
-a typed papo nick-change chain; it never assumes that a later holder of an unproven nick is the
-same person. Current channel members, user facts, DM presence, typing, and server read markers are
-queried from the active papo snapshot when building UI projections. Server buffers may occupy
-desktop panes.
+`BufferId` survives channel and proven nick changes. Durable DM state keys by the account's folded
+`AccountName::key()` when known and otherwise by the folded `Nick::key()`. When an account becomes
+known for an existing nick-keyed DM, the engine moves that same buffer, draft identity, local read
+position, and closed-buffer retention to the account key. It never assumes that a later holder of
+an unproven nick is the same person.
+
+`DirectRef` is a connection-local guarded send handle, not application identity. The engine holds
+one only while a DM is sendable, discards it when the connection ends, and captures a fresh handle
+after reconnect. Old and new handles need not compare equal. Current channel members, user facts,
+DM presence, typing, and server read markers are queried from the active papo snapshot when
+building UI projections. Server buffers may occupy desktop panes.
 
 IRC lookup always uses typed papo values or `State::name_rules()`; the engine never lowercases IRC
 names itself.
