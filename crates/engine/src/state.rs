@@ -90,7 +90,6 @@ struct BufferState {
     memberships: Vec<MembershipProjection>,
     last_membership: Option<MessageId>,
     direct: Option<DirectAvailability>,
-    last_activity_ms: Option<i64>,
     read_at_ms: Option<i64>,
     history: HistoryState,
 }
@@ -265,6 +264,7 @@ impl NetworkModel {
                 mentions: 0,
                 read_through: None,
                 last_message: None,
+                last_activity_ms: None,
                 cached_preview: None,
             },
             key: None,
@@ -273,7 +273,6 @@ impl NetworkModel {
             memberships: Vec::new(),
             last_membership: None,
             direct: None,
-            last_activity_ms: None,
             read_at_ms: None,
             history: HistoryState::Ready {
                 oldest: None,
@@ -386,6 +385,7 @@ impl NetworkModel {
                 buffer.projection.title = row.title;
                 buffer.projection.cached = Some(true);
                 buffer.projection.cached_preview = row.preview;
+                buffer.projection.last_activity_ms = row.last_activity_ms;
                 match row.badge {
                     SnapshotBadge::None => {}
                     SnapshotBadge::Unread => buffer.projection.unread = 1,
@@ -396,6 +396,7 @@ impl NetworkModel {
                 }
             }
         }
+        self.sort_buffer_order();
     }
 
     pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
@@ -1205,10 +1206,11 @@ impl NetworkModel {
         let direct_key = DirectKey::from_nick(&nick, state);
         let (buffer_id, added) = self.ensure_buffer(key, Some(direct_key.clone()), None);
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
-            buffer.last_activity_ms = Some(buffer.last_activity_ms.map_or_else(
-                || time_millis(latest),
-                |current| current.max(time_millis(latest)),
-            ));
+            buffer.projection.last_activity_ms =
+                Some(buffer.projection.last_activity_ms.map_or_else(
+                    || time_millis(latest),
+                    |current| current.max(time_millis(latest)),
+                ));
             if matches!(buffer.history, HistoryState::Unrequested) {
                 buffer.history = HistoryState::LoadingLatest;
             }
@@ -1574,6 +1576,7 @@ impl NetworkModel {
             mentions: 0,
             read_through: None,
             last_message: None,
+            last_activity_ms: None,
             cached_preview: None,
         };
         self.buffers.insert(
@@ -1587,7 +1590,6 @@ impl NetworkModel {
                 last_membership: None,
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
-                last_activity_ms: None,
                 read_at_ms: None,
                 history: HistoryState::Unrequested,
             },
@@ -1683,7 +1685,7 @@ impl NetworkModel {
             return Err(StateError::MissingBuffer(buffer_id));
         };
         buffer.last_membership = None;
-        buffer.last_activity_ms = Some(buffer.last_activity_ms.map_or_else(
+        buffer.projection.last_activity_ms = Some(buffer.projection.last_activity_ms.map_or_else(
             || message_time(&record.projection),
             |current| current.max(message_time(&record.projection)),
         ));
@@ -1735,6 +1737,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
     Some(SnapshotRow {
         conversation,
         title: buffer.projection.title.clone(),
+        last_activity_ms: buffer.projection.last_activity_ms,
         badge,
         preview: buffer
             .projection
@@ -1937,8 +1940,9 @@ fn compare_buffers(
                 })
         }
         BufferKind::Direct => second
+            .projection
             .last_activity_ms
-            .cmp(&first.last_activity_ms)
+            .cmp(&first.projection.last_activity_ms)
             .then_with(|| {
                 casemapping
                     .fold(&first.projection.title)
@@ -2173,6 +2177,39 @@ mod tests {
                 if buffers.iter().map(|buffer| buffer.title.as_str()).collect::<Vec<_>>()
                     == ["Test", "alice", "carol", "Bob"])
         }));
+    }
+
+    #[test]
+    fn chat_list_snapshot_round_trip_preserves_direct_order_and_activity() {
+        let (mut live, state) = model(10);
+        for incoming in [
+            direct_incoming(&state, "Bob", "oldest", 100),
+            direct_incoming(&state, "alice", "newest", 300),
+            direct_incoming(&state, "carol", "middle", 200),
+        ] {
+            live.receive_incoming(incoming, &state);
+        }
+        let snapshot = live.chat_list_snapshot("network".into());
+        let encoded = snapshot.encode().expect("encode snapshot");
+        let decoded = ChatListSnapshot::decode(&encoded, "network").expect("decode snapshot");
+        let (mut restored, _) = model(10);
+
+        restored.restore_chat_list(decoded);
+
+        let rows = restored
+            .ordered_buffers()
+            .into_iter()
+            .filter(|buffer| buffer.kind == BufferKind::Direct)
+            .map(|buffer| (buffer.title, buffer.last_activity_ms))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows,
+            [
+                ("alice".into(), Some(300)),
+                ("carol".into(), Some(200)),
+                ("Bob".into(), Some(100)),
+            ]
+        );
     }
 
     #[test]
@@ -3079,6 +3116,7 @@ mod tests {
                     key: "alice".into(),
                 },
                 title: "Alice".into(),
+                last_activity_ms: Some(1_000),
                 badge: SnapshotBadge::Unread,
                 preview: Some("hello".into()),
             }],
@@ -3112,6 +3150,7 @@ mod tests {
                     key: "#room".into(),
                 },
                 title: "#room".into(),
+                last_activity_ms: Some(1_000),
                 badge: SnapshotBadge::Mentions(2),
                 preview: Some("alice: hello".into()),
             }],
