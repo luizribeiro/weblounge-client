@@ -7,6 +7,7 @@ mod name_key;
 mod protocol;
 mod runtime;
 mod state;
+pub mod storage;
 
 use tokio::sync::mpsc;
 

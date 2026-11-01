@@ -7,7 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+idb.workspace = true
+js-sys.workspace = true
 papo.workspace = true
+wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
@@ -16,6 +19,7 @@ papo = { workspace = true, features = ["websocket"] }
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 ts-rs.workspace = true
 weblounge-command-derive = { path = "../command-derive" }
