@@ -1,6 +1,6 @@
 //! Engine-owned device-local key/value storage.
 
-use std::{cell::RefCell, collections::BTreeMap};
+use std::{collections::BTreeMap, sync::Mutex};
 
 /// One storage namespace with a distinct persistence contract.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -136,7 +136,7 @@ pub trait KvBackend {
 /// A deterministic backend for engine tests.
 #[derive(Debug, Default)]
 pub struct MemoryKv {
-    rows: RefCell<MemoryRows>,
+    rows: Mutex<MemoryRows>,
 }
 
 type MemoryRows = BTreeMap<(Space, Vec<u8>), Vec<u8>>;
@@ -145,7 +145,7 @@ type MemoryRows = BTreeMap<(Space, Vec<u8>), Vec<u8>>;
 #[allow(clippy::unused_async_trait_impl)]
 impl KvBackend for MemoryKv {
     async fn get(&self, space: Space, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        Ok(self.rows.borrow().get(&(space, key.to_vec())).cloned())
+        Ok(lock(&self.rows).get(&(space, key.to_vec())).cloned())
     }
 
     async fn range(
@@ -155,7 +155,7 @@ impl KvBackend for MemoryKv {
         direction: Direction,
         limit: u32,
     ) -> Result<Page, StorageError> {
-        let rows = self.rows.borrow();
+        let rows = lock(&self.rows);
         let mut matches = rows
             .iter()
             .filter(|((row_space, key), _)| *row_space == space && range.contains(key))
@@ -174,7 +174,7 @@ impl KvBackend for MemoryKv {
     }
 
     async fn commit(&self, space: Space, operations: Vec<Operation>) -> Result<(), StorageError> {
-        let mut next = self.rows.borrow().clone();
+        let mut next = lock(&self.rows).clone();
         for operation in operations {
             match operation {
                 Operation::Put { key, value } => {
@@ -188,16 +188,20 @@ impl KvBackend for MemoryKv {
                 }
             }
         }
-        *self.rows.borrow_mut() = next;
+        *lock(&self.rows) = next;
         Ok(())
     }
 
     async fn clear(&self, space: Space) -> Result<(), StorageError> {
-        self.rows
-            .borrow_mut()
-            .retain(|(row_space, _), _| *row_space != space);
+        lock(&self.rows).retain(|(row_space, _), _| *row_space != space);
         Ok(())
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn bound_allows_start(bound: &KeyBound, key: &[u8]) -> bool {
@@ -225,7 +229,9 @@ mod indexed_db {
     use js_sys::Uint8Array;
     use wasm_bindgen::JsValue;
 
-    use super::{Direction, KeyBound, KeyRange, KvBackend, Operation, Page, Space, StorageError};
+    use super::{
+        Direction, KeyBound, KeyRange, KvBackend, MemoryKv, Operation, Page, Space, StorageError,
+    };
 
     const DATABASE_NAME: &str = "weblounge";
     const DATABASE_VERSION: u32 = 1;
@@ -235,6 +241,65 @@ mod indexed_db {
     #[derive(Debug)]
     pub struct IdbKv {
         database: Database,
+    }
+
+    /// Web cache storage that degrades to memory when browser persistence is unavailable.
+    #[derive(Debug)]
+    pub enum WebKv {
+        /// Persistent worker-owned IndexedDB.
+        IndexedDb(IdbKv),
+        /// Empty, session-only cache used when IndexedDB cannot be opened.
+        Memory(MemoryKv),
+    }
+
+    impl WebKv {
+        /// Opens IndexedDB without making evictable Cache storage a startup dependency.
+        pub async fn open() -> Self {
+            match IdbKv::open().await {
+                Ok(backend) => Self::IndexedDb(backend),
+                Err(_) => Self::Memory(MemoryKv::default()),
+            }
+        }
+    }
+
+    impl KvBackend for WebKv {
+        async fn get(&self, space: Space, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
+            match self {
+                Self::IndexedDb(backend) => backend.get(space, key).await,
+                Self::Memory(backend) => backend.get(space, key).await,
+            }
+        }
+
+        async fn range(
+            &self,
+            space: Space,
+            range: KeyRange,
+            direction: Direction,
+            limit: u32,
+        ) -> Result<Page, StorageError> {
+            match self {
+                Self::IndexedDb(backend) => backend.range(space, range, direction, limit).await,
+                Self::Memory(backend) => backend.range(space, range, direction, limit).await,
+            }
+        }
+
+        async fn commit(
+            &self,
+            space: Space,
+            operations: Vec<Operation>,
+        ) -> Result<(), StorageError> {
+            match self {
+                Self::IndexedDb(backend) => backend.commit(space, operations).await,
+                Self::Memory(backend) => backend.commit(space, operations).await,
+            }
+        }
+
+        async fn clear(&self, space: Space) -> Result<(), StorageError> {
+            match self {
+                Self::IndexedDb(backend) => backend.clear(space).await,
+                Self::Memory(backend) => backend.clear(space).await,
+            }
+        }
     }
 
     impl IdbKv {
@@ -468,7 +533,7 @@ mod indexed_db {
 }
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub use indexed_db::IdbKv;
+pub use indexed_db::{IdbKv, WebKv};
 
 #[cfg(test)]
 mod tests {

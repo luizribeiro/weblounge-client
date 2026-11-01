@@ -1,7 +1,13 @@
 //! WebAssembly boundary for the worker-owned weblounge engine.
 
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use std::rc::Rc;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use js_sys::Function;
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use weblounge_engine::storage::{KvBackend, Space, WebKv};
 use weblounge_engine::{Engine, UiToEngine};
 
 /// Worker-owned engine handle.
@@ -10,21 +16,6 @@ pub struct WasmEngine(Engine);
 
 #[wasm_bindgen]
 impl WasmEngine {
-    /// Creates one engine for the lifetime of its worker.
-    #[must_use]
-    #[wasm_bindgen(constructor)]
-    pub fn new(build_id: String, instance_id: String, on_event: Function) -> Self {
-        let (engine, mut events) = Engine::with_events(build_id, instance_id);
-        wasm_bindgen_futures::spawn_local(async move {
-            while let Some(event) = events.recv().await {
-                if let Ok(encoded) = serde_json::to_string(&event) {
-                    let _ = on_event.call1(&JsValue::NULL, &JsValue::from_str(&encoded));
-                }
-            }
-        });
-        Self(engine)
-    }
-
     /// Handles one JSON envelope and returns an ordered JSON event array.
     ///
     /// # Errors
@@ -33,6 +24,32 @@ impl WasmEngine {
     pub fn handle(&self, json: &str) -> Result<String, JsValue> {
         handle_json(&self.0, json).map_err(|error| JsValue::from_str(&error))
     }
+}
+
+/// Opens worker-owned cache storage and creates one engine for the worker lifetime.
+/// IndexedDB failures degrade to an empty in-memory cache.
+#[wasm_bindgen]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub async fn create_wasm_engine(
+    build_id: String,
+    instance_id: String,
+    on_event: Function,
+) -> Result<WasmEngine, JsValue> {
+    let storage = Rc::new(WebKv::open().await);
+    let cached_snapshot = storage
+        .get(Space::Cache, b"chat-list-snapshot")
+        .await
+        .unwrap_or(None);
+    let (engine, mut events) =
+        Engine::with_events_and_storage(build_id, instance_id, storage, cached_snapshot);
+    wasm_bindgen_futures::spawn_local(async move {
+        while let Some(event) = events.recv().await {
+            if let Ok(encoded) = serde_json::to_string(&event) {
+                let _ = on_event.call1(&JsValue::NULL, &JsValue::from_str(&encoded));
+            }
+        }
+    });
+    Ok(WasmEngine(engine))
 }
 
 fn handle_json(engine: &Engine, json: &str) -> Result<String, String> {

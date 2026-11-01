@@ -500,7 +500,9 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (network !== undefined) return { type: messageType, network };
       break;
     }
-    case "buffers_changed": {
+    case "buffers_changed":
+    case "chat_list_snapshot_loaded":
+    case "chat_list_live": {
       const buffers = decodeArray(value.buffers, decodeBuffer);
       if (typeof value.network_id === "number" && buffers !== undefined) {
         return {
@@ -715,6 +717,8 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "completion_result" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
+    value === "chat_list_snapshot_loaded" ||
+    value === "chat_list_live" ||
     value === "recent_directs_ready" ||
     value === "buffer_added" ||
     value === "buffer_updated" ||
@@ -945,6 +949,8 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.network_id !== "number" ||
     !isOneOf(value.kind, ["server", "channel", "direct"]) ||
+    !(value.cached === undefined || typeof value.cached === "boolean") ||
+    !(value.available === undefined || typeof value.available === "boolean") ||
     typeof value.title !== "string" ||
     typeof value.draft_key !== "string" ||
     !(
@@ -958,7 +964,11 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.unread !== "number" ||
     typeof value.mentions !== "number" ||
     !(value.read_through === null || typeof value.read_through === "number") ||
-    (value.last_message !== undefined && lastMessage === undefined)
+    (value.last_message !== undefined && lastMessage === undefined) ||
+    !(
+      value.cached_preview === undefined ||
+      typeof value.cached_preview === "string"
+    )
   ) {
     return undefined;
   }
@@ -966,6 +976,8 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     id: value.id,
     network_id: value.network_id,
     kind: value.kind,
+    cached: value.cached ?? false,
+    available: value.available ?? true,
     title: value.title,
     ...(value.nick_color_index === undefined
       ? {}
@@ -979,6 +991,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     mentions: value.mentions,
     read_through: value.read_through,
     ...(lastMessage === undefined ? {} : { last_message: lastMessage }),
+    ...(value.cached_preview === undefined
+      ? {}
+      : { cached_preview: value.cached_preview }),
   };
 }
 

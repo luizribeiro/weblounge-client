@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -8,7 +8,11 @@ use crate::{
     BufferId, BufferKind, BufferProjection, EngineToUi, LocalSendId, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
-    NoticeTone, name_key::NameKey,
+    NoticeTone,
+    chat_list_snapshot::{
+        ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, truncate_preview,
+    },
+    name_key::NameKey,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -206,6 +210,12 @@ pub(crate) struct PendingSend {
     pub(crate) kind: MessageKind,
 }
 
+pub(crate) enum PendingTargetState {
+    Waiting,
+    Ready,
+    Gone,
+}
+
 /// A validated read advance ready for local or server-backed application.
 #[derive(Clone, Debug)]
 pub(crate) struct ReadAdvance {
@@ -230,6 +240,7 @@ pub(crate) struct NetworkModel {
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     recent_commands: VecDeque<String>,
+    cached_read_intents: HashSet<NameKey>,
     #[cfg(test)]
     name_rebuilds: usize,
 }
@@ -243,6 +254,8 @@ impl NetworkModel {
                 id: server_id,
                 network_id: id,
                 kind: BufferKind::Server,
+                cached: None,
+                available: None,
                 title: label.clone(),
                 nick_color_index: None,
                 draft_key: draft_key(&label, &label, casemapping),
@@ -252,6 +265,7 @@ impl NetworkModel {
                 mentions: 0,
                 read_through: None,
                 last_message: None,
+                cached_preview: None,
             },
             key: None,
             direct_key: None,
@@ -286,6 +300,7 @@ impl NetworkModel {
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
             recent_commands: VecDeque::new(),
+            cached_read_intents: HashSet::new(),
             #[cfg(test)]
             name_rebuilds: 0,
         }
@@ -354,6 +369,89 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn restore_chat_list(&mut self, snapshot: ChatListSnapshot) {
+        for row in snapshot.rows {
+            let key = match row.conversation {
+                SnapshotConversation::Channel { key } => {
+                    NameKey::Channel(self.casemapping.channel(key))
+                }
+                SnapshotConversation::Direct { key } => NameKey::Direct(self.casemapping.nick(key)),
+            };
+            let kind = match key {
+                NameKey::Channel(_) => BufferKind::Channel,
+                NameKey::Direct(_) => BufferKind::Direct,
+            };
+            let projection = self.add_buffer(key, kind, None, None, None);
+            if let Some(buffer) = self.buffers.get_mut(&projection.id) {
+                buffer.projection.title = row.title;
+                buffer.projection.cached = Some(true);
+                buffer.projection.cached_preview = row.preview;
+                match row.badge {
+                    SnapshotBadge::None => {}
+                    SnapshotBadge::Unread => buffer.projection.unread = 1,
+                    SnapshotBadge::Mentions(count) => {
+                        buffer.projection.unread = count;
+                        buffer.projection.mentions = count;
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
+        EngineToUi::ChatListLive {
+            network_id: self.network.id,
+            buffers: self.ordered_buffers(),
+        }
+    }
+
+    pub(crate) fn mark_vanished_cached_rows(&mut self) {
+        for buffer in self.buffers.values_mut() {
+            if buffer.projection.cached == Some(true) {
+                buffer.projection.cached = None;
+                buffer.projection.available = Some(false);
+            }
+        }
+    }
+
+    pub(crate) fn is_cached_buffer(&self, buffer_id: BufferId) -> bool {
+        self.buffers
+            .get(&buffer_id)
+            .is_some_and(|buffer| buffer.projection.cached == Some(true))
+    }
+
+    pub(crate) fn chat_list_complete(&self) -> bool {
+        self.is_online()
+            && self.buffers.values().all(|buffer| {
+                buffer.projection.kind == BufferKind::Server
+                    || buffer.projection.available == Some(false)
+                    || matches!(buffer.history, HistoryState::Ready { .. })
+            })
+    }
+
+    pub(crate) fn chat_list_snapshot(&self, fingerprint: String) -> ChatListSnapshot {
+        let rows = self
+            .buffer_order
+            .iter()
+            .filter_map(|id| self.buffers.get(id))
+            .filter(|buffer| {
+                buffer.projection.kind != BufferKind::Server
+                    && buffer.projection.available != Some(false)
+                    && buffer.projection.cached != Some(true)
+            })
+            .filter_map(snapshot_row)
+            .collect();
+        ChatListSnapshot::new(fingerprint, rows)
+    }
+
+    fn ordered_buffers(&self) -> Vec<BufferProjection> {
+        self.buffer_order
+            .iter()
+            .filter_map(|id| self.buffers.get(id))
+            .map(|buffer| buffer.projection.clone())
+            .collect()
+    }
+
     pub(crate) fn set_connection(
         &mut self,
         state: NetworkConnectionState,
@@ -377,11 +475,20 @@ impl NetworkModel {
         for (channel, topic) in channels {
             let key = NameKey::Channel(channel);
             if let Some(id) = self.names.get(&key).copied() {
-                if let Some(buffer) = self.buffers.get_mut(&id)
-                    && buffer.projection.topic != topic
-                {
-                    buffer.projection.topic = topic;
-                    changed = true;
+                if let Some(buffer) = self.buffers.get_mut(&id) {
+                    let title = key.title();
+                    if buffer.projection.topic != topic
+                        || buffer.projection.cached == Some(true)
+                        || buffer.projection.available == Some(false)
+                        || buffer.projection.title != title
+                    {
+                        buffer.projection.topic = topic;
+                        buffer.projection.title = title;
+                        buffer.projection.cached = None;
+                        buffer.projection.available = None;
+                        buffer.projection.cached_preview = None;
+                        changed = true;
+                    }
                 }
             } else {
                 let buffer = self.add_buffer(key, BufferKind::Channel, None, None, topic);
@@ -594,16 +701,33 @@ impl NetworkModel {
         state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
         let buffer = self.buffers.get(&buffer_id)?;
+        if buffer.projection.available == Some(false) {
+            return None;
+        }
+        let cached = buffer.projection.cached == Some(true);
         let key = buffer.key.clone()?;
         let direct = buffer.direct.clone();
-        let target = SendTarget::from_buffer(key.clone(), direct.as_ref())?;
+        let target = SendTarget::from_buffer(key.clone(), direct.as_ref()).or_else(|| {
+            if cached {
+                match key.clone() {
+                    NameKey::Direct(nick) => Some(SendTarget::Direct {
+                        nick,
+                        recipient: None,
+                    }),
+                    NameKey::Channel(_) => None,
+                }
+            } else {
+                None
+            }
+        })?;
         if matches!(
             &target,
             SendTarget::Direct {
                 recipient: None,
                 ..
             }
-        ) {
+        ) && !cached
+        {
             return None;
         }
         let local_send_id = LocalSendId(self.next_local_send_id);
@@ -654,6 +778,36 @@ impl NetworkModel {
             },
             events,
         ))
+    }
+
+    pub(crate) fn prepare_cached_send(&self, pending: &mut PendingSend) -> PendingTargetState {
+        let Some(buffer) = self.buffers.get(&pending.buffer_id) else {
+            return PendingTargetState::Gone;
+        };
+        if buffer.projection.available == Some(false) {
+            return PendingTargetState::Gone;
+        }
+        if buffer.projection.cached == Some(true) {
+            return PendingTargetState::Waiting;
+        }
+        match (&buffer.key, &buffer.direct) {
+            (Some(NameKey::Channel(channel)), _) => {
+                pending.target = SendTarget::Channel(channel.clone());
+                PendingTargetState::Ready
+            }
+            (Some(NameKey::Direct(nick)), Some(DirectAvailability::Guarded(recipient))) => {
+                pending.target = SendTarget::Direct {
+                    nick: nick.clone(),
+                    recipient: Some(recipient.clone()),
+                };
+                PendingTargetState::Ready
+            }
+            (
+                Some(NameKey::Direct(_)),
+                Some(DirectAvailability::Pending | DirectAvailability::Resolving),
+            ) => PendingTargetState::Waiting,
+            _ => PendingTargetState::Gone,
+        }
     }
 
     pub(crate) fn receive_membership(
@@ -1125,6 +1279,52 @@ impl NetworkModel {
         })
     }
 
+    pub(crate) fn mark_cached_read(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        if buffer.projection.cached != Some(true) {
+            return None;
+        }
+        self.cached_read_intents.insert(buffer.key.clone()?);
+        buffer.projection.unread = 0;
+        buffer.projection.mentions = 0;
+        Some(EngineToUi::BufferUpdated {
+            buffer: buffer.projection.clone(),
+        })
+    }
+
+    pub(crate) fn take_cached_read_advances(&mut self) -> (Vec<ReadAdvance>, Vec<EngineToUi>) {
+        let mut advances = Vec::new();
+        let mut events = Vec::new();
+        for key in self.cached_read_intents.clone() {
+            let Some(buffer_id) = self.names.get(&key).copied() else {
+                continue;
+            };
+            let Some(buffer) = self.buffers.get(&buffer_id) else {
+                continue;
+            };
+            if !matches!(buffer.history, HistoryState::Ready { .. }) {
+                continue;
+            }
+            let through = buffer
+                .timeline
+                .iter()
+                .rev()
+                .find(|record| is_committed(&record.projection))
+                .map(|record| record.projection.id);
+            let Some(through) = through else {
+                self.cached_read_intents.remove(&key);
+                continue;
+            };
+            let Some(advance) = self.prepare_mark_read(buffer_id, through) else {
+                continue;
+            };
+            self.cached_read_intents.remove(&key);
+            events.extend(self.apply_read_time(buffer_id, advance.time));
+            advances.push(advance);
+        }
+        (advances, events)
+    }
+
     pub(crate) fn prepare_mark_all_read(&self) -> Vec<ReadAdvance> {
         self.buffer_order
             .iter()
@@ -1304,6 +1504,11 @@ impl NetworkModel {
             .as_ref()
             .and_then(|direct_key| self.directs.get(direct_key).copied());
         if let Some(id) = direct_id.or_else(|| self.names.get(&key).copied()) {
+            if let Some(buffer) = self.buffers.get_mut(&id) {
+                buffer.projection.cached = None;
+                buffer.projection.available = None;
+                buffer.projection.cached_preview = None;
+            }
             if matches!(key, NameKey::Direct(_)) {
                 self.names.insert(key.clone(), id);
                 self.update_direct_name(id, key);
@@ -1357,6 +1562,8 @@ impl NetworkModel {
             id,
             network_id: self.network.id,
             kind,
+            cached: None,
+            available: None,
             title: key.title(),
             nick_color_index: (kind == BufferKind::Direct)
                 .then(|| nick_color_index(self.casemapping, &key.title())),
@@ -1367,6 +1574,7 @@ impl NetworkModel {
             mentions: 0,
             read_through: None,
             last_message: None,
+            cached_preview: None,
         };
         self.buffers.insert(
             id,
@@ -1505,6 +1713,53 @@ impl NetworkModel {
                 self.fallbacks.remove(&fallback);
             }
         }
+    }
+}
+
+fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
+    let conversation = match buffer.key.as_ref()? {
+        NameKey::Channel(channel) => SnapshotConversation::Channel {
+            key: channel.key().to_owned(),
+        },
+        NameKey::Direct(nick) => SnapshotConversation::Direct {
+            key: nick.key().to_owned(),
+        },
+    };
+    let badge = if buffer.projection.mentions > 0 {
+        SnapshotBadge::Mentions(buffer.projection.mentions)
+    } else if buffer.projection.unread > 0 {
+        SnapshotBadge::Unread
+    } else {
+        SnapshotBadge::None
+    };
+    Some(SnapshotRow {
+        conversation,
+        title: buffer.projection.title.clone(),
+        badge,
+        preview: buffer
+            .projection
+            .last_message
+            .as_ref()
+            .map(|message| snapshot_preview(&buffer.projection, message)),
+    })
+}
+
+fn snapshot_preview(buffer: &BufferProjection, message: &MessageProjection) -> String {
+    let text = truncate_preview(&message.text);
+    if buffer.kind == BufferKind::Direct && message.authorship == MessageAuthorship::Own {
+        return format!("You: {text}");
+    }
+    if buffer.kind == BufferKind::Direct && message.author == buffer.title {
+        return if message.kind == MessageKind::Action {
+            format!("* {text}")
+        } else {
+            text
+        };
+    }
+    if message.kind == MessageKind::Action {
+        format!("* {} {text}", message.author)
+    } else {
+        format!("{}: {text}", message.author)
     }
 }
 
@@ -1744,11 +1999,14 @@ mod tests {
     use papo_testing::{StateBuilder, wire};
 
     use super::{
-        DirectKey, HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, SendTarget,
-        TimelineOrigin, collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
-        time_millis,
+        DirectKey, HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, PendingTargetState,
+        SendTarget, TimelineOrigin, collapse_blank_lines, derive_read_projection, draft_key,
+        nick_color_index, time_millis,
     };
-    use crate::{BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId};
+    use crate::{
+        BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId,
+        chat_list_snapshot::{ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow},
+    };
 
     #[test]
     fn message_text_keeps_at_most_one_blank_line() {
@@ -2809,6 +3067,114 @@ mod tests {
         let channel = NameKey::Channel(channel_name(&state, "#room"));
         let target = SendTarget::from_buffer(channel.clone(), None).expect("channel target");
         assert_eq!(target.name_key(), channel);
+    }
+
+    #[test]
+    fn cached_direct_send_waits_for_the_live_target_and_fails_if_it_vanishes() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                badge: SnapshotBadge::Unread,
+                preview: Some("hello".into()),
+            }],
+        ));
+        let buffer_id = *model
+            .names
+            .get(&NameKey::Direct(nick_name(&state, "alice")))
+            .expect("cached direct exists");
+        let (mut pending, _) = model
+            .begin_send(buffer_id, "queued".into(), &state)
+            .expect("cached direct accepts an optimistic send");
+
+        assert!(matches!(
+            model.prepare_cached_send(&mut pending),
+            PendingTargetState::Waiting
+        ));
+        model.mark_vanished_cached_rows();
+        assert!(matches!(
+            model.prepare_cached_send(&mut pending),
+            PendingTargetState::Gone
+        ));
+    }
+
+    #[test]
+    fn cached_mark_read_clears_locally_then_advances_after_live_history() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#room".into(),
+                },
+                title: "#room".into(),
+                badge: SnapshotBadge::Mentions(2),
+                preview: Some("alice: hello".into()),
+            }],
+        ));
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let buffer_id = *model.names.get(&key).expect("cached channel exists");
+
+        assert!(matches!(
+            model.mark_cached_read(buffer_id),
+            Some(EngineToUi::BufferUpdated { buffer })
+                if buffer.unread == 0 && buffer.mentions == 0
+        ));
+        model.receive_incoming(
+            incoming(
+                &state,
+                "live history",
+                Some("history"),
+                Some(1_000),
+                1_000,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        model.buffers.get_mut(&buffer_id).expect("buffer").history = HistoryState::Ready {
+            oldest: None,
+            at_start: true,
+        };
+
+        let (advances, events) = model.take_cached_read_advances();
+        assert_eq!(advances.len(), 1);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                buffer_id: changed,
+                unread: 0,
+                mentions: 0,
+            } if *changed == buffer_id
+        )));
+    }
+
+    #[test]
+    fn chat_list_is_writable_only_when_online_and_fully_hydrated() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let (buffer_id, _) = model.ensure_buffer(key, None, None);
+        assert!(!model.chat_list_complete());
+
+        model.set_connection(crate::NetworkConnectionState::Online, None);
+        assert!(!model.chat_list_complete());
+        model.buffers.get_mut(&buffer_id).expect("buffer").history = HistoryState::Ready {
+            oldest: None,
+            at_start: true,
+        };
+        assert!(model.chat_list_complete());
+
+        model.set_connection(
+            crate::NetworkConnectionState::Reconnecting {
+                attempt: 1,
+                next_retry_at_ms: 1,
+            },
+            None,
+        );
+        assert!(!model.chat_list_complete());
     }
 
     #[test]

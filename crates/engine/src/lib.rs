@@ -1,5 +1,6 @@
 //! Platform-neutral weblounge engine composition.
 
+mod chat_list_snapshot;
 /// Runtime slash-command metadata and registration.
 pub mod commands;
 mod members;
@@ -10,6 +11,9 @@ mod state;
 pub mod storage;
 
 use tokio::sync::mpsc;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use std::rc::Rc;
 
 pub use protocol::{
     AccountProjection, BufferId, BufferKind, BufferProjection, CompletionCandidate,
@@ -43,6 +47,25 @@ impl Engine {
     ) -> (Self, mpsc::UnboundedReceiver<EngineToUi>) {
         let (outbound, events) = mpsc::unbounded_channel();
         (Self::with_sender(build_id, instance_id, outbound), events)
+    }
+
+    /// Creates a web engine with its worker-owned persistent backend and preloaded cache record.
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    pub fn with_events_and_storage(
+        build_id: impl Into<String>,
+        instance_id: impl Into<String>,
+        storage: Rc<storage::WebKv>,
+        cached_snapshot: Option<Vec<u8>>,
+    ) -> (Self, mpsc::UnboundedReceiver<EngineToUi>) {
+        let (outbound, events) = mpsc::unbounded_channel();
+        (
+            Self {
+                build_id: build_id.into(),
+                instance_id: instance_id.into(),
+                runtime: runtime::Runtime::with_storage(outbound, storage, cached_snapshot),
+            },
+            events,
+        )
     }
 
     fn with_sender(

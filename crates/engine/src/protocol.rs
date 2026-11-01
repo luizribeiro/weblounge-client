@@ -202,6 +202,14 @@ pub struct BufferProjection {
     pub network_id: NetworkId,
     /// Kind of conversation.
     pub kind: BufferKind,
+    /// Whether this row was restored from the launch cache and is not live yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cached: Option<bool>,
+    /// Whether the configured conversation still exists in the complete live list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub available: Option<bool>,
     /// Current channel or nick display name.
     pub title: String,
     /// Stable theme palette index for a direct-message peer.
@@ -228,6 +236,10 @@ pub struct BufferProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_message: Option<MessageProjection>,
+    /// Already-formatted bounded preview used only by a cached launch row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cached_preview: Option<String>,
 }
 
 /// Who authored a projected message relative to this client.
@@ -538,6 +550,11 @@ pub enum EngineRequest {
         /// Latest fully visible committed row.
         through: MessageId,
     },
+    /// Clear a cached launch row and defer its server marker until live history resolves.
+    MarkCachedRead {
+        /// Cached conversation being cleared.
+        buffer_id: BufferId,
+    },
     /// Advance every conversation through its latest committed row.
     MarkAllRead,
     /// Fetch the latest history page the first time a buffer is opened.
@@ -671,6 +688,20 @@ pub enum EngineToUi {
         /// Network whose order changed.
         network_id: NetworkId,
         /// Complete ordered buffer projection.
+        buffers: Vec<BufferProjection>,
+    },
+    /// Reveal one validated cached chat list before live synchronization completes.
+    ChatListSnapshotLoaded {
+        /// Network whose configured identity matched the record.
+        network_id: NetworkId,
+        /// Complete ordered cached rows with fresh session-only IDs.
+        buffers: Vec<BufferProjection>,
+    },
+    /// Replace cached rows once live discovery and latest history are complete.
+    ChatListLive {
+        /// Network whose live projection completed.
+        network_id: NetworkId,
+        /// Complete ordered live rows plus an unavailable selected-cache fallback.
         buffers: Vec<BufferProjection>,
     },
     /// Report that initial recent-direct discovery cannot add more buffers.

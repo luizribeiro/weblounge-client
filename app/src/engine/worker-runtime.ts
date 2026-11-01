@@ -15,11 +15,11 @@ export interface WasmEngine {
 
 interface WasmModule {
   default: (input: { module_or_path: string }) => Promise<unknown>;
-  WasmEngine: new (
+  create_wasm_engine: (
     buildId: string,
     instanceId: string,
     onEvent: (encoded: string) => void,
-  ) => WasmEngine;
+  ) => Promise<WasmEngine>;
 }
 
 type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
@@ -101,7 +101,11 @@ async function loadEngine(
   const imported: unknown = await import("@weblounge-engine");
   if (!isWasmModule(imported)) throw new Error("invalid wasm module");
   await imported.default({ module_or_path: wasmBinaryUrl });
-  return new imported.WasmEngine(__BUILD_ID__, crypto.randomUUID(), onEvent);
+  return imported.create_wasm_engine(
+    __BUILD_ID__,
+    crypto.randomUUID(),
+    onEvent,
+  );
 }
 
 function readRequestId(message: unknown): string | undefined {
@@ -121,6 +125,8 @@ function isSharedStateEvent(event: unknown): boolean {
   return (
     event.type === "network_state_changed" ||
     event.type === "buffers_changed" ||
+    event.type === "chat_list_snapshot_loaded" ||
+    event.type === "chat_list_live" ||
     event.type === "buffer_added" ||
     event.type === "buffer_updated" ||
     event.type === "draft_key_changed" ||
@@ -140,7 +146,7 @@ function isWasmModule(value: unknown): value is WasmModule {
   if (!isRecord(value)) return false;
   return (
     typeof value.default === "function" &&
-    typeof value.WasmEngine === "function"
+    typeof value.create_wasm_engine === "function"
   );
 }
 

@@ -5,11 +5,11 @@ export default async function initialize(_input: {
 }
 
 export class WasmEngine {
-  constructor() {
-    throw new Error("tests must inject an engine loader");
-  }
-
   handle(): never {
     throw new Error("tests must inject an engine loader");
   }
+}
+
+export async function create_wasm_engine(): Promise<WasmEngine> {
+  throw new Error("tests must inject an engine loader");
 }
