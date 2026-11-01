@@ -71,26 +71,53 @@ pub struct Buffer {
 pub enum BufferKind {
     Server,
     Channel { conversation: ConversationKey },
-    Direct { peer: DirectKey },
+    Direct { peer: DirectPeer },
 }
 
-pub enum DirectKey {
-    Account(String),
-    Nick(String),
+pub struct DirectPeer {
+    pub nick_key: String,
+    pub pin: Option<String>,
 }
 ```
 
-`BufferId` survives channel and proven nick changes. Durable DM state keys by the account's folded
-`AccountName::key()` when known and otherwise by the folded `Nick::key()`. When an account becomes
-known for an existing nick-keyed DM, the engine moves that same buffer, draft identity, local read
-position, and closed-buffer retention to the account key. It never assumes that a later holder of
-an unproven nick is the same person.
+Channel `BufferId`s survive proven channel renames. A DM thread instead keys by connection profile
+and the peer's folded `Nick::key()`, matching the target used by Ergo CHATHISTORY. Two nicks on one
+account are separate threads, and a rename starts a new thread. When a `NickChanged` event's
+`peer_key()` matches the old thread's pin, the old transcript may say that the peer is now known by
+the new nick, but it does not merge either thread's state.
 
-`DirectRef` is a connection-local guarded send handle, not application identity. The engine holds
-one only while a DM is sendable, discards it when the connection ends, and captures a fresh handle
-after reconnect. Old and new handles need not compare equal. Current channel members, user facts,
-DM presence, typing, and server read markers are queried from the active papo snapshot when
-building UI projections. Server buffers may occupy desktop panes.
+Each DM thread stores an optional SSH-known-hosts-style identity pin. The serialized value is the
+opaque result of `PeerKey::as_verified_str()`; only account keys are durable, while continuity keys
+are connection-local and project as unverified after a new session. Stored values are parsed with
+`str::parse::<PeerKey>()`; an `InvalidPeerKey` is treated as no pin. Pins are scoped to the
+TLS-verified server host (a normalized URL host without its port) for `wss://` and `ircs://`
+connections. Migrating pins when a connection profile changes host is deliberately out of scope.
+
+For every incoming direct message, the engine obtains `UserSource::peer_key()`. Live and
+CHATHISTORY messages with an account tag can therefore prove identity; `None` means unknown, never
+logged out. Before presenting the thread as verified, and again before every send, the engine calls
+`stored.check(&current)`. `Match` proceeds. `Upgrade(new)` replaces the pin silently, including a
+continuity-to-account upgrade for one uninterrupted user. `Mismatch(DifferentAccount |
+CannotVerify)` leaves the message in the existing transcript marked as unverified and makes the
+thread read-only until the user decides.
+
+The mismatch projection carries the current key and one of two reasons: “This isn't the same
+{nick} — different account” or “Can't verify this is the same {nick}”. The UI presents it in an
+inline banner at the top of the transcript, above the composer in both shells. “Trust new identity”
+opens a fresh `Client::direct()` handle, stores its current account pin when one is available, and
+clears the banner. “Not now” preserves the read-only thread and its short disabled-composer reason.
+Incoming messages remain visible while the decision is pending.
+
+Sends use `Client::direct_pinned(nick, &stored)`. A `papo::Error::PeerPinMismatch` carries the
+reason and current key, sends nothing, and moves the thread to the same mismatch state. Papo's
+direct handles remain connection-local protocol capabilities, not application identity. Current
+channel members, user facts, DM presence, typing, and server read markers are queried from the
+active papo snapshot when building UI projections. Server buffers may occupy desktop panes.
+
+The first durable schema using this model performs a one-time migration from account-keyed DMs.
+Drafts, local read markers, closed-DM retention, and chat-list snapshot rows move to nick-keyed
+threads. If one account record names several nicks, only its most recently active nick is retained.
+Migration never invents a pin; the next provable contact establishes one.
 
 IRC lookup always uses typed papo values or `State::name_rules()`; the engine never lowercases IRC
 names itself.
@@ -209,7 +236,8 @@ and channel browsing are later designs.
 ## Decisions
 
 - Do not preserve arbitrary batch identity in milestone 1.
-- Identify DMs by account first, then by a typed nick-change chain, and otherwise keep identities separate.
+- Key DM threads by connection profile and folded nick, with an independently stored account pin
+  guarding continuity; never merge threads by account or rename.
 - Keep unknown `Event::Other` records in a bounded diagnostics window.
 - Derive message-window sizes from the performance harness.
 - Luiz, 2026-10-27: use pure domain tests plus native `papo_testing::wire()` transcripts, with the
