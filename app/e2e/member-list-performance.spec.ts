@@ -13,6 +13,9 @@ test("keeps a 10k-member channel bounded at 4x CPU", async ({
   await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/e2e/member-list-performance.html");
+  await expect(
+    page.locator('link[rel="apple-touch-startup-image"]'),
+  ).toHaveCount(0);
   const list = page.getByRole("list", { name: "Members of #ten-thousand" });
   await expect(list).toBeVisible();
   const retainedRowRatio = await list.evaluate(async (element) => {
