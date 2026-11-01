@@ -8,6 +8,7 @@ import type {
   EngineRequestEnvelope,
 } from "./engine/protocol";
 import { OneShotAccessToken } from "./hosted/HostedSession";
+import { startupDeadlineMs } from "./hosted/startup-deadline";
 
 it("keeps synthetic timelines out of the production app", () => {
   const source = readFileSync("src/App.tsx", "utf8");
@@ -119,6 +120,27 @@ it("offers startup retry without reloading the page", async () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(retry).toHaveBeenCalledOnce();
+});
+
+it("turns a stalled engine startup into a retryable error", async () => {
+  vi.useFakeTimers();
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  render(() => (
+    <App
+      engineClient={
+        new FakeEngineClient(undefined, new Promise<void>(() => {}))
+      }
+    />
+  ));
+
+  await vi.advanceTimersByTimeAsync(startupDeadlineMs);
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Couldn't start weblounge.",
+  );
+  expect(consoleError).toHaveBeenCalledOnce();
+  consoleError.mockRestore();
+  vi.useRealTimers();
 });
 
 it("hands a hosted token to the engine once and reauthorizes on rejection", async () => {

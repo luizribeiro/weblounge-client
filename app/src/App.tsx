@@ -43,6 +43,7 @@ import {
   SessionTokenError,
   SessionTokenProvider,
 } from "./hosted/session-token";
+import { withStartupDeadline } from "./hosted/startup-deadline";
 import { bufferPath } from "./navigation/buffer-route";
 import {
   initialDestination,
@@ -908,40 +909,50 @@ async function startEngine(
   clientId: string,
 ): Promise<"ready" | "failed" | "reloading"> {
   try {
-    await client.start({
-      build_id: __BUILD_ID__,
-      client_id: clientId,
-      last_revision: null,
-      shell: "web",
-    });
-    sessionStorage.removeItem(reloadMarker);
-    await client.send({
-      id: crypto.randomUUID(),
-      request: {
-        type: "diagnostic",
-        message: "wasm worker round trip complete",
+    await withStartupDeadline(
+      async () => {
+        await client.start({
+          build_id: __BUILD_ID__,
+          client_id: clientId,
+          last_revision: null,
+          shell: "web",
+        });
+        sessionStorage.removeItem(reloadMarker);
+        await client.send({
+          id: crypto.randomUUID(),
+          request: {
+            type: "diagnostic",
+            message: "wasm worker round trip complete",
+          },
+        });
+        if (hostedSession !== undefined) {
+          await client.send({
+            id: crypto.randomUUID(),
+            request: {
+              type: "connect_hosted",
+              label: hostedSession.network.name,
+              endpoint: hostedSession.network.endpoint,
+              nickname: "*",
+              oauth_token: hostedSession.token.take(),
+              autojoin: hostedSession.network.autojoin,
+            },
+          });
+        } else if (debugConnection !== null) {
+          await connectDebugNetwork(client, debugConnection);
+        }
       },
-    });
-    if (hostedSession !== undefined) {
-      await client.send({
-        id: crypto.randomUUID(),
-        request: {
-          type: "connect_hosted",
-          label: hostedSession.network.name,
-          endpoint: hostedSession.network.endpoint,
-          nickname: "*",
-          oauth_token: hostedSession.token.take(),
-          autojoin: hostedSession.network.autojoin,
-        },
-      });
-    } else if (debugConnection !== null) {
-      await connectDebugNetwork(client, debugConnection);
-    }
+      () => new Error("the chat engine did not respond in time"),
+    );
     return "ready";
   } catch (error: unknown) {
     if (error instanceof IncompatibleBuildError) {
       return recoverFromBuildMismatch(setStatus) ? "reloading" : "failed";
     }
+    console.error(
+      "[weblounge startup] The chat engine failed to start.",
+      error,
+    );
+    await client.close().catch(() => undefined);
     setStatus("Engine failed to start");
     if (hostedSession !== undefined) {
       setHostedError("Couldn't start the chat.");

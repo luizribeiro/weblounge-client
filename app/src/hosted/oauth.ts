@@ -1,5 +1,6 @@
 import type { HostedOAuthConfig } from "../engine/generated/HostedOAuthConfig";
 import { parseBufferRoute } from "../navigation/buffer-route";
+import { withStartupDeadline } from "./startup-deadline";
 
 const pendingKey = "weblounge.oauth.pending";
 
@@ -33,10 +34,19 @@ export async function discoverOAuthMetadata(
 ): Promise<OAuthMetadata> {
   let response: Response;
   try {
-    response = await fetchMetadata(metadataUrl(config.issuer), {
-      headers: { Accept: "application/json" },
-    });
-  } catch {
+    response = await withStartupDeadline(
+      (signal) =>
+        fetchMetadata(metadataUrl(config.issuer), {
+          headers: { Accept: "application/json" },
+          signal,
+        }),
+      () =>
+        new HostedAuthorizationError(
+          "The sign-in service did not respond. Please try again.",
+        ),
+    );
+  } catch (error: unknown) {
+    if (error instanceof HostedAuthorizationError) throw error;
     throw new HostedAuthorizationError("Couldn't reach the sign-in service.");
   }
   if (!response.ok) {
@@ -158,15 +168,24 @@ export async function exchangeAuthorizationCode(
   });
   let response: Response;
   try {
-    response = await fetchToken(metadata.tokenEndpoint, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body,
-    });
-  } catch {
+    response = await withStartupDeadline(
+      (signal) =>
+        fetchToken(metadata.tokenEndpoint, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body,
+          signal,
+        }),
+      () =>
+        new HostedAuthorizationError(
+          "The sign-in service did not respond. Please try again.",
+        ),
+    );
+  } catch (error: unknown) {
+    if (error instanceof HostedAuthorizationError) throw error;
     throw new HostedAuthorizationError("Couldn't reach the sign-in service.");
   }
   const value: unknown = await response.json().catch(() => undefined);

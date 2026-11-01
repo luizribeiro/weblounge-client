@@ -25,12 +25,16 @@ describe("hosted session token provider", () => {
       accessToken: "session-access-token",
       expiresAt: 900_050,
     });
-    expect(fetchToken).toHaveBeenCalledWith(endpoint, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
+    expect(fetchToken).toHaveBeenCalledWith(
+      endpoint,
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it.each([

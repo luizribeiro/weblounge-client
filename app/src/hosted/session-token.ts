@@ -1,3 +1,5 @@
+import { withStartupDeadline } from "./startup-deadline";
+
 export type SessionTokenFailureKind =
   | "authorization_required"
   | "endpoint_missing"
@@ -29,13 +31,23 @@ export class SessionTokenProvider {
   async acquire(): Promise<SessionAccessToken> {
     let response: Response;
     try {
-      response = await this.fetchToken.call(globalThis, this.endpoint, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-    } catch {
+      response = await withStartupDeadline(
+        (signal) =>
+          this.fetchToken.call(globalThis, this.endpoint, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+            signal,
+          }),
+        () =>
+          new SessionTokenError(
+            "transient",
+            "The sign-in service did not respond. Try again.",
+          ),
+      );
+    } catch (error: unknown) {
+      if (error instanceof SessionTokenError) throw error;
       throw new SessionTokenError(
         "transient",
         "Couldn't reach the sign-in service. Try again.",
