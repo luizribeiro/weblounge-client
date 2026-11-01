@@ -182,11 +182,9 @@ test("does not intercept or cache API, OAuth, session, or WebSocket traffic", as
       ]),
     ),
   ).toEqual(["ok", "ok", "ok"]);
-  expect(seen).toEqual([
-    "GET /api/probe",
-    "GET /oauth/probe",
-    "POST /session-token",
-  ]);
+  expect([...seen].sort()).toEqual(
+    ["GET /api/probe", "GET /oauth/probe", "POST /session-token"].sort(),
+  );
 
   const opened = page.waitForEvent(
     "websocket",
