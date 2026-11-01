@@ -15,4 +15,8 @@ client_id: string,
 /**
  * Exact authorization callback URL, without a fragment.
  */
-redirect_uri: string, };
+redirect_uri: string,
+/**
+ * Credentialed concierge endpoint used before each hosted connection attempt.
+ */
+session_token_endpoint: string, };

@@ -92,6 +92,8 @@ pub struct HostedOAuthConfig {
     pub client_id: String,
     /// Exact authorization callback URL, without a fragment.
     pub redirect_uri: String,
+    /// Credentialed concierge endpoint used before each hosted connection attempt.
+    pub session_token_endpoint: String,
 }
 
 /// Why a network is intentionally offline.

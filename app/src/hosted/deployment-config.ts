@@ -57,7 +57,11 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
   const network = record(root.network, '"network"');
   exactKeys(network, ["name", "endpoint", "autojoin"], '"network"');
   const oauth = record(root.oauth, '"oauth"');
-  exactKeys(oauth, ["issuer", "client_id", "redirect_uri"], '"oauth"');
+  exactKeys(
+    oauth,
+    ["issuer", "client_id", "redirect_uri", "session_token_endpoint"],
+    '"oauth"',
+  );
 
   const name = nonemptyString(network.name, '"network.name"');
   const endpoint = webSocketUrl(network.endpoint, '"network.endpoint"');
@@ -68,11 +72,20 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
   const issuer = issuerUrl(oauth.issuer);
   const clientId = nonemptyString(oauth.client_id, '"oauth.client_id"');
   const redirectUri = redirectUrl(oauth.redirect_uri);
+  const sessionTokenEndpoint = sessionTokenUrl(
+    oauth.session_token_endpoint,
+    issuer,
+  );
 
   return {
     mode: "hosted",
     network: { name, endpoint, autojoin },
-    oauth: { issuer, client_id: clientId, redirect_uri: redirectUri },
+    oauth: {
+      issuer,
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      session_token_endpoint: sessionTokenEndpoint,
+    },
   };
 }
 
@@ -137,6 +150,22 @@ function redirectUrl(value: unknown): string {
     );
   }
   requireSecure(url, '"oauth.redirect_uri"');
+  return url.href;
+}
+
+function sessionTokenUrl(value: unknown, issuer: string): string {
+  const url = parsedUrl(value, '"oauth.session_token_endpoint"');
+  if (url.hash !== "") {
+    throw new DeploymentConfigError(
+      '"oauth.session_token_endpoint" cannot have a fragment',
+    );
+  }
+  requireSecure(url, '"oauth.session_token_endpoint"');
+  if (url.origin !== new URL(issuer).origin) {
+    throw new DeploymentConfigError(
+      '"oauth.session_token_endpoint" must use the issuer origin',
+    );
+  }
   return url.href;
 }
 

@@ -16,6 +16,7 @@ const config: HostedOAuthConfig = {
   issuer: "https://members.weblounge.org",
   client_id: "weblounge-client",
   redirect_uri: "https://beta.weblounge.org/",
+  session_token_endpoint: "https://members.weblounge.org/oauth/session-token",
 };
 
 const metadata = {

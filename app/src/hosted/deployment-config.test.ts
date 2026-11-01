@@ -16,6 +16,7 @@ const hosted = {
     issuer: "https://members.weblounge.org",
     client_id: "weblounge-client",
     redirect_uri: "https://beta.weblounge.org/",
+    session_token_endpoint: "https://members.weblounge.org/oauth/session-token",
   },
 };
 
@@ -42,6 +43,16 @@ describe("deployment config", () => {
     [
       { ...hosted, oauth: { ...hosted.oauth, redirect_uri: "javascript:x" } },
       "must use https",
+    ],
+    [
+      {
+        ...hosted,
+        oauth: {
+          ...hosted.oauth,
+          session_token_endpoint: "https://tokens.example.test/session-token",
+        },
+      },
+      "must use the issuer origin",
     ],
   ])("rejects malformed input", (value, message) => {
     expect(() => decodeDeploymentConfig(value)).toThrow(message);
