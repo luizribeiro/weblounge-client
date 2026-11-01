@@ -171,6 +171,28 @@ test.describe("mobile text field zoom", () => {
     await expect.poll(() => appHeight(root)).toBe(measuredHeight);
   });
 
+  test("follows native composer focus when measured keyboard geometry arrives", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page);
+    await openChannel(page);
+    const root = page.locator("#root");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    const openHeight = 471;
+
+    await composer.evaluate((field) => field.focus({ preventScroll: true }));
+    await expect(composer).toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, openHeight);
+
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect(root).toHaveAttribute("data-keyboard-owner", "true");
+    await expect.poll(() => appHeight(root)).toBe(openHeight);
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+  });
+
   test("keeps the chat fixed while the member filter owns the keyboard", async ({
     page,
   }) => {

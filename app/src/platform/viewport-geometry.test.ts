@@ -123,10 +123,12 @@ describe("viewport geometry observer", () => {
 
   it("publishes the open keyboard and clears it when the keyboard closes", () => {
     const { root, viewport, stop } = observe();
+    const field = textField();
 
     expect(root.dataset.keyboard).toBe("closed");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
 
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
     expect(root.dataset.keyboard).toBe("open");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
@@ -151,10 +153,12 @@ describe("viewport geometry observer", () => {
 
   it("undoes an iOS pan and lands at the top of the visual viewport", () => {
     const { root, viewport } = observe();
+    const field = textField();
     const scrollTo = vi
       .spyOn(window, "scrollTo")
       .mockImplementation(() => viewport.set(viewport.height, 0, "scroll"));
 
+    field.focus();
     viewport.set(window.innerHeight - 300, 336, "resize");
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
@@ -164,8 +168,10 @@ describe("viewport geometry observer", () => {
 
   it("never publishes a pan that cannot be undone immediately", () => {
     const { root, viewport } = observe();
+    const field = textField();
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 
+    field.focus();
     viewport.set(window.innerHeight - 300, 336, "resize");
 
     expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
@@ -177,8 +183,10 @@ describe("viewport geometry observer", () => {
       changes.push((event as CustomEvent<AppGeometryChange>).detail);
     window.addEventListener("weblounge:app-geometry-change", changed);
     const { root, viewport } = observe();
+    const field = textField();
     changes.length = 0;
 
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
 
     expect(changes).toEqual([
@@ -192,6 +200,8 @@ describe("viewport geometry observer", () => {
 
   it("re-measures on later frames when an event reported stale values", async () => {
     const { root, viewport } = observe();
+    const field = textField();
+    field.focus();
     viewport.dispatchEvent(new Event("resize"));
     viewport.height = window.innerHeight - 300;
 
@@ -205,7 +215,9 @@ describe("viewport geometry observer", () => {
     const frames = vi.spyOn(window, "requestAnimationFrame");
     const scrollTo = vi.spyOn(window, "scrollTo");
     const { viewport } = observe();
+    const field = textField();
 
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
     await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
     const settled = frames.mock.calls.length;
@@ -221,7 +233,7 @@ describe("viewport geometry observer", () => {
     const field = textField();
     viewport.height = window.innerHeight - 300;
 
-    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    field.focus();
 
     expect(root.dataset.keyboard).toBe("open");
   });
@@ -231,7 +243,7 @@ describe("viewport geometry observer", () => {
     const field = textField();
 
     field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    field.focus();
     for (let frame = 0; frame < 6; frame += 1)
       await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(root.dataset.keyboard).toBe("closed");
@@ -328,6 +340,32 @@ describe("viewport geometry observer", () => {
     expect(surface.dataset.keyboardOwner).toBeUndefined();
   });
 
+  it("opens from measured geometry after a rejected tap and native focus", async () => {
+    const { root, viewport } = observe();
+    const field = textField();
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(root.dataset.keyboard).toBe("closed");
+
+    field.focus();
+    viewport.set(471, 0, "resize");
+
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.dataset.keyboardOwner).toBe("true");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+  });
+
+  it("ignores open viewport geometry without a focused keyboard field", () => {
+    const { root, viewport } = observe();
+
+    viewport.set(window.innerHeight - 300, 0, "resize");
+
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
+  });
+
   it("rolls back a pointer tap that ends without focus", async () => {
     const { browserWindow, root } = observe();
     const field = textField();
@@ -369,9 +407,10 @@ describe("viewport geometry observer", () => {
   it("commits the closed layout one frame after focusout before geometry arrives", async () => {
     const { root, viewport } = observe();
     const field = textField();
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    field.blur();
 
     expect(root.dataset.keyboard).toBe("open");
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -382,9 +421,10 @@ describe("viewport geometry observer", () => {
   it("does not let late open geometry undo a committed close", async () => {
     const { root, viewport } = observe();
     const field = textField();
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    field.blur();
     await new Promise((resolve) => requestAnimationFrame(resolve));
     viewport.dispatchEvent(new Event("resize"));
 
@@ -397,9 +437,9 @@ describe("viewport geometry observer", () => {
     const field = textField();
     const button = document.createElement("button");
     document.body.append(button);
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    field.focus();
     button.focus();
     field.focus();
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -411,12 +451,13 @@ describe("viewport geometry observer", () => {
   it("restores the open layout when a keyboard field refocuses after the close frame", async () => {
     const { root, viewport } = observe();
     const field = textField();
+    field.focus();
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    field.blur();
     await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(root.dataset.keyboard).toBe("closed");
-    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    field.focus();
 
     expect(root.dataset.keyboard).toBe("open");
   });
@@ -431,6 +472,8 @@ describe("viewport geometry observer", () => {
     running.push(stop);
 
     expect(keyboard.overlaysContent).toBe(true);
+    const field = textField();
+    field.focus();
     keyboard.height = 280;
     keyboard.dispatchEvent(new Event("geometrychange"));
 
@@ -448,7 +491,7 @@ describe("viewport geometry observer", () => {
     observe({ onScreenKeyboard: () => false });
 
     field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    field.focus();
     await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
     for (let frame = 0; frame < 3; frame += 1)
       await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -463,7 +506,7 @@ describe("viewport geometry observer", () => {
     viewport.height = window.innerHeight - 300;
 
     field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    field.focus();
     await vi.waitFor(() => expect(frames).toHaveBeenCalledTimes(2));
     for (let frame = 0; frame < 3; frame += 1)
       await new Promise((resolve) => requestAnimationFrame(resolve));
