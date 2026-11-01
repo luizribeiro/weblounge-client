@@ -122,7 +122,7 @@ These commands are visible only when your rank in the focused channel allows the
 | names | n | Channel? | Prints channel members. In the GUI, it opens the members panel. | channel state (no typed NAMES needed) | M5 | S, P, C ("Members") | anyone | no |
 | list | channels, browse | Text? (mask or ELIST filter) | Opens the channel browser dialog (sortable, filterable, join on Enter). | `Client::list` (max 10,000). ELIST filters are untyped (gap) | Later | S, P, N ("Browse channels…") | anyone | no |
 | motd | — | — | Shows the MOTD in the server buffer. | `event::Motd` at connect. Refetch is a gap (raw `MOTD`) | M3 | S, N ("Server info") | anyone | no |
-| lusers / version / time / info / admin / links / stats | — | Text? | Server queries (irssi semantics: `/version` and `/time` ask the server). Replies render in the server buffer. | gap: raw pass-through | Later | S | anyone | no |
+| lusers / time / info / admin / links / stats | — | Text? | Server queries. Replies render in the server buffer. | gap: raw pass-through | Later | S | anyone | no |
 | helpop | — | Text? | Server help (`HELP`/`HELPOP`), shown in a help panel. `/help` stays client help. | gap: raw `HELP` (labeled via `request_raw`) | Later | S | anyone | no |
 | lag | — | — | Shows round-trip time. Mainly a status-bar indicator. | `Client::ping` → `Duration` | Later | S, N | anyone | no |
 | ctcp | ping | Nick, Text | CTCP query (VERSION, PING, TIME, CLIENTINFO only). `/ping nick` is CTCP PING, as in irssi. | gap: no typed outgoing CTCP; `send_raw` with `\x01` framing. Replies use `CtcpReplies` | Later | S, U (CTCP submenu, hidden by default) | anyone | no |
@@ -169,6 +169,7 @@ These commands are visible only on a soju connection (`Feature::Bouncer`, **unst
 | Command | Aliases | Arguments | What it does | papo / capability | Pri | Surfaces | Perm | Confirm |
 |---|---|---|---|---|---|---|---|---|
 | help | ? , commands | CommandName? | Lists commands, or shows the usage and argument help for one, generated from the registry. | client-only | M3 | S, P | anyone | no |
+| version | — | — | Prints the client build revision and UTC timestamp, plus whether a service-worker update is waiting. | client-only | M2 | S, P | anyone | no |
 | quote | raw | Text | Sends a raw IRC line. Uses labeled replies when available. Raw `CAP` is refused so papo state cannot desync. Hidden from the palette unless "Show advanced commands" is on. **Needs sign-off to amend 13**, which says the composer "never exposes a raw-command escape hatch". | `Client::send_raw` / `Client::request_raw` (labeled-response) | Later | S | anyone | no |
 | close | wc | — | Closes the buffer. Query: hides it locally (until new activity). Channel: same as `part` (irssi, gamja). On soju, the menu offers "Detach" as the soft option. | client-only (+ `part`) | M3 | S, P, C ("Close") | anyone | menu (channels) |
 | clear | c, cl | — (`-all`) | Clears the local view only. Scrollback can still be refetched from chathistory. | client-only | M3 | S, P, C ("Clear view") | anyone | menu |
