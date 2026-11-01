@@ -26,6 +26,12 @@ The cache is named `weblounge-shell-<build version>`. Activation deletes every o
 auditable and compatible with beta's `default-src 'none'`, `script-src 'self'`, and
 `worker-src 'self'` policy.
 
+The Nix build also passes Vite a support-facing identity: the flake's short revision (or `dirty`)
+and source timestamp. It is compiled into the app rather than fetched, formats as one UTC line,
+and reads `weblounge dev` on the development server. The line is available through `/version`, at
+the top of every debug-overlay section, and as `window.weblounge.version`. This identity is distinct
+from the content-derived UI/worker compatibility and service-worker cache versions.
+
 Development does not register a service worker. Production registration is scheduled after page
 load and the first interactive frame, during browser idle time. Shell requests use low fetch
 priority and bounded concurrency so installation does not compete with first-launch interaction.
@@ -56,7 +62,7 @@ second reload.
 
 The page observes `updatefound` and a waiting worker and records a typed `update-ready` state. This
 slice deliberately has no toast or reload button: the next-launch policy needs no mid-session user
-action. The state is the minimal seam for a future settings/about indicator.
+action. `/version` appends “update ready — restart the app” when that state is set.
 
 ## Boundaries and failure modes
 
@@ -78,3 +84,6 @@ intercepted. Development coverage asserts that no registration occurs.
 
 The existing startup, hosted-mode, console-clean, brand, CSP mirror, and native-feel checks remain
 green in development and production.
+
+Build-identity coverage formats UTC timestamps in a unit test and drives the production composer
+and debug overlay to prove that both show the revision baked into the Nix artifact.
