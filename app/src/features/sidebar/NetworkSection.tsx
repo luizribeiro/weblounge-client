@@ -1,5 +1,5 @@
 import { For } from "solid-js";
-import { connectionPresentation } from "../../engine/connection-state";
+import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
@@ -26,7 +26,6 @@ interface NetworkSectionProps {
 }
 
 export function NetworkSection(props: NetworkSectionProps) {
-  const connection = () => connectionPresentation(props.network.state);
   const server = () => props.buffers.find((buffer) => buffer.kind === "server");
   const conversations = () =>
     props.buffers.filter((buffer) => buffer.kind !== "server");
@@ -37,8 +36,9 @@ export function NetworkSection(props: NetworkSectionProps) {
           aria-current={
             props.activeBufferId === server()?.id ? "page" : undefined
           }
-          aria-label={`${props.network.label}, ${connection().kind}`}
+          aria-label={`${props.network.label}, ${connectionStateKind(props.network.state)}`}
           class={styles.networkHeader}
+          data-network-state={connectionStateKind(props.network.state)}
           onClick={() => {
             const buffer = server();
             if (buffer !== undefined) props.onOpenServer(buffer);
@@ -52,13 +52,6 @@ export function NetworkSection(props: NetworkSectionProps) {
             {props.network.label.slice(0, 1).toLocaleUpperCase()}
           </span>
           <Line class={styles.networkName}>{props.network.label}</Line>
-          <span
-            aria-hidden="true"
-            class={styles.statusDot}
-            data-connection-color={connection().colorToken}
-            data-connection-indicator="network"
-            data-network-state={connection().kind}
-          />
         </button>
       )}
       <div class={styles.rows}>

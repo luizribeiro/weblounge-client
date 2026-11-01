@@ -23,6 +23,7 @@ interface ComposerProps {
   readonly bufferTitle: string;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult | undefined;
+  readonly connectionHint?: string | undefined;
   readonly disabled?: boolean;
   readonly focusOnMount?: boolean | undefined;
   readonly onRequestCandidates?: (
@@ -391,6 +392,11 @@ export function Composer(props: ComposerProps) {
           rows={1}
           value={text()}
         />
+        {props.connectionHint !== undefined && (
+          <span class={styles.deliveryHint} data-connection-send-hint="true">
+            {props.connectionHint}
+          </span>
+        )}
         <button
           class={styles.send}
           disabled={props.disabled}

@@ -12,6 +12,7 @@ import {
   ActionRegistry,
   type UiActionId,
 } from "../../actions/action-registry";
+import { connectionPresentation } from "../../engine/connection-state";
 import type {
   BufferProjection,
   CommandSpec,
@@ -107,6 +108,12 @@ export function DesktopShell(props: DesktopShellProps) {
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
+  const activeConnection = createMemo(() => {
+    const networkId = activeBuffer()?.network_id;
+    return connectionPresentation(
+      props.networks.filter((network) => network.id === networkId),
+    );
+  });
   const visibleBufferIds = createMemo<ReadonlySet<number>>(() => {
     const buffer = activeBuffer();
     return new Set(buffer === undefined ? [] : [buffer.id]);
@@ -395,6 +402,11 @@ export function DesktopShell(props: DesktopShellProps) {
                       bufferId={bufferId}
                       bufferTitle={buffer()?.title ?? ""}
                       commandSpecs={props.commandSpecs}
+                      connectionHint={
+                        activeConnection().sendsBlocked
+                          ? "Will send when connected"
+                          : undefined
+                      }
                       draftKey={buffer()?.draft_key ?? ""}
                       completion={
                         props.completion?.buffer_id === bufferId

@@ -85,6 +85,7 @@ export const motionTokens = {
   drawerClose: "260ms",
   drawerCurve: "cubic-bezier(0.2, 0.9, 0.25, 1)",
   drawerOpen: "340ms",
+  connection: "1400ms",
   fade: "200ms",
   pop: "280ms",
   popCurve: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",

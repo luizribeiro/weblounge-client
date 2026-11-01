@@ -32,6 +32,7 @@ describe("theme registry", () => {
     expect(motionTokens.drawerCurve).toBe("cubic-bezier(0.2, 0.9, 0.25, 1)");
     expect(motionTokens.drawerOpen).toBe("340ms");
     expect(motionTokens.drawerClose).toBe("260ms");
+    expect(motionTokens.connection).toBe("1400ms");
     expect(motionTokens.pop).toBe("280ms");
     expect(motionTokens.popCurve).toBe("cubic-bezier(0.25, 0.46, 0.45, 0.94)");
     expect(motionTokens.pushCurve).toBe("cubic-bezier(0.2, 0.9, 0.25, 1)");

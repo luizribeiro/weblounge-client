@@ -11,15 +11,12 @@ import {
   densityDefaults,
   densityPresets,
 } from "../../density/density";
-import {
-  connectionOverview,
-  connectionStateKind,
-  connectionSummary,
-} from "../../engine/connection-state";
+import { connectionPresentation } from "../../engine/connection-state";
 import type {
   BufferProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatList.module.css";
 import { MobileChatRow } from "./MobileChatRow";
@@ -41,6 +38,7 @@ interface MobileChatListProps {
   readonly onOpen: (bufferId: number, scrollTop: number) => void;
   readonly onQuery: (query: string) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
+  readonly showConnectionError?: boolean | undefined;
   readonly onScroll: (scrollTop: number) => void;
 }
 
@@ -76,11 +74,7 @@ export function MobileChatList(props: MobileChatListProps) {
     () => new Map(chats().map((buffer) => [buffer.id, buffer])),
   );
   const chatIds = createMemo(() => [...chatsById().keys()]);
-  const failedNetwork = () =>
-    props.networks.find(
-      (network) => connectionStateKind(network.state) === "failed",
-    );
-  const connection = () => connectionOverview(props.networks);
+  const connection = () => connectionPresentation(props.networks);
   createEffect(() => {
     props.restoreVersion();
     const scrollTop = props.restoreScroll();
@@ -110,37 +104,31 @@ export function MobileChatList(props: MobileChatListProps) {
   return (
     <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
       <header class={styles.header}>
-        <span aria-hidden="true" class={styles.logo}>
+        <span
+          aria-hidden="true"
+          class={styles.logo}
+          data-connection-error={connection().error !== undefined || undefined}
+          data-connection-progress={connection().progressing || undefined}
+        >
           <span class={styles.logoMark} data-mobile-logo-mark="true" />
         </span>
         <span class={styles.identity}>
           <h1>
             <Line>weblounge</Line>
           </h1>
-          {failedNetwork() !== undefined ? (
-            <button
-              class={styles.retry}
-              data-connection-status={connectionSummary(props.networks)}
-              onClick={() => props.onRetryNetwork?.(failedNetwork()?.id ?? 0)}
-              type="button"
-            >
-              Offline · Retry
-            </button>
-          ) : connectionSummary(props.networks) !== "" ? (
-            <Line
-              class={styles.status}
-              data-connection-status={connectionSummary(props.networks)}
-            >
-              <span
-                aria-hidden="true"
-                class={styles.statusDot}
-                data-connection-color={connection().colorToken}
-              />
-              {connectionSummary(props.networks)}
-            </Line>
-          ) : null}
         </span>
       </header>
+      <Show
+        when={props.showConnectionError !== false && connection().error}
+        keyed
+      >
+        {(error) => (
+          <ConnectionErrorStrip
+            error={error}
+            onAction={(networkId) => props.onRetryNetwork?.(networkId)}
+          />
+        )}
+      </Show>
       <label class={styles.search}>
         <span class="visually-hidden">Search chats</span>
         <input

@@ -28,6 +28,23 @@
   height: 38px;
   justify-content: center;
   overflow: hidden;
+  position: relative;
+}
+
+.logo[data-connection-error] {
+  background: var(--wl-color-error);
+}
+
+.logo[data-connection-progress]::after {
+  animation: sidebar-logo-shimmer var(--wl-motion-connection) infinite
+    var(--wl-motion-standard-curve);
+  background: var(--wl-color-panel);
+  content: "";
+  height: 150%;
+  opacity: 0.24;
+  position: absolute;
+  transform: translateX(-30px) rotate(18deg);
+  width: 13px;
 }
 
 .logoMark {
@@ -94,7 +111,7 @@
   font-size: var(--wl-density-sidebar-font-size);
   font-weight: 700;
   gap: 7px;
-  grid-template-columns: 22px minmax(0, 1fr) 8px;
+  grid-template-columns: 22px minmax(0, 1fr);
   height: var(--wl-density-sidebar-row-height);
   padding: 0 8px;
   text-align: start;
@@ -120,29 +137,6 @@
 
 .networkName {
   min-width: 0;
-}
-
-.statusDot,
-.userDot {
-  background: var(--wl-color-panel-muted);
-  border-radius: 50%;
-  height: 7px;
-  width: 7px;
-}
-
-.statusDot[data-connection-color="online"],
-.userDot[data-connection-color="online"] {
-  background: var(--wl-color-online);
-}
-
-.statusDot[data-connection-color="muted"],
-.userDot[data-connection-color="muted"] {
-  background: var(--wl-color-panel-muted);
-}
-
-.statusDot[data-network-state="connecting"],
-.statusDot[data-network-state="reconnecting"] {
-  box-shadow: 0 0 0 2px var(--wl-color-panel-border);
 }
 
 .rows {
@@ -179,7 +173,7 @@
   border-top: 1px solid var(--wl-color-panel-border);
   display: grid;
   gap: 9px;
-  grid-template-columns: 8px minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) 30px;
   min-height: 54px;
   padding: 8px 12px;
 }
@@ -191,20 +185,6 @@
 .nickname {
   font-size: 12px;
   font-weight: 700;
-}
-
-.retry {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  color: var(--wl-color-panel-muted);
-  font: inherit;
-  font-size: 11px;
-  padding: 0;
-}
-
-.retry:hover {
-  color: var(--wl-color-panel-fg);
 }
 
 .settings {
@@ -222,4 +202,20 @@
 .settings:hover {
   background: var(--wl-color-chip);
   color: var(--wl-color-panel-fg);
+}
+
+@keyframes sidebar-logo-shimmer {
+  to {
+    transform: translateX(30px) rotate(18deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo[data-connection-progress] {
+    opacity: 0.72;
+  }
+
+  .logo[data-connection-progress]::after {
+    animation: none;
+  }
 }

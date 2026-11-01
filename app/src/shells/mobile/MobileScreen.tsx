@@ -114,6 +114,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onOpen={props.onOpen}
           onQuery={props.onQuery}
           onRetryNetwork={props.onRetryNetwork}
+          showConnectionError={!props.retained}
           onScroll={props.onScroll}
           query={props.query}
           restoreScroll={() => props.chatsScrollTop() ?? 0}
@@ -143,6 +144,7 @@ export function MobileScreen(props: MobileScreenProps) {
           }
           onRequestCompletion={props.onRequestCompletion}
           onRetryNetwork={props.onRetryNetwork}
+          showConnectionError={!props.retained}
           onRetry={props.onRetry}
           onSend={props.onSend}
         />

@@ -60,6 +60,63 @@ it("updates chat filters and search through accessible controls", () => {
   expect(open).toHaveBeenCalledWith(3, 37);
 });
 
+it("uses only the logo for transient progress and one strip for failures", () => {
+  const retry = vi.fn();
+  const { container, unmount } = render(() => (
+    <MobileChatList
+      buffers={buffers}
+      filter="all"
+      networks={[
+        { id: 1, label: "Local", nickname: "me", state: "connecting" },
+      ]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onRetryNetwork={retry}
+      onScroll={() => {}}
+      query=""
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
+    />
+  ));
+
+  expect(container.querySelector("[data-connection-progress]")).not.toBeNull();
+  expect(screen.queryByText(/connecting|offline|reconnecting/iu)).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  unmount();
+
+  render(() => (
+    <MobileChatList
+      buffers={buffers}
+      filter="all"
+      networks={[
+        {
+          id: 1,
+          label: "Local",
+          nickname: "me",
+          state: {
+            failed: {
+              reason: "transport",
+              message_key: "engine.connection_failed",
+            },
+          },
+        },
+      ]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onRetryNetwork={retry}
+      onScroll={() => {}}
+      query=""
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
+    />
+  ));
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(retry).toHaveBeenCalledWith(1);
+});
+
 it("keeps row elements when buffer projections are replaced", () => {
   const [current, setCurrent] =
     createSignal<readonly BufferProjection[]>(buffers);

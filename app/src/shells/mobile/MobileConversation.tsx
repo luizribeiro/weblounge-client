@@ -1,7 +1,7 @@
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import {
+  connectionPresentation,
   connectionStateKind,
-  connectionSummary,
 } from "../../engine/connection-state";
 import type {
   BufferProjection,
@@ -16,6 +16,7 @@ import {
   MessageList,
   type MessageListController,
 } from "../../features/conversation/MessageList";
+import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./MobileShell.module.css";
@@ -40,6 +41,7 @@ export interface MobileConversationProps {
     explicit: boolean,
   ) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
+  readonly showConnectionError?: boolean | undefined;
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
@@ -53,10 +55,7 @@ export function MobileConversation(props: MobileConversationProps) {
   );
   let listController: MessageListController | undefined;
   const connection = () =>
-    props.network === undefined ? "" : connectionSummary([props.network]);
-  const failed = () =>
-    props.network !== undefined &&
-    connectionStateKind(props.network.state) === "failed";
+    connectionPresentation(props.network === undefined ? [] : [props.network]);
 
   createEffect(() => {
     const latest = [...props.messages]
@@ -120,17 +119,7 @@ export function MobileConversation(props: MobileConversationProps) {
             <Line>{props.buffer.title}</Line>
           </h2>
           <Line class={styles.subtitle}>
-            {failed() ? (
-              <button
-                class={styles.retry}
-                onClick={() => props.onRetryNetwork?.(props.network?.id ?? 0)}
-                type="button"
-              >
-                Offline · Retry
-              </button>
-            ) : connection() !== "" ? (
-              connection()
-            ) : props.buffer.kind === "direct" ? (
+            {props.buffer.kind === "direct" ? (
               "Direct message"
             ) : (
               <Selectable surfaceId="mobile-conversation-topic">
@@ -166,6 +155,17 @@ export function MobileConversation(props: MobileConversationProps) {
           <span aria-hidden="true" />
         )}
       </header>
+      <Show
+        when={props.showConnectionError !== false && connection().error}
+        keyed
+      >
+        {(error) => (
+          <ConnectionErrorStrip
+            error={error}
+            onAction={(networkId) => props.onRetryNetwork?.(networkId)}
+          />
+        )}
+      </Show>
       <div class={styles.conversation}>
         <MessageList
           bufferId={props.buffer.id}
@@ -206,6 +206,9 @@ export function MobileConversation(props: MobileConversationProps) {
             props.onRequestCompletion(props.buffer.id, input, cursor, explicit)
           }
           onSelectLast={() => listController?.selectLastOwn()}
+          connectionHint={
+            connection().sendsBlocked ? "Will send when connected" : undefined
+          }
           onSend={(text) => props.onSend(props.buffer.id, text)}
         />
       </div>

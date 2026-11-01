@@ -1,14 +1,12 @@
-import { createEffect, createSignal, For, onCleanup } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type {
   ActionContext,
   ActionRegistry,
   UiActionId,
 } from "../../actions/action-registry";
-import {
-  connectionStateKind,
-  connectionSummary,
-} from "../../engine/connection-state";
+import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
+import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
@@ -37,10 +35,7 @@ export function Sidebar(props: SidebarProps) {
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
-  const failedNetwork = () =>
-    props.networks.find(
-      (network) => connectionStateKind(network.state) === "failed",
-    );
+  const connection = () => connectionPresentation(props.networks);
   const run = (id: UiActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
       ...props.commandContext,
@@ -89,34 +84,29 @@ export function Sidebar(props: SidebarProps) {
   return (
     <aside aria-label="Channel list" class={styles.sidebar} data-sidebar="true">
       <div class={styles.brand}>
-        <div class={styles.logo}>
+        <div
+          class={styles.logo}
+          data-connection-error={connection().error !== undefined || undefined}
+          data-connection-progress={connection().progressing || undefined}
+        >
           <span aria-hidden="true" class={styles.logoMark} />
         </div>
         <div class={styles.brandText}>
           <h1>
             <Line>weblounge</Line>
           </h1>
-          {failedNetwork() !== undefined ? (
-            <button
-              class={styles.retry}
-              data-connection-status={connectionSummary(props.networks)}
-              onClick={() => props.onRetryNetwork?.(failedNetwork()?.id ?? 0)}
-              type="button"
-            >
-              {networkSummary(props.networks)}
-            </button>
-          ) : (
-            <Line
-              class={styles.summary}
-              data-connection-status={
-                connectionSummary(props.networks) || undefined
-              }
-            >
-              {networkSummary(props.networks)}
-            </Line>
-          )}
+          <Line class={styles.summary}>{networkSummary(props.networks)}</Line>
         </div>
       </div>
+
+      <Show when={connection().error} keyed>
+        {(error) => (
+          <ConnectionErrorStrip
+            error={error}
+            onAction={(networkId) => props.onRetryNetwork?.(networkId)}
+          />
+        )}
+      </Show>
 
       <button
         class={styles.jump}
@@ -193,9 +183,7 @@ function kindOrder(buffer: SidebarBuffer): number {
 
 function networkSummary(networks: readonly NetworkProjection[]): string {
   const count = networks.length;
-  const countLabel = `${count} ${count === 1 ? "network" : "networks"}`;
-  const status = connectionSummary(networks);
-  return status === "" ? countLabel : `${countLabel} · ${status}`;
+  return `${count} ${count === 1 ? "network" : "networks"}`;
 }
 
 function tooltip(registry: ActionRegistry, id: UiActionId): string {

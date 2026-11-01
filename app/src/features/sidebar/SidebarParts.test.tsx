@@ -67,7 +67,5 @@ it("keeps network rows and account chrome in focused components", () => {
   expect(openBuffer).toHaveBeenCalledOnce();
   expect(settings).toHaveBeenCalledOnce();
   expect(screen.queryByText("Connecting…")).not.toBeInTheDocument();
-  expect(
-    container.querySelector('[data-connection-indicator="account"]'),
-  ).toHaveAttribute("data-connection-color", "muted");
+  expect(container.querySelector("[data-connection-indicator]")).toBeNull();
 });

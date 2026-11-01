@@ -153,6 +153,13 @@ textarea.input {
   padding: 9px 14px;
 }
 
+.deliveryHint {
+  color: var(--wl-color-muted);
+  flex: 0 1 auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .send:disabled,
 .input:disabled {
   opacity: 0.55;

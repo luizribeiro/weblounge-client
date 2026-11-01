@@ -236,8 +236,8 @@ export function App(props: AppProps) {
         }
         const notice = t(message.key, message.values);
         if (message.key === "engine.connection_failed") {
-          setComposerNotice(notice);
-          if (props.hostedSession !== undefined) setHostedError(notice);
+          if (props.hostedSession !== undefined && !shellReady())
+            setHostedError(notice);
         }
       }
       if (message.type === "message_failed") {
@@ -676,6 +676,19 @@ export function App(props: AppProps) {
           }}
           onRetryNetwork={(networkId) => {
             if (client === undefined) return;
+            const network = networks().find(
+              (candidate) => candidate.id === networkId,
+            );
+            if (
+              props.hostedSession !== undefined &&
+              network !== undefined &&
+              typeof network.state === "object" &&
+              "failed" in network.state &&
+              network.state.failed.reason === "authentication"
+            ) {
+              props.onHostedAuthorizationRequired?.("revoked");
+              return;
+            }
             void client.send({
               id: crypto.randomUUID(),
               request: { type: "reconnect", network_id: networkId },
