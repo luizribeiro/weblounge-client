@@ -98,7 +98,7 @@ export default defineConfig(({ mode }) => {
       injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
       emitServiceWorker(),
-      ...(appConfigHarness ? [testAppConfig()] : []),
+      ...(development || appConfigHarness ? [appModeConfig()] : []),
     ],
     ...(!cspEnabled
       ? {}
@@ -312,13 +312,13 @@ function prioritizeSplashStylesheet(): Plugin {
   };
 }
 
-function testAppConfig(): Plugin {
+function appModeConfig(): Plugin {
   const serve = (_request: unknown, response: ServerResponse) => {
     response.setHeader("Content-Type", "application/json");
     response.end('{"mode":"app"}');
   };
   return {
-    name: "weblounge-test-app-config",
+    name: "weblounge-app-config",
     configureServer(server) {
       server.middlewares.use("/config.json", serve);
     },
