@@ -173,21 +173,13 @@ test("mobile Back button animates the chat over the visible list", async ({
   await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
 });
 
-test("mobile back reveals chat rows below the composer line", async ({
+test("mobile back reveals chat rows without repainting them", async ({
   page,
 }) => {
   const suffix = Date.now().toString(36);
   const bots: IrcClient[] = [];
   try {
     await openChat(page);
-    const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
-    });
-    await expect(composer).toBeEnabled();
-    const composerTop = await composer.evaluate(
-      (field) => field.closest("[data-composer]")?.getBoundingClientRect().top,
-    );
-    expect(composerTop).toBeDefined();
     await page.getByRole("button", { name: "Back to chats" }).tap();
     await expect(page.locator("[data-motion]")).toHaveCount(0);
 
@@ -202,30 +194,24 @@ test("mobile back reveals chat rows below the composer line", async ({
       bots.push(bot);
       await bot.privmsgConfirmed("weblounge", `swipe fill preview ${index}`);
     }
-    await expect(
-      page.getByRole("button", { name: `swipe-fill-10-${suffix}` }),
-    ).toContainText("swipe fill preview 10");
+    const uncoveredRow = page.getByRole("button", {
+      name: `swipe-fill-10-${suffix}`,
+    });
+    await expect(uncoveredRow).toContainText("swipe fill preview 10");
+    await expect(uncoveredRow).toBeVisible();
 
-    const clip = await page
-      .locator("[data-mobile-chat-list]")
-      .evaluate((list, top) => {
-        const lowerRow = [
-          ...list.querySelectorAll<HTMLElement>("[data-buffer-id]"),
-        ]
-          .map((row) => row.getBoundingClientRect())
-          .find((row) => row.bottom > top + 16 && row.top < innerHeight);
-        if (lowerRow === undefined)
-          throw new Error(
-            "chat list has no visible row below the composer line",
-          );
-        const y = Math.ceil(top + 8);
-        return {
-          height: Math.min(60, innerHeight - y - 4),
-          width: 100,
-          x: 0,
-          y,
-        };
-      }, composerTop ?? 0);
+    const clip = await uncoveredRow.evaluate((row) => {
+      const bounds = row.getBoundingClientRect();
+      const y = Math.ceil(Math.max(0, bounds.top) + 4);
+      return {
+        height: Math.floor(
+          Math.min(40, bounds.bottom - y - 4, innerHeight - y - 4),
+        ),
+        width: 100,
+        x: 0,
+        y,
+      };
+    });
     expect(clip.height).toBeGreaterThan(0);
     const resting = await page.screenshot({ clip });
 

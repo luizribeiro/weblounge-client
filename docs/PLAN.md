@@ -231,7 +231,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     first-measured geometry in one step; close applies the final layout one frame after focusout.
     The transcript anchors before paint, the document workaround follows only `data-keyboard`, and
     swipe-back still reveals the full chat list without a composer fill (#74 and #76, awaiting
-    Luiz's on-device confirmation).
+    Luiz's on-device confirmation). Pixel coverage samples a visible chat row directly because the
+    closed composer no longer defines a lower-row region.
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;
