@@ -25,11 +25,6 @@ export default defineConfig(({ mode }) => {
     mode === "test"
       ? resolve(import.meta.dirname, "src/engine/wasm-test-stub.ts")
       : wasmPath;
-  const splashCss = readFileSync(
-    resolve(import.meta.dirname, "src/styles/splash.css"),
-    "utf8",
-  );
-
   if (mode !== "test" && !existsSync(wasmPath)) {
     throw new Error("engine wasm is missing; run `nix build .#engine-wasm`");
   }
@@ -75,8 +70,8 @@ export default defineConfig(({ mode }) => {
         : {}),
     },
     plugins: [
-      inlineSplash(splashCss),
       solid(),
+      prioritizeSplashStylesheet(),
       ...(appConfigHarness ? [testAppConfig()] : []),
     ],
     ...(!cspEnabled
@@ -136,19 +131,29 @@ function testContentSecurityPolicy(devServer: boolean): string {
   ].join("; ");
 }
 
-function inlineSplash(css: string): Plugin {
+function prioritizeSplashStylesheet(): Plugin {
   return {
-    name: "weblounge-inline-splash",
-    transformIndexHtml: {
-      order: "post",
-      handler: () => [
-        {
-          tag: "style",
-          attrs: { "data-initial-splash-style": "" },
-          children: css,
-          injectTo: "head-prepend",
-        },
-      ],
+    name: "weblounge-prioritize-splash-stylesheet",
+    enforce: "post",
+    generateBundle(_options, bundle) {
+      const html = bundle["index.html"];
+      if (html?.type !== "asset" || typeof html.source !== "string") return;
+      const stylesheet = html.source.match(
+        /<link rel="stylesheet"[^>]*href="\/assets\/[^"]+\.css"[^>]*>/u,
+      )?.[0];
+      if (stylesheet === undefined) {
+        throw new Error("production stylesheet link is missing");
+      }
+      const tagged = stylesheet.replace(
+        "<link ",
+        "<link data-initial-splash-style ",
+      );
+      html.source = html.source
+        .replace(stylesheet, "")
+        .replace(
+          '<meta name="color-scheme" content="light dark" />',
+          `<meta name="color-scheme" content="light dark" />\n    ${tagged}`,
+        );
     },
   };
 }

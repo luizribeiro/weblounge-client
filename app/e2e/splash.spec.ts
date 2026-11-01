@@ -4,6 +4,10 @@ const fontAssetPattern =
   process.env.WEBLOUNGE_E2E_DEV === "1"
     ? /\/src\/assets\/inter-latin\.woff2$/u
     : /\/assets\/inter-latin-[^/]+\.woff2$/u;
+const splashStylePattern =
+  process.env.WEBLOUNGE_E2E_DEV === "1"
+    ? /\/src\/styles\/splash\.css$/u
+    : /\/assets\/[^/]+-[^/]+\.css$/u;
 
 const appearances = [
   {
@@ -179,8 +183,11 @@ async function verifySplash(
       "content",
       "light dark",
     );
-    const splashStyle = page.locator("style[data-initial-splash-style]");
+    const splashStyle = page.locator(
+      'link[data-initial-splash-style][rel="stylesheet"]',
+    );
     await expect(splashStyle).toHaveCount(1);
+    await expect(splashStyle).toHaveAttribute("href", splashStylePattern);
     const fontPreload = page.locator(
       'link[rel="preload"][as="font"][type="font/woff2"]',
     );
@@ -188,15 +195,8 @@ async function verifySplash(
     await expect(fontPreload).toHaveAttribute("href", fontAssetPattern);
     expect(
       await splashStyle.evaluate((element) => {
-        const blocking = document.head.querySelector(
-          'link[rel="stylesheet"], script[src]',
-        );
-        return (
-          blocking === null ||
-          (element.compareDocumentPosition(blocking) &
-            Node.DOCUMENT_POSITION_FOLLOWING) !==
-            0
-        );
+        const blocking = document.head.querySelector('link[rel="stylesheet"]');
+        return blocking === element;
       }),
     ).toBe(true);
     await expect(page.getByRole("heading", { name: "weblounge" })).toHaveCount(

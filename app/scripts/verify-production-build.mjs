@@ -5,6 +5,7 @@ import { inflateSync } from "node:zlib";
 const outputDirectory = resolve(import.meta.dirname, "../dist");
 
 await verifyIcons(outputDirectory);
+await verifyCspAssets(outputDirectory);
 
 if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
   const files = await descendants(outputDirectory);
@@ -56,6 +57,23 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
         `production bundle contains an unsafe worker URL: ${workerUrl}`,
       );
     }
+  }
+}
+
+async function verifyCspAssets(directory) {
+  const html = await readFile(resolve(directory, "index.html"), "utf8");
+  const splashLink = html.match(
+    /<link\s+[^>]*data-initial-splash-style[^>]*>/iu,
+  )?.[0];
+  if (
+    splashLink === undefined ||
+    !/href="\/assets\/[^"]+-[^"]+\.css"/u.test(splashLink)
+  ) {
+    throw new Error("startup splash is not a hashed stylesheet asset");
+  }
+  const script = html.match(/<script\s+[^>]*src=/u)?.[0];
+  if (script !== undefined && html.indexOf(splashLink) > html.indexOf(script)) {
+    throw new Error("startup stylesheet appears after an application script");
   }
 }
 
