@@ -4,8 +4,6 @@
   display: flex;
   gap: 8px;
   padding: 10px 14px max(14px, var(--wl-safe-bottom-effective));
-  transition: padding-bottom var(--wl-motion-pop)
-    var(--wl-motion-standard-curve);
 }
 
 .wrap {
@@ -13,28 +11,11 @@
   border-top: 1px solid var(--wl-color-border);
   padding: 8px 14px max(14px, var(--wl-safe-bottom-effective));
   position: relative;
-  transition: padding-bottom var(--wl-motion-pop)
-    var(--wl-motion-standard-curve);
-}
-
-:global([data-keyboard-motion-active="true"]) .wrap::after {
-  background: var(--wl-color-surface);
-  block-size: 100vh;
-  content: "";
-  inset-block-start: 100%;
-  inset-inline: 0;
-  pointer-events: none;
-  position: absolute;
 }
 
 .wrap .form {
   border: 0;
   padding: 0;
-}
-
-:global([data-keyboard-motion-active="true"]) .wrap {
-  transition: none;
-  z-index: 2;
 }
 
 .input {

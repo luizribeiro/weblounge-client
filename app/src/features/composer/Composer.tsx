@@ -270,11 +270,7 @@ export function Composer(props: ComposerProps) {
   };
 
   return (
-    <div
-      class={styles.wrap}
-      data-composer="true"
-      data-keyboard-motion-surface="true"
-    >
+    <div class={styles.wrap} data-composer="true">
       {suggestions() !== undefined && (
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}

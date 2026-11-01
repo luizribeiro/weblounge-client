@@ -92,7 +92,6 @@ export function installPlatformEnvironment(
   );
   const stopViewportObserver = observeViewportGeometry(root, browserWindow, {
     onScreenKeyboard: () => environment().input === "touch",
-    prefersReducedMotion,
   });
   const stopTouchMoveLock = observeTouchMoveLock(root, browserWindow);
   publish();
