@@ -74,7 +74,14 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 66 | 2026-10-31 | Mobile: opening a channel sometimes lands far up in the scrollback, or a moment after opening the transcript goes blank until a small scroll, then shows at a random position. | fixed, live (0cc7171); please confirm |
 | 67 | 2026-10-31 | Composer: a command typed with arguments before suggestions refresh (e.g. /debug viewport + Enter) accepted the stale suggestion and dropped the arguments. Found by CI. | fixed, live (24b3dfa) |
 | 68 | 2026-10-31 | Desktop sidebar (and member list): names left-aligned in one column, prefix symbols right-aligned against them as if one word; DMs line up with channel names. | fixed, live (48ba53f); please confirm |
-| 69 | 2026-10-31 | iPhone: opening the keyboard makes the whole screen jump and glide out of sync; the composer is briefly hidden and the transcript jumps again after resize. | open/close animated on the iOS keyboard curve, live (48ba53f); please confirm |
+| 69 | 2026-10-31 | iPhone: opening the keyboard makes the whole screen jump and glide out of sync; the composer is briefly hidden and the transcript jumps again after resize. | reworked to a one-step layout (no own animation), live (cc1a339); please confirm |
 | 70 | 2026-10-31 | iPhone with keyboard open: dragging header, composer, or gaps scrolls the whole document and flashes before snapping back. | fixed, confirmed by Luiz |
-| 71 | 2026-10-31 | Swipe-back sometimes releases after a couple of frames. | fixed, live (48ba53f); please confirm |
+| 71 | 2026-10-31 | Swipe-back sometimes releases after a couple of frames. | fixed (lost pointer capture ended swipes), confirmed by Luiz (681754e) |
 | 72 | 2026-10-31 | Nicknames should be clickable and open a DM. | done, live (48ba53f); please confirm |
+| 73 | 2026-11-01 | Swipe-back didn't work at all on 48ba53f (every swipe ended in lostcapture). | fixed, confirmed by Luiz (681754e) |
+| 74 | 2026-11-01 | Keyboard open/close animation: other elements all over the place (clipped composer, desktop-grid overlay, whole-app slide). | replaced by one-step layout, live (cc1a339); please confirm |
+| 75 | 2026-11-01 | Selecting a typeahead suggestion slid the composer away while the keyboard stayed up. | fixed, live (cc1a339); please confirm |
+| 76 | 2026-11-01 | Bottom of the chats list missing during swipe-back (composer fill painted over it). | fixed, live (cc1a339); please confirm |
+| 77 | 2026-11-01 | Mobile members drawer kept showing the first channel's members after switching channels. | fixed, live (cc1a339); please confirm |
+| 78 | 2026-11-01 | Tapping 'Filter members' re-laid out the chat behind the drawer. | fixed (keyboard owner scoping), live (cc1a339); please confirm |
+| 79 | 2026-11-01 | Sometimes the layout switched to keyboard-open without a keyboard (tap rejected, native focus not followed). | fixed, live (cc1a339); please confirm |
