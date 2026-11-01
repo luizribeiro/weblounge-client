@@ -82,6 +82,7 @@ export function expectStepsFollowCurve(
   start: PositionSample,
   end: number,
   transition: TransitionStyle,
+  devicePixelRatio?: number,
 ): void {
   const duration = durationMs(transition.duration);
   const curve = cubicBezier(transition.timingFunction);
@@ -91,11 +92,28 @@ export function expectStepsFollowCurve(
     const elapsed = Math.max(0, sample.time - previous.time);
     const timeFraction = duration === 0 ? 1 : Math.min(1, elapsed / duration);
     const allowed = distance * maximumCurveAdvance(curve, timeFraction) + 3;
-    expect(Math.abs(sample.position - previous.position)).toBeLessThanOrEqual(
-      allowed,
-    );
+    const advance = Math.abs(sample.position - previous.position);
+    if (devicePixelRatio === undefined) {
+      expect(advance).toBeLessThanOrEqual(allowed);
+    } else {
+      expectAtMostAtDevicePixelPrecision(advance, allowed, devicePixelRatio);
+    }
     previous = sample;
   }
+}
+
+function expectAtMostAtDevicePixelPrecision(
+  actual: number,
+  bound: number,
+  devicePixelRatio: number,
+): void {
+  if (!(devicePixelRatio > 0))
+    throw new Error(`unexpected device pixel ratio: ${devicePixelRatio}`);
+  // getBoundingClientRect exposes fractional compositor transforms; only an
+  // excess that rounds to a physical pixel establishes a visible curve jump.
+  expect(Math.round((actual - bound) * devicePixelRatio)).toBeLessThanOrEqual(
+    0,
+  );
 }
 
 export function durationMs(duration: string): number {
