@@ -8,7 +8,16 @@ import type {
 import { MobileConversation } from "./MobileConversation";
 
 vi.mock("../../features/composer/Composer", () => ({
-  Composer: () => <div data-composer="true" />,
+  Composer: (props: {
+    readonly connectionHint?: string;
+    readonly disabled?: boolean;
+  }) => (
+    <div
+      data-composer="true"
+      data-disabled={props.disabled}
+      data-hint={props.connectionHint}
+    />
+  ),
 }));
 
 vi.mock("../../features/conversation/MessageList", () => ({
@@ -104,6 +113,42 @@ it("shows the members action only for channels", () => {
   result.unmount();
   render(() => conversation({ ...buffer, kind: "direct" }, () => {}));
   expect(screen.queryByRole("button", { name: "Show members" })).toBeNull();
+});
+
+it("shows an identity mismatch, blocks sending, and routes both decisions", () => {
+  const trust = vi.fn();
+  const defer = vi.fn();
+  render(() => (
+    <MobileConversation
+      buffer={{ ...buffer, direct_identity: "different_account" }}
+      memberships={[]}
+      messages={[message]}
+      onBack={() => {}}
+      onDeferDirectIdentity={defer}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onOpenMembers={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+      onTrustDirectIdentity={trust}
+    />
+  ));
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "This isn't the same mel — different account",
+  );
+  expect(document.querySelector("[data-composer]")).toHaveAttribute(
+    "data-disabled",
+    "true",
+  );
+  expect(document.querySelector("[data-composer]")).toHaveAttribute(
+    "data-hint",
+    "Messages are blocked because this isn't the same mel.",
+  );
+  screen.getByRole("button", { name: "Trust new identity" }).click();
+  screen.getByRole("button", { name: "Not now" }).click();
+  expect(trust).toHaveBeenCalledWith(2);
+  expect(defer).toHaveBeenCalledWith(2);
 });
 
 function renderConversation(

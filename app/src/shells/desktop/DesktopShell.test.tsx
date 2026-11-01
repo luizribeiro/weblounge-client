@@ -27,6 +27,18 @@ const otherChannel: BufferProjection = {
   title: "#other",
   draft_key: "1:#other",
 };
+const direct: BufferProjection = {
+  id: 4,
+  network_id: 1,
+  kind: "direct",
+  title: "mel",
+  direct_identity: "different_account",
+  draft_key: "1:mel",
+  topic: null,
+  unread: 0,
+  mentions: 0,
+  read_through: null,
+};
 const nickMessage: MessageProjection = {
   id: 1,
   author: "mel",
@@ -153,6 +165,41 @@ it("routes transcript nicknames through the direct-message action", () => {
   expect(
     screen.queryByRole("button", { name: "Open direct message with mel" }),
   ).toBeNull();
+});
+
+it("blocks a mismatched direct thread and routes both identity decisions", () => {
+  const trust = vi.fn();
+  const defer = vi.fn();
+  render(() => (
+    <DesktopShell
+      activeBufferId={direct.id}
+      buffers={[direct]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onDeferDirectIdentity={defer}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+      onTrustDirectIdentity={trust}
+    />
+  ));
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "This isn't the same mel — different account",
+  );
+  expect(screen.getByRole("textbox", { name: "Message mel" })).toBeDisabled();
+  expect(
+    screen.getByText("Messages are blocked because this isn't the same mel."),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Trust new identity" }));
+  fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+  expect(trust).toHaveBeenCalledWith(direct.id);
+  expect(defer).toHaveBeenCalledWith(direct.id);
 });
 
 it("shows the projected member total while the panel is closed", () => {

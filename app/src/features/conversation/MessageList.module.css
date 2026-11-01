@@ -64,6 +64,15 @@
 .highlighted {
   background: var(--wl-color-mention-bg);
 }
+.unverified {
+  box-shadow: inset 3px 0 var(--wl-color-error);
+}
+.unverifiedMark {
+  color: var(--wl-color-error);
+  font-family: var(--wl-font-mono);
+  font-weight: 700;
+  margin-inline-start: 4px;
+}
 .time {
   color: var(--wl-color-muted);
   font-family: var(--wl-font-mono);

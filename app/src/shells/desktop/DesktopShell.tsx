@@ -24,6 +24,11 @@ import type {
 import { Composer } from "../../features/composer/Composer";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
 import {
+  DirectIdentityBanner,
+  directIdentityBlocked,
+  directIdentityBlockedReason,
+} from "../../features/conversation/DirectIdentityBanner";
+import {
   MessageList,
   type MessageListController,
 } from "../../features/conversation/MessageList";
@@ -82,6 +87,8 @@ export interface DesktopShellProps {
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
     | undefined;
+  readonly onDeferDirectIdentity?: ((bufferId: number) => void) | undefined;
+  readonly onTrustDirectIdentity?: ((bufferId: number) => void) | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
@@ -384,6 +391,17 @@ export function DesktopShell(props: DesktopShellProps) {
               {activeBuffer()?.available === false && (
                 <p role="status">This conversation is not available.</p>
               )}
+              {activeBuffer() !== undefined && (
+                <DirectIdentityBanner
+                  buffer={activeBuffer() as BufferProjection}
+                  onDefer={(bufferId) =>
+                    props.onDeferDirectIdentity?.(bufferId)
+                  }
+                  onTrust={(bufferId) =>
+                    props.onTrustDirectIdentity?.(bufferId)
+                  }
+                />
+              )}
               <MessageList
                 bufferId={activeBuffer()?.id}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
@@ -424,10 +442,15 @@ export function DesktopShell(props: DesktopShellProps) {
                       bufferTitle={buffer()?.title ?? ""}
                       commandSpecs={props.commandSpecs}
                       connectionHint={
-                        buffer()?.cached === true ||
-                        activeConnection().sendsBlocked
-                          ? "Will send when connected"
-                          : undefined
+                        buffer() === undefined
+                          ? undefined
+                          : (directIdentityBlockedReason(
+                              buffer() as BufferProjection,
+                            ) ??
+                            (buffer()?.cached === true ||
+                            activeConnection().sendsBlocked
+                              ? "Will send when connected"
+                              : undefined))
                       }
                       draftKey={buffer()?.draft_key ?? ""}
                       completion={
@@ -437,7 +460,9 @@ export function DesktopShell(props: DesktopShellProps) {
                       }
                       disabled={
                         buffer()?.kind === "server" ||
-                        buffer()?.available === false
+                        buffer()?.available === false ||
+                        (buffer() !== undefined &&
+                          directIdentityBlocked(buffer() as BufferProjection))
                       }
                       focusOnMount
                       onRequestCandidates={(input, cursor, explicit) =>

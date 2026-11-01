@@ -509,11 +509,12 @@ function MessageRow(props: {
     );
   return (
     <div
-      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.kind === "action" ? styles.action : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
       data-delivery={message.delivery}
       data-message-row="true"
       data-message-text={message.text}
       data-mode-symbol={message.mode_symbol ?? ""}
+      data-unverified-sender={message.unverified_sender === true || undefined}
     >
       {message.kind === "action" ? (
         <>
@@ -529,7 +530,8 @@ function MessageRow(props: {
               display={message}
               onOpenDirect={props.onOpenDirect}
               value={message.author}
-            />{" "}
+            />
+            <UnverifiedSenderMark message={message} />{" "}
             <MessageText
               authors={props.nickLookup}
               onOpenChannel={props.onOpenChannel}
@@ -563,6 +565,7 @@ function MessageRow(props: {
               />
             </span>
             {message.bot === true && <span class={styles.bot}>BOT</span>}
+            <UnverifiedSenderMark message={message} />
           </Line>
           <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
             <MessageText
@@ -578,6 +581,19 @@ function MessageRow(props: {
       )}
     </div>
   );
+}
+
+function UnverifiedSenderMark(props: { readonly message: MessageProjection }) {
+  return props.message.unverified_sender === true ? (
+    <span
+      aria-label="Unverified sender"
+      class={styles.unverifiedMark}
+      role="img"
+      title="Unverified sender"
+    >
+      ?
+    </span>
+  ) : null;
 }
 
 function NoticeRow(props: {

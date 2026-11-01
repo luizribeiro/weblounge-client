@@ -73,6 +73,16 @@ it("renders highlight, nick colour, and failed delivery presentation", () => {
   expect(screen.getByText("Failed")).toBeInTheDocument();
 });
 
+it("marks a direct row whose sender identity is unverified", () => {
+  render(() => (
+    <MessageList messages={[{ ...message, unverified_sender: true }]} />
+  ));
+
+  const row = screen.getByText("hello weblounge").closest("[data-message-row]");
+  expect(row).toHaveAttribute("data-unverified-sender", "true");
+  expect(screen.getByLabelText("Unverified sender")).toBeVisible();
+});
+
 it("opens non-own authors and mentions through the same nickname action", () => {
   const openDirect = vi.fn();
   render(() => (

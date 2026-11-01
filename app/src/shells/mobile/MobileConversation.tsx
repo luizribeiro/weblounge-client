@@ -13,6 +13,11 @@ import type {
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import {
+  DirectIdentityBanner,
+  directIdentityBlocked,
+  directIdentityBlockedReason,
+} from "../../features/conversation/DirectIdentityBanner";
+import {
   MessageList,
   type MessageListController,
 } from "../../features/conversation/MessageList";
@@ -36,6 +41,8 @@ export interface MobileConversationProps {
   readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onOpenMembers: () => void;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
+  readonly onDeferDirectIdentity?: ((bufferId: number) => void) | undefined;
+  readonly onTrustDirectIdentity?: ((bufferId: number) => void) | undefined;
   readonly onRequestCompletion: (
     bufferId: number,
     input: string,
@@ -207,6 +214,11 @@ export function MobileConversation(props: MobileConversationProps) {
             </div>
           }
         >
+          <DirectIdentityBanner
+            buffer={props.buffer}
+            onDefer={(bufferId) => props.onDeferDirectIdentity?.(bufferId)}
+            onTrust={(bufferId) => props.onTrustDirectIdentity?.(bufferId)}
+          />
           <MessageList
             bufferId={props.buffer.id}
             messages={props.messages}
@@ -252,10 +264,12 @@ export function MobileConversation(props: MobileConversationProps) {
             }
             onSelectLast={() => listController?.selectLastOwn()}
             connectionHint={
-              props.buffer.cached === true || connection().sendsBlocked
+              directIdentityBlockedReason(props.buffer) ??
+              (props.buffer.cached === true || connection().sendsBlocked
                 ? "Will send when connected"
-                : undefined
+                : undefined)
             }
+            disabled={directIdentityBlocked(props.buffer)}
             onSend={(text) => props.onSend(props.buffer.id, text)}
           />
         </Show>

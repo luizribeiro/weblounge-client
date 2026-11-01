@@ -796,6 +796,26 @@ export function App(props: AppProps) {
               targetNick: nick,
             });
           }}
+          onDeferDirectIdentity={(bufferId) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: {
+                type: "defer_direct_identity",
+                buffer_id: bufferId,
+              },
+            });
+          }}
+          onTrustDirectIdentity={(bufferId) => {
+            if (client === undefined) return;
+            void client.send({
+              id: crypto.randomUUID(),
+              request: {
+                type: "trust_direct_identity",
+                buffer_id: bufferId,
+              },
+            });
+          }}
           onRetryNetwork={(networkId) => {
             if (client === undefined) return;
             const network = networks().find(

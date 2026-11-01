@@ -36,6 +36,8 @@ export interface MobileShellData {
   readonly onOpenDirect?:
     | ((networkId: number, nick: string) => void)
     | undefined;
+  readonly onDeferDirectIdentity?: ((bufferId: number) => void) | undefined;
+  readonly onTrustDirectIdentity?: ((bufferId: number) => void) | undefined;
   readonly onRequestCompletion: (
     bufferId: number,
     input: string,
@@ -147,6 +149,8 @@ export function MobileScreen(props: MobileScreenProps) {
           onOpenDirect={(nick) =>
             props.onOpenDirect?.(buffer()?.network_id ?? 0, nick)
           }
+          onDeferDirectIdentity={props.onDeferDirectIdentity}
+          onTrustDirectIdentity={props.onTrustDirectIdentity}
           onRequestCompletion={props.onRequestCompletion}
           onRetryNetwork={props.onRetryNetwork}
           showConnectionError={!props.retained}

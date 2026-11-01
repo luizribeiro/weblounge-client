@@ -964,6 +964,17 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
       value.nick_color_index === undefined ||
       typeof value.nick_color_index === "number"
     ) ||
+    !(
+      value.direct_identity === undefined ||
+      isOneOf(value.direct_identity, [
+        "unverified",
+        "verified",
+        "different_account",
+        "cannot_verify",
+        "deferred_different_account",
+        "deferred_cannot_verify",
+      ])
+    ) ||
     !(value.topic === null || typeof value.topic === "string") ||
     !(
       value.member_count === undefined || typeof value.member_count === "number"
@@ -993,6 +1004,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ...(value.nick_color_index === undefined
       ? {}
       : { nick_color_index: value.nick_color_index }),
+    ...(value.direct_identity === undefined
+      ? {}
+      : { direct_identity: value.direct_identity }),
     draft_key: value.draft_key,
     topic: value.topic,
     ...(value.member_count === undefined
@@ -1023,6 +1037,10 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
     typeof value.nick_color_index !== "number" ||
     typeof value.highlighted !== "boolean" ||
+    !(
+      value.unverified_sender === undefined ||
+      typeof value.unverified_sender === "boolean"
+    ) ||
     !isOneOf(value.delivery, [
       "received",
       "optimistic",
@@ -1050,6 +1068,9 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     authorship: value.authorship,
     nick_color_index: value.nick_color_index,
     highlighted: value.highlighted,
+    ...(value.unverified_sender === undefined
+      ? {}
+      : { unverified_sender: value.unverified_sender }),
     delivery: value.delivery,
     local_send_id: value.local_send_id,
     server_ids: value.server_ids,

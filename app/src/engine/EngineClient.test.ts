@@ -516,23 +516,72 @@ describe("WorkerEngineClient", () => {
     );
   });
 
-  it("decodes durable direct draft-key migrations", () => {
+  it("decodes legacy account draft migration into a nick thread", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
 
     port.emit({
       type: "draft_key_changed",
-      previous: "5:Local:rfc1459:nick=alice",
-      current: "5:Local:rfc1459:account=alice-account",
+      previous: "5:Local:rfc1459:account=alice-account",
+      current: "5:Local:rfc1459:nick=alice",
     });
     frames[0]?.(0);
 
     expect(listener).toHaveBeenCalledWith({
       type: "draft_key_changed",
-      previous: "5:Local:rfc1459:nick=alice",
-      current: "5:Local:rfc1459:account=alice-account",
+      previous: "5:Local:rfc1459:account=alice-account",
+      current: "5:Local:rfc1459:nick=alice",
     });
+  });
+
+  it("decodes direct identity state and unverified sender rows", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "buffer_added",
+      buffer: {
+        id: 4,
+        network_id: 1,
+        kind: "direct",
+        title: "mel",
+        direct_identity: "different_account",
+        draft_key: "5:Local:rfc1459:nick=mel",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+        last_message: {
+          id: 8,
+          author: "mel",
+          text: "replacement",
+          kind: "text",
+          bot: false,
+          mode_symbol: null,
+          authorship: "other",
+          nick_color_index: 2,
+          highlighted: false,
+          unverified_sender: true,
+          delivery: "received",
+          local_send_id: null,
+          server_ids: [],
+          server_time_ms: null,
+          received_at_ms: 1,
+        },
+      },
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buffer: expect.objectContaining({
+          direct_identity: "different_account",
+          last_message: expect.objectContaining({ unverified_sender: true }),
+        }),
+      }),
+    );
   });
 
   it("rejects a stale UI build", async () => {

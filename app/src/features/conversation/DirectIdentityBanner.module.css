@@ -1,0 +1,30 @@
+.banner {
+  align-items: center;
+  background: var(--wl-color-mention-bg);
+  border-block: 1px solid var(--wl-color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 14px;
+}
+
+.banner span {
+  flex: 1 1 18rem;
+}
+
+.banner button {
+  appearance: none;
+  background: var(--wl-color-input-bg);
+  border: 1px solid var(--wl-color-border);
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-fg);
+  font: inherit;
+  padding: 5px 9px;
+}
+
+@media (hover: hover) {
+  .banner button:hover {
+    background: var(--wl-color-chip);
+    cursor: pointer;
+  }
+}
