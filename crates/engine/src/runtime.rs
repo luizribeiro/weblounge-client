@@ -216,13 +216,7 @@ impl Runtime {
     pub(crate) fn request(&self, envelope: EngineRequestEnvelope) -> Vec<EngineToUi> {
         match envelope.request {
             EngineRequest::Ping => vec![EngineToUi::Pong { id: envelope.id }],
-            EngineRequest::Diagnostic { message } => vec![
-                EngineToUi::Diagnostic {
-                    command_id: envelope.id.clone(),
-                    message,
-                },
-                EngineToUi::CommandResult { id: envelope.id },
-            ],
+            EngineRequest::Diagnostic { message } => Self::diagnostic(envelope.id, message),
             EngineRequest::Connect {
                 label,
                 endpoint,
@@ -249,7 +243,6 @@ impl Runtime {
                 endpoint,
                 nickname,
                 oauth_token,
-                session_token_endpoint: _,
                 autojoin,
             } => self.connect(
                 envelope.id,
@@ -259,6 +252,9 @@ impl Runtime {
                 network_id,
                 oauth_token,
             } => self.reconnect_hosted(envelope.id, network_id, oauth_token),
+            EngineRequest::HostedTokenUnavailable { network_id } => {
+                self.hosted_token_unavailable(envelope.id, network_id)
+            }
             EngineRequest::ExpireHostedAuthentication { network_id } => {
                 self.expire_hosted_authentication(envelope.id, network_id)
             }
@@ -313,6 +309,16 @@ impl Runtime {
                 self.open_direct(envelope.id, network_id, nick)
             }
         }
+    }
+
+    fn diagnostic(command_id: String, message: String) -> Vec<EngineToUi> {
+        vec![
+            EngineToUi::Diagnostic {
+                command_id: command_id.clone(),
+                message,
+            },
+            EngineToUi::CommandResult { id: command_id },
+        ]
     }
 
     fn submit_input(&self, id: String, buffer_id: BufferId, input: &str) -> Vec<EngineToUi> {
@@ -827,6 +833,28 @@ impl Runtime {
             EngineToUi::notice("engine.hosted_auth_failed"),
             EngineToUi::CommandResult { id: command_id },
         ]
+    }
+
+    fn hosted_token_unavailable(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut().filter(|running| {
+            running.model.id() == network_id
+                && running.authentication_kind == AuthenticationKind::HostedOAuth
+        }) else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let event = running.model.set_connection(
+            NetworkConnectionState::Failed {
+                reason: ConnectionFailureReason::Transport,
+                message_key: "engine.connection_failed".into(),
+            },
+            None,
+        );
+        vec![event, EngineToUi::CommandResult { id: command_id }]
     }
 
     fn send_input(
@@ -3304,8 +3332,9 @@ mod tests {
         schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch, utf16_len,
     };
     use crate::{
-        BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
-        EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkId, SaslCredentials,
+        BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
+        EngineRequest, EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkConnectionState,
+        NetworkId, NetworkProjection, SaslCredentials,
         chat_list_snapshot::{
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
         },
@@ -4285,7 +4314,6 @@ mod tests {
                 endpoint: "wss://beta.weblounge.org/socket".into(),
                 nickname: "weblounge".into(),
                 oauth_token: "token".into(),
-                session_token_endpoint: "https://members.weblounge.org/oauth/session-token".into(),
                 autojoin: Vec::new(),
             },
         });
@@ -4350,7 +4378,6 @@ mod tests {
                 endpoint: "wss://beta.weblounge.org/socket".into(),
                 nickname: "weblounge".into(),
                 oauth_token: "discarded-second-token".into(),
-                session_token_endpoint: "https://members.weblounge.org/oauth/session-token".into(),
                 autojoin: vec!["#lounge".into()],
             },
         });
@@ -4364,6 +4391,8 @@ mod tests {
                 EngineToUi::CommandResult { id },
             ] if id == "second-tab"
         ));
+
+        assert_hosted_token_unavailable(&runtime);
 
         let reconnected = runtime.request(EngineRequestEnvelope {
             id: "fresh-token".into(),
@@ -4399,6 +4428,31 @@ mod tests {
             ] if key == "engine.hosted_auth_failed" && id == "expired"
         ));
         assert!(lock(&runtime.state).network.is_none());
+    }
+
+    fn assert_hosted_token_unavailable(runtime: &Runtime) {
+        let unavailable = runtime.request(EngineRequestEnvelope {
+            id: "token-unavailable".into(),
+            request: EngineRequest::HostedTokenUnavailable {
+                network_id: NetworkId(1),
+            },
+        });
+        assert!(matches!(
+            unavailable.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged {
+                    network: NetworkProjection {
+                        state: NetworkConnectionState::Failed {
+                            reason: ConnectionFailureReason::Transport,
+                            ..
+                        },
+                        ..
+                    },
+                },
+                EngineToUi::CommandResult { id },
+            ] if id == "token-unavailable"
+        ));
+        assert!(lock(&runtime.state).network.is_some());
     }
 
     #[tokio::test]

@@ -298,6 +298,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     parallel with engine prewarm. A `401 login_required` reaches PKCE without waiting for a stalled
     worker or Wasm; Chromium at 6x CPU and WebKit cover the two worker kinds, while later 401s
     remain immediate after rate-limit and network failures.
+  - B1g. [x] Keep every member-session token request in a live page, including reconnect refreshes;
+    workers only route token demand and retain a visible failed network when no page is available.
+    Network and TLS failures expose Retry, then enter PKCE after three seconds. Chromium and WebKit
+    abort a fresh session request at the network layer and verify the bounded redirect.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.

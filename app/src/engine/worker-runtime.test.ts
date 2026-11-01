@@ -1,5 +1,4 @@
 import { expect, it, vi } from "vitest";
-import { SessionTokenError } from "../hosted/session-token";
 import { EngineWorkerRuntime, type WorkerHostPort } from "./worker-runtime";
 
 it("broadcasts optimistic state to every shared port", async () => {
@@ -103,134 +102,84 @@ it("broadcasts asynchronous buffer and member patches to every shared port", asy
   expect(second.sent).toEqual(patches);
 });
 
-it("acquires a fresh hosted token for every engine reconnect", async () => {
-  const port = new FakePort();
+it("routes hosted token requests to the most recently active page", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
   let emit: ((encoded: string) => void) | undefined;
   const handled: unknown[] = [];
-  const tokens = ["first-reconnect", "second-reconnect"];
-  const runtime = new EngineWorkerRuntime(
-    async (onEvent) => {
-      emit = onEvent;
-      return {
-        handle: (encoded) => {
-          handled.push(JSON.parse(encoded));
-          return "[]";
-        },
-      };
-    },
-    () => ({
-      acquire: async () => ({
-        accessToken: tokens.shift() ?? "unexpected-token",
-        expiresAt: Date.now() + 900_000,
-      }),
-    }),
-  );
-  runtime.attach(port);
-  port.receive(hostedConnect("initial-token"));
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return {
+      handle: (encoded) => {
+        handled.push(JSON.parse(encoded));
+        return "[]";
+      },
+    };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  first.receive(hostedConnect("initial-token"));
   await vi.waitFor(() => expect(handled).toHaveLength(1));
 
   emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await vi.waitFor(() => expect(handled).toHaveLength(2));
-  emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await vi.waitFor(() => expect(handled).toHaveLength(3));
-
-  expect(handled).toContainEqual(
-    expect.objectContaining({
-      payload: expect.objectContaining({
-        request: {
-          type: "reconnect_hosted",
-          network_id: 7,
-          oauth_token: "first-reconnect",
-        },
-      }),
-    }),
-  );
-  expect(handled).toContainEqual(
-    expect.objectContaining({
-      payload: expect.objectContaining({
-        request: {
-          type: "reconnect_hosted",
-          network_id: 7,
-          oauth_token: "second-reconnect",
-        },
-      }),
-    }),
-  );
+  expect(first.sent).toContainEqual({
+    type: "hosted_token_required",
+    network_id: 7,
+  });
+  expect(second.sent).toEqual([]);
+  expect(handled).toHaveLength(1);
 });
 
-it("turns login-required into hosted reauthorization", async () => {
+it("falls back to another page when the active page detaches", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return { handle: () => "[]" };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  first.receive({ type: "hello" });
+  second.receive({ type: "hello" });
+  second.receive({ type: "host_detach" });
+  await vi.waitFor(() => expect(emit).toBeTypeOf("function"));
+
+  emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
+  expect(first.sent).toContainEqual({
+    type: "hosted_token_required",
+    network_id: 7,
+  });
+  expect(second.sent).toEqual([]);
+});
+
+it("fails hosted refresh visibly when every page detached", async () => {
   const port = new FakePort();
   let emit: ((encoded: string) => void) | undefined;
   const handled: unknown[] = [];
-  const runtime = new EngineWorkerRuntime(
-    async (onEvent) => {
-      emit = onEvent;
-      return {
-        handle: (encoded) => {
-          handled.push(JSON.parse(encoded));
-          return "[]";
-        },
-      };
-    },
-    () => ({
-      acquire: async () => {
-        throw new SessionTokenError("authorization_required", "sign in");
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return {
+      handle: (encoded) => {
+        handled.push(JSON.parse(encoded));
+        return "[]";
       },
-    }),
-  );
+    };
+  });
   runtime.attach(port);
   port.receive(hostedConnect("initial-token"));
   await vi.waitFor(() => expect(handled).toHaveLength(1));
+  port.receive({ type: "host_detach" });
 
   emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
   await vi.waitFor(() => expect(handled).toHaveLength(2));
-
-  expect(handled).toContainEqual(
+  expect(handled[1]).toEqual(
     expect.objectContaining({
       payload: expect.objectContaining({
-        request: {
-          type: "expire_hosted_authentication",
-          network_id: 7,
-        },
+        request: { type: "hosted_token_unavailable", network_id: 7 },
       }),
     }),
   );
-});
-
-it("backs off after a transient hosted token failure", async () => {
-  const port = new FakePort();
-  let emit: ((encoded: string) => void) | undefined;
-  let retry: (() => void) | undefined;
-  let attempts = 0;
-  let connected = false;
-  const runtime = new EngineWorkerRuntime(
-    async (onEvent) => {
-      emit = onEvent;
-      return {
-        handle: () => {
-          connected = true;
-          return "[]";
-        },
-      };
-    },
-    () => ({
-      acquire: async () => {
-        attempts += 1;
-        throw new SessionTokenError("transient", "offline");
-      },
-    }),
-    (callback, delay) => {
-      expect(delay).toBe(1_000);
-      retry = callback;
-    },
-  );
-  runtime.attach(port);
-  port.receive(hostedConnect("initial-token"));
-  await vi.waitFor(() => expect(connected).toBe(true));
-
-  emit?.(JSON.stringify({ type: "hosted_token_required", network_id: 7 }));
-  await vi.waitFor(() => expect(retry).toBeTypeOf("function"));
-  expect(attempts).toBe(1);
 });
 
 function hostedConnect(token: string): unknown {
@@ -241,8 +190,6 @@ function hostedConnect(token: string): unknown {
       request: {
         type: "connect_hosted",
         oauth_token: token,
-        session_token_endpoint:
-          "https://members.weblounge.org/oauth/session-token",
       },
     },
   };

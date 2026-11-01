@@ -1,10 +1,5 @@
 import wasmBinaryUrl from "@weblounge-engine-wasm";
 import { buildVersion } from "../build-version";
-import {
-  requiresAuthorization,
-  SessionTokenError,
-  SessionTokenProvider,
-} from "../hosted/session-token";
 
 export interface WorkerHostPort {
   postMessage(message: unknown): void;
@@ -30,9 +25,6 @@ interface WasmModule {
 }
 
 type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
-type HostedProvider = Pick<SessionTokenProvider, "acquire">;
-type HostedProviderFactory = (endpoint: string) => HostedProvider;
-type RetryScheduler = (callback: () => void, delay: number) => void;
 
 let sharedRuntime: EngineWorkerRuntime | undefined;
 
@@ -45,29 +37,21 @@ export class EngineWorkerRuntime {
   readonly #ports = new Set<WorkerHostPort>();
   readonly #requestPorts = new Map<string, WorkerHostPort>();
   readonly #engine: Promise<WasmEngine>;
-  readonly #hostedProviderFactory: HostedProviderFactory;
-  readonly #scheduleRetry: RetryScheduler;
-  #hostedProvider: HostedProvider | undefined;
-  #hostedRefreshPending = false;
-  #hostedRetry = 0;
+  #activePort: WorkerHostPort | undefined;
 
-  constructor(
-    load: EngineLoader,
-    hostedProviderFactory: HostedProviderFactory = (endpoint) =>
-      new SessionTokenProvider(endpoint),
-    scheduleRetry: RetryScheduler = (callback, delay) => {
-      setTimeout(callback, delay);
-    },
-  ) {
+  constructor(load: EngineLoader) {
     this.#engine = load((encoded) => this.#routeEncoded(encoded));
-    this.#hostedProviderFactory = hostedProviderFactory;
-    this.#scheduleRetry = scheduleRetry;
   }
 
   attach(port: WorkerHostPort): void {
     this.#ports.add(port);
     let pending = Promise.resolve();
     port.addEventListener("message", (event) => {
+      if (isHostDetach(event.data)) {
+        this.#ports.delete(port);
+        if (this.#activePort === port) this.#activePort = this.#lastPort();
+        return;
+      }
       pending = pending.then(() => this.#handleMessage(port, event.data));
     });
     port.start?.();
@@ -75,9 +59,10 @@ export class EngineWorkerRuntime {
 
   async #handleMessage(port: WorkerHostPort, message: unknown): Promise<void> {
     try {
+      if (!this.#ports.has(port)) return;
+      this.#activePort = port;
       const requestId = readRequestId(message);
       if (requestId !== undefined) this.#requestPorts.set(requestId, port);
-      this.#rememberHostedProvider(message);
       const currentEngine = await this.#engine;
       const encoded = currentEngine.handle(JSON.stringify(message));
       const events: unknown = JSON.parse(encoded);
@@ -96,7 +81,13 @@ export class EngineWorkerRuntime {
   #route(event: unknown, callingPort?: WorkerHostPort): void {
     const hostedNetwork = hostedTokenNetwork(event);
     if (hostedNetwork !== undefined) {
-      this.#refreshHostedToken(hostedNetwork);
+      const port = callingPort ?? this.#activePort;
+      if (port !== undefined) port.postMessage(event);
+      else
+        void this.#handleInternalRequest({
+          type: "hosted_token_unavailable",
+          network_id: hostedNetwork,
+        });
       return;
     }
     if (
@@ -124,52 +115,6 @@ export class EngineWorkerRuntime {
     }
   }
 
-  #rememberHostedProvider(message: unknown): void {
-    const endpoint = hostedSessionTokenEndpoint(message);
-    if (endpoint === undefined) return;
-    this.#hostedProvider = this.#hostedProviderFactory(endpoint);
-    this.#hostedRetry = 0;
-  }
-
-  #refreshHostedToken(networkId: number): void {
-    if (this.#hostedRefreshPending) return;
-    const provider = this.#hostedProvider;
-    if (provider === undefined) {
-      this.#broadcastHostedFailure();
-      return;
-    }
-    this.#hostedRefreshPending = true;
-    void provider
-      .acquire()
-      .then((token) => {
-        this.#hostedRetry = 0;
-        return this.#handleInternalRequest({
-          type: "reconnect_hosted",
-          network_id: networkId,
-          oauth_token: token.accessToken,
-        });
-      })
-      .catch((error: unknown) => {
-        if (requiresAuthorization(error)) {
-          this.#hostedRetry = 0;
-          return this.#handleInternalRequest({
-            type: "expire_hosted_authentication",
-            network_id: networkId,
-          });
-        }
-        if (error instanceof SessionTokenError && error.kind === "transient") {
-          const delay = Math.min(1_000 * 2 ** this.#hostedRetry, 30_000);
-          this.#hostedRetry += 1;
-          this.#scheduleRetry(() => this.#refreshHostedToken(networkId), delay);
-          return;
-        }
-        this.#broadcastHostedFailure();
-      })
-      .finally(() => {
-        this.#hostedRefreshPending = false;
-      });
-  }
-
   async #handleInternalRequest(
     request: Record<string, unknown>,
   ): Promise<void> {
@@ -186,15 +131,8 @@ export class EngineWorkerRuntime {
     for (const event of events) this.#route(event);
   }
 
-  #broadcastHostedFailure(): void {
-    const notice = {
-      type: "notice",
-      key: "engine.connection_failed",
-      values: {},
-      tone: "neutral",
-      action: null,
-    };
-    for (const port of this.#ports) port.postMessage(notice);
+  #lastPort(): WorkerHostPort | undefined {
+    return [...this.#ports].at(-1);
   }
 }
 
@@ -224,20 +162,6 @@ function readRequestId(message: unknown): string | undefined {
   return undefined;
 }
 
-function hostedSessionTokenEndpoint(message: unknown): string | undefined {
-  if (
-    isRecord(message) &&
-    message.type === "request" &&
-    isRecord(message.payload) &&
-    isRecord(message.payload.request) &&
-    message.payload.request.type === "connect_hosted" &&
-    typeof message.payload.request.session_token_endpoint === "string"
-  ) {
-    return message.payload.request.session_token_endpoint;
-  }
-  return undefined;
-}
-
 function hostedTokenNetwork(event: unknown): number | undefined {
   if (
     isRecord(event) &&
@@ -247,6 +171,10 @@ function hostedTokenNetwork(event: unknown): number | undefined {
     return event.network_id;
   }
   return undefined;
+}
+
+function isHostDetach(message: unknown): boolean {
+  return isRecord(message) && message.type === "host_detach";
 }
 
 function isSharedStateEvent(event: unknown): boolean {

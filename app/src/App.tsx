@@ -38,6 +38,11 @@ import {
 import type { MemberWindow } from "./features/members/MemberPanel";
 import type { HostedSession } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
+import {
+  requiresAuthorization,
+  SessionTokenError,
+  SessionTokenProvider,
+} from "./hosted/session-token";
 import { bufferPath } from "./navigation/buffer-route";
 import {
   initialDestination,
@@ -65,7 +70,7 @@ interface AppProps {
   hostedSession?: HostedSession;
   onReady?: () => void;
   onHostedAuthorizationRequired?: (
-    reason: "revoked" | "worker_restarted",
+    reason: "refresh_failed" | "revoked" | "worker_restarted",
   ) => void;
   onRetryStartup?: (() => void) | undefined;
 }
@@ -110,6 +115,9 @@ export function App(props: AppProps) {
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
   let restartingHostedAuthorization = false;
+  let hostedRefreshNetworkId: number | undefined;
+  let hostedRefreshPending = false;
+  let hostedFallbackTimer: number | undefined;
   let engineInstance: string | undefined;
   let disposed = false;
   let revealingStartup = false;
@@ -206,6 +214,10 @@ export function App(props: AppProps) {
             window.history.replaceState(window.history.state, "", path),
           );
     const unsubscribe = mountedClient.subscribe((message) => {
+      if (message.type === "hosted_token_required") {
+        void refreshHostedToken(message.network_id);
+        return;
+      }
       if (message.type === "ready") {
         const restarted =
           engineInstance !== undefined &&
@@ -461,6 +473,8 @@ export function App(props: AppProps) {
     });
     onCleanup(() => {
       disposed = true;
+      if (hostedFallbackTimer !== undefined)
+        window.clearTimeout(hostedFallbackTimer);
       clearStartupWaits();
       unregisterContextSurface();
       removeContextMenuHandler();
@@ -472,32 +486,80 @@ export function App(props: AppProps) {
       unsubscribeUpdateReady();
       void mountedClient.close();
     });
-
-    async function restartHostedAuthorization(
-      reason: "revoked" | "worker_restarted",
-    ): Promise<void> {
-      if (restartingHostedAuthorization) return;
-      restartingHostedAuthorization = true;
-      setHostedError(
-        reason === "worker_restarted"
-          ? "Restoring the chat…"
-          : "Your session expired. Signing in again…",
-      );
-      const network = networks()[0];
-      if (network !== undefined) {
-        await mountedClient
-          .send({
-            id: crypto.randomUUID(),
-            request: {
-              type: "expire_hosted_authentication",
-              network_id: network.id,
-            },
-          })
-          .catch(() => undefined);
-      }
-      props.onHostedAuthorizationRequired?.(reason);
-    }
   });
+
+  async function restartHostedAuthorization(
+    reason: "revoked" | "worker_restarted",
+  ): Promise<void> {
+    if (restartingHostedAuthorization) return;
+    restartingHostedAuthorization = true;
+    setHostedError(
+      reason === "worker_restarted"
+        ? "Restoring the chat…"
+        : "Your session expired. Signing in again…",
+    );
+    const network = networks()[0];
+    if (network !== undefined && client !== undefined) {
+      await client
+        .send({
+          id: crypto.randomUUID(),
+          request: {
+            type: "expire_hosted_authentication",
+            network_id: network.id,
+          },
+        })
+        .catch(() => undefined);
+    }
+    props.onHostedAuthorizationRequired?.(reason);
+  }
+
+  async function refreshHostedToken(networkId: number): Promise<void> {
+    const session = props.hostedSession;
+    if (session === undefined || client === undefined || hostedRefreshPending)
+      return;
+    hostedRefreshPending = true;
+    if (hostedFallbackTimer !== undefined) {
+      window.clearTimeout(hostedFallbackTimer);
+      hostedFallbackTimer = undefined;
+    }
+    try {
+      const token = await new SessionTokenProvider(
+        session.sessionTokenEndpoint,
+      ).acquire();
+      hostedRefreshNetworkId = undefined;
+      setHostedError(undefined);
+      await client.send({
+        id: crypto.randomUUID(),
+        request: {
+          type: "reconnect_hosted",
+          network_id: networkId,
+          oauth_token: token.accessToken,
+        },
+      });
+    } catch (error: unknown) {
+      if (requiresAuthorization(error)) {
+        await restartHostedAuthorization("revoked");
+        return;
+      }
+      hostedRefreshNetworkId = networkId;
+      if (error instanceof Error) setHostedError(error.message);
+      await client
+        .send({
+          id: crypto.randomUUID(),
+          request: { type: "hosted_token_unavailable", network_id: networkId },
+        })
+        .catch(() => undefined);
+      if (error instanceof SessionTokenError && error.kind === "transient") {
+        // wait-ok: a bounded recovery window lets the visible Retry act first.
+        hostedFallbackTimer = window.setTimeout(() => {
+          hostedFallbackTimer = undefined;
+          props.onHostedAuthorizationRequired?.("refresh_failed");
+        }, 3_000);
+      }
+    } finally {
+      hostedRefreshPending = false;
+    }
+  }
 
   async function revealStartup(): Promise<void> {
     if (revealingStartup || startupRevealed()) return;
@@ -595,7 +657,13 @@ export function App(props: AppProps) {
           <HostedStatus
             message={hostedError() ?? ""}
             error
-            onRetry={props.onRetryStartup}
+            onRetry={() => {
+              if (hostedRefreshNetworkId === undefined) {
+                props.onRetryStartup?.();
+                return;
+              }
+              void refreshHostedToken(hostedRefreshNetworkId);
+            }}
           />
         ) : null
       ) : (
@@ -863,7 +931,6 @@ async function startEngine(
           endpoint: hostedSession.network.endpoint,
           nickname: "*",
           oauth_token: hostedSession.token.take(),
-          session_token_endpoint: hostedSession.sessionTokenEndpoint,
           autojoin: hostedSession.network.autojoin,
         },
       });

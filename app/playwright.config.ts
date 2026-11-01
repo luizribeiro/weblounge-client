@@ -49,7 +49,7 @@ export default defineConfig({
     },
     {
       name: "webkit-hosted",
-      grep: /member session through|real (?:shared|dedicated) worker|backs off after|shows (?:a network|an unrecoverable token) failure/,
+      grep: /member session through|real (?:shared|dedicated) worker|fresh session request is aborted|recovers from a (?:rate limit|network) failure|shows an unrecoverable token failure/,
       testMatch: "**/hosted-mode.spec.ts",
       use: { browserName: "webkit" },
     },

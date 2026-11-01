@@ -152,8 +152,6 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
         endpoint: "wss://beta.weblounge.org/socket",
         nickname: "*",
         oauth_token: "hosted-secret",
-        session_token_endpoint:
-          "https://members.weblounge.org/oauth/session-token",
         autojoin: ["#lounge"],
       },
     }),
@@ -226,6 +224,60 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     id: expect.any(String),
     request: { type: "expire_hosted_authentication", network_id: 1 },
   });
+});
+
+it("acquires hosted reconnect tokens in the page", async () => {
+  const fetchToken = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        access_token: "fresh-hosted-secret",
+        token_type: "Bearer",
+        expires_in: 900,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  const client = new FakeEngineClient();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        sessionTokenEndpoint:
+          "https://members.weblounge.org/oauth/session-token",
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: [],
+        },
+        token: new OneShotAccessToken("initial-secret", Date.now() + 60_000),
+      }}
+    />
+  ));
+  await waitFor(() =>
+    expect(client.requests).toContainEqual(
+      expect.objectContaining({
+        request: expect.objectContaining({ type: "connect_hosted" }),
+      }),
+    ),
+  );
+
+  client.emit({ type: "hosted_token_required", network_id: 1 });
+
+  await waitFor(() =>
+    expect(client.requests).toContainEqual({
+      id: expect.any(String),
+      request: {
+        type: "reconnect_hosted",
+        network_id: 1,
+        oauth_token: "fresh-hosted-secret",
+      },
+    }),
+  );
+  expect(fetchToken).toHaveBeenCalledWith(
+    "https://members.weblounge.org/oauth/session-token",
+    expect.objectContaining({ method: "POST" }),
+  );
+  fetchToken.mockRestore();
 });
 
 it("caps startup history hydration at 400ms", async () => {

@@ -93,6 +93,7 @@ for (const worker of ["shared", "dedicated"] as const) {
     await installFakeEngine(page, false, worker);
     const redirectUri = await installHostedConfig(page);
     let authorizationRequests = 0;
+    let sessionRequests = 0;
     await page.route(`${oauthIssuer}/authorize**`, async (route) => {
       authorizationRequests += 1;
       await route.fallback();
@@ -107,7 +108,12 @@ for (const worker of ["shared", "dedicated"] as const) {
         route.request().headerValue("content-type"),
       ).resolves.toContain("application/json");
       expect(route.request().postData()).toBe("{}");
-      await fulfillSessionToken(route, redirectUri(), "session-token");
+      sessionRequests += 1;
+      await fulfillSessionToken(
+        route,
+        redirectUri(),
+        sessionRequests === 1 ? "session-token" : "refreshed-token",
+      );
     });
 
     await page.goto("/");
@@ -116,6 +122,13 @@ for (const worker of ["shared", "dedicated"] as const) {
     await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
     await expect(page).toHaveURL(redirectUri());
     expect(authorizationRequests).toBe(0);
+    await page.evaluate(() => {
+      const request = Reflect.get(globalThis, "requestHostedToken");
+      if (typeof request !== "function")
+        throw new Error("hosted token request is missing");
+      request();
+    });
+    await expectHostedToken(page, "refreshed-token", "reconnect_hosted");
   });
 }
 
@@ -261,7 +274,7 @@ for (const worker of ["shared", "dedicated"] as const) {
 }
 
 for (const failure of ["rate limit", "network failure"] as const) {
-  test(`backs off after a ${failure}, then redirects immediately on login-required`, async ({
+  test(`shows a ${failure}, then redirects immediately on login-required`, async ({
     page,
   }, testInfo) => {
     const redirectUri = await installHostedConfig(page);
@@ -309,13 +322,42 @@ for (const failure of ["rate limit", "network failure"] as const) {
   });
 }
 
+test("falls back to PKCE after a fresh session request is aborted", async ({
+  page,
+}, testInfo) => {
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+      return;
+    }
+    await route.abort("failed");
+  });
+  await page.route(`${oauthIssuer}/authorize**`, (route) =>
+    route.fulfill({ contentType: "text/html", body: "Member sign in" }),
+  );
+
+  const startedAt = performance.now();
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page).toHaveURL(
+    new RegExp(`^${oauthIssuer}/authorize\\?`, "u"),
+    { timeout: 4_000 },
+  );
+  const elapsed = performance.now() - startedAt;
+  testInfo.annotations.push({
+    type: "network-failure-fallback-ms",
+    description: elapsed.toFixed(0),
+  });
+  expect(elapsed).toBeLessThan(4_000);
+});
+
 for (const worker of ["shared", "dedicated"] as const) {
   for (const failure of ["rate limit", "network"] as const) {
-    const behavior = failure === "rate limit" ? "backs off after" : "shows";
-    test(`${behavior} a ${failure} failure with the ${worker} worker`, async ({
+    test(`recovers from a ${failure} failure with the ${worker} worker`, async ({
       page,
     }) => {
-      await page.clock.install();
       await installFakeEngine(page, false, worker);
       const redirectUri = await installHostedConfig(page);
       let releaseInitialResponse = () => undefined;
@@ -342,7 +384,7 @@ for (const worker of ["shared", "dedicated"] as const) {
           markInitialRequestStarted();
           await initialResponse;
         }
-        if (failure === "rate limit") {
+        if (attempts === 1 && failure === "rate limit") {
           await route.fulfill({
             status: 429,
             contentType: "application/json",
@@ -367,11 +409,10 @@ for (const worker of ["shared", "dedicated"] as const) {
           .locator("[data-hosted-status]", { has: page.getByRole("alert") })
           .getByRole("button", { name: "Retry" }),
       ).toBeVisible();
-      await page.clock.fastForward(1_000);
-      await expect.poll(() => attempts).toBeGreaterThanOrEqual(2);
+      await page.getByRole("button", { name: "Retry" }).click();
+      await expect.poll(() => attempts).toBe(2);
       expect(authorizationRequests).toBe(0);
       await expect(page).toHaveURL(redirectUri());
-      if (failure === "rate limit") return;
       await expectHostedToken(page, "recovered-token");
       await expect(
         page.getByRole("heading", { name: "#lounge" }),
@@ -570,7 +611,11 @@ async function expectHostedConnection(page: Page): Promise<void> {
     .toContainEqual(expect.objectContaining({ type: "connect_hosted" }));
 }
 
-async function expectHostedToken(page: Page, token: string): Promise<void> {
+async function expectHostedToken(
+  page: Page,
+  token: string,
+  requestType = "connect_hosted",
+): Promise<void> {
   await expect
     .poll(async () =>
       page
@@ -581,7 +626,7 @@ async function expectHostedToken(page: Page, token: string): Promise<void> {
         .catch(() => []),
     )
     .toContainEqual(
-      expect.objectContaining({ type: "connect_hosted", oauth_token: token }),
+      expect.objectContaining({ type: requestType, oauth_token: token }),
     );
 }
 
@@ -679,6 +724,9 @@ async function installFakeEngine(
         if (request?.type === "connect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);
+          Reflect.set(globalThis, "requestHostedToken", () => {
+            this.emit({ type: "hosted_token_required", network_id: 1 });
+          });
           const complete = () => {
             this.emit({
               type: "network_state_changed",
@@ -736,6 +784,10 @@ async function installFakeEngine(
           } else {
             complete();
           }
+        }
+        if (request?.type === "reconnect_hosted") {
+          const requests = Reflect.get(globalThis, "hostedEngineRequests");
+          if (Array.isArray(requests)) requests.push(request);
         }
         if (id !== undefined) this.emit({ type: "command_result", id });
       }

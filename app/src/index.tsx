@@ -17,6 +17,7 @@ import {
   discoverOAuthMetadata,
   exchangeAuthorizationCode,
   HostedAuthorizationError,
+  type OAuthMetadata,
 } from "./hosted/oauth";
 import {
   requiresAuthorization,
@@ -39,6 +40,9 @@ type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
 type InitialSessionResult =
   | { readonly type: "token"; readonly token: SessionAccessToken }
   | { readonly type: "error"; readonly error: unknown };
+type InitialMetadataResult =
+  | { readonly type: "metadata"; readonly metadata: OAuthMetadata }
+  | { readonly type: "error"; readonly error: unknown };
 
 type DeploymentAttempt =
   | {
@@ -48,6 +52,7 @@ type DeploymentAttempt =
   | {
       readonly type: "hosted";
       readonly config: HostedConfig;
+      readonly metadata: Promise<InitialMetadataResult>;
       readonly session: Promise<InitialSessionResult> | null;
     };
 
@@ -93,20 +98,22 @@ function Bootstrap(props: BootstrapProps) {
     message: "Starting…",
   });
   let starting = false;
-  let hostedRetry = 0;
-  let hostedRetryTimer: number | undefined;
+  let hostedFallbackConfig: HostedConfig | undefined;
+  let hostedFallbackMetadata: Promise<InitialMetadataResult> | undefined;
+  let hostedFallbackTimer: number | undefined;
 
   onCleanup(() => {
-    if (hostedRetryTimer !== undefined) window.clearTimeout(hostedRetryTimer);
+    if (hostedFallbackTimer !== undefined)
+      window.clearTimeout(hostedFallbackTimer);
   });
 
   onMount(() => void start());
 
   async function start(): Promise<void> {
     if (starting) return;
-    if (hostedRetryTimer !== undefined) {
-      window.clearTimeout(hostedRetryTimer);
-      hostedRetryTimer = undefined;
+    if (hostedFallbackTimer !== undefined) {
+      window.clearTimeout(hostedFallbackTimer);
+      hostedFallbackTimer = undefined;
     }
     starting = true;
     try {
@@ -122,6 +129,8 @@ function Bootstrap(props: BootstrapProps) {
         return;
       }
       const { config } = deployment;
+      hostedFallbackConfig = config;
+      hostedFallbackMetadata = deployment.metadata;
       requireCurrentRedirect(config);
       const currentUrl = new URL(window.location.href);
       const authorization = consumeAuthorizationCallback(currentUrl);
@@ -135,7 +144,7 @@ function Bootstrap(props: BootstrapProps) {
         } catch (error: unknown) {
           if (!requiresAuthorization(error)) throw error;
         }
-        const metadata = await discoverOAuthMetadata(config.oauth);
+        const metadata = await acquireMetadata(deployment.metadata);
         setState({ type: "starting", message: "Opening sign in…" });
         window.location.replace(
           await createAuthorizationUrl(
@@ -146,7 +155,7 @@ function Bootstrap(props: BootstrapProps) {
         );
         return;
       }
-      const metadata = await discoverOAuthMetadata(config.oauth);
+      const metadata = await acquireMetadata(deployment.metadata);
       const token = await exchangeAuthorizationCode(
         metadata,
         config.oauth,
@@ -163,17 +172,20 @@ function Bootstrap(props: BootstrapProps) {
         retryLabel:
           error instanceof HostedAuthorizationError ? "Sign in again" : "Retry",
       });
+      if (
+        isTransientSessionFailure(error) &&
+        hostedFallbackConfig !== undefined
+      ) {
+        const config = hostedFallbackConfig;
+        // wait-ok: a bounded recovery window lets the visible Retry act first.
+        hostedFallbackTimer = window.setTimeout(() => {
+          hostedFallbackTimer = undefined;
+          void restartAuthorization(config, hostedFallbackMetadata);
+        }, 3_000);
+      }
       await Promise.resolve();
       await props.beforeReveal();
       props.onReady();
-      if (isTransientSessionFailure(error)) {
-        const delay = Math.min(1_000 * 2 ** hostedRetry, 30_000);
-        hostedRetry += 1;
-        hostedRetryTimer = window.setTimeout(() => {
-          hostedRetryTimer = undefined;
-          void start();
-        }, delay);
-      }
     } finally {
       starting = false;
     }
@@ -183,7 +195,6 @@ function Bootstrap(props: BootstrapProps) {
     config: HostedConfig,
     token: { readonly accessToken: string; readonly expiresAt: number },
   ): void {
-    hostedRetry = 0;
     setState({
       type: "hosted",
       config,
@@ -196,9 +207,15 @@ function Bootstrap(props: BootstrapProps) {
     });
   }
 
-  async function restartAuthorization(config: HostedConfig): Promise<void> {
+  async function restartAuthorization(
+    config: HostedConfig,
+    prefetched?: Promise<InitialMetadataResult>,
+  ): Promise<void> {
     try {
-      const metadata = await discoverOAuthMetadata(config.oauth);
+      const metadata =
+        prefetched === undefined
+          ? await discoverOAuthMetadata(config.oauth)
+          : await acquireMetadata(prefetched);
       window.location.replace(
         await createAuthorizationUrl(
           metadata,
@@ -285,15 +302,34 @@ async function loadDeploymentAttempt(): Promise<DeploymentAttempt> {
   const config = await loadDeploymentConfig();
   if (config.mode === "app") return { type: "app", config };
   requireCurrentRedirect(config);
+  const metadata = acquireInitialMetadata(config);
   const url = new URL(window.location.href);
   if (url.searchParams.has("code") || url.searchParams.has("error")) {
-    return { type: "hosted", config, session: null };
+    return { type: "hosted", config, metadata, session: null };
   }
   return {
     type: "hosted",
     config,
+    metadata,
     session: acquireSession(config.oauth.session_token_endpoint),
   };
+}
+
+function acquireInitialMetadata(
+  config: HostedConfig,
+): Promise<InitialMetadataResult> {
+  return discoverOAuthMetadata(config.oauth).then(
+    (metadata): InitialMetadataResult => ({ type: "metadata", metadata }),
+    (error: unknown): InitialMetadataResult => ({ type: "error", error }),
+  );
+}
+
+async function acquireMetadata(
+  result: Promise<InitialMetadataResult>,
+): Promise<OAuthMetadata> {
+  const metadata = await result;
+  if (metadata.type === "error") throw metadata.error;
+  return metadata.metadata;
 }
 
 function acquireSession(endpoint: string): Promise<InitialSessionResult> {

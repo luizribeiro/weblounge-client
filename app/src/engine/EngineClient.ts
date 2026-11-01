@@ -30,7 +30,7 @@ export interface EngineClient {
 }
 
 export interface EnginePort {
-  postMessage(message: UiToEngine): void;
+  postMessage(message: UiToEngine | { readonly type: "host_detach" }): void;
   addEventListener(
     type: "message",
     listener: (event: MessageEvent<unknown>) => void,
@@ -175,6 +175,7 @@ export class WorkerEngineClient implements EngineClient {
     if (this.#closed) return;
     this.#closed = true;
     this.#clearHeartbeat();
+    this.#connection.port.postMessage({ type: "host_detach" });
     this.#detach(this.#connection);
     this.#connection.close();
     const error = new Error("engine client closed");

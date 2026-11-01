@@ -485,8 +485,6 @@ pub enum EngineRequest {
         /// One-shot bearer token moved into papo's redacting secret store.
         #[ts(type = "string")]
         oauth_token: RedactedSecret,
-        /// Concierge endpoint retained by the worker adapter for later reconnects.
-        session_token_endpoint: String,
         /// Channels joined after registration.
         autojoin: Vec<String>,
     },
@@ -497,6 +495,11 @@ pub enum EngineRequest {
         /// One-shot bearer token moved into papo's redacting secret store.
         #[ts(type = "string")]
         oauth_token: RedactedSecret,
+    },
+    /// Stop a hosted reconnect when no page can acquire a fresh token.
+    HostedTokenUnavailable {
+        /// Hosted network waiting for a page-owned token.
+        network_id: NetworkId,
     },
     /// Clear a hosted token at its known expiry and ask every UI tab to authorize again.
     ExpireHostedAuthentication {
@@ -980,7 +983,6 @@ mod tests {
             endpoint: "wss://beta.weblounge.org/socket".into(),
             nickname: "*".into(),
             oauth_token: "unique-oauth-token".into(),
-            session_token_endpoint: "https://members.weblounge.org/oauth/session-token".into(),
             autojoin: vec!["#lounge".into()],
         };
         let credentials = SaslCredentials {
@@ -998,7 +1000,6 @@ mod tests {
                 "endpoint": "wss://beta.weblounge.org/socket",
                 "nickname": "*",
                 "oauth_token": "unique-oauth-token",
-                "session_token_endpoint": "https://members.weblounge.org/oauth/session-token",
                 "autojoin": ["#lounge"],
             })
         );

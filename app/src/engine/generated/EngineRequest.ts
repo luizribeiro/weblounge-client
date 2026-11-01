@@ -54,10 +54,6 @@ nickname: string,
  */
 oauth_token: string,
 /**
- * Concierge endpoint retained by the worker adapter for later reconnects.
- */
-session_token_endpoint: string,
-/**
  * Channels joined after registration.
  */
 autojoin: Array<string>, } | { "type": "reconnect_hosted",
@@ -68,7 +64,11 @@ network_id: NetworkId,
 /**
  * One-shot bearer token moved into papo's redacting secret store.
  */
-oauth_token: string, } | { "type": "expire_hosted_authentication",
+oauth_token: string, } | { "type": "hosted_token_unavailable",
+/**
+ * Hosted network waiting for a page-owned token.
+ */
+network_id: NetworkId, } | { "type": "expire_hosted_authentication",
 /**
  * Hosted network whose token expired.
  */
