@@ -1,8 +1,3 @@
-import {
-  KeyboardMotionController,
-  selectKeyboardMotion,
-} from "./keyboard-motion";
-
 export type ViewportGeometry =
   | { readonly keyboard: "closed" }
   | {
@@ -60,7 +55,6 @@ export function documentPanned({
 
 export interface ViewportObserverOptions {
   readonly onScreenKeyboard?: () => boolean;
-  readonly prefersReducedMotion?: () => boolean;
 }
 
 export function shouldBeginKeyboardClose(
@@ -78,7 +72,6 @@ export function shouldBeginKeyboardClose(
 }
 
 const cachedHeights = new WeakMap<Window, Map<string, number>>();
-const cachedClosedHeights = new WeakMap<Window, Map<string, number>>();
 
 export function cacheKeyboardHeight(
   browserWindow: Window,
@@ -100,35 +93,10 @@ export function requestCachedKeyboardOpen(browserWindow: Window): boolean {
   return true;
 }
 
-export function cacheKeyboardClosedHeight(
-  browserWindow: Window,
-  height: number,
-): void {
-  if (height <= 0) return;
-  const heights =
-    cachedClosedHeights.get(browserWindow) ?? new Map<string, number>();
-  heights.set(orientation(browserWindow), height);
-  cachedClosedHeights.set(browserWindow, heights);
-}
-
-export function keyboardCloseDistance(
-  browserWindow: Window,
-  openHeight: number,
-  fallbackClosedHeight = browserWindow.innerHeight,
-): number {
-  const closedHeight =
-    cachedClosedHeights.get(browserWindow)?.get(orientation(browserWindow)) ??
-    fallbackClosedHeight;
-  return Math.max(0, closedHeight - openHeight);
-}
-
 export function observeViewportGeometry(
   root: HTMLElement,
   browserWindow: Window,
-  {
-    onScreenKeyboard = () => true,
-    prefersReducedMotion = () => false,
-  }: ViewportObserverOptions = {},
+  { onScreenKeyboard = () => true }: ViewportObserverOptions = {},
 ): () => void {
   const viewport = browserWindow.visualViewport;
   if (viewport === null || viewport === undefined) return () => {};
@@ -136,26 +104,13 @@ export function observeViewportGeometry(
   const previousOverlay = keyboard?.overlaysContent;
   if (keyboard !== undefined && onScreenKeyboard())
     keyboard.overlaysContent = true;
-  const motion = new KeyboardMotionController(
-    browserWindow,
-    selectKeyboardMotion(
-      browserWindow.navigator.userAgent,
-      keyboard !== undefined,
-    ),
-    prefersReducedMotion,
-  );
   let published = "";
-  let publishedGeometry: ViewportGeometry = { keyboard: "closed" };
   let frame = 0;
   let stableFrames = 0;
   let settleUntil = 0;
   let expectedKeyboard: ViewportGeometry["keyboard"] | undefined;
-  let pendingGeometry: ViewportGeometry | undefined;
   let closeFrame = 0;
   let closing = false;
-  let closeLayoutCommitted = false;
-  let closedGeometryVerified = false;
-  let pendingClosedHeight: number | undefined;
   let pointerMayFocus = false;
   let awaitingMeasuredOpen = false;
   let correctingPan = false;
@@ -192,20 +147,7 @@ export function observeViewportGeometry(
     const key = JSON.stringify(geometry);
     if (key === published) return false;
     published = key;
-    publishedGeometry = geometry;
-    pendingGeometry = undefined;
-    if (geometry.keyboard === "closed") {
-      closing = false;
-      closeLayoutCommitted = false;
-      closedGeometryVerified = false;
-      pendingClosedHeight = undefined;
-    }
     applyGeometry(root, geometry);
-    if (geometry.keyboard === "closed")
-      cacheKeyboardClosedHeight(
-        browserWindow,
-        root.getBoundingClientRect().height,
-      );
     browserWindow.dispatchEvent(new Event(appGeometryChangeEvent));
     return true;
   };
@@ -213,21 +155,6 @@ export function observeViewportGeometry(
     awaitingMeasuredOpen = false;
     cacheKeyboardHeight(browserWindow, height);
     browserWindow.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
-  };
-  const commitClosedLayout = () => {
-    closeLayoutCommitted = true;
-    if (
-      closedGeometryVerified ||
-      resolveViewportGeometry(measure()).keyboard === "closed"
-    ) {
-      publish({ keyboard: "closed" });
-      return;
-    }
-    prepareGeometry(
-      root,
-      { keyboard: "closed" },
-      pendingClosedHeight ?? browserWindow.innerHeight,
-    );
   };
   const update = () => {
     const initial = measure();
@@ -242,56 +169,20 @@ export function observeViewportGeometry(
       measured,
       expectedKeyboard === "open" || keyboard !== undefined ? 0 : undefined,
     );
-    const key = JSON.stringify(geometry);
-    if (key === published) {
-      if (geometry.keyboard === "open" && awaitingMeasuredOpen)
-        acceptMeasuredOpen(geometry.height);
-      return { changed: false, geometry };
+    if (geometry.keyboard === "open") {
+      if (awaitingMeasuredOpen) acceptMeasuredOpen(geometry.height);
+      else cacheKeyboardHeight(browserWindow, geometry.height);
     }
-    if (JSON.stringify(pendingGeometry) === key) {
+    if (closing) {
       if (geometry.keyboard === "closed") {
-        closedGeometryVerified = true;
-        if (closeLayoutCommitted) publish(geometry);
+        closing = false;
+        expectedKeyboard = undefined;
       }
       return { changed: false, geometry };
     }
-    const commit = () => publish(geometry);
-    pendingGeometry = geometry;
-    if (geometry.keyboard === "open") {
-      pendingClosedHeight = undefined;
-      const beforeHeight = root.getBoundingClientRect().height;
-      cacheKeyboardClosedHeight(browserWindow, beforeHeight);
-      motion.open(
-        {
-          afterHeight: geometry.height,
-          beforeHeight,
-          viewportOffsetTop: panned
-            ? Math.max(1, initial.viewport.offsetTop, initial.scrollY)
-            : 0,
-        },
-        () => prepareGeometry(root, geometry, beforeHeight),
-        commit,
-      );
-      if (awaitingMeasuredOpen) acceptMeasuredOpen(geometry.height);
-    } else {
-      closeLayoutCommitted = false;
-      closedGeometryVerified = true;
-      const openHeight =
-        publishedGeometry.keyboard === "open"
-          ? publishedGeometry.height
-          : root.getBoundingClientRect().height;
-      const distance =
-        publishedGeometry.keyboard === "open"
-          ? keyboardCloseDistance(browserWindow, openHeight)
-          : 0;
-      pendingClosedHeight = openHeight + distance;
-      motion.beginClose(
-        distance,
-        () => prepareGeometry(root, geometry, openHeight),
-        commitClosedLayout,
-      );
-    }
-    return { changed: true, geometry };
+    if (expectedKeyboard === "open" && geometry.keyboard === "closed")
+      return { changed: false, geometry };
+    return { changed: publish(geometry), geometry };
   };
   // WebKit can fire viewport events before it updates the values they report,
   // so re-measure on the following frames until the geometry stops changing.
@@ -309,29 +200,18 @@ export function observeViewportGeometry(
       expectedKeyboard = undefined;
     }
   };
-  const measuredKeyboardIsOpen = () =>
-    resolveViewportGeometry(measure()).keyboard === "open";
   const keepKeyboardOpen = () => {
     if (closeFrame !== 0) {
       browserWindow.cancelAnimationFrame(closeFrame);
       closeFrame = 0;
     }
     closing = false;
-    pendingGeometry = undefined;
-    closeLayoutCommitted = false;
-    closedGeometryVerified = false;
-    pendingClosedHeight = undefined;
     if (expectedKeyboard === "closed") expectedKeyboard = undefined;
-    motion.keepOpen();
-    applyGeometry(root, publishedGeometry);
+    const measured = resolveViewportGeometry(measure());
+    if (measured.keyboard === "open") publish(measured);
+    else requestCachedKeyboardOpen(browserWindow);
   };
-  const onChange = (event?: Event) => {
-    if (
-      closing &&
-      (event?.type === "resize" || event?.type === "geometrychange") &&
-      measuredKeyboardIsOpen()
-    )
-      keepKeyboardOpen();
+  const onChange = () => {
     if (correctingPan) {
       stableFrames = 0;
       if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
@@ -351,7 +231,7 @@ export function observeViewportGeometry(
     pointerMayFocus = true;
     if (keyboardField(event.target)) {
       expectKeyboard("open");
-      onChange();
+      if (!requestCachedKeyboardOpen(browserWindow)) onChange();
     }
   };
   const clearPointerFocus = () => {
@@ -396,46 +276,20 @@ export function observeViewportGeometry(
           return;
         closing = true;
         expectKeyboard("closed");
-        if (publishedGeometry.keyboard === "open") {
-          pendingGeometry = { keyboard: "closed" };
-          closeLayoutCommitted = false;
-          closedGeometryVerified = false;
-          const openHeight = publishedGeometry.height;
-          const distance = keyboardCloseDistance(browserWindow, openHeight);
-          pendingClosedHeight = openHeight + distance;
-          motion.beginClose(
-            distance,
-            () => prepareGeometry(root, { keyboard: "closed" }, openHeight),
-            commitClosedLayout,
-          );
-        }
+        publish({ keyboard: "closed" });
         onChange();
       });
       return;
     }
-    onChange(event);
+    onChange();
   };
   const onCachedOpen = (event: Event) => {
     const height = (event as CustomEvent<number>).detail;
     expectKeyboard("open");
-    pendingClosedHeight = undefined;
-    const beforeHeight = root.getBoundingClientRect().height;
-    cacheKeyboardClosedHeight(browserWindow, beforeHeight);
-    pendingGeometry = { keyboard: "open", height };
-    motion.open(
-      {
-        afterHeight: height,
-        beforeHeight,
-        viewportOffsetTop: 0,
-      },
-      () => prepareGeometry(root, { keyboard: "open", height }, beforeHeight),
-      () => publish({ keyboard: "open", height }),
-    );
+    closing = false;
+    publish({ keyboard: "open", height });
   };
-  const onOrientationChange = () => {
-    motion.cancel();
-    onChange();
-  };
+  const onOrientationChange = () => onChange();
   const viewportEvents = ["resize", "scroll"] as const;
   const windowEvents = ["resize", "scroll", "focusin", "focusout"] as const;
   for (const type of viewportEvents) viewport.addEventListener(type, onChange);
@@ -461,7 +315,6 @@ export function observeViewportGeometry(
     browserWindow.removeEventListener("pointercancel", clearPointerFocus);
     browserWindow.removeEventListener(cachedKeyboardOpenEvent, onCachedOpen);
     browserWindow.removeEventListener("orientationchange", onOrientationChange);
-    motion.cancel();
     if (keyboard !== undefined && previousOverlay !== undefined)
       keyboard.overlaysContent = previousOverlay;
     delete root.dataset.keyboard;
@@ -492,19 +345,6 @@ function applyGeometry(root: HTMLElement, geometry: ViewportGeometry): void {
   }
   root.style.setProperty("--wl-app-height", `${geometry.height}px`);
   root.style.setProperty("--wl-app-top", "0px");
-}
-
-function prepareGeometry(
-  root: HTMLElement,
-  geometry: ViewportGeometry,
-  retainedHeight: number,
-): void {
-  root.dataset.keyboard = geometry.keyboard;
-  root.style.setProperty("--wl-app-height", `${retainedHeight}px`);
-  root.style.setProperty("--wl-app-top", "0px");
-  root.ownerDocument.defaultView?.dispatchEvent(
-    new Event(appGeometryChangeEvent),
-  );
 }
 
 function clearOpenGeometry(root: HTMLElement): void {

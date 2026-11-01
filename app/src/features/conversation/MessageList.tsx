@@ -147,11 +147,7 @@ export function MessageList(props: MessageListProps) {
         const viewportChanged =
           (observedWidth !== undefined && observedWidth !== next.width) ||
           (observedHeight !== undefined && observedHeight !== next.height);
-        const followEnd =
-          viewportChanged &&
-          atLiveEdge() &&
-          (list?.closest("[data-keyboard-motion-active='true']") ?? null) ===
-            null;
+        const followEnd = viewportChanged && atLiveEdge();
         if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
         observedHeight = next.height;
@@ -287,11 +283,7 @@ export function MessageList(props: MessageListProps) {
             { root: list },
           );
     const anchorGeometryChange = () => {
-      if (
-        atLiveEdge() &&
-        (list?.closest("[data-keyboard-motion-active='true']") ?? null) === null
-      )
-        virtualizer.scrollToEnd();
+      if (atLiveEdge()) virtualizer.scrollToEnd();
     };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
@@ -317,7 +309,7 @@ export function MessageList(props: MessageListProps) {
 
   return (
     <div class={styles.surface}>
-      {/* biome-ignore lint/a11y/useSemanticElements: the scroll owner wraps a separately animated semantic row layer */}
+      {/* biome-ignore lint/a11y/useSemanticElements: the scroll owner wraps the semantic row layer */}
       <div
         aria-label="Messages"
         class={styles.list}
@@ -369,11 +361,7 @@ export function MessageList(props: MessageListProps) {
           copySelectedRows(event, event.currentTarget, toCopyRows(rows()))
         }
       >
-        <ol
-          class={styles.motionLayer}
-          data-keyboard-motion-surface="true"
-          role="presentation"
-        >
+        <ol class={styles.motionLayer} role="presentation">
           <li
             aria-hidden="true"
             class={styles.spacer}

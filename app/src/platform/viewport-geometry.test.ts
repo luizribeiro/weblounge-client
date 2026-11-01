@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  cacheKeyboardClosedHeight,
   cacheKeyboardHeight,
   documentPanned,
-  keyboardCloseDistance,
   observeViewportGeometry,
   requestCachedKeyboardOpen,
   resolveViewportGeometry,
@@ -94,16 +92,6 @@ describe("keyboard close decision", () => {
   });
 });
 
-describe("keyboard close distance", () => {
-  it("uses the cached corrected closed height for the current orientation", () => {
-    const browserWindow = fakeWindow(new FakeVisualViewport(500));
-
-    expect(keyboardCloseDistance(browserWindow, 500, 812)).toBe(312);
-    cacheKeyboardClosedHeight(browserWindow, 874);
-    expect(keyboardCloseDistance(browserWindow, 500, 812)).toBe(374);
-  });
-});
-
 describe("viewport geometry observer", () => {
   afterEach(() => {
     for (const stop of running.splice(0)) stop();
@@ -165,7 +153,7 @@ describe("viewport geometry observer", () => {
 
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    expect(changed).toHaveBeenCalledTimes(2);
+    expect(changed).toHaveBeenCalledOnce();
     window.removeEventListener("weblounge:app-geometry-change", changed);
   });
 
@@ -222,11 +210,11 @@ describe("viewport geometry observer", () => {
     );
   });
 
-  it("uses a cached orientation height before focus and leaves a cold path alone", () => {
-    const browserWindow = fakeWindow(
-      new FakeVisualViewport(window.innerHeight),
-    );
+  it("uses cached geometry before focus and replaces it at the first measured step", () => {
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport);
     const root = document.createElement("div");
+    const field = textField();
     document.body.append(root);
     const stop = observeViewportGeometry(root, browserWindow);
     running.push(stop);
@@ -235,95 +223,70 @@ describe("viewport geometry observer", () => {
     expect(root.dataset.keyboard).toBe("closed");
 
     cacheKeyboardHeight(browserWindow, window.innerHeight - 320);
-    expect(requestCachedKeyboardOpen(browserWindow)).toBe(true);
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     expect(root.dataset.keyboard).toBe("open");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 320}px`,
     );
-  });
 
-  it("starts close motion one frame after focusout before closed geometry arrives", async () => {
-    const { root, viewport } = observe();
-    const field = textField();
     viewport.set(window.innerHeight - 300, 0, "resize");
-    const { animate } = keyboardMotionFixture();
-
-    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-
-    expect(animate).not.toHaveBeenCalled();
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    expect(animate).toHaveBeenCalledTimes(2);
-    expect(animate.mock.calls[0]?.[0]).toEqual([
-      { transform: "translateY(0px)" },
-      { transform: "translateY(300px)" },
-    ]);
-    expect(root.dataset.keyboard).toBe("closed");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 300}px`,
     );
   });
 
-  it("retains the corrected closed height until late close geometry arrives", async () => {
+  it("commits the closed layout one frame after focusout before geometry arrives", async () => {
     const { root, viewport } = observe();
     const field = textField();
     viewport.set(window.innerHeight - 300, 0, "resize");
-    const { finish } = keyboardMotionFixture();
+
+    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    expect(root.dataset.keyboard).toBe("open");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
+  });
+
+  it("does not let late open geometry undo a committed close", async () => {
+    const { root, viewport } = observe();
+    const field = textField();
+    viewport.set(window.innerHeight - 300, 0, "resize");
 
     field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    finish();
-    await Promise.resolve();
-    await Promise.resolve();
+    viewport.dispatchEvent(new Event("resize"));
 
     expect(root.dataset.keyboard).toBe("closed");
-    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
-      `${window.innerHeight}px`,
-    );
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
   });
 
   it("keeps the keyboard still when focus returns before the close frame", async () => {
-    const { viewport } = observe();
+    const { root, viewport } = observe();
     const field = textField();
     const button = document.createElement("button");
     document.body.append(button);
     viewport.set(window.innerHeight - 300, 0, "resize");
-    const { animate } = keyboardMotionFixture();
 
     field.focus();
     button.focus();
     field.focus();
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    expect(animate).not.toHaveBeenCalled();
-  });
-
-  it("cancels close motion when refocus proves the keyboard stayed open", async () => {
-    const { root, viewport } = observe();
-    const field = textField();
-    viewport.set(window.innerHeight - 300, 0, "resize");
-    const { cancel, scope } = keyboardMotionFixture();
-
-    field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-
-    expect(cancel).toHaveBeenCalledTimes(2);
-    expect(scope.dataset.keyboardMotionActive).toBeUndefined();
+    expect(document.activeElement).toBe(field);
     expect(root.dataset.keyboard).toBe("open");
   });
 
-  it("cancels close motion when resize still measures an open keyboard", async () => {
+  it("restores the open layout when a keyboard field refocuses after the close frame", async () => {
     const { root, viewport } = observe();
     const field = textField();
     viewport.set(window.innerHeight - 300, 0, "resize");
-    const { cancel, scope } = keyboardMotionFixture();
 
     field.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    viewport.dispatchEvent(new Event("resize"));
+    expect(root.dataset.keyboard).toBe("closed");
+    field.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 
-    expect(cancel).toHaveBeenCalledTimes(2);
-    expect(scope.dataset.keyboardMotionActive).toBeUndefined();
     expect(root.dataset.keyboard).toBe("open");
   });
 
@@ -398,30 +361,6 @@ describe("viewport geometry observer", () => {
 });
 
 const running: (() => void)[] = [];
-
-function keyboardMotionFixture() {
-  const scope = document.createElement("div");
-  scope.dataset.keyboardMotion = "true";
-  const content = document.createElement("div");
-  content.dataset.keyboardMotionSurface = "true";
-  const composer = document.createElement("div");
-  composer.dataset.composer = "true";
-  composer.dataset.keyboardMotionSurface = "true";
-  scope.append(content, composer);
-  document.body.append(scope);
-  const cancel = vi.fn();
-  let finish = () => {};
-  const finished = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  const animate = vi.fn().mockReturnValue({
-    cancel,
-    finished,
-  });
-  content.animate = animate;
-  composer.animate = animate;
-  return { animate, cancel, finish, scope };
-}
 
 function observe(options?: ViewportObserverOptions) {
   const root = document.createElement("div");

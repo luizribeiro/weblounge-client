@@ -98,30 +98,23 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   values, each event re-measures on following frames until geometry holds for two of them.
 - `visualViewport.height` is geometry, not animation progress: WKWebView consumes the keyboard's
   final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
-  The first open signal starts compositor motion while `#root` remains at its closed geometry;
-  close likewise retains open geometry. The header and transcript scroller box therefore stay
-  fixed. Only the composer and an inner transcript-row layer move, with enough pixel overscan above
-  the viewport to keep close motion filled with rows. The shell clips horizontally but permits
-  vertical paint over the area the keyboard is covering, so neither moving surface is cut at the
-  target app height. When motion finishes, target root geometry, live-edge anchoring, and removal of
-  the compensating transforms commit together before paint.
-- The full WebKit-301108-corrected closed height is cached per orientation when open geometry is
-  measured. Close distance is that cached height minus open height; measuring it must never resize
-  the live transcript. A late close viewport step only verifies the target and does not delay the
-  layout commit. The standalone document keeps its corrected full height through that commit, so a
-  status-bar-short intermediate layout cannot paint. On focusout, close motion still waits one frame
-  to confirm focus did not return to a keyboard field; a resize or refocus that still proves open
-  geometry cancels the close at the open position. A nonzero visual-viewport offset is first undone
-  and never compounded with app motion.
-- iOS 26 uses a 333ms sampled critically damped spring, front-loaded to match the on-device keyboard
-  reaching about 95% of its travel in 200ms, based on [Telegram's matching keyboard
-  animation](https://github.com/TelegramMessenger/Telegram-iOS/blob/master/submodules/Display/Source/CAAnimationUtils.swift);
-  earlier iOS uses 500ms `cubic-bezier(0.38, 0.7, 0.125, 1)`. Android requests
-  `virtualKeyboard.overlaysContent`, follows `geometrychange`, and uses 285ms
-  `cubic-bezier(0.2, 0, 0, 1)`, matching AOSP's [synchronized IME duration and
-  interpolator](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/view/InsetsController.java).
-  Orientation changes cancel and snap. Reduced motion may snap but never shortens the duration and
-  desynchronizes the app from a moving keyboard.
+  The app deliberately does not animate keyboard layout. On open it applies the final layout in one
+  step at the first signal: a cached open height for the current orientation at composer
+  pointerdown, before focus, or otherwise the first measured visual-viewport step. The transcript
+  is bottom-anchored in the same frame before paint. There are no height transitions, transforms,
+  retained layouts, or cloned row layers. This is a deliberate simplification after app-owned
+  animation repeatedly produced worse on-device glitches than an immediate layout change.
+- On focusout, close waits one frame to confirm focus did not return to a keyboard field. It then
+  commits the closed layout immediately, so the departing keyboard uncovers a composer that is
+  already in place. A refocus into a keyboard field cancels that close; this preserves taps from the
+  composer into typeahead suggestions. Later viewport events only re-verify the chosen layout.
+  Portrait and landscape keep separate cached open heights. A nonzero visual-viewport offset is
+  undone and never published as app geometry.
+- The WebKit-301108 full-height document workaround switches only with `data-keyboard`: enabled
+  while closed and disabled while open. It never follows an intermediate motion state. Android
+  still requests `virtualKeyboard.overlaysContent` and follows `geometrychange`, but applies the
+  same one-step policy. Reduced-motion preferences require no separate keyboard behavior because
+  the app owns no keyboard animation.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
   `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout.
