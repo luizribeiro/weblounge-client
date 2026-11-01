@@ -78,6 +78,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       ...(cspEnabled ? [cspDevStyles()] : []),
       solid(),
+      injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
       ...(appConfigHarness ? [testAppConfig()] : []),
     ],
@@ -116,6 +117,38 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+function injectStartupImageLinks(): Plugin {
+  const devices = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "startup-images.json"), "utf8"),
+  ) as Array<{ height: number; name: string; ratio: number; width: number }>;
+  return {
+    name: "weblounge-startup-images",
+    transformIndexHtml: {
+      order: "pre",
+      handler: () =>
+        devices.flatMap((device) =>
+          (["portrait", "landscape"] as const).flatMap((orientation) =>
+            (["light", "dark"] as const).map((appearance) => ({
+              tag: "link",
+              attrs: {
+                href: `/startup/${device.name}-${orientation}-${appearance}.png`,
+                media: [
+                  `(device-width: ${device.width}px)`,
+                  `(device-height: ${device.height}px)`,
+                  `(-webkit-device-pixel-ratio: ${device.ratio})`,
+                  `(orientation: ${orientation})`,
+                  `(prefers-color-scheme: ${appearance})`,
+                ].join(" and "),
+                rel: "apple-touch-startup-image",
+              },
+              injectTo: "head" as const,
+            })),
+          ),
+        ),
+    },
+  };
+}
 
 function testWebSocketProxy() {
   return {

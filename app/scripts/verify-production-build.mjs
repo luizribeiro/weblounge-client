@@ -5,6 +5,7 @@ import { inflateSync } from "node:zlib";
 const outputDirectory = resolve(import.meta.dirname, "../dist");
 
 await verifyIcons(outputDirectory);
+await verifyStartupImages(outputDirectory);
 await verifyCspAssets(outputDirectory);
 
 if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
@@ -113,6 +114,75 @@ async function verifyIcons(directory) {
     }
   }
   await readFile(resolve(directory, "icons/favicon.svg"), "utf8");
+}
+
+async function verifyStartupImages(directory) {
+  const devices = JSON.parse(
+    await readFile(
+      resolve(import.meta.dirname, "../startup-images.json"),
+      "utf8",
+    ),
+  );
+  const expectedLinks = new Map();
+  for (const device of devices) {
+    for (const orientation of ["portrait", "landscape"]) {
+      const cssWidth =
+        orientation === "portrait" ? device.width : device.height;
+      const cssHeight =
+        orientation === "portrait" ? device.height : device.width;
+      for (const appearance of ["light", "dark"]) {
+        const filename = `${device.name}-${orientation}-${appearance}.png`;
+        const href = `/startup/${filename}`;
+        expectedLinks.set(
+          href,
+          [
+            `(device-width: ${device.width}px)`,
+            `(device-height: ${device.height}px)`,
+            `(-webkit-device-pixel-ratio: ${device.ratio})`,
+            `(orientation: ${orientation})`,
+            `(prefers-color-scheme: ${appearance})`,
+          ].join(" and "),
+        );
+        const png = await readFile(resolve(directory, `.${href}`));
+        const image = pngMetadata(png);
+        const expectedBackground = appearance === "light" ? "f3f1e9" : "18221e";
+        if (
+          image.width !== cssWidth * device.ratio ||
+          image.height !== cssHeight * device.ratio ||
+          image.firstPixel !== expectedBackground ||
+          !image.opaque
+        ) {
+          throw new Error(
+            `${filename} does not match its splash geometry and theme`,
+          );
+        }
+      }
+    }
+  }
+  const html = await readFile(resolve(directory, "index.html"), "utf8");
+  const links = [
+    ...html.matchAll(/<link\s+[^>]*rel="apple-touch-startup-image"[^>]*>/gu),
+  ].map(([link]) => ({
+    href: link.match(/href="([^"]+)"/u)?.[1],
+    media: link.match(/media="([^"]+)"/u)?.[1]?.replaceAll("&amp;", "&"),
+  }));
+  if (links.length !== expectedLinks.size) {
+    throw new Error(
+      `expected ${expectedLinks.size} startup image links, found ${links.length}`,
+    );
+  }
+  for (const link of links) {
+    if (
+      link.href === undefined ||
+      link.media !== expectedLinks.get(link.href)
+    ) {
+      throw new Error(`unexpected startup image link: ${JSON.stringify(link)}`);
+    }
+    expectedLinks.delete(link.href);
+  }
+  if (expectedLinks.size !== 0) {
+    throw new Error("production HTML is missing startup image links");
+  }
 }
 
 function pngMetadata(png) {

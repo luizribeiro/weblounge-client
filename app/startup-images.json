@@ -1,0 +1,23 @@
+[
+  { "name": "iphone-16-pro-max", "width": 440, "height": 956, "ratio": 3 },
+  { "name": "iphone-14-pro-max", "width": 430, "height": 932, "ratio": 3 },
+  { "name": "iphone-16-pro", "width": 402, "height": 874, "ratio": 3 },
+  { "name": "iphone-14-pro", "width": 393, "height": 852, "ratio": 3 },
+  { "name": "iphone-12-pro-max", "width": 428, "height": 926, "ratio": 3 },
+  { "name": "iphone-12", "width": 390, "height": 844, "ratio": 3 },
+  { "name": "iphone-xs-max", "width": 414, "height": 896, "ratio": 3 },
+  { "name": "iphone-11", "width": 414, "height": 896, "ratio": 2 },
+  { "name": "iphone-x", "width": 375, "height": 812, "ratio": 3 },
+  { "name": "iphone-8-plus", "width": 414, "height": 736, "ratio": 3 },
+  { "name": "iphone-8", "width": 375, "height": 667, "ratio": 2 },
+  { "name": "iphone-se", "width": 320, "height": 568, "ratio": 2 },
+  { "name": "ipad-pro-13", "width": 1032, "height": 1376, "ratio": 2 },
+  { "name": "ipad-pro-12-9", "width": 1024, "height": 1366, "ratio": 2 },
+  { "name": "ipad-pro-11-m4", "width": 834, "height": 1210, "ratio": 2 },
+  { "name": "ipad-pro-11", "width": 834, "height": 1194, "ratio": 2 },
+  { "name": "ipad-air-11", "width": 820, "height": 1180, "ratio": 2 },
+  { "name": "ipad-pro-10-5", "width": 834, "height": 1112, "ratio": 2 },
+  { "name": "ipad-10-2", "width": 810, "height": 1080, "ratio": 2 },
+  { "name": "ipad-9-7", "width": 768, "height": 1024, "ratio": 2 },
+  { "name": "ipad-mini-6", "width": 744, "height": 1133, "ratio": 2 }
+]

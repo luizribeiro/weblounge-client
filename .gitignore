@@ -4,6 +4,8 @@
 /node_modules/
 /app/dist/
 /app/public/icons/
+/app/public/startup/
+/app/.startup-images-hash
 /app/node_modules/
 /app/playwright-report/
 /app/test-results/

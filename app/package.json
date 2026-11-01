@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm icons && tsc --noEmit && vite build && node scripts/verify-production-build.mjs",
-    "dev": "pnpm icons && vite",
+    "build": "pnpm assets && tsc --noEmit && vite build && node scripts/verify-production-build.mjs",
+    "dev": "pnpm assets && vite",
+    "assets": "pnpm icons && pnpm startup-images",
     "e2e": "playwright test",
     "icons": "node scripts/generate-icons.mjs",
+    "startup-images": "node scripts/generate-startup-images.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
