@@ -49,7 +49,11 @@ command_id: string,
 /**
  * Diagnostic text.
  */
-message: string, } | { "type": "notice",
+message: string, } | { "type": "hosted_token_required",
+/**
+ * Hosted network waiting for a new connection attempt.
+ */
+network_id: NetworkId, } | { "type": "notice",
 /**
  * Localization key interpreted by the UI shell.
  */

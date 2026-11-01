@@ -115,6 +115,7 @@ function Bootstrap(props: BootstrapProps) {
         engineClient: takePrewarmedEngineClient(),
         session: {
           network: config.network,
+          sessionTokenEndpoint: config.oauth.session_token_endpoint,
           token: new OneShotAccessToken(token.accessToken, token.expiresAt),
         },
       });

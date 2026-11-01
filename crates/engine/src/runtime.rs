@@ -42,6 +42,14 @@ struct RunningNetwork {
     device_online: bool,
     pending_sends: VecDeque<QueuedSend>,
     flushing_sends: bool,
+    hosted_reconnect: Option<HostedReconnectConfig>,
+}
+
+#[derive(Clone)]
+struct HostedReconnectConfig {
+    endpoint: String,
+    nickname: String,
+    autojoin: Vec<String>,
 }
 
 struct QueuedSend {
@@ -177,20 +185,16 @@ impl Runtime {
                 endpoint,
                 nickname,
                 oauth_token,
+                session_token_endpoint: _,
                 autojoin,
             } => self.connect(
                 envelope.id,
-                ConnectConfig {
-                    label,
-                    endpoint,
-                    nickname,
-                    authentication: ConnectionAuthentication::HostedOAuth {
-                        token: papo::Secret::new(oauth_token.into_inner()),
-                    },
-                    autojoin,
-                    allow_insecure: false,
-                },
+                hosted_connect_config(label, endpoint, nickname, oauth_token, autojoin),
             ),
+            EngineRequest::ReconnectHosted {
+                network_id,
+                oauth_token,
+            } => self.reconnect_hosted(envelope.id, network_id, oauth_token),
             EngineRequest::ExpireHostedAuthentication { network_id } => {
                 self.expire_hosted_authentication(envelope.id, network_id)
             }
@@ -456,21 +460,21 @@ impl Runtime {
         state.next_network_id += 1;
         let instance = state.next_instance;
         state.next_instance += 1;
-        let sasl = config.authentication.into_sasl();
-        let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
-            .sasl(sasl)
-            .allow_insecure_auth(config.allow_insecure)
-            .reconnect(
-                papo::Reconnect::exponential()
-                    .max_delay(Duration::from_secs(30))
-                    .refused_delay(Duration::from_secs(30)),
-            )
-            .history_on_reconnect(true);
-        if !config.autojoin.is_empty() {
-            builder = builder.autojoin(config.autojoin);
-        }
-        let (client, events, driver) = builder.build();
-        let model = NetworkModel::new(id, config.label, config.nickname, DEFAULT_WINDOW_LIMIT);
+        let hosted_reconnect =
+            (authentication_kind == AuthenticationKind::HostedOAuth).then(|| {
+                HostedReconnectConfig {
+                    endpoint: config.endpoint.clone(),
+                    nickname: config.nickname.clone(),
+                    autojoin: config.autojoin.clone(),
+                }
+            });
+        let model = NetworkModel::new(
+            id,
+            config.label.clone(),
+            config.nickname.clone(),
+            DEFAULT_WINDOW_LIMIT,
+        );
+        let (client, events, driver) = build_client(config);
         let output = vec![
             model.network_event(),
             model.buffers_event(),
@@ -485,6 +489,7 @@ impl Runtime {
             device_online: true,
             pending_sends: VecDeque::new(),
             flushing_sends: false,
+            hosted_reconnect,
         });
         drop(state);
 
@@ -497,6 +502,58 @@ impl Runtime {
             drain_events(state, outbound, client, events, instance).await;
         });
         output
+    }
+
+    fn reconnect_hosted(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        oauth_token: crate::RedactedSecret,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(mut running) = state.network.take() else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(config) = running.hosted_reconnect.clone() else {
+            state.network = Some(running);
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        if running.model.id() != network_id {
+            state.network = Some(running);
+            return rejected_command(command_id, "engine.network_not_found");
+        }
+        let instance = state.next_instance;
+        state.next_instance += 1;
+        let previous = running.client;
+        let (client, events, driver) = build_client(ConnectConfig {
+            label: String::new(),
+            endpoint: config.endpoint,
+            nickname: config.nickname,
+            authentication: ConnectionAuthentication::HostedOAuth {
+                token: papo::Secret::new(oauth_token.into_inner()),
+            },
+            autojoin: config.autojoin,
+            allow_insecure: false,
+        });
+        running.instance = instance;
+        running.client = client.clone();
+        running.connection_attempt = 1;
+        running.flushing_sends = false;
+        state.network = Some(running);
+        drop(state);
+
+        spawn_task(async move {
+            let _ = previous.quit(String::new()).await;
+        });
+        spawn_task(async move {
+            let _ = driver.await;
+        });
+        let state = Arc::clone(&self.state);
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            drain_events(state, outbound, client, events, instance).await;
+        });
+        vec![EngineToUi::CommandResult { id: command_id }]
     }
 
     fn disconnect(
@@ -537,6 +594,7 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let client = running.client.clone();
+        let hosted = running.authentication_kind == AuthenticationKind::HostedOAuth;
         let online = running.model.is_online();
         let state_event = (!online).then(|| {
             let next = next_connection_state(
@@ -554,6 +612,9 @@ impl Runtime {
                     .await
                     .is_ok_and(|result| result.is_ok());
             let result = if alive {
+                Ok(())
+            } else if hosted {
+                let _ = outbound.send(EngineToUi::HostedTokenRequired { network_id });
                 Ok(())
             } else {
                 client.reconnect().await
@@ -587,6 +648,12 @@ impl Runtime {
         };
         running.device_online = online;
         if online {
+            if running.authentication_kind == AuthenticationKind::HostedOAuth {
+                return vec![
+                    EngineToUi::HostedTokenRequired { network_id },
+                    EngineToUi::CommandResult { id: command_id },
+                ];
+            }
             let client = running.client.clone();
             drop(state);
             let outbound = self.outbound.clone();
@@ -1258,6 +1325,42 @@ struct ConnectConfig {
     authentication: ConnectionAuthentication,
     autojoin: Vec<String>,
     allow_insecure: bool,
+}
+
+fn build_client(config: ConnectConfig) -> (papo::Client, papo::Events, papo::Driver) {
+    let sasl = config.authentication.into_sasl();
+    let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
+        .sasl(sasl)
+        .allow_insecure_auth(config.allow_insecure)
+        .reconnect(
+            papo::Reconnect::exponential()
+                .max_delay(Duration::from_secs(30))
+                .refused_delay(Duration::from_secs(30)),
+        )
+        .history_on_reconnect(true);
+    if !config.autojoin.is_empty() {
+        builder = builder.autojoin(config.autojoin);
+    }
+    builder.build()
+}
+
+fn hosted_connect_config(
+    label: String,
+    endpoint: String,
+    nickname: String,
+    oauth_token: crate::RedactedSecret,
+    autojoin: Vec<String>,
+) -> ConnectConfig {
+    ConnectConfig {
+        label,
+        endpoint,
+        nickname,
+        authentication: ConnectionAuthentication::HostedOAuth {
+            token: papo::Secret::new(oauth_token.into_inner()),
+        },
+        autojoin,
+        allow_insecure: false,
+    }
 }
 
 enum ConnectionAuthentication {
@@ -2211,7 +2314,8 @@ fn process_event_with_direct(
             Vec::new()
         }
         papo::Event::Disconnected(disconnected) => {
-            clear_hosted_authentication = process_disconnect(running, &disconnected, &mut output);
+            clear_hosted_authentication =
+                process_disconnected_event(running, &disconnected, &mut output);
             Vec::new()
         }
         _ => Vec::new(),
@@ -2220,13 +2324,35 @@ fn process_event_with_direct(
         state.network = None;
     }
     drop(state);
-    for event in output {
-        let _ = outbound.send(event);
-    }
+    send_events(outbound, output);
     if flush_pending {
         spawn_send_flush(shared_state, outbound.clone(), client.clone(), instance);
     }
     history_targets
+}
+
+fn stop_client(client: papo::Client) {
+    spawn_task(async move {
+        let _ = client.quit(String::new()).await;
+    });
+}
+
+fn process_disconnected_event(
+    running: &mut RunningNetwork,
+    disconnected: &papo::Disconnected,
+    output: &mut Vec<EngineToUi>,
+) -> bool {
+    let clear_authentication = process_disconnect(running, disconnected, output);
+    let refresh_token = running.authentication_kind == AuthenticationKind::HostedOAuth
+        && !clear_authentication
+        && !matches!(disconnected.cause, papo::DisconnectCause::Requested { .. });
+    if refresh_token {
+        output.push(EngineToUi::HostedTokenRequired {
+            network_id: running.model.id(),
+        });
+        stop_client(running.client.clone());
+    }
+    clear_authentication
 }
 
 fn process_connecting(
@@ -2830,10 +2956,11 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{
-        AuthenticationKind, ConnectionAuthentication, ConnectionTransition, MemberViews,
-        RunningNetwork, Runtime, RuntimeState, completion_context, connection_failure_notice,
-        drain_events, fetch_history, fetch_latest, lock, next_connection_state, person_candidates,
-        process_event, process_history, spawn_history_fetch, spawn_read_marker_fetch, utf16_len,
+        AuthenticationKind, ConnectionAuthentication, ConnectionTransition, HostedReconnectConfig,
+        MemberViews, RunningNetwork, Runtime, RuntimeState, completion_context,
+        connection_failure_notice, drain_events, fetch_history, fetch_latest, lock,
+        next_connection_state, person_candidates, process_event, process_history,
+        spawn_history_fetch, spawn_read_marker_fetch, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, EngineRequest,
@@ -3455,6 +3582,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3646,6 +3774,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -3690,6 +3819,7 @@ mod tests {
                 endpoint: "wss://beta.weblounge.org/socket".into(),
                 nickname: "weblounge".into(),
                 oauth_token: "token".into(),
+                session_token_endpoint: "https://members.weblounge.org/oauth/session-token".into(),
                 autojoin: Vec::new(),
             },
         });
@@ -3724,6 +3854,11 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: Some(HostedReconnectConfig {
+                        endpoint: "wss://127.0.0.1/socket".into(),
+                        nickname: "*".into(),
+                        autojoin: vec!["#lounge".into()],
+                    }),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -3743,6 +3878,7 @@ mod tests {
                 endpoint: "wss://beta.weblounge.org/socket".into(),
                 nickname: "weblounge".into(),
                 oauth_token: "discarded-second-token".into(),
+                session_token_endpoint: "https://members.weblounge.org/oauth/session-token".into(),
                 autojoin: vec!["#lounge".into()],
             },
         });
@@ -3756,6 +3892,25 @@ mod tests {
                 EngineToUi::CommandResult { id },
             ] if id == "second-tab"
         ));
+
+        let reconnected = runtime.request(EngineRequestEnvelope {
+            id: "fresh-token".into(),
+            request: EngineRequest::ReconnectHosted {
+                network_id: NetworkId(1),
+                oauth_token: "fresh-token".into(),
+            },
+        });
+        assert!(matches!(
+            reconnected.as_slice(),
+            [EngineToUi::CommandResult { id }] if id == "fresh-token"
+        ));
+        assert_eq!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .map(|running| (running.instance, running.model.id())),
+            Some((2, NetworkId(1)))
+        );
 
         let expired = runtime.request(EngineRequestEnvelope {
             id: "expired".into(),
@@ -3791,6 +3946,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3942,6 +4098,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -3950,13 +4107,7 @@ mod tests {
         };
         mark_runtime_online(&runtime);
 
-        _ = runtime.request(EngineRequestEnvelope {
-            id: "join".into(),
-            request: EngineRequest::SubmitInput {
-                buffer_id: BufferId(1),
-                input: "/join #new secret".into(),
-            },
-        });
+        _ = runtime.submit_input("join".into(), BufferId(1), "/join #new secret");
         assert_eq!(wire.next_sent().await, "JOIN #new secret");
         wire.server(":weblounge!u@host JOIN #new").await;
         _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
@@ -4016,7 +4167,6 @@ mod tests {
         }));
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
         assert_unfocused_direct(&collect(&mut receiver), "alice");
-
         runtime.request(EngineRequestEnvelope {
             id: "part".into(),
             request: EngineRequest::SubmitInput {
@@ -4055,6 +4205,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4368,6 +4519,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4432,6 +4584,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4487,6 +4640,7 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    hosted_reconnect: None,
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -4689,6 +4843,7 @@ mod tests {
                 device_online: true,
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
+                hosted_reconnect: None,
                 client,
                 model,
             }),

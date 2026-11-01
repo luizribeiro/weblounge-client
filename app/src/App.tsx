@@ -798,6 +798,7 @@ async function startEngine(
           endpoint: hostedSession.network.endpoint,
           nickname: "*",
           oauth_token: hostedSession.token.take(),
+          session_token_endpoint: hostedSession.sessionTokenEndpoint,
           autojoin: hostedSession.network.autojoin,
         },
       });

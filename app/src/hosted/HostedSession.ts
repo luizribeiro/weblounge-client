@@ -21,5 +21,6 @@ export class OneShotAccessToken {
 
 export interface HostedSession {
   network: HostedNetworkConfig;
+  sessionTokenEndpoint: string;
   token: OneShotAccessToken;
 }

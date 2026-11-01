@@ -129,6 +129,8 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     <App
       engineClient={client}
       hostedSession={{
+        sessionTokenEndpoint:
+          "https://members.weblounge.org/oauth/session-token",
         network: {
           name: "weblounge",
           endpoint: "wss://beta.weblounge.org/socket",
@@ -150,6 +152,8 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
         endpoint: "wss://beta.weblounge.org/socket",
         nickname: "*",
         oauth_token: "hosted-secret",
+        session_token_endpoint:
+          "https://members.weblounge.org/oauth/session-token",
         autojoin: ["#lounge"],
       },
     }),
@@ -232,6 +236,8 @@ it("caps startup history hydration at 400ms", async () => {
     <App
       engineClient={client}
       hostedSession={{
+        sessionTokenEndpoint:
+          "https://members.weblounge.org/oauth/session-token",
         network: {
           name: "weblounge",
           endpoint: "wss://beta.weblounge.org/socket",
@@ -573,6 +579,8 @@ it("retains engine focus until a delayed shell can consume it", async () => {
     <App
       engineClient={client}
       hostedSession={{
+        sessionTokenEndpoint:
+          "https://members.weblounge.org/oauth/session-token",
         network: {
           name: "weblounge",
           endpoint: "wss://beta.weblounge.org/socket",

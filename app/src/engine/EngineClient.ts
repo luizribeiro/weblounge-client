@@ -409,6 +409,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "hosted_token_required":
+      if (typeof value.network_id === "number") {
+        return { type: messageType, network_id: value.network_id };
+      }
+      break;
     case "notice": {
       const values = decodeStringRecord(value.values);
       const action = decodeNoticeAction(value.action);
@@ -708,6 +713,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "command_specs_changed" ||
     value === "incompatible_build" ||
     value === "diagnostic" ||
+    value === "hosted_token_required" ||
     value === "notice" ||
     value === "command_help_requested" ||
     value === "command_result" ||
