@@ -31,6 +31,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
       aria-label={props.buffer.title}
       class={styles.row}
       data-buffer-id={props.buffer.id}
+      data-cached={props.buffer.cached || undefined}
       onClick={props.onOpen}
       onPointerDown={props.onPressStart}
       type="button"
