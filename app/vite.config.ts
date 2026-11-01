@@ -20,6 +20,15 @@ export default defineConfig(({ mode }) => {
   const maxWorkers = process.env.WEBLOUNGE_VITEST_MAX_WORKERS;
   const testTimeout = process.env.WEBLOUNGE_VITEST_TEST_TIMEOUT;
   const cspEnabled = process.env.WEBLOUNGE_E2E_CSP === "1";
+  const development = mode !== "production";
+  const buildSha = development
+    ? "dev"
+    : (process.env.WEBLOUNGE_BUILD_SHA ?? "dirty");
+  const buildTimestamp = development
+    ? "0"
+    : (process.env.WEBLOUNGE_BUILD_TIMESTAMP ??
+      process.env.SOURCE_DATE_EPOCH ??
+      String(Math.floor(Date.now() / 1_000)));
   const wasmDirectory =
     process.env.WEBLOUNGE_ENGINE_WASM_DIR ??
     resolve(import.meta.dirname, "../result/dist");
@@ -39,6 +48,8 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       __BUILD_ID__: JSON.stringify(buildId(wasmPath)),
+      __BUILD_SHA__: JSON.stringify(buildSha),
+      __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
       __DEBUG_IRC_CONFIG__: JSON.stringify(
         buildDebugIrcConfig(mode, process.env, performanceHarness),
       ),

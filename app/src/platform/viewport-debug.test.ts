@@ -149,6 +149,7 @@ describe("viewport diagnostics", () => {
     const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
 
     expect(overlay?.getAttribute("aria-hidden")).toBe("true");
+    expect(overlay?.textContent).toContain("weblounge dev");
     expect(overlay?.textContent).toContain("event: install");
     input.focus();
     await new Promise((resolve) => requestAnimationFrame(resolve));

@@ -22,12 +22,15 @@
       git-hooks,
       nixpkgs,
       rust-overlay,
+      self,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         overlays = [ (import rust-overlay) ];
+        buildSha = self.shortRev or "dirty";
+        buildTimestamp = toString (self.lastModified or 0);
         pkgs = import nixpkgs { inherit overlays system; };
         rustToolchain = pkgs.rust-bin.stable."1.98.1".minimal.override {
           extensions = [
@@ -209,6 +212,8 @@
             pkgs.pnpmConfigHook
           ];
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          WEBLOUNGE_BUILD_SHA = buildSha;
+          WEBLOUNGE_BUILD_TIMESTAMP = buildTimestamp;
           buildPhase = ''
             runHook preBuild
             pnpm --filter @weblounge/app build
@@ -245,6 +250,7 @@
           WEBLOUNGE_APP_DIR = "${e2eApp}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_ERGO = "1";
+          WEBLOUNGE_EXPECTED_BUILD_SHA = buildSha;
           buildPhase = ''
             runHook preBuild
             weblounge-ergo >ergo.log 2>&1 &

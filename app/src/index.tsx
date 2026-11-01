@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { App } from "./App";
+import { exposeBuildVersion } from "./build-version";
 import { installDensity } from "./density/density";
 import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
@@ -287,6 +288,7 @@ if (root === null) {
 }
 
 installPlatformEnvironment(root, window);
+exposeBuildVersion(window);
 installRequestedDebugOverlays(root, window);
 const splash = root.querySelector<HTMLElement>("[data-initial-splash]");
 if (splash === null) {

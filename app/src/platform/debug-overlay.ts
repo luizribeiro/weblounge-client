@@ -1,4 +1,5 @@
 import "./viewport-debug.css";
+import { buildVersion } from "../build-version";
 
 export type DebugReading = readonly [label: string, value: string];
 
@@ -58,7 +59,11 @@ function managerFor(browserWindow: Window): OverlayManager {
     render() {
       overlay.textContent = [...manager.sections.values()]
         .map(({ section }) =>
-          [`[${section.title}]`, ...format(section.read())].join("\n"),
+          [
+            `[${section.title}]`,
+            buildVersion.text,
+            ...format(section.read()),
+          ].join("\n"),
         )
         .join("\n\n");
     },
