@@ -4,6 +4,7 @@
   --wl-splash-mark: #4e6244;
   --wl-splash-mark-size: 112px;
   --wl-splash-muted: #5c655d;
+  --wl-splash-screen-block-size: 100%;
   --wl-splash-status-height: 18.2px;
   background: var(--wl-splash-bg);
   color-scheme: light;
@@ -18,6 +19,10 @@ body,
 }
 
 @media (display-mode: standalone) {
+  :root {
+    --wl-splash-screen-block-size: 100lvh;
+  }
+
   html {
     min-block-size: min(100lvh, calc(100% + var(--wl-safe-top)));
   }
@@ -26,10 +31,12 @@ body,
 [data-initial-splash] {
   align-items: center;
   background: var(--wl-splash-bg);
+  block-size: var(--wl-splash-screen-block-size);
   display: flex;
   flex-direction: column;
   gap: var(--wl-splash-gap);
-  inset: 0;
+  inset-block-start: 0;
+  inset-inline: 0;
   justify-content: center;
   opacity: 1;
   position: fixed;

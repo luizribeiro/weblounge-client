@@ -116,6 +116,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     and startup reveals channel and recent-DM previews only after their latest history settles or
     the fixed 400ms cap expires. Filmstrip, local-Ergo first-reveal, and stalled-history coverage
     protect the complete path.
+  - [x] Center the standalone splash against its own full-screen `100lvh` box so WebKit's transient
+    status-bar-short layout viewport cannot move the chair before the document-height workaround
+    settles; WebKit coverage also matches the complete chair rect to the generated launch image.
   - [x] Keep the startup font and chair assets Vite-managed in development and production, with
     content hashes in production and working dev-server URLs.
   - [x] Start mobile push-motion measurement after the startup splash has fully left, so the
