@@ -340,9 +340,26 @@ describe("viewport geometry observer", () => {
     expect(surface.dataset.keyboardOwner).toBeUndefined();
   });
 
-  it("opens from measured geometry after a rejected tap and native focus", async () => {
-    const { root, viewport } = observe();
+  it("reopens after a retained-focus send, Done blur, and rejected tap", async () => {
+    const { browserWindow, root, viewport } = observe();
     const field = textField();
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.focus();
+    viewport.set(471, 0, "resize");
+    field.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    expect(root.dataset.keyboard).toBe("open");
+    expect(document.activeElement).toBe(field);
+    expect(requestCachedKeyboardOpen(browserWindow)).toBe(true);
+
+    field.value = "/debug keyboard";
+    field.value = "";
+    expect(document.activeElement).toBe(field);
+    field.blur();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    viewport.set(window.innerHeight, 0, "resize");
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.dataset.keyboardOwner).toBeUndefined();
 
     field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     field.dispatchEvent(new Event("pointerup", { bubbles: true }));

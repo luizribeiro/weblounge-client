@@ -5,6 +5,8 @@ import type {
   CompletionCandidate,
   CompletionResult,
 } from "../../engine/protocol";
+import { installPlatformEnvironment } from "../../platform/environment";
+import { keyboardGeometryMeasuredEvent } from "../../platform/viewport-geometry";
 import { Composer, replacementFor } from "./Composer";
 import { migrateDraft, readDraft } from "./draft-storage";
 
@@ -115,6 +117,39 @@ it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   expect(onSend).toHaveBeenCalledWith("hello");
+});
+
+it("accepts a second tap after a retained-focus send and Done-style blur", async () => {
+  const mobile = installPlatformEnvironment(document.body, window, {
+    target: "tauri-mobile",
+  });
+  const onSend = vi.fn(() => true);
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      draftKey="test:keyboard-reopen"
+      onSend={onSend}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+
+  tap(input, 7);
+  expect(input).toHaveFocus();
+  window.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
+  fireEvent.input(input, { target: { value: "/debug keyboard" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(input).toHaveValue(""));
+  expect(onSend).toHaveBeenCalledWith("/debug keyboard");
+  expect(input).toHaveFocus();
+
+  input.blur();
+  expect(input).not.toHaveFocus();
+  tap(input, 8);
+
+  expect(input).toHaveFocus();
+  window.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
+  mobile.dispose();
 });
 
 it("confirms always-policy commands typed by name or alias", async () => {
@@ -627,3 +662,9 @@ it("clears a draft when arriving specs classify it as secret", () => {
 
   expect(readDraft("test:late-secret")).toBe("");
 });
+
+function tap(target: HTMLElement, identifier: number): void {
+  const touch = { clientX: 20, clientY: 40, identifier };
+  fireEvent.touchStart(target, { touches: [touch] });
+  fireEvent.touchEnd(target, { changedTouches: [touch] });
+}

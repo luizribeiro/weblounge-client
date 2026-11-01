@@ -193,6 +193,43 @@ test.describe("mobile text field zoom", () => {
     await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
   });
 
+  test("reopens after sending the debug command and dismissing with Done", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page);
+    await openChannel(page, "&debug=keyboard");
+    const root = page.locator("#root");
+    const overlay = page.locator("[data-debug-overlay]");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    const layoutHeight = await page.evaluate(() => innerHeight);
+    const openHeight = 471;
+
+    await touchTap(composer, 81);
+    await setVisualViewport(page, openHeight);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await composer.fill("/debug keyboard");
+    await composer.press("Enter");
+    await expect(composer).toHaveValue("");
+    await expect(composer).toBeFocused();
+
+    await composer.evaluate((field) => field.blur());
+    await expect(composer).not.toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, layoutHeight);
+
+    await touchTap(composer, 82);
+    await expect(composer).toBeFocused();
+    await setVisualViewport(page, openHeight);
+
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => appHeight(root)).toBe(openHeight);
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+    await expect(overlay).toContainText("touchend:tap");
+    await expect(overlay).not.toContainText("touchend:rejected");
+  });
+
   test("keeps the chat fixed while the member filter owns the keyboard", async ({
     page,
   }) => {
@@ -1039,6 +1076,30 @@ async function touchMove(
       startY,
     },
   );
+}
+
+async function touchTap(
+  target: ReturnType<Page["locator"]>,
+  identifier: number,
+): Promise<void> {
+  await target.evaluate((element, touchIdentifier) => {
+    const touch = { clientX: 20, clientY: 40, identifier: touchIdentifier };
+    const dispatch = (type: "touchend" | "touchstart", timeStamp: number) => {
+      const event = new Event(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      });
+      Object.defineProperties(event, {
+        changedTouches: { value: [touch] },
+        timeStamp: { value: timeStamp },
+        touches: { value: type === "touchend" ? [] : [touch] },
+      });
+      element.dispatchEvent(event);
+    };
+    dispatch("touchstart", 100);
+    dispatch("touchend", 150);
+  }, identifier);
 }
 
 async function makeTranscriptScrollable(
