@@ -304,6 +304,14 @@
   overflow: visible;
   white-space: nowrap;
 }
+.list[data-presentation="mobile"] .unverifiedMark {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
 .list[data-presentation="mobile"] .pending,
 .list[data-presentation="mobile"] .failed {
   margin-inline-start: 6px;

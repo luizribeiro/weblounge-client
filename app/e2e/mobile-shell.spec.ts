@@ -288,6 +288,9 @@ test.describe("mobile shell against local Ergo", () => {
         await bots[9]?.privmsgConfirmed("weblounge", wrappingText);
         const wrappedMessage = page.getByText(wrappingText, { exact: true });
         await expect(wrappedMessage).toBeVisible();
+        await expect(
+          wrappedMessage.locator("xpath=ancestor::*[@data-message-row]"),
+        ).toHaveAttribute("data-unverified-sender", "true");
         const geometry = await wrappedMessage.evaluate((text) => {
           const row = text.closest<HTMLElement>("[data-message-row]");
           const nick = row?.querySelector<HTMLElement>("[title]");
