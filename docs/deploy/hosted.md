@@ -2,8 +2,7 @@
 
 The single `packages.<system>.app` output runs in app mode only when `/config.json` explicitly
 contains `{"mode":"app"}`, and in hosted mode when the server supplies the preset below. A missing
-file or HTML fallback is a visible deployment error in production; development and test builds may
-still default to app mode. Build it with:
+file or HTML fallback is a visible deployment error in every build. Build it with:
 
 ```sh
 nix build --no-link .#app
@@ -17,6 +16,13 @@ There is no separate hosted build and no hostname-based mode selection.
 `/config.json` is fetched from the app origin with revalidation before the engine starts. Its type
 is generated from the Rust `DeploymentConfig`; the browser rejects missing fields, extra fields,
 insecure non-loopback URLs, fragments, empty values, and wrong JSON types with a visible error.
+
+Required fields are:
+
+- `mode`; use `app` with no other fields, or `hosted` with both objects below.
+- `network.name`, `network.endpoint`, and `network.autojoin`.
+- `oauth.issuer`, `oauth.client_id`, `oauth.redirect_uri`, and
+  `oauth.session_token_endpoint`.
 
 The beta preset is:
 
