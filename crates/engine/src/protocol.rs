@@ -208,7 +208,7 @@ pub struct BufferProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub nick_color_index: Option<u32>,
-    /// Session draft identity derived from the network and IRC-casemapped name.
+    /// Session draft identity derived from the network and durable conversation identity.
     pub draft_key: String,
     /// Current channel topic, when this is a channel and the server supplied one.
     pub topic: Option<String>,
@@ -687,6 +687,13 @@ pub enum EngineToUi {
     BufferUpdated {
         /// Complete current buffer projection.
         buffer: BufferProjection,
+    },
+    /// Move a UI-owned draft when a direct message gains a more durable identity.
+    DraftKeyChanged {
+        /// Previous storage key to consume.
+        previous: String,
+        /// New storage key to retain.
+        current: String,
     },
     /// Ask the active shell to focus a buffer selected by engine-owned input semantics.
     FocusBufferRequested {

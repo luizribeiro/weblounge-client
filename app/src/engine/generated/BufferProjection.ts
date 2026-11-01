@@ -30,7 +30,7 @@ title: string,
  */
 nick_color_index?: number,
 /**
- * Session draft identity derived from the network and IRC-casemapped name.
+ * Session draft identity derived from the network and durable conversation identity.
  */
 draft_key: string,
 /**

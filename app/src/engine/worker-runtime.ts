@@ -123,6 +123,7 @@ function isSharedStateEvent(event: unknown): boolean {
     event.type === "buffers_changed" ||
     event.type === "buffer_added" ||
     event.type === "buffer_updated" ||
+    event.type === "draft_key_changed" ||
     event.type === "members_changed" ||
     event.type === "messages_appended" ||
     event.type === "message_updated" ||

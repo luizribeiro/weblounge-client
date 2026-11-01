@@ -28,6 +28,7 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "./engine/protocol";
+import { migrateDraft } from "./features/composer/draft-storage";
 import {
   isMessageKey,
   type MessageKey,
@@ -349,6 +350,9 @@ export function App(props: AppProps) {
         startupHistoryComplete.add(message.buffer_id);
         startupHistoryPending.delete(message.buffer_id);
         scheduleStartupContentCheck();
+      }
+      if (message.type === "draft_key_changed") {
+        migrateDraft(message.previous, message.current);
       }
       applyDebugEvent(
         message,

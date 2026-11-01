@@ -129,7 +129,15 @@ buffer: BufferProjection, } | { "type": "buffer_updated",
 /**
  * Complete current buffer projection.
  */
-buffer: BufferProjection, } | { "type": "focus_buffer_requested",
+buffer: BufferProjection, } | { "type": "draft_key_changed",
+/**
+ * Previous storage key to consume.
+ */
+previous: string,
+/**
+ * New storage key to retain.
+ */
+current: string, } | { "type": "focus_buffer_requested",
 /**
  * `EngineRequest` whose composer should navigate.
  */

@@ -45,6 +45,19 @@ export function removeDraft(draftKey: string, storage?: Storage): void {
   }
 }
 
+export function migrateDraft(
+  previous: string,
+  current: string,
+  storage?: Storage,
+): void {
+  if (previous === current) return;
+  const value = readDraft(previous, storage);
+  if (value !== "" && readDraft(current, storage) === "") {
+    writeDraft(current, value, storage);
+  }
+  removeDraft(previous, storage);
+}
+
 function key(draftKey: string): string {
   return `${draftPrefix}${encodeURIComponent(draftKey)}`;
 }

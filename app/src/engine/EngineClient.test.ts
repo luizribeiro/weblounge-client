@@ -516,6 +516,25 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("decodes durable direct draft-key migrations", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    port.emit({
+      type: "draft_key_changed",
+      previous: "5:Local:rfc1459:nick=alice",
+      current: "5:Local:rfc1459:account=alice-account",
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "draft_key_changed",
+      previous: "5:Local:rfc1459:nick=alice",
+      current: "5:Local:rfc1459:account=alice-account",
+    });
+  });
+
   it("rejects a stale UI build", async () => {
     const { client, port } = fixture();
     const started = client.start({

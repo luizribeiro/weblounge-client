@@ -522,6 +522,18 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (buffer !== undefined) return { type: messageType, buffer };
       break;
     }
+    case "draft_key_changed":
+      if (
+        typeof value.previous === "string" &&
+        typeof value.current === "string"
+      ) {
+        return {
+          type: messageType,
+          previous: value.previous,
+          current: value.current,
+        };
+      }
+      break;
     case "messages_appended": {
       const messages = decodeArray(value.messages, decodeMessage);
       if (typeof value.buffer_id === "number" && messages !== undefined) {
@@ -706,6 +718,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "recent_directs_ready" ||
     value === "buffer_added" ||
     value === "buffer_updated" ||
+    value === "draft_key_changed" ||
     value === "focus_buffer_requested" ||
     value === "messages_appended" ||
     value === "message_updated" ||

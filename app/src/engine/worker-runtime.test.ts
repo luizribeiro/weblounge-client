@@ -77,6 +77,11 @@ it("broadcasts asynchronous buffer and member patches to every shared port", asy
 
   const patches = [
     { type: "buffer_updated", buffer: { id: 2, member_count: 2 } },
+    {
+      type: "draft_key_changed",
+      previous: "nick=alice",
+      current: "account=alice-account",
+    },
     { type: "members_changed", buffer_id: 2 },
     {
       type: "notice",

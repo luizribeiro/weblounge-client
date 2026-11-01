@@ -103,7 +103,12 @@ export function Composer(props: ComposerProps) {
   });
 
   createEffect(() => {
-    if (props.bufferId === currentBuffer) return;
+    if (props.bufferId === currentBuffer && props.draftKey === currentDraftKey)
+      return;
+    if (props.bufferId === currentBuffer) {
+      currentDraftKey = props.draftKey;
+      return;
+    }
     currentBuffer = props.bufferId;
     currentDraftKey = props.draftKey;
     setText(readDraft(currentDraftKey));

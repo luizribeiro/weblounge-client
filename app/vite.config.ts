@@ -66,6 +66,10 @@ export default defineConfig(({ mode }) => {
                   import.meta.dirname,
                   "e2e/member-window-live.html",
                 ),
+                "draft-key-migration": resolve(
+                  import.meta.dirname,
+                  "e2e/draft-key-migration.html",
+                ),
               },
             },
           }

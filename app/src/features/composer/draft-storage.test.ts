@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { readDraft, writeDraft } from "./draft-storage";
+import { migrateDraft, readDraft, writeDraft } from "./draft-storage";
 
 it("guards unavailable session storage", () => {
   const unavailable = {
@@ -30,4 +30,17 @@ it("caps individual drafts and total draft storage", () => {
   sessionStorage.setItem("weblounge:draft:existing", "x".repeat(250_000));
   writeDraft("over-total", "x".repeat(20_000));
   expect(readDraft("over-total")).toBe("");
+});
+
+it("moves a nick-keyed draft to an account identity without overwriting", () => {
+  writeDraft("nick:alice", "hello");
+  migrateDraft("nick:alice", "account:alice");
+  expect(readDraft("nick:alice")).toBe("");
+  expect(readDraft("account:alice")).toBe("hello");
+
+  writeDraft("nick:alice-phone", "from phone");
+  writeDraft("account:alice", "existing");
+  migrateDraft("nick:alice-phone", "account:alice");
+  expect(readDraft("nick:alice-phone")).toBe("");
+  expect(readDraft("account:alice")).toBe("existing");
 });

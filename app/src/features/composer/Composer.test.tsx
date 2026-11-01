@@ -6,7 +6,7 @@ import type {
   CompletionResult,
 } from "../../engine/protocol";
 import { Composer, replacementFor } from "./Composer";
-import { readDraft } from "./draft-storage";
+import { migrateDraft, readDraft } from "./draft-storage";
 
 const identify = {
   name: "identify",
@@ -204,6 +204,37 @@ it("navigates suggestions, inserts a mention, and restores drafts", () => {
   fireEvent.input(input, { target: { value: "other" } });
   setBufferId(2);
   expect(input).toHaveValue("alex: ");
+});
+
+it("continues a migrated direct draft under its account key", async () => {
+  const [draftKey, setDraftKey] = createSignal("test:nick=alice");
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferTitle="alice"
+      commandSpecs={[]}
+      draftKey={draftKey()}
+      onSend={() => {}}
+    />
+  ));
+  const input = screen.getByRole("textbox");
+  fireEvent.input(input, { target: { value: "before account" } });
+  await waitFor(() =>
+    expect(readDraft("test:nick=alice")).toBe("before account"),
+  );
+
+  migrateDraft("test:nick=alice", "test:account=alice-account");
+  setDraftKey("test:account=alice-account");
+  await waitFor(() =>
+    expect(readDraft("test:account=alice-account")).toBe("before account"),
+  );
+  fireEvent.input(input, { target: { value: "after account" } });
+
+  expect(input).toHaveValue("after account");
+  expect(readDraft("test:nick=alice")).toBe("");
+  await waitFor(() =>
+    expect(readDraft("test:account=alice-account")).toBe("after account"),
+  );
 });
 
 it("accepts command suggestions and requests their argument context", async () => {

@@ -917,7 +917,8 @@ impl Runtime {
                 else {
                     return;
                 };
-                let (buffer_id, mut output) = running.model.open_direct(nick, direct);
+                let snapshot = running.client.state();
+                let (buffer_id, mut output) = running.model.open_direct(nick, direct, &snapshot);
                 if degraded {
                     output.push(EngineToUi::notice("engine.direct_presence_unavailable"));
                 }
@@ -1752,14 +1753,14 @@ fn spawn_direct_resolution(
     message: papo::Message,
 ) {
     let nick = message.actor.nick().clone();
-    let should_resolve = lock(&state)
+    let buffer_id = lock(&state)
         .network
         .as_mut()
         .filter(|running| running.instance == instance)
-        .is_some_and(|running| running.model.begin_direct_resolution(&nick));
-    if !should_resolve {
+        .and_then(|running| running.model.begin_direct_resolution(&nick));
+    let Some(buffer_id) = buffer_id else {
         return;
-    }
+    };
     spawn_task(async move {
         let (availability, degraded) = match client.direct_to(&message).await {
             Ok(direct) => (DirectAvailability::Guarded(direct), false),
@@ -1774,7 +1775,7 @@ fn spawn_direct_resolution(
         else {
             return;
         };
-        running.model.resolve_direct(&nick, availability);
+        running.model.resolve_direct(buffer_id, availability);
         drop(state);
         if degraded {
             let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
@@ -1989,7 +1990,6 @@ fn spawn_recent_direct_restore(
         let mut seen = HashSet::new();
         directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
         directs.truncate(RECENT_DIRECT_LIMIT);
-        drop(snapshot);
         if directs.is_empty() {
             send_recent_directs_ready(&state, &outbound, instance, network_id);
             return;
@@ -2005,19 +2005,24 @@ fn spawn_recent_direct_restore(
                     .network
                     .as_mut()
                     .filter(|running| running.instance == instance)
-                    .map(|running| running.model.restore_direct(nick.clone(), latest))
+                    .map(|running| {
+                        running
+                            .model
+                            .restore_direct(nick.clone(), latest, &snapshot)
+                    })
             };
-            let Some((fetch, should_resolve, added)) = restored else {
+            let Some((fetch, buffer_id, added)) = restored else {
                 return;
             };
             if let Some(buffer) = added {
                 output.push(EngineToUi::BufferAdded { buffer });
             }
             fetches.push(fetch);
-            if should_resolve {
-                resolutions.push(nick);
+            if let Some(buffer_id) = buffer_id {
+                resolutions.push((nick, buffer_id));
             }
         }
+        drop(snapshot);
         let buffers = {
             let state = lock(&state);
             state
@@ -2041,13 +2046,13 @@ fn spawn_recent_direct_restore(
                 fetch,
             );
         }
-        for nick in resolutions {
+        for (nick, buffer_id) in resolutions {
             let state = Arc::clone(&state);
             let outbound = outbound.clone();
             let client = client.clone();
             spawn_task(async move {
                 let result = client.direct(&nick).await;
-                apply_direct_resolution(&state, &outbound, instance, &nick, result);
+                apply_direct_resolution(&state, &outbound, instance, buffer_id, result);
             });
         }
     });
@@ -2080,7 +2085,7 @@ fn apply_direct_resolution(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
-    nick: &papo::Nick,
+    buffer_id: BufferId,
     result: Result<papo::DirectRef, papo::Error>,
 ) {
     let (availability, degraded) = match result {
@@ -2096,7 +2101,7 @@ fn apply_direct_resolution(
     else {
         return;
     };
-    running.model.resolve_direct(nick, availability);
+    running.model.resolve_direct(buffer_id, availability);
     drop(state);
     if degraded {
         let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
@@ -2167,7 +2172,15 @@ fn process_event_with_direct(
             Vec::new()
         }
         papo::Event::NickChanged(changed) => {
-            process_nick_change(&mut running.model, changed, &mut output);
+            process_nick_change(&mut running.model, &changed, &mut output);
+            Vec::new()
+        }
+        papo::Event::AccountChanged(changed) => {
+            output.extend(
+                running
+                    .model
+                    .update_direct_account(changed.actor.nick(), &changed.new),
+            );
             Vec::new()
         }
         papo::Event::Message(message) => {
@@ -2261,6 +2274,7 @@ fn process_disconnect(
     disconnected: &papo::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
+    running.model.invalidate_direct_handles();
     let mut retained = VecDeque::new();
     for queued in running.pending_sends.drain(..) {
         if queued.retry_if_disconnected {
@@ -2315,15 +2329,13 @@ fn process_lagged(
 
 fn process_nick_change(
     model: &mut NetworkModel,
-    changed: papo::event::NickChanged,
+    changed: &papo::event::NickChanged,
     output: &mut Vec<EngineToUi>,
 ) {
     if changed.authorship == papo::Authorship::Own {
         output.push(model.set_nickname(changed.new.to_string()));
     }
-    if let Some(event) = model.rename_direct(changed.actor.nick(), changed.new) {
-        output.push(event);
-    }
+    output.extend(model.rename_direct(changed.actor.nick(), &changed.new));
 }
 
 enum ConnectionTransition {
@@ -4144,7 +4156,8 @@ mod tests {
         let direct = client.direct("alice").await.expect("shared user is direct");
         let nick = direct.nick();
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let (buffer_id, _) = model.open_direct(nick, DirectAvailability::Guarded(direct));
+        let (buffer_id, _) =
+            model.open_direct(nick, DirectAvailability::Guarded(direct), &client.state());
         let (pending, _) = model
             .begin_send(buffer_id, "hi".into(), &client.state())
             .expect("direct is sendable");
@@ -4203,8 +4216,11 @@ mod tests {
             .expect("registered test client has name rules")
             .nick("alice");
         let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
-        let (buffer_id, _) =
-            model.open_direct(nick.clone(), DirectAvailability::Guarded(direct.clone()));
+        let (buffer_id, _) = model.open_direct(
+            nick.clone(),
+            DirectAvailability::Guarded(direct.clone()),
+            &client.state(),
+        );
         let (pending, _) = model
             .begin_send(buffer_id, "not for you".into(), &client.state())
             .expect("direct is sendable");
@@ -5637,7 +5653,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn direct_send_during_reconnect_fails_if_registration_disconnects() {
+    async fn direct_send_during_reconnect_requires_a_fresh_handle() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["extended-join"]).await;
@@ -5661,7 +5677,11 @@ mod tests {
                 .as_mut()
                 .expect("network remains active")
                 .model
-                .open_direct(direct.nick(), DirectAvailability::Guarded(direct))
+                .open_direct(
+                    direct.nick(),
+                    DirectAvailability::Guarded(direct),
+                    &client.state(),
+                )
                 .0
         };
         _ = collect(&mut receiver);
@@ -5685,44 +5705,13 @@ mod tests {
                 text: "do not leave this pending".into(),
             },
         });
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].delivery == MessageDelivery::Optimistic
-        )));
-
-        assert_eq!(wire.next_sent().await, "CAP LS 302");
-        assert_eq!(wire.next_sent().await, "NICK weblounge");
-        assert_eq!(wire.next_sent().await, "USER weblounge 0 * weblounge");
-        wire.server(":offline.test CAP * LS :").await;
-        assert_eq!(wire.next_sent().await, "CAP END");
-        // wait-ok: measures the pre-welcome window in which application traffic must stay absent.
-        assert!(
-            tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
-                .await
-                .is_err(),
-            "the direct send must wait for numeric 001"
+        assert_eq!(
+            output,
+            [EngineToUi::CommandRejected {
+                id: "reconnecting-direct".into(),
+                message_key: "engine.buffer_not_sendable".into(),
+            }]
         );
-
-        wire.close().await;
-        let failure = tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                let event = receiver.recv().await.expect("runtime remains subscribed");
-                if matches!(event, EngineToUi::MessageFailed { .. }) {
-                    break event;
-                }
-            }
-        })
-        .await
-        .expect("the optimistic row fails when registration ends");
-        assert!(matches!(
-            failure,
-            EngineToUi::MessageFailed {
-                buffer_id: failed_buffer,
-                message_key,
-                ..
-            } if failed_buffer == buffer_id && message_key == "engine.send_failed"
-        ));
     }
 
     #[tokio::test]
@@ -6102,7 +6091,8 @@ mod tests {
             .expect("registered test client has name rules")
             .nick("alice");
         let direct = client.direct(&alice).await.expect("shared user is direct");
-        let (direct_id, _) = model.open_direct(alice, DirectAvailability::Guarded(direct));
+        let (direct_id, _) =
+            model.open_direct(alice, DirectAvailability::Guarded(direct), &client.state());
         let (pending, sent) = begin_send_with_mode(
             &mut model,
             &client,
