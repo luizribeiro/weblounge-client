@@ -24,16 +24,12 @@ test.describe("message links and nicknames against local Ergo", () => {
     const authorNick = `clicka${suffix}`;
     const mentionNick = `clickb${suffix}`;
     const marker = `clickable nick ${suffix}`;
-    const author = await IrcClient.connect(
+    const author = await IrcClient.connectIsolated(
       authorNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
       "#weblounge-test",
     );
-    const mentioned = await IrcClient.connect(
+    const mentioned = await IrcClient.connectIsolated(
       mentionNick,
-      "weblounge-bot",
-      "weblounge-bot-test",
       "#weblounge-test",
     );
     try {

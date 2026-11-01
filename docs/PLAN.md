@@ -242,6 +242,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     member drawer follows measured keyboard inset while the scrimmed chat retains its root height,
     safe-area padding, composer position, transcript offset, and visible row; owner-scoped geometry
     events no longer re-anchor unrelated message lists (#78, awaiting on-device confirmation).
+    Luiz's on-device confirmation). Pixel coverage samples a visible chat row directly because the
+    closed composer no longer defines a lower-row region.
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;
@@ -251,6 +253,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
   - [x] Make startup and render failures retryable in place; standalone retries create a fresh worker and engine, while hosted retries restart authorization.
   - [x] Ellipsize long desktop message nicks within their fixed column while preserving a stable mode-symbol slot.
+  - [x] Give distinct nickname-link browser fixtures distinct accounts so durable DM identity does not merge their conversations.
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
   - B1b. [x] Hosted sign-in hardening: explicit production config, redacted request secrets,
