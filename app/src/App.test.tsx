@@ -361,7 +361,7 @@ it("caps startup history hydration at 400ms", async () => {
 it("reveals and navigates a cached chat list before live synchronization", async () => {
   const client = new FakeEngineClient();
   const onReady = vi.fn();
-  render(() => (
+  const { container } = render(() => (
     <App
       engineClient={client}
       hostedSession={{
@@ -409,6 +409,20 @@ it("reveals and navigates a cached chat list before live synchronization", async
   });
 
   await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: "online",
+    },
+  });
+  await waitFor(() =>
+    expect(
+      container.querySelector("[data-connection-progress]"),
+    ).not.toBeNull(),
+  );
   fireEvent.click(await screen.findByRole("button", { name: "#cached" }));
   expect(screen.queryByText(/connecting/i)).toBeNull();
   expect(client.requests).not.toContainEqual(
@@ -478,6 +492,13 @@ it("reveals and navigates a cached chat list before live synchronization", async
       },
     ],
   });
+  const progressLogo = container.querySelector("[data-connection-progress]");
+  if (!(progressLogo instanceof HTMLElement))
+    throw new Error("missing connection progress logo");
+  fireEvent.animationIteration(progressLogo);
+  await waitFor(() =>
+    expect(container.querySelector("[data-connection-progress]")).toBeNull(),
+  );
   await waitFor(() =>
     expect(client.requests).toContainEqual(
       expect.objectContaining({

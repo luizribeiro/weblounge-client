@@ -43,6 +43,7 @@ import { createSinglePane, showInFocusedPane } from "./pane-layout";
 export interface DesktopShellProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
+  readonly hydrating?: boolean | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
   readonly completion: CompletionResult | undefined;
@@ -113,6 +114,7 @@ export function DesktopShell(props: DesktopShellProps) {
     const networkId = activeBuffer()?.network_id;
     return connectionPresentation(
       props.networks.filter((network) => network.id === networkId),
+      props.hydrating,
     );
   });
   const visibleBufferIds = createMemo<ReadonlySet<number>>(() => {
@@ -544,6 +546,7 @@ export function DesktopShell(props: DesktopShellProps) {
         activeBufferId={activeBuffer()?.id}
         buffers={props.buffers}
         commandContext={context()}
+        hydrating={props.hydrating}
         networks={props.networks}
         onRetryNetwork={props.onRetryNetwork}
         registerListController={(controller) => {

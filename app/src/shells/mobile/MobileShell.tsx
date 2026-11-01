@@ -556,6 +556,7 @@ export function MobileShell(props: MobileShellProps) {
             composerNotice={props.composerNotice}
             completion={props.completion}
             filter={filter()}
+            hydrating={props.hydrating}
             memberships={props.memberships}
             messages={props.messages}
             networks={props.networks}

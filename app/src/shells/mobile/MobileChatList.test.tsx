@@ -60,15 +60,14 @@ it("updates chat filters and search through accessible controls", () => {
   expect(open).toHaveBeenCalledWith(3, 37);
 });
 
-it("uses only the logo for transient progress and one strip for failures", () => {
+it("uses only the logo for hydration progress and one strip for failures", () => {
   const retry = vi.fn();
   const { container, unmount } = render(() => (
     <MobileChatList
       buffers={buffers}
       filter="all"
-      networks={[
-        { id: 1, label: "Local", nickname: "me", state: "connecting" },
-      ]}
+      hydrating
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
       onFilter={() => {}}
       onOpen={() => {}}
       onQuery={() => {}}

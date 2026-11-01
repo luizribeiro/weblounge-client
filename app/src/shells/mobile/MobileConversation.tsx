@@ -23,6 +23,7 @@ import styles from "./MobileShell.module.css";
 
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;
+  readonly hydrating?: boolean | undefined;
   readonly composerNotice?: string | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult;
@@ -56,7 +57,10 @@ export function MobileConversation(props: MobileConversationProps) {
   );
   let listController: MessageListController | undefined;
   const connection = () =>
-    connectionPresentation(props.network === undefined ? [] : [props.network]);
+    connectionPresentation(
+      props.network === undefined ? [] : [props.network],
+      props.hydrating,
+    );
 
   createEffect(() => {
     const latest = [...props.messages]

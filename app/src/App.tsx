@@ -122,7 +122,7 @@ export function App(props: AppProps) {
   let engineInstance: string | undefined;
   let disposed = false;
   let revealingStartup = false;
-  let cachedChatListActive = false;
+  const [cachedChatListActive, setCachedChatListActive] = createSignal(false);
   let initialNavigationResolved = false;
   let startupCap: number | undefined;
   let startupSettleFrame: number | undefined;
@@ -348,7 +348,7 @@ export function App(props: AppProps) {
         }
       }
       if (message.type === "chat_list_snapshot_loaded") {
-        cachedChatListActive = true;
+        setCachedChatListActive(true);
         setBuffers(message.buffers);
         setLoadedNetworkIds((current) =>
           new Set(current).add(message.network_id),
@@ -357,7 +357,7 @@ export function App(props: AppProps) {
         setStartupContentReady(true);
       }
       if (message.type === "chat_list_live") {
-        cachedChatListActive = false;
+        setCachedChatListActive(false);
         setBuffers(message.buffers);
       }
       if (message.type === "buffer_added" && !startupRevealed()) {
@@ -385,7 +385,7 @@ export function App(props: AppProps) {
         migrateDraft(message.previous, message.current);
       }
       const stagedLiveBufferEvent =
-        cachedChatListActive &&
+        cachedChatListActive() &&
         (message.type === "buffers_changed" ||
           message.type === "buffer_added" ||
           (message.type === "buffer_updated" &&
@@ -670,6 +670,7 @@ export function App(props: AppProps) {
       ) : (
         <ResponsiveShell
           activeBufferId={initialBufferId()}
+          hydrating={cachedChatListActive()}
           memberViewScope={clientId}
           networks={networks()}
           buffers={buffers()}

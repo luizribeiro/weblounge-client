@@ -22,6 +22,7 @@ import {
 export interface MobileShellData {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
+  readonly hydrating?: boolean | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
   readonly completion: CompletionResult | undefined;
@@ -110,6 +111,7 @@ export function MobileScreen(props: MobileScreenProps) {
         <MobileChatList
           buffers={props.buffers}
           filter={props.filter}
+          hydrating={props.hydrating}
           networks={props.networks}
           onFilter={props.onFilter}
           onOpen={props.onOpen}
@@ -124,6 +126,7 @@ export function MobileScreen(props: MobileScreenProps) {
       ) : buffer() !== undefined ? (
         <MobileConversation
           buffer={buffer() as BufferProjection}
+          hydrating={props.hydrating}
           commandSpecs={props.commandSpecs}
           {...(props.composerNotice === undefined
             ? {}

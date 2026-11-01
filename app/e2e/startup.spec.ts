@@ -48,6 +48,42 @@ test("starts under the beta CSP without a policy violation", async ({
   expect(consoleViolations).toEqual([]);
 });
 
+test("shimmers through cached-list hydration and finishes its sweep", async ({
+  page,
+}) => {
+  await installDelayedLiveListEngine(page);
+
+  await page.goto("/?irc-password=weblounge-test");
+
+  await expect(page.getByRole("button", { name: "#cached" })).toBeVisible();
+  await expect(
+    page.locator("[data-mobile-chats] [data-connection-progress]"),
+  ).toBeVisible();
+  await observeCachedListShimmer(page);
+  await page.evaluate(() => {
+    const release = Reflect.get(globalThis, "releaseLiveChatList");
+    if (typeof release !== "function") throw new Error("live list unavailable");
+    release();
+  });
+
+  await expect(page.getByRole("button", { name: "#live" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "#cached" })).toHaveCount(0);
+  await expect
+    .poll(() => cachedListShimmerObservation(page))
+    .toMatchObject({
+      progressAtSwap: true,
+      stoppedAtIteration: expect.any(Number),
+      swapIterations: expect.any(Number),
+    });
+  const shimmer = await cachedListShimmerObservation(page);
+  expect(shimmer.stoppedAtIteration).toBeGreaterThan(
+    shimmer.swapIterations ?? -1,
+  );
+  await expect(
+    page.locator("[data-mobile-chats] [data-connection-progress]"),
+  ).toHaveCount(0);
+});
+
 test("turns a stalled startup into a human error", async ({ page }) => {
   await page.clock.install();
   await page.route("**/config.json", () => new Promise(() => {}));
@@ -185,6 +221,10 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
         text: expect.stringContaining("cached before the socket"),
       }),
     ]);
+    await expect(
+      page.locator("[data-mobile-chats] [data-connection-progress]"),
+    ).toBeVisible();
+    await observeCachedListShimmer(page);
     await page.getByRole("button", { name: "#cached" }).click();
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
     await page.getByRole("button", { name: "Mark as read" }).click();
@@ -207,6 +247,17 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     await expect(
       page.getByText("This conversation is not available."),
     ).toBeVisible();
+    await expect
+      .poll(() => cachedListShimmerObservation(page))
+      .toMatchObject({
+        progressAtSwap: true,
+        stoppedAtIteration: expect.any(Number),
+        swapIterations: expect.any(Number),
+      });
+    const shimmer = await cachedListShimmerObservation(page);
+    expect(shimmer.stoppedAtIteration).toBeGreaterThan(
+      shimmer.swapIterations ?? -1,
+    );
     await expect(
       page
         .getByRole("main")
@@ -341,6 +392,69 @@ async function seedChatListSnapshot(
   }, snapshot);
 }
 
+interface ShimmerObservation {
+  readonly iterations: number;
+  readonly progressAtSwap?: boolean;
+  readonly stoppedAtIteration?: number;
+  readonly swapIterations?: number;
+}
+
+async function observeCachedListShimmer(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const logo = document.querySelector(
+      "[data-mobile-chats] [data-connection-progress]",
+    );
+    if (!(logo instanceof HTMLElement)) throw new Error("shimmer logo missing");
+    const observation: {
+      iterations: number;
+      progressAtSwap?: boolean;
+      stoppedAtIteration?: number;
+      swapIterations?: number;
+    } = { iterations: 0 };
+    Reflect.set(globalThis, "cachedListShimmerObservation", observation);
+    document.addEventListener(
+      "animationiteration",
+      (event) => {
+        if (event.target === logo) observation.iterations += 1;
+      },
+      true,
+    );
+    const observer = new MutationObserver(() => {
+      if (
+        observation.swapIterations === undefined &&
+        document.querySelector('[data-buffer-id][aria-label="#cached"]') ===
+          null
+      ) {
+        observation.progressAtSwap = logo.hasAttribute(
+          "data-connection-progress",
+        );
+        observation.swapIterations = observation.iterations;
+      }
+      if (!logo.hasAttribute("data-connection-progress")) {
+        observation.stoppedAtIteration = observation.iterations;
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
+async function cachedListShimmerObservation(
+  page: Page,
+): Promise<ShimmerObservation> {
+  return page.evaluate(
+    () =>
+      Reflect.get(
+        globalThis,
+        "cachedListShimmerObservation",
+      ) as ShimmerObservation,
+  );
+}
+
 function fingerprint(label: string, endpoint: string): string {
   return `${label.length}:${label}${endpoint.length}:${endpoint}`;
 }
@@ -430,6 +544,91 @@ async function installHistoryStallEngine(
         readonly port = port;
       },
     });
+
+    function isRecord(value: unknown): value is Record<string, unknown> {
+      return typeof value === "object" && value !== null;
+    }
+  });
+}
+
+async function installDelayedLiveListEngine(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    class DelayedLiveListPort extends EventTarget {
+      postMessage(message: unknown): void {
+        if (!isRecord(message)) return;
+        if (message.type === "hello") {
+          this.emit({
+            type: "ready",
+            engine_instance: "delayed-live-list-engine",
+            revision: 0,
+          });
+          return;
+        }
+        const payload = message.payload;
+        if (!isRecord(payload) || typeof payload.id !== "string") return;
+        const request = payload.request;
+        if (isRecord(request) && request.type === "diagnostic") {
+          this.emit({
+            type: "diagnostic",
+            command_id: payload.id,
+            message: "wasm worker round trip complete",
+          });
+          this.emit({
+            type: "network_state_changed",
+            network: {
+              id: 1,
+              label: "Local Ergo",
+              nickname: "weblounge",
+              state: "online",
+            },
+          });
+          this.emit({
+            type: "chat_list_snapshot_loaded",
+            network_id: 1,
+            buffers: [buffer(2, "#cached", true)],
+          });
+        }
+        this.emit({ type: "command_result", id: payload.id });
+      }
+
+      start(): void {}
+      close(): void {}
+
+      releaseLiveList(): void {
+        this.emit({
+          type: "chat_list_live",
+          network_id: 1,
+          buffers: [buffer(3, "#live", false)],
+        });
+      }
+
+      private emit(data: unknown): void {
+        this.dispatchEvent(new MessageEvent("message", { data }));
+      }
+    }
+    const buffer = (id: number, title: string, cached: boolean) => ({
+      id,
+      network_id: 1,
+      kind: "channel",
+      title,
+      draft_key: `test:${title}`,
+      topic: null,
+      member_count: 0,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+      ...(cached ? { cached: true, cached_preview: "seeded cache" } : {}),
+    });
+    const port = new DelayedLiveListPort();
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: class {
+        readonly port = port;
+      },
+    });
+    Reflect.set(globalThis, "releaseLiveChatList", () =>
+      port.releaseLiveList(),
+    );
 
     function isRecord(value: unknown): value is Record<string, unknown> {
       return typeof value === "object" && value !== null;
