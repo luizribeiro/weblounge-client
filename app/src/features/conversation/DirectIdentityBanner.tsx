@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import styles from "./DirectIdentityBanner.module.css";
 
@@ -9,16 +10,24 @@ interface DirectIdentityBannerProps {
 
 export function DirectIdentityBanner(props: DirectIdentityBannerProps) {
   const message = () => mismatchMessage(props.buffer);
-  return message() === undefined ? null : (
-    <div class={styles.banner} data-direct-identity-banner="true" role="alert">
-      <span>{message()}</span>
-      <button onClick={() => props.onTrust(props.buffer.id)} type="button">
-        Trust new identity
-      </button>
-      <button onClick={() => props.onDefer(props.buffer.id)} type="button">
-        Not now
-      </button>
-    </div>
+  return (
+    <Show when={message()} keyed>
+      {(text) => (
+        <div
+          class={styles.banner}
+          data-direct-identity-banner="true"
+          role="alert"
+        >
+          <span>{text}</span>
+          <button onClick={() => props.onTrust(props.buffer.id)} type="button">
+            Trust new identity
+          </button>
+          <button onClick={() => props.onDefer(props.buffer.id)} type="button">
+            Not now
+          </button>
+        </div>
+      )}
+    </Show>
   );
 }
 

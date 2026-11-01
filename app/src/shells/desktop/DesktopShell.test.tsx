@@ -170,10 +170,14 @@ it("routes transcript nicknames through the direct-message action", () => {
 it("blocks a mismatched direct thread and routes both identity decisions", () => {
   const trust = vi.fn();
   const defer = vi.fn();
+  const [directBuffer, setDirectBuffer] = createSignal<BufferProjection>({
+    ...direct,
+    direct_identity: "unverified",
+  });
   render(() => (
     <DesktopShell
       activeBufferId={direct.id}
-      buffers={[direct]}
+      buffers={[directBuffer()]}
       composerNotice={undefined}
       completion={undefined}
       focusRequest={undefined}
@@ -189,6 +193,8 @@ it("blocks a mismatched direct thread and routes both identity decisions", () =>
     />
   ));
 
+  expect(screen.queryByRole("alert")).toBeNull();
+  setDirectBuffer(direct);
   expect(screen.getByRole("alert")).toHaveTextContent(
     "This isn't the same mel — different account",
   );
