@@ -193,6 +193,8 @@ pub(crate) struct NetworkModel {
     buffer_order: Vec<BufferId>,
     buffers: HashMap<BufferId, BufferState>,
     names: HashMap<NameKey, BufferId>,
+    #[allow(clippy::mutable_key_type)]
+    directs: HashMap<papo::DirectRef, BufferId>,
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     recent_commands: VecDeque<String>,
@@ -247,6 +249,7 @@ impl NetworkModel {
             buffer_order: vec![server_id],
             buffers: HashMap::from([(server_id, server)]),
             names: HashMap::new(),
+            directs: HashMap::new(),
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
             recent_commands: VecDeque::new(),
@@ -904,6 +907,7 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
         buffer.direct = Some(DirectAvailability::Pending);
+        self.directs.retain(|_, id| *id != buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
     }
@@ -1019,10 +1023,24 @@ impl NetworkModel {
     }
 
     pub(crate) fn resolve_direct(&mut self, nick: &papo::Nick, availability: DirectAvailability) {
-        if let Some(buffer_id) = self.names.get(&NameKey::Direct(nick.clone())).copied()
-            && let Some(buffer) = self.buffers.get_mut(&buffer_id)
-        {
-            buffer.direct = Some(availability);
+        let buffer_id = self
+            .names
+            .get(&NameKey::Direct(nick.clone()))
+            .copied()
+            .or_else(|| match &availability {
+                DirectAvailability::Guarded(recipient) => self
+                    .directs
+                    .get(recipient)
+                    .copied()
+                    .or_else(|| self.names.get(&NameKey::Direct(recipient.nick())).copied())
+                    .or_else(|| self.buffer_id_for_current_nick(&recipient.nick())),
+                DirectAvailability::Pending
+                | DirectAvailability::Resolving
+                | DirectAvailability::MonitorFull
+                | DirectAvailability::Failed => None,
+            });
+        if let Some(buffer_id) = buffer_id {
+            self.set_direct_availability(buffer_id, availability);
         }
     }
 
@@ -1214,11 +1232,22 @@ impl NetworkModel {
         key: NameKey,
         direct: Option<DirectAvailability>,
     ) -> (BufferId, Option<BufferProjection>) {
-        if let Some(id) = self.names.get(&key).copied() {
-            if direct.is_some()
-                && let Some(buffer) = self.buffers.get_mut(&id)
-            {
-                buffer.direct = direct;
+        let direct_id = direct.as_ref().and_then(|availability| match availability {
+            DirectAvailability::Guarded(recipient) => self.directs.get(recipient).copied(),
+            DirectAvailability::Pending
+            | DirectAvailability::Resolving
+            | DirectAvailability::MonitorFull
+            | DirectAvailability::Failed => None,
+        });
+        if let Some(id) = direct_id.or_else(|| self.names.get(&key).copied()) {
+            if matches!(key, NameKey::Direct(_)) {
+                self.names
+                    .retain(|name, mapped| *mapped != id || !matches!(name, NameKey::Direct(_)));
+                self.names.insert(key.clone(), id);
+                self.update_direct_name(id, key);
+            }
+            if let Some(direct) = direct {
+                self.set_direct_availability(id, direct);
             }
             return (id, None);
         }
@@ -1248,6 +1277,13 @@ impl NetworkModel {
     ) -> BufferProjection {
         let id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
+        let direct_identity = direct.as_ref().and_then(|availability| match availability {
+            DirectAvailability::Guarded(recipient) => Some(recipient.clone()),
+            DirectAvailability::Pending
+            | DirectAvailability::Resolving
+            | DirectAvailability::MonitorFull
+            | DirectAvailability::Failed => None,
+        });
         let projection = BufferProjection {
             id,
             network_id: self.network.id,
@@ -1278,10 +1314,48 @@ impl NetworkModel {
                 history: HistoryState::Unrequested,
             },
         );
+        if let Some(recipient) = direct_identity {
+            self.directs.insert(recipient, id);
+        }
         self.names.insert(key, id);
         self.buffer_order.push(id);
         self.sort_buffer_order();
         projection
+    }
+
+    fn set_direct_availability(&mut self, buffer_id: BufferId, direct: DirectAvailability) {
+        self.directs.retain(|_, id| *id != buffer_id);
+        if let DirectAvailability::Guarded(recipient) = &direct {
+            self.directs.insert(recipient.clone(), buffer_id);
+        }
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            buffer.direct = Some(direct);
+        }
+    }
+
+    fn buffer_id_for_current_nick(&self, nick: &papo::Nick) -> Option<BufferId> {
+        self.buffers.iter().find_map(|(id, buffer)| {
+            matches!(
+                &buffer.direct,
+                Some(DirectAvailability::Guarded(recipient)) if recipient.nick().eq(nick)
+            )
+            .then_some(*id)
+        })
+    }
+
+    fn update_direct_name(&mut self, buffer_id: BufferId, key: NameKey) {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return;
+        };
+        buffer.projection.title = key.title();
+        buffer.projection.nick_color_index =
+            Some(nick_color_index(self.casemapping, &buffer.projection.title));
+        buffer.projection.draft_key = draft_key(
+            &self.network.label,
+            &buffer.projection.title,
+            self.casemapping,
+        );
+        buffer.key = Some(key);
     }
 
     fn sort_buffer_order(&mut self) -> bool {
@@ -1591,7 +1665,7 @@ pub(crate) fn time_millis(time: SystemTime) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use papo_testing::StateBuilder;
+    use papo_testing::{StateBuilder, wire};
 
     use super::{
         HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, SendTarget, TimelineOrigin,
@@ -2334,6 +2408,144 @@ mod tests {
         assert_ne!(
             draft_key("Other", "#ROOM[", papo::Casemapping::Rfc1459),
             "4:Test:rfc1459:#room{"
+        );
+    }
+
+    #[tokio::test]
+    async fn account_discovery_keeps_one_direct_through_message_and_nick_change() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[
+            "account-notify",
+            "account-tag",
+            "extended-join",
+            "message-tags",
+        ])
+        .await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room * :WebLounge")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":alice!a@host JOIN #room * :Alice").await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+
+        let before_account = client.direct("alice").await.expect("shared user is direct");
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (buffer_id, _) = model.open_direct(
+            before_account.nick(),
+            super::DirectAvailability::Guarded(before_account.clone()),
+        );
+        let draft_key = model.buffers[&buffer_id].projection.draft_key.clone();
+        let read_at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1);
+        model.apply_read_time(buffer_id, read_at);
+        model.close_direct(buffer_id).expect("direct closes");
+
+        wire.server(":alice!a@host ACCOUNT alice-account").await;
+        while !matches!(events.next().await, Some(papo::Event::AccountChanged(_))) {}
+        wire.server("@account=alice-account :alice!a@host PRIVMSG weblounge :hello after account")
+            .await;
+        let message = loop {
+            if let Some(papo::Event::Message(message)) = events.next().await {
+                break message;
+            }
+        };
+        let after_account = client
+            .direct_to(&message)
+            .await
+            .expect("private message proves its sender");
+        assert_ne!(before_account, after_account);
+        let resolution_nick = message.actor.nick().clone();
+
+        let received = model.receive(&message, false, &client.state(), None);
+        assert!(received.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { buffer_id: received, .. } if *received == buffer_id
+        )));
+        assert!(received.iter().any(|event| matches!(
+            event,
+            EngineToUi::BufferAdded { buffer } if buffer.id == buffer_id
+        )));
+        assert_eq!(model.buffers[&buffer_id].projection.draft_key, draft_key);
+        assert_eq!(
+            model.buffers[&buffer_id].read_at_ms,
+            Some(time_millis(read_at))
+        );
+        assert_eq!(
+            model
+                .buffers
+                .values()
+                .filter(|buffer| buffer.projection.kind == BufferKind::Direct)
+                .count(),
+            1
+        );
+
+        wire.server(":alice!a@host NICK alicia").await;
+        let changed = loop {
+            if let Some(papo::Event::NickChanged(changed)) = events.next().await {
+                break changed;
+            }
+        };
+        model
+            .rename_direct(changed.actor.nick(), changed.new)
+            .expect("direct title follows the nick change");
+        model.resolve_direct(
+            &resolution_nick,
+            super::DirectAvailability::Guarded(after_account.clone()),
+        );
+        assert_eq!(after_account.nick().as_str(), "alicia");
+        assert_eq!(model.directs.len(), 1);
+        assert_eq!(model.directs.get(&after_account), Some(&buffer_id));
+        let (reopened, added) = model.open_direct(
+            after_account.nick(),
+            super::DirectAvailability::Guarded(after_account.clone()),
+        );
+        assert_eq!(reopened, buffer_id);
+        assert!(added.is_empty());
+        assert_eq!(model.buffers[&buffer_id].projection.title, "alicia");
+    }
+
+    #[tokio::test]
+    async fn known_account_nicks_share_one_direct_identity() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room own-account :WebLounge")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":alice!a@host JOIN #room alice-account :Alice")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        wire.server(":alice-phone!a@phone JOIN #room alice-account :Alice Phone")
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Joined(_))) {}
+        let desktop = client
+            .direct("alice")
+            .await
+            .expect("desktop nick is directly addressable");
+        let same_account = client
+            .direct("alice-phone")
+            .await
+            .expect("second nick is directly addressable");
+        assert_eq!(desktop, same_account);
+
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let (buffer_id, _) =
+            model.open_direct(desktop.nick(), super::DirectAvailability::Guarded(desktop));
+        let (same_buffer, added) = model.open_direct(
+            same_account.nick(),
+            super::DirectAvailability::Guarded(same_account),
+        );
+        assert_eq!(same_buffer, buffer_id);
+        assert!(added.is_empty());
+        assert_eq!(model.directs.len(), 1);
+        assert_eq!(
+            model
+                .buffers
+                .values()
+                .filter(|buffer| buffer.projection.kind == BufferKind::Direct)
+                .count(),
+            1
         );
     }
 

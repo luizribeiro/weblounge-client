@@ -73,6 +73,36 @@ export class IrcClient {
     return client;
   }
 
+  static async connectIsolated(
+    nickname: string,
+    channel: string,
+  ): Promise<IrcClient> {
+    const password = `test-${nickname}`;
+    const response = await fetch(
+      process.env.WEBLOUNGE_E2E_IRC_API ??
+        "http://127.0.0.1:8089/v1/saregister",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.WEBLOUNGE_E2E_IRC_API_TOKEN ?? "weblounge-local-api-token"}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ accountName: nickname, passphrase: password }),
+      },
+    );
+    const result: unknown = await response.json();
+    if (
+      !response.ok ||
+      typeof result !== "object" ||
+      result === null ||
+      !("success" in result) ||
+      result.success !== true
+    ) {
+      throw new Error(`Could not create isolated IRC account ${nickname}`);
+    }
+    return IrcClient.connect(nickname, nickname, password, channel);
+  }
+
   get nickname(): string {
     return this.#nickname;
   }

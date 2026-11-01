@@ -232,6 +232,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     The transcript anchors before paint, the document workaround follows only `data-keyboard`, and
     swipe-back still reveals the full chat list without a composer fill (#74 and #76, awaiting
     Luiz's on-device confirmation).
+  - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
+    keys explicitly, and DM buffers use `DirectRef` identity without splitting drafts, read state,
+    monitor ownership, or closed-buffer retention when an account becomes known after opening.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
@@ -250,7 +253,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `d2c0db8`. Guarded directs, split-send reconciliation, exact live
+- **papo:** papo 0.1 pinned at `0070f15`. Guarded directs with stable captured identity, explicit
+  display spelling and folded storage keys, split-send reconciliation, exact live
   and nested-history multiline concatenation, server name rules, lag diagnostics,
   channel-recreation warnings, hardened typed inputs, correlated history responses, exact live
   actor facts, tri-state account/bot evidence, and completed JOIN refusals are integrated.

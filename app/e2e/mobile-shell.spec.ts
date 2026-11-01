@@ -127,7 +127,7 @@ test.describe("mobile shell against local Ergo", () => {
     });
 
     let bots: IrcClient[] = [];
-    const suffix = Date.now().toString().slice(-4);
+    const suffix = Date.now().toString();
     const targetNick = `mobile09${suffix}`;
     const target = page.getByRole("button", {
       exact: true,
@@ -138,10 +138,8 @@ test.describe("mobile shell against local Ergo", () => {
         bots = await Promise.all(
           Array.from({ length: 11 }, async (_, index) => {
             const nick = `mobile${index.toString().padStart(2, "0")}${suffix}`;
-            const bot = await IrcClient.connect(
+            const bot = await IrcClient.connectIsolated(
               nick,
-              "weblounge-bot",
-              "weblounge-bot-test",
               "#weblounge-test",
             );
             await bot.privmsgConfirmed("weblounge", `preview from ${nick}`);
