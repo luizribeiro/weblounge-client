@@ -1,6 +1,7 @@
 # 09 — Density and layout system
 
-Status: platform-environment addendum approved by Luiz on 2026-10-30.
+Status: platform-environment addendum approved by Luiz on 2026-10-30; keyboard-surface ownership
+directed by Luiz on 2026-10-31.
 
 ## Problem
 
@@ -78,9 +79,13 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   the viewport short anyway, the composer still sits whole inside the painted area above an
   unpainted band.
 - Keyboard open (the visual viewport over 120px shorter than the layout viewport, pinch zoom
-  excluded), `#root` takes the visual viewport's height from `--wl-app-height` and keeps
-  `--wl-app-top` at zero. A short touch that ends within 10px and under 500ms moves the composer field
-  above the viewport synchronously and focuses it with `preventScroll`, following [React Aria's iOS
+  excluded), keyboard geometry remains global but only the surface that owns the focused field
+  responds. The nearest `[data-keyboard-surface]` ancestor becomes `data-keyboard-owner`; a field
+  without one uses `#root`, preserving the composer path. The root publishes `data-keyboard` and
+  `--wl-keyboard-inset`, and geometry-change event detail identifies the owner. When `#root` owns
+  focus, it takes the visual viewport's height from `--wl-app-height` and keeps `--wl-app-top` at
+  zero. A short touch that ends within 10px and under 500ms moves the composer field above the
+  viewport synchronously and focuses it with `preventScroll`, following [React Aria's iOS
   technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
   The field stays translated until the first keyboard-height step, with a bounded fallback, because
   iOS may decide its reveal pan several frames after focus. A successful open height is cached per
@@ -101,18 +106,26 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
   The app deliberately does not animate keyboard layout. On open it applies the final layout in one
   step at the first signal: a cached open height for the current orientation once composer focus
-  lands during the pointer gesture, or otherwise the first measured visual-viewport step. Later
-  measured open geometry replaces a cached layout before the next paint and refreshes that
-  orientation's cache; multiple readings within one frame collapse to the last one. The transcript
-  is bottom-anchored with each commit. There are no height transitions, transforms, retained
-  layouts, or cloned row layers. This is a deliberate simplification after app-owned animation
-  repeatedly produced worse on-device glitches than an immediate layout change.
+  lands during the pointer gesture, or otherwise the first measured visual-viewport step. Cached
+  geometry applies only to the root owner; overlay owners wait for measured geometry. Later measured
+  open geometry replaces a cached layout before the next paint and refreshes that orientation's
+  cache; multiple readings within one frame collapse to the last one. A root-owned change anchors
+  the transcript before paint. Owner-local changes do not disturb surfaces outside that owner.
+  There are no height transitions, transforms, retained layouts, or cloned row layers. This is a
+  deliberate simplification after app-owned animation repeatedly produced worse on-device glitches
+  than an immediate layout change.
+- Overlay drawers are keyboard surfaces. While a drawer owns focus, `#root` and the scrimmed chat
+  retain their closed geometry and the owning drawer uses `bottom: var(--wl-keyboard-inset)` so its
+  list and focused field remain above the keyboard. The drawer consumes
+  `--wl-safe-bottom-effective`, avoiding a home-indicator band while the keyboard is open. Geometry
+  consumers such as the message list respond only when the event owner contains them.
 - On focusout, close waits one frame to confirm focus did not return to a keyboard field. It then
-  commits the closed layout immediately, so the departing keyboard uncovers a composer that is
-  already in place. A refocus into a keyboard field cancels that close; this preserves taps from the
-  composer into typeahead suggestions. Later viewport events only re-verify the chosen layout.
-  Portrait and landscape keep separate cached open heights. A nonzero visual-viewport offset is
-  undone and never published as app geometry.
+  clears the owner and inset and commits the closed layout immediately, so the departing keyboard
+  uncovers a surface that is already in place. A refocus into a keyboard field cancels that close;
+  moving between keyboard fields transfers ownership without an intermediate close. This preserves
+  taps from the composer into typeahead suggestions. Later viewport events only re-verify the
+  chosen layout. Portrait and landscape keep separate cached open heights. A nonzero
+  visual-viewport offset is undone and never published as app geometry.
 - The WebKit-301108 full-height document workaround switches only with `data-keyboard`: enabled
   while closed and disabled while open. It never follows an intermediate motion state. Android
   still requests `virtualKeyboard.overlaysContent` and follows `geometrychange`, but applies the
@@ -123,13 +136,14 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout and records
   whether each layout decision came from cached geometry, measured geometry, or rollback.
 
-`--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard
-is closed and becomes zero under `data-keyboard="open"`, so components never interpret keyboard
-state themselves. Tests can replace those custom properties on the root without impersonating a
-device. The web adapter derives display mode from `(display-mode: standalone)` and keyboard geometry
-from `visualViewport`; Tauri injects the same contract from its target and keyboard plugin. Theme
-and motion code consumes platform-owned preference observers or token-file media queries rather
-than issuing its own `matchMedia` calls.
+`--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard is closed and becomes
+zero under `data-keyboard="open"`, so components never interpret keyboard state themselves.
+`--wl-keyboard-inset` is zero while closed and the measured obstruction while open. Tests can
+replace those custom properties on the root without impersonating a device. The web adapter derives
+display mode from `(display-mode: standalone)` and keyboard geometry from `visualViewport`; Tauri
+injects the same contract from its target and keyboard plugin. Theme and motion code consumes
+platform-owned preference observers or token-file media queries rather than issuing its own
+`matchMedia` calls.
 
 Components consume only these attributes and properties. A repository check rejects
 `env(safe-area`, `matchMedia(`, `navigator.userAgent`, `navigator.platform`, and media-query
@@ -341,6 +355,9 @@ themes, or virtual-list behavior.
 - Mobile WebKit taps the composer through an emulated focus pan and samples opening frames to keep
   visual viewport, document, and app top at zero. With the keyboard open, vertical header drags
   stay locked, horizontal gestures remain available, and the transcript still scrolls by touch.
+  Focusing a drawer field keeps the root, composer, transcript offset, and first visible row fixed;
+  only the owning drawer ends at the visible viewport and keeps its filter and first row above the
+  keyboard. Closing restores the safe-area inset without moving the background transcript.
   Desktop WebKit cannot reproduce the real iOS software keyboard or its compositor pan, so these
   tests prove the event policy and published geometry; an iPhone remains the final motion check.
 - Playwright also covers one through six panes, explicit/automatic zoom, chromeless mode, browser
