@@ -6,7 +6,9 @@ import type {
 } from "../../actions/action-registry";
 import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
+import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
+import { createConnectionProgress } from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
@@ -21,6 +23,7 @@ export interface SidebarListController {
 interface SidebarProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly SidebarBuffer[];
+  readonly hydrating?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
   readonly visibleBufferIds: ReadonlySet<number>;
   readonly registry: ActionRegistry;
@@ -32,10 +35,16 @@ interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
+  const platform = platformEnvironment();
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
-  const connection = () => connectionPresentation(props.networks);
+  const connection = () =>
+    connectionPresentation(props.networks, props.hydrating);
+  const progress = createConnectionProgress(
+    () => connection().progressing,
+    () => connection().error !== undefined || platform.prefersReducedMotion(),
+  );
   const run = (id: UiActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
       ...props.commandContext,
@@ -87,7 +96,8 @@ export function Sidebar(props: SidebarProps) {
         <div
           class={styles.logo}
           data-connection-error={connection().error !== undefined || undefined}
-          data-connection-progress={connection().progressing || undefined}
+          data-connection-progress={progress.active() || undefined}
+          onAnimationIteration={progress.finishSweep}
         >
           <span aria-hidden="true" class={styles.logoMark} />
         </div>

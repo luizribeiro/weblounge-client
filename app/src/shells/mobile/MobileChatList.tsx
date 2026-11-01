@@ -16,7 +16,9 @@ import type {
   BufferProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
+import { createConnectionProgress } from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatList.module.css";
 import { MobileChatRow } from "./MobileChatRow";
@@ -30,6 +32,7 @@ import {
 interface MobileChatListProps {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
+  readonly hydrating?: boolean | undefined;
   readonly filter: ChatFilter;
   readonly query: string;
   readonly restoreScroll: Accessor<number>;
@@ -43,6 +46,7 @@ interface MobileChatListProps {
 }
 
 export function MobileChatList(props: MobileChatListProps) {
+  const platform = platformEnvironment();
   let list: HTMLDivElement | undefined;
   let restoringScroll = false;
   let userScrollIntent = false;
@@ -78,7 +82,12 @@ export function MobileChatList(props: MobileChatListProps) {
     () => new Map(chats().map((buffer) => [buffer.id, buffer])),
   );
   const chatIds = createMemo(() => [...chatsById().keys()]);
-  const connection = () => connectionPresentation(props.networks);
+  const connection = () =>
+    connectionPresentation(props.networks, props.hydrating);
+  const progress = createConnectionProgress(
+    () => connection().progressing,
+    () => connection().error !== undefined || platform.prefersReducedMotion(),
+  );
   createEffect(() => {
     props.restoreVersion();
     const scrollTop = props.restoreScroll();
@@ -112,7 +121,8 @@ export function MobileChatList(props: MobileChatListProps) {
           aria-hidden="true"
           class={styles.logo}
           data-connection-error={connection().error !== undefined || undefined}
-          data-connection-progress={connection().progressing || undefined}
+          data-connection-progress={progress.active() || undefined}
+          onAnimationIteration={progress.finishSweep}
         >
           <span class={styles.logoMark} data-mobile-logo-mark="true" />
         </span>
