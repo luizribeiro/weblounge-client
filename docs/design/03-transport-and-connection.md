@@ -208,12 +208,18 @@ Once the UI can render a usable shell, connection changes never replace it with 
 UI. The last projection, navigation, scroll position, and drafts stay mounted. There is no visible
 “Connecting…”, “Reconnecting…”, or “Offline” status copy in normal chrome.
 
-The weblounge logo is the sole transient progress indicator: the logo in the mobile Chats header
-and desktop sidebar shimmers subtly while connecting, registering, reconnecting, or hydrating the
-first complete live projection. A transient drop that recovers produces only this treatment. The
-logo is still at all other times. With reduced motion, progress uses a gentle static dim instead of
-animation. The shimmer uses theme colour/opacity tokens and moves a pseudo-element with the shared
-motion tokens through `transform` and `opacity`; it introduces no raw colours or independent timing.
+The weblounge logo and title are the sole transient progress indicator: the pair in the mobile
+Chats header and desktop sidebar fills while connecting, registering, reconnecting, or hydrating
+the first complete live projection. A transient drop that recovers produces only this treatment.
+During progress, the logo tile, chair, and title have a theme-derived dim base. One straight,
+soft-edged band reveals a full-colour copy from left to right across the real logo geometry and then
+the title, driven by one shared coordinate so it reads as one continuous pass. On recovery, the
+current cycle finishes before one final pass fills everything behind its leading edge; the pair then
+stays fully filled and has no active animation. Recovery during the cycle's ending rest starts the
+final pass immediately. With reduced motion, progress is a static dim base with a partially visible
+full-colour logo and brighter title, and recovery snaps to full colour. The error tint and shared
+error strip take precedence and never sweep. The implementation uses theme colour mixes and a
+registered custom property; it introduces no raw colours, fade, or colour interpolation.
 
 The shared presentation projection exposes semantic progress, one optional actionable error, and
 whether sends are blocked; it no longer exposes a user-facing connection label. Any network still
