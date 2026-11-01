@@ -5,6 +5,7 @@ import {
   readKeyboardTraceFrame,
   summarizeKeyboardTrace,
 } from "./keyboard-debug";
+import { keyboardLayoutCommitEvent } from "./viewport-geometry";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -55,10 +56,19 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   const stop = installKeyboardDebug(root, window);
 
   window.dispatchEvent(new PointerEvent("pointerup", { isPrimary: true }));
+  window.dispatchEvent(
+    new CustomEvent(keyboardLayoutCommitEvent, {
+      detail: {
+        geometry: { keyboard: "open", height: 476 },
+        source: "measured",
+      },
+    }),
+  );
   callback?.(500);
   callback?.(1001);
   const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
   expect(overlay?.textContent).toContain("trigger: pointerup");
+  expect(overlay?.textContent).toContain("commits: measured:476");
   expect(overlay?.textContent).toContain("frames · tap to copy full trace");
 
   unrelatedButton.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));

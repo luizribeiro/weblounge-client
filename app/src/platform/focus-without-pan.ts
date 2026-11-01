@@ -1,7 +1,4 @@
-import {
-  keyboardGeometryMeasuredEvent,
-  requestCachedKeyboardOpen,
-} from "./viewport-geometry";
+import { keyboardGeometryMeasuredEvent } from "./viewport-geometry";
 
 export function focusWithoutViewportPan(
   field: HTMLElement,
@@ -26,9 +23,9 @@ export function focusWithoutViewportPan(
   field.style.transform = "translateY(-2000px)";
   browserWindow.addEventListener(keyboardGeometryMeasuredEvent, restore);
   fallback = browserWindow.setTimeout(restore, 1000);
-  requestCachedKeyboardOpen(browserWindow);
   try {
     field.focus({ preventScroll: true });
+    if (browserWindow.document.activeElement !== field) restore();
   } catch (error: unknown) {
     restore();
     throw error;

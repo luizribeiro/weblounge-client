@@ -65,6 +65,26 @@ test.describe("mobile text field zoom", () => {
     });
     const root = page.locator("#root");
 
+    await composer.evaluate((field) => {
+      field.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          isPrimary: true,
+          pointerId: 7,
+          pointerType: "touch",
+        }),
+      );
+      field.dispatchEvent(
+        new PointerEvent("pointercancel", {
+          bubbles: true,
+          isPrimary: true,
+          pointerId: 7,
+          pointerType: "touch",
+        }),
+      );
+    });
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+
     const drag = await touchMove(composer, 400, 400, {
       endX: 240,
       startX: 200,
@@ -111,6 +131,44 @@ test.describe("mobile text field zoom", () => {
     expect(await messages.evaluate((element) => element.scrollTop)).toBe(
       before + 100,
     );
+  });
+
+  test("reconciles a focused cached layout to measured keyboard geometry", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page);
+    await openChannel(page);
+    const root = page.locator("#root");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    const layoutHeight = await page.evaluate(() => innerHeight);
+    const firstHeight = layoutHeight - 320;
+    const measuredHeight = layoutHeight - 380;
+
+    await composer.tap();
+    await expect(composer).toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, firstHeight);
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => appHeight(root)).toBe(firstHeight);
+
+    await composer.evaluate((field) => field.blur());
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, layoutHeight);
+
+    await composer.tap();
+    await expect(composer).toBeFocused();
+    await expect.poll(() => appHeight(root)).toBe(firstHeight);
+    await setVisualViewport(page, measuredHeight);
+    await expect.poll(() => appHeight(root)).toBe(measuredHeight);
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+
+    await composer.evaluate((field) => field.blur());
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, layoutHeight);
+    await composer.tap();
+    await expect.poll(() => appHeight(root)).toBe(measuredHeight);
   });
 
   test("applies cold and warm keyboard layout in one step", async ({
@@ -552,6 +610,12 @@ async function composerKeyboardGap(page: Page): Promise<number> {
         viewport.height,
     );
   });
+}
+
+async function appHeight(root: Locator): Promise<number> {
+  return root.evaluate((element) =>
+    Number.parseFloat(element.style.getPropertyValue("--wl-app-height")),
+  );
 }
 
 async function attemptDocumentScroll(page: Page): Promise<void> {

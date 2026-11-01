@@ -8,7 +8,15 @@ export type ViewportGeometry =
 export const appGeometryChangeEvent = "weblounge:app-geometry-change";
 export const keyboardGeometryMeasuredEvent =
   "weblounge:keyboard-geometry-measured";
+export const keyboardLayoutCommitEvent = "weblounge:keyboard-layout-commit";
 const cachedKeyboardOpenEvent = "weblounge:cached-keyboard-open";
+
+export type KeyboardLayoutCommitSource = "cached" | "measured" | "rollback";
+
+export interface KeyboardLayoutCommit {
+  readonly geometry: ViewportGeometry;
+  readonly source: KeyboardLayoutCommitSource;
+}
 
 export interface ViewportMeasurements {
   readonly layoutHeight: number;
@@ -110,6 +118,7 @@ export function observeViewportGeometry(
   let settleUntil = 0;
   let expectedKeyboard: ViewportGeometry["keyboard"] | undefined;
   let closeFrame = 0;
+  let pointerFocusFrame = 0;
   let closing = false;
   let pointerMayFocus = false;
   let awaitingMeasuredOpen = false;
@@ -143,12 +152,25 @@ export function observeViewportGeometry(
   // - https://bugs.webkit.org/show_bug.cgi?id=254861
   // - https://bugs.webkit.org/show_bug.cgi?id=259770
   // - https://bugs.webkit.org/show_bug.cgi?id=230225
-  const publish = (geometry: ViewportGeometry) => {
+  const publish = (
+    geometry: ViewportGeometry,
+    source: KeyboardLayoutCommitSource,
+  ) => {
     const key = JSON.stringify(geometry);
-    if (key === published) return false;
+    const announce = () =>
+      browserWindow.dispatchEvent(
+        new CustomEvent<KeyboardLayoutCommit>(keyboardLayoutCommitEvent, {
+          detail: { geometry, source },
+        }),
+      );
+    if (key === published) {
+      if (source !== "measured") announce();
+      return false;
+    }
     published = key;
     applyGeometry(root, geometry);
     browserWindow.dispatchEvent(new Event(appGeometryChangeEvent));
+    announce();
     return true;
   };
   const acceptMeasuredOpen = (height: number) => {
@@ -156,7 +178,7 @@ export function observeViewportGeometry(
     cacheKeyboardHeight(browserWindow, height);
     browserWindow.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
   };
-  const update = () => {
+  const update = (acceptOpenReconcile = true) => {
     const initial = measure();
     const panned = documentPanned(initial);
     if (panned) {
@@ -167,8 +189,16 @@ export function observeViewportGeometry(
     const measured = measure();
     const geometry = resolveViewportGeometry(
       measured,
-      expectedKeyboard === "open" || keyboard !== undefined ? 0 : undefined,
+      keyboard !== undefined ? 0 : undefined,
     );
+    const key = JSON.stringify(geometry);
+    if (
+      geometry.keyboard === "open" &&
+      root.dataset.keyboard === "open" &&
+      key !== published &&
+      !acceptOpenReconcile
+    )
+      return { changed: false, geometry };
     if (geometry.keyboard === "open") {
       if (awaitingMeasuredOpen) acceptMeasuredOpen(geometry.height);
       else cacheKeyboardHeight(browserWindow, geometry.height);
@@ -182,7 +212,7 @@ export function observeViewportGeometry(
     }
     if (expectedKeyboard === "open" && geometry.keyboard === "closed")
       return { changed: false, geometry };
-    return { changed: publish(geometry), geometry };
+    return { changed: publish(geometry, "measured"), geometry };
   };
   // WebKit can fire viewport events before it updates the values they report,
   // so re-measure on the following frames until the geometry stops changing.
@@ -208,7 +238,7 @@ export function observeViewportGeometry(
     closing = false;
     if (expectedKeyboard === "closed") expectedKeyboard = undefined;
     const measured = resolveViewportGeometry(measure());
-    if (measured.keyboard === "open") publish(measured);
+    if (measured.keyboard === "open") publish(measured, "measured");
     else requestCachedKeyboardOpen(browserWindow);
   };
   const onChange = () => {
@@ -217,7 +247,7 @@ export function observeViewportGeometry(
       if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
       return;
     }
-    update();
+    update(false);
     stableFrames = 0;
     if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
   };
@@ -228,14 +258,37 @@ export function observeViewportGeometry(
   };
   const onPointerDown = (event: Event) => {
     if (!onScreenKeyboard()) return;
-    pointerMayFocus = true;
     if (keyboardField(event.target)) {
+      pointerMayFocus = true;
       expectKeyboard("open");
-      if (!requestCachedKeyboardOpen(browserWindow)) onChange();
     }
   };
-  const clearPointerFocus = () => {
+  const rollbackPointerFocus = () => {
+    if (pointerFocusFrame !== 0) {
+      browserWindow.cancelAnimationFrame(pointerFocusFrame);
+      pointerFocusFrame = 0;
+    }
+    if (!pointerMayFocus || keyboardField(browserWindow.document.activeElement))
+      return;
+    pointerMayFocus = false;
+    if (expectedKeyboard === "open") expectedKeyboard = undefined;
+    awaitingMeasuredOpen = false;
+    publish({ keyboard: "closed" }, "rollback");
+  };
+  const finishPointerFocus = () => {
+    if (!pointerMayFocus) return;
+    if (pointerFocusFrame !== 0)
+      browserWindow.cancelAnimationFrame(pointerFocusFrame);
+    pointerFocusFrame = browserWindow.requestAnimationFrame(() => {
+      pointerFocusFrame = 0;
+      rollbackPointerFocus();
+      if (keyboardField(browserWindow.document.activeElement))
+        pointerMayFocus = false;
+    });
+  };
+  const cancelPointerFocus = () => {
     browserWindow.queueMicrotask(() => {
+      rollbackPointerFocus();
       pointerMayFocus = false;
     });
   };
@@ -252,7 +305,9 @@ export function observeViewportGeometry(
         expectKeyboard("open");
       } else if (pointerMayFocus) {
         expectKeyboard("open");
+        requestCachedKeyboardOpen(browserWindow);
       }
+      pointerMayFocus = false;
     }
     const mayClose =
       onScreenKeyboard() &&
@@ -276,7 +331,7 @@ export function observeViewportGeometry(
           return;
         closing = true;
         expectKeyboard("closed");
-        publish({ keyboard: "closed" });
+        publish({ keyboard: "closed" }, "rollback");
         onChange();
       });
       return;
@@ -284,10 +339,11 @@ export function observeViewportGeometry(
     onChange();
   };
   const onCachedOpen = (event: Event) => {
+    if (!keyboardField(browserWindow.document.activeElement)) return;
     const height = (event as CustomEvent<number>).detail;
     expectKeyboard("open");
     closing = false;
-    publish({ keyboard: "open", height });
+    publish({ keyboard: "open", height }, "cached");
   };
   const onOrientationChange = () => onChange();
   const viewportEvents = ["resize", "scroll"] as const;
@@ -297,22 +353,24 @@ export function observeViewportGeometry(
   for (const type of windowEvents)
     browserWindow.addEventListener(type, onWindowChange);
   browserWindow.addEventListener("pointerdown", onPointerDown);
-  browserWindow.addEventListener("pointerup", clearPointerFocus);
-  browserWindow.addEventListener("pointercancel", clearPointerFocus);
+  browserWindow.addEventListener("pointerup", finishPointerFocus);
+  browserWindow.addEventListener("pointercancel", cancelPointerFocus);
   browserWindow.addEventListener(cachedKeyboardOpenEvent, onCachedOpen);
   browserWindow.addEventListener("orientationchange", onOrientationChange);
   update();
   return () => {
     if (frame !== 0) browserWindow.cancelAnimationFrame(frame);
     if (closeFrame !== 0) browserWindow.cancelAnimationFrame(closeFrame);
+    if (pointerFocusFrame !== 0)
+      browserWindow.cancelAnimationFrame(pointerFocusFrame);
     for (const type of viewportEvents)
       viewport.removeEventListener(type, onChange);
     keyboard?.removeEventListener("geometrychange", onChange);
     for (const type of windowEvents)
       browserWindow.removeEventListener(type, onWindowChange);
     browserWindow.removeEventListener("pointerdown", onPointerDown);
-    browserWindow.removeEventListener("pointerup", clearPointerFocus);
-    browserWindow.removeEventListener("pointercancel", clearPointerFocus);
+    browserWindow.removeEventListener("pointerup", finishPointerFocus);
+    browserWindow.removeEventListener("pointercancel", cancelPointerFocus);
     browserWindow.removeEventListener(cachedKeyboardOpenEvent, onCachedOpen);
     browserWindow.removeEventListener("orientationchange", onOrientationChange);
     if (keyboard !== undefined && previousOverlay !== undefined)

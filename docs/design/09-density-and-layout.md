@@ -84,7 +84,8 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
   The field stays translated until the first keyboard-height step, with a bounded fallback, because
   iOS may decide its reveal pan several frames after focus. A successful open height is cached per
-  orientation and may be applied before later focus; cold focus waits for measured geometry.
+  orientation and may be applied synchronously once later pointer focus actually lands; cold focus
+  waits for measured geometry. A cancelled tap or drag never commits cached geometry.
   Drags and long-press callouts remain native. A platform-owned non-passive
   vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
   textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
@@ -99,11 +100,13 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
 - `visualViewport.height` is geometry, not animation progress: WKWebView consumes the keyboard's
   final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
   The app deliberately does not animate keyboard layout. On open it applies the final layout in one
-  step at the first signal: a cached open height for the current orientation at composer
-  pointerdown, before focus, or otherwise the first measured visual-viewport step. The transcript
-  is bottom-anchored in the same frame before paint. There are no height transitions, transforms,
-  retained layouts, or cloned row layers. This is a deliberate simplification after app-owned
-  animation repeatedly produced worse on-device glitches than an immediate layout change.
+  step at the first signal: a cached open height for the current orientation once composer focus
+  lands during the pointer gesture, or otherwise the first measured visual-viewport step. Later
+  measured open geometry replaces a cached layout before the next paint and refreshes that
+  orientation's cache; multiple readings within one frame collapse to the last one. The transcript
+  is bottom-anchored with each commit. There are no height transitions, transforms, retained
+  layouts, or cloned row layers. This is a deliberate simplification after app-owned animation
+  repeatedly produced worse on-device glitches than an immediate layout change.
 - On focusout, close waits one frame to confirm focus did not return to a keyboard field. It then
   commits the closed layout immediately, so the departing keyboard uncovers a composer that is
   already in place. A refocus into a keyboard field cancels that close; this preserves taps from the
@@ -117,7 +120,8 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   the app owns no keyboard animation.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
-  `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout.
+  `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout and records
+  whether each layout decision came from cached geometry, measured geometry, or rollback.
 
 `--wl-safe-bottom-effective` follows the bottom safe inset while the keyboard
 is closed and becomes zero under `data-keyboard="open"`, so components never interpret keyboard

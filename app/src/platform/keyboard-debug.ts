@@ -1,4 +1,8 @@
 import { type DebugReading, installDebugSection } from "./debug-overlay";
+import {
+  type KeyboardLayoutCommit,
+  keyboardLayoutCommitEvent,
+} from "./viewport-geometry";
 
 const traceMilliseconds = 1000;
 const header = "ms sy vo vh ih rt rh ct";
@@ -61,6 +65,7 @@ export function installKeyboardDebug(
   browserWindow: Window,
 ): () => void {
   let frames: readonly KeyboardTraceFrame[] = [];
+  let commits: readonly string[] = [];
   let trigger = "waiting for tap/focusout";
   let animationFrame = 0;
   const stopSection = installDebugSection(browserWindow, {
@@ -68,6 +73,7 @@ export function installKeyboardDebug(
     title: "keyboard",
     read: (): readonly DebugReading[] => [
       ["trigger", trigger],
+      ["commits", commits.join(" · ") || "waiting"],
       ["trace", summarizeKeyboardTrace(frames)],
     ],
     subscribe: (render) => {
@@ -109,13 +115,28 @@ export function installKeyboardDebug(
         };
         animationFrame = browserWindow.requestAnimationFrame(sample);
       };
+      const recordCommit = (event: Event) => {
+        const { geometry, source } = (
+          event as CustomEvent<KeyboardLayoutCommit>
+        ).detail;
+        commits = [
+          ...commits,
+          `${source}:${geometry.keyboard === "open" ? geometry.height : "closed"}`,
+        ].slice(-5);
+        render();
+      };
       browserWindow.addEventListener("pointerup", record);
       browserWindow.addEventListener("focusout", record);
+      browserWindow.addEventListener(keyboardLayoutCommitEvent, recordCommit);
       return () => {
         if (animationFrame !== 0)
           browserWindow.cancelAnimationFrame(animationFrame);
         browserWindow.removeEventListener("pointerup", record);
         browserWindow.removeEventListener("focusout", record);
+        browserWindow.removeEventListener(
+          keyboardLayoutCommitEvent,
+          recordCommit,
+        );
         overlay?.removeEventListener("pointerdown", stopTraceTap);
         overlay?.removeEventListener("pointerup", stopTraceTap);
         overlay?.removeEventListener("click", copyTrace);

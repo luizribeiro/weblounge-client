@@ -5,6 +5,7 @@ import { keyboardGeometryMeasuredEvent } from "./viewport-geometry";
 it("focuses above the viewport until measured keyboard geometry arrives", () => {
   const field = document.createElement("textarea");
   field.style.transform = "scale(1)";
+  document.body.append(field);
   const focus = vi.spyOn(field, "focus");
 
   focusWithoutViewportPan(field, window);
@@ -12,6 +13,17 @@ it("focuses above the viewport until measured keyboard geometry arrives", () => 
   expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   expect(field.style.transform).toBe("translateY(-2000px)");
   window.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
+  expect(field.style.transform).toBe("scale(1)");
+});
+
+it("restores the field immediately when WebKit refuses focus", () => {
+  const field = document.createElement("textarea");
+  field.style.transform = "scale(1)";
+  vi.spyOn(field, "focus").mockImplementation(() => {});
+
+  focusWithoutViewportPan(field, window);
+
+  expect(document.activeElement).not.toBe(field);
   expect(field.style.transform).toBe("scale(1)");
 });
 

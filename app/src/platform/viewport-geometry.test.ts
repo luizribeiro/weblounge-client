@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cacheKeyboardHeight,
   documentPanned,
+  type KeyboardLayoutCommit,
+  keyboardLayoutCommitEvent,
   observeViewportGeometry,
   requestCachedKeyboardOpen,
   resolveViewportGeometry,
@@ -210,7 +212,7 @@ describe("viewport geometry observer", () => {
     );
   });
 
-  it("uses cached geometry before focus and replaces it at the first measured step", () => {
+  it("commits focused cache then reconciles and caches stable measured geometry", async () => {
     const viewport = new FakeVisualViewport(window.innerHeight);
     const browserWindow = fakeWindow(viewport);
     const root = document.createElement("div");
@@ -223,16 +225,80 @@ describe("viewport geometry observer", () => {
     expect(root.dataset.keyboard).toBe("closed");
 
     cacheKeyboardHeight(browserWindow, window.innerHeight - 320);
+    viewport.height = window.innerHeight - 60;
     field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(root.dataset.keyboard).toBe("closed");
+
+    field.focus();
     expect(root.dataset.keyboard).toBe("open");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 320}px`,
     );
 
+    viewport.set(window.innerHeight - 280, 0, "resize");
     viewport.set(window.innerHeight - 300, 0, "resize");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+      `${window.innerHeight - 320}px`,
+    );
+    await vi.waitFor(() =>
+      expect(root.style.getPropertyValue("--wl-app-height")).toBe(
+        `${window.innerHeight - 300}px`,
+      ),
+    );
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 300}px`,
     );
+
+    const commits: KeyboardLayoutCommit[] = [];
+    browserWindow.addEventListener(
+      keyboardLayoutCommitEvent,
+      (event) =>
+        commits.push((event as CustomEvent<KeyboardLayoutCommit>).detail),
+      { once: true },
+    );
+    requestCachedKeyboardOpen(browserWindow);
+    expect(commits.at(-1)).toEqual({
+      geometry: { keyboard: "open", height: window.innerHeight - 300 },
+      source: "cached",
+    });
+  });
+
+  it("rolls back a pointer tap that ends without focus", async () => {
+    const { browserWindow, root } = observe();
+    const field = textField();
+    cacheKeyboardHeight(browserWindow, window.innerHeight - 320);
+    const commits: KeyboardLayoutCommit[] = [];
+    window.addEventListener(
+      keyboardLayoutCommitEvent,
+      (event) =>
+        commits.push((event as CustomEvent<KeyboardLayoutCommit>).detail),
+      { once: true },
+    );
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.activeElement).not.toBe(field);
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(commits.at(-1)).toEqual({
+      geometry: { keyboard: "closed" },
+      source: "rollback",
+    });
+  });
+
+  it("rolls back when a composer pointer gesture becomes a drag", async () => {
+    const { browserWindow, root } = observe();
+    const field = textField();
+    cacheKeyboardHeight(browserWindow, window.innerHeight - 320);
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.dispatchEvent(new Event("pointercancel", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(document.activeElement).not.toBe(field);
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
   });
 
   it("commits the closed layout one frame after focusout before geometry arrives", async () => {
@@ -366,9 +432,10 @@ function observe(options?: ViewportObserverOptions) {
   const root = document.createElement("div");
   document.body.append(root);
   const viewport = new FakeVisualViewport(window.innerHeight);
-  const stop = observeViewportGeometry(root, fakeWindow(viewport), options);
+  const browserWindow = fakeWindow(viewport);
+  const stop = observeViewportGeometry(root, browserWindow, options);
   running.push(stop);
-  return { root, viewport, stop };
+  return { browserWindow, root, viewport, stop };
 }
 
 function textField(): HTMLTextAreaElement {
