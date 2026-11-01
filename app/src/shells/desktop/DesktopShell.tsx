@@ -62,6 +62,7 @@ export interface DesktopShellProps {
     | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onRequestCompletion: (
     bufferId: number,
@@ -282,6 +283,8 @@ export function DesktopShell(props: DesktopShellProps) {
     if (
       buffer === undefined ||
       buffer.kind === "server" ||
+      buffer.cached ||
+      buffer.available === false ||
       requestedHistory.has(buffer.id)
     ) {
       return;
@@ -363,6 +366,22 @@ export function DesktopShell(props: DesktopShellProps) {
               topic={activeBuffer()?.topic ?? undefined}
             />
             <div class={styles.conversationBody}>
+              {activeBuffer()?.cached === true &&
+                (activeBuffer()?.unread ?? 0) > 0 && (
+                  <button
+                    onClick={() => {
+                      const buffer = activeBuffer();
+                      if (buffer !== undefined)
+                        props.onMarkCachedRead?.(buffer.id);
+                    }}
+                    type="button"
+                  >
+                    Mark as read
+                  </button>
+                )}
+              {activeBuffer()?.available === false && (
+                <p role="status">This conversation is not available.</p>
+              )}
               <MessageList
                 bufferId={activeBuffer()?.id}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
@@ -403,6 +422,7 @@ export function DesktopShell(props: DesktopShellProps) {
                       bufferTitle={buffer()?.title ?? ""}
                       commandSpecs={props.commandSpecs}
                       connectionHint={
+                        buffer()?.cached === true ||
                         activeConnection().sendsBlocked
                           ? "Will send when connected"
                           : undefined
@@ -413,7 +433,10 @@ export function DesktopShell(props: DesktopShellProps) {
                           ? props.completion
                           : undefined
                       }
-                      disabled={buffer()?.kind === "server"}
+                      disabled={
+                        buffer()?.kind === "server" ||
+                        buffer()?.available === false
+                      }
                       focusOnMount
                       onRequestCandidates={(input, cursor, explicit) =>
                         props.onRequestCompletion(

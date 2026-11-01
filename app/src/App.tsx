@@ -110,6 +110,7 @@ export function App(props: AppProps) {
   let engineInstance: string | undefined;
   let disposed = false;
   let revealingStartup = false;
+  let cachedChatListActive = false;
   let initialNavigationResolved = false;
   let startupCap: number | undefined;
   let startupSettleFrame: number | undefined;
@@ -330,6 +331,19 @@ export function App(props: AppProps) {
           trackStartupBuffers(message.buffers);
         }
       }
+      if (message.type === "chat_list_snapshot_loaded") {
+        cachedChatListActive = true;
+        setBuffers(message.buffers);
+        setLoadedNetworkIds((current) =>
+          new Set(current).add(message.network_id),
+        );
+        setShellReady(true);
+        setStartupContentReady(true);
+      }
+      if (message.type === "chat_list_live") {
+        cachedChatListActive = false;
+        setBuffers(message.buffers);
+      }
       if (message.type === "buffer_added" && !startupRevealed()) {
         trackStartupBuffers([message.buffer]);
       }
@@ -354,13 +368,22 @@ export function App(props: AppProps) {
       if (message.type === "draft_key_changed") {
         migrateDraft(message.previous, message.current);
       }
-      applyDebugEvent(
-        message,
-        setNetworks,
-        setBuffers,
-        setMessages,
-        setMemberships,
-      );
+      const stagedLiveBufferEvent =
+        cachedChatListActive &&
+        (message.type === "buffers_changed" ||
+          message.type === "buffer_added" ||
+          (message.type === "buffer_updated" &&
+            message.buffer.cached !== true) ||
+          message.type === "unread_changed");
+      if (!stagedLiveBufferEvent) {
+        applyDebugEvent(
+          message,
+          setNetworks,
+          setBuffers,
+          setMessages,
+          setMemberships,
+        );
+      }
     });
     const updateVisibility = () => {
       mountedClient.setVisibility(document.hidden ? "hidden" : "visible");
@@ -581,6 +604,22 @@ export function App(props: AppProps) {
               .send({
                 id: crypto.randomUUID(),
                 request: { type: "mark_read", buffer_id: bufferId, through },
+              })
+              .catch(() => undefined);
+          }}
+          onMarkCachedRead={(bufferId) => {
+            setBuffers((current) =>
+              current.map((buffer) =>
+                buffer.id === bufferId
+                  ? { ...buffer, unread: 0, mentions: 0 }
+                  : buffer,
+              ),
+            );
+            if (client === undefined) return;
+            void client
+              .send({
+                id: crypto.randomUUID(),
+                request: { type: "mark_cached_read", buffer_id: bufferId },
               })
               .catch(() => undefined);
           }}

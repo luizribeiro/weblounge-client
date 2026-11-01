@@ -109,6 +109,7 @@ export function Composer(props: ComposerProps) {
       return;
     if (props.bufferId === currentBuffer) {
       currentDraftKey = props.draftKey;
+      if (text() === "") setText(readDraft(currentDraftKey));
       return;
     }
     currentBuffer = props.bufferId;

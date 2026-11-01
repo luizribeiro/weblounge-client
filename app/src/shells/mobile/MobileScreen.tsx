@@ -29,6 +29,7 @@ export interface MobileShellData {
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onOpenMembers?: ((bufferId: number) => void) | undefined;
   readonly onOpenDirect?:
@@ -138,6 +139,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onBack={props.onBack}
           onLoadHistory={props.onLoadHistory}
           onMarkRead={props.onMarkRead}
+          onMarkCachedRead={props.onMarkCachedRead}
           onOpenMembers={() => props.onOpenMembers?.(buffer()?.id ?? 0)}
           onOpenDirect={(nick) =>
             props.onOpenDirect?.(buffer()?.network_id ?? 0, nick)

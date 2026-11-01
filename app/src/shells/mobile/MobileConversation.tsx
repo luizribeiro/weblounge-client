@@ -32,6 +32,7 @@ export interface MobileConversationProps {
   readonly onBack: () => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
+  readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onOpenMembers: () => void;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onRequestCompletion: (
@@ -79,8 +80,19 @@ export function MobileConversation(props: MobileConversationProps) {
     onCleanup(() => window.clearTimeout(timeout));
   });
 
-  onMount(() => {
+  let historyRequested = false;
+  createEffect(() => {
+    if (
+      historyRequested ||
+      props.buffer.cached === true ||
+      props.buffer.available === false
+    )
+      return;
+    historyRequested = true;
     props.onLoadHistory(props.buffer.id);
+  });
+
+  onMount(() => {
     const updateForeground = () =>
       setForeground(
         document.visibilityState === "visible" && document.hasFocus(),
@@ -128,7 +140,17 @@ export function MobileConversation(props: MobileConversationProps) {
             )}
           </Line>
         </span>
-        {props.buffer.kind === "channel" ? (
+        {props.buffer.cached === true && props.buffer.unread > 0 ? (
+          <button
+            aria-label="Mark as read"
+            class={styles.members}
+            onClick={() => props.onMarkCachedRead?.(props.buffer.id)}
+            title="Mark as read"
+            type="button"
+          >
+            <span aria-hidden="true">✓</span>
+          </button>
+        ) : props.buffer.kind === "channel" ? (
           <button
             aria-label="Show members"
             class={styles.members}
@@ -167,50 +189,72 @@ export function MobileConversation(props: MobileConversationProps) {
         )}
       </Show>
       <div class={styles.conversation}>
-        <MessageList
-          bufferId={props.buffer.id}
-          messages={props.messages}
-          memberships={props.memberships}
-          onLiveEdgeChange={setAtLiveEdge}
-          onOpenChannel={(channel) => {
-            void props.onSend(props.buffer.id, `/join ${channel}`);
-          }}
-          onOpenDirect={
-            props.buffer.kind === "server" ? undefined : props.onOpenDirect
+        <Show
+          when={props.buffer.available !== false}
+          fallback={
+            <div role="status">
+              <p>This conversation is not available.</p>
+              {props.composerNotice !== undefined && (
+                <p class={styles.notice}>{props.composerNotice}</p>
+              )}
+              <button onClick={props.onBack} type="button">
+                Back to Chats
+              </button>
+            </div>
           }
-          onRetry={(localSendId) =>
-            props.onRetry?.(props.buffer.id, localSendId)
-          }
-          presentation="mobile"
-          readThrough={props.buffer.read_through}
-          registerController={(controller) => {
-            listController = controller;
-          }}
-        />
-        {props.composerNotice !== undefined && (
-          <p class={styles.notice} role="status">
-            {props.composerNotice}
-          </p>
-        )}
-        <Composer
-          bufferId={props.buffer.id}
-          bufferTitle={props.buffer.title}
-          commandSpecs={props.commandSpecs}
-          draftKey={props.buffer.draft_key}
-          completion={
-            props.completion?.buffer_id === props.buffer.id
-              ? props.completion
-              : undefined
-          }
-          onRequestCandidates={(input, cursor, explicit) =>
-            props.onRequestCompletion(props.buffer.id, input, cursor, explicit)
-          }
-          onSelectLast={() => listController?.selectLastOwn()}
-          connectionHint={
-            connection().sendsBlocked ? "Will send when connected" : undefined
-          }
-          onSend={(text) => props.onSend(props.buffer.id, text)}
-        />
+        >
+          <MessageList
+            bufferId={props.buffer.id}
+            messages={props.messages}
+            memberships={props.memberships}
+            onLiveEdgeChange={setAtLiveEdge}
+            onOpenChannel={(channel) => {
+              void props.onSend(props.buffer.id, `/join ${channel}`);
+            }}
+            onOpenDirect={
+              props.buffer.kind === "server" ? undefined : props.onOpenDirect
+            }
+            onRetry={(localSendId) =>
+              props.onRetry?.(props.buffer.id, localSendId)
+            }
+            presentation="mobile"
+            readThrough={props.buffer.read_through}
+            registerController={(controller) => {
+              listController = controller;
+            }}
+          />
+          {props.composerNotice !== undefined && (
+            <p class={styles.notice} role="status">
+              {props.composerNotice}
+            </p>
+          )}
+          <Composer
+            bufferId={props.buffer.id}
+            bufferTitle={props.buffer.title}
+            commandSpecs={props.commandSpecs}
+            draftKey={props.buffer.draft_key}
+            completion={
+              props.completion?.buffer_id === props.buffer.id
+                ? props.completion
+                : undefined
+            }
+            onRequestCandidates={(input, cursor, explicit) =>
+              props.onRequestCompletion(
+                props.buffer.id,
+                input,
+                cursor,
+                explicit,
+              )
+            }
+            onSelectLast={() => listController?.selectLastOwn()}
+            connectionHint={
+              props.buffer.cached === true || connection().sendsBlocked
+                ? "Will send when connected"
+                : undefined
+            }
+            onSend={(text) => props.onSend(props.buffer.id, text)}
+          />
+        </Show>
       </div>
     </section>
   );

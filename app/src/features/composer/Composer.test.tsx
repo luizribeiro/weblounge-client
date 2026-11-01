@@ -6,7 +6,7 @@ import type {
   CompletionResult,
 } from "../../engine/protocol";
 import { Composer, replacementFor } from "./Composer";
-import { migrateDraft, readDraft } from "./draft-storage";
+import { migrateDraft, readDraft, writeDraft } from "./draft-storage";
 
 const identify = {
   name: "identify",
@@ -253,6 +253,28 @@ it("continues a migrated direct draft under its account key", async () => {
   expect(readDraft("test:nick=alice")).toBe("");
   await waitFor(() =>
     expect(readDraft("test:account=alice-account")).toBe("after account"),
+  );
+});
+
+it("restores a persisted draft when a cached identity becomes live", async () => {
+  const cached = "test:cached:#room";
+  const live = "test:rfc7613:#room";
+  writeDraft(live, "persisted before reload");
+  const [draftKey, setDraftKey] = createSignal(cached);
+  render(() => (
+    <Composer
+      bufferId={2}
+      bufferTitle="#room"
+      commandSpecs={[]}
+      draftKey={draftKey()}
+      onSend={() => {}}
+    />
+  ));
+
+  expect(screen.getByRole("textbox")).toHaveValue("");
+  setDraftKey(live);
+  await waitFor(() =>
+    expect(screen.getByRole("textbox")).toHaveValue("persisted before reload"),
   );
 });
 

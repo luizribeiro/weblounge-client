@@ -20,6 +20,8 @@ interface MobileChatRowProps {
 
 export function MobileChatRow(props: MobileChatRowProps) {
   const message = () => props.buffer.last_message;
+  const visiblePreview = () =>
+    props.buffer.cached_preview ?? preview(props.buffer);
   return (
     <button
       aria-label={props.buffer.title}
@@ -62,8 +64,8 @@ export function MobileChatRow(props: MobileChatRowProps) {
           )}
         </span>
         <span class={styles.detail}>
-          {props.previews && message() !== undefined && (
-            <Line class={styles.preview}>{preview(props.buffer)}</Line>
+          {props.previews && visiblePreview() !== "" && (
+            <Line class={styles.preview}>{visiblePreview()}</Line>
           )}
           {props.buffer.mentions > 0 ? (
             <span

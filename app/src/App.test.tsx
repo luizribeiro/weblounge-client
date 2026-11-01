@@ -278,6 +278,134 @@ it("caps startup history hydration at 400ms", async () => {
   vi.useRealTimers();
 });
 
+it("reveals and navigates a cached chat list before live synchronization", async () => {
+  const client = new FakeEngineClient();
+  const onReady = vi.fn();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: ["#cached"],
+        },
+        token: new OneShotAccessToken("hosted-secret", Date.now() + 60_000),
+      }}
+      onReady={onReady}
+    />
+  ));
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "weblounge",
+      nickname: "luiz",
+      state: "connecting",
+    },
+  });
+  client.emit({
+    type: "chat_list_snapshot_loaded",
+    network_id: 1,
+    buffers: [
+      {
+        id: 2,
+        network_id: 1,
+        kind: "channel",
+        cached: true,
+        available: true,
+        title: "#cached",
+        draft_key: "weblounge:#cached",
+        topic: null,
+        member_count: 0,
+        unread: 1,
+        mentions: 0,
+        read_through: null,
+        cached_preview: "alice: already here",
+      },
+    ],
+  });
+
+  await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+  fireEvent.click(await screen.findByRole("button", { name: "#cached" }));
+  expect(screen.queryByText(/connecting/i)).toBeNull();
+  expect(client.requests).not.toContainEqual(
+    expect.objectContaining({
+      request: { type: "load_history", buffer_id: 2 },
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+  expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull();
+  await waitFor(() =>
+    expect(client.requests).toContainEqual({
+      id: expect.any(String),
+      request: { type: "mark_cached_read", buffer_id: 2 },
+    }),
+  );
+  client.emit({
+    type: "buffer_updated",
+    buffer: {
+      id: 2,
+      network_id: 1,
+      kind: "channel",
+      cached: true,
+      available: true,
+      title: "#cached",
+      draft_key: "weblounge:#cached",
+      topic: null,
+      member_count: 0,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+      cached_preview: "alice: already here",
+    },
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull(),
+  );
+  fireEvent.input(screen.getByRole("textbox"), {
+    target: { value: "queued hello" },
+  });
+  fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+  await waitFor(() =>
+    expect(client.requests).toContainEqual({
+      id: expect.any(String),
+      request: {
+        type: "submit_input",
+        buffer_id: 2,
+        input: "queued hello",
+      },
+    }),
+  );
+
+  client.emit({
+    type: "chat_list_live",
+    network_id: 1,
+    buffers: [
+      {
+        id: 2,
+        network_id: 1,
+        kind: "channel",
+        title: "#cached",
+        draft_key: "weblounge:#cached",
+        topic: "Live topic",
+        member_count: 3,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    ],
+  });
+  await waitFor(() =>
+    expect(client.requests).toContainEqual(
+      expect.objectContaining({
+        request: { type: "load_history", buffer_id: 2 },
+      }),
+    ),
+  );
+  expect(screen.getByText("Live topic")).toBeInTheDocument();
+});
+
 it("lists projected networks, buffers, and messages", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);

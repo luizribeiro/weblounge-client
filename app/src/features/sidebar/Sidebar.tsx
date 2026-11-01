@@ -130,7 +130,9 @@ export function Sidebar(props: SidebarProps) {
             <NetworkSection
               activeBufferId={props.activeBufferId}
               buffers={props.buffers.filter(
-                (buffer) => buffer.network_id === network.id,
+                (buffer) =>
+                  buffer.network_id === network.id &&
+                  buffer.available !== false,
               )}
               network={network}
               onFocus={setRovingId}
@@ -169,7 +171,10 @@ function orderedBuffers(
 ): number[] {
   return networks.flatMap((network) =>
     buffers
-      .filter((buffer) => buffer.network_id === network.id)
+      .filter(
+        (buffer) =>
+          buffer.network_id === network.id && buffer.available !== false,
+      )
       .sort((first, second) => kindOrder(first) - kindOrder(second))
       .map((buffer) => buffer.id),
   );

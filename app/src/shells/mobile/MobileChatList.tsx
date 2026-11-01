@@ -68,7 +68,11 @@ export function MobileChatList(props: MobileChatListProps) {
     if (scrollKeys.has(event.key)) markUserScrollIntent(false);
   };
   const chats = createMemo(() =>
-    filterChats(props.buffers, props.filter, props.query),
+    filterChats(
+      props.buffers.filter((buffer) => buffer.available !== false),
+      props.filter,
+      props.query,
+    ),
   );
   const chatsById = createMemo(
     () => new Map(chats().map((buffer) => [buffer.id, buffer])),
