@@ -5,7 +5,10 @@ import {
   isActionId,
 } from "./actions/action-registry";
 import { commandHelp } from "./actions/command-help";
-import { consumeDebugPassword } from "./debug-irc-config";
+import {
+  consumeDebugConnection,
+  type DebugConnection,
+} from "./debug-irc-config";
 import {
   connectionFailureMessage,
   connectionStateKind,
@@ -191,10 +194,10 @@ export function App(props: AppProps) {
           });
     const mountedClient = props.engineClient ?? createEngineClient();
     client = mountedClient;
-    const debugPassword =
+    const debugConnection =
       __DEBUG_IRC_CONFIG__ === null
         ? null
-        : consumeDebugPassword(new URL(window.location.href), (path) =>
+        : consumeDebugConnection(new URL(window.location.href), (path) =>
             window.history.replaceState(window.history.state, "", path),
           );
     const unsubscribe = mountedClient.subscribe((message) => {
@@ -206,8 +209,8 @@ export function App(props: AppProps) {
         if (restarted) {
           if (props.hostedSession !== undefined) {
             void restartHostedAuthorization("worker_restarted");
-          } else if (debugPassword !== null) {
-            void connectDebugNetwork(mountedClient, debugPassword);
+          } else if (debugConnection !== null) {
+            void connectDebugNetwork(mountedClient, debugConnection);
           }
         }
       }
@@ -399,7 +402,7 @@ export function App(props: AppProps) {
       mountedClient,
       setEngineStatus,
       setHostedError,
-      debugPassword,
+      debugConnection,
       props.hostedSession,
       clientId,
     ).then((outcome) => {
@@ -763,7 +766,7 @@ async function startEngine(
   client: EngineClient,
   setStatus: (status: string) => void,
   setHostedError: (message: string) => void,
-  debugPassword: string | null,
+  debugConnection: DebugConnection | null,
   hostedSession: HostedSession | undefined,
   clientId: string,
 ): Promise<"ready" | "failed" | "reloading"> {
@@ -794,8 +797,8 @@ async function startEngine(
           autojoin: hostedSession.network.autojoin,
         },
       });
-    } else if (debugPassword !== null) {
-      await connectDebugNetwork(client, debugPassword);
+    } else if (debugConnection !== null) {
+      await connectDebugNetwork(client, debugConnection);
     }
     return "ready";
   } catch (error: unknown) {
@@ -812,7 +815,7 @@ async function startEngine(
 
 async function connectDebugNetwork(
   client: EngineClient,
-  password: string,
+  connection: DebugConnection,
 ): Promise<void> {
   if (__DEBUG_IRC_CONFIG__ === null) return;
   await client.send({
@@ -824,9 +827,14 @@ async function connectDebugNetwork(
       nickname: __DEBUG_IRC_CONFIG__.nickname,
       sasl: {
         account: __DEBUG_IRC_CONFIG__.account,
-        password,
+        password: connection.password,
       },
-      autojoin: [__DEBUG_IRC_CONFIG__.channel],
+      autojoin: [
+        __DEBUG_IRC_CONFIG__.channel,
+        ...connection.additionalAutojoin.filter(
+          (channel) => channel !== __DEBUG_IRC_CONFIG__?.channel,
+        ),
+      ],
       allow_insecure: __DEBUG_IRC_CONFIG__.allowInsecure,
     },
   });

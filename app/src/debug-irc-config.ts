@@ -6,6 +6,11 @@ export interface DebugIrcConfig {
   allowInsecure: boolean;
 }
 
+export interface DebugConnection {
+  readonly password: string;
+  readonly additionalAutojoin: readonly string[];
+}
+
 type DebugEnvironment = Readonly<Record<string, string | undefined>>;
 
 export function buildDebugIrcConfig(
@@ -37,13 +42,17 @@ function hasDebugValue(environment: DebugEnvironment): boolean {
   );
 }
 
-export function consumeDebugPassword(
+export function consumeDebugConnection(
   url: URL,
   replace: (path: string) => void,
-): string | null {
+): DebugConnection | null {
   const password = url.searchParams.get("irc-password");
   if (password === null) return null;
+  const additionalAutojoin = url.searchParams
+    .getAll("irc-autojoin")
+    .filter((channel) => channel !== "");
   url.searchParams.delete("irc-password");
+  url.searchParams.delete("irc-autojoin");
   replace(`${url.pathname}${url.search}${url.hash}`);
-  return password;
+  return { password, additionalAutojoin };
 }

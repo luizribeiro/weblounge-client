@@ -8,15 +8,56 @@ test.describe("mobile member drawer follows navigation", () => {
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
+  test("cold start follows channel A to channel B", async ({
+    page,
+  }, testInfo) => {
+    requireMobileMembersProject(testInfo.project.name);
+    const suffix = Date.now().toString().slice(-6);
+    const otherChannel = `#drawer-cold-${suffix}`;
+    const homeNick = `coldhome${suffix}`;
+    const otherNick = `coldother${suffix}`;
+    const homeMember = await IrcClient.connect(
+      homeNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      homeChannel,
+    );
+    const otherMember = await IrcClient.connect(
+      otherNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      otherChannel,
+    );
+
+    try {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/?irc-password=weblounge-test&irc-autojoin=${encodeURIComponent(otherChannel)}`,
+      );
+      await expect(
+        page.getByRole("button", { exact: true, name: homeChannel }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { exact: true, name: otherChannel }),
+      ).toBeVisible();
+
+      await openChat(page, homeChannel);
+      await expectDrawer(page, homeChannel, homeNick, otherNick);
+      await closeDrawer(page);
+      await backToChats(page);
+
+      await openChat(page, otherChannel);
+      await expectDrawer(page, otherChannel, otherNick, homeNick);
+    } finally {
+      homeMember.close();
+      otherMember.close();
+    }
+  });
+
   test("shows the active channel through every mobile navigation path", async ({
     page,
   }, testInfo) => {
-    test.skip(
-      !["chromium-mobile-members", "webkit-mobile-members"].includes(
-        testInfo.project.name,
-      ),
-      "requires a mobile browser profile",
-    );
+    requireMobileMembersProject(testInfo.project.name);
     const suffix = Date.now().toString().slice(-6);
     const otherChannel = `#drawer-${suffix}`;
     const homeNick = `home${suffix}`;
@@ -110,6 +151,13 @@ test.describe("mobile member drawer follows navigation", () => {
     }
   });
 });
+
+function requireMobileMembersProject(projectName: string): void {
+  test.skip(
+    !["chromium-mobile-members", "webkit-mobile-members"].includes(projectName),
+    "requires a mobile browser profile",
+  );
+}
 
 async function openChat(page: Page, title: string): Promise<void> {
   await page.getByRole("button", { exact: true, name: title }).click();
