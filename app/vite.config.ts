@@ -193,8 +193,7 @@ function appShellUrls(directory: string): string[] {
         url === "/index.html" ||
         url === "/manifest.webmanifest" ||
         url.startsWith("/assets/") ||
-        url.startsWith("/icons/") ||
-        url.startsWith("/startup/"),
+        url.startsWith("/icons/"),
     )
     .sort();
 }

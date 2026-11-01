@@ -3,6 +3,15 @@ import { expect, test } from "@playwright/test";
 const development = process.env.WEBLOUNGE_E2E_DEV === "1";
 
 test("registers the app-shell worker only in production", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (window.requestIdleCallback === undefined) return;
+    const requestIdleCallback = window.requestIdleCallback.bind(window);
+    window.requestIdleCallback = (callback, options) =>
+      requestIdleCallback((deadline) => {
+        Reflect.set(globalThis, "serviceWorkerIdleCallbackRan", true);
+        callback(deadline);
+      }, options);
+  });
   await page.goto("/");
   if (development) {
     await expect
@@ -15,6 +24,11 @@ test("registers the app-shell worker only in production", async ({ page }) => {
     return;
   }
   await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  expect(
+    await page.evaluate(() =>
+      Reflect.get(globalThis, "serviceWorkerIdleCallbackRan"),
+    ),
+  ).toBe(true);
   await expect
     .poll(() =>
       page.evaluate(() => navigator.serviceWorker.controller !== null),
@@ -99,6 +113,21 @@ test("launches the shell and engine from cache with the origin offline", async (
       return requests.flat().some((request) => request.url.endsWith(".wasm"));
     }),
   ).toBe(true);
+  expect(
+    await page.evaluate(async () => {
+      const names = await caches.keys();
+      const requests = await Promise.all(
+        names
+          .filter((name) => name.startsWith("weblounge-shell-"))
+          .map(async (name) => (await caches.open(name)).keys()),
+      );
+      return requests
+        .flat()
+        .some((request) =>
+          new URL(request.url).pathname.startsWith("/startup/"),
+        );
+    }),
+  ).toBe(false);
 });
 
 test("activation removes obsolete app-shell caches", async ({ page }) => {

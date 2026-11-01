@@ -206,8 +206,7 @@ async function verifyServiceWorker(directory) {
         url === "/index.html" ||
         url === "/manifest.webmanifest" ||
         url.startsWith("/assets/") ||
-        url.startsWith("/icons/") ||
-        url.startsWith("/startup/"),
+        url.startsWith("/icons/"),
     )
     .sort();
   if (JSON.stringify(urls) !== JSON.stringify(expectedUrls)) {
@@ -226,7 +225,9 @@ async function verifyServiceWorker(directory) {
   }
   if (
     urls.includes("/config.json") ||
+    urls.some((url) => url.startsWith("/startup/")) ||
     worker.includes("skipWaiting") ||
+    !worker.includes('priority: "low"') ||
     !worker.includes('name.startsWith("weblounge-shell-")')
   ) {
     throw new Error("service worker cache or update policy is unsafe");
