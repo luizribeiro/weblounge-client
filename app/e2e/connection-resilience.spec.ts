@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
+import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 
 const channel = "#weblounge-test";
@@ -106,13 +107,18 @@ test.describe("connection resilience against local Ergo", () => {
     const composer = await openChannel(page, testInfo.project.name);
     const list = page.locator("[data-message-list]");
     const listWidth = await elementWidth(list);
+    const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
 
     await context.setOffline(true);
     const queueHint = page.getByText("Will send when connected", {
       exact: true,
     });
     await expect(queueHint).toBeVisible();
-    expect(await elementWidth(list)).toBe(listWidth);
+    expectEqualAtDevicePixelPrecision(
+      await elementWidth(list),
+      listWidth,
+      devicePixelRatio,
+    );
     await expect(
       page.getByText(/Connecting|Reconnecting|Offline/u),
     ).toHaveCount(0);

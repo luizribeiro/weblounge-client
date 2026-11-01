@@ -102,6 +102,15 @@ export function expectStepsFollowCurve(
   }
 }
 
+export function expectEqualAtDevicePixelPrecision(
+  actual: number,
+  expected: number,
+  devicePixelRatio: number,
+): void {
+  expectAtMostAtDevicePixelPrecision(actual, expected, devicePixelRatio);
+  expectAtMostAtDevicePixelPrecision(expected, actual, devicePixelRatio);
+}
+
 function expectAtMostAtDevicePixelPrecision(
   actual: number,
   bound: number,
