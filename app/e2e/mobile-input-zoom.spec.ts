@@ -1083,7 +1083,16 @@ async function touchTap(
   identifier: number,
 ): Promise<void> {
   await target.evaluate((element, touchIdentifier) => {
-    const touch = { clientX: 20, clientY: 40, identifier: touchIdentifier };
+    const touch = Object.create(
+      Object.defineProperties(
+        {},
+        {
+          clientX: { get: () => 20 },
+          clientY: { get: () => 40 },
+          identifier: { get: () => touchIdentifier },
+        },
+      ),
+    );
     const dispatch = (type: "touchend" | "touchstart", timeStamp: number) => {
       const event = new Event(type, {
         bubbles: true,

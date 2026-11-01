@@ -35,6 +35,15 @@ it("recognizes a short touch within tap slop", () => {
   expect(gesture.end(touch(27, 46), 180)).toEqual({ accepted: true });
 });
 
+it("retains prototype-backed browser touch properties", () => {
+  const gesture = new TouchTapGesture();
+  gesture.begin(browserTouch(20, 40, 81), 100);
+
+  expect(gesture.end(browserTouch(20, 40, 81), 181)).toEqual({
+    accepted: true,
+  });
+});
+
 it("recognizes a 63ms tap with small diagonal movement", () => {
   const gesture = new TouchTapGesture();
   gesture.begin(touch(20, 40), 100);
@@ -64,6 +73,33 @@ it("rejects a long-press without consuming its native behavior", () => {
   });
 });
 
-function touch(clientX: number, clientY: number) {
-  return { clientX, clientY, identifier: 7 };
+it("identifies both touches when the tracked finger changes", () => {
+  const gesture = new TouchTapGesture();
+  gesture.begin(touch(20, 40, 7), 100);
+
+  expect(gesture.end(touch(20, 40, 9), 180)).toEqual({
+    accepted: false,
+    reason: "touch changed from 7 to 9",
+  });
+});
+
+function touch(clientX: number, clientY: number, identifier = 7) {
+  return { clientX, clientY, identifier };
+}
+
+function browserTouch(clientX: number, clientY: number, identifier: number) {
+  return Object.create(
+    Object.defineProperties(
+      {},
+      {
+        clientX: { get: () => clientX },
+        clientY: { get: () => clientY },
+        identifier: { get: () => identifier },
+      },
+    ),
+  ) as {
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly identifier: number;
+  };
 }

@@ -706,6 +706,6 @@ it("clears a draft when arriving specs classify it as secret", () => {
 
 function tap(target: HTMLElement, identifier: number): void {
   const touch = { clientX: 20, clientY: 40, identifier };
-  fireEvent.touchStart(target, { touches: [touch] });
+  fireEvent.touchStart(target, { changedTouches: [touch], touches: [touch] });
   fireEvent.touchEnd(target, { changedTouches: [touch] });
 }

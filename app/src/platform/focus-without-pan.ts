@@ -47,7 +47,7 @@ interface TouchStart extends TouchPoint {
 type TouchTapRejection =
   | "clock changed"
   | "no start"
-  | "touch changed"
+  | `touch changed from ${number} to ${number}`
   | `held ${number}ms`
   | `moved ${number}px`;
 
@@ -64,7 +64,12 @@ export class TouchTapGesture {
   #rejection: TouchTapRejection | undefined;
 
   begin(touch: TouchPoint, time: number): void {
-    this.#start = { ...touch, time };
+    this.#start = {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      identifier: touch.identifier,
+      time,
+    };
     this.#movement = 0;
     this.#rejection = undefined;
   }
@@ -73,7 +78,7 @@ export class TouchTapGesture {
     const start = this.#start;
     if (start === undefined) return;
     if (touch.identifier !== start.identifier) {
-      this.#rejection = "touch changed";
+      this.#rejection = touchChanged(start.identifier, touch.identifier);
       return;
     }
     this.#movement = Math.max(this.#movement, distance(start, touch));
@@ -89,7 +94,7 @@ export class TouchTapGesture {
     const rejection =
       this.#rejection ??
       (touch.identifier !== start.identifier
-        ? "touch changed"
+        ? touchChanged(start.identifier, touch.identifier)
         : outsideTapSlop(start, touch)
           ? `moved ${Math.round(this.#movement)}px`
           : duration < 0
@@ -108,6 +113,10 @@ export class TouchTapGesture {
     this.#movement = 0;
     this.#rejection = undefined;
   }
+}
+
+function touchChanged(start: number, current: number): TouchTapRejection {
+  return `touch changed from ${start} to ${current}`;
 }
 
 function outsideTapSlop(start: TouchPoint, current: TouchPoint): boolean {

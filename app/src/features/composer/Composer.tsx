@@ -383,8 +383,9 @@ export function Composer(props: ComposerProps) {
           }}
           onTouchStart={(event) => {
             reportKeyboardInteraction("touchstart");
-            if (event.touches.length === 1 && event.touches[0] !== undefined)
-              touchFocus.begin(event.touches[0], event.timeStamp);
+            const touch = event.changedTouches[0];
+            if (event.touches.length === 1 && touch !== undefined)
+              touchFocus.begin(touch, event.timeStamp);
             else touchFocus.cancel();
           }}
           placeholder={`Message ${props.bufferTitle}`}
