@@ -121,8 +121,27 @@ it("re-anchors the live edge synchronously with app geometry", () => {
   render(() => <MessageList messages={[message]} />);
   const list = screen.getByRole("list", { name: "Messages" });
   const scrollTo = vi.spyOn(list, "scrollTo");
+  const unrelatedOwner = document.createElement("div");
 
-  window.dispatchEvent(new Event("weblounge:app-geometry-change"));
+  window.dispatchEvent(
+    new CustomEvent("weblounge:app-geometry-change", {
+      detail: {
+        geometry: { keyboard: "open", height: 500 },
+        owner: document.body,
+      },
+    }),
+  );
+
+  expect(scrollTo).toHaveBeenCalledOnce();
+
+  window.dispatchEvent(
+    new CustomEvent("weblounge:app-geometry-change", {
+      detail: {
+        geometry: { keyboard: "open", height: 500 },
+        owner: unrelatedOwner,
+      },
+    }),
+  );
 
   expect(scrollTo).toHaveBeenCalledOnce();
 });

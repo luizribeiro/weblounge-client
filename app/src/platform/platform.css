@@ -34,6 +34,7 @@
   position: fixed;
 }
 
-#root[data-keyboard="open"] {
+#root[data-keyboard="open"][data-keyboard-owner],
+#root[data-keyboard="open"] [data-keyboard-owner] {
   --wl-safe-bottom-effective: 0px;
 }

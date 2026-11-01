@@ -236,6 +236,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     taps and drags back by the next frame, and reconcile warm opens to stable measured viewport
     geometry while refreshing the orientation cache. `/debug keyboard` identifies cached,
     measured, and rollback commits (beta feedback on `40ee783`, awaiting on-device confirmation).
+  - [x] Route global keyboard geometry only to the surface owning the focused field. The mobile
+    member drawer follows measured keyboard inset while the scrimmed chat retains its root height,
+    safe-area padding, composer position, transcript offset, and visible row; owner-scoped geometry
+    events no longer re-anchor unrelated message lists (#78, awaiting on-device confirmation).
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;

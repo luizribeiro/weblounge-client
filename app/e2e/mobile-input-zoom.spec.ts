@@ -171,6 +171,92 @@ test.describe("mobile text field zoom", () => {
     await expect.poll(() => appHeight(root)).toBe(measuredHeight);
   });
 
+  test("keeps the chat fixed while the member filter owns the keyboard", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page);
+    await openChannel(page);
+    const suffix = Date.now().toString(36);
+    const bots = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        IrcClient.connect(
+          `drawer-keyboard-${index}-${suffix}`,
+          "weblounge-bot",
+          "weblounge-bot-test",
+          "#weblounge-test",
+        ),
+      ),
+    );
+    try {
+      for (let round = 0; round < 8; round += 1)
+        await Promise.all(
+          bots.map((bot, index) =>
+            bot.privmsgConfirmed(
+              "#weblounge-test",
+              `drawer keyboard row ${round * bots.length + index} ${suffix}`,
+            ),
+          ),
+        );
+      const root = page.locator("#root");
+      const messages = page.locator("[data-message-list]");
+      const drawer = page.getByRole("dialog", { name: "Members" });
+      const filter = page.getByRole("searchbox", { name: "Filter members" });
+      const layoutHeight = await page.evaluate(() => innerHeight);
+      const openHeight = layoutHeight - 358;
+      await messages.press("End");
+      await expect(
+        page.getByText(`drawer keyboard row 31 ${suffix}`, { exact: true }),
+      ).toBeVisible();
+      await root.evaluate((element) =>
+        element.style.setProperty("--wl-safe-bottom", "34px"),
+      );
+      await page.getByRole("button", { name: "Show members" }).click();
+      await expect(filter).toBeVisible();
+      const background = await readChatBackground(page);
+
+      await filter.tap();
+      await expect(filter).toBeFocused();
+      await setVisualViewport(page, openHeight);
+      await expect(root).toHaveAttribute("data-keyboard", "open");
+      await expect(drawer).toHaveAttribute("data-keyboard-owner", "true");
+      await expect
+        .poll(() =>
+          root.evaluate((element) =>
+            element.style.getPropertyValue("--wl-app-height"),
+          ),
+        )
+        .toBe("");
+      await expect.poll(() => drawerKeyboardGap(drawer)).toBeLessThanOrEqual(1);
+      await expect(drawer.locator("aside")).toHaveCSS("padding-bottom", "0px");
+      await expect
+        .poll(() => fieldKeyboardOverlap(filter))
+        .toBeLessThanOrEqual(0);
+      await expect
+        .poll(() =>
+          fieldKeyboardOverlap(
+            drawer.locator('[data-member-row-kind="member"]').first(),
+          ),
+        )
+        .toBeLessThanOrEqual(0);
+      expect(await readChatBackground(page)).toEqual(background);
+
+      await filter.fill(`drawer-keyboard-0-${suffix}`);
+      await expect(
+        drawer.locator('[data-member-row-kind="member"]'),
+      ).not.toHaveCount(0);
+      expect(await readChatBackground(page)).toEqual(background);
+
+      await filter.evaluate((field) => field.blur());
+      await expect(root).toHaveAttribute("data-keyboard", "closed");
+      await setVisualViewport(page, layoutHeight);
+      await expect(drawer).not.toHaveAttribute("data-keyboard-owner");
+      await expect(drawer.locator("aside")).toHaveCSS("padding-bottom", "34px");
+      expect(await readChatBackground(page)).toEqual(background);
+    } finally {
+      for (const bot of bots) bot.close();
+    }
+  });
+
   test("applies cold and warm keyboard layout in one step", async ({
     page,
   }) => {
@@ -616,6 +702,57 @@ async function appHeight(root: Locator): Promise<number> {
   return root.evaluate((element) =>
     Number.parseFloat(element.style.getPropertyValue("--wl-app-height")),
   );
+}
+
+interface ChatBackground {
+  readonly composerTop: number;
+  readonly firstVisibleRow: string;
+  readonly scrollTop: number;
+}
+
+async function readChatBackground(page: Page): Promise<ChatBackground> {
+  return page.evaluate(() => {
+    const composer = document.querySelector<HTMLElement>("[data-composer]");
+    const messages = document.querySelector<HTMLElement>("[data-message-list]");
+    if (composer === null || messages === null)
+      throw new Error("chat background is missing");
+    const listRect = messages.getBoundingClientRect();
+    const firstVisible = [
+      ...messages.querySelectorAll<HTMLElement>("li[data-row-key]"),
+    ].find((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.bottom > listRect.top && rect.top < listRect.bottom;
+    });
+    return {
+      composerTop: composer.getBoundingClientRect().top,
+      firstVisibleRow: firstVisible?.dataset.rowKey ?? "",
+      scrollTop: messages.scrollTop,
+    };
+  });
+}
+
+async function drawerKeyboardGap(drawer: Locator): Promise<number> {
+  return drawer.evaluate((element) => {
+    const viewport = window.visualViewport;
+    if (viewport === null) throw new Error("visual viewport is missing");
+    return Math.abs(
+      element.getBoundingClientRect().bottom -
+        viewport.offsetTop -
+        viewport.height,
+    );
+  });
+}
+
+async function fieldKeyboardOverlap(field: Locator): Promise<number> {
+  return field.evaluate((element) => {
+    const viewport = window.visualViewport;
+    if (viewport === null) throw new Error("visual viewport is missing");
+    return (
+      element.getBoundingClientRect().bottom -
+      viewport.offsetTop -
+      viewport.height
+    );
+  });
 }
 
 async function attemptDocumentScroll(page: Page): Promise<void> {

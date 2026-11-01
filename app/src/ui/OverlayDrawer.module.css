@@ -43,6 +43,10 @@
   width: var(--wl-overlay-drawer-width);
 }
 
+.drawer[data-keyboard-owner] {
+  bottom: var(--wl-keyboard-inset);
+}
+
 .overlay[data-moving="true"] .drawer {
   will-change: transform;
 }

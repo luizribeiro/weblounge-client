@@ -18,7 +18,10 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import { appGeometryChangeEvent } from "../../platform/viewport-geometry";
+import {
+  type AppGeometryChange,
+  appGeometryChangeEvent,
+} from "../../platform/viewport-geometry";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
@@ -282,8 +285,10 @@ export function MessageList(props: MessageListProps) {
             },
             { root: list },
           );
-    const anchorGeometryChange = () => {
-      if (atLiveEdge()) virtualizer.scrollToEnd();
+    const anchorGeometryChange = (event: Event) => {
+      const { owner } = (event as CustomEvent<AppGeometryChange>).detail;
+      if (list !== undefined && owner.contains(list) && atLiveEdge())
+        virtualizer.scrollToEnd();
     };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);

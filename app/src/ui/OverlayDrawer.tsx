@@ -127,6 +127,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
         aria-modal="true"
         class={styles.drawer}
         data-edge={props.edge}
+        data-keyboard-surface="true"
         onKeyDown={keydown}
         onTransitionCancel={(event) => {
           if (transformEvent(event)) queueMicrotask(settleUnlessMoving);

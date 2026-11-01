@@ -53,6 +53,7 @@ it("traps focus and closes a mirrored drawer with Escape", async () => {
   const last = screen.getByRole("button", { name: "Last" });
   await Promise.resolve();
   expect(first).toHaveFocus();
+  expect(dialog).toHaveAttribute("data-keyboard-surface", "true");
 
   last.focus();
   fireEvent.keyDown(dialog, { key: "Tab" });
