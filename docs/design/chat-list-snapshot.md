@@ -49,15 +49,20 @@ reconnecting, or holding a partial/error projection never overwrites the last co
 Repeated changes coalesce, and the one-record commit is atomic.
 
 At launch the engine reads and validates the record before live synchronization completes. A valid
-record renders through the normal chat-list geometry. The list has no full-screen “Connecting…”
-state; the normal connection-status indicator is sufficient.
+record renders through the normal chat-list geometry. There is no “Connecting…” or “Reconnecting…”
+copy and no full-screen connection state. While the engine is connecting, reconnecting, or
+hydrating the snapshot, the weblounge logo in the mobile Chats header or desktop sidebar carries a
+subtle token-driven shimmer. It is still when ready; reduced motion replaces animation with a
+gentle static dim.
 
 Cached rows are interactive through their durable identities. Selecting one navigates immediately
 and opens the normal conversation shell. Until its live target and history resolve, the transcript
-shows a quiet in-place connecting state. The composer remains available: a submission creates its
-optimistic row and enters the engine-owned FIFO introduced in `772e05b`, keyed to the durable
-conversation identity until a live send target resolves. It flushes through the existing send path
-in order once the network connects and the target is sendable; the UI does not own a second queue.
+keeps its normal geometry without progress copy or a spinner. The composer remains available: a
+submission creates its optimistic row and enters the engine-owned FIFO introduced in `772e05b`,
+keyed to the durable conversation identity until a live send target resolves. It flushes through
+the existing send path in order once the network connects and the target is sendable; the UI does
+not own a second queue. While sends are affected, the composer shows a short hint beside the input,
+such as “Will send when connected”.
 
 An explicit mark-read action clears the cached badge locally and records a session-local intent
 against the same durable identity. Once live history resolves, the engine applies that intent to
@@ -82,7 +87,13 @@ wholesale boundary.
 With a valid cached snapshot, the splash reveals the cached Chats frame as soon as the shell and
 fonts can paint it; it no longer waits for live readiness. The existing live-ready behavior remains
 the fallback when the cache is absent or ignored, including its bounded wait. Live synchronization
-continues behind the normal shell and its connection-status indicator.
+continues behind the normal shell, with only the logo treatment indicating transient progress.
+
+Transient drops that recover use that same shimmer and no error copy. An actionable failure uses
+the one shell-owned connection error strip instead: immediately under the top bar on every mobile
+screen and at the top of the desktop sidebar. It contains a few words and one action, such as “Sign
+in again” or “Retry”, disappears when resolved, and gives the logo an error-token tint while shown.
+It is never duplicated in the Chats header or conversation header.
 
 Sign-out clears the snapshot as part of clearing device-local cache. A schema/version mismatch or
 decode failure is ignored rather than migrated. A configured-network identity mismatch is also
@@ -103,13 +114,16 @@ evicted at any time, and must never be required for a correct cold launch.
   record and a following launch cannot paint it.
 - A Chromium and WebKit Playwright filmstrip starts with a seeded cache and delayed engine. Its
   first revealed app frame contains cached rows and previews in the normal shell, with only the
-  standard connection indicator, then swaps once to live rows with no blank frame or layout shift.
+  token-driven logo treatment, then swaps once to live rows with no blank frame or layout shift.
+  Reduced-motion coverage sees a static dim and no animation.
 - Before live state arrives, Playwright taps a cached row and observes the quiet conversation
   state, submits a message, observes its optimistic pending row, and verifies FIFO delivery after
-  connection. A companion case marks the cached row read locally and verifies server sync after
-  live history resolves.
+  connection; the composer hint is present only while delivery is affected. A companion case marks
+  the cached row read locally and verifies server sync after live history resolves.
 - A seeded row omitted from the first complete live list remains open as not available, offers a
   working route back to Chats, and never sends its queued message to another target.
+- Transient recovery shows no status text or strip. Actionable failure shows the single shared strip
+  on Chats and conversation screens, tints the logo, and clears both when resolved.
 - The existing no-cache startup, splash geometry, live-ready cap, native-feel idle, and hidden-tab
   checks remain green.
 
