@@ -148,10 +148,12 @@ interface PanDispatch {
 interface PanResult {
   readonly base: number;
   readonly chatLeft: number | null;
+  readonly devicePixelRatio: number;
   readonly now: number;
 }
 
 interface Settle {
+  readonly devicePixelRatio: number;
   readonly releaseLeft: number;
   readonly releasedAt: number;
   readonly frames: readonly Frame[];
@@ -184,6 +186,7 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
   return {
     base: start,
     chatLeft: chat?.getBoundingClientRect().left ?? null,
+    devicePixelRatio: window.devicePixelRatio,
     now: triggeredAt,
   };
 }
@@ -211,6 +214,7 @@ async function swipeAndRelease(
   const released = frames.findIndex((frame) => frame.motion !== "dragging");
   expect(released).toBeGreaterThanOrEqual(0);
   return {
+    devicePixelRatio: drag.devicePixelRatio,
     frames: frames.slice(released),
     releaseLeft: drag.chatLeft ?? Number.NaN,
     releasedAt,
@@ -246,6 +250,7 @@ function expectSettlesFromFinger(
     { position: releaseLeft, time: settle.releasedAt },
     restingLeft,
     transitionFrame.transition,
+    settle.devicePixelRatio,
   );
   const final = settle.frames.at(-1)?.transformEndLeft ?? Number.NaN;
   expect(Math.abs(final - restingLeft)).toBeLessThan(1.5);
