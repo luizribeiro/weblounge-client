@@ -185,6 +185,14 @@ for (const worker of ["shared", "dedicated"] as const) {
       await page.clock.install();
       await installFakeEngine(page, false, worker);
       const redirectUri = await installHostedConfig(page);
+      let releaseInitialResponse = () => undefined;
+      const initialResponse = new Promise<void>((resolve) => {
+        releaseInitialResponse = resolve;
+      });
+      let markInitialRequestStarted = () => undefined;
+      const initialRequestStarted = new Promise<void>((resolve) => {
+        markInitialRequestStarted = resolve;
+      });
       let authorizationRequests = 0;
       let attempts = 0;
       await page.route(`${oauthIssuer}/authorize**`, async (route) => {
@@ -197,6 +205,10 @@ for (const worker of ["shared", "dedicated"] as const) {
           return;
         }
         attempts += 1;
+        if (attempts === 1) {
+          markInitialRequestStarted();
+          await initialResponse;
+        }
         if (failure === "rate limit") {
           await route.fulfill({
             status: 429,
@@ -214,9 +226,14 @@ for (const worker of ["shared", "dedicated"] as const) {
       });
 
       await page.goto("/");
+      await initialRequestStarted;
+      releaseInitialResponse();
 
-      await expect(page.getByRole("alert")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+      await expect(
+        page
+          .locator("[data-hosted-status]", { has: page.getByRole("alert") })
+          .getByRole("button", { name: "Retry" }),
+      ).toBeVisible();
       await page.clock.fastForward(1_000);
       await expect.poll(() => attempts).toBeGreaterThanOrEqual(2);
       expect(authorizationRequests).toBe(0);
