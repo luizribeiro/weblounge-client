@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("migrates a visible direct draft from nick to account identity", async ({
+test("migrates a visible direct draft from an account key to its nick thread", async ({
   page,
 }) => {
   test.skip(
@@ -9,14 +9,14 @@ test("migrates a visible direct draft from nick to account identity", async ({
   );
   await page.goto("/e2e/draft-key-migration.html");
   const composer = page.getByRole("textbox", { name: "Message alice" });
-  await composer.fill("draft before account discovery");
-  await page.getByRole("button", { name: "Account known" }).click();
-  await expect(composer).toHaveValue("draft before account discovery");
-  await composer.fill("draft after account discovery");
+  await composer.fill("draft before identity migration");
+  await page.getByRole("button", { name: "Migrate identity" }).click();
+  await expect(composer).toHaveValue("draft before identity migration");
+  await composer.fill("draft after identity migration");
 
   await page.reload();
 
   await expect(
     page.getByRole("textbox", { name: "Message alice" }),
-  ).toHaveValue("draft after account discovery");
+  ).toHaveValue("draft after identity migration");
 });

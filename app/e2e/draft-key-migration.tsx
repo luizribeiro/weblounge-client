@@ -7,7 +7,7 @@ import "../src/styles/base.css";
 
 const nickKey = "test:nick=alice";
 const accountKey = "test:account=alice-account";
-const accountKnownKey = "weblounge:e2e:account-known";
+const migratedKey = "weblounge:e2e:nick-key-migrated";
 const root = document.getElementById("root");
 if (root === null) throw new Error("missing draft migration root");
 installPlatformEnvironment(root, window);
@@ -15,7 +15,7 @@ render(() => <Harness />, root);
 
 function Harness() {
   const [draftKey, setDraftKey] = createSignal(
-    sessionStorage.getItem(accountKnownKey) === "1" ? accountKey : nickKey,
+    sessionStorage.getItem(migratedKey) === "1" ? nickKey : accountKey,
   );
   return (
     <main>
@@ -28,13 +28,13 @@ function Harness() {
       />
       <button
         onClick={() => {
-          migrateDraft(nickKey, accountKey);
-          sessionStorage.setItem(accountKnownKey, "1");
-          setDraftKey(accountKey);
+          migrateDraft(accountKey, nickKey);
+          sessionStorage.setItem(migratedKey, "1");
+          setDraftKey(nickKey);
         }}
         type="button"
       >
-        Account known
+        Migrate identity
       </button>
     </main>
   );

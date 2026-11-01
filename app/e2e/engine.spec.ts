@@ -116,6 +116,123 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("blocks a reused nick until its new account is trusted", async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString(36).slice(-5);
+    const alias = `pin-${suffix}`;
+    const first = await IrcClient.connectIsolated(
+      `pina${suffix}`,
+      fixtureChannel,
+    );
+    const replacement = await IrcClient.connectIsolated(
+      `pinb${suffix}`,
+      fixtureChannel,
+    );
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: /#weblounge-test/u }),
+      ).toBeVisible();
+      await first.nick(alias);
+      first.privmsg("weblounge", "first account");
+      await page
+        .getByRole("button", { name: new RegExp(`^${alias},`) })
+        .click();
+      await expect(
+        page.getByText("first account", { exact: true }),
+      ).toBeVisible();
+
+      await first.nick(`away-${suffix}`);
+      await replacement.nick(alias);
+      replacement.privmsg("weblounge", "replacement account");
+
+      const banner = page.locator("[data-direct-identity-banner]");
+      await expect(banner).toContainText(
+        `Can't verify this is the same ${alias}`,
+      );
+      await expect(
+        page.getByRole("textbox", { name: `Message ${alias}` }),
+      ).toBeDisabled();
+      await expect(
+        page.locator(
+          '[data-message-row][data-message-text="replacement account"][data-unverified-sender="true"]',
+        ),
+      ).toBeVisible();
+
+      await banner.getByRole("button", { name: "Trust new identity" }).click();
+      await expect(banner).toHaveCount(0);
+      await expect(
+        page.getByRole("textbox", { name: `Message ${alias}` }),
+      ).toBeEnabled();
+      const reply = `trusted reply ${suffix}`;
+      await observeDeliveries(page, reply);
+      await page.getByRole("textbox", { name: `Message ${alias}` }).fill(reply);
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect(page.getByText(reply, { exact: true })).toBeVisible();
+      await expect.poll(() => observedDeliveries(page)).toContain("confirmed");
+    } finally {
+      first.close();
+      replacement.close();
+    }
+  });
+
+  test("keeps two nicks on one account as separate direct threads", async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString(36).slice(-5);
+    const desktopNick = `desk-${suffix}`;
+    const phoneNick = `phone-${suffix}`;
+    const desktop = await IrcClient.connect(
+      desktopNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      fixtureChannel,
+    );
+    const phone = await IrcClient.connect(
+      phoneNick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      fixtureChannel,
+    );
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: /#weblounge-test/u }),
+      ).toBeVisible();
+      desktop.privmsg("weblounge", "from desktop nick");
+      phone.privmsg("weblounge", "from phone nick");
+
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${desktopNick},`) }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${phoneNick},`) }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: new RegExp(`^${desktopNick},`) })
+        .click();
+      await expect(
+        page.getByText("from desktop nick", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("from phone nick", { exact: true }),
+      ).toHaveCount(0);
+      await page
+        .getByRole("button", { name: new RegExp(`^${phoneNick},`) })
+        .click();
+      await expect(
+        page.getByText("from phone nick", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("from desktop nick", { exact: true }),
+      ).toHaveCount(0);
+    } finally {
+      desktop.close();
+      phone.close();
+    }
+  });
+
   test("keeps our operator prefix through send confirmation", async ({
     page,
   }) => {

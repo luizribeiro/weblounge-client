@@ -163,6 +163,19 @@ export class IrcClient {
     );
   }
 
+  async nick(nickname: string): Promise<void> {
+    const previous = this.#nickname;
+    this.send(`NICK ${nickname}`);
+    await this.waitFor(
+      `NICK confirmation for ${nickname}`,
+      (line) =>
+        line.includes(`:${previous}!`) &&
+        (line.includes(` NICK :${nickname}`) ||
+          line.includes(` NICK ${nickname}`)),
+    );
+    this.#nickname = nickname;
+  }
+
   async part(channel: string): Promise<void> {
     this.send(`PART ${channel} :screenshot seed complete`);
     await this.waitFor(`PART confirmation for ${channel}`, (line) =>
