@@ -20,11 +20,12 @@ reproducible toolchain. The brief, its addenda, and the prototype remain authori
 | 10. Navigation | [10-navigation.md](10-navigation.md) | Desktop uses focused tiling; mobile uses independent tab stacks. |
 | 14. Commands and shortcuts | [14-commands-and-shortcuts.md](14-commands-and-shortcuts.md) | One typed registry resolves capability-aware actions and platform/shell-safe bindings. |
 | 17. Capability model | [17-capability-model.md](17-capability-model.md) | Typed papo features become per-buffer and per-message action projections. |
+| 19. Packaging | [19-packaging.md](19-packaging.md) | A versioned allowlisted app-shell cache enables offline launch without retaining configuration or credentials. |
 | 21. Performance harness | [21-performance-harness.md](21-performance-harness.md) | One local Ergo fixture, app marks, CDP metrics, and measured budgets gate regressions. |
 
 Later designs retain the brief's two-digit numbering. Storage (04), history (05), Activity (06),
 push (07), rendering (11), virtualization (12), composer (13), selection (15), settings (16),
-onboarding (18), packaging (19), and hosted mode (20) remain undesigned. Subsystem 03 nevertheless
+onboarding (18), and hosted mode (20) remain undesigned. Subsystem 03 nevertheless
 settles hosted mode's existing concierge OAuth-to-SASL handover so later design does not reopen it.
 
 ## Repository and dependency boundaries
