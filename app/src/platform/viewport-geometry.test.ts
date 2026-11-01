@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type AppGeometryChange,
   cacheKeyboardHeight,
   documentPanned,
   type KeyboardLayoutCommit,
   keyboardLayoutCommitEvent,
+  keyboardSurfaceOwner,
   observeViewportGeometry,
   requestCachedKeyboardOpen,
   resolveViewportGeometry,
@@ -94,6 +96,24 @@ describe("keyboard close decision", () => {
   });
 });
 
+describe("keyboard surface ownership", () => {
+  it("uses the nearest keyboard surface and falls back to the root", () => {
+    const root = document.createElement("div");
+    const outer = document.createElement("div");
+    const inner = document.createElement("div");
+    const field = document.createElement("input");
+    outer.dataset.keyboardSurface = "true";
+    inner.dataset.keyboardSurface = "true";
+    inner.append(field);
+    outer.append(inner);
+    root.append(outer);
+
+    expect(keyboardSurfaceOwner(field, root)).toBe(inner);
+    expect(keyboardSurfaceOwner(root, root)).toBe(root);
+    expect(keyboardSurfaceOwner(null, root)).toBe(root);
+  });
+});
+
 describe("viewport geometry observer", () => {
   afterEach(() => {
     for (const stop of running.splice(0)) stop();
@@ -113,11 +133,15 @@ describe("viewport geometry observer", () => {
       `${window.innerHeight - 300}px`,
     );
     expect(root.style.getPropertyValue("--wl-app-top")).toBe("0px");
+    expect(root.style.getPropertyValue("--wl-keyboard-inset")).toBe("300px");
+    expect(root.dataset.keyboardOwner).toBe("true");
 
     viewport.set(window.innerHeight, 0, "resize");
     expect(root.dataset.keyboard).toBe("closed");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
     expect(root.style.getPropertyValue("--wl-app-top")).toBe("");
+    expect(root.style.getPropertyValue("--wl-keyboard-inset")).toBe("");
+    expect(root.dataset.keyboardOwner).toBeUndefined();
 
     stop();
     expect(root.dataset.keyboard).toBeUndefined();
@@ -148,14 +172,21 @@ describe("viewport geometry observer", () => {
   });
 
   it("announces geometry changes after publishing them", () => {
-    const changed = vi.fn();
+    const changes: AppGeometryChange[] = [];
+    const changed = (event: Event) =>
+      changes.push((event as CustomEvent<AppGeometryChange>).detail);
     window.addEventListener("weblounge:app-geometry-change", changed);
-    const { viewport } = observe();
-    changed.mockClear();
+    const { root, viewport } = observe();
+    changes.length = 0;
 
     viewport.set(window.innerHeight - 300, 0, "resize");
 
-    expect(changed).toHaveBeenCalledOnce();
+    expect(changes).toEqual([
+      {
+        geometry: { keyboard: "open", height: window.innerHeight - 300 },
+        owner: root,
+      },
+    ]);
     window.removeEventListener("weblounge:app-geometry-change", changed);
   });
 
@@ -231,6 +262,7 @@ describe("viewport geometry observer", () => {
 
     field.focus();
     expect(root.dataset.keyboard).toBe("open");
+    expect(root.dataset.keyboardOwner).toBe("true");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe(
       `${window.innerHeight - 320}px`,
     );
@@ -261,6 +293,39 @@ describe("viewport geometry observer", () => {
       geometry: { keyboard: "open", height: window.innerHeight - 300 },
       source: "cached",
     });
+  });
+
+  it("applies measured keyboard geometry only to an overlay owner", async () => {
+    const { browserWindow, root, viewport } = observe();
+    const surface = document.createElement("div");
+    surface.dataset.keyboardSurface = "true";
+    const field = document.createElement("input");
+    field.type = "search";
+    surface.append(field);
+    document.body.append(surface);
+    cacheKeyboardHeight(browserWindow, window.innerHeight - 320);
+
+    field.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    field.focus();
+
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
+    expect(surface.dataset.keyboardOwner).toBe("true");
+
+    viewport.set(window.innerHeight - 300, 0, "resize");
+
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("");
+    expect(root.style.getPropertyValue("--wl-keyboard-inset")).toBe("300px");
+    expect(surface.dataset.keyboardOwner).toBe("true");
+
+    field.blur();
+    expect(surface.dataset.keyboardOwner).toBe("true");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(root.style.getPropertyValue("--wl-keyboard-inset")).toBe("");
+    expect(surface.dataset.keyboardOwner).toBeUndefined();
   });
 
   it("rolls back a pointer tap that ends without focus", async () => {

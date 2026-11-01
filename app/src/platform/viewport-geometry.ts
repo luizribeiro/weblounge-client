@@ -11,6 +11,11 @@ export const keyboardGeometryMeasuredEvent =
 export const keyboardLayoutCommitEvent = "weblounge:keyboard-layout-commit";
 const cachedKeyboardOpenEvent = "weblounge:cached-keyboard-open";
 
+export interface AppGeometryChange {
+  readonly geometry: ViewportGeometry;
+  readonly owner: HTMLElement;
+}
+
 export type KeyboardLayoutCommitSource = "cached" | "measured" | "rollback";
 
 export interface KeyboardLayoutCommit {
@@ -79,6 +84,15 @@ export function shouldBeginKeyboardClose(
   );
 }
 
+export function keyboardSurfaceOwner(
+  target: EventTarget | null,
+  root: HTMLElement,
+): HTMLElement {
+  return target instanceof Element
+    ? (target.closest<HTMLElement>("[data-keyboard-surface]") ?? root)
+    : root;
+}
+
 const cachedHeights = new WeakMap<Window, Map<string, number>>();
 
 export function cacheKeyboardHeight(
@@ -119,6 +133,8 @@ export function observeViewportGeometry(
   let expectedKeyboard: ViewportGeometry["keyboard"] | undefined;
   let closeFrame = 0;
   let pointerFocusFrame = 0;
+  let owner: HTMLElement | undefined;
+  let publishedOwner: HTMLElement | undefined;
   let closing = false;
   let pointerMayFocus = false;
   let awaitingMeasuredOpen = false;
@@ -157,21 +173,43 @@ export function observeViewportGeometry(
     source: KeyboardLayoutCommitSource,
   ) => {
     const key = JSON.stringify(geometry);
+    const eventOwner = owner ?? publishedOwner ?? root;
+    const sameLayout =
+      key === published &&
+      (geometry.keyboard === "closed" || eventOwner === publishedOwner);
     const announce = () =>
       browserWindow.dispatchEvent(
         new CustomEvent<KeyboardLayoutCommit>(keyboardLayoutCommitEvent, {
           detail: { geometry, source },
         }),
       );
-    if (key === published) {
+    if (sameLayout) {
+      if (geometry.keyboard === "closed") {
+        applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
+        setKeyboardOwner(undefined);
+        publishedOwner = undefined;
+      }
       if (source !== "measured") announce();
       return false;
     }
     published = key;
-    applyGeometry(root, geometry);
-    browserWindow.dispatchEvent(new Event(appGeometryChangeEvent));
+    if (geometry.keyboard === "open") setKeyboardOwner(eventOwner);
+    applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
+    publishedOwner = geometry.keyboard === "open" ? eventOwner : undefined;
+    browserWindow.dispatchEvent(
+      new CustomEvent<AppGeometryChange>(appGeometryChangeEvent, {
+        detail: { geometry, owner: eventOwner },
+      }),
+    );
+    if (geometry.keyboard === "closed") setKeyboardOwner(undefined);
     announce();
     return true;
+  };
+  const setKeyboardOwner = (next: HTMLElement | undefined) => {
+    if (owner === next) return;
+    owner?.removeAttribute("data-keyboard-owner");
+    owner = next;
+    owner?.setAttribute("data-keyboard-owner", "true");
   };
   const acceptMeasuredOpen = (height: number) => {
     awaitingMeasuredOpen = false;
@@ -239,7 +277,7 @@ export function observeViewportGeometry(
     if (expectedKeyboard === "closed") expectedKeyboard = undefined;
     const measured = resolveViewportGeometry(measure());
     if (measured.keyboard === "open") publish(measured, "measured");
-    else requestCachedKeyboardOpen(browserWindow);
+    else if (owner === root) requestCachedKeyboardOpen(browserWindow);
   };
   const onChange = () => {
     if (correctingPan) {
@@ -300,12 +338,13 @@ export function observeViewportGeometry(
     )
       return;
     if (event.type === "focusin" && keyboardField(event.target)) {
+      setKeyboardOwner(keyboardSurfaceOwner(event.target, root));
       if (closeFrame !== 0 || closing) {
         keepKeyboardOpen();
         expectKeyboard("open");
       } else if (pointerMayFocus) {
         expectKeyboard("open");
-        requestCachedKeyboardOpen(browserWindow);
+        if (owner === root) requestCachedKeyboardOpen(browserWindow);
       }
       pointerMayFocus = false;
     }
@@ -339,7 +378,8 @@ export function observeViewportGeometry(
     onChange();
   };
   const onCachedOpen = (event: Event) => {
-    if (!keyboardField(browserWindow.document.activeElement)) return;
+    if (!keyboardField(browserWindow.document.activeElement) || owner !== root)
+      return;
     const height = (event as CustomEvent<number>).detail;
     expectKeyboard("open");
     closing = false;
@@ -375,6 +415,7 @@ export function observeViewportGeometry(
     browserWindow.removeEventListener("orientationchange", onOrientationChange);
     if (keyboard !== undefined && previousOverlay !== undefined)
       keyboard.overlaysContent = previousOverlay;
+    setKeyboardOwner(undefined);
     delete root.dataset.keyboard;
     clearOpenGeometry(root);
   };
@@ -395,17 +436,35 @@ function keyboardField(target: EventTarget | null): boolean {
   );
 }
 
-function applyGeometry(root: HTMLElement, geometry: ViewportGeometry): void {
+function applyGeometry(
+  root: HTMLElement,
+  geometry: ViewportGeometry,
+  owner: HTMLElement,
+  layoutHeight: number,
+): void {
   root.dataset.keyboard = geometry.keyboard;
   if (geometry.keyboard === "closed") {
     clearOpenGeometry(root);
     return;
   }
-  root.style.setProperty("--wl-app-height", `${geometry.height}px`);
-  root.style.setProperty("--wl-app-top", "0px");
+  root.style.setProperty(
+    "--wl-keyboard-inset",
+    `${Math.max(0, layoutHeight - geometry.height)}px`,
+  );
+  if (owner === root) {
+    root.style.setProperty("--wl-app-height", `${geometry.height}px`);
+    root.style.setProperty("--wl-app-top", "0px");
+  } else {
+    clearRootGeometry(root);
+  }
 }
 
 function clearOpenGeometry(root: HTMLElement): void {
+  root.style.removeProperty("--wl-keyboard-inset");
+  clearRootGeometry(root);
+}
+
+function clearRootGeometry(root: HTMLElement): void {
   root.style.removeProperty("--wl-app-height");
   root.style.removeProperty("--wl-app-top");
 }

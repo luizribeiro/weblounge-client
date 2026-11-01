@@ -23,6 +23,7 @@
 }
 
 #root {
+  --wl-keyboard-inset: 0px;
   --wl-safe-bottom-effective: var(--wl-safe-bottom);
 }
 
