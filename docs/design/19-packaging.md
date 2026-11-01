@@ -30,8 +30,10 @@ registration failure is nonfatal because an online launch still works.
 ## Request policy
 
 Navigation requests use the versioned shell's `index.html` cache entry first, including app deep
-links. Exact precache URLs use cache-first. `config.json` uses network-first and is never written to
-Cache Storage, because it selects hosted versus app mode and can change independently of a build.
+links. Exact precache URLs use cache-first. `config.json` uses network-first and a separate runtime
+cache: a successful same-origin response replaces the cached public deployment configuration, and
+an offline launch falls back to the last response. It is not part of the immutable precache because
+it selects hosted versus app mode and can change independently of a build.
 
 Every other request passes through to the browser without a service-worker `respondWith`. In
 particular, the worker never handles non-GET requests, cross-origin requests, `/socket`, OAuth or
