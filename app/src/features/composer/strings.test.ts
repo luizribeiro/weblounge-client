@@ -3,7 +3,7 @@ import { messageKeys, t } from "./strings";
 
 describe("composer strings", () => {
   it.each(messageKeys)("renders %s as a complete sentence", (key) => {
-    const message = t(key, { input: "/whois #garden" });
+    const message = t(key, { input: "/whois #garden", target: "#garden" });
 
     expect(message).toMatch(/^[A-Z]/u);
     expect(message).toMatch(/[.!?]$/u);
@@ -27,6 +27,12 @@ describe("composer strings", () => {
   it("explains the channel state limit without exposing a raw engine error", () => {
     expect(t("engine.channel_limit_reached")).toBe(
       "You're in the maximum number of channels for this server.",
+    );
+  });
+
+  it("names the channel for membership refusals", () => {
+    expect(t("engine.not_in_channel", { target: "#garden" })).toBe(
+      "You're not in #garden.",
     );
   });
 

@@ -774,6 +774,10 @@ pub enum EngineToUi {
         id: String,
         /// Stable localization key describing the rejection.
         message_key: String,
+        /// Typed interpolation values for the localized rejection.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        values: Option<BTreeMap<String, String>>,
     },
     /// Typed candidates for input around the composer caret.
     #[allow(missing_docs)]

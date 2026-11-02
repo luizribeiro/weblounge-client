@@ -193,10 +193,12 @@ describe("WorkerEngineClient", () => {
       type: "command_rejected",
       id: "connect-again",
       message_key: "engine.network_already_connected",
+      values: { target: "#garden" },
     });
 
     await expect(result).rejects.toMatchObject({
       messageKey: "engine.network_already_connected",
+      values: { target: "#garden" },
     });
   });
 

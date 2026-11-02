@@ -31,6 +31,7 @@ export const messageKeys = [
   "engine.invalid_endpoint",
   "engine.network_already_connected",
   "engine.network_not_found",
+  "engine.not_in_channel",
   "engine.offline",
   "engine.send_failed",
   "engine.state_inconsistent",
@@ -155,6 +156,8 @@ export function t(key: string, values: MessageValues = {}): string {
       return "That network is already connected.";
     case "engine.network_not_found":
       return "That network is no longer available.";
+    case "engine.not_in_channel":
+      return `You're not in ${values.target}.`;
     case "engine.offline":
       return "That command needs a connection.";
     case "engine.send_failed":

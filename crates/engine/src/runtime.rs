@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{
         Arc, Mutex, MutexGuard,
         atomic::{AtomicU64, Ordering},
@@ -105,6 +105,13 @@ enum ChannelTarget {
 }
 
 impl ChannelTarget {
+    fn label(&self) -> String {
+        match self {
+            Self::Known(channel) => channel.to_string(),
+            Self::Text(channel) => channel.clone(),
+        }
+    }
+
     async fn part(&self, client: &papo::Client, reason: String) -> Result<(), papo::Error> {
         match self {
             Self::Known(channel) => client.part(channel, reason).await,
@@ -501,10 +508,7 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let Ok(direct) = client.direct(&nick).await else {
-                let _ = outbound.send(EngineToUi::CommandRejected {
-                    id: command_id,
-                    message_key: "engine.direct_unavailable".into(),
-                });
+                let _ = outbound.send(command_rejection(command_id, "engine.direct_unavailable"));
                 return;
             };
             let event = {
@@ -874,10 +878,7 @@ impl Runtime {
             let event = if result.is_ok() {
                 EngineToUi::CommandResult { id: command_id }
             } else {
-                EngineToUi::CommandRejected {
-                    id: command_id,
-                    message_key: "engine.connection_failed".into(),
-                }
+                command_rejection(command_id, "engine.connection_failed")
             };
             let _ = outbound.send(event);
         });
@@ -913,10 +914,7 @@ impl Runtime {
                 let event = if client.reconnect().await.is_ok() {
                     EngineToUi::CommandResult { id: command_id }
                 } else {
-                    EngineToUi::CommandRejected {
-                        id: command_id,
-                        message_key: "engine.connection_failed".into(),
-                    }
+                    command_rejection(command_id, "engine.connection_failed")
                 };
                 let _ = outbound.send(event);
             });
@@ -1219,10 +1217,8 @@ impl Runtime {
                 }
                 Some(DirectAvailability::MonitorFull) => {
                     let Some(nick) = known_nick else {
-                        let _ = outbound.send(EngineToUi::CommandRejected {
-                            id: command_id,
-                            message_key: "engine.direct_unavailable".into(),
-                        });
+                        let _ = outbound
+                            .send(command_rejection(command_id, "engine.direct_unavailable"));
                         return;
                     };
                     (nick, DirectAvailability::MonitorFull, false)
@@ -1236,19 +1232,15 @@ impl Runtime {
                     Ok(direct) => (direct.nick(), DirectAvailability::Guarded(direct), false),
                     Err(papo::Error::MonitorFull { .. }) => {
                         let Some(nick) = known_nick else {
-                            let _ = outbound.send(EngineToUi::CommandRejected {
-                                id: command_id,
-                                message_key: "engine.direct_unavailable".into(),
-                            });
+                            let _ = outbound
+                                .send(command_rejection(command_id, "engine.direct_unavailable"));
                             return;
                         };
                         (nick, DirectAvailability::MonitorFull, true)
                     }
                     Err(_) => {
-                        let _ = outbound.send(EngineToUi::CommandRejected {
-                            id: command_id,
-                            message_key: "engine.direct_unavailable".into(),
-                        });
+                        let _ = outbound
+                            .send(command_rejection(command_id, "engine.direct_unavailable"));
                         return;
                     }
                 },
@@ -1315,7 +1307,8 @@ impl Runtime {
         };
         let client = running.client.clone();
         drop(state);
-        spawn_request(self.outbound.clone(), command_id, async move {
+        let target = channel.label();
+        spawn_channel_request(self.outbound.clone(), command_id, target, async move {
             channel.part(&client, reason.unwrap_or_default()).await
         });
         Vec::new()
@@ -1394,7 +1387,8 @@ impl Runtime {
         };
         let client = running.client.clone();
         drop(state);
-        spawn_request(self.outbound.clone(), command_id, async move {
+        let target = channel.label();
+        spawn_channel_request(self.outbound.clone(), command_id, target, async move {
             channel.set_topic(&client, text).await
         });
         Vec::new()
@@ -1613,10 +1607,7 @@ fn spawn_read_advances(
                 Ok(Some(events)) => send_events(&outbound, events),
                 Ok(None) => return,
                 Err(()) => {
-                    let _ = outbound.send(EngineToUi::CommandRejected {
-                        id: command_id,
-                        message_key: "engine.mark_read_failed".into(),
-                    });
+                    let _ = outbound.send(command_rejection(command_id, "engine.mark_read_failed"));
                     return;
                 }
             }
@@ -3524,18 +3515,20 @@ fn valid_name_check(check: papo::NameCheck) -> bool {
 }
 
 fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
-    vec![EngineToUi::CommandRejected {
+    vec![command_rejection(command_id, message_key)]
+}
+
+fn command_rejection(command_id: String, message_key: &str) -> EngineToUi {
+    EngineToUi::CommandRejected {
         id: command_id,
         message_key: message_key.into(),
-    }]
+        values: None,
+    }
 }
 
 fn terminal_command(command_id: String, rejection: Option<&'static str>) -> EngineToUi {
     match rejection {
-        Some(message_key) => EngineToUi::CommandRejected {
-            id: command_id,
-            message_key: message_key.into(),
-        },
+        Some(message_key) => command_rejection(command_id, message_key),
         None => EngineToUi::CommandResult { id: command_id },
     }
 }
@@ -3668,13 +3661,48 @@ fn spawn_request<T: Send + 'static>(
     spawn_task(async move {
         let event = match request.await {
             Ok(_) => EngineToUi::CommandResult { id: command_id },
-            Err(_) => EngineToUi::CommandRejected {
-                id: command_id,
-                message_key: "engine.command_refused".into(),
-            },
+            Err(_) => command_rejection(command_id, "engine.command_refused"),
         };
         let _ = outbound.send(event);
     });
+}
+
+fn spawn_channel_request<T: Send + 'static>(
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    command_id: String,
+    target: String,
+    request: impl std::future::Future<Output = Result<T, papo::Error>> + Send + 'static,
+) {
+    spawn_task(async move {
+        let event = match request.await {
+            Ok(_) => EngineToUi::CommandResult { id: command_id },
+            Err(error) => channel_request_rejection(command_id, target, &error),
+        };
+        let _ = outbound.send(event);
+    });
+}
+
+fn channel_request_rejection(
+    command_id: String,
+    target: String,
+    error: &papo::Error,
+) -> EngineToUi {
+    if matches!(
+        error,
+        papo::Error::Server(error)
+            if matches!(
+                error.refusal(),
+                papo::Refusal::NoSuchChannel | papo::Refusal::NotOnChannel
+            )
+    ) {
+        EngineToUi::CommandRejected {
+            id: command_id,
+            message_key: "engine.not_in_channel".into(),
+            values: Some(BTreeMap::from([("target".into(), target)])),
+        }
+    } else {
+        command_rejection(command_id, "engine.command_refused")
+    }
 }
 
 fn spawn_join_request<T: Send + 'static>(
@@ -3930,6 +3958,7 @@ mod tests {
             [EngineToUi::CommandRejected {
                 id: "unsupported-scheme".into(),
                 message_key: "engine.invalid_endpoint".into(),
+                values: None,
             }]
         );
     }
@@ -4766,7 +4795,9 @@ mod tests {
         });
         assert!(matches!(
             hosted.as_slice(),
-            [EngineToUi::CommandRejected { id, message_key }]
+            [EngineToUi::CommandRejected {
+                id, message_key, ..
+            }]
                 if id == "hosted" && message_key == "engine.network_already_connected"
         ));
         assert_eq!(
@@ -5200,6 +5231,81 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn part_and_topic_membership_refusals_name_the_channel() {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let buffer_id = model
+            .buffer_id_for_channel(&known_channel(&client, "#room"))
+            .expect("joined buffer exists");
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model,
+            }))),
+            outbound,
+        };
+        mark_runtime_online(&runtime);
+
+        for (id, input, sent, numeric) in [
+            ("part-refused", "/part", "PART #room", 442),
+            (
+                "topic-refused",
+                "/topic updated topic",
+                "TOPIC #room :updated topic",
+                403,
+            ),
+        ] {
+            assert!(
+                runtime
+                    .request(EngineRequestEnvelope {
+                        id: id.into(),
+                        request: EngineRequest::SubmitInput {
+                            buffer_id,
+                            input: input.into(),
+                        },
+                    })
+                    .is_empty()
+            );
+            assert_eq!(wire.next_sent().await, sent);
+            wire.server(format!(
+                ":irc.test {numeric} weblounge #room :Not on channel"
+            ))
+            .await;
+            let result = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                .await
+                .expect("channel refusal resolves")
+                .expect("runtime remains subscribed");
+            assert_eq!(
+                result,
+                EngineToUi::CommandRejected {
+                    id: id.into(),
+                    message_key: "engine.not_in_channel".into(),
+                    values: Some(std::collections::BTreeMap::from([(
+                        "target".into(),
+                        "#room".into(),
+                    )])),
+                }
+            );
+        }
     }
 
     #[tokio::test]
@@ -5868,6 +5974,7 @@ mod tests {
             EngineToUi::CommandRejected {
                 id: "banned-join".into(),
                 message_key: "engine.join_banned".into(),
+                values: None,
             }
         );
     }
@@ -5934,6 +6041,7 @@ mod tests {
                 EngineToUi::CommandRejected {
                     id,
                     message_key: "engine.join_refused".into(),
+                    values: None,
                 }
             );
             let channel = known_channel(
@@ -7204,6 +7312,7 @@ mod tests {
             [EngineToUi::CommandRejected {
                 id: "reconnecting-direct".into(),
                 message_key: "engine.buffer_not_sendable".into(),
+                values: None,
             }]
         );
     }
@@ -7228,6 +7337,7 @@ mod tests {
             [EngineToUi::CommandRejected {
                 id: "join".into(),
                 message_key: "engine.offline".into(),
+                values: None,
             }]
         );
     }

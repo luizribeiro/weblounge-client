@@ -180,7 +180,10 @@ connections across tabs.
 Errors remain typed: invalid input, unsupported action, offline, permission denied, server refusal,
 timeout ambiguity, and internal incidents. Outside the milestone-2 one-shot connection command,
 raw credentials and potentially secret server lines do not cross IPC. UI localization maps stable
-message keys to prose.
+message keys and typed interpolation values to prose. Channel mutation requests classify papo's
+`NoSuchChannel` and `NotOnChannel` refusals without inspecting numerics and include the target in
+`CommandRejected`; this gives PART and TOPIC the specific membership error now and is the shared
+boundary for MODE when that M5 command is implemented.
 
 ## Boundaries
 

@@ -819,7 +819,7 @@ export function App(props: AppProps) {
               .catch((error: unknown) => {
                 setComposerNotice(
                   error instanceof EngineCommandError
-                    ? t(error.messageKey, { input: text })
+                    ? t(error.messageKey, { input: text, ...error.values })
                     : t("engine.command_failed"),
                 );
                 return false;

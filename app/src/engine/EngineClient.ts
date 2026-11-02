@@ -88,6 +88,10 @@ export class EngineCommandError extends Error {
   get messageKey(): string {
     return this.rejection.message_key;
   }
+
+  get values(): Readonly<Record<string, string | undefined>> {
+    return this.rejection.values ?? {};
+  }
 }
 
 export class WorkerEngineClient implements EngineClient {
@@ -443,18 +447,23 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (typeof value.id === "string")
         return { type: "command_result", id: value.id };
       break;
-    case "command_rejected":
+    case "command_rejected": {
+      const rejectionValues =
+        value.values === undefined ? {} : decodeStringRecord(value.values);
       if (
         typeof value.id === "string" &&
-        typeof value.message_key === "string"
+        typeof value.message_key === "string" &&
+        rejectionValues !== undefined
       ) {
         return {
           type: "command_rejected",
           id: value.id,
           message_key: value.message_key,
+          values: rejectionValues,
         };
       }
       break;
+    }
     case "completion_result": {
       const candidates = decodeArray(
         value.candidates,

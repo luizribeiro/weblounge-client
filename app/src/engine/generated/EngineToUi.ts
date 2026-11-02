@@ -85,7 +85,11 @@ id: string,
 /**
  * Stable localization key describing the rejection.
  */
-message_key: string, } | { "type": "completion_result",
+message_key: string,
+/**
+ * Typed interpolation values for the localized rejection.
+ */
+values?: { [key in string]?: string }, } | { "type": "completion_result",
 /**
  * `EngineRequest` that requested these candidates.
  */

@@ -220,6 +220,7 @@ mod tests {
             [EngineToUi::CommandRejected {
                 id: "bad-command".into(),
                 message_key: "composer.unknown_command".into(),
+                values: None,
             }]
         );
     }
