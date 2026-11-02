@@ -413,7 +413,7 @@ export function DesktopShell(props: DesktopShellProps) {
                   if (buffer !== undefined)
                     props.onRetry?.(buffer.id, localSendId);
                 }}
-                readThrough={activeBuffer()?.read_through}
+                readAtMs={activeBuffer()?.read_at_ms}
                 registerController={(controller) => {
                   messageListController = controller;
                 }}

@@ -233,7 +233,7 @@ export function MobileConversation(props: MobileConversationProps) {
               props.onRetry?.(props.buffer.id, localSendId)
             }
             presentation="mobile"
-            readThrough={props.buffer.read_through}
+            readAtMs={props.buffer.read_at_ms}
             registerController={(controller) => {
               listController = controller;
             }}

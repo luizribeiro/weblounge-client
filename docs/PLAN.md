@@ -322,7 +322,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     hidden from the accessibility tree, leaving only the active screen's controls exposed.
   - [x] Keep the unread divider out of focused live-edge arrivals and every own message, including
     other-device actions. Own committed rows advance local and server read state; divider placement
-    follows chronological timeline order and stays absent when its marker row is unknown.
+    compares the projected marker timestamp with chronological message times, including a top
+    divider when the known marker predates the loaded window and no divider when no marker is known.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.

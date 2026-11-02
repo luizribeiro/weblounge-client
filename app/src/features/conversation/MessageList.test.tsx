@@ -461,7 +461,7 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           received_at_ms: 5,
         },
       ]}
-      readThrough={1}
+      readAtMs={1}
     />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -480,18 +480,21 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
 });
 
 it("keeps the New boundary frozen while the live marker advances", async () => {
-  const [readThrough, setReadThrough] = createSignal<number | null>(1);
+  const [readAtMs, setReadAtMs] = createSignal<number | null>(1);
   const { container } = render(() => (
     <MessageList
       bufferId={2}
-      messages={[message, { ...message, id: 2, text: "newer" }]}
-      readThrough={readThrough()}
+      messages={[
+        message,
+        { ...message, id: 2, text: "newer", received_at_ms: 2 },
+      ]}
+      readAtMs={readAtMs()}
     />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 
-  setReadThrough(2);
+  setReadAtMs(2);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
@@ -503,12 +506,30 @@ it("hides the New boundary when the read marker row is unknown", async () => {
         { ...message, id: 10, text: "oldest retained" },
         { ...message, id: 11, text: "newest retained" },
       ]}
-      readThrough={9}
+      readAtMs={null}
     />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(container.querySelector("[data-new-line]")).toBeNull();
+});
+
+it("shows New at the top when a known marker predates the loaded window", async () => {
+  const { container } = render(() => (
+    <MessageList
+      messages={[
+        { ...message, id: 10, text: "oldest unread", received_at_ms: 10 },
+        { ...message, id: 11, text: "newest unread", received_at_ms: 11 },
+      ]}
+      readAtMs={9}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "oldest unread",
+  );
 });
 
 it("places New by timeline order after older history is prepended", async () => {
@@ -519,7 +540,7 @@ it("places New by timeline order after older history is prepended", async () => 
         { ...message, id: 3, text: "read row", received_at_ms: 2 },
         { ...message, id: 2, text: "unread row", received_at_ms: 3 },
       ]}
-      readThrough={3}
+      readAtMs={2}
     />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -530,21 +551,28 @@ it("places New by timeline order after older history is prepended", async () => 
   );
 });
 
-it("places New only after the latest own message", async () => {
+it("keeps a frozen boundary from trailing a committed own message", async () => {
   const { container } = render(() => (
     <MessageList
       messages={[
         { ...message, delivery: "received" },
-        { ...message, id: 2, delivery: "received", text: "unread peer" },
+        {
+          ...message,
+          id: 2,
+          delivery: "received",
+          text: "unread peer",
+          received_at_ms: 2,
+        },
         {
           ...message,
           id: 3,
           authorship: "own",
           delivery: "confirmed",
           text: "own reply",
+          received_at_ms: 3,
         },
       ]}
-      readThrough={1}
+      readAtMs={1}
     />
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -558,10 +586,11 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
     ...message,
     id: index + 1,
     text: `message ${index + 1}`,
+    received_at_ms: index + 1,
   }));
   const [shown, setShown] = createSignal(messages.slice(0, 1));
   const { container } = render(() => (
-    <MessageList messages={shown()} readThrough={1} />
+    <MessageList messages={shown()} readAtMs={1} />
   ));
   const list = container.querySelector<HTMLOListElement>("[data-message-list]");
   if (list === null) throw new Error("message list is missing");
@@ -601,12 +630,18 @@ it("does not add New for a message arriving at the focused live edge", async () 
     { ...message, delivery: "received" },
   ]);
   const { container } = render(() => (
-    <MessageList messages={messages()} readThrough={1} />
+    <MessageList messages={messages()} readAtMs={1} />
   ));
 
   setMessages([
     ...messages(),
-    { ...message, id: 2, delivery: "received", text: "arriving now" },
+    {
+      ...message,
+      id: 2,
+      delivery: "received",
+      text: "arriving now",
+      received_at_ms: 2,
+    },
   ]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
@@ -627,16 +662,26 @@ it("restacks measured rows when the New boundary moves past a long row", async (
   vi.spyOn(document, "hasFocus").mockReturnValue(false);
   const longText = (label: string) =>
     `${label} ${"the deploy health check failed again ".repeat(12)}`;
-  const [readThrough, setReadThrough] = createSignal<number | null>(1);
+  const [readAtMs, setReadAtMs] = createSignal<number | null>(1);
   const { container } = render(() => (
     <MessageList
       bufferId={2}
       messages={[
         message,
-        { ...message, id: 2, text: longText("first") },
-        { ...message, id: 3, text: longText("second") },
+        {
+          ...message,
+          id: 2,
+          text: longText("first"),
+          received_at_ms: 2,
+        },
+        {
+          ...message,
+          id: 3,
+          text: longText("second"),
+          received_at_ms: 3,
+        },
       ]}
-      readThrough={readThrough()}
+      readAtMs={readAtMs()}
     />
   ));
   const flushRowSizes = async () => {
@@ -648,7 +693,7 @@ it("restacks measured rows when the New boundary moves past a long row", async (
   };
   await flushRowSizes();
 
-  setReadThrough(2);
+  setReadAtMs(2);
   await flushRowSizes();
 
   const rows = renderedRowGeometry(container);

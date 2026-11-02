@@ -44,7 +44,7 @@ interface MessageListProps {
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
-  readonly readThrough?: number | null | undefined;
+  readonly readAtMs?: number | null | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
@@ -85,17 +85,15 @@ export function MessageList(props: MessageListProps) {
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
-  const initialReadThrough = props.readThrough ?? null;
-  let boundaryFrozen = hasUnreadAfter(props.messages, initialReadThrough);
-  const [frozenReadThrough, setFrozenReadThrough] = createSignal(
-    props.readThrough ?? null,
-  );
+  const initialReadAt = props.readAtMs ?? null;
+  let boundaryFrozen = hasUnreadAfter(props.messages, initialReadAt);
+  const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
   const [atLiveEdge, setAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
   const rows = createMemo(() =>
-    timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
+    timelineRows(props.messages, props.memberships ?? [], frozenReadAt()),
   );
   // TanStack rebuilds its index-keyed measurements only when the row count or
   // the key extractor's identity changes, and a moving divider keeps the count.
@@ -106,11 +104,11 @@ export function MessageList(props: MessageListProps) {
   const nickLookup = createMemo(() => createNickLookup(props.messages));
   const setLiveEdge = (live: boolean) => {
     if (!live && atLiveEdge() && !boundaryFrozen) {
-      const lastSeen = props.messages.at(-1)?.id;
+      const lastSeen = latestMessageTime(props.messages);
       if (lastSeen !== undefined) {
         boundaryFrozen = true;
-        if (!hasUnreadAfter(props.messages, frozenReadThrough()))
-          setFrozenReadThrough(lastSeen);
+        if (!hasUnreadAfter(props.messages, frozenReadAt()))
+          setFrozenReadAt(lastSeen);
       }
     }
     setAtLiveEdge(live);
@@ -254,7 +252,7 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     if (props.bufferId !== currentBuffer) {
       currentBuffer = props.bufferId;
-      setFrozenReadThrough(props.readThrough ?? null);
+      setFrozenReadAt(props.readAtMs ?? null);
       boundaryFrozen = false;
       renderedCount = 0;
       setUnseen(0);
@@ -263,15 +261,15 @@ export function MessageList(props: MessageListProps) {
     }
   });
   createEffect(() => {
-    const marker = props.readThrough ?? null;
+    const marker = props.readAtMs ?? null;
     const hasUnread = hasUnreadAfter(props.messages, marker);
     const away = !atLiveEdge() || document.hidden || !document.hasFocus();
     if (hasUnread && away) {
       boundaryFrozen = true;
-      setFrozenReadThrough(marker);
+      setFrozenReadAt(marker);
     } else if (!boundaryFrozen) {
-      setFrozenReadThrough(
-        hasUnread ? (latestMessageId(props.messages) ?? marker) : marker,
+      setFrozenReadAt(
+        hasUnread ? (latestMessageTime(props.messages) ?? marker) : marker,
       );
     }
   });
@@ -690,20 +688,20 @@ function Delivery(props: {
 
 function hasUnreadAfter(
   messages: readonly MessageProjection[],
-  readThrough: number | null,
+  readAtMs: number | null,
 ): boolean {
-  return unreadStartId(messages, readThrough) !== undefined;
+  return unreadStartId(messages, readAtMs) !== undefined;
 }
 
 function timelineRows(
   messages: readonly MessageProjection[],
   memberships: readonly MembershipProjection[],
-  readThrough: number | null,
+  readAtMs: number | null,
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
   let day = "";
   let newInserted = false;
-  const firstUnread = unreadStartId(messages, readThrough);
+  const firstUnread = unreadStartId(messages, readAtMs);
   const items = [
     ...messages.map((value) => ({
       kind: "message" as const,
@@ -730,7 +728,7 @@ function timelineRows(
       item.kind === "message" &&
       item.value.id === firstUnread
     ) {
-      rows.push({ kind: "new", key: `new-after-${readThrough}` });
+      rows.push({ kind: "new", key: `new-before-${firstUnread}` });
       newInserted = true;
     }
     if (item.kind === "message")
@@ -751,35 +749,35 @@ function timelineRows(
 
 function unreadStartId(
   messages: readonly MessageProjection[],
-  readThrough: number | null,
+  readAtMs: number | null,
 ): number | undefined {
-  if (readThrough === null) return undefined;
+  if (readAtMs === null) return undefined;
   const ordered = [...messages].sort(
     (left, right) =>
       messageTime(left) - messageTime(right) || left.id - right.id,
   );
-  const marker = ordered.findIndex((message) => message.id === readThrough);
-  if (marker < 0) return undefined;
-  let effectiveMarker = marker;
-  for (let index = marker + 1; index < ordered.length; index += 1) {
-    const candidate = ordered[index];
-    if (candidate?.authorship === "own" && candidate.kind !== "notice")
-      effectiveMarker = index;
-  }
-  return ordered
-    .slice(effectiveMarker + 1)
-    .find((message) => message.authorship !== "own")?.id;
+  const effectiveReadAt = ordered.reduce(
+    (current, message) =>
+      message.authorship === "own" &&
+      message.kind !== "notice" &&
+      (message.delivery === "received" || message.delivery === "confirmed")
+        ? Math.max(current, messageTime(message))
+        : current,
+    readAtMs,
+  );
+  return ordered.find(
+    (message) =>
+      message.authorship !== "own" && messageTime(message) > effectiveReadAt,
+  )?.id;
 }
 
-function latestMessageId(
+function latestMessageTime(
   messages: readonly MessageProjection[],
 ): number | undefined {
-  return [...messages]
-    .sort(
-      (left, right) =>
-        messageTime(left) - messageTime(right) || left.id - right.id,
-    )
-    .at(-1)?.id;
+  return messages.reduce<number | undefined>((latest, message) => {
+    const time = messageTime(message);
+    return latest === undefined ? time : Math.max(latest, time);
+  }, undefined);
 }
 
 function formatDay(time: Date): string {

@@ -82,7 +82,7 @@ async function expectNewDividerAfter(page: Page, readThrough: number) {
     page
       .locator("li[data-index]")
       .filter({ has: page.locator("[data-new-line]") }),
-  ).toHaveAttribute("data-row-key", `new-after-${readThrough}`);
+  ).toHaveAttribute("data-row-key", `new-before-${readThrough + 1}`);
 }
 
 async function expectStackedTimeline(page: Page) {

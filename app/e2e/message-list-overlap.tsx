@@ -57,7 +57,8 @@ installTheme(document, platform.prefersDark());
 
 const [messages, setMessages] =
   createSignal<readonly MessageProjection[]>(history);
-const [readThrough, setReadThrough] = createSignal(history.length);
+const markerTime = (readThrough: number) => start + readThrough * 60_000;
+const [readAtMs, setReadAtMs] = createSignal(markerTime(history.length));
 const [atLiveEdge, setAtLiveEdge] = createSignal(true);
 
 window.messageListOverlap = {
@@ -69,7 +70,7 @@ window.messageListOverlap = {
           harnessMessage(current.length + index + 1, text),
         ),
       ]);
-      setReadThrough(nextReadThrough);
+      setReadAtMs(markerTime(nextReadThrough));
     }),
   estimate: (text, width) =>
     estimateMessageHeight(
@@ -77,7 +78,7 @@ window.messageListOverlap = {
       width,
       currentMessageDensity(document.documentElement),
     ),
-  markRead: setReadThrough,
+  markRead: (readThrough) => setReadAtMs(markerTime(readThrough)),
 };
 
 render(
@@ -96,7 +97,7 @@ render(
       <MessageList
         messages={messages()}
         onLiveEdgeChange={setAtLiveEdge}
-        readThrough={readThrough()}
+        readAtMs={readAtMs()}
       />
     </div>
   ),
