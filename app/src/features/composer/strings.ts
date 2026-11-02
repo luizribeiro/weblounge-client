@@ -14,6 +14,9 @@ export const messageKeys = [
   "engine.buffer_not_sendable",
   "engine.channel_recreated",
   "engine.channel_required",
+  "engine.channel_limit_reached",
+  "engine.metadata_limit_reached",
+  "engine.bouncer_network_limit_reached",
   "engine.command_refused",
   "engine.cached_target_gone",
   "engine.connection_failed",
@@ -117,6 +120,12 @@ export function t(key: string, values: MessageValues = {}): string {
       return "This channel was recreated while you were away. Verify its topic and members before trusting it.";
     case "engine.channel_required":
       return "That command only works in a channel.";
+    case "engine.channel_limit_reached":
+      return "You're in the maximum number of channels for this server.";
+    case "engine.metadata_limit_reached":
+      return "That profile change exceeds this server's client state limit.";
+    case "engine.bouncer_network_limit_reached":
+      return "You can't add another network because this server's client state limit was reached.";
     case "engine.command_refused":
       return "The server refused that command.";
     case "engine.cached_target_gone":

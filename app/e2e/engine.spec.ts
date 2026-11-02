@@ -78,6 +78,25 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("shows a clear notice at the server channel limit", async ({ page }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await expect(
+      page.getByRole("heading", { name: /#weblounge-test/u }),
+    ).toBeVisible();
+    const suffix = Date.now().toString(36);
+    const channels = Array.from(
+      { length: 4 },
+      (_, index) => `#cap-${suffix}-${index}`,
+    );
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill(`/join ${channels.join(",")}`);
+    await composer.press("Enter");
+
+    await expect(page.getByRole("note")).toHaveText(
+      "You're in the maximum number of channels for this server.",
+    );
+  });
+
   test("keeps an ordinary incoming DM row unhighlighted", async ({ page }) => {
     const bot = await IrcClient.connect(
       "plain-dm",

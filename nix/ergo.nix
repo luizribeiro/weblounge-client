@@ -22,6 +22,7 @@ let
       .accounts.require-sasl.exempted = [] |
       .accounts.login-throttling.enabled = false |
       .accounts.nick-reservation.force-nick-equals-account = false |
+      .channels.max-channels-per-client = 4 |
       .history.enabled = true |
       .history.persistent.enabled = false |
       .languages.enabled = false |

@@ -6,6 +6,7 @@ pub mod commands;
 mod members;
 mod name_key;
 mod protocol;
+mod request_error;
 mod runtime;
 mod state;
 pub mod storage;

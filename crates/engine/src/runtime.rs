@@ -21,6 +21,7 @@ use crate::{
     NetworkConnectionState, NetworkId, OfflineReason,
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
+    request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
         DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
         PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
@@ -1042,10 +1043,7 @@ impl Runtime {
                     if focused {
                         continue;
                     }
-                    let _ = outbound.send(EngineToUi::CommandRejected {
-                        id: command_id,
-                        message_key: join_error_key(&error).into(),
-                    });
+                    send_events(&outbound, join_request_events(command_id, &error));
                     return;
                 }
                 let Some((output, _)) =
@@ -1278,7 +1276,7 @@ impl Runtime {
         };
         let client = running.client.clone();
         drop(state);
-        spawn_request(self.outbound.clone(), command_id, async move {
+        spawn_join_request(self.outbound.clone(), command_id, async move {
             channel.part(&client, reason.unwrap_or_default()).await?;
             channel.join(&client).await
         });
@@ -1494,6 +1492,32 @@ fn server_command(command: &Command) -> bool {
     )
 }
 
+fn complete_read_advance<T>(
+    state: &Arc<Mutex<RuntimeState>>,
+    instance: u64,
+    advance: &ReadAdvance,
+    result: Result<T, papo::Error>,
+) -> Result<Option<Vec<EngineToUi>>, ()> {
+    let mut output = match result {
+        Ok(_) => Vec::new(),
+        Err(error) => state_limit_events(&error, false, None, "mark_read").ok_or(())?,
+    };
+    let mut state = lock(state);
+    let Some(running) = state
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    else {
+        return Ok(None);
+    };
+    output.extend(
+        running
+            .model
+            .apply_read_time(advance.buffer_id, advance.time),
+    );
+    Ok(Some(output))
+}
+
 fn spawn_read_advances(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
@@ -1508,28 +1532,16 @@ fn spawn_read_advances(
                 SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
                 SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
             };
-            if result.is_err() {
-                let _ = outbound.send(EngineToUi::CommandRejected {
-                    id: command_id,
-                    message_key: "engine.mark_read_failed".into(),
-                });
-                return;
-            }
-            let events = {
-                let mut state = lock(&state);
-                let Some(running) = state
-                    .network
-                    .as_mut()
-                    .filter(|running| running.instance == instance)
-                else {
+            match complete_read_advance(&state, instance, &advance, result) {
+                Ok(Some(events)) => send_events(&outbound, events),
+                Ok(None) => return,
+                Err(()) => {
+                    let _ = outbound.send(EngineToUi::CommandRejected {
+                        id: command_id,
+                        message_key: "engine.mark_read_failed".into(),
+                    });
                     return;
-                };
-                running
-                    .model
-                    .apply_read_time(advance.buffer_id, advance.time)
-            };
-            for event in events {
-                let _ = outbound.send(event);
+                }
             }
         }
         let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
@@ -2586,8 +2598,8 @@ fn process_event_with_direct(
         papo::Event::Lagged(lagged) => {
             process_lagged(&mut running.model, &snapshot, &lagged, &mut output)
         }
-        papo::Event::Warning(papo::event::Warning::ChannelRecreated { .. }) => {
-            output.push(EngineToUi::notice("engine.channel_recreated"));
+        papo::Event::Warning(warning) => {
+            process_warning(&warning, &mut output);
             Vec::new()
         }
         papo::Event::CasemappingChanged(_) => {
@@ -2681,6 +2693,26 @@ fn process_disconnected_event(
         stop_client(running.client.clone());
     }
     clear_authentication
+}
+
+fn process_warning(warning: &papo::event::Warning, output: &mut Vec<EngineToUi>) {
+    match warning {
+        papo::event::Warning::ChannelRecreated { .. } => {
+            output.push(EngineToUi::notice("engine.channel_recreated"));
+        }
+        papo::event::Warning::StateLimitReached { kind, .. } => {
+            output.extend(
+                state_limit_events(
+                    &papo::Error::StateLimit(*kind),
+                    false,
+                    None,
+                    "papo_state_warning",
+                )
+                .unwrap_or_default(),
+            );
+        }
+        _ => {}
+    }
 }
 
 fn process_connecting(
@@ -3109,7 +3141,10 @@ fn spawn_deferred_read_advances(
                 SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
                 SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
             };
-            if result.is_err() {
+            if let Err(error) = result {
+                if state_limit_events(&error, false, None, "mark_read").is_some() {
+                    continue;
+                }
                 let _ = outbound.send(EngineToUi::notice("engine.mark_read_failed"));
                 return;
             }
@@ -3328,6 +3363,73 @@ fn join_error_key(error: &papo::Error) -> &'static str {
     }
 }
 
+fn join_request_events(command_id: String, error: &papo::Error) -> Vec<EngineToUi> {
+    let mut output = if matches!(
+        error,
+        papo::Error::Server(error) if error.refusal() == papo::Refusal::TooManyChannels
+    ) {
+        vec![EngineToUi::error_notice("engine.channel_limit_reached")]
+    } else if let Some(output) = state_limit_events(error, true, None, "join") {
+        output
+    } else {
+        return rejected_command(command_id, join_error_key(error));
+    };
+    output.push(EngineToUi::CommandResult { id: command_id });
+    output
+}
+
+fn state_limit_events(
+    error: &papo::Error,
+    user_initiated: bool,
+    channel: Option<(&mut NetworkModel, BufferId)>,
+    context: &str,
+) -> Option<Vec<EngineToUi>> {
+    let papo::Error::StateLimit(limit) = error else {
+        return None;
+    };
+    Some(match state_limit_outcome(*limit, user_initiated) {
+        StateLimitOutcome::SharedNotice(key) => vec![EngineToUi::error_notice(key)],
+        StateLimitOutcome::ChannelNotice(text) => {
+            if let Some((model, buffer_id)) = channel {
+                model
+                    .append_notice(buffer_id, text.into(), "weblounge".into(), None)
+                    .into_iter()
+                    .collect()
+            } else {
+                log_state_limit(context, *limit);
+                Vec::new()
+            }
+        }
+        StateLimitOutcome::Log => {
+            log_state_limit(context, *limit);
+            Vec::new()
+        }
+    })
+}
+
+fn log_state_limit(context: &str, limit: papo::StateLimit) {
+    engine_log(&format!("{context}: papo state limit reached: {limit:?}"));
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[allow(clippy::print_stderr)]
+fn engine_log(message: &str) {
+    eprintln!("[weblounge engine] {message}");
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn engine_log(message: &str) {
+    let console = js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("console")).ok();
+    let warn = console.as_ref().and_then(|console| {
+        js_sys::Reflect::get(console, &JsValue::from_str("warn"))
+            .ok()
+            .and_then(|warn| warn.dyn_into::<js_sys::Function>().ok())
+    });
+    if let (Some(console), Some(warn)) = (console, warn) {
+        let _ = warn.call1(&console, &JsValue::from_str(message));
+    }
+}
+
 fn sync_joined_channel(
     state: &Arc<Mutex<RuntimeState>>,
     client: &papo::Client,
@@ -3385,6 +3487,20 @@ fn spawn_request<T: Send + 'static>(
     });
 }
 
+fn spawn_join_request<T: Send + 'static>(
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    command_id: String,
+    request: impl std::future::Future<Output = Result<T, papo::Error>> + Send + 'static,
+) {
+    spawn_task(async move {
+        let events = match request.await {
+            Ok(_) => vec![EngineToUi::CommandResult { id: command_id }],
+            Err(error) => join_request_events(command_id, &error),
+        };
+        send_events(&outbound, events);
+    });
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -3406,7 +3522,7 @@ mod tests {
     use std::{
         collections::VecDeque,
         sync::{Arc, Mutex, atomic::AtomicU64},
-        time::Duration,
+        time::{Duration, UNIX_EPOCH},
     };
 
     use papo_testing::{Wire, wire};
@@ -3415,9 +3531,10 @@ mod tests {
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, RunningNetwork, Runtime, RuntimeState,
-        completion_context, connection_failure_notice, drain_events, fetch_history, fetch_latest,
-        lock, next_connection_state, person_candidates, process_event, process_history,
-        schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch, utf16_len,
+        complete_read_advance, completion_context, connection_failure_notice, drain_events,
+        fetch_history, fetch_latest, join_request_events, lock, next_connection_state,
+        person_candidates, process_event, process_history, schedule_snapshot_write_after,
+        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -3427,7 +3544,9 @@ mod tests {
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
         },
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
-        state::{DirectAvailability, HistoryTarget, NetworkModel, PendingSend, SendTarget},
+        state::{
+            DirectAvailability, HistoryTarget, NetworkModel, PendingSend, ReadAdvance, SendTarget,
+        },
         storage::MemoryKv,
     };
 
@@ -5253,6 +5372,57 @@ mod tests {
         assert_eq!(second, "JOIN #b key2");
     }
 
+    #[test]
+    fn join_state_limits_use_the_shared_notice_terminal_path() {
+        let output = join_request_events(
+            "join-limit".into(),
+            &papo::Error::StateLimit(papo::StateLimit::Channels),
+        );
+
+        assert!(matches!(
+            output.as_slice(),
+            [
+                EngineToUi::Notice { key, tone: crate::NoticeTone::Error, .. },
+                EngineToUi::CommandResult { id }
+            ] if key == "engine.channel_limit_reached" && id == "join-limit"
+        ));
+    }
+
+    #[tokio::test]
+    async fn list_mode_state_limits_append_a_notice_to_the_channel() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = known_channel(&client, "#room");
+        let buffer_id = model
+            .buffer_id_for_channel(&channel)
+            .expect("joined channel is projected");
+
+        let output = state_limit_events(
+            &papo::Error::StateLimit(papo::StateLimit::ListEntries),
+            true,
+            Some((&mut model, buffer_id)),
+            "list_mode_add",
+        )
+        .expect("state limit is classified");
+
+        assert!(matches!(
+            output.as_slice(),
+            [EngineToUi::MessagesAppended { buffer_id: actual, messages }]
+                if *actual == buffer_id
+                    && messages[0].kind == crate::MessageKind::Notice
+                    && messages[0].text == "No entry was added because this channel's list is full."
+        ));
+    }
+
     #[tokio::test]
     async fn banned_join_numeric_becomes_a_typed_notice() {
         let (client, mut events, mut wire) =
@@ -6216,6 +6386,52 @@ mod tests {
             event,
             EngineToUi::ReadMarkerMoved { through: Some(id), .. } if *id == message_id
         )));
+    }
+
+    #[tokio::test]
+    async fn read_marker_state_limits_still_advance_local_read_state() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, _outbound, _receiver) = harness(client.clone());
+        let advance = ReadAdvance {
+            buffer_id: BufferId(1),
+            target: SendTarget::Channel(known_channel(&client, "#room")),
+            time: UNIX_EPOCH + Duration::from_secs(20),
+        };
+
+        let first = complete_read_advance(
+            &state,
+            1,
+            &advance,
+            Err::<(), _>(papo::Error::StateLimit(papo::StateLimit::ReadMarkers)),
+        )
+        .expect("the limit is handled")
+        .expect("the runtime instance is current");
+        assert!(first.iter().any(|event| matches!(
+            event,
+            EngineToUi::ReadMarkerMoved {
+                buffer_id: BufferId(1),
+                ..
+            }
+        )));
+        assert!(!first.iter().any(|event| matches!(
+            event,
+            EngineToUi::Notice { .. } | EngineToUi::CommandRejected { .. }
+        )));
+
+        let earlier = ReadAdvance {
+            time: UNIX_EPOCH + Duration::from_secs(10),
+            ..advance
+        };
+        assert_eq!(
+            complete_read_advance(&state, 1, &earlier, Ok(())),
+            Ok(Some(Vec::new()))
+        );
     }
 
     #[tokio::test]

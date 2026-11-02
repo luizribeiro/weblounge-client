@@ -922,6 +922,15 @@ impl EngineToUi {
             action: None,
         }
     }
+
+    pub(crate) fn error_notice(key: impl Into<String>) -> Self {
+        Self::Notice {
+            key: key.into(),
+            values: BTreeMap::new(),
+            tone: NoticeTone::Error,
+            action: None,
+        }
+    }
 }
 
 #[cfg(test)]

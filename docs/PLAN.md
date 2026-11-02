@@ -293,6 +293,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     new identity or a read-only Not now state in both shells. Legacy account draft keys and schema-2
     chat-list rows migrate to nick threads without inventing pins; two nicks on one account remain
     separate, and verified rename continuity adds a note without merging their histories.
+  - [x] Update papo to `3508be1` and map bounded-state request failures to product outcomes. Join
+    limits use the shared human notice across explicit and automatic paths; read-marker limits log
+    while preserving local read state; list-mode limits append a channel notice; metadata and
+    bouncer limits stay diagnostic unless a person initiated the request.
   - [x] Bake the Nix revision and UTC source timestamp into production builds, with `dev` in the
     development server. `/version`, every `/debug` overlay section, and `window.weblounge.version`
     expose the same line; `/version` also reports a waiting service-worker update.
@@ -338,9 +342,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `e774925`. Persistable TLS-host-scoped peer identity pins,
+- **papo:** papo 0.1 pinned at `3508be1`. Persistable TLS-host-scoped peer identity pins,
   per-send `direct_pinned` verification, post-registration SASL account-state hardening, explicit
   display spelling and folded storage keys, split-send reconciliation, exact live
   and nested-history multiline concatenation, server name rules, lag diagnostics,
   channel-recreation warnings, hardened typed inputs, correlated history responses, exact live
-  actor facts, tri-state account/bot evidence, and completed JOIN refusals are integrated.
+  actor facts, tri-state account/bot evidence, completed JOIN refusals, and bounded request-state
+  failures are integrated.

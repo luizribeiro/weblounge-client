@@ -24,6 +24,12 @@ describe("composer strings", () => {
     );
   });
 
+  it("explains the channel state limit without exposing a raw engine error", () => {
+    expect(t("engine.channel_limit_reached")).toBe(
+      "You're in the maximum number of channels for this server.",
+    );
+  });
+
   it("explains when a guarded direct recipient is gone", () => {
     expect(t("engine.direct_target_gone")).toContain("nickname now belongs");
   });

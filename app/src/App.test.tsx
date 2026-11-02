@@ -893,6 +893,19 @@ it("renders command error and engine notice keys as human text", async () => {
 
   client.emit({
     type: "notice",
+    key: "engine.channel_limit_reached",
+    values: {},
+    tone: "error",
+    action: null,
+  });
+  expect(
+    screen.getByText(
+      "You're in the maximum number of channels for this server.",
+    ),
+  ).toBeVisible();
+
+  client.emit({
+    type: "notice",
     key: "engine.connection_failed",
     values: {},
     tone: "neutral",
