@@ -92,3 +92,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 84 | 2026-11-02 | `/me hides` rendered with an "ACTION" prefix until refresh. | fixed locally; awaiting review |
 | 85 | 2026-11-02 | `/part #projects/weblounge` after joining it failed with "the server refused that command". | cause found (engine ignored your own PART); decided: /part and /close remove the buffer, a kick keeps it read-only with Rejoin; fix in progress |
 | 86 | 2026-11-02 | Remove the "Following #channel" chip from the members panel (per-channel member lists make it meaningless; already decided in split-view.md). | fixed locally; awaiting review |
+| 87 | 2026-11-02 | PWA on weak signal: "This deployment is misconfigured… could not be loaded in time"; startup blocks on config.json; "Connecting…" text and a different chair on the error screen (duplicate startup surfaces). | in progress |
