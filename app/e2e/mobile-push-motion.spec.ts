@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emulateStandalone } from "./mobile-platform";
 import {
+  durationMs,
   expectDistanceScaledTransition,
   expectNoTransformOrTransition,
   expectStepsFollowCurve,
@@ -236,9 +237,6 @@ function expectSettlesFromFinger(
   expect(releaseLeft).toBeGreaterThan(20);
   expectListStill(settle.frames);
   expect(monotonic(path, restingLeft > releaseLeft ? "up" : "down")).toBe(true);
-  expect(
-    hasIntermediatePosition(moving.map(left), releaseLeft, restingLeft),
-  ).toBe(true);
   const width = settle.frames[0]?.list?.width ?? Number.NaN;
   expectReleasedTransition(
     moving,
@@ -254,6 +252,10 @@ function expectSettlesFromFinger(
   );
   const final = settle.frames.at(-1)?.transformEndLeft ?? Number.NaN;
   expect(Math.abs(final - restingLeft)).toBeLessThan(1.5);
+  expect(settle.frames.at(-1)?.transformEndElapsedMs).toBeCloseTo(
+    durationMs(transitionFrame.transition.duration),
+    5,
+  );
   expectShadowWhileMoving(moving);
 }
 
@@ -277,6 +279,7 @@ interface Frame {
   readonly shadow: string | null;
   readonly shadowOpacity: number;
   readonly time: number;
+  readonly transformEndElapsedMs: number | null;
   readonly transformEndLeft: number | null;
   readonly tokens: {
     readonly pushCurve: string;
@@ -311,6 +314,7 @@ async function recordMotion(
     const recording = {
       done: false,
       frames: [] as Frame[],
+      transformEndElapsedMs: null as number | null,
       transformEndLeft: null as number | null,
     };
     (
@@ -327,8 +331,10 @@ async function recordMotion(
         chat !== undefined &&
         event.target === chat &&
         event.propertyName === "transform"
-      )
+      ) {
+        recording.transformEndElapsedMs = event.elapsedTime * 1_000;
         recording.transformEndLeft = chat.getBoundingClientRect().left;
+      }
     };
     document.addEventListener("transitionend", captureTransformEnd, true);
     const sample = () => {
@@ -375,6 +381,7 @@ async function recordMotion(
         shadow: shadow?.content === "none" ? null : (shadow?.boxShadow ?? null),
         shadowOpacity: Number(shadow?.opacity ?? 0),
         time: performance.now(),
+        transformEndElapsedMs: recording.transformEndElapsedMs,
         transformEndLeft: recording.transformEndLeft,
         tokens: {
           pushCurve: rootStyle

@@ -98,7 +98,9 @@ export function expectStepsFollowCurve(
     } else {
       expectAtMostAtDevicePixelPrecision(advance, allowed, devicePixelRatio);
     }
-    previous = sample;
+    // A main-thread frame can run before WebKit's compositor begins the
+    // transition. It has not consumed curve time until its position changes.
+    if (advance > 0) previous = sample;
   }
 }
 
