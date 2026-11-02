@@ -361,6 +361,13 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Remove a channel buffer after a confirmed own PART from any session, preserving in-flight
     sends and navigating away in both shells. Keep own-KICK buffers read-only with their reason and
     an explicit Rejoin action; typed 403/442 refusals now name the affected channel (#85).
+- **Push notifications (design 23):**
+  - [x] Ship relay slice 1 as a flake package: concierge-authenticated Web Push devices,
+    VAPID-pinned probing and active routes, opaque RFC 8291 forwarding, dead-target cleanup,
+    body limits, push-service SSRF defenses, SQLite state and `/healthz`, covered through fake
+    concierge and push-service integration tests.
+  - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
+    registration, service-worker delivery, and the local-Ergo and Playwright journeys.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.

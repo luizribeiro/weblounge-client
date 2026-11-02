@@ -1,7 +1,7 @@
 # 23 — Push notifications
 
-Status: approved (decisions 2026-11-02); implementation not started. This is the brief's subsystem 7; it overrides the earlier statements listed under "Conflicts with signed-off
-text".
+Status: approved (decisions 2026-11-02); relay slice 1 implemented. This is the brief's subsystem
+7; it overrides the earlier statements listed under "Conflicts with signed-off text".
 
 ## Problem
 
@@ -383,6 +383,34 @@ Where rules live is deferred (see Decisions).
     in SQLite. Against SSRF (it runs with `IPAddressAllow=any`), it refuses targets outside an
     allowlist of push-service hosts, targets that resolve to private or loopback addresses, and
     redirects.
+
+### Relay slice 1 implementation (2026-11-02)
+
+The deployable relay uses Axum on the workspace's Tokio runtime. Axum keeps the API typed and lets
+the public home route enforce its 2,800-byte body limit before buffering. State uses `rusqlite`
+with bundled SQLite: the service is small, every operation is short, and each connection runs on
+Tokio's blocking pool rather than blocking an HTTP worker. This avoids an async ORM and a host
+SQLite dependency. Outbound HTTP uses Reqwest with Rustls, proxy discovery off and redirects
+disabled. The relay implements the small RFC 8291/RFC 8292 wrapping layer with the RustCrypto
+P-256, HKDF and AES-GCM crates; it therefore has no OpenSSL runtime dependency.
+
+The process contract for `weblounge-server` is:
+
+- listen on `127.0.0.1:8098` by default (`--listen` / `PUSH_RELAY_LISTEN`);
+- put SQLite at `<state-dir>/push-relay.sqlite3`, with `./state` as the development default
+  (`--state-dir` / `PUSH_RELAY_STATE_DIR`);
+- serve the database-backed health check at `GET /healthz`;
+- read the relay VAPID PEM from `--vapid-key-file` / `PUSH_RELAY_VAPID_KEY_FILE` and the concierge
+  client secret from `--concierge-secret-file` / `PUSH_RELAY_CONCIERGE_SECRET_FILE`;
+- call `--concierge-url` / `PUSH_RELAY_CONCIERGE_URL` as Basic client `push-relay`; and
+- use `https://push.weblounge.org` as the default VAPID audience and route origin, overridable with
+  `--origin` / `PUSH_RELAY_ORIGIN` for tests or another deployment.
+
+Web targets are restricted to `fcm.googleapis.com`, `updates.push.services.mozilla.com` and
+`web.push.apple.com`. Registration and every delivery resolve the target again, reject the whole
+answer set if any address is non-public, then pin the selected validated address for the HTTPS
+connection. Slice 1 stores only Web Push targets; APNs and FCM target variants return 501. Leases,
+held pushes, the urgency policy and application rate limits remain later slices.
 
 ## Rollout
 

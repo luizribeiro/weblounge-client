@@ -81,6 +81,23 @@
           CARGO_PROFILE = "dev";
         };
         checkCargoArtifacts = craneLib.buildDepsOnly checkCargoArgs;
+        pushRelay = craneLib.buildPackage (
+          cargoArgs
+          // {
+            pname = "weblounge-push-relay";
+            inherit cargoArtifacts;
+            cargoExtraArgs = "--package weblounge-push-relay";
+            doCheck = false;
+          }
+        );
+        pushRelayCheck = craneLib.cargoTest (
+          checkCargoArgs
+          // {
+            pname = "weblounge-push-relay-test";
+            cargoArtifacts = checkCargoArtifacts;
+            cargoTestExtraArgs = "--package weblounge-push-relay";
+          }
+        );
         protocolSource = pkgs.lib.fileset.toSource {
           root = ./.;
           fileset = pkgs.lib.fileset.unions [
@@ -477,6 +494,7 @@
           );
           ergo-integration = ergoIntegration;
           protocol-types = protocolTypes;
+          push-relay = pushRelayCheck;
           wasm = engineWasm;
           app-build = app;
           inherit e2e;
@@ -492,6 +510,7 @@
           ergo-weblounge = webloungeErgo;
           pnpm-deps = pnpmDeps;
           pnpm-deps-probe = pnpmDeps.overrideAttrs { outputHash = pkgs.lib.fakeHash; };
+          push-relay = pushRelay;
         };
         apps.ergo = {
           type = "app";
