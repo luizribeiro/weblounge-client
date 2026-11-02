@@ -530,6 +530,11 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (buffer !== undefined) return { type: messageType, buffer };
       break;
     }
+    case "buffer_removed":
+      if (typeof value.buffer_id === "number") {
+        return { type: messageType, buffer_id: value.buffer_id };
+      }
+      break;
     case "draft_key_changed":
       if (
         typeof value.previous === "string" &&
@@ -728,6 +733,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "chat_list_live" ||
     value === "recent_directs_ready" ||
     value === "buffer_added" ||
+    value === "buffer_removed" ||
     value === "buffer_updated" ||
     value === "draft_key_changed" ||
     value === "focus_buffer_requested" ||

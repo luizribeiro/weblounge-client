@@ -145,7 +145,11 @@ network_id: NetworkId, } | { "type": "buffer_added",
 /**
  * New buffer projection.
  */
-buffer: BufferProjection, } | { "type": "buffer_updated",
+buffer: BufferProjection, } | { "type": "buffer_removed",
+/**
+ * Buffer that no longer represents a joined channel.
+ */
+buffer_id: BufferId, } | { "type": "buffer_updated",
 /**
  * Complete current buffer projection.
  */

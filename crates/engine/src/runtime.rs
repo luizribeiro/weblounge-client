@@ -3123,15 +3123,17 @@ fn process_part(
     parted: &papo::event::Parted,
     output: &mut Vec<EngineToUi>,
 ) {
-    if parted.authorship != papo::Authorship::Own
-        && let Some(event) = model.receive_membership(
-            &parted.channel,
-            MembershipKind::Parted,
-            parted.actor.nick().to_string(),
-            parted.server_time.map(time_millis),
-            time_millis(parted.received_at),
-        )
-    {
+    if parted.authorship == papo::Authorship::Own {
+        if let Some(event) = model.remove_channel(&parted.channel) {
+            output.push(event);
+        }
+    } else if let Some(event) = model.receive_membership(
+        &parted.channel,
+        MembershipKind::Parted,
+        parted.actor.nick().to_string(),
+        parted.server_time.map(time_millis),
+        time_millis(parted.received_at),
+    ) {
         output.push(event);
     }
     output.extend(model.sync_channels(snapshot));
@@ -5109,6 +5111,41 @@ mod tests {
         }));
         assert_eq!(wire.next_sent().await, "PRIVMSG alice hello");
         assert_unfocused_direct(&collect(&mut receiver), "alice");
+    }
+
+    #[tokio::test]
+    async fn own_part_removes_the_channel_buffer() {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #projects/weblounge")
+            .await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let buffer_id = model
+            .buffer_id_for_channel(&known_channel(&client, "#projects/weblounge"))
+            .expect("joined buffer exists");
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model,
+            }))),
+            outbound,
+        };
+        mark_runtime_online(&runtime);
+
         runtime.request(EngineRequestEnvelope {
             id: "part".into(),
             request: EngineRequest::SubmitInput {
@@ -5116,8 +5153,32 @@ mod tests {
                 input: "/part later".into(),
             },
         });
-        assert_eq!(wire.next_sent().await, "PART #new later");
-        wire.server(":lounge2!u@host PART #new :later").await;
+        assert_eq!(wire.next_sent().await, "PART #projects/weblounge later");
+        wire.server(":weblounge!u@host PART #projects/weblounge :later")
+            .await;
+        let parted =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Parted(_))).await;
+        process_runtime_event(&runtime, parted);
+        assert!(collect(&mut receiver).iter().any(
+            |event| matches!(event, EngineToUi::BufferRemoved { buffer_id: removed } if *removed == buffer_id)
+        ));
+
+        let stale_close = runtime.request(EngineRequestEnvelope {
+            id: "close-after-part".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "/close".into(),
+            },
+        });
+        assert!(matches!(
+            stale_close.as_slice(),
+            [EngineToUi::CommandRejected { .. }]
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), wire.next_sent())
+                .await
+                .is_err()
+        );
     }
 
     #[test]

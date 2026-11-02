@@ -1129,6 +1129,14 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    pub(crate) fn remove_channel(&mut self, channel: &papo::ChannelName) -> Option<EngineToUi> {
+        let key = NameKey::Channel(channel.clone());
+        let buffer_id = self.names.remove(&key)?;
+        self.buffer_order.retain(|id| *id != buffer_id);
+        self.buffers.remove(&buffer_id)?;
+        Some(EngineToUi::BufferRemoved { buffer_id })
+    }
+
     pub(crate) fn set_member_count(
         &mut self,
         buffer_id: BufferId,

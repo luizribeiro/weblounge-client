@@ -792,6 +792,11 @@ pub enum EngineToUi {
         /// New buffer projection.
         buffer: BufferProjection,
     },
+    /// Remove one channel buffer after the server confirms this user's departure.
+    BufferRemoved {
+        /// Buffer that no longer represents a joined channel.
+        buffer_id: BufferId,
+    },
     /// Replace one changed buffer projection.
     BufferUpdated {
         /// Complete current buffer projection.
