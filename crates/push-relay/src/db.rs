@@ -17,10 +17,20 @@ pub(crate) struct WebPushTarget {
     pub auth: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct DeviceCredentials {
     pub id: String,
     pub secret: String,
+}
+
+impl std::fmt::Debug for DeviceCredentials {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DeviceCredentials")
+            .field("id", &self.id)
+            .field("secret", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -354,5 +364,17 @@ mod tests {
             .create_route(first.id, first.secret, vec![4; 65])
             .await;
         assert!(matches!(extra_route, Err(Error::Capacity)));
+    }
+
+    #[test]
+    fn device_credentials_debug_redacts_the_secret() {
+        let credentials = super::DeviceCredentials {
+            id: "device-id".to_owned(),
+            secret: "should-never-appear".to_owned(),
+        };
+        let debug = format!("{credentials:?}");
+        assert!(debug.contains("device-id"));
+        assert!(!debug.contains("should-never-appear"));
+        assert!(debug.contains("[redacted]"));
     }
 }

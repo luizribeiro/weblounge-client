@@ -29,11 +29,21 @@ pub trait Concierge: Send + Sync + 'static {
 }
 
 /// RFC 7662 client for concierge's loopback-only endpoint.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ConciergeClient {
     client: reqwest::Client,
     url: Url,
     secret: String,
+}
+
+impl std::fmt::Debug for ConciergeClient {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ConciergeClient")
+            .field("url", &self.url)
+            .field("secret", &"[redacted]")
+            .finish_non_exhaustive()
+    }
 }
 
 impl ConciergeClient {
@@ -271,5 +281,17 @@ mod tests {
         let result = client.introspect("session").await;
         assert!(matches!(result, Err(crate::Error::ConciergeUnavailable)));
         server.abort();
+    }
+
+    #[test]
+    fn concierge_debug_redacts_the_secret() {
+        let client = ConciergeClient::new(
+            Url::parse("http://127.0.0.1/introspect").expect("URL"),
+            "should-never-appear".to_owned(),
+        )
+        .expect("client");
+        let debug = format!("{client:?}");
+        assert!(!debug.contains("should-never-appear"));
+        assert!(debug.contains("[redacted]"));
     }
 }
