@@ -83,6 +83,50 @@ test.describe("IRCv3 read markers", () => {
       await secondContext.close();
     }
   });
+
+  test("does not flash New for an arrival at the focused live edge", async ({
+    page,
+  }) => {
+    const channel = `#active-${Date.now().toString(36)}`;
+    const text = `focused arrival ${Date.now()}`;
+    await page.goto("/?irc-password=weblounge-test");
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const bot = await IrcClient.connect(
+      `active-${Date.now().toString(36).slice(-6)}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    try {
+      const active = page.locator('[data-buffer-id][aria-current="page"]');
+      await expect(active).toHaveAttribute("data-unread", "0");
+      await page.locator("[data-message-list]").evaluate((list) => {
+        Object.assign(window, { unreadDividerAppeared: false });
+        new MutationObserver(() => {
+          if (list.querySelector("[data-new-line]") !== null)
+            Object.assign(window, { unreadDividerAppeared: true });
+        }).observe(list, { childList: true, subtree: true });
+      });
+
+      await bot.privmsgConfirmed(channel, text);
+      await expect(page.getByText(text, { exact: true })).toBeVisible();
+      await expect(active).toHaveAttribute("data-unread", "0");
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as Window & { unreadDividerAppeared?: boolean })
+                .unreadDividerAppeared,
+          ),
+        )
+        .toBe(false);
+    } finally {
+      bot.close();
+    }
+  });
 });
 
 async function scrollRange(

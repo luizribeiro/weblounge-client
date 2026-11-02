@@ -265,13 +265,14 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const marker = props.readThrough ?? null;
     const hasUnread = hasUnreadAfter(props.messages, marker);
-    if (!boundaryFrozen) setFrozenReadThrough(marker);
-    if (
-      hasUnread &&
-      (!atLiveEdge() || document.hidden || !document.hasFocus())
-    ) {
+    const away = !atLiveEdge() || document.hidden || !document.hasFocus();
+    if (hasUnread && away) {
       boundaryFrozen = true;
       setFrozenReadThrough(marker);
+    } else if (!boundaryFrozen) {
+      setFrozenReadThrough(
+        hasUnread ? (latestMessageId(props.messages) ?? marker) : marker,
+      );
     }
   });
   createEffect(() => {
@@ -759,6 +760,17 @@ function unreadStartId(
   );
   const marker = ordered.findIndex((message) => message.id === readThrough);
   return marker < 0 ? undefined : ordered[marker + 1]?.id;
+}
+
+function latestMessageId(
+  messages: readonly MessageProjection[],
+): number | undefined {
+  return [...messages]
+    .sort(
+      (left, right) =>
+        messageTime(left) - messageTime(right) || left.id - right.id,
+    )
+    .at(-1)?.id;
 }
 
 function formatDay(time: Date): string {

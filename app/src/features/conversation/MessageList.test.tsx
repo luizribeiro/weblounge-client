@@ -547,9 +547,6 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
     clientHeight: { configurable: true, value: 50 },
     scrollHeight: { configurable: true, value: 500 },
   });
-  setShown(messages);
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  expect(container.querySelector("[data-new-line]")).not.toBeNull();
   const removedLines: Node[] = [];
   new MutationObserver((records) => {
     for (const record of records)
@@ -565,6 +562,8 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
   fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
+  setShown(messages);
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(removedLines).toEqual([]);
@@ -572,6 +571,24 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
   expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
     "message 2",
   );
+});
+
+it("does not add New for a message arriving at the focused live edge", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    { ...message, delivery: "received" },
+  ]);
+  const { container } = render(() => (
+    <MessageList messages={messages()} readThrough={1} />
+  ));
+
+  setMessages([
+    ...messages(),
+    { ...message, id: 2, delivery: "received", text: "arriving now" },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-new-line]")).toBeNull();
 });
 
 it("restacks measured rows when the New boundary moves past a long row", async () => {
