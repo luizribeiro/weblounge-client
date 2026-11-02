@@ -258,7 +258,7 @@ describe("viewport geometry observer", () => {
     );
   });
 
-  it("watches pointerless focus through a silent late viewport shrink", () => {
+  it("time-bounds pointerless focus through a silent late viewport shrink", () => {
     const frames = new ManualAnimationFrames();
     const viewport = new FakeVisualViewport(window.innerHeight);
     const browserWindow = fakeWindow(viewport, undefined, frames);
@@ -270,17 +270,18 @@ describe("viewport geometry observer", () => {
     const startedAt = performance.now();
 
     field.focus();
-    for (let frame = 1; frame <= 4; frame += 1)
-      frames.flush(startedAt + frame * 16);
+    for (let frame = 1; frame <= 100; frame += 1)
+      frames.flush(startedAt + frame);
+    expect(root.dataset.keyboardWatch).toBe("active");
     viewport.height = 471;
-    frames.flush(startedAt + 80);
+    frames.flush(startedAt + 101);
 
     expect(root.dataset.keyboard).toBe("open");
     expect(root.dataset.keyboardOwner).toBe("true");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
   });
 
-  it("stops watching pointerless focus after stable closed geometry", () => {
+  it("stops watching pointerless focus after its time bound", () => {
     const frames = new ManualAnimationFrames();
     const viewport = new FakeVisualViewport(window.innerHeight);
     const browserWindow = fakeWindow(viewport, undefined, frames);
@@ -292,10 +293,11 @@ describe("viewport geometry observer", () => {
     const startedAt = performance.now();
 
     field.focus();
-    for (let frame = 1; frame <= 6; frame += 1)
-      frames.flush(startedAt + frame * 16);
+    frames.flush(startedAt + 1_100);
+    frames.flush(startedAt + 1_116);
 
     expect(root.dataset.keyboard).toBe("closed");
+    expect(root.dataset.keyboardWatch).toBeUndefined();
     expect(frames.pending).toBe(0);
   });
 

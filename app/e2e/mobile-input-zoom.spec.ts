@@ -208,7 +208,7 @@ test.describe("mobile text field zoom", () => {
     await page.evaluate(
       () =>
         new Promise<void>((resolve) => {
-          let remaining = 4;
+          let remaining = 12;
           const next = () => {
             remaining -= 1;
             if (remaining === 0) resolve();
@@ -217,6 +217,7 @@ test.describe("mobile text field zoom", () => {
           requestAnimationFrame(next);
         }),
     );
+    await expect(root).toHaveAttribute("data-keyboard-watch", "active");
     await expect(root).toHaveAttribute("data-keyboard", "closed");
     await setVisualViewport(page, openHeight, 0, "silent");
 

@@ -4,6 +4,7 @@ import {
   auditMessageSelection,
   installNativeFeelInstrumentation,
   nativeFeelAudit,
+  waitForKeyboardGeometrySettle,
 } from "./native-feel-audit";
 
 const ready = "Engine ready: wasm worker round trip complete";
@@ -147,14 +148,7 @@ test.describe("native feel against local Ergo", () => {
             name: "Open direct message with hidden-audit",
           }),
         ).toBeVisible();
-        await page.evaluate(
-          () =>
-            new Promise<void>((resolve) =>
-              requestAnimationFrame(() =>
-                requestAnimationFrame(() => resolve()),
-              ),
-            ),
-        );
+        await waitForKeyboardGeometrySettle(page);
         await page.evaluate(() => {
           const state = window as Window & {
             __hiddenMutations?: number;

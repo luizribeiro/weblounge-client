@@ -253,6 +253,7 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
       ),
     )
     .toBe(true);
+  await waitForKeyboardGeometrySettle(page);
   await page.evaluate(() => {
     const metrics = (
       window as Window & {
@@ -317,6 +318,12 @@ export async function nativeFeelAudit(page: Page): Promise<void> {
     intervals: 0,
     timeouts: 0,
   });
+}
+
+export async function waitForKeyboardGeometrySettle(page: Page): Promise<void> {
+  await expect(page.locator("#root")).not.toHaveAttribute(
+    "data-keyboard-watch",
+  );
 }
 
 export async function resetNativeFeelLayoutShift(page: Page): Promise<void> {
