@@ -199,9 +199,6 @@ it("blocks a mismatched direct thread and routes both identity decisions", () =>
     "This isn't the same mel — different account",
   );
   expect(screen.getByRole("textbox", { name: "Message mel" })).toBeDisabled();
-  expect(
-    screen.getByText("Messages are blocked because this isn't the same mel."),
-  ).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Trust new identity" }));
   fireEvent.click(screen.getByRole("button", { name: "Not now" }));
   expect(trust).toHaveBeenCalledWith(direct.id);

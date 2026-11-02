@@ -100,25 +100,6 @@ it("focuses a desktop composer when it mounts", async () => {
   await waitFor(() => expect(screen.getByRole("textbox")).toHaveFocus());
 });
 
-it("shows a connection-local delivery hint only while sends are blocked", () => {
-  const [hint, setHint] = createSignal<string>();
-  render(() => (
-    <Composer
-      bufferId={1}
-      bufferTitle="#lounge"
-      connectionHint={hint()}
-      draftKey="test:connection-hint"
-      onSend={() => true}
-    />
-  ));
-
-  expect(screen.queryByText("Will send when connected")).toBeNull();
-  setHint("Will send when connected");
-  expect(screen.getByText("Will send when connected")).toBeVisible();
-  setHint(undefined);
-  expect(screen.queryByText("Will send when connected")).toBeNull();
-});
-
 it("sends on Enter, keeps Shift+Enter, and ignores composition", () => {
   const onSend = vi.fn();
   render(() => (

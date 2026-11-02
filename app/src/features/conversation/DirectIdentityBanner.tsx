@@ -40,22 +40,6 @@ export function directIdentityBlocked(buffer: BufferProjection): boolean {
   );
 }
 
-export function directIdentityBlockedReason(
-  buffer: BufferProjection,
-): string | undefined {
-  if (
-    buffer.direct_identity === "different_account" ||
-    buffer.direct_identity === "deferred_different_account"
-  )
-    return `Messages are blocked because this isn't the same ${buffer.title}.`;
-  if (
-    buffer.direct_identity === "cannot_verify" ||
-    buffer.direct_identity === "deferred_cannot_verify"
-  )
-    return `Messages are blocked until ${buffer.title}'s identity can be verified.`;
-  return undefined;
-}
-
 function mismatchMessage(buffer: BufferProjection): string | undefined {
   if (buffer.direct_identity === "different_account")
     return `This isn't the same ${buffer.title} — different account`;

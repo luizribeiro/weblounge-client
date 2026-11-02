@@ -228,9 +228,9 @@ owns the logo tint.
 
 | Situation | Logo | Shared error strip | Composer |
 |---|---|---|---|
-| Connecting, reconnecting, or hydrating | Shimmer; static dim with reduced motion | None | Queue hint only when sends are affected |
+| Connecting, reconnecting, or hydrating | Shimmer; static dim with reduced motion | None | None |
 | Online and hydrated | Still, normal colour | None | No connection hint |
-| User action required | Still, error-token tint | A few words and one action | Queue hint when sends remain affected |
+| User action required | Still, error-token tint | A few words and one action | None |
 
 Authentication expiry or refusal, a server that remains unreachable after retries, and another
 typed terminal failure project one actionable error for the shell. Mobile renders one shared strip
@@ -249,13 +249,12 @@ become buffer notices or live-region chatter; the shell may expose `aria-busy` w
 repeating status string. The actionable strip uses alert semantics.
 
 Sends submitted outside `Online` become ordered pending records owned by the engine and flush in
-order after `Connected`. While delivery is blocked, the active composer shows a short contextual
-hint beside its input, such as “Will send when connected”; it clears when the queue can flush or the
-send reaches a terminal failure. Server-dependent commands reject with a short offline reason. A
-worker host uses `messageerror`, a heartbeat, and a bounded request timeout to detect termination,
-rebuild the worker, repeat `Hello`, and request a snapshot. Persisting queued sends across that new
-engine instance waits for the storage subsystem; the UI must state this limitation rather than
-duplicate the queue.
+order after `Connected`. They appear as pending transcript rows; the composer adds no connection
+hint. A better visual treatment for queued delivery is a later design decision. Server-dependent
+commands reject with a short offline reason. A worker host uses `messageerror`, a heartbeat, and a
+bounded request timeout to detect termination, rebuild the worker, repeat `Hello`, and request a
+snapshot. Persisting queued sends across that new engine instance waits for the storage subsystem;
+the UI must state this limitation rather than duplicate the queue.
 
 The milestone-2 single-network runtime rejects a second `Connect` while a client exists with the
 typed `engine.network_already_connected` command error. It never replaces a live client implicitly;

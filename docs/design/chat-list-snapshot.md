@@ -64,8 +64,8 @@ keeps its normal geometry without progress copy or a spinner. The composer remai
 submission creates its optimistic row and enters the engine-owned FIFO introduced in `772e05b`,
 keyed to the durable conversation identity until a live send target resolves. It flushes through
 the existing send path in order once the network connects and the target is sendable; the UI does
-not own a second queue. While sends are affected, the composer shows a short hint beside the input,
-such as “Will send when connected”.
+not own a second queue. Queued sends remain visible as pending transcript rows; the composer does
+not add connection-state copy or change the conversation width.
 
 An explicit mark-read action clears the cached badge locally and records a session-local intent
 against the same durable identity. Once live history resolves, the engine applies that intent to

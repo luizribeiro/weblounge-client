@@ -15,7 +15,6 @@ import { Composer } from "../../features/composer/Composer";
 import {
   DirectIdentityBanner,
   directIdentityBlocked,
-  directIdentityBlockedReason,
 } from "../../features/conversation/DirectIdentityBanner";
 import {
   MessageList,
@@ -263,12 +262,6 @@ export function MobileConversation(props: MobileConversationProps) {
               )
             }
             onSelectLast={() => listController?.selectLastOwn()}
-            connectionHint={
-              directIdentityBlockedReason(props.buffer) ??
-              (props.buffer.cached === true || connection().sendsBlocked
-                ? "Will send when connected"
-                : undefined)
-            }
             disabled={directIdentityBlocked(props.buffer)}
             onSend={(text) => props.onSend(props.buffer.id, text)}
           />

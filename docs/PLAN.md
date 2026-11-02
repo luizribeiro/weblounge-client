@@ -181,7 +181,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep unresolved buffer routes above provisional startup fallbacks while explicit engine
     focus and user navigation remain authoritative.
   - [x] Present connection state once per shell: the brand mark carries transient progress,
-    actionable failures use one strip, and blocked composers explain queued delivery locally.
+    actionable failures use one strip, and queued sends appear only as pending transcript rows;
+    composers add no connection copy or width-changing state.
   - [x] Restore a versioned engine-owned chat-list snapshot from the web Cache store before live
     synchronization. Cached rows navigate, queue identity-safe sends, and defer explicit read
     intent; the first complete online list replaces them wholesale and preserves vanished routes

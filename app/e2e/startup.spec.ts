@@ -270,7 +270,6 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     await expect(
       page.getByRole("button", { name: "Mark as read" }),
     ).toHaveCount(0);
-    await expect(page.getByText("Will send when connected")).toBeVisible();
     await page.getByRole("textbox").fill("queued from cache");
     await page.getByRole("textbox").press("Enter");
     await expect(page.getByText("queued from cache")).toBeVisible();
@@ -282,7 +281,6 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     await expect(
       page.locator('[data-mobile-chat][data-network-state="online"]'),
     ).toBeVisible();
-    await expect(page.getByText("Will send when connected")).toHaveCount(0);
     await expect(
       page.getByText("This conversation is not available."),
     ).toBeVisible();

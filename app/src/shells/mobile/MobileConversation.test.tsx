@@ -8,15 +8,8 @@ import type {
 import { MobileConversation } from "./MobileConversation";
 
 vi.mock("../../features/composer/Composer", () => ({
-  Composer: (props: {
-    readonly connectionHint?: string;
-    readonly disabled?: boolean;
-  }) => (
-    <div
-      data-composer="true"
-      data-disabled={props.disabled}
-      data-hint={props.connectionHint}
-    />
+  Composer: (props: { readonly disabled?: boolean }) => (
+    <div data-composer="true" data-disabled={props.disabled} />
   ),
 }));
 
@@ -140,10 +133,6 @@ it("shows an identity mismatch, blocks sending, and routes both decisions", () =
   expect(document.querySelector("[data-composer]")).toHaveAttribute(
     "data-disabled",
     "true",
-  );
-  expect(document.querySelector("[data-composer]")).toHaveAttribute(
-    "data-hint",
-    "Messages are blocked because this isn't the same mel.",
   );
   screen.getByRole("button", { name: "Trust new identity" }).click();
   screen.getByRole("button", { name: "Not now" }).click();

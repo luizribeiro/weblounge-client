@@ -105,18 +105,24 @@ test.describe("connection resilience against local Ergo", () => {
   }, testInfo) => {
     await installNativeFeelInstrumentation(page);
     const composer = await openChannel(page, testInfo.project.name);
-    const list = page.locator("[data-message-list]");
-    const listWidth = await elementWidth(list);
+    const conversation = conversationColumn(page, testInfo.project.name);
+    const conversationWidth = await elementWidth(conversation);
     const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
+    if (isMobile(testInfo.project.name))
+      expectEqualAtDevicePixelPrecision(
+        conversationWidth,
+        await page.evaluate(() => document.documentElement.clientWidth),
+        devicePixelRatio,
+      );
 
     await context.setOffline(true);
-    const queueHint = page.getByText("Will send when connected", {
-      exact: true,
-    });
-    await expect(queueHint).toBeVisible();
+    await expectTransientConnectionPresentation(
+      page,
+      isMobile(testInfo.project.name),
+    );
     expectEqualAtDevicePixelPrecision(
-      await elementWidth(list),
-      listWidth,
+      await elementWidth(conversation),
+      conversationWidth,
       devicePixelRatio,
     );
     await expect(
@@ -143,7 +149,6 @@ test.describe("connection resilience against local Ergo", () => {
     expect(order.indexOf(texts[0] ?? "")).toBeLessThan(
       order.indexOf(texts[1] ?? ""),
     );
-    await expect(queueHint).toHaveCount(0);
     await expectShellToRemain(page, channel);
   });
 
@@ -471,4 +476,10 @@ async function installWorkerControl(page: Page): Promise<void> {
 
 function isMobile(projectName: string): boolean {
   return projectName.includes("mobile");
+}
+
+function conversationColumn(page: Page, projectName: string): Locator {
+  return isMobile(projectName)
+    ? page.locator("[data-mobile-chat]")
+    : page.locator("[data-buffer-title]");
 }
