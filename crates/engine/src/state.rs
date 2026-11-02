@@ -264,6 +264,7 @@ impl NetworkModel {
                 unread: 0,
                 mentions: 0,
                 read_through: None,
+                read_at_ms: None,
                 last_message: None,
                 last_activity_ms: None,
                 cached_preview: None,
@@ -1534,6 +1535,9 @@ impl NetworkModel {
                 buffer_id,
                 through: buffer.projection.read_through,
             },
+            EngineToUi::BufferUpdated {
+                buffer: buffer.projection.clone(),
+            },
         ]
     }
 
@@ -1762,6 +1766,7 @@ impl NetworkModel {
             unread: 0,
             mentions: 0,
             read_through: None,
+            read_at_ms: None,
             last_message: None,
             last_activity_ms: None,
             cached_preview: None,
@@ -2004,6 +2009,7 @@ fn confirmed_text(kind: MessageKind, text: &str) -> String {
 }
 
 fn derive_read_projection(buffer: &mut BufferState) {
+    buffer.projection.read_at_ms = buffer.read_at_ms;
     buffer.projection.last_message = buffer
         .timeline
         .iter()
@@ -2827,6 +2833,11 @@ mod tests {
         let advances = model.prepare_mark_all_read();
         assert_eq!(advances.len(), 1);
         let events = model.apply_read_time(advances[0].buffer_id, advances[0].time);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::EngineToUi::BufferUpdated { buffer }
+                if buffer.read_at_ms == Some(time_millis(advances[0].time))
+        )));
         assert!(
             events
                 .iter()
@@ -3418,6 +3429,7 @@ mod tests {
             buffer.projection.read_through,
             Some(buffer.timeline[1].projection.id)
         );
+        assert_eq!(buffer.projection.read_at_ms, buffer.read_at_ms);
     }
 
     #[test]

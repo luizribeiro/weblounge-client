@@ -256,6 +256,10 @@ pub struct BufferProjection {
     pub mentions: u64,
     /// Latest committed row covered by the effective read marker.
     pub read_through: Option<MessageId>,
+    /// Effective read marker as Unix milliseconds, when it is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub read_at_ms: Option<i64>,
     /// Latest timeline row for conversation-list previews.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

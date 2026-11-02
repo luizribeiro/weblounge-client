@@ -67,6 +67,10 @@ mentions: number,
  */
 read_through: MessageId | null,
 /**
+ * Effective read marker as Unix milliseconds, when it is known.
+ */
+read_at_ms?: number,
+/**
  * Latest timeline row for conversation-list previews.
  */
 last_message?: MessageProjection,
