@@ -1,0 +1,35 @@
+[package]
+name = "weblounge-push-relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait = "0.1.89"
+aes-gcm = "0.10.3"
+axum = "0.8.9"
+base64 = "0.22.1"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+getrandom = "0.4.2"
+hkdf = "0.12.4"
+p256 = { version = "0.13.2", default-features = false, features = ["ecdh", "ecdsa", "pem", "pkcs8", "std"] }
+rand_core = { version = "0.6.4", features = ["getrandom"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+rusqlite = { version = "0.41.1", default-features = false, features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10.9"
+subtle = "2.6.1"
+thiserror.workspace = true
+time = "0.3.47"
+tokio.workspace = true
+url = { version = "2.5.8", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.24.0"
+tower = { version = "0.5.3", features = ["util"] }
+
+[lints]
+workspace = true

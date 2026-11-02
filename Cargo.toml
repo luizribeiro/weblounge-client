@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/command-derive", "crates/engine", "crates/engine-wasm"]
+members = ["crates/command-derive", "crates/engine", "crates/engine-wasm", "crates/push-relay"]
 
 [workspace.package]
 edition = "2024"
@@ -21,7 +21,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 syn = { version = "2.0.111", features = ["full"] }
 thiserror = "2.0.21"
-tokio = { version = "1.53.3", features = ["macros", "rt", "sync", "time"] }
+tokio = { version = "1.53.3", features = ["fs", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 ts-rs = "11.1.0"
 wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4.79"

@@ -1,0 +1,80 @@
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde_json::json;
+
+/// Errors produced while configuring or serving the relay.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// Invalid process configuration.
+    #[error("invalid configuration: {0}")]
+    Config(String),
+    /// A filesystem operation failed.
+    #[error("filesystem operation failed: {0}")]
+    Io(#[from] std::io::Error),
+    /// SQLite rejected an operation.
+    #[error("database operation failed: {0}")]
+    Database(#[from] rusqlite::Error),
+    /// A blocking database task could not finish.
+    #[error("database task failed: {0}")]
+    DatabaseTask(#[from] tokio::task::JoinError),
+    /// An HTTP client operation failed.
+    #[error("outbound HTTP failed: {0}")]
+    Http(#[from] reqwest::Error),
+    /// Web Push encryption or signing failed.
+    #[error("Web Push preparation failed: {0}")]
+    Crypto(String),
+    /// A request was not authenticated.
+    #[error("authentication failed")]
+    Unauthorized,
+    /// A requested object does not exist or is dead.
+    #[error("not found")]
+    NotFound,
+    /// The request is syntactically or semantically invalid.
+    #[error("invalid request: {0}")]
+    BadRequest(String),
+    /// A recognized platform target belongs to a later relay slice.
+    #[error("platform target is not implemented")]
+    NotImplemented,
+    /// Concierge could not decide whether the session is active.
+    #[error("concierge introspection failed")]
+    ConciergeUnavailable,
+    /// The target is not a permitted public push-service endpoint.
+    #[error("push target refused: {0}")]
+    TargetRefused(String),
+    /// The push service failed without declaring the subscription dead.
+    #[error("push service failed")]
+    PushServiceUnavailable,
+}
+
+/// Relay result alias.
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let status = match self {
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::BadRequest(_) | Self::TargetRefused(_) => StatusCode::BAD_REQUEST,
+            Self::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+            Self::ConciergeUnavailable
+            | Self::PushServiceUnavailable
+            | Self::Http(_)
+            | Self::Crypto(_) => StatusCode::BAD_GATEWAY,
+            Self::Config(_) | Self::Io(_) | Self::Database(_) | Self::DatabaseTask(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        };
+        let message = match status {
+            StatusCode::UNAUTHORIZED => "unauthorized",
+            StatusCode::NOT_FOUND => "not found",
+            StatusCode::BAD_REQUEST => "invalid request",
+            StatusCode::NOT_IMPLEMENTED => "platform target not implemented",
+            StatusCode::BAD_GATEWAY => "upstream unavailable",
+            _ => "internal error",
+        };
+        (status, Json(json!({ "error": message }))).into_response()
+    }
+}
