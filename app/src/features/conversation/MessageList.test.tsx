@@ -496,6 +496,40 @@ it("keeps the New boundary frozen while the live marker advances", async () => {
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("hides the New boundary when the read marker row is unknown", async () => {
+  const { container } = render(() => (
+    <MessageList
+      messages={[
+        { ...message, id: 10, text: "oldest retained" },
+        { ...message, id: 11, text: "newest retained" },
+      ]}
+      readThrough={9}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-new-line]")).toBeNull();
+});
+
+it("places New by timeline order after older history is prepended", async () => {
+  const { container } = render(() => (
+    <MessageList
+      messages={[
+        { ...message, id: 4, text: "loaded later", received_at_ms: 1 },
+        { ...message, id: 3, text: "read row", received_at_ms: 2 },
+        { ...message, id: 2, text: "unread row", received_at_ms: 3 },
+      ]}
+      readThrough={3}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "unread row",
+  );
+});
+
 it("keeps the unread line in place when the reader leaves the live edge", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const messages = Array.from({ length: 3 }, (_, index) => ({

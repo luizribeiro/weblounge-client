@@ -691,9 +691,7 @@ function hasUnreadAfter(
   messages: readonly MessageProjection[],
   readThrough: number | null,
 ): boolean {
-  return (
-    readThrough !== null && messages.some((message) => message.id > readThrough)
-  );
+  return unreadStartId(messages, readThrough) !== undefined;
 }
 
 function timelineRows(
@@ -704,6 +702,7 @@ function timelineRows(
   const rows: TimelineRow[] = [];
   let day = "";
   let newInserted = false;
+  const firstUnread = unreadStartId(messages, readThrough);
   const items = [
     ...messages.map((value) => ({
       kind: "message" as const,
@@ -727,9 +726,8 @@ function timelineRows(
     }
     if (
       !newInserted &&
-      readThrough !== null &&
       item.kind === "message" &&
-      item.value.id > readThrough
+      item.value.id === firstUnread
     ) {
       rows.push({ kind: "new", key: `new-after-${readThrough}` });
       newInserted = true;
@@ -748,6 +746,19 @@ function timelineRows(
       });
   }
   return rows;
+}
+
+function unreadStartId(
+  messages: readonly MessageProjection[],
+  readThrough: number | null,
+): number | undefined {
+  if (readThrough === null) return undefined;
+  const ordered = [...messages].sort(
+    (left, right) =>
+      messageTime(left) - messageTime(right) || left.id - right.id,
+  );
+  const marker = ordered.findIndex((message) => message.id === readThrough);
+  return marker < 0 ? undefined : ordered[marker + 1]?.id;
 }
 
 function formatDay(time: Date): string {
