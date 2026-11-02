@@ -76,10 +76,10 @@ history paints.
 
 The engine's first complete live chat-list snapshot replaces the cached record in the UI in one
 batch. Cached and live rows are never merged or diffed. A selected cached identity rebinds to its
-live buffer when present, and the quiet state gives way to live history. If it is absent because,
-for example, the channel was left on another device, the route remains open as a clear “not
-available” conversation with a Back-to-Chats action. It never silently joins, retargets, or closes;
-any queued send to that vanished identity fails visibly instead of reaching another target.
+live buffer when present, and the quiet state gives way to live history. A channel absent because
+it was left on another device is removed with its route; desktop selects the preceding live buffer
+and mobile returns to Chats. The client never silently rejoins or retargets it. Any queued send to
+that departed identity still finishes against its original target and cannot reopen the buffer.
 
 The cached values are otherwise never used as live unread state, notifications, history, or
 protocol identity proof. Matching cached and live fixtures retain the same row boxes, so the swap

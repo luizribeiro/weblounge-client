@@ -100,6 +100,10 @@ export function App(props: AppProps) {
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
   const [focusRequest, setFocusRequest] = createSignal<{ bufferId: number }>();
+  const [bufferRemoval, setBufferRemoval] = createSignal<{
+    bufferId: number;
+    previousBufferId: number | undefined;
+  }>();
   const [networks, setNetworks] = createSignal<NetworkProjection[]>([]);
   const [buffers, setBuffers] = createSignal<BufferProjection[]>([]);
   const [messages, setMessages] = createSignal<
@@ -403,6 +407,25 @@ export function App(props: AppProps) {
       }
       if (message.type === "draft_key_changed") {
         migrateDraft(message.previous, message.current);
+      }
+      if (message.type === "buffer_removed") {
+        const current = buffers();
+        const index = current.findIndex(
+          (buffer) => buffer.id === message.buffer_id,
+        );
+        setBufferRemoval({
+          bufferId: message.buffer_id,
+          previousBufferId: index > 0 ? current[index - 1]?.id : undefined,
+        });
+        setMemberWindows(
+          (windows) =>
+            new Map(
+              [...windows].filter(
+                ([, memberWindow]) =>
+                  memberWindow.buffer_id !== message.buffer_id,
+              ),
+            ),
+        );
       }
       const stagedLiveBufferEvent =
         cachedChatListActive() &&
@@ -727,6 +750,7 @@ export function App(props: AppProps) {
           memberViewScope={clientId}
           networks={networks()}
           buffers={buffers()}
+          bufferRemoval={bufferRemoval()}
           commandSpecs={commandSpecs()}
           composerNotice={composerNotice()}
           completion={completion()}
@@ -1114,6 +1138,12 @@ function applyDebugEvent(
     ]);
   } else if (message.type === "buffer_added") {
     setBuffers((current) => upsert(current, message.buffer));
+  } else if (message.type === "buffer_removed") {
+    setBuffers((current) =>
+      current.filter((buffer) => buffer.id !== message.buffer_id),
+    );
+    setMessages((current) => withoutMapKey(current, message.buffer_id));
+    setMemberships((current) => withoutMapKey(current, message.buffer_id));
   } else if (message.type === "buffer_updated") {
     setBuffers((current) =>
       current.map((buffer) =>
@@ -1242,6 +1272,15 @@ function upsert<T extends { id: number }>(current: T[], value: T): T[] {
   const existing = current.findIndex((item) => item.id === value.id);
   if (existing === -1) return [...current, value];
   return current.map((item, index) => (index === existing ? value : item));
+}
+
+function withoutMapKey<Value>(
+  current: ReadonlyMap<number, Value>,
+  key: number,
+): ReadonlyMap<number, Value> {
+  const next = new Map(current);
+  next.delete(key);
+  return next;
 }
 
 export function recoverFromBuildMismatch(

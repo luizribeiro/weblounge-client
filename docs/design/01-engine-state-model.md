@@ -178,6 +178,11 @@ typed target metadata needed for a transient failure notice. Only a new live mes
 the other person, or an explicit open action, returns the DM to the projected order; this client's
 own confirmations and messages from another signed-in device do not resurrect a closed DM.
 
+A server-confirmed own `PART`, including one initiated by another device or tab, destroys the
+channel buffer and removes its route. Desktop selects the previous ordered buffer; mobile returns
+to Chats when it was showing the channel. A disconnect does not imply a departure. An own `KICK`
+keeps the channel buffer as a read-only conversation so its reason and rejoin action remain visible.
+
 Known event fields come from typed papo events. Formatting spans become an owned safe AST. Generic
 batch identity is not retained in milestone 1; known batch semantics arrive through typed events.
 Unknown `Event::Other` records are retained only in a bounded server-buffer diagnostics window.

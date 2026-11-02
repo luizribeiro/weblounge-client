@@ -36,6 +36,12 @@ import {
 } from "./push-motion";
 
 interface MobileShellProps extends MobileShellData {
+  readonly bufferRemoval?:
+    | {
+        readonly bufferId: number;
+        readonly previousBufferId: number | undefined;
+      }
+    | undefined;
   readonly focusRequest?: { readonly bufferId: number } | undefined;
   readonly onFocusRequestHandled?:
     | ((request: { readonly bufferId: number }) => void)
@@ -176,6 +182,17 @@ export function MobileShell(props: MobileShellProps) {
       return { active: chats ?? { kind: "chats" }, back: [] };
     });
   };
+  let handledBufferRemoval: MobileShellProps["bufferRemoval"];
+  createEffect(() => {
+    const removal = props.bufferRemoval;
+    if (removal === undefined || removal === handledBufferRemoval) return;
+    handledBufferRemoval = removal;
+    const active = stack().active;
+    if (active.kind === "chat" && active.bufferId === removal.bufferId) {
+      setDrawerBufferId(undefined);
+      replaceWithRoot();
+    }
+  });
   const completingSwipe = () => swipe()?.phase === "completing";
   const resetSwipe = (reason?: "visibility" | "popstate") => {
     completedBeforePop = false;

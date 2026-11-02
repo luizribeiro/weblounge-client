@@ -81,6 +81,45 @@ it("opens a deep link above the chats list", () => {
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
 });
 
+it("returns to chats and drops the route when the active buffer is removed", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  const [buffers, setBuffers] = createSignal<readonly BufferProjection[]>([
+    buffer,
+  ]);
+  const [bufferRemoval, setBufferRemoval] = createSignal<{
+    readonly bufferId: number;
+    readonly previousBufferId: number | undefined;
+  }>();
+  render(() => (
+    <MobileShell
+      bufferRemoval={bufferRemoval()}
+      buffers={buffers()}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={buffer.id}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  setBufferRemoval({ bufferId: buffer.id, previousBufferId: undefined });
+  setBuffers([]);
+
+  expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "mel" })).toBeNull();
+  expect(window.location.pathname).toBe("/");
+});
+
 it("opens a deep link when its buffer resolves after mount", () => {
   vi.stubGlobal(
     "matchMedia",

@@ -60,6 +60,12 @@ export interface DesktopShellProps {
   readonly memberViewScope?: string | undefined;
   readonly showMemberModeSymbols?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
+  readonly bufferRemoval?:
+    | {
+        readonly bufferId: number;
+        readonly previousBufferId: number | undefined;
+      }
+    | undefined;
   readonly onSelectBuffer?: ((bufferId: number) => void) | undefined;
   readonly pathForBuffer?:
     | ((bufferId: number) => string | undefined)

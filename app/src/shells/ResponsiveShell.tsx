@@ -11,6 +11,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
   const platform = platformEnvironment();
   const [, sharedProps] = splitProps(props, [
     "activeBufferId",
+    "bufferRemoval",
     "focusRequest",
     "onFocusRequestHandled",
     "onSelectBuffer",
@@ -28,6 +29,27 @@ export function ResponsiveShell(props: DesktopShellProps) {
   let observedFocusRequest: DesktopShellProps["focusRequest"];
   let previousShell = platform.environment().shell;
 
+  createEffect(() => {
+    const removal = props.bufferRemoval;
+    if (removal === undefined || selection().bufferId !== removal.bufferId)
+      return;
+    if (removal.previousBufferId === undefined) {
+      setSelection({ bufferId: undefined, priority: "none" });
+      if (platform.environment().shell === "desktop")
+        window.history.replaceState(window.history.state, "", "/");
+      return;
+    }
+    setSelection({
+      bufferId: removal.previousBufferId,
+      priority: "explicit",
+    });
+    props.onSelectBuffer?.(removal.previousBufferId);
+    if (platform.environment().shell === "desktop") {
+      const path = props.pathForBuffer?.(removal.previousBufferId);
+      if (path !== undefined)
+        window.history.replaceState(window.history.state, "", path);
+    }
+  });
   createEffect(() => {
     const activeBufferId = props.activeBufferId;
     if (activeBufferId !== undefined)
@@ -89,6 +111,7 @@ export function ResponsiveShell(props: DesktopShellProps) {
       {platform.environment().shell === "mobile" ? (
         <MobileShell
           {...sharedProps}
+          bufferRemoval={props.bufferRemoval}
           focusRequest={pendingFocusRequest()}
           initialBufferId={mobileInitialBufferId() ?? props.activeBufferId}
           onFocusRequestHandled={(request) =>

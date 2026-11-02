@@ -602,6 +602,53 @@ it("lists projected networks, buffers, and messages", async () => {
   });
 });
 
+it("removes a parted channel and navigates to the previous buffer", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Local",
+      nickname: "me",
+      state: "online",
+    },
+  });
+  const room = {
+    id: 2,
+    network_id: 1,
+    kind: "channel" as const,
+    title: "#room",
+    draft_key: "Local:#room",
+    topic: null,
+    member_count: 1,
+    unread: 0,
+    mentions: 0,
+    read_through: null,
+  };
+  const other = {
+    ...room,
+    id: 3,
+    title: "#other",
+    draft_key: "Local:#other",
+  };
+  client.emit({
+    type: "buffers_changed",
+    network_id: 1,
+    buffers: [room, other],
+  });
+
+  fireEvent.click(await screen.findByRole("button", { name: "#other" }));
+  expect(await screen.findByRole("heading", { name: "#other" })).toBeVisible();
+  expect(window.location.pathname).toBe("/Local/other");
+
+  client.emit({ type: "buffer_removed", buffer_id: other.id });
+
+  expect(await screen.findByRole("heading", { name: "#room" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "#other" })).toBeNull();
+  expect(window.location.pathname).toBe("/Local/room");
+});
+
 it("replaces a buffer's rows from the snapshot an attaching tab receives", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);

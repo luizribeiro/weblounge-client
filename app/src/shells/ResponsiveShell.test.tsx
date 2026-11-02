@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { BufferProjection } from "../engine/protocol";
 import { ResponsiveShell } from "./ResponsiveShell";
 
@@ -55,6 +55,53 @@ it("keeps a user click when a pending route later resolves", async () => {
 
   setActiveBufferId(fallback.id);
   expect(screen.getByRole("heading", { name: "#routed" })).toBeVisible();
+});
+
+it("selects the previous buffer and replaces a removed channel route", async () => {
+  window.history.replaceState(null, "", "/Local/routed");
+  const [buffers, setBuffers] = createSignal<readonly BufferProjection[]>([
+    server,
+    fallback,
+    routed,
+  ]);
+  const [bufferRemoval, setBufferRemoval] = createSignal<{
+    readonly bufferId: number;
+    readonly previousBufferId: number | undefined;
+  }>();
+  const selected = vi.fn();
+  render(() => (
+    <ResponsiveShell
+      activeBufferId={routed.id}
+      bufferRemoval={bufferRemoval()}
+      buffers={buffers()}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={selected}
+      onSend={async () => true}
+      pathForBuffer={(bufferId) =>
+        bufferId === fallback.id ? "/Local/fallback" : undefined
+      }
+    />
+  ));
+
+  setBufferRemoval({
+    bufferId: routed.id,
+    previousBufferId: fallback.id,
+  });
+  setBuffers([server, fallback]);
+
+  expect(
+    await screen.findByRole("heading", { name: "#fallback" }),
+  ).toBeVisible();
+  expect(window.location.pathname).toBe("/Local/fallback");
+  expect(selected).toHaveBeenCalledWith(fallback.id);
 });
 
 function shell(
