@@ -1,7 +1,7 @@
 # 09 — Density and layout system
 
 Status: platform-environment addendum approved by Luiz on 2026-10-30; keyboard-surface ownership
-directed by Luiz on 2026-10-31.
+directed by Luiz on 2026-10-31; transcript mode-symbol removal directed by Luiz on 2026-11-02.
 
 ## Problem
 
@@ -30,6 +30,15 @@ Defaults are cozy messages, compact desktop lists, and cozy mobile lists. The th
 independent. Components consume `--wl-density-*` variables rather than branching on preset IDs,
 except compact mobile rows use a typed no-preview variant so hidden text is absent from layout and
 accessibility output. Touch targets remain at least 44 CSS px and text continues to scale.
+
+## Member status symbols
+
+Mode symbols (`@`, `+`, and server-defined equivalents) appear only in the live member list, in a
+fixed-width column that keeps nicks aligned. The Mode symbols appearance setting controls that
+column. Transcript rows never show a mode symbol in either message layout: IRC history does not
+retain the sender's status at message time, so mixing unstamped history with live or optimistically
+stamped rows would present inconsistent and potentially false status. Luiz chose this behavior on
+2026-11-02; it supersedes the prototype's transcript-prefix presentation.
 
 ## Shell selection
 

@@ -450,7 +450,7 @@ Classic IRC basics are also required: `/me` actions, NOTICEs, mIRC formatting (b
 - **Message layout:** One-line (default) or Grouped.
 - **Message density:** Compact / Cozy (default) / Comfortable.
 - **Sidebar density** (desktop) and **List density** (mobile): Compact (desktop default) / Cozy (mobile default) / Comfortable. These are separate from message density on purpose.
-- **Switches:** Avatars (on), Mode symbols (on), Joins/parts/quits (on).
+- **Switches:** Avatars (on), Member-list mode symbols (on), Joins/parts/quits (on).
 
 **Networks**
 - As described in §5.2 and §5.3.
@@ -465,7 +465,7 @@ Classic IRC basics are also required: `/me` actions, NOTICEs, mIRC formatting (b
 All settings are typed. They're stored locally for now; whether they sync later (e.g. via metadata) is a design decision.
 
 ### 5.5 Message rendering details
-- **One-line layout:** time · `@nick` (right-aligned nick column; the mode symbol is muted, the nick coloured) · text.
+- **One-line layout:** time · nick (right-aligned nick column, nick coloured) · text.
 - **Grouped layout:** an avatar, plus a header with nick and time; consecutive messages from the same person collapse under one header.
 - **Nick colours:**
   - Each theme has a nick palette (appendix), assigned by a stable hash.
@@ -477,7 +477,7 @@ All settings are typed. They're stored locally for now; whether they sync later 
 - **Reactions:** chips with a count; your own reactions are highlighted.
 - **Link previews:** a card with host and title. **Code:** a monospace block.
 - **BOT badge:** a small outlined monospace "BOT" pill after the nick.
-- **Mode symbols** (`@` ops, `+` voice) appear before nicks in messages and the member list, and can be switched off.
+- **Mode symbols** (`@` ops, `+` voice) appear before nicks only in the live member list and can be switched off. Transcript rows never show them because IRC history does not retain status at message time; Luiz chose consistency over stamping only live rows on 2026-11-02.
 
 ### 5.6 Motion
 - **Push/pop:** 280ms in, 230ms out (curves above).
