@@ -18,6 +18,7 @@ export default defineConfig({
       testIgnore: [
         "**/mobile-input-zoom.spec.ts",
         "**/mobile-page-zoom.spec.ts",
+        "**/mobile-read-state.spec.ts",
         "**/connection-resilience.spec.ts",
       ],
       use: { browserName: "chromium" },
@@ -120,8 +121,18 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-read-state",
+      testMatch: "**/mobile-read-state.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "android-mobile-history",
       testMatch: "**/mobile-history.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
+      name: "android-mobile-read-state",
+      testMatch: "**/mobile-read-state.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {

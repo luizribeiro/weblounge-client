@@ -341,6 +341,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     divider when the known marker predates the loaded window and no divider when no marker is known.
   - [x] Remove the redundant "Following #channel" chip from desktop and mobile member lists while
     retaining the channel in each panel's accessible name (#86).
+  - [x] Keep the 500ms read dwell tied to the visible buffer's unread count and newest committed
+    message, so traffic elsewhere cannot starve desktop or mobile marker advancement. Mobile
+    Chromium and WebKit return through both Back and swipe without restoring the unread badge (#88).
   - [x] Start from the last validated public deployment configuration and revalidate it in the
     background, while keeping session tokens one-shot and uncached. Hosted profiles restore the
     engine-owned chat-list snapshot before credential acquisition completes; cold reachability

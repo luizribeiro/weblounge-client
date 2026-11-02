@@ -39,6 +39,10 @@ import {
   Sidebar,
   type SidebarListController,
 } from "../../features/sidebar/Sidebar";
+import {
+  createReadDwell,
+  newestCommittedMessageId,
+} from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
@@ -121,6 +125,11 @@ export function DesktopShell(props: DesktopShellProps) {
   const requestedHistory = new Set<number>();
   const activeBuffer = createMemo(() =>
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
+  );
+  const activeBufferId = createMemo(() => activeBuffer()?.id);
+  const activeUnread = createMemo(() => activeBuffer()?.unread ?? 0);
+  const newestMessageId = createMemo(() =>
+    newestCommittedMessageId(props.messages.get(activeBufferId() ?? -1) ?? []),
   );
   const visibleBufferIds = createMemo<ReadonlySet<number>>(() => {
     const buffer = activeBuffer();
@@ -259,23 +268,13 @@ export function DesktopShell(props: DesktopShellProps) {
     }
   });
 
-  createEffect(() => {
-    const buffer = activeBuffer();
-    const latest = latestCommitted(props.messages.get(buffer?.id ?? -1) ?? []);
-    if (
-      buffer === undefined ||
-      buffer.unread === 0 ||
-      latest === undefined ||
-      !atLiveEdge() ||
-      !foreground()
-    ) {
-      return;
-    }
-    const timeout = window.setTimeout(
-      () => props.onMarkRead(buffer.id, latest.id),
-      500,
-    );
-    onCleanup(() => window.clearTimeout(timeout));
+  createReadDwell({
+    atLiveEdge,
+    bufferId: activeBufferId,
+    foreground,
+    newestCommittedMessageId: newestMessageId,
+    onMarkRead: (bufferId, through) => props.onMarkRead(bufferId, through),
+    unread: activeUnread,
   });
 
   createEffect(() => {
@@ -638,17 +637,6 @@ function isEditable(target: Element): boolean {
       "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
     ) !== null
   );
-}
-
-function latestCommitted(
-  messages: readonly MessageProjection[],
-): MessageProjection | undefined {
-  return [...messages]
-    .reverse()
-    .find(
-      (message) =>
-        message.delivery === "received" || message.delivery === "confirmed",
-    );
 }
 
 function orderedBufferIds(

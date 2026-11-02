@@ -1,5 +1,5 @@
 import { render, screen } from "@solidjs/testing-library";
-import { onMount } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
   BufferProjection,
@@ -75,6 +75,37 @@ it("marks the latest committed message read after a 500ms live-edge dwell", () =
   vi.advanceTimersByTime(499);
   expect(markRead).not.toHaveBeenCalled();
   vi.advanceTimersByTime(1);
+  expect(markRead).toHaveBeenCalledOnce();
+  expect(markRead).toHaveBeenCalledWith(2, 8);
+});
+
+it("keeps the dwell across equal buffer and message replacements", () => {
+  const [snapshot, setSnapshot] = createSignal({
+    buffer,
+    messages: [message] as readonly MessageProjection[],
+  });
+  const markRead = vi.fn();
+  render(() => (
+    <MobileConversation
+      buffer={snapshot().buffer}
+      memberships={[]}
+      messages={snapshot().messages}
+      onBack={() => {}}
+      onLoadHistory={() => {}}
+      onMarkRead={markRead}
+      onOpenMembers={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  vi.advanceTimersByTime(300);
+  setSnapshot((current) => ({
+    buffer: { ...current.buffer },
+    messages: current.messages.map((item) => ({ ...item })),
+  }));
+  vi.advanceTimersByTime(200);
+
   expect(markRead).toHaveBeenCalledOnce();
   expect(markRead).toHaveBeenCalledWith(2, 8);
 });

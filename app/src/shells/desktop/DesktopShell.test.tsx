@@ -480,3 +480,59 @@ it("routes printable chrome keys to the composer without hijacking controls", ()
   expect(toggle).toHaveFocus();
   expect(composer).toHaveValue("h");
 });
+
+it("keeps the read dwell across equal buffer and message replacements", () => {
+  vi.useFakeTimers();
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const visibility = vi
+    .spyOn(document, "visibilityState", "get")
+    .mockReturnValue("visible");
+  const [snapshot, setSnapshot] = createSignal({
+    buffers: [{ ...channel, unread: 1 }] as readonly BufferProjection[],
+    messages: new Map<number, readonly MessageProjection[]>([
+      [channel.id, [nickMessage]],
+    ]),
+  });
+  const markRead = vi.fn();
+  const result = render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={snapshot().buffers}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={snapshot().messages}
+      networks={[]}
+      onLoadHistory={() => {}}
+      onMarkRead={markRead}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  try {
+    fireEvent.keyDown(screen.getByRole("list", { name: "Messages" }), {
+      key: "End",
+    });
+    vi.advanceTimersByTime(300);
+    setSnapshot((current) => ({
+      buffers: current.buffers.map((buffer) => ({ ...buffer })),
+      messages: new Map(
+        [...current.messages].map(([bufferId, messages]) => [
+          bufferId,
+          messages.map((message) => ({ ...message })),
+        ]),
+      ),
+    }));
+    vi.advanceTimersByTime(200);
+
+    expect(markRead).toHaveBeenCalledOnce();
+    expect(markRead).toHaveBeenCalledWith(channel.id, nickMessage.id);
+  } finally {
+    result.unmount();
+    hasFocus.mockRestore();
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
+});

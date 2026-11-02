@@ -1,4 +1,11 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import {
   connectionPresentation,
   connectionStateKind,
@@ -21,6 +28,10 @@ import {
   MessageList,
   type MessageListController,
 } from "../../features/conversation/MessageList";
+import {
+  createReadDwell,
+  newestCommittedMessageId,
+} from "../../features/unread/createReadDwell";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
@@ -68,27 +79,19 @@ export function MobileConversation(props: MobileConversationProps) {
       props.network === undefined ? [] : [props.network],
       props.hydrating,
     );
-
-  createEffect(() => {
-    const latest = [...props.messages]
-      .reverse()
-      .find(
-        (message) =>
-          message.delivery === "received" || message.delivery === "confirmed",
-      );
-    if (
-      props.buffer.unread === 0 ||
-      latest === undefined ||
-      !atLiveEdge() ||
-      !foreground()
-    ) {
-      return;
-    }
-    const timeout = window.setTimeout(
-      () => props.onMarkRead(props.buffer.id, latest.id),
-      500,
-    );
-    onCleanup(() => window.clearTimeout(timeout));
+  const bufferId = createMemo(() => props.buffer.id);
+  const unread = createMemo(() => props.buffer.unread);
+  const newestMessageId = createMemo(() =>
+    newestCommittedMessageId(props.messages),
+  );
+  createReadDwell({
+    atLiveEdge,
+    bufferId,
+    foreground,
+    newestCommittedMessageId: newestMessageId,
+    onMarkRead: (currentBufferId, through) =>
+      props.onMarkRead(currentBufferId, through),
+    unread,
   });
 
   let historyRequested = false;
