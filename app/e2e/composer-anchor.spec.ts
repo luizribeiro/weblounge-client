@@ -7,6 +7,8 @@ import {
 
 interface AnchorFrame {
   readonly bottom: number;
+  readonly composerTop: number;
+  readonly listBottom: number;
   readonly top: number;
 }
 
@@ -31,7 +33,7 @@ for (const shell of [
   { name: "desktop", touch: false },
   { name: "mobile", touch: true },
 ] as const) {
-  test(`keeps ${shell.name} transcript rows fixed while the composer resizes`, async ({
+  test(`anchors the ${shell.name} transcript while the composer resizes`, async ({
     browser,
     baseURL,
   }) => {
@@ -64,6 +66,7 @@ for (const shell of [
       if (shell.touch)
         await page.getByRole("button", { name: "#weblounge-test" }).click();
       await expect(page.getByText(lastSeed, { exact: true })).toBeVisible();
+      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 
       const list = page.locator("[data-message-list]");
       const composer = page.getByRole("textbox", {
@@ -73,16 +76,16 @@ for (const shell of [
       await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(2);
       await composer.fill("first line");
 
-      await expectAnchorFixed(page, composer, "last", () =>
+      await expectLiveEdgePinned(page, composer, () =>
         composer.press("Shift+Enter"),
       );
-      await expectAnchorFixed(page, composer, "last", () =>
+      await expectLiveEdgePinned(page, composer, () =>
         composer.press("Shift+Enter"),
       );
-      await expectAnchorFixed(page, composer, "last", () =>
+      await expectLiveEdgePinned(page, composer, () =>
         composer.press("Backspace"),
       );
-      await expectAnchorFixed(page, composer, "last", () =>
+      await expectLiveEdgePinned(page, composer, () =>
         composer.press("Backspace"),
       );
 
@@ -90,11 +93,11 @@ for (const shell of [
         input: shell.touch ? "touch" : "wheel",
       });
       await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
-      await expectAnchorFixed(page, composer, "visible", () =>
+      await expectScrolledAnchorFixed(page, composer, () =>
         composer.press("Shift+Enter"),
       );
       await composer.type("second line");
-      await expectAnchorFixed(page, composer, "visible", () =>
+      await expectScrolledAnchorFixed(page, composer, () =>
         composer.press("Enter"),
       );
       await expect(composer).toHaveValue("");
@@ -105,21 +108,45 @@ for (const shell of [
   });
 }
 
-async function expectAnchorFixed(
+async function expectLiveEdgePinned(
   page: Page,
   composer: Locator,
-  anchor: "last" | "visible",
   action: () => Promise<void>,
 ): Promise<void> {
-  await startAnchorRecording(page, anchor);
+  await startAnchorRecording(page, "last");
+  await action();
+  const frames = await finishAnchorRecording(page);
+  expect(frames.length).toBeGreaterThan(1);
+  expect(
+    frames.every(
+      ({ bottom, listBottom }) => Math.abs(bottom - listBottom) <= 1,
+    ),
+    JSON.stringify(frames),
+  ).toBe(true);
+  const first = frames[0];
+  if (first === undefined) throw new Error("anchor recording has no frames");
+  const initialComposerGap = first.bottom - first.composerTop;
+  expect(
+    frames.every(
+      ({ bottom, composerTop }) =>
+        Math.abs(bottom - composerTop - initialComposerGap) <= 1,
+    ),
+    JSON.stringify(frames),
+  ).toBe(true);
+  await expect(composer).toBeFocused();
+}
+
+async function expectScrolledAnchorFixed(
+  page: Page,
+  composer: Locator,
+  action: () => Promise<void>,
+): Promise<void> {
+  await startAnchorRecording(page, "visible");
   await action();
   const frames = await finishAnchorRecording(page);
   expect(frames.length).toBeGreaterThan(1);
   expect(new Set(frames.map(({ top }) => top))).toEqual(
     new Set([frames[0]?.top]),
-  );
-  expect(new Set(frames.map(({ bottom }) => bottom))).toEqual(
-    new Set([frames[0]?.bottom]),
   );
   await expect(composer).toBeFocused();
 }
@@ -131,6 +158,8 @@ async function startAnchorRecording(
   await page.evaluate((anchorKind) => {
     const list = document.querySelector<HTMLElement>("[data-message-list]");
     if (list === null) throw new Error("message list is missing");
+    const composer = document.querySelector<HTMLElement>("[data-composer]");
+    if (composer === null) throw new Error("composer is missing");
     const rows = [...list.querySelectorAll<HTMLElement>("[data-message-row]")];
     const listTop = list.getBoundingClientRect().top;
     const message =
@@ -163,6 +192,8 @@ async function startAnchorRecording(
       const rect = anchoredMessage.getBoundingClientRect();
       recording.frames.push({
         bottom: rect.bottom,
+        composerTop: composer.getBoundingClientRect().top,
+        listBottom: list.getBoundingClientRect().bottom,
         top: rect.top,
       });
       if (!recording.done) requestAnimationFrame(sample);

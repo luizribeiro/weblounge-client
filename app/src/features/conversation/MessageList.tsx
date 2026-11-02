@@ -30,6 +30,7 @@ import { Selectable } from "../../ui/Selectable";
 import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import { preserveVisualScrollAnchor } from "../../ui/visual-scroll-anchor";
+import { composerGeometryChangeEvent } from "../composer/geometry";
 import styles from "./MessageList.module.css";
 import { MessageText, Nickname } from "./MessageText";
 import {
@@ -79,6 +80,7 @@ export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
   let liveEdgeSentinel: HTMLLIElement | undefined;
   let observedWidth: number | undefined;
+  let syncViewportRect: (() => void) | undefined;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
@@ -91,6 +93,7 @@ export function MessageList(props: MessageListProps) {
   const [atLiveEdge, setAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
+  const [viewportHeight, setViewportHeight] = createSignal(768);
   const rows = createMemo(() =>
     timelineRows(props.messages, props.memberships ?? [], frozenReadThrough()),
   );
@@ -141,22 +144,36 @@ export function MessageList(props: MessageListProps) {
     getScrollElement: () => list ?? null,
     observeElementOffset: observeVirtualizerOffset,
     initialRect: { width: 1024, height: 768 },
-    observeElementRect: (instance, callback) =>
-      observeElementRect(instance, (rect) => {
+    observeElementRect: (instance, callback) => {
+      const updateRect = (rect: {
+        readonly height: number;
+        readonly width: number;
+      }) => {
         const next = rect.height === 0 ? { width: 1024, height: 768 } : rect;
         const widthChanged =
           observedWidth !== undefined && observedWidth !== next.width;
         if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
-        if (!widthChanged) {
-          // Composer and shell boundaries change height without transcript
-          // content, so updating measurements must not write the scroll offset.
-          callback(next);
-          return;
-        }
+        setViewportHeight(next.height);
         callback(next);
-        remeasure();
-      }),
+        if (widthChanged) remeasure();
+      };
+      const updateCurrentRect = () => {
+        const element = instance.scrollElement;
+        if (element === null) return;
+        updateRect({
+          height: element.clientHeight,
+          width: element.clientWidth,
+        });
+      };
+      syncViewportRect = updateCurrentRect;
+      const stop = observeElementRect(instance, updateRect);
+      return () => {
+        if (syncViewportRect === updateCurrentRect)
+          syncViewportRect = undefined;
+        stop?.();
+      };
+    },
     estimateSize: (index) => {
       const row = rows()[index];
       if (row?.kind !== "message") return 34;
@@ -268,6 +285,11 @@ export function MessageList(props: MessageListProps) {
   });
   onMount(() => {
     const fonts = document.fonts;
+    const composerOwner = list?.parentElement?.parentElement;
+    const anchorComposerGeometry = () => {
+      syncViewportRect?.();
+      if (atLiveEdge()) virtualizer.scrollToEnd();
+    };
     const handleFontsLoaded = () => {
       remeasure();
       if (atLiveEdge()) virtualizer.scrollToEnd();
@@ -292,10 +314,18 @@ export function MessageList(props: MessageListProps) {
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
     void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
+    composerOwner?.addEventListener(
+      composerGeometryChangeEvent,
+      anchorComposerGeometry,
+    );
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
     window.addEventListener(appGeometryChangeEvent, anchorGeometryChange);
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
+      composerOwner?.removeEventListener(
+        composerGeometryChangeEvent,
+        anchorComposerGeometry,
+      );
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
       window.removeEventListener(appGeometryChangeEvent, anchorGeometryChange);
       list?.removeEventListener("keydown", markScrollKeyIntent);
@@ -399,7 +429,7 @@ export function MessageList(props: MessageListProps) {
                   data-selected={selected()}
                   ref={(element) => measureRow(element, virtualRow.index)}
                   style={{
-                    transform: `translateY(${virtualRow.start + bottomOffset(virtualizer.scrollRect?.height ?? 0, virtualizer.getTotalSize())}px)`,
+                    transform: `translateY(${virtualRow.start + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
                   }}
                 >
                   <TimelineRowView

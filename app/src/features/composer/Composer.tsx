@@ -13,6 +13,7 @@ import { reportKeyboardInteraction } from "../../platform/keyboard-debug";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
+import { composerGeometryChangeEvent } from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
 import { t } from "./strings";
@@ -88,8 +89,14 @@ export function Composer(props: ComposerProps) {
   };
   const resize = () => {
     if (textarea === undefined) return;
+    const previousHeight = textarea.style.height;
     textarea.style.height = "0";
-    textarea.style.height = `${textarea.scrollHeight}px`;
+    const nextHeight = `${textarea.scrollHeight}px`;
+    textarea.style.height = nextHeight;
+    if (nextHeight !== previousHeight)
+      textarea.dispatchEvent(
+        new Event(composerGeometryChangeEvent, { bubbles: true }),
+      );
   };
 
   createEffect(() => {

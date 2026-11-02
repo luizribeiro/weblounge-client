@@ -5,6 +5,7 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import { composerGeometryChangeEvent } from "../composer/geometry";
 import { MessageList, type MessageListController } from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
 
@@ -155,7 +156,7 @@ it("re-anchors the live edge synchronously with app geometry", () => {
   expect(scrollTo).toHaveBeenCalledOnce();
 });
 
-it("keeps the transcript fixed through a height-only viewport resize", async () => {
+it("anchors composer height changes before viewport resize delivery", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(
     "ResizeObserver",
@@ -167,26 +168,37 @@ it("keeps the transcript fixed through a height-only viewport resize", async () 
     },
   );
   render(() => (
-    <MessageList
-      messages={Array.from({ length: 30 }, (_, index) => ({
-        ...message,
-        id: index + 1,
-      }))}
-    />
+    <div>
+      <MessageList
+        messages={Array.from({ length: 30 }, (_, index) => ({
+          ...message,
+          id: index + 1,
+        }))}
+      />
+      <div data-composer="true">
+        <textarea />
+      </div>
+    </div>
   ));
   const list = screen.getByRole("list", { name: "Messages" });
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const input = screen.getByRole("textbox");
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   for (const observer of observers) observer.flushTarget(list, 600);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   list.scrollTop = 200;
   const scrollTo = vi.spyOn(list, "scrollTo");
+  input.style.height = "80px";
+  input.dispatchEvent(
+    new Event(composerGeometryChangeEvent, { bubbles: true }),
+  );
+  expect(scrollTo).toHaveBeenCalledOnce();
+
+  scrollTo.mockClear();
   for (const observer of observers) observer.flushTarget(list, 560);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(scrollTo).not.toHaveBeenCalled();
-  expect(list.scrollTop).toBe(200);
 });
 
 it("offers Retry for a failed local send", () => {
