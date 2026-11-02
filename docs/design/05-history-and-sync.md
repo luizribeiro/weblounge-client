@@ -40,15 +40,19 @@ moves forward. Without server support, `MarkRead` advances the local marker.
 
 Visible conversation instances remain the source of read intent. A foreground instance at the
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that
-row to a server time and calls `Client::mark_read`; it does not poll. For badge counts, DMs classify
-every incoming message as a mention, while channels classify only messages matching the highlight
-rules. Row highlighting is independent of that DM badge policy: in every conversation, a row is
-highlighted only when its text matches the rules. The initial rule is the current nick as an
+row to a server time and records that local read position immediately. When read markers are
+supported, the engine coalesces pending advances per conversation and calls `Client::mark_read`;
+an unavailable connection leaves the advance queued until `Connected` instead of rejecting or
+losing it. Cached conversations use this same dwell and queue after history paints; they have no
+separate mark-read action or protocol request. The engine does not poll. For badge counts, DMs
+classify every incoming message as a mention, while channels classify only messages matching the
+highlight rules. Row highlighting is independent of that DM badge policy: in every conversation, a
+row is highlighted only when its text matches the rules. The initial rule is the current nick as an
 IRC-casemapped word; later user-defined keywords extend the engine matcher without changing the UI
 projection. Both shells always show the engine's total unread count. Unread-only buffers use the
 accent badge; a buffer with one or more mentions uses the mention-badge colours while keeping the
-total unread count. DMs therefore always use the mention treatment. The count and an accessible
-“N unread, including mentions” label keep severity from being colour-only.
+total unread count. DMs therefore always use the mention treatment. The count and an accessible “N
+unread, including mentions” label keep severity from being colour-only.
 
 ## Boundaries
 
@@ -66,7 +70,7 @@ notification policy, or background push delivery.
   UI derivation tests cover no unread, unread with and without mentions, DMs, and counts above 99.
 - Scripted papo transcripts page through more than 1,000 same-time messages and assert every msgid
   is delivered once in chronological order. Separate transcripts cover initial marker fetch,
-  marker sends, and live remote advances.
+  online and queued-offline marker sends, and live remote advances.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
   configured limits.
 - Production-profile Playwright reconnects after own multiline and bot split/multiline sends,
