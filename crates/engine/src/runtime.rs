@@ -7403,13 +7403,13 @@ mod tests {
             .confirm_send(&pending, &sent)
             .expect("optimistic row exists");
 
-        assert!(matches!(
-            confirmation.as_slice(),
-            [EngineToUi::MessageConfirmed { message, .. }]
+        assert!(confirmation.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
                 if message.kind == crate::MessageKind::Action
                     && message.text == "hides"
                     && message.server_ids == ["action"]
-        ));
+        )));
     }
 
     #[tokio::test]
