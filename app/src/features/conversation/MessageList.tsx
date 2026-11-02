@@ -81,7 +81,7 @@ export function MessageList(props: MessageListProps) {
   let liveEdgeSentinel: HTMLElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
-  let syncViewportRect: (() => void) | undefined;
+  let syncViewportRect: (() => boolean) | undefined;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
@@ -162,11 +162,12 @@ export function MessageList(props: MessageListProps) {
         callback(next);
         if (widthChanged) remeasure();
         if (followEnd) virtualizer.scrollToEnd();
+        return followEnd;
       };
       const updateCurrentRect = () => {
         const element = instance.scrollElement;
-        if (element === null) return;
-        updateRect({
+        if (element === null) return false;
+        return updateRect({
           height: element.clientHeight,
           width: element.clientWidth,
         });
@@ -313,8 +314,10 @@ export function MessageList(props: MessageListProps) {
           );
     const anchorGeometryChange = (event: Event) => {
       const { owner } = (event as CustomEvent<AppGeometryChange>).detail;
-      if (list !== undefined && owner.contains(list) && atLiveEdge())
-        syncViewportRect?.();
+      if (list !== undefined && owner.contains(list) && atLiveEdge()) {
+        const followedResizedViewport = syncViewportRect?.() ?? false;
+        if (!followedResizedViewport) virtualizer.scrollToEnd();
+      }
     };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
