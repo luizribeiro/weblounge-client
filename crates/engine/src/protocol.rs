@@ -670,11 +670,6 @@ pub enum EngineRequest {
         /// Latest fully visible committed row.
         through: MessageId,
     },
-    /// Clear a cached launch row and defer its server marker until live history resolves.
-    MarkCachedRead {
-        /// Cached conversation being cleared.
-        buffer_id: BufferId,
-    },
     /// Advance every conversation through its latest committed row.
     MarkAllRead,
     /// Fetch the latest history page the first time a buffer is opened.

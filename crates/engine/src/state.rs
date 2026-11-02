@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -240,7 +240,6 @@ pub(crate) struct NetworkModel {
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     recent_commands: VecDeque<String>,
-    cached_read_intents: HashSet<NameKey>,
     #[cfg(test)]
     name_rebuilds: usize,
 }
@@ -305,7 +304,6 @@ impl NetworkModel {
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
             recent_commands: VecDeque::new(),
-            cached_read_intents: HashSet::new(),
             #[cfg(test)]
             name_rebuilds: 0,
         }
@@ -1560,52 +1558,6 @@ impl NetworkModel {
             },
             time: system_time_from_millis(message_time(&record.projection)),
         })
-    }
-
-    pub(crate) fn mark_cached_read(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
-        let buffer = self.buffers.get_mut(&buffer_id)?;
-        if buffer.projection.cached != Some(true) {
-            return None;
-        }
-        self.cached_read_intents.insert(buffer.key.clone()?);
-        buffer.projection.unread = 0;
-        buffer.projection.mentions = 0;
-        Some(EngineToUi::BufferUpdated {
-            buffer: buffer.projection.clone(),
-        })
-    }
-
-    pub(crate) fn take_cached_read_advances(&mut self) -> (Vec<ReadAdvance>, Vec<EngineToUi>) {
-        let mut advances = Vec::new();
-        let mut events = Vec::new();
-        for key in self.cached_read_intents.clone() {
-            let Some(buffer_id) = self.names.get(&key).copied() else {
-                continue;
-            };
-            let Some(buffer) = self.buffers.get(&buffer_id) else {
-                continue;
-            };
-            if !matches!(buffer.history, HistoryState::Ready { .. }) {
-                continue;
-            }
-            let through = buffer
-                .timeline
-                .iter()
-                .rev()
-                .find(|record| is_committed(&record.projection))
-                .map(|record| record.projection.id);
-            let Some(through) = through else {
-                self.cached_read_intents.remove(&key);
-                continue;
-            };
-            let Some(advance) = self.prepare_mark_read(buffer_id, through) else {
-                continue;
-            };
-            self.cached_read_intents.remove(&key);
-            events.extend(self.apply_read_time(buffer_id, advance.time));
-            advances.push(advance);
-        }
-        (advances, events)
     }
 
     pub(crate) fn prepare_mark_all_read(&self) -> Vec<ReadAdvance> {
@@ -3721,61 +3673,6 @@ mod tests {
             Some(crate::DirectIdentityState::Unverified)
         );
         assert!(model.buffers[&buffer_id].direct_pin.is_none());
-    }
-
-    #[test]
-    fn cached_mark_read_clears_locally_then_advances_after_live_history() {
-        let (mut model, state) = model(10);
-        model.restore_chat_list(ChatListSnapshot::new(
-            "network".into(),
-            vec![SnapshotRow {
-                conversation: SnapshotConversation::Channel {
-                    key: "#room".into(),
-                },
-                title: "#room".into(),
-                last_activity_ms: Some(1_000),
-                badge: SnapshotBadge::Mentions {
-                    count: 2,
-                    mentions: 2,
-                },
-                preview: Some("alice: hello".into()),
-                peer_pin: None,
-            }],
-        ));
-        let key = NameKey::Channel(channel_name(&state, "#room"));
-        let buffer_id = *model.names.get(&key).expect("cached channel exists");
-
-        assert!(matches!(
-            model.mark_cached_read(buffer_id),
-            Some(EngineToUi::BufferUpdated { buffer })
-                if buffer.unread == 0 && buffer.mentions == 0
-        ));
-        model.receive_incoming(
-            incoming(
-                &state,
-                "live history",
-                Some("history"),
-                Some(1_000),
-                1_000,
-                TimelineOrigin::History,
-            ),
-            &state,
-        );
-        model.buffers.get_mut(&buffer_id).expect("buffer").history = HistoryState::Ready {
-            oldest: None,
-            at_start: true,
-        };
-
-        let (advances, events) = model.take_cached_read_advances();
-        assert_eq!(advances.len(), 1);
-        assert!(events.iter().any(|event| matches!(
-            event,
-            EngineToUi::UnreadChanged {
-                buffer_id: changed,
-                unread: 0,
-                mentions: 0,
-            } if *changed == buffer_id
-        )));
     }
 
     #[test]

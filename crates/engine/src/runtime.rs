@@ -63,6 +63,8 @@ struct RunningNetwork {
     device_online: bool,
     pending_sends: VecDeque<QueuedSend>,
     flushing_sends: bool,
+    pending_reads: VecDeque<ReadAdvance>,
+    flushing_reads: bool,
     hosted_reconnect: Option<HostedReconnectConfig>,
     chat_list: ChatListSync,
 }
@@ -300,9 +302,6 @@ impl Runtime {
             } => self.complete_input(envelope.id, buffer_id, input, cursor, explicit),
             EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
-            }
-            EngineRequest::MarkCachedRead { buffer_id } => {
-                self.mark_cached_read(envelope.id, buffer_id)
             }
             EngineRequest::MarkAllRead => self.mark_all_read(envelope.id),
             EngineRequest::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
@@ -671,6 +670,8 @@ impl Runtime {
             device_online: true,
             pending_sends: VecDeque::new(),
             flushing_sends: false,
+            pending_reads: VecDeque::new(),
+            flushing_reads: false,
             hosted_reconnect,
             chat_list: ChatListSync {
                 fingerprint: snapshot_fingerprint,
@@ -746,6 +747,8 @@ impl Runtime {
             device_online: true,
             pending_sends: VecDeque::new(),
             flushing_sends: false,
+            pending_reads: VecDeque::new(),
+            flushing_reads: false,
             hosted_reconnect: Some(HostedReconnectConfig {
                 endpoint,
                 nickname,
@@ -795,6 +798,7 @@ impl Runtime {
         running.client = client.clone();
         running.connection_attempt = 1;
         running.flushing_sends = false;
+        running.flushing_reads = false;
         state.network = Some(running);
         drop(state);
 
@@ -1448,34 +1452,19 @@ impl Runtime {
         let Some(advance) = running.model.prepare_mark_read(buffer_id, through) else {
             return rejected_command(command_id, "engine.read_marker_invalid");
         };
-        if !running.client.state().supports(papo::Feature::ReadMarkers) {
-            let mut output = running.model.apply_read_time(buffer_id, advance.time);
-            output.push(EngineToUi::CommandResult { id: command_id });
-            return output;
-        }
-        let client = running.client.clone();
-        let instance = running.instance;
+        let mut output = record_read_advances(running, [advance]);
+        let flush = start_read_flush(running);
+        output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
-        spawn_read_advances(
-            Arc::clone(&self.state),
-            self.outbound.clone(),
-            client,
-            instance,
-            command_id,
-            vec![advance],
-        );
-        Vec::new()
-    }
-
-    fn mark_cached_read(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
-        let mut state = lock(&self.state);
-        let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
-        };
-        let Some(event) = running.model.mark_cached_read(buffer_id) else {
-            return rejected_command(command_id, "engine.read_marker_invalid");
-        };
-        vec![event, EngineToUi::CommandResult { id: command_id }]
+        if let Some((client, instance)) = flush {
+            spawn_read_flush(
+                Arc::clone(&self.state),
+                self.outbound.clone(),
+                client,
+                instance,
+            );
+        }
+        output
     }
 
     fn mark_all_read(&self, command_id: String) -> Vec<EngineToUi> {
@@ -1484,30 +1473,19 @@ impl Runtime {
             return rejected_command(command_id, "engine.network_not_found");
         };
         let advances = running.model.prepare_mark_all_read();
-        if !running.client.state().supports(papo::Feature::ReadMarkers) {
-            let mut output = advances
-                .into_iter()
-                .flat_map(|advance| {
-                    running
-                        .model
-                        .apply_read_time(advance.buffer_id, advance.time)
-                })
-                .collect::<Vec<_>>();
-            output.push(EngineToUi::CommandResult { id: command_id });
-            return output;
-        }
-        let client = running.client.clone();
-        let instance = running.instance;
+        let mut output = record_read_advances(running, advances);
+        let flush = start_read_flush(running);
+        output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
-        spawn_read_advances(
-            Arc::clone(&self.state),
-            self.outbound.clone(),
-            client,
-            instance,
-            command_id,
-            advances,
-        );
-        Vec::new()
+        if let Some((client, instance)) = flush {
+            spawn_read_flush(
+                Arc::clone(&self.state),
+                self.outbound.clone(),
+                client,
+                instance,
+            );
+        }
+        output
     }
 
     fn load_history(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
@@ -1570,56 +1548,115 @@ fn server_command(command: &Command) -> bool {
     )
 }
 
-fn complete_read_advance<T>(
-    state: &Arc<Mutex<RuntimeState>>,
-    instance: u64,
-    advance: &ReadAdvance,
-    result: Result<T, papo::Error>,
-) -> Result<Option<Vec<EngineToUi>>, ()> {
-    let mut output = match result {
-        Ok(_) => Vec::new(),
-        Err(error) => state_limit_events(&error, false, None, "mark_read").ok_or(())?,
-    };
-    let mut state = lock(state);
-    let Some(running) = state
-        .network
-        .as_mut()
-        .filter(|running| running.instance == instance)
-    else {
-        return Ok(None);
-    };
-    output.extend(
-        running
-            .model
-            .apply_read_time(advance.buffer_id, advance.time),
-    );
-    Ok(Some(output))
+fn record_read_advances(
+    running: &mut RunningNetwork,
+    advances: impl IntoIterator<Item = ReadAdvance>,
+) -> Vec<EngineToUi> {
+    let server_backed = !running.client.state().is_connected()
+        || running.client.state().supports(papo::Feature::ReadMarkers);
+    let mut output = Vec::new();
+    for advance in advances {
+        output.extend(
+            running
+                .model
+                .apply_read_time(advance.buffer_id, advance.time),
+        );
+        if server_backed {
+            queue_read_advance(&mut running.pending_reads, advance);
+        }
+    }
+    output
 }
 
-fn spawn_read_advances(
+fn queue_read_advance(pending: &mut VecDeque<ReadAdvance>, advance: ReadAdvance) {
+    if let Some(existing) = pending
+        .iter_mut()
+        .find(|existing| existing.buffer_id == advance.buffer_id)
+    {
+        if advance.time > existing.time {
+            *existing = advance;
+        }
+        return;
+    }
+    pending.push_back(advance);
+}
+
+fn start_read_flush(running: &mut RunningNetwork) -> Option<(papo::Client, u64)> {
+    if running.client.state().is_connected()
+        && !running.client.state().supports(papo::Feature::ReadMarkers)
+    {
+        running.pending_reads.clear();
+        return None;
+    }
+    if !running.device_online
+        || !running.client.state().is_connected()
+        || running.pending_reads.is_empty()
+        || running.flushing_reads
+    {
+        return None;
+    }
+    running.flushing_reads = true;
+    Some((running.client.clone(), running.instance))
+}
+
+fn spawn_read_flush(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
     client: papo::Client,
     instance: u64,
-    command_id: String,
-    advances: Vec<ReadAdvance>,
 ) {
     spawn_task(async move {
-        for advance in advances {
+        loop {
+            let advance = {
+                let mut state = lock(&state);
+                let Some(running) = state
+                    .network
+                    .as_mut()
+                    .filter(|running| running.instance == instance)
+                else {
+                    return;
+                };
+                if !running.device_online || !running.client.state().is_connected() {
+                    running.flushing_reads = false;
+                    return;
+                }
+                let Some(advance) = running.pending_reads.pop_front() else {
+                    running.flushing_reads = false;
+                    return;
+                };
+                advance
+            };
             let result = match advance.target.clone() {
                 SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
                 SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
             };
-            match complete_read_advance(&state, instance, &advance, result) {
-                Ok(Some(events)) => send_events(&outbound, events),
-                Ok(None) => return,
-                Err(()) => {
-                    let _ = outbound.send(command_rejection(command_id, "engine.mark_read_failed"));
+            match result {
+                Ok(_) => {}
+                Err(papo::Error::Disconnected(_)) => {
+                    let restart = {
+                        let mut state = lock(&state);
+                        let Some(running) = state
+                            .network
+                            .as_mut()
+                            .filter(|running| running.instance == instance)
+                        else {
+                            return;
+                        };
+                        queue_read_advance(&mut running.pending_reads, advance);
+                        running.flushing_reads = false;
+                        start_read_flush(running)
+                    };
+                    if let Some((client, instance)) = restart {
+                        spawn_read_flush(Arc::clone(&state), outbound.clone(), client, instance);
+                    }
                     return;
+                }
+                Err(error) if state_limit_events(&error, false, None, "mark_read").is_some() => {}
+                Err(_) => {
+                    let _ = outbound.send(EngineToUi::notice("engine.mark_read_failed"));
                 }
             }
         }
-        let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
     });
 }
 
@@ -1851,7 +1888,7 @@ async fn flush_pending_sends(
             let _ = outbound.send(event);
         }
         if let Some(advance) = own_read_advance {
-            spawn_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
+            record_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
         }
     }
 }
@@ -1944,7 +1981,7 @@ async fn finish_send(
         let _ = outbound.send(event);
     }
     if let Some(advance) = own_read_advance {
-        spawn_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
+        record_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
     }
 }
 
@@ -2664,7 +2701,7 @@ fn apply_direct_resolution(
         Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
         Err(_) => (DirectAvailability::Failed, false),
     };
-    let (client, read_advances) = {
+    let client = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -2674,21 +2711,15 @@ fn apply_direct_resolution(
             return;
         };
         running.model.resolve_direct(buffer_id, availability);
-        let (read_advances, events) = running.model.take_cached_read_advances();
-        send_events(outbound, events);
-        let client = if !running.pending_sends.is_empty() && !running.flushing_sends {
+        if !running.pending_sends.is_empty() && !running.flushing_sends {
             running.flushing_sends = true;
             Some(running.client.clone())
         } else {
             None
-        };
-        (client, read_advances)
+        }
     };
     if let Some(client) = client {
         spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
-    }
-    if !read_advances.is_empty() {
-        spawn_deferred_read_advances(state, outbound.clone(), instance, read_advances);
     }
     if degraded {
         let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
@@ -2725,31 +2756,72 @@ fn process_event_with_direct(
         return Vec::new();
     };
     let mut output = Vec::new();
-    let mut own_read_advances = Vec::new();
-    let mut clear_hosted_authentication = false;
-    let mut flush_pending = false;
-    let history_targets = match event {
+    let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
+    if effects.clear_hosted_authentication {
+        state.network = None;
+    }
+    drop(state);
+    send_events(outbound, output);
+    if !effects.own_read_advances.is_empty() {
+        record_deferred_read_advances(
+            &shared_state,
+            outbound.clone(),
+            instance,
+            effects.own_read_advances,
+        );
+    }
+    update_chat_list(&shared_state, outbound, instance);
+    spawn_event_flushes(
+        &shared_state,
+        outbound,
+        client,
+        instance,
+        effects.flush_sends,
+        effects.read_flush,
+    );
+    effects.history_targets
+}
+
+#[derive(Default)]
+struct EventEffects {
+    history_targets: Vec<HistoryTarget>,
+    own_read_advances: Vec<ReadAdvance>,
+    clear_hosted_authentication: bool,
+    flush_sends: bool,
+    read_flush: Option<(papo::Client, u64)>,
+}
+
+fn process_papo_event(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    event: papo::Event,
+    direct: Option<papo::DirectRef>,
+    output: &mut Vec<EngineToUi>,
+) -> EventEffects {
+    let mut effects = EventEffects::default();
+    effects.history_targets = match event {
         papo::Event::Connecting(connecting) => {
-            process_connecting(running, &connecting, &mut output);
+            process_connecting(running, &connecting, output);
             Vec::new()
         }
         papo::Event::Connected(connected) => {
-            let history_targets = process_connected(running, &snapshot, &connected, &mut output);
+            let history_targets = process_connected(running, snapshot, &connected, output);
             if !running.pending_sends.is_empty() && !running.flushing_sends {
                 running.flushing_sends = true;
-                flush_pending = true;
+                effects.flush_sends = true;
             }
+            effects.read_flush = start_read_flush(running);
             history_targets
         }
         papo::Event::Lagged(lagged) => {
-            process_lagged(&mut running.model, &snapshot, &lagged, &mut output)
+            process_lagged(&mut running.model, snapshot, &lagged, output)
         }
         papo::Event::Warning(warning) => {
-            process_warning(&warning, &mut output);
+            process_warning(&warning, output);
             Vec::new()
         }
         papo::Event::CasemappingChanged(_) => {
-            running.model.rebuild_name_keys(&snapshot);
+            running.model.rebuild_name_keys(snapshot);
             output.push(running.model.buffers_event());
             Vec::new()
         }
@@ -2760,59 +2832,64 @@ fn process_event_with_direct(
             Vec::new()
         }
         papo::Event::NickChanged(changed) => {
-            process_nick_change(&mut running.model, &changed, &mut output);
+            process_nick_change(&mut running.model, &changed, output);
             Vec::new()
         }
         papo::Event::AccountChanged(changed) => {
-            process_account_change(&mut running.model, &changed, &mut output);
+            process_account_change(&mut running.model, &changed, output);
             Vec::new()
         }
         papo::Event::Message(message) => {
             let (received, advance) =
-                receive_message(&mut running.model, &message, false, &snapshot, direct);
-            own_read_advances.extend(advance);
+                receive_message(&mut running.model, &message, false, snapshot, direct);
+            effects.own_read_advances.extend(advance);
             output.extend(received);
             Vec::new()
         }
         papo::Event::ReadMarkerChanged(marker) => {
-            process_read_marker(&mut running.model, &marker, &mut output);
+            process_read_marker(&mut running.model, &marker, output);
             Vec::new()
         }
-        papo::Event::Joined(joined) => {
-            process_join(&mut running.model, &snapshot, &joined, &mut output)
-        }
-        papo::Event::Parted(parted) => {
-            process_part(&mut running.model, &snapshot, &parted, &mut output)
-        }
-        papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, &mut output),
+        papo::Event::Joined(joined) => process_join(&mut running.model, snapshot, &joined, output),
+        papo::Event::Parted(parted) => process_part(&mut running.model, snapshot, &parted, output),
+        papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, output),
         papo::Event::Quit(quit) => {
-            process_quit(&mut running.model, &quit, &mut output);
+            process_quit(&mut running.model, &quit, output);
             Vec::new()
         }
         papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
-            output.extend(running.model.sync_channels(&snapshot));
+            output.extend(running.model.sync_channels(snapshot));
             Vec::new()
         }
         papo::Event::Disconnected(disconnected) => {
-            clear_hosted_authentication =
-                process_disconnected_event(running, &disconnected, &mut output);
+            effects.clear_hosted_authentication =
+                process_disconnected_event(running, &disconnected, output);
             Vec::new()
         }
         _ => Vec::new(),
     };
-    if clear_hosted_authentication {
-        state.network = None;
+    effects
+}
+
+fn spawn_event_flushes(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    flush_sends: bool,
+    read_flush: Option<(papo::Client, u64)>,
+) {
+    if flush_sends {
+        spawn_send_flush(
+            Arc::clone(state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+        );
     }
-    drop(state);
-    send_events(outbound, output);
-    if !own_read_advances.is_empty() {
-        spawn_deferred_read_advances(&shared_state, outbound.clone(), instance, own_read_advances);
+    if let Some((client, instance)) = read_flush {
+        spawn_read_flush(Arc::clone(state), outbound.clone(), client, instance);
     }
-    update_chat_list(&shared_state, outbound, instance);
-    if flush_pending {
-        spawn_send_flush(shared_state, outbound.clone(), client.clone(), instance);
-    }
-    history_targets
 }
 
 fn stop_client(client: papo::Client) {
@@ -2910,6 +2987,7 @@ fn process_disconnect(
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running.model.invalidate_direct_handles();
+    running.flushing_reads = false;
     let mut retained = VecDeque::new();
     for queued in running.pending_sends.drain(..) {
         if queued.retry_if_disconnected {
@@ -3300,49 +3378,38 @@ fn process_history(
             at_start,
         });
     }
-    let (mut read_advances, read_events) = running.model.take_cached_read_advances();
-    read_advances.extend(own_read_advance);
-    output.extend(read_events);
+    let read_advances = own_read_advance.into_iter().collect::<Vec<_>>();
     drop(state);
     send_events(outbound, output);
     if !read_advances.is_empty() {
-        spawn_deferred_read_advances(&shared_state, outbound.clone(), instance, read_advances);
+        record_deferred_read_advances(&shared_state, outbound.clone(), instance, read_advances);
     }
     update_chat_list(&shared_state, outbound, instance);
 }
 
-fn spawn_deferred_read_advances(
+fn record_deferred_read_advances(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
     advances: Vec<ReadAdvance>,
 ) {
-    let client = lock(state)
-        .network
-        .as_ref()
-        .filter(|running| running.instance == instance)
-        .map(|running| running.client.clone());
-    let Some(client) = client else {
-        return;
-    };
-    spawn_task(async move {
-        if !client.state().supports(papo::Feature::ReadMarkers) {
+    let (events, flush) = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
             return;
-        }
-        for advance in advances {
-            let result = match advance.target {
-                SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
-                SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
-            };
-            if let Err(error) = result {
-                if state_limit_events(&error, false, None, "mark_read").is_some() {
-                    continue;
-                }
-                let _ = outbound.send(EngineToUi::notice("engine.mark_read_failed"));
-                return;
-            }
-        }
-    });
+        };
+        let events = record_read_advances(running, advances);
+        let flush = start_read_flush(running);
+        (events, flush)
+    };
+    send_events(&outbound, events);
+    if let Some((client, instance)) = flush {
+        spawn_read_flush(Arc::clone(state), outbound, client, instance);
+    }
 }
 
 fn update_chat_list(
@@ -3755,16 +3822,16 @@ mod tests {
         time::{Duration, UNIX_EPOCH},
     };
 
-    use papo_testing::{Wire, wire};
+    use papo_testing::{ConnectedBuilder, Wire, wire};
     use tokio::sync::{mpsc, oneshot};
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, RunningNetwork, Runtime, RuntimeState,
-        complete_read_advance, completion_context, connection_failure_notice, drain_events,
-        fetch_history, fetch_latest, join_request_events, lock, next_connection_state,
-        person_candidates, process_event, process_history, schedule_snapshot_write_after,
-        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
+        completion_context, connection_failure_notice, drain_events, fetch_history, fetch_latest,
+        join_request_events, lock, next_connection_state, person_candidates, process_event,
+        process_history, queue_read_advance, schedule_snapshot_write_after, spawn_history_fetch,
+        spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -3791,6 +3858,20 @@ mod tests {
             build_version: "weblounge test".into(),
             update_ready: false,
             network: Some(network),
+        }
+    }
+
+    fn set_harness_device_online(state: &Arc<Mutex<RuntimeState>>, online: bool) {
+        let mut state = lock(state);
+        let running = state.network.as_mut().expect("network remains active");
+        running.device_online = online;
+        if !online {
+            running.model.set_connection(
+                NetworkConnectionState::Offline {
+                    reason: crate::OfflineReason::DeviceOffline,
+                },
+                None,
+            );
         }
     }
 
@@ -4490,6 +4571,8 @@ mod tests {
                 device_online: true,
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
+                pending_reads: VecDeque::new(),
+                flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 client,
@@ -4558,6 +4641,8 @@ mod tests {
                 device_online: true,
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
+                pending_reads: VecDeque::new(),
+                flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 client,
@@ -4756,6 +4841,8 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    pending_reads: VecDeque::new(),
+                    flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     client,
@@ -4843,6 +4930,8 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    pending_reads: VecDeque::new(),
+                    flushing_reads: false,
                     hosted_reconnect: Some(HostedReconnectConfig {
                         endpoint: "wss://127.0.0.1/socket".into(),
                         nickname: "*".into(),
@@ -4958,6 +5047,8 @@ mod tests {
                 device_online: true,
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
+                pending_reads: VecDeque::new(),
+                flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 client,
@@ -5106,6 +5197,8 @@ mod tests {
                 device_online: true,
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
+                pending_reads: VecDeque::new(),
+                flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 client,
@@ -5443,6 +5536,8 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    pending_reads: VecDeque::new(),
+                    flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     client,
@@ -5830,6 +5925,8 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    pending_reads: VecDeque::new(),
+                    flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     client,
@@ -5952,6 +6049,8 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    pending_reads: VecDeque::new(),
+                    flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     client,
@@ -6015,6 +6114,8 @@ mod tests {
                     device_online: true,
                     pending_sends: VecDeque::new(),
                     flushing_sends: false,
+                    pending_reads: VecDeque::new(),
+                    flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     client,
@@ -6221,6 +6322,8 @@ mod tests {
                 device_online: true,
                 pending_sends: VecDeque::new(),
                 flushing_sends: false,
+                pending_reads: VecDeque::new(),
+                flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 client,
@@ -6866,8 +6969,8 @@ mod tests {
         process_event(&state, &outbound, &client, 1, message);
 
         let request = wire.next_sent().await;
-        let label = request_label(&request);
         assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        let label = request_label(&request);
         wire.server(format!(
             "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
         ))
@@ -6932,48 +7035,131 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_marker_state_limits_still_advance_local_read_state() {
+    async fn mark_read_while_offline_syncs_after_connecting() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&[]).await;
+        wire.register(&caps).await;
         _ = next_matching(&mut events, |event| {
             matches!(event, papo::Event::Connected(_))
         })
         .await;
-        let (state, _outbound, _receiver) = harness(client.clone());
-        let advance = ReadAdvance {
-            buffer_id: BufferId(1),
-            target: SendTarget::Channel(known_channel(&client, "#room")),
-            time: UNIX_EPOCH + Duration::from_secs(20),
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+            .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        let appended = collect(&mut receiver);
+        let (buffer_id, message_id) = appended
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("live message is projected");
+        set_harness_device_online(&state, false);
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
         };
 
-        let first = complete_read_advance(
-            &state,
-            1,
-            &advance,
-            Err::<(), _>(papo::Error::StateLimit(papo::StateLimit::ReadMarkers)),
-        )
-        .expect("the limit is handled")
-        .expect("the runtime instance is current");
-        assert!(first.iter().any(|event| matches!(
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "mark-offline".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
+
+        assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::ReadMarkerMoved {
-                buffer_id: BufferId(1),
+            EngineToUi::UnreadChanged {
+                unread: 0,
+                mentions: 0,
                 ..
             }
         )));
-        assert!(!first.iter().any(|event| matches!(
-            event,
-            EngineToUi::Notice { .. } | EngineToUi::CommandRejected { .. }
-        )));
-
-        let earlier = ReadAdvance {
-            time: UNIX_EPOCH + Duration::from_secs(10),
-            ..advance
-        };
         assert_eq!(
-            complete_read_advance(&state, 1, &earlier, Ok(())),
-            Ok(Some(Vec::new()))
+            lock(&state)
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .pending_reads
+                .len(),
+            1
+        );
+        set_harness_device_online(&state, true);
+        process_event(
+            &state,
+            &outbound,
+            &client,
+            1,
+            papo::Event::Connected(
+                ConnectedBuilder::new(
+                    client
+                        .state()
+                        .name_rules()
+                        .expect("registered test client has name rules")
+                        .nick("weblounge"),
+                )
+                .reconnected(true)
+                .build(),
+            ),
+        );
+
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
+        ))
+        .await;
+    }
+
+    #[test]
+    fn queued_read_advances_keep_only_the_latest_position() {
+        let mut pending = VecDeque::new();
+        let advance = ReadAdvance {
+            buffer_id: BufferId(1),
+            target: SendTarget::Channel(papo_testing::channel(papo::Casemapping::Ascii, "#room")),
+            time: UNIX_EPOCH + Duration::from_secs(20),
+        };
+        queue_read_advance(&mut pending, advance.clone());
+        queue_read_advance(
+            &mut pending,
+            ReadAdvance {
+                time: UNIX_EPOCH + Duration::from_secs(10),
+                ..advance.clone()
+            },
+        );
+        queue_read_advance(
+            &mut pending,
+            ReadAdvance {
+                time: UNIX_EPOCH + Duration::from_secs(30),
+                ..advance
+            },
+        );
+
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            pending.front().map(|advance| advance.time),
+            Some(UNIX_EPOCH + Duration::from_secs(30))
         );
     }
 
@@ -7084,33 +7270,29 @@ mod tests {
             .expect("live message is projected");
         let runtime = Runtime { state, outbound };
 
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "mark-server".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
         assert!(
-            runtime
-                .request(EngineRequestEnvelope {
-                    id: "mark-server".into(),
-                    request: EngineRequest::MarkRead {
-                        buffer_id,
-                        through: message_id
-                    },
-                })
-                .is_empty()
+            output
+                .iter()
+                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
         );
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::CommandResult { id } if id == "mark-server"
+        )));
         let request = wire.next_sent().await;
-        let label = request_label(&request).to_owned();
         assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        let label = request_label(&request).to_owned();
         wire.server(format!(
             "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
         ))
         .await;
-
-        let result = tokio::time::timeout(std::time::Duration::from_secs(1), receiver.recv())
-            .await
-            .expect("mark response arrives")
-            .expect("runtime remains open");
-        assert!(matches!(
-            result,
-            EngineToUi::UnreadChanged { unread: 0, .. }
-        ));
     }
 
     #[tokio::test]

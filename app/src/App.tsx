@@ -767,22 +767,6 @@ export function App(props: AppProps) {
               })
               .catch(() => undefined);
           }}
-          onMarkCachedRead={(bufferId) => {
-            setBuffers((current) =>
-              current.map((buffer) =>
-                buffer.id === bufferId
-                  ? { ...buffer, unread: 0, mentions: 0 }
-                  : buffer,
-              ),
-            );
-            if (client === undefined) return;
-            void client
-              .send({
-                id: crypto.randomUUID(),
-                request: { type: "mark_cached_read", buffer_id: bufferId },
-              })
-              .catch(() => undefined);
-          }}
           onLoadHistory={(bufferId) => {
             if (client === undefined) return;
             void client
