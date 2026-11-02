@@ -207,6 +207,7 @@ async function verifySplash(
       "opacity",
       "1",
     );
+    await expect(page.locator("[data-splash-message]")).toBeEmpty();
 
     const colors = await splash.evaluate((element) => {
       const mark = element.querySelector("[data-splash-mark] path");
@@ -225,7 +226,7 @@ async function verifySplash(
     await page.evaluate(() => document.fonts.ready);
     expect(
       await page.evaluate(() =>
-        document.fonts.check("400 13px Inter", "Connecting to weblounge…"),
+        document.fonts.check("400 13px Inter", "Starting weblounge…"),
       ),
     ).toBe(true);
     expect(fontUrls.size).toBe(1);

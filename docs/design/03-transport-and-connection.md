@@ -89,15 +89,25 @@ ID, exact webchat root as redirect URI, the preconfigured WebSocket endpoint, an
 hostname sniffing or onboarding chooses these values. The session-token endpoint is configuration,
 not a path derived from the issuer.
 
+The window keeps the last schema-valid deployment configuration in a versioned local-storage
+record. It is public routing and OAuth-client metadata, never a credential. A returning launch uses
+that record immediately and revalidates `/config.json` in the background; a changed valid response
+takes effect on the next launch so one running session never mixes deployment identities. A cold
+launch without a valid record waits for the fetch. Network failures and the startup deadline are
+reachability errors; only a missing/HTML response, malformed JSON, or schema violation is a
+misconfigured deployment. The service worker never handles `config.json`.
+
 The window's credential path posts an empty JSON object to the configured session-token endpoint
 with `credentials: "include"`. It validates the bearer response and yields the token once to the
 engine. The endpoint and member cookie never enter a worker: worker fetches do not inherit the
 page's test-CA exception in Playwright WebKit, and browser credential behavior must have one owner.
-Startup begins the page fetch in parallel with worker initialization. On reconnect the engine's
-typed token-required event is routed to one active page, which performs the same one-shot exchange
-and returns a fresh token. With no live page, the engine enters a credential-unavailable failure
-instead of retrying silently. Live projection waits for both startup operations. A valid chat-list
-snapshot may reveal the shell while they continue; without one, the splash remains until a usable
+Startup begins the page fetch in parallel with worker initialization. The window first sends the
+validated public hosted profile without credentials, allowing the engine to restore its matching
+chat-list snapshot; only a subsequent fresh-token request constructs the papo connection. On
+reconnect the engine's typed token-required event is routed to one active page, which performs the
+same one-shot exchange and returns a fresh token. With no live page, the engine enters a
+credential-unavailable failure instead of retrying silently. A valid chat-list snapshot may reveal
+the shell while credential acquisition continues; without one, the splash remains until a usable
 shell or an actionable failure can render. Each connect attempt makes at most one request; the
 provider does not cache bearer tokens or run its own retry loop.
 
@@ -243,8 +253,10 @@ strip is present.
 This replaces the mobile Chats status line/dot and inline retry, the mobile conversation subtitle's
 connection status/retry, the desktop sidebar's connection suffix/retry, and the footer connection
 dot. Connection/authentication paths that currently use full-screen hosted status move to the
-shared strip once the shell exists; a host failure that prevents constructing any shell remains a
-startup recovery error. Conversation subtitles return to topic/type content. Transient states never
+shared strip once the shell exists; a host failure that prevents constructing any shell remains on
+the original inline startup surface. That surface keeps the launch-image chair fixed and adds only
+an error line and action below it; normal progress has no visible text. Conversation subtitles
+return to topic/type content. Transient states never
 become buffer notices or live-region chatter; the shell may expose `aria-busy` without announcing a
 repeating status string. The actionable strip uses alert semantics.
 

@@ -5,8 +5,9 @@ Status: app-shell service-worker slice approved by Luiz on 2026-10-31.
 ## Problem
 
 An installed web app must reach the existing inline splash and load its engine without waiting for
-the network. Caching must not retain deployment configuration, credentials, OAuth traffic, IRC
-traffic, or API responses, and a newly deployed build must not replace code during a live session.
+the network. The app may persist its last validated public deployment configuration, but the
+service worker must not retain configuration, credentials, OAuth traffic, IRC traffic, or API
+responses, and a newly deployed build must not replace code during a live session.
 
 This slice covers the web app shell only. Web Push, native Tauri packaging, background sync, and
 durable IRC state remain later work.
@@ -37,13 +38,19 @@ load and the first interactive frame, during browser idle time. Shell requests u
 priority and bounded concurrency so installation does not compete with first-launch interaction.
 Registration failure is nonfatal because an online launch still works.
 
+The HTML startup surface owns the only launch chair. Normal startup exposes screen-reader status
+but no visible “Connecting” copy; the fixed launch-image geometry communicates progress until the
+shell logo can take over. A cold-start failure changes only the status line and reveals its action
+below the same chair. Application code never replaces it with a second branded screen.
+
 ## Request policy
 
 Navigation requests use the versioned shell's `index.html` cache entry first, including app deep
-links. Exact precache URLs use cache-first. `config.json` uses network-first and a separate runtime
-cache: a successful same-origin response replaces the cached public deployment configuration, and
-an offline launch falls back to the last response. It is not part of the immutable precache because
-it selects hosted versus app mode and can change independently of a build.
+links. Exact precache URLs use cache-first. The worker bypasses `config.json`. The window validates
+and versions the last good public deployment configuration in local storage, starts from it
+without a network round trip, and revalidates in the background. A valid changed response is
+persisted for the next launch; a failed or invalid response leaves the last good value intact. A
+first launch with no valid cached configuration waits for the network.
 
 Every other request passes through to the browser without a service-worker `respondWith`. In
 particular, the worker never handles non-GET requests, cross-origin requests, `/socket`, OAuth or
@@ -78,9 +85,9 @@ only after the new worker has installed successfully and reached activation.
 
 The production verifier checks the worker's version, exact manifest, and presence of every listed
 file. Playwright proves that a second launch renders the splash and starts engine Wasm while all
-app-origin network requests are blocked; activation removes an injected old cache; config remains
-network-first; and session-token, OAuth, API, and WebSocket-shaped traffic is neither cached nor
-intercepted. Development coverage asserts that no registration occurs.
+app-origin network requests are blocked; activation removes an injected old cache; configuration,
+session-token, OAuth, API, and WebSocket-shaped traffic is neither cached nor intercepted by the
+worker. Development coverage asserts that no registration occurs.
 
 The existing startup, hosted-mode, console-clean, brand, CSP mirror, and native-feel checks remain
 green in development and production.

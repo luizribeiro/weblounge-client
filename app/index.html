@@ -60,12 +60,13 @@
             d="M3.971 10.9 3.505 13.4A.6.6 0 0 0 4.705 13.4L5.171 10.9ZM7.233 10.9 7 13.4A.6.6 0 0 0 8.2 13.4L8.433 10.9ZM11.534 10.9 11.999 13.4A.6.6 0 0 0 13.199 13.4L12.734 10.9Z"
           />
         </svg>
-        <p data-splash-status role="status">
-          <span data-splash-a11y>Starting weblounge…</span>
-          <span data-splash-message aria-hidden="true"
-            >Connecting to weblounge…</span
-          >
-        </p>
+        <div data-splash-copy>
+          <p data-splash-status role="status">
+            <span data-splash-a11y>Starting weblounge…</span>
+            <span data-splash-message aria-hidden="true"></span>
+          </p>
+          <button data-splash-retry hidden type="button">Retry</button>
+        </div>
       </main>
     </div>
     <script type="module" src="/src/index.tsx"></script>

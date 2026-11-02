@@ -33,7 +33,7 @@ for (const failure of [
   },
   {
     name: "failed config request",
-    expected: "server returned 500",
+    expected: "Can't reach weblounge",
     response: "500",
   },
 ] as const) {
@@ -82,7 +82,7 @@ for (const failure of [
     const error = page.getByRole("alert");
     await expect(error).toContainText(failure.expected);
     expect(performance.now() - startedAt).toBeLessThan(4_000);
-    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await expect(page.locator("[data-initial-splash]")).toBeVisible();
     await expect.poll(() => startupErrors).toHaveLength(1);
     expect(startupErrors[0]).toContain(failure.expected);
 
@@ -115,10 +115,8 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
     )
     .toContainEqual(
       expect.objectContaining({
-        type: "connect_hosted",
-        endpoint: "wss://beta.weblounge.org/socket",
+        type: "reconnect_hosted",
         oauth_token: "fake-hosted-access-token",
-        autojoin: ["#lounge"],
       }),
     );
   await page.evaluate(() => {
@@ -147,6 +145,44 @@ test("authorizes with PKCE and hands the bearer token once to the engine", async
   await expect.poll(() => page.evaluate(() => sessionStorage.length)).toBe(0);
   await page.goBack();
   await expect(page).toHaveURL(`${oauthIssuer}/health`);
+});
+
+test("reveals cached chats while config and session requests are blocked", async ({
+  page,
+}) => {
+  await page.addInitScript((issuer) => {
+    const config = {
+      mode: "hosted",
+      network: {
+        name: "weblounge",
+        endpoint: "wss://beta.weblounge.org/socket",
+        autojoin: ["#lounge"],
+      },
+      oauth: {
+        issuer,
+        client_id: "weblounge-client",
+        redirect_uri: new URL("/", location.href).href,
+        session_token_endpoint: `${issuer}/oauth/session-token`,
+      },
+    };
+    localStorage.setItem(
+      "weblounge.deployment-config.v1",
+      JSON.stringify({ config, schema: 1 }),
+    );
+    Reflect.set(globalThis, "hostedCachedChatList", true);
+  }, oauthIssuer);
+  await installFakeEngine(page);
+  await page.route("**/config.json", () => new Promise(() => {}));
+  await page.route(
+    `${oauthIssuer}/oauth/session-token`,
+    () => new Promise(() => {}),
+  );
+
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "#cached" })).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await expect(page.getByText(/misconfigured/iu)).toHaveCount(0);
 });
 
 for (const worker of ["shared", "dedicated"] as const) {
@@ -465,7 +501,7 @@ for (const worker of ["shared", "dedicated"] as const) {
 
       await expect(
         page
-          .locator("[data-hosted-status]", { has: page.getByRole("alert") })
+          .locator("[data-initial-splash]", { has: page.getByRole("alert") })
           .getByRole("button", { name: "Retry" }),
       ).toBeVisible();
       await page.getByRole("button", { name: "Retry" }).click();
@@ -501,7 +537,7 @@ for (const worker of ["shared", "dedicated"] as const) {
     await page.goto("/");
 
     await expect(page.getByRole("alert")).toContainText("invalid access token");
-    await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+    await expect(page.locator("[data-initial-splash]")).toBeVisible();
     await expect(page).toHaveURL(redirectUri());
   });
 }
@@ -673,13 +709,13 @@ async function expectHostedConnection(page: Page): Promise<void> {
         })
         .catch(() => []),
     )
-    .toContainEqual(expect.objectContaining({ type: "connect_hosted" }));
+    .toContainEqual(expect.objectContaining({ type: "reconnect_hosted" }));
 }
 
 async function expectHostedToken(
   page: Page,
   token: string,
-  requestType = "connect_hosted",
+  requestType = "reconnect_hosted",
 ): Promise<void> {
   await expect
     .poll(async () =>
@@ -786,7 +822,42 @@ async function installFakeEngine(
             message: "wasm worker round trip complete",
           });
         }
-        if (request?.type === "connect_hosted") {
+        if (request?.type === "prepare_hosted") {
+          const requests = Reflect.get(globalThis, "hostedEngineRequests");
+          if (Array.isArray(requests)) requests.push(request);
+          this.emit({
+            type: "network_state_changed",
+            network: {
+              id: 1,
+              label: "weblounge",
+              nickname: "weblounge",
+              state: "connecting",
+            },
+          });
+          if (Reflect.get(globalThis, "hostedCachedChatList") === true) {
+            this.emit({
+              type: "chat_list_snapshot_loaded",
+              network_id: 1,
+              buffers: [
+                {
+                  id: 2,
+                  network_id: 1,
+                  kind: "channel",
+                  title: "#cached",
+                  draft_key: "10:weblounge:rfc1459:#cached",
+                  topic: null,
+                  member_count: 0,
+                  unread: 1,
+                  mentions: 0,
+                  read_through: null,
+                  cached: true,
+                  cached_preview: "available before credentials",
+                },
+              ],
+            });
+          }
+        }
+        if (request?.type === "reconnect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);
           Reflect.set(globalThis, "requestHostedToken", () => {
@@ -849,10 +920,6 @@ async function installFakeEngine(
           } else {
             complete();
           }
-        }
-        if (request?.type === "reconnect_hosted") {
-          const requests = Reflect.get(globalThis, "hostedEngineRequests");
-          if (Array.isArray(requests)) requests.push(request);
         }
         if (id !== undefined) this.emit({ type: "command_result", id });
       }

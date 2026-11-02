@@ -7,9 +7,11 @@ import { createEngineClient } from "./engine/createEngineClient";
 import type { EngineClient } from "./engine/EngineClient";
 import type { DeploymentConfig } from "./engine/generated/DeploymentConfig";
 import { AppErrorBoundary } from "./hosted/AppErrorBoundary";
-import { loadDeploymentConfig } from "./hosted/deployment-config";
+import {
+  DeploymentConfigUnavailableError,
+  loadDeploymentConfig,
+} from "./hosted/deployment-config";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
-import { HostedStatus } from "./hosted/HostedStatus";
 import {
   authorizationReturnPath,
   consumeAuthorizationCallback,
@@ -22,7 +24,6 @@ import {
 import {
   requiresAuthorization,
   type SessionAccessToken,
-  SessionTokenError,
   SessionTokenProvider,
 } from "./hosted/session-token";
 import { withStartupDeadline } from "./hosted/startup-deadline";
@@ -54,7 +55,6 @@ type DeploymentAttempt =
       readonly type: "hosted";
       readonly config: HostedConfig;
       readonly metadata: Promise<InitialMetadataResult>;
-      readonly session: Promise<InitialSessionResult> | null;
     };
 
 let prewarmedEngine:
@@ -68,8 +68,7 @@ try {
 }
 
 type BootstrapState =
-  | { type: "starting"; message: string }
-  | { type: "error"; message: string; retryLabel: string }
+  | { type: "starting" }
   | { type: "app"; attempt: number; engineClient: EngineClient }
   | {
       type: "hosted";
@@ -81,6 +80,12 @@ type BootstrapState =
 interface BootstrapProps {
   readonly beforeReveal: () => Promise<void>;
   readonly onReady: () => void;
+  readonly showError: (
+    message: string,
+    retryLabel: string,
+    retry: () => void,
+    retryWhenReachable: boolean,
+  ) => void;
 }
 
 function Bootstrap(props: BootstrapProps) {
@@ -96,26 +101,14 @@ function Bootstrap(props: BootstrapProps) {
   onCleanup(removePageZoomGuard);
   const [state, setState] = createSignal<BootstrapState>({
     type: "starting",
-    message: "Starting…",
   });
   let starting = false;
-  let hostedFallbackConfig: HostedConfig | undefined;
-  let hostedFallbackMetadata: Promise<InitialMetadataResult> | undefined;
-  let hostedFallbackTimer: number | undefined;
-
-  onCleanup(() => {
-    if (hostedFallbackTimer !== undefined)
-      window.clearTimeout(hostedFallbackTimer);
-  });
+  let authorizing = false;
 
   onMount(() => void start());
 
   async function start(): Promise<void> {
     if (starting) return;
-    if (hostedFallbackTimer !== undefined) {
-      window.clearTimeout(hostedFallbackTimer);
-      hostedFallbackTimer = undefined;
-    }
     starting = true;
     try {
       const attempt = deploymentAttempt ?? loadDeploymentAttempt();
@@ -130,65 +123,20 @@ function Bootstrap(props: BootstrapProps) {
         return;
       }
       const { config } = deployment;
-      hostedFallbackConfig = config;
-      hostedFallbackMetadata = deployment.metadata;
       requireCurrentRedirect(config);
-      const currentUrl = new URL(window.location.href);
-      const authorization = consumeAuthorizationCallback(currentUrl);
-      if (authorization === null) {
-        try {
-          const result = await (deployment.session ??
-            acquireSession(config.oauth.session_token_endpoint));
-          if (result.type === "error") throw result.error;
-          setHostedState(config, result.token);
-          return;
-        } catch (error: unknown) {
-          if (!requiresAuthorization(error)) throw error;
-        }
-        const metadata = await acquireMetadata(deployment.metadata);
-        setState({ type: "starting", message: "Opening sign in…" });
-        window.location.replace(
-          await createAuthorizationUrl(
-            metadata,
-            config.oauth,
-            authorizationReturnPath(currentUrl, window.location.origin),
-          ),
-        );
-        return;
-      }
-      const metadata = await acquireMetadata(deployment.metadata);
-      const token = await exchangeAuthorizationCode(
-        metadata,
-        config.oauth,
-        authorization,
+      setHostedState(
+        config,
+        acquireInitialAccessToken(config, deployment.metadata),
       );
-      if (authorization.returnPath !== undefined) {
-        history.replaceState(history.state, "", authorization.returnPath);
-      }
-      setHostedState(config, token);
     } catch (error: unknown) {
       const message = userFacingError(error);
       console.error(`[weblounge startup] ${message}`);
-      setState({
-        type: "error",
+      props.showError(
         message,
-        retryLabel:
-          error instanceof HostedAuthorizationError ? "Sign in again" : "Retry",
-      });
-      if (
-        isTransientSessionFailure(error) &&
-        hostedFallbackConfig !== undefined
-      ) {
-        const config = hostedFallbackConfig;
-        // wait-ok: a bounded recovery window lets the visible Retry act first.
-        hostedFallbackTimer = window.setTimeout(() => {
-          hostedFallbackTimer = undefined;
-          void restartAuthorization(config, hostedFallbackMetadata);
-        }, 3_000);
-      }
-      await Promise.resolve();
-      await props.beforeReveal();
-      props.onReady();
+        error instanceof HostedAuthorizationError ? "Sign in again" : "Retry",
+        () => void start(),
+        error instanceof DeploymentConfigUnavailableError,
+      );
     } finally {
       starting = false;
     }
@@ -196,24 +144,58 @@ function Bootstrap(props: BootstrapProps) {
 
   function setHostedState(
     config: HostedConfig,
-    token: { readonly accessToken: string; readonly expiresAt: number },
+    token: Promise<SessionAccessToken>,
   ): void {
+    const engineClient = takePrewarmedEngineClient();
+    let startupCancelled = false;
+    const tokenResult = token.then(
+      (value) => ({
+        type: "token" as const,
+        token: new OneShotAccessToken(value.accessToken, value.expiresAt),
+      }),
+      (error: unknown) => ({ type: "error" as const, error }),
+    );
+    void tokenResult.then(async (result) => {
+      if (result.type === "error" && requiresAuthorization(result.error)) {
+        startupCancelled = true;
+        await engineClient.close().catch(() => undefined);
+        void restartAuthorization(config);
+      } else if (
+        result.type === "error" &&
+        result.error instanceof HostedAuthorizationError
+      ) {
+        props.showError(
+          result.error.message,
+          "Sign in again",
+          () => void restartAuthorization(config),
+          false,
+        );
+      }
+    });
     setState({
       type: "hosted",
       config,
-      engineClient: takePrewarmedEngineClient(),
+      engineClient,
       session: {
         network: config.network,
         sessionTokenEndpoint: config.oauth.session_token_endpoint,
-        token: new OneShotAccessToken(token.accessToken, token.expiresAt),
+        startupCancelled: () => startupCancelled,
+        token: tokenResult,
       },
     });
+  }
+
+  function retryHosted(config: HostedConfig): void {
+    const metadata = acquireInitialMetadata(config);
+    setHostedState(config, acquireInitialAccessToken(config, metadata));
   }
 
   async function restartAuthorization(
     config: HostedConfig,
     prefetched?: Promise<InitialMetadataResult>,
   ): Promise<void> {
+    if (authorizing) return;
+    authorizing = true;
     try {
       const metadata =
         prefetched === undefined
@@ -230,13 +212,15 @@ function Bootstrap(props: BootstrapProps) {
         ),
       );
     } catch (error: unknown) {
+      authorizing = false;
       const message = userFacingError(error);
       console.error(`[weblounge startup] ${message}`);
-      setState({
-        type: "error",
+      props.showError(
         message,
-        retryLabel: "Sign in again",
-      });
+        "Sign in again",
+        () => void restartAuthorization(config),
+        false,
+      );
     }
   }
 
@@ -244,16 +228,7 @@ function Bootstrap(props: BootstrapProps) {
     const current = state();
     switch (current.type) {
       case "starting":
-        return <HostedStatus message={current.message} />;
-      case "error":
-        return (
-          <HostedStatus
-            message={current.message}
-            error
-            onRetry={() => void start()}
-            retryLabel={current.retryLabel}
-          />
-        );
+        return null;
       case "app":
         return (
           <Show keyed when={current.attempt}>
@@ -262,6 +237,14 @@ function Bootstrap(props: BootstrapProps) {
                 beforeReveal={props.beforeReveal}
                 engineClient={current.engineClient}
                 onReady={props.onReady}
+                onStartupError={(message, retry) =>
+                  props.showError(
+                    message,
+                    "Retry",
+                    retry ?? (() => void start()),
+                    false,
+                  )
+                }
                 onRetryStartup={() => {
                   setState({
                     type: "app",
@@ -275,16 +258,28 @@ function Bootstrap(props: BootstrapProps) {
         );
       case "hosted":
         return (
-          <App
-            beforeReveal={props.beforeReveal}
-            engineClient={current.engineClient}
-            hostedSession={current.session}
-            onReady={props.onReady}
-            onHostedAuthorizationRequired={() =>
-              void restartAuthorization(current.config)
-            }
-            onRetryStartup={() => void restartAuthorization(current.config)}
-          />
+          <Show keyed when={current.session}>
+            {(session) => (
+              <App
+                beforeReveal={props.beforeReveal}
+                engineClient={current.engineClient}
+                hostedSession={session}
+                onReady={props.onReady}
+                onStartupError={(message, retry) =>
+                  props.showError(
+                    message,
+                    "Retry",
+                    retry ?? (() => retryHosted(current.config)),
+                    false,
+                  )
+                }
+                onHostedAuthorizationRequired={() =>
+                  void restartAuthorization(current.config)
+                }
+                onRetryStartup={() => retryHosted(current.config)}
+              />
+            )}
+          </Show>
         );
       default: {
         const exhaustive: never = current;
@@ -308,16 +303,29 @@ async function loadDeploymentAttempt(): Promise<DeploymentAttempt> {
   if (config.mode === "app") return { type: "app", config };
   requireCurrentRedirect(config);
   const metadata = acquireInitialMetadata(config);
-  const url = new URL(window.location.href);
-  if (url.searchParams.has("code") || url.searchParams.has("error")) {
-    return { type: "hosted", config, metadata, session: null };
+  return { type: "hosted", config, metadata };
+}
+
+async function acquireInitialAccessToken(
+  config: HostedConfig,
+  metadata: Promise<InitialMetadataResult>,
+): Promise<SessionAccessToken> {
+  const currentUrl = new URL(window.location.href);
+  const authorization = consumeAuthorizationCallback(currentUrl);
+  if (authorization === null) {
+    const result = await acquireSession(config.oauth.session_token_endpoint);
+    if (result.type === "error") throw result.error;
+    return result.token;
   }
-  return {
-    type: "hosted",
-    config,
-    metadata,
-    session: acquireSession(config.oauth.session_token_endpoint),
-  };
+  const token = await exchangeAuthorizationCode(
+    await acquireMetadata(metadata),
+    config.oauth,
+    authorization,
+  );
+  if (authorization.returnPath !== undefined) {
+    history.replaceState(history.state, "", authorization.returnPath);
+  }
+  return token;
 }
 
 function acquireInitialMetadata(
@@ -360,10 +368,6 @@ function userFacingError(error: unknown): string {
   return "Couldn't start the app.";
 }
 
-function isTransientSessionFailure(error: unknown): boolean {
-  return error instanceof SessionTokenError && error.kind === "transient";
-}
-
 const root = document.getElementById("root");
 
 if (root === null) {
@@ -383,26 +387,37 @@ application.dataset.applicationMount = "true";
 root.append(application);
 render(
   () => (
-    <Bootstrap beforeReveal={startup.beforeReveal} onReady={startup.onReady} />
+    <Bootstrap
+      beforeReveal={startup.beforeReveal}
+      onReady={startup.onReady}
+      showError={startup.showError}
+    />
   ),
   application,
 );
 
 function createStartupGate(splash: HTMLElement): BootstrapProps {
   let active = true;
+  let retryOnRecovery: (() => void) | undefined;
   const fontReady = withStartupDeadline(
-    () => document.fonts.load("400 13px Inter", "Connecting to weblounge…"),
+    () => document.fonts.load("400 13px Inter", "Starting weblounge…"),
     () => new Error("startup font did not load in time"),
     1_000,
   ).catch(() => []);
-  const timeout = window.setTimeout(() => {
-    if (!active) return;
-    const status = splash.querySelector<HTMLElement>("[data-splash-status]");
-    if (status === null) return;
-    status.dataset.error = "true";
-    status.textContent =
-      "We couldn't finish starting weblounge. Check your connection and reload.";
-  }, 15_000);
+  const retryButton = splash.querySelector<HTMLButtonElement>(
+    "[data-splash-retry]",
+  );
+  const status = splash.querySelector<HTMLElement>("[data-splash-status]");
+  const retry = () => {
+    const action = retryOnRecovery;
+    retryOnRecovery = undefined;
+    action?.();
+  };
+  const retryVisible = () => {
+    if (document.visibilityState === "visible") retry();
+  };
+  window.addEventListener("online", retry);
+  document.addEventListener("visibilitychange", retryVisible);
 
   return {
     beforeReveal: async () => {
@@ -411,7 +426,9 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
     onReady: () => {
       if (!active) return;
       active = false;
-      window.clearTimeout(timeout);
+      retryOnRecovery = undefined;
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", retryVisible);
       splash
         .querySelector<HTMLElement>("[data-splash-status]")
         ?.setAttribute("data-hidden", "true");
@@ -429,6 +446,36 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
         splash.remove();
         registerProductionServiceWorker();
       });
+    },
+    showError: (message, retryLabel, onRetry, retryWhenReachable) => {
+      if (!active || status === null || retryButton === null) return;
+      if (
+        status.textContent === message &&
+        retryButton.textContent === "Sign in again"
+      ) {
+        return;
+      }
+      status.dataset.error = "true";
+      status.setAttribute("role", "alert");
+      status.textContent = message;
+      retryButton.textContent = retryLabel;
+      retryButton.hidden = false;
+      const beginRetry = () => {
+        retryButton.hidden = true;
+        status.removeAttribute("data-error");
+        status.setAttribute("role", "status");
+        status.textContent = "";
+        const a11y = document.createElement("span");
+        a11y.dataset.splashA11y = "true";
+        a11y.textContent = "Starting weblounge…";
+        const visible = document.createElement("span");
+        visible.dataset.splashMessage = "true";
+        visible.setAttribute("aria-hidden", "true");
+        status.append(a11y, visible);
+        onRetry();
+      };
+      retryButton.onclick = beginRetry;
+      retryOnRecovery = retryWhenReachable ? beginRetry : undefined;
     },
   };
 }

@@ -1,5 +1,6 @@
 :root {
   --wl-splash-bg: #f3f1e9;
+  --wl-splash-button-fg: #f3f1e9;
   --wl-splash-gap: 16px;
   --wl-splash-mark: #4e6244;
   --wl-splash-mark-size: 112px;
@@ -33,8 +34,6 @@ body,
   background: var(--wl-splash-bg);
   block-size: var(--wl-splash-screen-block-size);
   display: flex;
-  flex-direction: column;
-  gap: var(--wl-splash-gap);
   inset-block-start: 0;
   inset-inline: 0;
   justify-content: center;
@@ -54,17 +53,45 @@ body,
   color: var(--wl-splash-mark);
   fill: currentcolor;
   inline-size: var(--wl-splash-mark-size);
+  inset-block-start: calc(
+    50% -
+    (
+      var(--wl-splash-mark-size) +
+      var(--wl-splash-gap) +
+      var(--wl-splash-status-height)
+    ) /
+    2
+  );
+  position: absolute;
+}
+
+[data-splash-copy] {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  inset-block-start: calc(
+    50% +
+    (
+      var(--wl-splash-mark-size) +
+      var(--wl-splash-gap) -
+      var(--wl-splash-status-height)
+    ) /
+    2
+  );
+  inset-inline: 24px;
+  position: absolute;
 }
 
 [data-splash-status] {
-  animation: splash-status-in 150ms ease-out 1s forwards;
   color: var(--wl-splash-muted);
   font-family: Inter, "Inter Fallback", system-ui, sans-serif;
   font-size: 13px;
   font-weight: 400;
   line-height: var(--wl-splash-status-height);
   margin: 0;
-  opacity: 0;
+  min-block-size: var(--wl-splash-status-height);
+  opacity: 1;
 }
 
 [data-splash-status][data-error] {
@@ -78,6 +105,19 @@ body,
   visibility: hidden;
 }
 
+[data-splash-retry] {
+  background: var(--wl-splash-mark);
+  border: 0;
+  border-radius: 6px;
+  color: var(--wl-splash-button-fg);
+  cursor: pointer;
+  font-family: Inter, "Inter Fallback", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  min-block-size: 32px;
+  padding: 6px 16px;
+}
+
 [data-splash-a11y] {
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
@@ -86,12 +126,6 @@ body,
   position: absolute;
   white-space: nowrap;
   width: 1px;
-}
-
-@keyframes splash-status-in {
-  to {
-    opacity: 1;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -106,10 +140,5 @@ body,
 @media (prefers-reduced-motion: reduce) {
   [data-initial-splash] {
     transition-duration: 0ms;
-  }
-
-  [data-splash-status] {
-    animation-delay: 0s;
-    animation-duration: 0ms;
   }
 }

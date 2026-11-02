@@ -20,12 +20,6 @@
   text-align: center;
 }
 
-.mark {
-  block-size: 7rem;
-  inline-size: 7rem;
-  opacity: 0.72;
-}
-
 .retry {
   background: var(--wl-color-accent);
   border: 0;

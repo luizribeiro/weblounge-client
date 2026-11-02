@@ -341,6 +341,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     divider when the known marker predates the loaded window and no divider when no marker is known.
   - [x] Remove the redundant "Following #channel" chip from desktop and mobile member lists while
     retaining the channel in each panel's accessible name (#86).
+  - [x] Start from the last validated public deployment configuration and revalidate it in the
+    background, while keeping session tokens one-shot and uncached. Hosted profiles restore the
+    engine-owned chat-list snapshot before credential acquisition completes; cold reachability
+    failures stay on the stationary inline splash with Retry plus online/visibility recovery, and
+    only invalid configuration is reported as misconfigured (#87).
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.

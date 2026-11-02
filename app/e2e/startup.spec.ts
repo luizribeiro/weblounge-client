@@ -83,7 +83,14 @@ test("shimmers through cached-list hydration and finishes its sweep", async ({
 
 test("turns a stalled startup into a human error", async ({ page }) => {
   await page.clock.install();
-  await page.route("**/config.json", () => new Promise(() => {}));
+  let recover = false;
+  await page.route("**/config.json", async (route) => {
+    if (!recover) return new Promise(() => {});
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ mode: "app" }),
+    });
+  });
   const startupErrors: string[] = [];
   page.on("console", (message) => {
     if (
@@ -95,15 +102,81 @@ test("turns a stalled startup into a human error", async ({ page }) => {
   });
 
   await page.goto("/");
+  const initialChair = await page.locator("[data-splash-mark]").boundingBox();
   await page.clock.fastForward(10_000);
 
   await expect(page.getByRole("alert")).toContainText(
-    "Invalid /config.json: could not be loaded in time",
+    "Can't reach weblounge. Check your connection.",
   );
-  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  await expect(page.locator("[data-initial-splash]")).toBeVisible();
+  await expect(page.locator("[data-splash-mark]")).toHaveCount(1);
+  expect(await page.locator("[data-splash-mark]").boundingBox()).toEqual(
+    initialChair,
+  );
   await expect.poll(() => startupErrors).toHaveLength(1);
-  expect(startupErrors[0]).toContain("/config.json");
+  expect(startupErrors[0]).toContain("Can't reach weblounge");
+
+  recover = true;
+  await page.clock.resume();
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 });
+
+test("uses cached config and chats while config revalidation is blocked", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "weblounge.deployment-config.v1",
+      JSON.stringify({ config: { mode: "app" }, schema: 1 }),
+    );
+  });
+  await installDelayedLiveListEngine(page);
+  await page.route("**/config.json", () => new Promise(() => {}));
+
+  await page.goto("/?irc-password=weblounge-test");
+
+  await expect(page.getByRole("button", { name: "#cached" })).toBeVisible();
+  await expect(page.getByText(/misconfigured/iu)).toHaveCount(0);
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+});
+
+for (const recovery of [
+  { event: "online", name: "browser comes online" },
+  { event: "visibilitychange", name: "page becomes visible" },
+] as const) {
+  test(`retries an unreachable cold start when the ${recovery.name}`, async ({
+    page,
+  }) => {
+    await page.clock.install();
+    let reachable = false;
+    await page.route("**/config.json", async (route) => {
+      if (!reachable) return new Promise(() => {});
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ mode: "app" }),
+      });
+    });
+
+    await page.goto("/");
+    await page.clock.fastForward(10_000);
+    await expect(page.getByRole("alert")).toContainText(
+      "Can't reach weblounge",
+    );
+
+    reachable = true;
+    await page.clock.resume();
+    await page.evaluate((event) => {
+      const target = event === "online" ? window : document;
+      target.dispatchEvent(new Event(event));
+    }, recovery.event);
+
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+  });
+}
 
 test("reveals local Ergo rows with channel and direct previews", async ({
   page,
