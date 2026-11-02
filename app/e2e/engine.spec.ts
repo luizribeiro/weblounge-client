@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { devices, expect, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import {
   distanceFromBottom,
@@ -131,6 +131,63 @@ test.describe("local Ergo user flow", () => {
 
       expect(colors.row).not.toBe(colors.expected);
     } finally {
+      bot.close();
+    }
+  });
+
+  test("resolves cached direct history on desktop and mobile", async ({
+    baseURL,
+    browser,
+    context,
+    page,
+  }) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_PRODUCTION_ERGO !== "1",
+      "requires the production-shaped local Ergo history profile",
+    );
+    const suffix = Date.now().toString().slice(-6);
+    const bot = await IrcClient.connect(
+      `cached-dm-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      fixtureChannel,
+    );
+    const text = `cached direct history ${suffix}`;
+    let mobileContext: import("@playwright/test").BrowserContext | undefined;
+    try {
+      await context.addInitScript(() => {
+        Object.defineProperty(globalThis, "SharedWorker", {
+          configurable: true,
+          value: undefined,
+        });
+      });
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        1,
+      );
+      await bot.privmsgConfirmed("weblounge", text);
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${bot.nickname}`) }),
+      ).toBeVisible();
+      await openCachedDirect(page, baseURL, bot.nickname, text);
+      await page.close();
+
+      mobileContext = await browser.newContext({
+        ...devices["iPhone 16 Pro"],
+        baseURL,
+      });
+      await mobileContext.addInitScript(() => {
+        Object.defineProperty(globalThis, "SharedWorker", {
+          configurable: true,
+          value: undefined,
+        });
+      });
+      const mobile = await mobileContext.newPage();
+      await mobile.goto("/?irc-password=weblounge-test");
+      await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
+      await openCachedDirect(mobile, baseURL, bot.nickname, text);
+    } finally {
+      await mobileContext?.close();
       bot.close();
     }
   });
@@ -784,6 +841,86 @@ async function observeDeliveries(
     });
     record();
   }, text);
+}
+
+async function openCachedDirect(
+  page: Page,
+  baseURL: string | undefined,
+  nick: string,
+  text: string,
+): Promise<void> {
+  await seedCachedDirect(page, baseURL, nick, text);
+
+  await page.goto("/?irc-password=weblounge-test");
+  const row = page.getByRole("button", { name: new RegExp(`^${nick}`) });
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(page.locator("[data-message-list]")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark as read" })).toHaveCount(
+    0,
+  );
+
+  await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+  await expect(
+    page.locator("[data-message-list]").getByText(text, { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark as read" })).toHaveCount(
+    0,
+  );
+}
+
+async function seedCachedDirect(
+  page: Page,
+  baseURL: string | undefined,
+  nick: string,
+  text: string,
+): Promise<void> {
+  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
+  const endpoint = new URL("/socket", baseURL);
+  if (process.env.WEBLOUNGE_E2E_SECURE_ERGO === "1") {
+    endpoint.href = "wss://127.0.0.1:8068";
+  } else {
+    endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+  }
+  await page.evaluate(
+    async ({ fingerprint, nick, text }) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("weblounge", 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction("cache", "readwrite");
+        transaction.objectStore("cache").put(
+          new TextEncoder().encode(
+            JSON.stringify({
+              schema: 4,
+              fingerprint,
+              rows: [
+                {
+                  conversation: { kind: "direct", key: nick },
+                  title: nick,
+                  last_activity_ms: Date.now(),
+                  badge: { kind: "mentions", count: 2, mentions: 2 },
+                  preview: `${nick}: ${text}`,
+                },
+              ],
+            }),
+          ),
+          new TextEncoder().encode("chat-list-snapshot"),
+        );
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+      database.close();
+    },
+    {
+      fingerprint: `${"Local Ergo".length}:Local Ergo${endpoint.href.length}:${endpoint.href}`,
+      nick,
+      text,
+    },
+  );
 }
 
 async function expectMeasuredTimeline(

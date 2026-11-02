@@ -98,7 +98,7 @@ export function MobileConversation(props: MobileConversationProps) {
   createEffect(() => {
     if (
       historyRequested ||
-      props.buffer.cached === true ||
+      (props.buffer.cached === true && props.buffer.kind !== "direct") ||
       props.buffer.available === false
     )
       return;
@@ -154,17 +154,7 @@ export function MobileConversation(props: MobileConversationProps) {
             )}
           </Line>
         </span>
-        {props.buffer.cached === true && props.buffer.unread > 0 ? (
-          <button
-            aria-label="Mark as read"
-            class={styles.members}
-            onClick={() => props.onMarkCachedRead?.(props.buffer.id)}
-            title="Mark as read"
-            type="button"
-          >
-            <span aria-hidden="true">✓</span>
-          </button>
-        ) : props.buffer.kind === "channel" ? (
+        {props.buffer.kind === "channel" ? (
           <button
             aria-label="Show members"
             class={styles.members}

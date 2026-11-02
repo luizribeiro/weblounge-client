@@ -289,7 +289,7 @@ export function DesktopShell(props: DesktopShellProps) {
     if (
       buffer === undefined ||
       buffer.kind === "server" ||
-      buffer.cached ||
+      (buffer.cached && buffer.kind !== "direct") ||
       buffer.available === false ||
       requestedHistory.has(buffer.id)
     ) {
@@ -372,19 +372,6 @@ export function DesktopShell(props: DesktopShellProps) {
               topic={activeBuffer()?.topic ?? undefined}
             />
             <div class={styles.conversationBody}>
-              {activeBuffer()?.cached === true &&
-                (activeBuffer()?.unread ?? 0) > 0 && (
-                  <button
-                    onClick={() => {
-                      const buffer = activeBuffer();
-                      if (buffer !== undefined)
-                        props.onMarkCachedRead?.(buffer.id);
-                    }}
-                    type="button"
-                  >
-                    Mark as read
-                  </button>
-                )}
               {activeBuffer()?.available === false && (
                 <p role="status">This conversation is not available.</p>
               )}

@@ -427,14 +427,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
       request: { type: "load_history", buffer_id: 2 },
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
   expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull();
-  await waitFor(() =>
-    expect(client.requests).toContainEqual({
-      id: expect.any(String),
-      request: { type: "mark_cached_read", buffer_id: 2 },
-    }),
-  );
   client.emit({
     type: "buffer_updated",
     buffer: {

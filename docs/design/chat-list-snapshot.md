@@ -68,11 +68,13 @@ the existing send path in order once the network connects and the target is send
 not own a second queue. Queued sends remain visible as pending transcript rows; the composer does
 not add connection-state copy or change the conversation width.
 
-An explicit mark-read action clears the cached badge locally and records a session-local intent
-against the same durable identity. Once live history resolves, the engine applies that intent to
-the corresponding live read position and uses the existing server-sync path. Merely opening an
-empty connecting transcript does not mark it read; automatic live-edge dwell begins after live
-history paints.
+Selecting a cached direct conversation also requests its latest history. A request made before
+registration is queued in the engine and starts after `Connected`; it does not depend on the
+30-day recent-target list or fresh traffic creating the live buffer. Starting that request promotes
+the row from snapshot state, discards its cached preview and badge projection, and lets fetched
+history plus the server read marker rebuild unread state. An empty successful page still completes
+that promotion. The transcript has no separate cached-state mark-read control: automatic live-edge
+dwell begins after live history paints and uses the normal server-sync path.
 
 The engine's first complete live chat-list snapshot replaces the cached record in the UI in one
 batch. Cached and live rows are never merged or diffed. A selected cached identity rebinds to its
@@ -129,8 +131,9 @@ evicted at any time, and must never be required for a correct cold launch.
   Reduced-motion coverage sees a static dim and no animation.
 - Before live state arrives, Playwright taps a cached row and observes the quiet conversation
   state, submits a message, observes its optimistic pending row, and verifies FIFO delivery after
-  connection; the composer hint is present only while delivery is affected. A companion case marks
-  the cached row read locally and verifies server sync after live history resolves.
+  connection; the composer hint is present only while delivery is affected. Cached-DM coverage
+  verifies that desktop and mobile replace the placeholder with server history and expose no
+  transcript-covering mark-read control.
 - A seeded row omitted from the first complete live list remains open as not available, offers a
   working route back to Chats, and never sends its queued message to another target.
 - Transient recovery shows no status text or strip. Actionable failure shows the single shared strip

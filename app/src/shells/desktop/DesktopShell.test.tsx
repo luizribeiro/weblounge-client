@@ -77,6 +77,30 @@ const members: MemberWindow = {
   ],
 };
 
+it("resolves a cached direct through normal history without a mark-read overlay", () => {
+  const loadHistory = vi.fn();
+  render(() => (
+    <DesktopShell
+      activeBufferId={4}
+      buffers={[{ ...direct, cached: true, unread: 2, mentions: 2 }]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={loadHistory}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(loadHistory).toHaveBeenCalledWith(4);
+  expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull();
+  expect(document.querySelector("[data-message-list]")).not.toBeNull();
+});
+
 it("toggles the channel member panel and routes direct messages", () => {
   const openDirect = vi.fn();
   const requestMembers = vi.fn();
