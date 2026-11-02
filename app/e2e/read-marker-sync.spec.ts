@@ -104,15 +104,38 @@ test.describe("IRCv3 read markers", () => {
       const active = page.locator('[data-buffer-id][aria-current="page"]');
       await expect(active).toHaveAttribute("data-unread", "0");
       await page.locator("[data-message-list]").evaluate((list) => {
-        Object.assign(window, { unreadDividerAppeared: false });
+        Object.assign(window, {
+          unreadCountAppeared: false,
+          unreadDividerAppeared: false,
+        });
         new MutationObserver(() => {
           if (list.querySelector("[data-new-line]") !== null)
             Object.assign(window, { unreadDividerAppeared: true });
         }).observe(list, { childList: true, subtree: true });
+        new MutationObserver(() => {
+          const active = document.querySelector(
+            '[data-buffer-id][aria-current="page"]',
+          );
+          if (Number(active?.getAttribute("data-unread")) > 0)
+            Object.assign(window, { unreadCountAppeared: true });
+        }).observe(document.body, {
+          attributeFilter: ["data-unread"],
+          childList: true,
+          subtree: true,
+        });
       });
 
       await bot.privmsgConfirmed(channel, text);
       await expect(page.getByText(text, { exact: true })).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as Window & { unreadCountAppeared?: boolean })
+                .unreadCountAppeared,
+          ),
+        )
+        .toBe(true);
       await expect(active).toHaveAttribute("data-unread", "0");
       await expect
         .poll(() =>
