@@ -69,24 +69,24 @@ export function MobileChatRow(props: MobileChatRowProps) {
             </time>
           )}
         </span>
-        <span class={styles.detail}>
-          {props.previews && visiblePreview() !== "" && (
+        {props.previews && visiblePreview() !== "" && (
+          <span class={styles.detail}>
             <Line class={styles.preview}>{visiblePreview()}</Line>
-          )}
-          {badge() !== undefined && (
-            <span
-              aria-label={badge()?.label}
-              class={`${styles.badge} ${
-                badge()?.kind === "mention" ? styles.mention : ""
-              }`}
-              data-badge-kind={badge()?.kind}
-              role="status"
-            >
-              {badge()?.count}
-            </span>
-          )}
-        </span>
+          </span>
+        )}
       </span>
+      {badge() !== undefined && (
+        <span
+          aria-label={badge()?.label}
+          class={`${styles.badge} ${
+            badge()?.kind === "mention" ? styles.mention : ""
+          }`}
+          data-badge-kind={badge()?.kind}
+          role="status"
+        >
+          {badge()?.count}
+        </span>
+      )}
     </button>
   );
 }

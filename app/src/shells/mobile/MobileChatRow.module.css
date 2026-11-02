@@ -35,8 +35,10 @@
 .detail {
   align-items: center;
   display: flex;
-  gap: 7px;
   min-width: 0;
+}
+.heading {
+  gap: 7px;
 }
 .title {
   flex: 0 1 auto;
