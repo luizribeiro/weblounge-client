@@ -155,6 +155,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     WebKit cannot remove the panel on its penultimate composited frame.
   - [x] Open channel members with a protected mid-screen pan while keeping browser-edge and history gestures platform-owned.
   - [x] Apply the bottom safe inset only at the active bottom surface; root lists scroll beneath it and composer padding takes the larger of its normal spacing and the inset.
+  - [x] Wait for safe-bottom changes to resize the transcript before asserting its live-edge
+    correction, so stale pre-layout geometry cannot satisfy the keyboard-motion test.
   - [x] Remove home-indicator composer space while the software keyboard is open, following the keyboard motion without losing the live edge.
   - [x] Fill the iOS standalone layout viewport when `visualViewport` is shorter without a
     keyboard. Only a measured inset above 120px shrinks the mobile shell, preserving keyboard

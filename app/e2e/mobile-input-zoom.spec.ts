@@ -382,11 +382,17 @@ test.describe("mobile text field zoom", () => {
       await expect(
         page.getByText(`keyboard step row 39 ${suffix}`, { exact: true }),
       ).toBeVisible();
+      const messageListHeight = await messages.evaluate(
+        (element) => element.clientHeight,
+      );
       await root.evaluate((element) => {
         element.style.setProperty("--wl-safe-bottom", "34px");
       });
       await expect(root).toHaveAttribute("data-keyboard", "closed");
       await expect(composer).toHaveCSS("padding-bottom", "34px");
+      await expect
+        .poll(() => messages.evaluate((element) => element.clientHeight))
+        .toBe(messageListHeight - 20);
       await expect.poll(() => liveEdgeGap(messages)).toBeLessThanOrEqual(2);
       const layoutHeight = await page.evaluate(() => innerHeight);
       const openHeight = layoutHeight - 358;
