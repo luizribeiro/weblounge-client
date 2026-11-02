@@ -6,6 +6,8 @@ mod config;
 mod db;
 mod error;
 mod outbound;
+#[cfg(test)]
+mod test_tls;
 
 pub use api::{App, app};
 pub use auth::{Concierge, ConciergeClient, Introspection};

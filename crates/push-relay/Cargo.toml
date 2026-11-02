@@ -28,7 +28,10 @@ tokio.workspace = true
 url = { version = "2.5.8", features = ["serde"] }
 
 [dev-dependencies]
+rcgen = "0.14.5"
+temp-env = { version = "0.3.6", features = ["async_closure"] }
 tempfile = "3.24.0"
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["logging", "ring", "tls12"] }
 tower = { version = "0.5.3", features = ["util"] }
 
 [lints]

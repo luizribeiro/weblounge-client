@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use axum::http::{HeaderMap, header};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
+#[cfg(test)]
+use reqwest::Certificate;
 use reqwest::redirect::Policy;
 use serde::Deserialize;
 use url::Url;
@@ -37,14 +39,29 @@ impl ConciergeClient {
     ///
     /// Returns an error if the HTTP client cannot be constructed.
     pub fn new(url: Url, secret: String) -> Result<Self> {
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .build()?;
+        Self::with_client_builder(url, secret, reqwest::Client::builder())
+    }
+
+    fn with_client_builder(
+        url: Url,
+        secret: String,
+        builder: reqwest::ClientBuilder,
+    ) -> Result<Self> {
+        let client = builder.no_proxy().redirect(Policy::none()).build()?;
         Ok(Self {
             client,
             url,
             secret,
         })
+    }
+
+    #[cfg(test)]
+    fn with_root_certificate(url: Url, secret: String, root: Certificate) -> Result<Self> {
+        Self::with_client_builder(
+            url,
+            secret,
+            reqwest::Client::builder().add_root_certificate(root),
+        )
     }
 }
 
@@ -174,5 +191,43 @@ fn parse_vapid_authorization(value: &str) -> Result<(&str, &str)> {
     match (token, key) {
         (Some(token), Some(key)) if !token.is_empty() && !key.is_empty() => Ok((token, key)),
         _ => Err(Error::Unauthorized),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use reqwest::Certificate;
+    use url::Url;
+
+    use super::{Concierge as _, ConciergeClient};
+    use crate::test_tls::TlsServer;
+
+    #[tokio::test]
+    async fn concierge_ignores_https_proxy() {
+        let server = TlsServer::start(
+            "127.0.0.1",
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 32\r\n\r\n{\"active\":true,\"username\":\"mel\"}",
+        )
+        .await;
+        let root = Certificate::from_der(server.certificate()).expect("test root");
+        let client = ConciergeClient::with_root_certificate(
+            Url::parse(&format!("https://127.0.0.1:{}/introspect", server.port())).expect("URL"),
+            "concierge-secret".to_owned(),
+            root,
+        )
+        .expect("client");
+
+        temp_env::async_with_vars([("HTTPS_PROXY", Some("http://127.0.0.1:9"))], async {
+            let identity =
+                tokio::time::timeout(Duration::from_secs(2), client.introspect("member-session"))
+                    .await
+                    .expect("request completed")
+                    .expect("introspection succeeded");
+            assert_eq!(identity.account, "mel");
+        })
+        .await;
+        assert_eq!(server.requests(), 1);
     }
 }

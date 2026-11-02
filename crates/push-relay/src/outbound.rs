@@ -15,7 +15,7 @@ use p256::{
     pkcs8::DecodePrivateKey as _,
 };
 use rand_core::{OsRng, RngCore as _};
-use reqwest::{StatusCode, redirect::Policy};
+use reqwest::{Certificate, StatusCode, redirect::Policy};
 use serde::Serialize;
 use sha2::Sha256;
 use url::Url;
@@ -118,7 +118,20 @@ pub trait HttpTransport: Send + Sync + 'static {
 }
 
 #[derive(Clone, Debug)]
-struct ReqwestTransport;
+struct ReqwestTransport {
+    root: Option<Certificate>,
+}
+
+impl ReqwestTransport {
+    fn production() -> Self {
+        Self { root: None }
+    }
+
+    #[cfg(test)]
+    fn with_root_certificate(root: Certificate) -> Self {
+        Self { root: Some(root) }
+    }
+}
 
 #[async_trait]
 impl HttpTransport for ReqwestTransport {
@@ -127,12 +140,16 @@ impl HttpTransport for ReqwestTransport {
             .endpoint
             .host_str()
             .ok_or_else(|| Error::TargetRefused("endpoint has no host".to_owned()))?;
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
+            .no_proxy()
             .redirect(Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(15))
-            .resolve(host, request.address)
-            .build()?;
+            .resolve(host, request.address);
+        if let Some(root) = &self.root {
+            builder = builder.add_root_certificate(root.clone());
+        }
+        let client = builder.build()?;
         Ok(client
             .post(request.endpoint)
             .header("TTL", request.ttl)
@@ -275,7 +292,7 @@ impl WebPushSender {
     ///
     /// Returns an error when the key is not a PEM-encoded P-256 private key.
     pub fn new(vapid_key: &[u8], targets: EndpointValidator) -> Result<Self> {
-        Self::with_transport(vapid_key, targets, Arc::new(ReqwestTransport))
+        Self::with_transport(vapid_key, targets, Arc::new(ReqwestTransport::production()))
     }
 
     /// Constructs a sender with an explicit no-redirect transport.
@@ -479,5 +496,81 @@ fn is_public(address: IpAddr) -> bool {
                 || (segments[0] & 0xffc0) == 0xfe80
                 || (segments[0] == 0x2001 && segments[1] == 0x0db8))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use reqwest::{Certificate, StatusCode};
+    use url::Url;
+
+    use super::{HttpTransport as _, OutboundRequest, ReqwestTransport};
+    use crate::test_tls::TlsServer;
+
+    fn request(endpoint: Url, address: std::net::SocketAddr) -> OutboundRequest {
+        OutboundRequest {
+            endpoint,
+            address,
+            ttl: 60,
+            authorization: "vapid t=test,k=test".to_owned(),
+            body: b"encrypted".to_vec(),
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_ignores_https_proxy_and_uses_the_pinned_address() {
+        let server = TlsServer::start(
+            "push.example",
+            b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n",
+        )
+        .await;
+        let root = Certificate::from_der(server.certificate()).expect("test root");
+        let transport = ReqwestTransport::with_root_certificate(root);
+
+        temp_env::async_with_vars([("HTTPS_PROXY", Some("http://127.0.0.1:9"))], async {
+            let status = tokio::time::timeout(
+                Duration::from_secs(2),
+                transport.send(request(
+                    Url::parse(&format!("https://push.example:{}/send", server.port()))
+                        .expect("URL"),
+                    server.address(),
+                )),
+            )
+            .await
+            .expect("request completed")
+            .expect("request succeeded");
+            assert_eq!(status, StatusCode::CREATED);
+        })
+        .await;
+        assert_eq!(server.requests(), 1);
+    }
+
+    #[tokio::test]
+    async fn transport_does_not_follow_redirects() {
+        let destination = TlsServer::start(
+            "destination.example",
+            b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n",
+        )
+        .await;
+        let response = format!(
+            "HTTP/1.1 302 Found\r\nLocation: https://destination.example:{}/stolen\r\nContent-Length: 0\r\n\r\n",
+            destination.port(),
+        );
+        let source = TlsServer::start("push.example", response.into_bytes()).await;
+        let root = Certificate::from_der(source.certificate()).expect("test root");
+        let transport = ReqwestTransport::with_root_certificate(root);
+
+        let status = transport
+            .send(request(
+                Url::parse(&format!("https://push.example:{}/send", source.port())).expect("URL"),
+                source.address(),
+            ))
+            .await
+            .expect("redirect response");
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(source.requests(), 1);
+        assert_eq!(destination.requests(), 0);
     }
 }
