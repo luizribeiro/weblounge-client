@@ -80,6 +80,7 @@ export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
   let liveEdgeSentinel: HTMLLIElement | undefined;
   let observedWidth: number | undefined;
+  let observedHeight: number | undefined;
   let syncViewportRect: (() => void) | undefined;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
@@ -150,11 +151,17 @@ export function MessageList(props: MessageListProps) {
         const next = rect.height === 0 ? { width: 1024, height: 768 } : rect;
         const widthChanged =
           observedWidth !== undefined && observedWidth !== next.width;
+        const viewportChanged =
+          widthChanged ||
+          (observedHeight !== undefined && observedHeight !== next.height);
+        const followEnd = viewportChanged && atLiveEdge();
         if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
+        observedHeight = next.height;
         setViewportHeight(next.height);
         callback(next);
         if (widthChanged) remeasure();
+        if (followEnd) virtualizer.scrollToEnd();
       };
       const updateCurrentRect = () => {
         const element = instance.scrollElement;
@@ -287,7 +294,6 @@ export function MessageList(props: MessageListProps) {
     const composerOwner = list?.parentElement?.parentElement;
     const anchorComposerGeometry = () => {
       syncViewportRect?.();
-      if (atLiveEdge()) virtualizer.scrollToEnd();
     };
     const handleFontsLoaded = () => {
       remeasure();

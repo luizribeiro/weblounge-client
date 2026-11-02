@@ -182,6 +182,11 @@ it("anchors composer height changes before viewport resize delivery", async () =
   ));
   const list = screen.getByRole("list", { name: "Messages" });
   const input = screen.getByRole("textbox");
+  let listHeight = 600;
+  Object.defineProperty(list, "clientHeight", {
+    configurable: true,
+    get: () => listHeight,
+  });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   for (const observer of observers) observer.flushTarget(list, 600);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -189,6 +194,7 @@ it("anchors composer height changes before viewport resize delivery", async () =
   list.scrollTop = 200;
   const scrollTo = vi.spyOn(list, "scrollTo");
   input.style.height = "80px";
+  listHeight = 560;
   input.dispatchEvent(
     new Event(composerGeometryChangeEvent, { bubbles: true }),
   );
@@ -199,6 +205,50 @@ it("anchors composer height changes before viewport resize delivery", async () =
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(scrollTo).not.toHaveBeenCalled();
+});
+
+it("keeps the live edge through viewport resizes", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  render(() => (
+    <MessageList
+      messages={Array.from({ length: 30 }, (_, index) => ({
+        ...message,
+        id: index + 1,
+      }))}
+    />
+  ));
+  const list = screen.getByRole("list", { name: "Messages" });
+  let listHeight = 600;
+  let listWidth = 800;
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, get: () => listHeight },
+    clientWidth: { configurable: true, get: () => listWidth },
+  });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  for (const observer of observers) observer.flushTarget(list, 600);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  list.scrollTop = 200;
+  const scrollTo = vi.spyOn(list, "scrollTo");
+
+  listHeight = 560;
+  for (const observer of observers) observer.flushTarget(list, 560);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(scrollTo).toHaveBeenCalledOnce();
+
+  scrollTo.mockClear();
+  listWidth = 402;
+  for (const observer of observers) observer.flushTarget(list, 560);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(scrollTo).toHaveBeenCalledOnce();
 });
 
 it("offers Retry for a failed local send", () => {

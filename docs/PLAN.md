@@ -304,6 +304,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Anchor transcript rows when the composer grows or shrinks. The live edge follows the
     composer boundary before the next frame while a scrolled-up row keeps its screen position;
     desktop and mobile cover one-to-three-line growth, deletion, and send clearing (#80).
+  - [x] Keep live transcripts pinned through viewport height, width, and row-measurement changes
+    while preserving the visible anchor after the reader scrolls away.
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;
