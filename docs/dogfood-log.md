@@ -95,3 +95,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 87 | 2026-11-02 | PWA on weak signal: "This deployment is misconfigured… could not be loaded in time"; startup blocks on config.json; "Connecting…" text and a different chair on the error screen (duplicate startup surfaces). | in progress |
 | 88 | 2026-11-02 | Mobile: open a chat with a new message, read it, swipe back, and the unread badge is still there. | cause found: the mark-read timer restarts on any network traffic, so on a busy network it never fires; fix in progress |
 | 89 | 2026-11-02 | Mobile chat list: centre the unread badge vertically on the whole row. | in progress |
+| 90 | 2026-11-02 | Desktop: opening the pgray DM shows a giant grey "Mark as read" box and no history (cached snapshot buffer never became live; unstyled button). | in progress |
