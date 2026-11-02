@@ -6,9 +6,12 @@ use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier as _};
 use reqwest::Certificate;
 use reqwest::redirect::Policy;
 use serde::Deserialize;
+use std::time::Duration;
 use url::Url;
 
 use crate::{Error, Result};
+
+const CONCIERGE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The member identity returned by concierge for an active session.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,15 +42,20 @@ impl ConciergeClient {
     ///
     /// Returns an error if the HTTP client cannot be constructed.
     pub fn new(url: Url, secret: String) -> Result<Self> {
-        Self::with_client_builder(url, secret, reqwest::Client::builder())
+        Self::with_client_builder(url, secret, reqwest::Client::builder(), CONCIERGE_TIMEOUT)
     }
 
     fn with_client_builder(
         url: Url,
         secret: String,
         builder: reqwest::ClientBuilder,
+        timeout: Duration,
     ) -> Result<Self> {
-        let client = builder.no_proxy().redirect(Policy::none()).build()?;
+        let client = builder
+            .no_proxy()
+            .redirect(Policy::none())
+            .timeout(timeout)
+            .build()?;
         Ok(Self {
             client,
             url,
@@ -61,7 +69,13 @@ impl ConciergeClient {
             url,
             secret,
             reqwest::Client::builder().add_root_certificate(root),
+            CONCIERGE_TIMEOUT,
         )
+    }
+
+    #[cfg(test)]
+    fn with_timeout(url: Url, secret: String, timeout: Duration) -> Result<Self> {
+        Self::with_client_builder(url, secret, reqwest::Client::builder(), timeout)
     }
 }
 
@@ -198,6 +212,7 @@ fn parse_vapid_authorization(value: &str) -> Result<(&str, &str)> {
 mod tests {
     use std::time::Duration;
 
+    use axum::{Router, routing::post};
     use reqwest::Certificate;
     use url::Url;
 
@@ -229,5 +244,28 @@ mod tests {
         })
         .await;
         assert_eq!(server.requests(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn concierge_has_a_bounded_request_timeout() {
+        let router = Router::new().route(
+            "/introspect",
+            post(|| async { std::future::pending::<axum::http::StatusCode>().await }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let client = ConciergeClient::with_timeout(
+            Url::parse(&format!("http://{address}/introspect")).expect("URL"),
+            "secret".to_owned(),
+            Duration::from_secs(5),
+        )
+        .expect("client");
+
+        let result = client.introspect("session").await;
+        assert!(matches!(result, Err(crate::Error::ConciergeUnavailable)));
+        server.abort();
     }
 }

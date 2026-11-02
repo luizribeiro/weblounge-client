@@ -27,6 +27,8 @@ use url::Url;
 
 use crate::{Error, Result, db::WebPushTarget};
 
+const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// An opaque home push and the browser subscription that should receive it.
 #[derive(Clone, Debug)]
 pub struct Delivery {
@@ -193,6 +195,7 @@ impl DnsResolver for SystemDns {
 pub struct EndpointValidator {
     allowed_hosts: Arc<HashSet<String>>,
     resolver: Arc<dyn DnsResolver>,
+    dns_timeout: Duration,
 }
 
 impl std::fmt::Debug for EndpointValidator {
@@ -227,7 +230,14 @@ impl EndpointValidator {
         Self {
             allowed_hosts: Arc::new(allowed_hosts.into_iter().map(Into::into).collect()),
             resolver,
+            dns_timeout: DNS_LOOKUP_TIMEOUT,
         }
+    }
+
+    #[cfg(test)]
+    fn with_dns_timeout(mut self, timeout: Duration) -> Self {
+        self.dns_timeout = timeout;
+        self
     }
 
     /// Validates the URL and every current DNS answer, returning one pinned address.
@@ -261,7 +271,9 @@ impl EndpointValidator {
                 "push-service endpoint must use port 443".to_owned(),
             ));
         }
-        let addresses = self.resolver.resolve(host, port).await?;
+        let addresses = tokio::time::timeout(self.dns_timeout, self.resolver.resolve(host, port))
+            .await
+            .map_err(|_| Error::TargetRefused("DNS resolution timed out".to_owned()))??;
         if addresses.is_empty() || addresses.iter().any(|address| !is_public(*address)) {
             return Err(Error::TargetRefused(
                 "endpoint resolves to a non-public address".to_owned(),
@@ -544,13 +556,17 @@ fn is_global_ipv6(address: Ipv6Addr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::IpAddr, time::Duration};
+    use std::{net::IpAddr, sync::Arc, time::Duration};
 
+    use async_trait::async_trait;
     use reqwest::{Certificate, StatusCode};
     use url::Url;
 
-    use super::{HttpTransport as _, OutboundRequest, ReqwestTransport, is_public};
-    use crate::test_tls::TlsServer;
+    use super::{
+        DnsResolver, EndpointValidator, HttpTransport as _, OutboundRequest, ReqwestTransport,
+        is_public,
+    };
+    use crate::{Result, test_tls::TlsServer};
 
     fn request(endpoint: Url, address: std::net::SocketAddr) -> OutboundRequest {
         OutboundRequest {
@@ -652,5 +668,25 @@ mod tests {
             let address = address.parse::<IpAddr>().expect("test address");
             assert!(is_public(address), "{address} must be allowed");
         }
+    }
+
+    #[derive(Debug)]
+    struct HangingDns;
+
+    #[async_trait]
+    impl DnsResolver for HangingDns {
+        async fn resolve(&self, _host: &str, _port: u16) -> Result<Vec<IpAddr>> {
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dns_lookup_has_a_bounded_timeout() {
+        let validator = EndpointValidator::new(["push.example"], Arc::new(HangingDns))
+            .with_dns_timeout(Duration::from_secs(5));
+        let result = validator
+            .validate(&Url::parse("https://push.example/send").expect("URL"))
+            .await;
+        assert!(matches!(result, Err(crate::Error::TargetRefused(_))));
     }
 }
