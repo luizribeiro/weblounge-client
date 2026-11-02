@@ -75,6 +75,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     sender's status at message time, so the message protocol carries no mode symbol and live and
     optimistic rows do not guess one. The Mode symbols setting remains scoped to the member list;
     local Ergo proves an operator keeps `@` there through an unprefixed send confirmation.
+  - [x] Keep `/me` semantic through optimistic display, correlated echo confirmation, shared-tab
+    delivery, and history replay. Confirmed wire bodies use papo's CTCP parser instead of exposing
+    the raw `ACTION` framing; local Ergo covers channel and direct actions before and after reload.
   - [x] Keep engine buffer order deterministic: server first, channels by casemapped name without
     `#`/`&`, and direct messages by latest activity with a casemapped nick tiebreaker. Desktop and
     mobile consume the same engine order; shuffled joins remain stable across three reloads.

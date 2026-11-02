@@ -89,4 +89,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 81 | 2026-11-02 | "New" marker added in the buffer you're reading with the window focused. | in progress |
 | 82 | 2026-11-02 | "New" marker added for your own messages. | in progress |
 | 83 | 2026-11-02 | "New" marker at the very top of an old, fully-read DM. | in progress |
-| 84 | 2026-11-02 | `/me hides` rendered with an "ACTION" prefix until refresh. | in progress |
+| 84 | 2026-11-02 | `/me hides` rendered with an "ACTION" prefix until refresh. | fixed locally; awaiting review |

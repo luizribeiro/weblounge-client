@@ -7246,6 +7246,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn action_echo_confirmation_keeps_semantic_text() {
+        let caps = ["echo-message", "labeled-response", "message-tags"];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = known_channel(&client, "#room");
+        let buffer_id = model
+            .buffer_id_for_target(&SendTarget::Channel(channel))
+            .expect("joined channel is projected");
+        let (pending, _) = model
+            .begin_action(buffer_id, "hides".into(), &client.state())
+            .expect("channel is sendable");
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move {
+            super::send(&sender, &pending)
+                .await
+                .map(|sent| (pending, sent))
+        });
+        assert_eq!(
+            wire.next_sent().await,
+            "@label=0 PRIVMSG #room :\u{1}ACTION hides\u{1}"
+        );
+        wire.server(
+            "@label=0;msgid=action :weblounge!u@host PRIVMSG #room :\u{1}ACTION hides\u{1}",
+        )
+        .await;
+        let (pending, sent) = send_task
+            .await
+            .expect("send task completes")
+            .expect("send succeeds");
+
+        let confirmation = model
+            .confirm_send(&pending, &sent)
+            .expect("optimistic row exists");
+
+        assert!(matches!(
+            confirmation.as_slice(),
+            [EngineToUi::MessageConfirmed { message, .. }]
+                if message.kind == crate::MessageKind::Action
+                    && message.text == "hides"
+                    && message.server_ids == ["action"]
+        ));
+    }
+
+    #[tokio::test]
     async fn labelled_multiline_send_preserves_the_confirmed_text() {
         let caps = [
             "batch",

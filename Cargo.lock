@@ -1257,6 +1257,7 @@ dependencies = [
  "idb",
  "js-sys",
  "papo",
+ "papo-proto",
  "papo-testing",
  "serde",
  "serde_json",

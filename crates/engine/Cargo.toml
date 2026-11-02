@@ -17,6 +17,7 @@ wasm-bindgen-futures.workspace = true
 papo = { workspace = true, features = ["websocket"] }
 
 [dependencies]
+papo-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

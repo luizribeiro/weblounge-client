@@ -891,7 +891,7 @@ impl NetworkModel {
                     if index != 0 {
                         message.id = self.allocate_message_id();
                     }
-                    message.text = collapse_blank_lines(text.clone());
+                    message.text = collapse_blank_lines(confirmed_text(message.kind, text));
                     message.server_ids = vec![msgid.to_string()];
                     message.server_time_ms = server_time;
                     message.delivery = MessageDelivery::Confirmed;
@@ -1951,6 +1951,18 @@ fn collapse_blank_lines(text: String) -> String {
     collapsed
 }
 
+fn confirmed_text(kind: MessageKind, text: &str) -> String {
+    if kind != MessageKind::Action {
+        return text.to_owned();
+    }
+    let Some(action) =
+        papo_proto::Ctcp::parse(text).filter(|ctcp| ctcp.command.eq_ignore_ascii_case("ACTION"))
+    else {
+        return text.to_owned();
+    };
+    action.params.unwrap_or_default().to_owned()
+}
+
 fn derive_read_projection(buffer: &mut BufferState) {
     buffer.projection.last_message = buffer
         .timeline
@@ -2930,6 +2942,26 @@ mod tests {
                 target,
                 ..
             }] if *buffer_id == buffer.id && target == "#room"
+        ));
+    }
+
+    #[test]
+    fn optimistic_action_projects_semantic_text() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None, None);
+
+        let (_, events) = model
+            .begin_action(buffer.id, "hides".into(), &state)
+            .expect("channel is sendable");
+
+        assert!(matches!(
+            events.first(),
+            Some(EngineToUi::MessagesAppended { messages, .. })
+                if matches!(messages.as_slice(), [message]
+                    if message.kind == crate::MessageKind::Action
+                        && message.text == "hides"
+                        && message.delivery == crate::MessageDelivery::Optimistic)
         ));
     }
 
