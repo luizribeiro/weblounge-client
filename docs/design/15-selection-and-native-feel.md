@@ -128,7 +128,7 @@ the conversation sideways; the mobile drawer focuses no field, so it never raise
 |---|---|---|---|---|
 | Suggestions popup | fade + 4px rise, ≤120ms | fade ≤120ms | composer | message list, composer |
 | On-screen keyboard | platform-matched transform animation after final geometry (VirtualKeyboard API on Chromium, `visualViewport` on iOS) | starts after focus remains outside keyboard fields for one frame; final geometry commits after motion | composer while open | header, message list bottom anchor |
-| Member/sidebar drawer | `drawer-open` slide from its owned edge, scrim fading in as the same motion | `drawer-close` slide back; unmounts on the panel's `transitionend` | desktop: drawer filter while open, composer after dismissal; mobile: the drawer, no field | conversation underneath |
+| Member/sidebar drawer | `drawer-open` slide from its owned edge, scrim fading in as the same motion | `drawer-close` slide back; presents the fully off-screen endpoint after the panel's `transitionend`, then unmounts | desktop: drawer filter while open, composer after dismissal; mobile: the drawer, no field | conversation underneath |
 | Inline confirmation | fade ≤120ms above the composer | fade | its primary button; composer afterwards | message list |
 | Swipe-back | follows the finger; completes or eases back | | — | — |
 | New-messages button | fade | fade | — | message list scroll position |

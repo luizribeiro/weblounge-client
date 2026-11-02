@@ -85,7 +85,8 @@ it("paints the start state for two frames before opening", () => {
   expect(overlay).not.toHaveAttribute("data-moving");
 });
 
-it("unmounts only when the closing transform transition ends", async () => {
+it("paints the closed endpoint before unmounting", async () => {
+  const frames = holdFrames();
   runningAnimations([transformTransition]);
   const { close, dialog, overlay } = renderDrawer();
 
@@ -96,6 +97,10 @@ it("unmounts only when the closing transform transition ends", async () => {
 
   runningAnimations([]);
   fireEvent(dialog, transitionEnd("transform"));
+  expect(close).not.toHaveBeenCalled();
+  flushFrame(frames, 0);
+  expect(close).not.toHaveBeenCalled();
+  flushFrame(frames, 16);
   expect(close).toHaveBeenCalledOnce();
 });
 
@@ -106,6 +111,10 @@ function holdFrames(): FrameRequestCallback[] {
     return frames.length;
   });
   return frames;
+}
+
+function flushFrame(frames: FrameRequestCallback[], time: number): void {
+  for (const callback of frames.splice(0)) callback(time);
 }
 
 it("ignores the opening transition's end once closing has begun", async () => {
@@ -124,6 +133,9 @@ it("ignores the opening transition's end once closing has begun", async () => {
 
   animations.length = 0;
   fireEvent(dialog, transitionEnd("transform"));
+  flushFrame(frames, 32);
+  expect(close).not.toHaveBeenCalled();
+  flushFrame(frames, 48);
   expect(close).toHaveBeenCalledOnce();
 });
 

@@ -1,9 +1,11 @@
-export function afterStartStatePaints(callback: () => void): () => void {
+export function afterNextPaint(callback: () => void): () => void {
   let frame = requestAnimationFrame(() => {
     frame = requestAnimationFrame(callback);
   });
   return () => cancelAnimationFrame(frame);
 }
+
+export const afterStartStatePaints = afterNextPaint;
 
 export function movingTransform(element: HTMLElement | undefined): boolean {
   if (element === undefined || typeof element.getAnimations !== "function")

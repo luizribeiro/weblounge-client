@@ -6,7 +6,11 @@ import {
   onMount,
 } from "solid-js";
 import styles from "./OverlayDrawer.module.css";
-import { afterStartStatePaints, movingTransform } from "./transform-motion";
+import {
+  afterNextPaint,
+  afterStartStatePaints,
+  movingTransform,
+} from "./transform-motion";
 
 interface OverlayDrawerProps {
   readonly children:
@@ -27,6 +31,7 @@ type DrawerPhase = "entering" | "opening" | "open" | "closing";
 
 export function OverlayDrawer(props: OverlayDrawerProps) {
   let drawer: HTMLDivElement | undefined;
+  let cancelPaintedClose: (() => void) | undefined;
   const [phase, setPhase] = createSignal<DrawerPhase>(
     props.dragProgress === undefined ? "entering" : "open",
   );
@@ -40,6 +45,17 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
   };
   const settleUnlessMoving = () => {
     if (!movingTransform(drawer)) settle();
+  };
+  const settleAfterTransition = () => {
+    if (movingTransform(drawer)) return;
+    if (phase() !== "closing") {
+      settle();
+      return;
+    }
+    cancelPaintedClose ??= afterNextPaint(() => {
+      cancelPaintedClose = undefined;
+      if (phase() === "closing") props.onClose();
+    });
   };
   const moveTo = (next: "opening" | "closing") => {
     setPhase(next);
@@ -61,6 +77,8 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
       }),
     );
   });
+
+  onCleanup(() => cancelPaintedClose?.());
 
   createEffect(() => {
     if (props.dragReturning === true) queueMicrotask(settleUnlessMoving);
@@ -133,7 +151,7 @@ export function OverlayDrawer(props: OverlayDrawerProps) {
           if (transformEvent(event)) queueMicrotask(settleUnlessMoving);
         }}
         onTransitionEnd={(event) => {
-          if (transformEvent(event)) settleUnlessMoving();
+          if (transformEvent(event)) settleAfterTransition();
         }}
         ref={drawer}
         role="dialog"

@@ -149,6 +149,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the message list before invoking its End shortcut, independent of composer autofocus timing.
   - [x] Share axis-locked pan handling between mobile Back and the drag-to-close members drawer.
   - [x] Animate overlay drawers, scrims, and shadows as one progress-linked entrance and exit.
+  - [x] Present an overlay drawer's fully off-screen closing endpoint before unmounting it, so
+    WebKit cannot remove the panel on its penultimate composited frame.
   - [x] Open channel members with a protected mid-screen pan while keeping browser-edge and history gestures platform-owned.
   - [x] Apply the bottom safe inset only at the active bottom surface; root lists scroll beneath it and composer padding takes the larger of its normal spacing and the inset.
   - [x] Remove home-indicator composer space while the software keyboard is open, following the keyboard motion without losing the live edge.
