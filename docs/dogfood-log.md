@@ -90,3 +90,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 82 | 2026-11-02 | "New" marker added for your own messages. | fixed, awaiting beta |
 | 83 | 2026-11-02 | "New" marker at the very top of an old, fully-read DM. | fixed, awaiting beta |
 | 84 | 2026-11-02 | `/me hides` rendered with an "ACTION" prefix until refresh. | fixed locally; awaiting review |
+| 85 | 2026-11-02 | `/part #projects/weblounge` after joining it failed with "the server refused that command". | investigating |
