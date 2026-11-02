@@ -193,6 +193,38 @@ test.describe("mobile text field zoom", () => {
     await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
   });
 
+  test("follows pointerless composer focus through a silent late viewport step", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page);
+    await openChannel(page);
+    const root = page.locator("#root");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    const openHeight = 471;
+
+    await composer.evaluate((field) => field.focus({ preventScroll: true }));
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          let remaining = 4;
+          const next = () => {
+            remaining -= 1;
+            if (remaining === 0) resolve();
+            else requestAnimationFrame(next);
+          };
+          requestAnimationFrame(next);
+        }),
+    );
+    await expect(root).toHaveAttribute("data-keyboard", "closed");
+    await setVisualViewport(page, openHeight, 0, "silent");
+
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect.poll(() => appHeight(root)).toBe(openHeight);
+    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+  });
+
   test("reopens after sending the debug command and dismissing with Done", async ({
     page,
   }) => {
@@ -584,7 +616,7 @@ interface KeyboardFrame {
   readonly visibleRows: number;
 }
 
-type ViewportTiming = "live" | "stale";
+type ViewportTiming = "live" | "silent" | "stale";
 type ViewportSetter = (
   height: number,
   offsetTop?: number,
@@ -687,6 +719,10 @@ async function installVisualViewportHook(
         geometry.height = height;
         geometry.offsetTop = offsetTop;
       };
+      if (timing === "silent") {
+        apply();
+        return;
+      }
       if (timing === "live") apply();
       if (resized) viewport.dispatchEvent(new Event("resize"));
       if (panned) viewport.dispatchEvent(new Event("scroll"));

@@ -158,8 +158,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Replace the status-bar shortfall with WebKit's own full-screen viewport (standalone `html`
     at least screen tall), undo iOS keyboard pans instead of following them, re-measure on the
     frames after viewport events, and add the `?debug=viewport` overlay (awaiting device).
-  - [x] Keep late iOS keyboard geometry polling around pointer-activated text focus only, and stop
-    as soon as the expected open or closed state is stable so programmatic focus returns to idle.
+  - [x] Keep late iOS keyboard geometry polling bounded around every keyboard-field focus and
+    foreground resume, stopping as soon as the expected state settles. Pointerless and
+    accessory-arrow focus now observe silent late viewport shrink, while focused measured-open
+    reality wins stale closed rollbacks and diagnostics identify the focus source and rollback cause.
   - [x] Prevent iOS composer taps and keyboard-open drags from panning the document while leaving
     composer swipes and long-presses gesture-owned; never publish a stale visual-viewport top, and
     re-anchor the live-edge transcript with the app-height change before paint (#69 and #70,

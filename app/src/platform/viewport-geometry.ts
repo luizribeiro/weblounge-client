@@ -18,9 +18,15 @@ export interface AppGeometryChange {
 
 export type KeyboardLayoutCommitSource = "cached" | "measured" | "rollback";
 
+export type KeyboardRollbackReason =
+  | "focus-left-keyboard-field"
+  | "pointer-canceled"
+  | "pointer-ended-without-focus";
+
 export interface KeyboardLayoutCommit {
   readonly geometry: ViewportGeometry;
   readonly source: KeyboardLayoutCommitSource;
+  readonly rollbackReason?: KeyboardRollbackReason;
 }
 
 export interface ViewportMeasurements {
@@ -164,8 +170,8 @@ export function observeViewportGeometry(
   // exposes neither interactive-widget nor the VirtualKeyboard API. We undo the
   // pan without ever publishing its stale offset, size to the visual viewport,
   // and re-measure after its events because their geometry can be stale.
-  // Pointer-activated text focus gets a bounded fallback until the expected
-  // keyboard state is stable; other changes stop after two stable frames.
+  // Text focus gets a bounded fallback until the expected keyboard state is
+  // stable; other changes stop after two stable frames.
   // Upstream WebKit bugs:
   // - https://bugs.webkit.org/show_bug.cgi?id=254861
   // - https://bugs.webkit.org/show_bug.cgi?id=259770
@@ -173,6 +179,7 @@ export function observeViewportGeometry(
   const publish = (
     geometry: ViewportGeometry,
     source: KeyboardLayoutCommitSource,
+    rollbackReason?: KeyboardRollbackReason,
   ) => {
     const activeElement = browserWindow.document.activeElement;
     if (geometry.keyboard === "closed" && keyboardField(activeElement)) {
@@ -187,12 +194,17 @@ export function observeViewportGeometry(
     const sameLayout =
       key === published &&
       (geometry.keyboard === "closed" || eventOwner === publishedOwner);
-    const announce = () =>
+    const announce = () => {
+      const detail: KeyboardLayoutCommit =
+        rollbackReason === undefined
+          ? { geometry, source }
+          : { geometry, rollbackReason, source };
       browserWindow.dispatchEvent(
         new CustomEvent<KeyboardLayoutCommit>(keyboardLayoutCommitEvent, {
-          detail: { geometry, source },
+          detail,
         }),
       );
+    };
     if (sameLayout) {
       if (geometry.keyboard === "closed") {
         applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
@@ -329,7 +341,7 @@ export function observeViewportGeometry(
     browserWindow.cancelAnimationFrame(closeFrame);
     closeFrame = 0;
   };
-  const reconcileRollback = () => {
+  const reconcileRollback = (reason: KeyboardRollbackReason) => {
     const activeElement = browserWindow.document.activeElement;
     const measured = measuredGeometry();
     if (keyboardField(activeElement) && measured.keyboard === "open") {
@@ -338,31 +350,34 @@ export function observeViewportGeometry(
       expectedKeyboard = undefined;
       awaitingMeasuredOpen = false;
       cacheKeyboardHeight(browserWindow, measured.height);
-      publish(measured, "rollback");
+      publish(measured, "rollback", reason);
       return;
     }
-    publish({ keyboard: "closed" }, "rollback");
+    publish({ keyboard: "closed" }, "rollback", reason);
   };
-  const rollbackPointerFocus = () => {
+  const rollbackPointerFocus = (reason: KeyboardRollbackReason) => {
     cancelPointerRollback();
     pointerMayFocus = false;
     if (expectedKeyboard === "open") expectedKeyboard = undefined;
     awaitingMeasuredOpen = false;
-    reconcileRollback();
+    reconcileRollback(reason);
   };
   const finishPointerFocus = () => {
     if (!pointerMayFocus) return;
     if (pointerFocusFrame !== 0)
       browserWindow.cancelAnimationFrame(pointerFocusFrame);
-    pointerFocusFrame = browserWindow.requestAnimationFrame(() => {
+    let scheduledPointerFocusFrame = 0;
+    scheduledPointerFocusFrame = browserWindow.requestAnimationFrame(() => {
+      if (pointerFocusFrame !== scheduledPointerFocusFrame) return;
       pointerFocusFrame = 0;
-      rollbackPointerFocus();
+      if (!pointerMayFocus) return;
+      rollbackPointerFocus("pointer-ended-without-focus");
     });
+    pointerFocusFrame = scheduledPointerFocusFrame;
   };
   const cancelPointerFocus = () => {
     browserWindow.queueMicrotask(() => {
-      rollbackPointerFocus();
-      pointerMayFocus = false;
+      if (pointerMayFocus) rollbackPointerFocus("pointer-canceled");
     });
   };
   const onWindowChange = (event: Event) => {
@@ -389,7 +404,7 @@ export function observeViewportGeometry(
       if (resumesClosingKeyboard) {
         keepKeyboardOpen();
       }
-      if (pointerActivated || resumesClosingKeyboard) expectKeyboard("open");
+      expectKeyboard("open");
       if (pointerActivated && owner === root)
         requestCachedKeyboardOpen(browserWindow);
       pointerMayFocus = false;
@@ -403,7 +418,9 @@ export function observeViewportGeometry(
     if (mayClose) {
       const focusEvent = event as FocusEvent;
       if (closeFrame !== 0) browserWindow.cancelAnimationFrame(closeFrame);
-      closeFrame = browserWindow.requestAnimationFrame(() => {
+      let scheduledCloseFrame = 0;
+      scheduledCloseFrame = browserWindow.requestAnimationFrame(() => {
+        if (closeFrame !== scheduledCloseFrame) return;
         closeFrame = 0;
         if (
           !shouldBeginKeyboardClose(
@@ -418,12 +435,30 @@ export function observeViewportGeometry(
         owner?.removeAttribute("data-keyboard-owner");
         owner = undefined;
         expectKeyboard("closed");
-        reconcileRollback();
+        reconcileRollback("focus-left-keyboard-field");
         onChange();
       });
+      closeFrame = scheduledCloseFrame;
       return;
     }
     onChange();
+  };
+  const rearmFocusedKeyboard = () => {
+    if (
+      !onScreenKeyboard() ||
+      !keyboardField(browserWindow.document.activeElement)
+    )
+      return;
+    cancelPendingRollbacks();
+    owner = keyboardSurfaceOwner(browserWindow.document.activeElement, root);
+    owner.setAttribute("data-keyboard-owner", "true");
+    closing = false;
+    expectKeyboard("open");
+    onChange();
+  };
+  const onVisibilityChange = () => {
+    if (browserWindow.document.visibilityState === "visible")
+      rearmFocusedKeyboard();
   };
   const onCachedOpen = (event: Event) => {
     if (!keyboardField(browserWindow.document.activeElement) || owner !== root)
@@ -445,6 +480,11 @@ export function observeViewportGeometry(
   browserWindow.addEventListener("pointercancel", cancelPointerFocus);
   browserWindow.addEventListener(cachedKeyboardOpenEvent, onCachedOpen);
   browserWindow.addEventListener("orientationchange", onOrientationChange);
+  browserWindow.addEventListener("pageshow", rearmFocusedKeyboard);
+  browserWindow.document.addEventListener(
+    "visibilitychange",
+    onVisibilityChange,
+  );
   update();
   return () => {
     if (frame !== 0) browserWindow.cancelAnimationFrame(frame);
@@ -461,6 +501,11 @@ export function observeViewportGeometry(
     browserWindow.removeEventListener("pointercancel", cancelPointerFocus);
     browserWindow.removeEventListener(cachedKeyboardOpenEvent, onCachedOpen);
     browserWindow.removeEventListener("orientationchange", onOrientationChange);
+    browserWindow.removeEventListener("pageshow", rearmFocusedKeyboard);
+    browserWindow.document.removeEventListener(
+      "visibilitychange",
+      onVisibilityChange,
+    );
     if (keyboard !== undefined && previousOverlay !== undefined)
       keyboard.overlaysContent = previousOverlay;
     owner?.removeAttribute("data-keyboard-owner");

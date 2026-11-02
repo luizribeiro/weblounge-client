@@ -256,6 +256,118 @@ describe("viewport geometry observer", () => {
     );
   });
 
+  it("watches pointerless focus through a silent late viewport shrink", () => {
+    const frames = new ManualAnimationFrames();
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport, undefined, frames);
+    const root = document.createElement("div");
+    const field = textField();
+    document.body.append(root);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+    const startedAt = performance.now();
+
+    field.focus();
+    frames.flush(startedAt + 16);
+    frames.flush(startedAt + 32);
+    viewport.height = 471;
+    frames.flush(startedAt + 48);
+
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.dataset.keyboardOwner).toBe("true");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+  });
+
+  it("keeps watching pointerless focus after a pending close rollback", () => {
+    const frames = new ManualAnimationFrames(true);
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport, undefined, frames);
+    const root = document.createElement("div");
+    const field = textField();
+    const button = document.createElement("button");
+    document.body.append(root, button);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+    const startedAt = performance.now();
+
+    field.focus();
+    viewport.set(471, 0, "resize");
+    frames.flush(startedAt + 16);
+    frames.flush(startedAt + 32);
+    button.focus();
+    viewport.height = window.innerHeight;
+    field.focus();
+    frames.flush(startedAt + 48);
+    frames.flush(startedAt + 64);
+    viewport.height = 471;
+    frames.flush(startedAt + 80);
+
+    expect(document.activeElement).toBe(field);
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+  });
+
+  it.each(["visibilitychange", "pageshow"] as const)(
+    "re-arms focused keyboard measurement on %s",
+    (resumeEvent) => {
+      const frames = new ManualAnimationFrames();
+      const viewport = new FakeVisualViewport(window.innerHeight);
+      const browserWindow = fakeWindow(viewport, undefined, frames);
+      const root = document.createElement("div");
+      const field = textField();
+      document.body.append(root);
+      const stop = observeViewportGeometry(root, browserWindow);
+      running.push(stop);
+      const startedAt = performance.now();
+
+      field.focus();
+      frames.flush(startedAt + 1_100);
+      frames.flush(startedAt + 1_116);
+      expect(frames.pending).toBe(0);
+
+      if (resumeEvent === "visibilitychange")
+        document.dispatchEvent(new Event(resumeEvent));
+      else browserWindow.dispatchEvent(new Event(resumeEvent));
+      const resumedAt = performance.now();
+      frames.flush(resumedAt + 16);
+      frames.flush(resumedAt + 32);
+      viewport.height = 471;
+      frames.flush(resumedAt + 48);
+
+      expect(root.dataset.keyboard).toBe("open");
+      expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+    },
+  );
+
+  it("re-arms the watch when keyboard accessory focus moves fields", () => {
+    const frames = new ManualAnimationFrames();
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport, undefined, frames);
+    const root = document.createElement("div");
+    const first = textField();
+    const second = textField();
+    document.body.append(root);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+    const startedAt = performance.now();
+
+    first.focus();
+    frames.flush(startedAt + 1_100);
+    frames.flush(startedAt + 1_116);
+    expect(frames.pending).toBe(0);
+
+    second.focus();
+    const movedAt = performance.now();
+    frames.flush(movedAt + 16);
+    frames.flush(movedAt + 32);
+    viewport.height = 471;
+    frames.flush(movedAt + 48);
+
+    expect(document.activeElement).toBe(second);
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+  });
+
   it("commits focused cache then reconciles and caches stable measured geometry", async () => {
     const viewport = new FakeVisualViewport(window.innerHeight);
     const browserWindow = fakeWindow(viewport);
@@ -483,6 +595,7 @@ describe("viewport geometry observer", () => {
     expect(root.dataset.keyboard).toBe("closed");
     expect(commits.at(-1)).toEqual({
       geometry: { keyboard: "closed" },
+      rollbackReason: "pointer-ended-without-focus",
       source: "rollback",
     });
   });
@@ -719,10 +832,14 @@ class ManualAnimationFrames {
     if (!this.#keepCanceled) this.#callbacks.delete(id);
   };
 
-  flush(): void {
+  get pending(): number {
+    return this.#callbacks.size;
+  }
+
+  flush(now = performance.now()): void {
     const callbacks = [...this.#callbacks.values()];
     this.#callbacks.clear();
-    for (const callback of callbacks) callback(performance.now());
+    for (const callback of callbacks) callback(now);
   }
 
   clear(): void {

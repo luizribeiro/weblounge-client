@@ -65,8 +65,9 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   window.dispatchEvent(
     new CustomEvent(keyboardLayoutCommitEvent, {
       detail: {
-        geometry: { keyboard: "open", height: 476 },
-        source: "measured",
+        geometry: { keyboard: "closed" },
+        rollbackReason: "focus-left-keyboard-field",
+        source: "rollback",
       },
     }),
   );
@@ -74,11 +75,13 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   callback?.(1001);
   const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
   expect(overlay?.textContent).toContain("trigger: pointerup");
-  expect(overlay?.textContent).toContain("commits: measured:476");
+  expect(overlay?.textContent).toContain(
+    "commits: rollback:closed(focus-left-keyboard-field)",
+  );
   expect(overlay?.textContent).toContain("touchstart");
   expect(overlay?.textContent).toContain("touchend:tap");
   expect(overlay?.textContent).toContain("touchend:rejected(moved 14px)");
-  expect(overlay?.textContent).toContain("focusin:composer");
+  expect(overlay?.textContent).toContain("focusin:composer(no-pointer)");
   expect(overlay?.textContent).toContain("focus:landed");
   expect(overlay?.textContent).toContain("frames · tap to copy full trace");
 

@@ -97,9 +97,12 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   viewport synchronously and focuses it with `preventScroll`, following [React Aria's iOS
   technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
   The field stays translated until the first keyboard-height step, with a bounded fallback, because
-  iOS may decide its reveal pan several frames after focus. A successful open height is cached per
-  orientation and may be applied synchronously once later pointer focus actually lands; cold focus
-  waits for measured geometry. A cancelled tap or drag never commits cached geometry.
+  iOS may decide its reveal pan several frames after focus. Every keyboard-field focus arms the same
+  bounded geometry watch, including programmatic focus and focus moved by the keyboard accessory;
+  returning to a visible page re-arms it when a keyboard field remains focused. A successful open
+  height is cached per orientation and may be applied synchronously once later pointer focus actually
+  lands; cold and pointerless focus wait for measured geometry. A cancelled tap or drag never commits
+  cached geometry.
   Drags and long-press callouts remain native. A platform-owned non-passive
   vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
   textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
@@ -142,8 +145,9 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   the app owns no keyboard animation.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
-  `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout and records
-  whether each layout decision came from cached geometry, measured geometry, or rollback.
+  `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout, distinguishes
+  pointer and pointerless composer focus, and records whether each layout decision came from cached
+  geometry, measured geometry, or a rollback with its cause.
 
 `--wl-safe-bottom-effective` follows the bottom safe inset except inside the active keyboard owner,
 where it becomes zero under `data-keyboard="open"`; the scrimmed background therefore retains its

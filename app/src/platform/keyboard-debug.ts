@@ -11,7 +11,7 @@ export const keyboardInteractionEvent = "weblounge:keyboard-interaction";
 export type KeyboardInteractionLabel =
   | "focus:landed"
   | "focus:refused"
-  | "focusin:composer"
+  | `focusin:composer(${"no-pointer" | "pointer"})`
   | "touchcancel"
   | `touchend:rejected(${string})`
   | "touchend:tap"
@@ -94,6 +94,7 @@ export function installKeyboardDebug(
   let commits: readonly string[] = [];
   let interactions: readonly string[] = [];
   let interactionStartedAt = 0;
+  let pointerMayFocusComposer = false;
   let trigger = "waiting for tap/focusout";
   let animationFrame = 0;
   const stopSection = installDebugSection(browserWindow, {
@@ -150,12 +151,14 @@ export function installKeyboardDebug(
         animationFrame = browserWindow.requestAnimationFrame(sample);
       };
       const recordCommit = (event: Event) => {
-        const { geometry, source } = (
+        const { geometry, rollbackReason, source } = (
           event as CustomEvent<KeyboardLayoutCommit>
         ).detail;
+        const reason =
+          rollbackReason === undefined ? "" : `(${rollbackReason})`;
         commits = [
           ...commits,
-          `${source}:${geometry.keyboard === "open" ? geometry.height : "closed"}`,
+          `${source}:${geometry.keyboard === "open" ? geometry.height : "closed"}${reason}`,
         ].slice(-5);
         render();
       };
@@ -178,9 +181,23 @@ export function installKeyboardDebug(
           event.target.closest("[data-composer]") === null
         )
           return;
-        reportKeyboardInteraction("focusin:composer", browserWindow);
+        reportKeyboardInteraction(
+          `focusin:composer(${pointerMayFocusComposer ? "pointer" : "no-pointer"})`,
+          browserWindow,
+        );
       };
+      const recordPointerDown = (event: Event) => {
+        pointerMayFocusComposer =
+          event.target instanceof Element &&
+          event.target.closest("[data-composer]") !== null;
+      };
+      const clearPointerFocus = () => {
+        pointerMayFocusComposer = false;
+      };
+      browserWindow.addEventListener("pointerdown", recordPointerDown);
       browserWindow.addEventListener("pointerup", record);
+      browserWindow.addEventListener("pointerup", clearPointerFocus);
+      browserWindow.addEventListener("pointercancel", clearPointerFocus);
       browserWindow.addEventListener("focusout", record);
       browserWindow.addEventListener("focusin", recordComposerFocus);
       browserWindow.addEventListener(keyboardLayoutCommitEvent, recordCommit);
@@ -192,6 +209,9 @@ export function installKeyboardDebug(
         if (animationFrame !== 0)
           browserWindow.cancelAnimationFrame(animationFrame);
         browserWindow.removeEventListener("pointerup", record);
+        browserWindow.removeEventListener("pointerdown", recordPointerDown);
+        browserWindow.removeEventListener("pointerup", clearPointerFocus);
+        browserWindow.removeEventListener("pointercancel", clearPointerFocus);
         browserWindow.removeEventListener("focusout", record);
         browserWindow.removeEventListener("focusin", recordComposerFocus);
         browserWindow.removeEventListener(
