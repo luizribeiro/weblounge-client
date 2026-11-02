@@ -530,6 +530,28 @@ it("places New by timeline order after older history is prepended", async () => 
   );
 });
 
+it("places New only after the latest own message", async () => {
+  const { container } = render(() => (
+    <MessageList
+      messages={[
+        { ...message, delivery: "received" },
+        { ...message, id: 2, delivery: "received", text: "unread peer" },
+        {
+          ...message,
+          id: 3,
+          authorship: "own",
+          delivery: "confirmed",
+          text: "own reply",
+        },
+      ]}
+      readThrough={1}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-new-line]")).toBeNull();
+});
+
 it("keeps the unread line in place when the reader leaves the live edge", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const messages = Array.from({ length: 3 }, (_, index) => ({

@@ -936,6 +936,21 @@ impl NetworkModel {
         if order_changed {
             events.push(self.buffers_event());
         }
+        let buffer = &self.buffers[&pending.buffer_id];
+        events.extend([
+            EngineToUi::BufferUpdated {
+                buffer: buffer.projection.clone(),
+            },
+            EngineToUi::UnreadChanged {
+                buffer_id: pending.buffer_id,
+                unread: buffer.projection.unread,
+                mentions: buffer.projection.mentions,
+            },
+            EngineToUi::ReadMarkerMoved {
+                buffer_id: pending.buffer_id,
+                through: buffer.projection.read_through,
+            },
+        ]);
         Some(events)
     }
 
@@ -1416,12 +1431,14 @@ impl NetworkModel {
             .find(|record| record.projection.id == through && is_committed(&record.projection))?;
         Some(ReadAdvance {
             buffer_id,
-            target: SendTarget::from_buffer(
-                buffer.key.clone()?,
-                buffer.direct.as_ref(),
-                buffer.direct_pin.as_ref(),
-                buffer.direct_mismatch.is_some(),
-            )?,
+            target: match buffer.key.clone()? {
+                NameKey::Channel(channel) => SendTarget::Channel(channel),
+                NameKey::Direct(nick) => SendTarget::Direct {
+                    nick,
+                    recipient: None,
+                    pin: None,
+                },
+            },
             time: system_time_from_millis(message_time(&record.projection)),
         })
     }
@@ -1598,6 +1615,7 @@ impl NetworkModel {
                 added.map(|_| buffer.projection.clone()),
             )
         };
+        let own_message = message.authorship == MessageAuthorship::Own;
 
         let mut events = Vec::new();
         let buffer_added = added.is_some();
@@ -1619,6 +1637,12 @@ impl NetworkModel {
             unread,
             mentions,
         });
+        if own_message {
+            events.push(EngineToUi::ReadMarkerMoved {
+                buffer_id,
+                through: self.buffers[&buffer_id].projection.read_through,
+            });
+        }
         if let Some(account) = incoming.legacy_account_key {
             events.push(self.legacy_draft_migration(buffer_id, &account));
         }
@@ -1827,6 +1851,10 @@ impl NetworkModel {
         send_text: Option<String>,
         dedup: DedupReferences,
     ) -> Result<bool, StateError> {
+        let own_read_at = (projection.authorship == MessageAuthorship::Own
+            && projection.kind != MessageKind::Notice
+            && is_committed(&projection))
+        .then(|| message_time(&projection));
         let Some(buffer) = self.buffers.get(&buffer_id) else {
             self.release_dedup(dedup);
             return Err(StateError::MissingBuffer(buffer_id));
@@ -1851,6 +1879,13 @@ impl NetworkModel {
         ));
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
+        if let Some(read_at) = own_read_at {
+            buffer.read_at_ms = Some(
+                buffer
+                    .read_at_ms
+                    .map_or(read_at, |current| current.max(read_at)),
+            );
+        }
         let excess = buffer.timeline.len().saturating_sub(self.window_limit);
         let evicted = buffer.timeline.drain(..excess).collect::<Vec<_>>();
         for record in evicted {
@@ -3362,6 +3397,27 @@ mod tests {
             .expect("directly received buffer exists");
         assert_eq!(model.buffers[&id].projection.unread, 0);
         assert_eq!(timeline(&model), ["from phone"]);
+    }
+
+    #[test]
+    fn own_device_lines_mark_earlier_peer_messages_read() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(direct_incoming(&state, "alice", "unread peer", 1), &state);
+        let mut own = direct_incoming(&state, "alice", "from phone", 2);
+        own.authorship = MessageAuthorship::Own;
+        model.receive_incoming(own, &state);
+
+        let id = *model
+            .names
+            .values()
+            .next()
+            .expect("directly received buffer exists");
+        let buffer = &model.buffers[&id];
+        assert_eq!(buffer.projection.unread, 0);
+        assert_eq!(
+            buffer.projection.read_through,
+            Some(buffer.timeline[1].projection.id)
+        );
     }
 
     #[test]

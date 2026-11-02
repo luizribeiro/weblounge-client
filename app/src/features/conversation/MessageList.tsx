@@ -759,7 +759,16 @@ function unreadStartId(
       messageTime(left) - messageTime(right) || left.id - right.id,
   );
   const marker = ordered.findIndex((message) => message.id === readThrough);
-  return marker < 0 ? undefined : ordered[marker + 1]?.id;
+  if (marker < 0) return undefined;
+  let effectiveMarker = marker;
+  for (let index = marker + 1; index < ordered.length; index += 1) {
+    const candidate = ordered[index];
+    if (candidate?.authorship === "own" && candidate.kind !== "notice")
+      effectiveMarker = index;
+  }
+  return ordered
+    .slice(effectiveMarker + 1)
+    .find((message) => message.authorship !== "own")?.id;
 }
 
 function latestMessageId(

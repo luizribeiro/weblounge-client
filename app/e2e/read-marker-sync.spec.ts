@@ -127,6 +127,60 @@ test.describe("IRCv3 read markers", () => {
       bot.close();
     }
   });
+
+  test("an own action from another device advances the unread boundary", async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString(36);
+    const channel = `#own-${suffix}`;
+    await page.goto("/?irc-password=weblounge-test");
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    const peer = await IrcClient.connect(
+      `peer-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    const ownDevice = await IrcClient.connect(
+      `own-${suffix}`,
+      "weblounge",
+      "weblounge-test",
+      channel,
+    );
+    try {
+      const list = page.locator("[data-message-list]");
+      const active = page.locator('[data-buffer-id][aria-current="page"]');
+      for (let index = 0; index < 30; index += 1)
+        await peer.privmsgConfirmed(
+          channel,
+          `own marker seed ${index} ${"wrapped line ".repeat(8)}`,
+        );
+      await expect.poll(() => scrollRange(list)).toBeGreaterThan(100);
+      await expect(active).toHaveAttribute("data-unread", "0");
+      await scrollAwayFromLiveEdge(page, list);
+
+      const unread = `unread before own action ${suffix}`;
+      await peer.privmsgConfirmed(channel, unread);
+      await expect
+        .poll(async () => Number(await active.getAttribute("data-unread")))
+        .toBeGreaterThan(0);
+
+      const action = `marks this read ${suffix}`;
+      await ownDevice.actionConfirmed(channel, action);
+      await expect(active).toHaveAttribute("data-unread", "0");
+      await list.press("End");
+      await expect(
+        page.locator("[data-message-row]").filter({ hasText: action }),
+      ).toBeVisible();
+      await expect(page.getByText("New", { exact: true })).toHaveCount(0);
+    } finally {
+      peer.close();
+      ownDevice.close();
+    }
+  });
 });
 
 async function scrollRange(

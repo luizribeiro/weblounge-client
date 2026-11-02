@@ -1728,7 +1728,7 @@ async fn flush_pending_sends(
             FlushNext::Stop => return,
         };
         let result = send(client, &queued.pending).await;
-        let events = {
+        let (events, own_read_advance) = {
             let mut state = lock(state);
             let Some(running) = state
                 .network
@@ -1738,21 +1738,27 @@ async fn flush_pending_sends(
                 return;
             };
             match result {
-                Ok(sent) => running.model.confirm_send(&queued.pending, &sent),
+                Ok(sent) => confirm_send_with_read(&mut running.model, &queued.pending, &sent),
                 Err(SendError::Offline) if queued.retry_if_disconnected => {
                     running.pending_sends.push_front(queued);
                     running.flushing_sends = false;
                     return;
                 }
-                Err(error) => Some(
-                    running
-                        .model
-                        .fail_send(&queued.pending, error.message_key()),
+                Err(error) => (
+                    Some(
+                        running
+                            .model
+                            .fail_send(&queued.pending, error.message_key()),
+                    ),
+                    None,
                 ),
             }
         };
         for event in events.into_iter().flatten() {
             let _ = outbound.send(event);
+        }
+        if let Some(advance) = own_read_advance {
+            spawn_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
         }
     }
 }
@@ -1811,7 +1817,7 @@ async fn finish_send(
     pending: &PendingSend,
 ) {
     let result = send(client, pending).await;
-    let events = {
+    let (events, own_read_advance) = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -1821,7 +1827,7 @@ async fn finish_send(
             return;
         };
         match result {
-            Ok(sent) => running.model.confirm_send(pending, &sent),
+            Ok(sent) => confirm_send_with_read(&mut running.model, pending, &sent),
             Err(SendError::PeerPinMismatch(mismatch)) => {
                 let mut events = running
                     .model
@@ -1833,14 +1839,62 @@ async fn finish_send(
                         .model
                         .fail_send(pending, "engine.direct_identity_mismatch"),
                 );
-                Some(events)
+                (Some(events), None)
             }
-            Err(error) => Some(running.model.fail_send(pending, error.message_key())),
+            Err(error) => (
+                Some(running.model.fail_send(pending, error.message_key())),
+                None,
+            ),
         }
     };
     for event in events.into_iter().flatten() {
         let _ = outbound.send(event);
     }
+    if let Some(advance) = own_read_advance {
+        spawn_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
+    }
+}
+
+fn confirm_send_with_read(
+    model: &mut NetworkModel,
+    pending: &PendingSend,
+    sent: &papo::Sent,
+) -> (Option<Vec<EngineToUi>>, Option<ReadAdvance>) {
+    let events = model.confirm_send(pending, sent);
+    let advance = events.as_ref().and_then(|events| {
+        events.iter().find_map(|event| match event {
+            EngineToUi::MessageConfirmed {
+                buffer_id, message, ..
+            } => model.prepare_mark_read(*buffer_id, message.id),
+            _ => None,
+        })
+    });
+    (events, advance)
+}
+
+fn appended_read_advance(model: &NetworkModel, events: &[EngineToUi]) -> Option<ReadAdvance> {
+    let (buffer_id, through) = events.iter().find_map(|event| match event {
+        EngineToUi::MessagesAppended {
+            buffer_id,
+            messages,
+        } => messages.last().map(|message| (*buffer_id, message.id)),
+        _ => None,
+    })?;
+    model.prepare_mark_read(buffer_id, through)
+}
+
+fn receive_message(
+    model: &mut NetworkModel,
+    message: &papo::Message,
+    history: bool,
+    state: &papo::State,
+    direct: Option<papo::DirectRef>,
+) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
+    let events = model.receive(message, history, state, direct);
+    let advance = (message.authorship == papo::Authorship::Own)
+        .then(|| appended_read_advance(model, &events))
+        .flatten();
+    (events, advance)
 }
 
 fn completion_context(
@@ -2578,6 +2632,7 @@ fn process_event_with_direct(
         return Vec::new();
     };
     let mut output = Vec::new();
+    let mut own_read_advances = Vec::new();
     let mut clear_hosted_authentication = false;
     let mut flush_pending = false;
     let history_targets = match event {
@@ -2616,23 +2671,18 @@ fn process_event_with_direct(
             Vec::new()
         }
         papo::Event::AccountChanged(changed) => {
-            output.extend(
-                running
-                    .model
-                    .update_direct_account(changed.actor.nick(), &changed.new),
-            );
+            process_account_change(&mut running.model, &changed, &mut output);
             Vec::new()
         }
         papo::Event::Message(message) => {
-            output.extend(running.model.receive(&message, false, &snapshot, direct));
+            let (received, advance) =
+                receive_message(&mut running.model, &message, false, &snapshot, direct);
+            own_read_advances.extend(advance);
+            output.extend(received);
             Vec::new()
         }
         papo::Event::ReadMarkerChanged(marker) => {
-            output.extend(
-                running
-                    .model
-                    .apply_server_read_marker(&marker.conversation, marker.read_until),
-            );
+            process_read_marker(&mut running.model, &marker, &mut output);
             Vec::new()
         }
         papo::Event::Joined(joined) => {
@@ -2662,6 +2712,9 @@ fn process_event_with_direct(
     }
     drop(state);
     send_events(outbound, output);
+    if !own_read_advances.is_empty() {
+        spawn_deferred_read_advances(&shared_state, outbound.clone(), instance, own_read_advances);
+    }
     update_chat_list(&shared_state, outbound, instance);
     if flush_pending {
         spawn_send_flush(shared_state, outbound.clone(), client.clone(), instance);
@@ -2820,6 +2873,22 @@ fn process_nick_change(
         output.push(model.set_nickname(changed.new.to_string()));
     }
     output.extend(model.note_direct_rename(changed.actor.nick(), &changed.new, changed.peer_key()));
+}
+
+fn process_account_change(
+    model: &mut NetworkModel,
+    changed: &papo::event::AccountChanged,
+    output: &mut Vec<EngineToUi>,
+) {
+    output.extend(model.update_direct_account(changed.actor.nick(), &changed.new));
+}
+
+fn process_read_marker(
+    model: &mut NetworkModel,
+    marker: &papo::event::ReadMarkerChanged,
+    output: &mut Vec<EngineToUi>,
+) {
+    output.extend(model.apply_server_read_marker(&marker.conversation, marker.read_until));
 }
 
 enum ConnectionTransition {
@@ -3035,10 +3104,14 @@ fn process_history(
     let mut output = Vec::new();
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut unread = None;
+    let mut own_read_advance = None;
     for item in page.items {
         match item {
             papo::Event::Message(message) => {
-                for event in running.model.receive(&message, true, &snapshot, None) {
+                let (received, advance) =
+                    receive_message(&mut running.model, &message, true, &snapshot, None);
+                own_read_advance = advance.or(own_read_advance);
+                for event in received {
                     match event {
                         EngineToUi::MessagesAppended {
                             buffer_id,
@@ -3106,7 +3179,8 @@ fn process_history(
             at_start,
         });
     }
-    let (read_advances, read_events) = running.model.take_cached_read_advances();
+    let (mut read_advances, read_events) = running.model.take_cached_read_advances();
+    read_advances.extend(own_read_advance);
     output.extend(read_events);
     drop(state);
     send_events(outbound, output);
@@ -5071,11 +5145,11 @@ mod tests {
             EngineToUi::BuffersChanged { buffers, .. }
                 if buffers.iter().all(|buffer| buffer.id != buffer_id)
         ));
-        assert!(matches!(
-            confirmation.as_slice(),
-            [EngineToUi::MessageConfirmed { message, .. }]
+        assert!(confirmation.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
                 if message.delivery == MessageDelivery::Confirmed
-        ));
+        )));
     }
 
     #[tokio::test]
@@ -6320,6 +6394,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn own_live_message_advances_the_server_read_marker() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+
+        wire.server(
+            "@time=2026-10-27T12:00:00.000Z;msgid=own :weblounge!u@host PRIVMSG #room :from phone",
+        )
+        .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
+        ))
+        .await;
+    }
+
+    #[tokio::test]
     async fn mark_read_without_server_support_advances_local_counts() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
@@ -7238,11 +7352,11 @@ mod tests {
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
 
-        assert!(matches!(
-            confirmation_events.as_slice(),
-            [EngineToUi::MessageConfirmed { message, .. }]
+        assert!(confirmation_events.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
                 if message.server_ids.is_empty() && message.server_time_ms.is_none()
-        ));
+        )));
     }
 
     #[tokio::test]
@@ -7369,13 +7483,13 @@ mod tests {
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
 
-        assert!(matches!(
-            confirmation_events.as_slice(),
-            [EngineToUi::MessageConfirmed { message, .. }]
+        assert!(confirmation_events.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
                 if message.server_ids == ["whole"]
                     && message.text == text
                     && !message.text.contains('\n')
-        ));
+        )));
     }
 
     #[tokio::test]
@@ -7438,17 +7552,18 @@ mod tests {
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
 
-        assert!(matches!(
-            confirmation_events.as_slice(),
-            [
-                EngineToUi::MessageConfirmed { message: first, .. },
-                EngineToUi::MessagesAppended { messages, .. }
-            ] if first.server_ids == ["first"]
-                && first.text == first_text
-                && messages.len() == 1
-                && messages[0].server_ids == ["second"]
-                && messages[0].text == second_text
-        ));
+        assert!(confirmation_events.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageConfirmed { message, .. }
+                if message.server_ids == ["first"] && message.text == first_text
+        )));
+        assert!(confirmation_events.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages.len() == 1
+                    && messages[0].server_ids == ["second"]
+                    && messages[0].text == second_text
+        )));
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(10), events.next())
                 .await
