@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  DeploymentConfigError,
+  DeploymentConfigUnavailableError,
   decodeDeploymentConfig,
+  deploymentConfigCacheKey,
   loadDeploymentConfig,
 } from "./deployment-config";
 
@@ -21,6 +22,15 @@ const hosted = {
 };
 
 describe("deployment config", () => {
+  const storage = () => {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+  };
+
   it("decodes the beta hosted preset", () => {
     expect(decodeDeploymentConfig(hosted)).toEqual(hosted);
   });
@@ -80,7 +90,7 @@ describe("deployment config", () => {
 
   it("requires an explicit config", async () => {
     const missing = vi.fn(async () => new Response(null, { status: 404 }));
-    await expect(loadDeploymentConfig(missing)).rejects.toThrow(
+    await expect(loadDeploymentConfig(missing, storage())).rejects.toThrow(
       'expected an explicit {"mode":"app"} or hosted configuration',
     );
     expect(missing).toHaveBeenCalledWith(
@@ -94,27 +104,106 @@ describe("deployment config", () => {
     const spaFallback = vi.fn(async () =>
       Response.json({}, { headers: { "Content-Type": "text/html" } }),
     );
-    await expect(loadDeploymentConfig(spaFallback)).rejects.toThrow(
+    await expect(loadDeploymentConfig(spaFallback, storage())).rejects.toThrow(
       "This deployment is misconfigured",
     );
 
     const appMode = vi.fn(async () => Response.json({ mode: "app" }));
-    await expect(loadDeploymentConfig(appMode)).resolves.toEqual({
+    await expect(loadDeploymentConfig(appMode, storage())).resolves.toEqual({
       mode: "app",
     });
   });
 
   it("reports config loading failures", async () => {
     const unavailable = vi.fn(async () => new Response(null, { status: 503 }));
-    await expect(loadDeploymentConfig(unavailable)).rejects.toBeInstanceOf(
-      DeploymentConfigError,
-    );
+    await expect(
+      loadDeploymentConfig(unavailable, storage()),
+    ).rejects.toBeInstanceOf(DeploymentConfigUnavailableError);
+
+    const serverFailure = vi.fn(async () => Response.json({}, { status: 503 }));
+    await expect(
+      loadDeploymentConfig(serverFailure, storage()),
+    ).rejects.toBeInstanceOf(DeploymentConfigUnavailableError);
 
     const unreachable = vi.fn(async () => {
       throw new TypeError("Failed to fetch");
     });
-    await expect(loadDeploymentConfig(unreachable)).rejects.toThrow(
-      "This deployment is misconfigured. Invalid /config.json: could not be loaded",
+    await expect(loadDeploymentConfig(unreachable, storage())).rejects.toThrow(
+      "Can't reach weblounge. Check your connection.",
+    );
+  });
+
+  it("classifies a config timeout as unreachable", async () => {
+    vi.useFakeTimers();
+    const pending = loadDeploymentConfig(
+      vi.fn(() => new Promise<Response>(() => {})),
+      storage(),
+    );
+    const rejected = expect(pending).rejects.toBeInstanceOf(
+      DeploymentConfigUnavailableError,
+    );
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await rejected;
+    vi.useRealTimers();
+  });
+
+  it("starts from the last good config while revalidating it", async () => {
+    const cache = storage();
+    const firstFetch = vi.fn(async () => Response.json(hosted));
+    await expect(loadDeploymentConfig(firstFetch, cache)).resolves.toEqual(
+      hosted,
+    );
+    expect(cache.getItem(deploymentConfigCacheKey)).not.toBeNull();
+
+    let finishRevalidation = (_response: Response) => {};
+    const revalidation = new Promise<Response>((resolve) => {
+      finishRevalidation = resolve;
+    });
+    const backgroundFetch = vi.fn(() => revalidation);
+    await expect(loadDeploymentConfig(backgroundFetch, cache)).resolves.toEqual(
+      hosted,
+    );
+    expect(backgroundFetch).toHaveBeenCalledOnce();
+
+    finishRevalidation(Response.json({ mode: "app" }));
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(cache.getItem(deploymentConfigCacheKey) ?? "null"),
+      ).toEqual({ config: { mode: "app" }, schema: 1 }),
+    );
+  });
+
+  it("ignores corrupt cache records and keeps the last good config on failure", async () => {
+    const cache = storage();
+    cache.setItem(deploymentConfigCacheKey, "not json");
+    const appMode = vi.fn(async () => Response.json({ mode: "app" }));
+    await expect(loadDeploymentConfig(appMode, cache)).resolves.toEqual({
+      mode: "app",
+    });
+
+    const unreachable = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await expect(loadDeploymentConfig(unreachable, cache)).resolves.toEqual({
+      mode: "app",
+    });
+    await vi.waitFor(() => expect(unreachable).toHaveBeenCalledOnce());
+    expect(
+      JSON.parse(cache.getItem(deploymentConfigCacheKey) ?? "null"),
+    ).toEqual({ config: { mode: "app" }, schema: 1 });
+
+    await expect(
+      loadDeploymentConfig(
+        vi.fn(async () => Response.json({ mode: "future" })),
+        cache,
+      ),
+    ).resolves.toEqual({ mode: "app" });
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(cache.getItem(deploymentConfigCacheKey) ?? "null"),
+      ).toEqual({ config: { mode: "app" }, schema: 1 }),
     );
   });
 });

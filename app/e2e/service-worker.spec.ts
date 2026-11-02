@@ -58,15 +58,18 @@ test("launches the shell and engine from cache with the origin offline", async (
       page.evaluate(() => navigator.serviceWorker.controller !== null),
     )
     .toBe(true);
-  await page.evaluate(() => fetch("/config.json"));
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const cache = await caches.open("weblounge-runtime-config");
-        return (await cache.match("/config.json")) !== undefined;
-      }),
-    )
-    .toBe(true);
+  expect(
+    await page.evaluate(async () => {
+      const requests = await Promise.all(
+        (await caches.keys()).map(async (name) =>
+          (await caches.open(name)).keys(),
+        ),
+      );
+      return requests
+        .flat()
+        .some((request) => new URL(request.url).pathname === "/config.json");
+    }),
+  ).toBe(false);
   await page.addInitScript(() => {
     Reflect.set(globalThis, "offlineSawSplash", false);
     Reflect.set(globalThis, "offlineWorkers", []);

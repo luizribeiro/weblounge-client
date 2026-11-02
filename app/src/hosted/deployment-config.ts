@@ -1,15 +1,48 @@
 import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
 import { withStartupDeadline } from "./startup-deadline";
+import { startupStrings } from "./strings";
+
+export const deploymentConfigCacheKey = "weblounge.deployment-config.v1";
+
+interface CachedDeploymentConfig {
+  readonly config: DeploymentConfig;
+  readonly schema: 1;
+}
+
+type ConfigStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export class DeploymentConfigUnavailableError extends Error {
+  constructor() {
+    super(startupStrings.unreachable);
+    this.name = "DeploymentConfigUnavailableError";
+  }
+}
 
 export class DeploymentConfigError extends Error {
   constructor(message: string) {
-    super(`This deployment is misconfigured. Invalid /config.json: ${message}`);
+    super(`${startupStrings.misconfigured} Invalid /config.json: ${message}`);
     this.name = "DeploymentConfigError";
   }
 }
 
 export async function loadDeploymentConfig(
   fetchConfig: typeof fetch = fetch,
+  storage: ConfigStorage = localStorage,
+): Promise<DeploymentConfig> {
+  const cached = readCachedDeploymentConfig(storage);
+  if (cached !== undefined) {
+    void fetchDeploymentConfig(fetchConfig)
+      .then((config) => writeCachedDeploymentConfig(storage, config))
+      .catch(() => undefined);
+    return cached;
+  }
+  const config = await fetchDeploymentConfig(fetchConfig);
+  writeCachedDeploymentConfig(storage, config);
+  return config;
+}
+
+async function fetchDeploymentConfig(
+  fetchConfig: typeof fetch,
 ): Promise<DeploymentConfig> {
   let response: Response;
   try {
@@ -21,11 +54,16 @@ export async function loadDeploymentConfig(
           headers: { Accept: "application/json" },
           signal,
         }),
-      () => new DeploymentConfigError("could not be loaded in time"),
+      () => new DeploymentConfigUnavailableError(),
     );
   } catch (error: unknown) {
-    if (error instanceof DeploymentConfigError) throw error;
-    throw new DeploymentConfigError("could not be loaded");
+    if (
+      error instanceof DeploymentConfigError ||
+      error instanceof DeploymentConfigUnavailableError
+    ) {
+      throw error;
+    }
+    throw new DeploymentConfigUnavailableError();
   }
   const missingConfig =
     response.status === 404 ||
@@ -36,6 +74,7 @@ export async function loadDeploymentConfig(
     );
   }
   if (!response.ok) {
+    if (response.status >= 500) throw new DeploymentConfigUnavailableError();
     throw new DeploymentConfigError(`server returned ${response.status}`);
   }
   let value: unknown;
@@ -45,6 +84,46 @@ export async function loadDeploymentConfig(
     throw new DeploymentConfigError("response is not JSON");
   }
   return decodeDeploymentConfig(value);
+}
+
+function readCachedDeploymentConfig(
+  storage: ConfigStorage,
+): DeploymentConfig | undefined {
+  try {
+    const encoded = storage.getItem(deploymentConfigCacheKey);
+    if (encoded === null) return undefined;
+    const value: unknown = JSON.parse(encoded);
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("schema" in value) ||
+      value.schema !== 1 ||
+      !("config" in value)
+    ) {
+      storage.removeItem(deploymentConfigCacheKey);
+      return undefined;
+    }
+    return decodeDeploymentConfig(value.config);
+  } catch {
+    try {
+      storage.removeItem(deploymentConfigCacheKey);
+    } catch {
+      // Storage is an optional startup optimization.
+    }
+    return undefined;
+  }
+}
+
+function writeCachedDeploymentConfig(
+  storage: ConfigStorage,
+  config: DeploymentConfig,
+): void {
+  const cached: CachedDeploymentConfig = { config, schema: 1 };
+  try {
+    storage.setItem(deploymentConfigCacheKey, JSON.stringify(cached));
+  } catch {
+    // Storage is an optional startup optimization.
+  }
 }
 
 export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
