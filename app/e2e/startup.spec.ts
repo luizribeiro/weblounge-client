@@ -342,10 +342,6 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     await observeCachedListShimmer(page);
     await page.getByRole("button", { name: "#cached" }).click();
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
-    await page.getByRole("button", { name: "Mark as read" }).click();
-    await expect(
-      page.getByRole("button", { name: "Mark as read" }),
-    ).toHaveCount(0);
     await page.getByRole("textbox").fill("queued from cache");
     await page.getByRole("textbox").press("Enter");
     await expect(page.getByText("queued from cache")).toBeVisible();

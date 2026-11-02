@@ -95,6 +95,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 87 | 2026-11-02 | PWA on weak signal: "This deployment is misconfigured… could not be loaded in time"; startup blocks on config.json; "Connecting…" text and a different chair on the error screen (duplicate startup surfaces). | in progress |
 | 88 | 2026-11-02 | Mobile: open a chat with a new message, read it, swipe back, and the unread badge is still there. | fixed locally; awaiting review |
 | 89 | 2026-11-02 | Mobile chat list: centre the unread badge vertically on the whole row. | fixed, awaiting beta |
-| 90 | 2026-11-02 | Desktop: opening the pgray DM shows a giant grey "Mark as read" box and no history (cached snapshot buffer never became live; unstyled button). | in progress |
+| 90 | 2026-11-02 | Desktop: opening the pgray DM shows a giant grey "Mark as read" box and no history (cached snapshot buffer never became live; unstyled button). | fixed locally; awaiting review |
 | 91 | 2026-11-02 | Beta 35682e7: channels with scrollback render as an empty background; messages occluded (keyboard-animation clip layer). Beta rolled back to b6dc15b. | fixed (76804eb: motion clip now spans the content), awaiting CI and beta |
 | 92 | 2026-11-02 | /version (and other local notices like "alice is now bob") render as "Topic: … set by weblounge". | fixed locally; awaiting review |

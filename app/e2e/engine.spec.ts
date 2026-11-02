@@ -856,17 +856,11 @@ async function openCachedDirect(
   await expect(row).toBeVisible();
   await row.click();
   await expect(page.locator("[data-message-list]")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Mark as read" })).toHaveCount(
-    0,
-  );
 
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await expect(
     page.locator("[data-message-list]").getByText(text, { exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Mark as read" })).toHaveCount(
-    0,
-  );
 }
 
 async function seedCachedDirect(

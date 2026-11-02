@@ -427,28 +427,6 @@ it("reveals and navigates a cached chat list before live synchronization", async
       request: { type: "load_history", buffer_id: 2 },
     }),
   );
-  expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull();
-  client.emit({
-    type: "buffer_updated",
-    buffer: {
-      id: 2,
-      network_id: 1,
-      kind: "channel",
-      cached: true,
-      available: true,
-      title: "#cached",
-      draft_key: "weblounge:#cached",
-      topic: null,
-      member_count: 0,
-      unread: 0,
-      mentions: 0,
-      read_through: null,
-      cached_preview: "alice: already here",
-    },
-  });
-  await waitFor(() =>
-    expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull(),
-  );
   fireEvent.input(screen.getByRole("textbox"), {
     target: { value: "queued hello" },
   });

@@ -151,7 +151,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the message list before invoking its End shortcut, independent of composer autofocus timing.
   - [x] Resolve an opened cached DM even when it has no fresh traffic: pre-registration history
     requests resume after connection, snapshot-only unread state yields to server history and the
-    read marker, and neither shell renders a transcript-covering mark-read control (#90).
+    read marker, neither shell renders a transcript-covering mark-read control, and normal
+    live-edge reads record locally while offline before syncing on reconnect (#90).
   - [x] Share axis-locked pan handling between mobile Back and the drag-to-close members drawer.
   - [x] Animate overlay drawers, scrims, and shadows as one progress-linked entrance and exit.
   - [x] Present an overlay drawer's fully off-screen closing endpoint before unmounting it, so

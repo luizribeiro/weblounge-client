@@ -161,7 +161,7 @@ it("keeps a kicked channel readable and disables its composer", () => {
   expect(document.querySelector("[data-message-list]")).not.toBeNull();
 });
 
-it("resolves a cached direct through normal history without a mark-read action", () => {
+it("resolves a cached direct through normal history", () => {
   const loadHistory = vi.fn();
   render(() => (
     <MobileConversation
@@ -178,7 +178,6 @@ it("resolves a cached direct through normal history without a mark-read action",
   ));
 
   expect(loadHistory).toHaveBeenCalledWith(2);
-  expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull();
   expect(document.querySelector("[data-message-list]")).not.toBeNull();
 });
 

@@ -585,7 +585,6 @@ export function MobileShell(props: MobileShellProps) {
             onBack={requestBack}
             onFilter={setFilter}
             onLoadHistory={requestHistoryOnce}
-            onMarkCachedRead={props.onMarkCachedRead}
             onMarkRead={props.onMarkRead}
             onOpen={(bufferId, currentScrollTop) =>
               open(bufferId, false, currentScrollTop)

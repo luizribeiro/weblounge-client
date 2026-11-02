@@ -49,7 +49,6 @@ export interface MobileConversationProps {
   readonly onBack: () => void;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
-  readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onOpenMembers: () => void;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onDeferDirectIdentity?: ((bufferId: number) => void) | undefined;

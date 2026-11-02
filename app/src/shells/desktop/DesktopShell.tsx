@@ -77,7 +77,6 @@ export interface DesktopShellProps {
     | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
-  readonly onMarkCachedRead?: ((bufferId: number) => void) | undefined;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onRequestCompletion: (
     bufferId: number,

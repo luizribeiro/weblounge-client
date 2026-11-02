@@ -77,7 +77,7 @@ const members: MemberWindow = {
   ],
 };
 
-it("resolves a cached direct through normal history without a mark-read overlay", () => {
+it("resolves a cached direct through normal history", () => {
   const loadHistory = vi.fn();
   render(() => (
     <DesktopShell
@@ -97,7 +97,6 @@ it("resolves a cached direct through normal history without a mark-read overlay"
   ));
 
   expect(loadHistory).toHaveBeenCalledWith(4);
-  expect(screen.queryByRole("button", { name: "Mark as read" })).toBeNull();
   expect(document.querySelector("[data-message-list]")).not.toBeNull();
 });
 
