@@ -141,7 +141,9 @@ it("keeps row elements when buffer projections are replaced", () => {
     ),
   );
 
-  expect(screen.getByRole("button", { name: "#garden" })).toBe(original);
+  expect(screen.getByRole("button", { name: "#garden, 1 unread" })).toBe(
+    original,
+  );
   expect(screen.getByLabelText("1 unread")).toBeVisible();
 });
 

@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { Line } from "../../ui/Line";
+import { unreadBadge } from "../unread/unread-badge";
 import styles from "./SidebarRow.module.css";
 
 export interface SidebarRowProps {
@@ -16,6 +17,7 @@ export interface SidebarRowProps {
 
 export function SidebarRow(props: SidebarRowProps) {
   const showBadges = () => props.badgesSuppressed !== true;
+  const badge = () => (showBadges() ? unreadBadge(props.buffer) : undefined);
   const prefix = () =>
     props.buffer.kind === "channel" ? props.buffer.title.slice(0, 1) : "";
   const name = () =>
@@ -24,7 +26,7 @@ export function SidebarRow(props: SidebarRowProps) {
       : props.buffer.title;
   return (
     <button
-      aria-label={rowLabel(props.buffer, showBadges())}
+      aria-label={rowLabel(props.buffer.title, badge()?.label)}
       aria-current={props.active ? "page" : undefined}
       class={`${styles.row} ${props.active ? styles.active : ""} ${
         props.muted === true ? styles.muted : ""
@@ -49,23 +51,22 @@ export function SidebarRow(props: SidebarRowProps) {
       >
         {name()}
       </Line>
-      {showBadges() && props.buffer.mentions > 0 ? (
-        <Line class={styles.mention}>{props.buffer.mentions}</Line>
-      ) : (
-        showBadges() &&
-        props.buffer.unread > 0 && (
-          <span aria-hidden="true" class={styles.dot} />
-        )
+      {badge() !== undefined && (
+        <Line
+          aria-label={badge()?.label}
+          class={`${styles.badge} ${
+            badge()?.kind === "mention" ? styles.mention : ""
+          }`}
+          data-badge-kind={badge()?.kind}
+          role="status"
+        >
+          {badge()?.count}
+        </Line>
       )}
     </button>
   );
 }
 
-function rowLabel(buffer: BufferProjection, showBadges: boolean): string {
-  if (!showBadges) return buffer.title;
-  if (buffer.mentions > 0) {
-    return `${buffer.title}, ${buffer.mentions} mentions`;
-  }
-  if (buffer.unread > 0) return `${buffer.title}, ${buffer.unread} unread`;
-  return buffer.title;
+function rowLabel(title: string, badgeLabel: string | undefined): string {
+  return badgeLabel === undefined ? title : `${title}, ${badgeLabel}`;
 }

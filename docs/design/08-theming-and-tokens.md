@@ -37,9 +37,11 @@ the typed UI registry and CSS custom-property blocks. It discovers files from th
 manifest or message-key registration. A future native UI may consume the same JSON directly, but
 milestone 1 has no Rust theme registry.
 
-The schema covers the appendix token set plus an explicit `focusRing` semantic colour. Initial
-`focusRing` values use each theme's accent. The accepted milestone-1 colour grammar is the appendix
-formats (hex and `rgb[a]` where needed); arbitrary CSS and `oklch` are not accepted.
+The schema covers the appendix token set plus an explicit `focusRing` semantic colour and
+`mentionBadge` / `mentionBadgeFg` pair. The pair gives mention-severity count badges their red
+treatment without coupling them to error UI. Initial `focusRing` values use each theme's accent.
+The accepted milestone-1 colour grammar is the appendix formats (hex and `rgb[a]` where needed);
+arbitrary CSS and `oklch` are not accepted.
 
 `OnboardingTokens` is present on Lounge and Lounge Night and uses the onboarding appendix values
 exactly, including the distinct dark `header: #0f1613`. It is not derived from the Lounge Night
@@ -117,8 +119,9 @@ belong to a later image-security design. App brand assets come from the paths na
 ## Accessibility
 
 Validation checks the actual foreground/background, panel, selection, accent-control, error,
-unread, and focus-ring pairs. Nick colours are checked on message and panel surfaces; identity is
-never conveyed by colour alone. Keyboard focus always uses the explicit focus-ring token.
+unread, mention-badge, and focus-ring pairs. Nick colours are checked on message and panel
+surfaces; identity and unread severity are never conveyed by colour alone. Keyboard focus always
+uses the explicit focus-ring token.
 
 ## Boundaries
 

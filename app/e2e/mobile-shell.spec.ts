@@ -130,8 +130,7 @@ test.describe("mobile shell against local Ergo", () => {
     const suffix = Date.now().toString();
     const targetNick = `mobile09${suffix}`;
     const target = page.getByRole("button", {
-      exact: true,
-      name: targetNick,
+      name: new RegExp(`^${targetNick}(?:,|$)`),
     });
     try {
       await test.step("connect IRC bots and seed direct previews", async () => {
@@ -269,7 +268,9 @@ test.describe("mobile shell against local Ergo", () => {
           await expect(page.locator("[data-mobile-chats]")).toBeVisible();
           await expect(page.locator("[data-mobile-chat]")).toHaveCount(0);
           await page
-            .getByRole("button", { exact: true, name: targetNick })
+            .getByRole("button", {
+              name: new RegExp(`^${targetNick}(?:,|$)`),
+            })
             .click();
           await expect(
             page.getByRole("heading", { name: targetNick }),

@@ -52,7 +52,9 @@ it("renders preview, non-default network, time, and mention badge", () => {
 
   expect(screen.getByText("Libera")).toBeVisible();
   expect(screen.getByText("mel: See you there")).toBeVisible();
-  expect(screen.getByLabelText("1 mentions")).toBeVisible();
+  expect(
+    screen.getByLabelText("3 unread, including mentions"),
+  ).toHaveTextContent("3");
   expect(document.querySelector("time")).toBeInTheDocument();
 });
 
@@ -75,7 +77,7 @@ it("renders cached activity without a live message", () => {
   );
 });
 
-it("omits the default network label and uses a subtle unread dot", () => {
+it("omits the default network label and shows the unread count", () => {
   render(() => (
     <MobileChatRow
       buffer={buffer({ mentions: 0 })}
@@ -87,7 +89,7 @@ it("omits the default network label and uses a subtle unread dot", () => {
 
   expect(screen.queryByText("Libera")).not.toBeInTheDocument();
   expect(screen.getByLabelText("3 unread")).toBeVisible();
-  expect(screen.queryByText("3")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("3 unread")).toHaveTextContent("3");
 });
 
 it("sizes avatar text from density and colours direct initials by nick", () => {

@@ -391,10 +391,10 @@ impl NetworkModel {
                 buffer.projection.last_activity_ms = row.last_activity_ms;
                 match row.badge {
                     SnapshotBadge::None => {}
-                    SnapshotBadge::Unread => buffer.projection.unread = 1,
-                    SnapshotBadge::Mentions(count) => {
+                    SnapshotBadge::Unread { count } => buffer.projection.unread = count,
+                    SnapshotBadge::Mentions { count, mentions } => {
                         buffer.projection.unread = count;
-                        buffer.projection.mentions = count;
+                        buffer.projection.mentions = mentions;
                     }
                 }
                 buffer.direct_pin = row.peer_pin.and_then(|pin| pin.parse().ok());
@@ -1888,9 +1888,14 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
         },
     };
     let badge = if buffer.projection.mentions > 0 {
-        SnapshotBadge::Mentions(buffer.projection.mentions)
+        SnapshotBadge::Mentions {
+            count: buffer.projection.unread,
+            mentions: buffer.projection.mentions,
+        }
     } else if buffer.projection.unread > 0 {
-        SnapshotBadge::Unread
+        SnapshotBadge::Unread {
+            count: buffer.projection.unread,
+        }
     } else {
         SnapshotBadge::None
     };
@@ -3421,7 +3426,7 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(1_000),
-                badge: SnapshotBadge::Unread,
+                badge: SnapshotBadge::Unread { count: 1 },
                 preview: Some("hello".into()),
                 peer_pin: None,
             }],
@@ -3481,7 +3486,10 @@ mod tests {
                 },
                 title: "#room".into(),
                 last_activity_ms: Some(1_000),
-                badge: SnapshotBadge::Mentions(2),
+                badge: SnapshotBadge::Mentions {
+                    count: 2,
+                    mentions: 2,
+                },
                 preview: Some("alice: hello".into()),
                 peer_pin: None,
             }],

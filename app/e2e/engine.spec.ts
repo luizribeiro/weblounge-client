@@ -112,7 +112,7 @@ test.describe("local Ergo user flow", () => {
       ).toBeVisible();
       bot.privmsg("weblounge", text);
       const direct = page.getByRole("button", {
-        name: /^plain-dm, 1 mentions$/u,
+        name: /^plain-dm, 1 unread, including mentions$/u,
       });
       await expect(direct).toBeVisible();
       await direct.click();

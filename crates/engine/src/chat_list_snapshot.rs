@@ -2,8 +2,9 @@ use crate::storage::{KvBackend, Operation, Space, StorageError};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SNAPSHOT_KEY: &[u8] = b"chat-list-snapshot";
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 const ACCOUNT_KEY_SCHEMA: u32 = 2;
+const COUNTLESS_BADGE_SCHEMA: u32 = 3;
 pub(crate) const PREVIEW_LIMIT: usize = 80;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -23,13 +24,25 @@ impl ChatListSnapshot {
     }
 
     pub(crate) fn decode(bytes: &[u8], expected: &str) -> Option<Self> {
-        let mut snapshot = serde_json::from_slice::<Self>(bytes).ok()?;
-        if snapshot.schema == ACCOUNT_KEY_SCHEMA {
-            snapshot.schema = SCHEMA_VERSION;
-            for row in &mut snapshot.rows {
-                row.peer_pin = None;
+        let mut value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
+        let schema = u32::try_from(value.get("schema")?.as_u64()?).ok()?;
+        if matches!(schema, ACCOUNT_KEY_SCHEMA | COUNTLESS_BADGE_SCHEMA) {
+            value["schema"] = SCHEMA_VERSION.into();
+            for row in value.get_mut("rows")?.as_array_mut()? {
+                if schema == ACCOUNT_KEY_SCHEMA {
+                    row.as_object_mut()?.remove("peer_pin");
+                }
+                let badge = row.get_mut("badge")?.as_object_mut()?;
+                let kind = badge.get("kind")?.as_str()?;
+                if kind == "unread" && !badge.contains_key("count") {
+                    badge.insert("count".into(), 1.into());
+                } else if kind == "mentions" && !badge.contains_key("mentions") {
+                    let mentions = badge.get("count")?.clone();
+                    badge.insert("mentions".into(), mentions);
+                }
             }
         }
+        let snapshot = serde_json::from_value::<Self>(value).ok()?;
         (snapshot.schema == SCHEMA_VERSION && snapshot.fingerprint == expected).then_some(snapshot)
     }
 
@@ -57,11 +70,11 @@ pub(crate) enum SnapshotConversation {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "count", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum SnapshotBadge {
     None,
-    Unread,
-    Mentions(u64),
+    Unread { count: u64 },
+    Mentions { count: u64, mentions: u64 },
 }
 
 pub(crate) fn fingerprint(label: &str, endpoint: &str) -> String {
@@ -120,7 +133,7 @@ mod tests {
                     },
                     title: "#Rust".into(),
                     last_activity_ms: Some(1_700_000_000_000),
-                    badge: SnapshotBadge::Unread,
+                    badge: SnapshotBadge::Unread { count: 7 },
                     preview: Some("mel: hello".into()),
                     peer_pin: None,
                 },
@@ -130,7 +143,10 @@ mod tests {
                     },
                     title: "Alice".into(),
                     last_activity_ms: Some(1_700_000_000_001),
-                    badge: SnapshotBadge::Mentions(3),
+                    badge: SnapshotBadge::Mentions {
+                        count: 5,
+                        mentions: 3,
+                    },
                     preview: Some(truncate_preview(&"é".repeat(81))),
                     peer_pin: Some("papo-peer-v1;scope=server%3Aexample;account=alice".into()),
                 },
@@ -144,8 +160,11 @@ mod tests {
         let encoded = snapshot.encode().expect("encode");
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
 
-        assert_eq!(value["schema"], 3);
+        assert_eq!(value["schema"], 4);
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
+        assert_eq!(value["rows"][0]["badge"]["count"], 7);
+        assert_eq!(value["rows"][1]["badge"]["count"], 5);
+        assert_eq!(value["rows"][1]["badge"]["mentions"], 3);
         assert_eq!(
             value["rows"][1]["preview"]
                 .as_str()
@@ -185,15 +204,53 @@ mod tests {
             serde_json::from_slice(&snapshot.encode().expect("encode")).expect("json");
         legacy["schema"] = 2.into();
         for row in legacy["rows"].as_array_mut().expect("rows") {
-            row.as_object_mut().expect("row").remove("peer_pin");
+            let badge = row["badge"].as_object_mut().expect("badge");
+            if badge["kind"] == "unread" {
+                badge.remove("count");
+            } else if badge["kind"] == "mentions" {
+                badge.remove("mentions");
+                badge.insert("count".into(), 3.into());
+            }
         }
 
         let migrated =
             ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected)
                 .expect("schema 2 migrates");
 
-        assert_eq!(migrated.schema, 3);
+        assert_eq!(migrated.schema, 4);
         assert!(migrated.rows.iter().all(|row| row.peer_pin.is_none()));
+        assert_eq!(migrated.rows[0].badge, SnapshotBadge::Unread { count: 1 });
+        assert_eq!(
+            migrated.rows[1].badge,
+            SnapshotBadge::Mentions {
+                count: 3,
+                mentions: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn countless_badge_schema_migrates_to_visible_counts() {
+        let snapshot = snapshot();
+        let expected = fingerprint("Lounge", "wss://irc.example");
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&snapshot.encode().expect("encode")).expect("json");
+        legacy["schema"] = 3.into();
+        legacy["rows"][0]["badge"] = serde_json::json!({ "kind": "unread" });
+        legacy["rows"][1]["badge"] = serde_json::json!({ "kind": "mentions", "count": 3 });
+
+        let migrated =
+            ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected)
+                .expect("schema 3 migrates");
+
+        assert_eq!(migrated.rows[0].badge, SnapshotBadge::Unread { count: 1 });
+        assert_eq!(
+            migrated.rows[1].badge,
+            SnapshotBadge::Mentions {
+                count: 3,
+                mentions: 3,
+            }
+        );
     }
 
     #[tokio::test]

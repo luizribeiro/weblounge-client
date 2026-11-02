@@ -19,6 +19,8 @@
     "selection": "#2c3a2f",
     "selectionFg": "#edefe5",
     "mentionBg": "#25321f",
+    "mentionBadge": "#eba293",
+    "mentionBadgeFg": "#18221e",
     "overlayScrim": "rgba(0,0,0,.48)",
     "unread": "#eba293",
     "inputBg": "#202c24",

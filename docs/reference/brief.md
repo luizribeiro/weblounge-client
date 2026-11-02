@@ -410,7 +410,7 @@ Classic IRC basics are also required: `/me` actions, NOTICEs, mIRC formatting (b
   - **Header:** the weblounge logo, the name and "N networks · connected", plus a `+` button (join a channel or start a DM).
   - **"Jump to… ⌘K"** button.
   - **One section per network**, each headed by the network's icon (or letter tile), its name and a status dot. Clicking the header opens that network's **server buffer**.
-  - **Rows:** channels and DMs; DM rows show a presence dot. Unread counts are subtle; mentions get an accent badge; muted channels are dimmed; the active row is highlighted.
+  - **Rows:** channels and DMs; DM rows show a presence dot. Every unread buffer shows its total unread count in an accent badge; if any unread message is a mention, including every unread DM, the badge uses the red mention treatment. Muted channels are dimmed; the active row is highlighted.
   - **"Add network"** at the end of the list opens onboarding.
   - **Footer:** your avatar (or a presence dot if avatars are off), nick, status, and a Settings button.
 - **Main header:** sidebar toggle, title (`#channel` or nick), topic (truncated), search, ⌘K, member list toggle.
@@ -430,7 +430,7 @@ Classic IRC basics are also required: `/me` actions, NOTICEs, mIRC formatting (b
   - header with the app logo and "weblounge", connection status and a `+` button;
   - search;
   - filters: All, Unread, Channels, Direct;
-  - rows: icon or avatar, name, network label (for networks other than the default), time, preview, and an unread or mention badge.
+  - rows: icon or avatar, name, network label (for networks other than the default), time, preview, and a total-unread badge whose red mention treatment also has an accessible text label.
   - **List density:** compact drops the previews.
 - **Chat screen:** pushed with an iOS-style animation. The new screen slides in from the right (280ms, `cubic-bezier(0.2,0.8,0.2,1)`) while the list behind it shifts left 28% and dims; Back slides it out to the right (230ms). Back returns you to whichever tab you came from.
   - **Header:** back, title and subtitle, members button.
@@ -626,6 +626,7 @@ All themes share these token names. `base` is the base font size in px (mobile u
 | accentFg | #f3f1e9 | #18221e | #ffffff | #121314 | #fff8ee |
 | sel / selFg | #bdd9a7 / #1d2825 | #2c3a2f / #edefe5 | #e3e9fd / #1a3bb0 | #22252a / #f4efe2 | #4a3527 / #fff3dc |
 | mentionBg | #e3ebd6 | #25321f | #fff5dc | #262113 | #f1dcb9 |
+| mentionBadge / mentionBadgeFg | #9a3b2e / #f3f1e9 | #eba293 / #18221e | — | — | — |
 | unread (New line) | #9a3b2e | #eba293 | #c2410c | #e6b450 | #b5471d |
 | inputBg | #faf9f4 | #202c24 | #ffffff | #0e0f10 | #fffaf0 |
 | chip | #e3e6dc | #253227 | #f0f0f3 | #1a1c1e | #efe3cc |

@@ -32,7 +32,8 @@ protect sends to that nick, but it is not the thread key. Each row contains only
 - display name and explicit list order;
 - one optional last-activity timestamp in milliseconds since the Unix epoch, using the same value
   that orders the live chat list;
-- the visible badge projection: none, unread dot, or mention count; and
+- the visible badge projection: total unread count plus the exact mention count used to choose its
+  severity treatment; and
 - an optional, single-line latest-message preview, already truncated by the UI's visible excerpt
   rule (currently 80 characters plus an ellipsis). Direct-message previews are included under the
   same bound.
@@ -98,9 +99,10 @@ screen and at the top of the desktop sidebar. It contains a few words and one ac
 in again” or “Retry”, disappears when resolved, and gives the logo an error-token tint while shown.
 It is never duplicated in the Chats header or conversation header.
 
-Sign-out clears the snapshot as part of clearing device-local cache. The timestamp addition bumps
-the schema version; records from the earlier version are ignored rather than migrated. Any other
-schema/version mismatch or decode failure is ignored too. A configured-network identity mismatch
+Sign-out clears the snapshot as part of clearing device-local cache. Badge counts bump the schema
+version; the two earlier snapshot schemas migrate their lossy dot or mention count to the closest
+representable count, while new records preserve both engine counters. Any other schema/version
+mismatch or decode failure is ignored. A configured-network identity mismatch
 is also ignored, preventing one account or network configuration from appearing under another;
 the next complete online projection may replace it.
 

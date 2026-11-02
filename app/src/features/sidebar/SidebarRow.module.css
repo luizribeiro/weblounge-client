@@ -44,7 +44,7 @@
   min-width: 0;
 }
 
-.mention {
+.badge {
   align-items: center;
   background: var(--wl-color-accent);
   border-radius: var(--wl-radius-pill);
@@ -59,10 +59,7 @@
   padding-inline: 4px;
 }
 
-.dot {
-  background: var(--wl-color-unread);
-  border-radius: 50%;
-  height: 6px;
-  margin-inline-start: var(--wl-space-list-gap);
-  width: 6px;
+.mention {
+  background: var(--wl-color-mention-badge);
+  color: var(--wl-color-mention-badge-fg);
 }

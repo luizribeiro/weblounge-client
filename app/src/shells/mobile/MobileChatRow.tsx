@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../features/composer/strings";
 import { nickColor } from "../../features/conversation/nick-color";
+import { unreadBadge } from "../../features/unread/unread-badge";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
@@ -19,6 +20,7 @@ interface MobileChatRowProps {
 }
 
 export function MobileChatRow(props: MobileChatRowProps) {
+  const badge = () => unreadBadge(props.buffer);
   const message = () => props.buffer.last_message;
   const activityTime = () =>
     props.buffer.last_activity_ms ??
@@ -28,7 +30,11 @@ export function MobileChatRow(props: MobileChatRowProps) {
     props.buffer.cached_preview ?? preview(props.buffer);
   return (
     <button
-      aria-label={props.buffer.title}
+      aria-label={
+        badge() === undefined
+          ? props.buffer.title
+          : `${props.buffer.title}, ${badge()?.label}`
+      }
       class={styles.row}
       data-buffer-id={props.buffer.id}
       data-cached={props.buffer.cached || undefined}
@@ -67,22 +73,17 @@ export function MobileChatRow(props: MobileChatRowProps) {
           {props.previews && visiblePreview() !== "" && (
             <Line class={styles.preview}>{visiblePreview()}</Line>
           )}
-          {props.buffer.mentions > 0 ? (
+          {badge() !== undefined && (
             <span
-              aria-label={`${props.buffer.mentions} mentions`}
-              class={styles.badge}
+              aria-label={badge()?.label}
+              class={`${styles.badge} ${
+                badge()?.kind === "mention" ? styles.mention : ""
+              }`}
+              data-badge-kind={badge()?.kind}
               role="status"
             >
-              {props.buffer.mentions}
+              {badge()?.count}
             </span>
-          ) : (
-            props.buffer.unread > 0 && (
-              <span
-                aria-label={`${props.buffer.unread} unread`}
-                class={styles.unreadDot}
-                role="status"
-              />
-            )
           )}
         </span>
       </span>

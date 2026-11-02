@@ -133,7 +133,7 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     await bot.privmsgConfirmed("#weblounge-test", channelPreview);
     await bot.privmsgConfirmed("weblounge", directPreview);
     await expect(
-      page.getByRole("button", { exact: true, name: nick }),
+      page.getByRole("button", { name: new RegExp(`^${nick}(?:,|$)`) }),
     ).toContainText(directPreview);
     keeper = await page.context().newPage();
     await keeper.goto("/");
@@ -149,11 +149,11 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     expect(rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          title: "#weblounge-test",
+          title: "#weblounge-test, 1 unread",
           text: expect.stringContaining(channelPreview),
         }),
         expect.objectContaining({
-          title: nick,
+          title: `${nick}, 1 unread, including mentions`,
           text: expect.stringContaining(directPreview),
         }),
       ]),
@@ -202,7 +202,10 @@ test("keeps seeded rows unchanged through the cached-to-live frame", async ({
   const firstFrame = filmstrip[0]?.rows;
   expect(firstFrame).toBeDefined();
   for (const frame of filmstrip) expect(frame.rows).toEqual(firstFrame);
-  expect(firstFrame?.map((row) => row.title)).toEqual(["zeta", "alpha"]);
+  expect(firstFrame?.map((row) => row.title)).toEqual([
+    "zeta, 2 unread, including mentions",
+    "alpha",
+  ]);
 });
 
 test("reveals an interactive IndexedDB chat list before reconnecting", async ({
@@ -256,7 +259,7 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     const rows = await firstRevealRows(page);
     expect(rows).toEqual([
       expect.objectContaining({
-        title: "#cached",
+        title: "#cached, 1 unread",
         text: expect.stringContaining("cached before the socket"),
       }),
     ]);

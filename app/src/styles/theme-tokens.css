@@ -29,6 +29,8 @@
   --wl-color-selection: #bdd9a7;
   --wl-color-selection-fg: #1d2825;
   --wl-color-mention-bg: #e3ebd6;
+  --wl-color-mention-badge: #9a3b2e;
+  --wl-color-mention-badge-fg: #f3f1e9;
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.28);
   --wl-color-unread: #9a3b2e;
   --wl-color-input-bg: #faf9f4;
@@ -77,6 +79,8 @@
   --wl-color-selection: #2c3a2f;
   --wl-color-selection-fg: #edefe5;
   --wl-color-mention-bg: #25321f;
+  --wl-color-mention-badge: #eba293;
+  --wl-color-mention-badge-fg: #18221e;
   --wl-color-overlay-scrim: rgba(0, 0, 0, 0.48);
   --wl-color-unread: #eba293;
   --wl-color-input-bg: #202c24;

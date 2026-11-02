@@ -32,7 +32,7 @@ describe("SidebarRow", () => {
       name: "#lounge",
     });
     expect(row).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByText("2")).not.toBeInTheDocument();
+    expect(screen.queryByText("4")).not.toBeInTheDocument();
     row.click();
     expect(onClick).toHaveBeenCalledOnce();
   });
@@ -72,7 +72,7 @@ describe("SidebarRow", () => {
     const name = kind === "channel" ? title.slice(1) : title;
     expect(container.querySelector("button")).toHaveAttribute(
       "aria-label",
-      `${title}, 2 mentions`,
+      `${title}, 4 unread, including mentions`,
     );
     expect(container.querySelector("[data-sidebar-prefix]")).toHaveTextContent(
       prefix,

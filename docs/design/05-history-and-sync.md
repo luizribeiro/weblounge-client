@@ -45,8 +45,10 @@ every incoming message as a mention, while channels classify only messages match
 rules. Row highlighting is independent of that DM badge policy: in every conversation, a row is
 highlighted only when its text matches the rules. The initial rule is the current nick as an
 IRC-casemapped word; later user-defined keywords extend the engine matcher without changing the UI
-projection. The shells project unread-only state as a subtle dot and mentions as an accent count
-badge.
+projection. Both shells always show the engine's total unread count. Unread-only buffers use the
+accent badge; a buffer with one or more mentions uses the mention-badge colours while keeping the
+total unread count. DMs therefore always use the mention treatment. The count and an accessible
+“N unread, including mentions” label keep severity from being colour-only.
 
 ## Boundaries
 
@@ -61,6 +63,7 @@ notification policy, or background push delivery.
 
 - Pure engine tests cover empty/non-empty terminal pages, cursor survival across bounded eviction,
   and the badge/highlight matrix for direct messages and channels with and without a nick match.
+  UI derivation tests cover no unread, unread with and without mentions, DMs, and counts above 99.
 - Scripted papo transcripts page through more than 1,000 same-time messages and assert every msgid
   is delivered once in chronological order. Separate transcripts cover initial marker fetch,
   marker sends, and live remote advances.
@@ -71,8 +74,9 @@ notification policy, or background push delivery.
   on every animation frame during the first second after history appears.
 - Playwright uses two independent browser contexts signed in to the same account: reading at the
   live edge in one clears the unread and mention indicators in the other. Native-feel idle and
-  hidden-tab audits remain green. A direct message without a nick match keeps its mention badge but
-  has no transcript highlight background.
+  hidden-tab audits remain green. A direct message without a nick match keeps its red total-unread
+  badge but has no transcript highlight background. Desktop and mobile badge coverage checks both
+  severity treatments in light and dark themes.
 
 ## Out of scope
 
