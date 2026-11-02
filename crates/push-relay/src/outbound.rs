@@ -1,4 +1,9 @@
-use std::{collections::HashSet, net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+    time::Duration,
+};
 
 use aes_gcm::{
     Aes128Gcm, Nonce,
@@ -481,6 +486,8 @@ fn is_public(address: IpAddr) -> bool {
                 || address.is_unspecified()
                 || octets[0] == 0
                 || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+                || (octets[0] == 192 && octets[1] == 88 && octets[2] == 99)
                 || (octets[0] == 198 && matches!(octets[1], 18 | 19))
                 || octets[0] >= 240)
         }
@@ -489,24 +496,60 @@ fn is_public(address: IpAddr) -> bool {
             if let Some(mapped) = address.to_ipv4_mapped() {
                 return is_public(IpAddr::V4(mapped));
             }
-            !(address.is_loopback()
-                || address.is_unspecified()
-                || address.is_multicast()
-                || (segments[0] & 0xfe00) == 0xfc00
-                || (segments[0] & 0xffc0) == 0xfe80
-                || (segments[0] == 0x2001 && segments[1] == 0x0db8))
+            if segments[..6] == [0; 6] {
+                return is_public(IpAddr::V4(embedded_v4(segments[6], segments[7])));
+            }
+            if segments[..6] == [0x0064, 0xff9b, 0, 0, 0, 0] {
+                return is_public(IpAddr::V4(embedded_v4(segments[6], segments[7])));
+            }
+            if segments[..3] == [0x0064, 0xff9b, 1]
+                && segments[4] & 0xff00 == 0
+                && segments[5].trailing_zeros() >= 8
+            {
+                let [first, second] = segments[3].to_be_bytes();
+                let [_, third] = segments[4].to_be_bytes();
+                let [fourth, _] = segments[5].to_be_bytes();
+                return is_public(IpAddr::V4(Ipv4Addr::new(first, second, third, fourth)));
+            }
+            if segments[0] == 0x2002 {
+                return is_public(IpAddr::V4(embedded_v4(segments[1], segments[2])));
+            }
+            if segments[..2] == [0x2001, 0] {
+                let server = embedded_v4(segments[2], segments[3]);
+                let client = embedded_v4(!segments[6], !segments[7]);
+                return is_public(IpAddr::V4(server)) && is_public(IpAddr::V4(client));
+            }
+
+            is_global_ipv6(address)
         }
     }
 }
 
+fn embedded_v4(high: u16, low: u16) -> Ipv4Addr {
+    let [first, second] = high.to_be_bytes();
+    let [third, fourth] = low.to_be_bytes();
+    Ipv4Addr::new(first, second, third, fourth)
+}
+
+fn is_global_ipv6(address: Ipv6Addr) -> bool {
+    let segments = address.segments();
+    if (segments[0] & 0xe000) != 0x2000 || (segments[0] & 0xfff0) == 0x3ff0 {
+        return false;
+    }
+    if segments[0] == 0x2001 && (segments[1] <= 0x01ff || segments[1] == 0x0db8) {
+        return false;
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{net::IpAddr, time::Duration};
 
     use reqwest::{Certificate, StatusCode};
     use url::Url;
 
-    use super::{HttpTransport as _, OutboundRequest, ReqwestTransport};
+    use super::{HttpTransport as _, OutboundRequest, ReqwestTransport, is_public};
     use crate::test_tls::TlsServer;
 
     fn request(endpoint: Url, address: std::net::SocketAddr) -> OutboundRequest {
@@ -572,5 +615,42 @@ mod tests {
         assert_eq!(status, StatusCode::FOUND);
         assert_eq!(source.requests(), 1);
         assert_eq!(destination.requests(), 0);
+    }
+
+    #[test]
+    fn public_address_policy_rechecks_special_ipv6_encodings() {
+        for address in [
+            "100.64.0.1",
+            "192.0.0.1",
+            "192.88.99.1",
+            "::ffff:10.0.0.1",
+            "::127.0.0.1",
+            "64:ff9b::a00:1",
+            "64:ff9b:1:a00:0001::",
+            "2002:0a00:0001::",
+            "2001:0000:0808:0808:0000:0000:f5ff:fffe",
+            "fec0::1",
+            "100::1",
+            "fe80::1",
+            "fc00::1",
+            "::1",
+        ] {
+            let address = address.parse::<IpAddr>().expect("test address");
+            assert!(!is_public(address), "{address} must be refused");
+        }
+
+        for address in [
+            "8.8.8.8",
+            "2606:4700:4700::1111",
+            "::ffff:8.8.8.8",
+            "::8.8.8.8",
+            "64:ff9b::808:808",
+            "64:ff9b:1:808:0008:0800::",
+            "2002:0808:0808::",
+            "2001:0000:0808:0808:0000:0000:f7f7:f7f7",
+        ] {
+            let address = address.parse::<IpAddr>().expect("test address");
+            assert!(is_public(address), "{address} must be allowed");
+        }
     }
 }
