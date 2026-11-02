@@ -96,6 +96,7 @@ pub(crate) enum DirectAvailability {
 #[derive(Clone, Debug)]
 enum HistoryState {
     Unrequested,
+    QueuedLatest,
     LoadingLatest,
     Ready {
         oldest: Option<papo::HistoryReference>,
@@ -415,7 +416,12 @@ impl NetworkModel {
 
     pub(crate) fn mark_vanished_cached_rows(&mut self) {
         for buffer in self.buffers.values_mut() {
-            if buffer.projection.cached == Some(true) {
+            if buffer.projection.cached == Some(true)
+                && !matches!(
+                    buffer.history,
+                    HistoryState::QueuedLatest | HistoryState::LoadingLatest
+                )
+            {
                 buffer.projection.cached = None;
                 buffer.projection.available = Some(false);
             }
@@ -1089,7 +1095,7 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let target = HistoryTarget::from_key(buffer.key.clone()?);
         match &buffer.history {
-            HistoryState::Unrequested => {
+            HistoryState::Unrequested | HistoryState::QueuedLatest => {
                 buffer.history = HistoryState::LoadingLatest;
                 Some(HistoryFetch::Latest(target))
             }
@@ -1107,6 +1113,50 @@ impl NetworkModel {
             | HistoryState::LoadingOlder { .. }
             | HistoryState::Ready { .. } => None,
         }
+    }
+
+    pub(crate) fn queue_latest_history(&mut self, buffer_id: BufferId) -> bool {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return false;
+        };
+        if !matches!(buffer.history, HistoryState::Unrequested) {
+            return false;
+        }
+        buffer.history = HistoryState::QueuedLatest;
+        true
+    }
+
+    pub(crate) fn take_queued_history(&mut self) -> Vec<HistoryTarget> {
+        let queued = self
+            .buffer_order
+            .iter()
+            .filter_map(|id| {
+                let buffer = self.buffers.get(id)?;
+                matches!(buffer.history, HistoryState::QueuedLatest)
+                    .then(|| buffer.key.clone().map(HistoryTarget::from_key))
+                    .flatten()
+                    .map(|target| (*id, target))
+            })
+            .collect::<Vec<_>>();
+        queued
+            .into_iter()
+            .filter_map(|(buffer_id, target)| {
+                self.promote_cached_for_history(buffer_id);
+                self.buffers.get_mut(&buffer_id)?.history = HistoryState::LoadingLatest;
+                Some(target)
+            })
+            .collect()
+    }
+
+    pub(crate) fn promote_cached_for_history(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        if buffer.projection.kind != BufferKind::Direct || buffer.projection.cached != Some(true) {
+            return None;
+        }
+        promote_cached_buffer(buffer);
+        Some(EngineToUi::BufferUpdated {
+            buffer: buffer.projection.clone(),
+        })
     }
 
     pub(crate) fn request_latest_channel(
@@ -1158,7 +1208,9 @@ impl NetworkModel {
                 oldest: Some(oldest.clone()),
                 at_start: false,
             },
-            HistoryState::Unrequested | HistoryState::Ready { .. } => return None,
+            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
+                return None;
+            }
         };
         Some(buffer_id)
     }
@@ -1294,7 +1346,11 @@ impl NetworkModel {
         nick: papo::Nick,
         latest: SystemTime,
         _state: &papo::State,
-    ) -> (HistoryFetch, Option<BufferId>, Option<BufferProjection>) {
+    ) -> (
+        Option<HistoryFetch>,
+        Option<BufferId>,
+        Option<BufferProjection>,
+    ) {
         let key = NameKey::Direct(nick.clone());
         let should_resolve = !matches!(
             self.direct(&nick),
@@ -1302,13 +1358,19 @@ impl NetworkModel {
         );
         let direct_key = DirectKey::from_nick(&nick);
         let (buffer_id, added) = self.ensure_buffer(key, Some(direct_key.clone()), None);
+        let should_fetch = self.buffers.get(&buffer_id).is_some_and(|buffer| {
+            matches!(
+                buffer.history,
+                HistoryState::Unrequested | HistoryState::QueuedLatest
+            )
+        });
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             buffer.projection.last_activity_ms =
                 Some(buffer.projection.last_activity_ms.map_or_else(
                     || time_millis(latest),
                     |current| current.max(time_millis(latest)),
                 ));
-            if matches!(buffer.history, HistoryState::Unrequested) {
+            if should_fetch {
                 buffer.history = HistoryState::LoadingLatest;
             }
             if should_resolve {
@@ -1317,7 +1379,7 @@ impl NetworkModel {
         }
         self.sort_buffer_order();
         (
-            HistoryFetch::Latest(HistoryTarget::Direct(nick)),
+            should_fetch.then_some(HistoryFetch::Latest(HistoryTarget::Direct(nick))),
             should_resolve.then_some(buffer_id),
             added,
         )
@@ -1752,9 +1814,10 @@ impl NetworkModel {
             .and_then(|direct_key| self.directs.get(direct_key).copied());
         if let Some(id) = direct_id.or_else(|| self.names.get(&key).copied()) {
             if let Some(buffer) = self.buffers.get_mut(&id) {
-                buffer.projection.cached = None;
+                if buffer.projection.cached == Some(true) {
+                    promote_cached_buffer(buffer);
+                }
                 buffer.projection.available = None;
-                buffer.projection.cached_preview = None;
             }
             if matches!(key, NameKey::Direct(_)) {
                 self.names.insert(key.clone(), id);
@@ -1973,6 +2036,16 @@ impl NetworkModel {
             }
         }
     }
+}
+
+fn promote_cached_buffer(buffer: &mut BufferState) {
+    buffer.projection.cached = None;
+    buffer.projection.cached_preview = None;
+    buffer.projection.unread = 0;
+    buffer.projection.mentions = 0;
+    buffer.projection.read_through = None;
+    buffer.projection.read_at_ms = None;
+    buffer.read_at_ms = None;
 }
 
 fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
@@ -2302,9 +2375,9 @@ mod tests {
     use papo_testing::{StateBuilder, wire};
 
     use super::{
-        DirectKey, HistoryFetch, HistoryState, Incoming, NameKey, NetworkModel, PendingTargetState,
-        SendTarget, TimelineOrigin, collapse_blank_lines, derive_read_projection, draft_key,
-        nick_color_index, time_millis,
+        DirectKey, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey, NetworkModel,
+        PendingTargetState, SendTarget, TimelineOrigin, collapse_blank_lines,
+        derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
         BufferId, BufferKind, EngineToUi, MembershipKind, MembershipProjection, MessageAuthorship,
@@ -3573,6 +3646,55 @@ mod tests {
         assert!(matches!(
             model.prepare_cached_send(&mut pending),
             PendingTargetState::Gone
+        ));
+    }
+
+    #[test]
+    fn opened_cached_direct_becomes_live_even_without_new_traffic() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(1_000),
+                badge: SnapshotBadge::Mentions {
+                    count: 3,
+                    mentions: 3,
+                },
+                preview: Some("stale preview".into()),
+                peer_pin: None,
+            }],
+        ));
+        let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+
+        assert!(model.queue_latest_history(buffer_id));
+        model.mark_vanished_cached_rows();
+        assert_eq!(model.buffers[&buffer_id].projection.cached, Some(true));
+
+        let targets = model.take_queued_history();
+        assert!(matches!(targets.as_slice(), [HistoryTarget::Direct(_)]));
+        let buffer = &model.buffers[&buffer_id];
+        assert_eq!(buffer.projection.cached, None);
+        assert_eq!(buffer.projection.cached_preview, None);
+        assert_eq!(
+            (buffer.projection.unread, buffer.projection.mentions),
+            (0, 0)
+        );
+        assert!(matches!(buffer.history, HistoryState::LoadingLatest));
+
+        assert_eq!(
+            model.finish_history(&targets[0].conversation(), None, true),
+            Some((buffer_id, true))
+        );
+        assert!(matches!(
+            model.buffers[&buffer_id].history,
+            HistoryState::Ready {
+                oldest: None,
+                at_start: true
+            }
         ));
     }
 

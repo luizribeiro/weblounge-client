@@ -1515,9 +1515,14 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, "engine.network_not_found");
         };
+        if !running.model.is_online() {
+            running.model.queue_latest_history(buffer_id);
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        }
         let Some(fetch) = running.model.request_history(buffer_id) else {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
+        let promoted = running.model.promote_cached_for_history(buffer_id);
         spawn_history_fetch(
             Arc::clone(&self.state),
             self.outbound.clone(),
@@ -1525,14 +1530,17 @@ impl Runtime {
             running.instance,
             fetch,
         );
-        vec![
-            EngineToUi::HistoryStateChanged {
-                buffer_id,
-                loading: true,
-                at_start: false,
-            },
-            EngineToUi::CommandResult { id: command_id },
-        ]
+        promoted
+            .into_iter()
+            .chain([
+                EngineToUi::HistoryStateChanged {
+                    buffer_id,
+                    loading: true,
+                    at_start: false,
+                },
+                EngineToUi::CommandResult { id: command_id },
+            ])
+            .collect()
     }
 }
 
@@ -2564,7 +2572,7 @@ fn spawn_recent_direct_restore(
             if let Some(buffer) = added {
                 output.push(EngineToUi::BufferAdded { buffer });
             }
-            fetches.push(fetch);
+            fetches.extend(fetch);
             if let Some(buffer_id) = buffer_id {
                 resolutions.push((nick, buffer_id));
             }
@@ -2726,12 +2734,12 @@ fn process_event_with_direct(
             Vec::new()
         }
         papo::Event::Connected(connected) => {
-            process_connected(running, &snapshot, &connected, &mut output);
+            let history_targets = process_connected(running, &snapshot, &connected, &mut output);
             if !running.pending_sends.is_empty() && !running.flushing_sends {
                 running.flushing_sends = true;
                 flush_pending = true;
             }
-            Vec::new()
+            history_targets
         }
         papo::Event::Lagged(lagged) => {
             process_lagged(&mut running.model, &snapshot, &lagged, &mut output)
@@ -2876,7 +2884,7 @@ fn process_connected(
     snapshot: &papo::State,
     connected: &papo::event::Connected,
     output: &mut Vec<EngineToUi>,
-) {
+) -> Vec<HistoryTarget> {
     running.model.rebuild_name_keys(snapshot);
     let next = next_connection_state(
         running.model.connection(),
@@ -2889,6 +2897,11 @@ fn process_connected(
             .set_connection(next, Some(connected.nick.to_string())),
     );
     output.extend(running.model.sync_channels(snapshot));
+    let history_targets = running.model.take_queued_history();
+    if !history_targets.is_empty() {
+        output.push(running.model.buffers_event());
+    }
+    history_targets
 }
 
 fn process_disconnect(
