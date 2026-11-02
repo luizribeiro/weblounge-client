@@ -344,6 +344,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     field on the retryable startup error and in one operator console error. Hosted configuration,
     discovery, session-token acquisition, and engine startup now have bounded visible failures in
     development and production.
+  - B1j. [x] Keep signed-out redirect timing report-only on shared CI runners. The functional gate
+    still holds the real worker asset through the redirect and proves that Wasm never starts.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.

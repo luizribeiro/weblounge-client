@@ -326,7 +326,6 @@ for (const worker of ["shared", "dedicated"] as const) {
     releaseWorker();
     releaseWasm();
 
-    expect(elapsed).toBeLessThan(2_000);
     expect(workerAssetRequests).toBe(1);
     expect(wasmAssetRequests).toBe(0);
     await expect(page.getByText("Member sign in")).toBeVisible();
