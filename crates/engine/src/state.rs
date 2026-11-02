@@ -190,6 +190,7 @@ impl SendTarget {
         }
     }
 
+    #[cfg(test)]
     fn name_key(&self) -> NameKey {
         match self {
             Self::Channel(channel) => NameKey::Channel(channel.clone()),
@@ -614,11 +615,6 @@ impl NetworkModel {
         } else {
             TimelineOrigin::Live
         };
-        let mode_symbol = if history {
-            None
-        } else {
-            actor_mode_symbol(state, &conversation, message.actor.nick())
-        };
         let direct_key = match &conversation {
             NameKey::Direct(nick) => Some(DirectKey::from_nick(nick)),
             NameKey::Channel(_) => None,
@@ -642,7 +638,6 @@ impl NetworkModel {
                 _ => MessageKind::Text,
             },
             bot: message.actor.is_bot(),
-            mode_symbol,
             authorship: map_authorship(message.authorship),
             msgid: message.msgid().map(ToString::to_string),
             server_time_ms: message.server_time.map(time_millis),
@@ -683,7 +678,6 @@ impl NetworkModel {
             text: collapse_blank_lines(text),
             kind: MessageKind::Notice,
             bot: Some(false),
-            mode_symbol: None,
             authorship: MessageAuthorship::Own,
             nick_color_index: 0,
             highlighted: false,
@@ -752,7 +746,6 @@ impl NetworkModel {
             text: collapse_blank_lines(text.clone()),
             kind,
             bot: state.user(state.nick()).and_then(papo::User::is_bot),
-            mode_symbol: actor_mode_symbol(state, &key, state.nick()),
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
             highlighted: false,
@@ -876,9 +869,7 @@ impl NetworkModel {
         &mut self,
         pending: &PendingSend,
         sent: &papo::Sent,
-        state: &papo::State,
     ) -> Option<Vec<EngineToUi>> {
-        let mode_symbol = actor_mode_symbol(state, &pending.target.name_key(), state.nick());
         let buffer = self.buffers.get_mut(&pending.buffer_id)?;
         let index = buffer
             .timeline
@@ -905,7 +896,6 @@ impl NetworkModel {
                     message.server_time_ms = server_time;
                     message.delivery = MessageDelivery::Confirmed;
                     message.local_send_id = None;
-                    message.mode_symbol = mode_symbol;
                     message
                 })
                 .collect::<Vec<_>>()
@@ -913,7 +903,6 @@ impl NetworkModel {
             let mut message = record.projection;
             message.delivery = MessageDelivery::Confirmed;
             message.local_send_id = None;
-            message.mode_symbol = mode_symbol;
             vec![message]
         };
         let mut order_changed = false;
@@ -1583,7 +1572,6 @@ impl NetworkModel {
             text: collapse_blank_lines(incoming.text),
             kind: incoming.kind,
             bot: incoming.bot,
-            mode_symbol: incoming.mode_symbol,
             authorship: incoming.authorship,
             nick_color_index,
             highlighted,
@@ -2084,7 +2072,6 @@ struct Incoming {
     text: String,
     kind: MessageKind,
     bot: Option<bool>,
-    mode_symbol: Option<char>,
     authorship: MessageAuthorship,
     msgid: Option<String>,
     server_time_ms: Option<i64>,
@@ -2098,21 +2085,6 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
         papo::Authorship::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
     }
-}
-
-fn actor_mode_symbol(
-    state: &papo::State,
-    conversation: &NameKey,
-    actor: &papo::Nick,
-) -> Option<char> {
-    let NameKey::Channel(channel) = conversation else {
-        return None;
-    };
-    state
-        .channel(channel)
-        .and_then(|channel| channel.member(actor))
-        .and_then(|member| member.prefixes().first())
-        .map(|prefix| prefix.symbol())
 }
 
 fn matches_highlight_rules(text: &str, state: &papo::State) -> bool {
@@ -2262,7 +2234,6 @@ mod tests {
             text: text.into(),
             kind: crate::MessageKind::Text,
             bot: Some(false),
-            mode_symbol: None,
             authorship: MessageAuthorship::Other,
             msgid: msgid.map(str::to_owned),
             server_time_ms,
@@ -2390,7 +2361,6 @@ mod tests {
             text: text.into(),
             kind: crate::MessageKind::Text,
             bot: Some(false),
-            mode_symbol: None,
             authorship: MessageAuthorship::Other,
             msgid: Some(format!("{nick}-{server_time_ms}")),
             server_time_ms: Some(server_time_ms),
@@ -2693,7 +2663,7 @@ mod tests {
     }
 
     #[test]
-    fn message_projection_keeps_action_bot_and_mode_metadata() {
+    fn message_projection_keeps_action_and_bot_metadata() {
         let (mut model, state) = model(10);
         let mut message = incoming(
             &state,
@@ -2705,7 +2675,6 @@ mod tests {
         );
         message.kind = crate::MessageKind::Action;
         message.bot = Some(true);
-        message.mode_symbol = Some('@');
 
         let projection = model
             .receive_incoming(message, &state)
@@ -2717,7 +2686,6 @@ mod tests {
             .expect("message projection");
         assert_eq!(projection.kind, crate::MessageKind::Action);
         assert_eq!(projection.bot, Some(true));
-        assert_eq!(projection.mode_symbol, Some('@'));
     }
 
     #[test]

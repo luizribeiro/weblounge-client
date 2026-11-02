@@ -30,10 +30,6 @@ kind: MessageKind,
  */
 bot: boolean | null,
 /**
- * Highest channel membership prefix known when the message arrived.
- */
-mode_symbol: string | null,
-/**
  * Authorship relative to this client.
  */
 authorship: MessageAuthorship,

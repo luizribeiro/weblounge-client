@@ -45,7 +45,6 @@ const nickMessage: MessageProjection = {
   text: "hello mel",
   kind: "text",
   bot: false,
-  mode_symbol: null,
   authorship: "other",
   nick_color_index: 1,
   highlighted: false,

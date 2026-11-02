@@ -95,17 +95,6 @@
   justify-content: flex-end;
   min-width: 0;
 }
-.mode {
-  color: var(--wl-color-muted);
-  flex: 0 0 1ch;
-  font-family: var(--wl-font-mono);
-  font-weight: 500;
-  inline-size: 1ch;
-  max-inline-size: 1ch;
-  min-inline-size: 1ch;
-  overflow: hidden;
-  text-align: center;
-}
 .nick {
   direction: rtl;
   flex: 0 1 auto;
@@ -294,10 +283,6 @@
 }
 .list[data-presentation="mobile"] .nickIdentity {
   display: inline;
-}
-.list[data-presentation="mobile"] .mode {
-  display: inline;
-  font-family: inherit;
 }
 .list[data-presentation="mobile"] .nick {
   direction: inherit;

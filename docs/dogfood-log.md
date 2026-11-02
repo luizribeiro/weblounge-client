@@ -32,7 +32,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 24 | 2026-10-29 | Desktop: after collapsing the sidebar with the hamburger, the conversation and composer don't widen to fill the window. | fixed, live |
 | 25 | 2026-10-29 | Server buffer says "Channel" under its name, shows nothing, and can't be reached on mobile. (Lower priority.) | queued, last |
 | 26 | 2026-10-29 | iPhone PWA: content needs space for the home indicator (the Dynamic Island is fine). Device tweaks need one organised place. | fixed, live |
-| 27 | 2026-10-29 | Messages you just sent show no mode prefix ("luiz" instead of "~luiz") until reloaded from history. | fixed, live |
+| 27 | 2026-10-29 | Messages you just sent show no mode prefix ("luiz" instead of "~luiz") until reloaded from history. | superseded: Luiz chose no transcript prefixes on 2026-11-02 |
 | 28 | 2026-10-29 | Beta console noise from our code: wasm-bindgen "deprecated parameters" warning, TanStack "Failed to get offset for index: 0", unused Inter preload, Firefox "scroll-linked positioning effect". (The webserial and CSP-eval errors come from browser extensions, not the app.) | queued (task 37, message-list rework, splash) |
 | 29 | 2026-10-29 | A Shift+Enter multiline message shows as one message live, but after reload as separate rows (blank lines as empty rows) with your nick in the wrong colour. Same papo history bug as #3. | fixed, confirmed by Luiz |
 | 30 | 2026-10-30 | Mobile: the browser's back/forward swipe gestures still fight the in-app gestures. | queued |
@@ -43,7 +43,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 35 | 2026-10-30 | Suggestions popup still flashes on Backspace. | fixed, live (dafcae3); please confirm |
 | 36 | 2026-10-30 | Desktop: focus isn't on the composer after joining or switching; you always have to click it (desktop focus policy not implemented). | fixed, live (dafcae3); please confirm |
 | 37 | 2026-10-30 | Firefox: the address bar doesn't follow the channel, so reload doesn't reopen it. | fixed, live (dafcae3); please confirm |
-| 38 | 2026-10-30 | History messages show no mode prefix (asked whether it can always be accurate). | queued |
+| 38 | 2026-10-30 | History messages show no mode prefix (asked whether it can always be accurate). | resolved: no transcript prefixes; history cannot make them accurate |
 | 39 | 2026-10-30 | iPhone: home-screen icon not showing; the generated icons use the line-art chair instead of the brand favicon glyph. | queued |
 | 40 | 2026-10-30 | After the splash, a second 'Signing in…' screen shows a black-on-black chair (desktop too). Drop it. | fixed, live (dafcae3); please confirm |
 | 41 | 2026-10-30 | iPhone: the home-indicator space applies to every screen (chats list, members) and is too big; it should only pad the composer. | fixed, live (dafcae3); please confirm |

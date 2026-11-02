@@ -71,10 +71,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     iPhone 16 Pro WebKit cover background/server loss, browser offline, worker termination, Ergo
     restart, hosted-token expiry, and preservation of the established shell, draft, and message
     viewport. The in-memory send queue cannot survive worker termination.
-  - [x] Preserve the sender's highest channel prefix on optimistic and confirmed own messages;
-    confirmation re-snapshots current membership, while DMs remain unprefixed. Engine coverage
-    spans owner, operator, voice, plain, mode changes during send, and DMs; local Ergo proves `@`
-    before and after browser confirmation.
+  - [x] Omit channel mode prefixes from every transcript row. IRC history cannot preserve the
+    sender's status at message time, so the message protocol carries no mode symbol and live and
+    optimistic rows do not guess one. The Mode symbols setting remains scoped to the member list;
+    local Ergo proves an operator keeps `@` there through an unprefixed send confirmation.
   - [x] Keep engine buffer order deterministic: server first, channels by casemapped name without
     `#`/`&`, and direct messages by latest activity with a casemapped nick tiebreaker. Desktop and
     mobile consume the same engine order; shuffled joins remain stable across three reloads.
@@ -97,7 +97,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Close engine bugs found in the papo API review: DM buffers own and release their MONITOR
     leases without history or channel traffic consuming slots; a full MONITOR list keeps the DM
     readable but disables unverified sends with a human reason; own-nick completion uses IRC
-    casemapping; and historical rows never inherit an actor's current channel prefix.
+    casemapping.
   - [x] Size desktop timestamp columns from the active locale; never ellipsize times.
   - [x] Reset mobile back-swipe motion on cancellation, browser history, visibility, and interrupted transitions.
   - [x] Keep the mobile chat list mounted across back navigation without recreating rows on retained
@@ -304,7 +304,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
   - [x] Make startup and render failures retryable in place; standalone retries create a fresh worker and engine, while hosted retries restart authorization.
-  - [x] Ellipsize long desktop message nicks within their fixed column while preserving a stable mode-symbol slot.
+  - [x] Ellipsize long desktop message nicks within their fixed column without reserving a transcript mode-symbol slot.
   - [x] Give distinct nickname-link browser fixtures distinct accounts so durable DM identity does not merge their conversations.
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).

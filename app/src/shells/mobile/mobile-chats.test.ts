@@ -69,7 +69,6 @@ function buffer(
             text: "latest note",
             kind: "text" as const,
             bot: false,
-            mode_symbol: null,
             authorship: "other" as const,
             nick_color_index: 0,
             highlighted: false,

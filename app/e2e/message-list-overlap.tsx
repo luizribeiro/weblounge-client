@@ -34,7 +34,6 @@ function harnessMessage(id: number, text: string): MessageProjection {
     text,
     kind: "text",
     bot: false,
-    mode_symbol: id % 2 === 0 ? null : "@",
     authorship: "other",
     nick_color_index: id * 7_919,
     highlighted: false,

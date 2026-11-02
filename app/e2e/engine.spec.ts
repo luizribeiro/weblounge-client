@@ -252,7 +252,7 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
-  test("keeps our operator prefix through send confirmation", async ({
+  test("keeps operator status in members and omits it from transcript rows", async ({
     page,
   }) => {
     const operator = await IrcClient.connect(
@@ -279,8 +279,13 @@ test.describe("local Ergo user flow", () => {
       await page.getByRole("textbox", { name: "Message" }).fill(text);
       await page.getByRole("button", { name: "Send" }).click();
       await expect
-        .poll(() => observedDeliveryModes(page))
-        .toEqual(expect.arrayContaining(["optimistic:@", "confirmed:@"]));
+        .poll(() => observedDeliveries(page))
+        .toEqual(expect.arrayContaining(["optimistic", "confirmed"]));
+      const row = page.locator(
+        `[data-message-row][data-message-text="${text}"]`,
+      );
+      await expect(row).toContainText("weblounge");
+      await expect(row).not.toContainText("@weblounge");
     } finally {
       operator.close();
     }
@@ -675,10 +680,8 @@ async function observeDeliveries(
   await page.evaluate((messageText) => {
     const state = window as Window & {
       observedDeliveries?: string[];
-      observedDeliveryModes?: string[];
     };
     state.observedDeliveries = [];
-    state.observedDeliveryModes = [];
     const record = () => {
       for (const row of document.querySelectorAll<HTMLElement>(
         `[data-message-text="${CSS.escape(messageText)}"]`,
@@ -690,9 +693,6 @@ async function observeDeliveries(
         ) {
           state.observedDeliveries?.push(delivery);
         }
-        const deliveryMode = `${delivery ?? ""}:${row.dataset.modeSymbol ?? ""}`;
-        if (!state.observedDeliveryModes?.includes(deliveryMode))
-          state.observedDeliveryModes?.push(deliveryMode);
       }
     };
     new MutationObserver(record).observe(document.body, {
@@ -702,16 +702,6 @@ async function observeDeliveries(
     });
     record();
   }, text);
-}
-
-async function observedDeliveryModes(
-  page: import("@playwright/test").Page,
-): Promise<string[]> {
-  return page.evaluate(
-    () =>
-      (window as Window & { observedDeliveryModes?: string[] })
-        .observedDeliveryModes ?? [],
-  );
 }
 
 async function expectMeasuredTimeline(

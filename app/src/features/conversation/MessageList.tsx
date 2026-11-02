@@ -513,7 +513,6 @@ function MessageRow(props: {
       data-delivery={message.delivery}
       data-message-row="true"
       data-message-text={message.text}
-      data-mode-symbol={message.mode_symbol ?? ""}
       data-unverified-sender={message.unverified_sender === true || undefined}
     >
       {message.kind === "action" ? (
@@ -553,9 +552,6 @@ function MessageRow(props: {
           </time>
           <Line class={styles.nickColumn} data-message-chrome="true">
             <span class={styles.nickIdentity}>
-              <span class={styles.mode} data-mode-slot="true">
-                {message.mode_symbol ?? ""}
-              </span>
               <Nickname
                 class={styles.nick}
                 display={message}

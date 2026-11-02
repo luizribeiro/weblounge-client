@@ -353,8 +353,6 @@ pub struct MessageProjection {
     pub kind: MessageKind,
     /// Whether IRC metadata identifies the author as a bot.
     pub bot: Option<bool>,
-    /// Highest channel membership prefix known when the message arrived.
-    pub mode_symbol: Option<char>,
     /// Authorship relative to this client.
     pub authorship: MessageAuthorship,
     /// Stable palette index derived with the network's IRC name rules.

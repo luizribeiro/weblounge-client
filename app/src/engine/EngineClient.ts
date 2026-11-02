@@ -1033,7 +1033,6 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     typeof value.text !== "string" ||
     !isOneOf(value.kind, ["text", "action", "notice"]) ||
     !(value.bot === null || typeof value.bot === "boolean") ||
-    !(value.mode_symbol === null || typeof value.mode_symbol === "string") ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
     typeof value.nick_color_index !== "number" ||
     typeof value.highlighted !== "boolean" ||
@@ -1064,7 +1063,6 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     text: value.text,
     kind: value.kind,
     bot: value.bot,
-    mode_symbol: value.mode_symbol,
     authorship: value.authorship,
     nick_color_index: value.nick_color_index,
     highlighted: value.highlighted,

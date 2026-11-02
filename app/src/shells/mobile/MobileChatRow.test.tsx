@@ -13,7 +13,6 @@ const lastMessage: MessageProjection = {
   text: "See you there",
   kind: "text",
   bot: false,
-  mode_symbol: null,
   authorship: "other",
   nick_color_index: 0,
   highlighted: true,

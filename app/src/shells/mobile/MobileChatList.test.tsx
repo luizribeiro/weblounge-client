@@ -309,7 +309,6 @@ it("omits the preview element at compact mobile density", () => {
             text: "compact preview",
             kind: "text",
             bot: false,
-            mode_symbol: null,
             authorship: "other",
             nick_color_index: 0,
             highlighted: false,

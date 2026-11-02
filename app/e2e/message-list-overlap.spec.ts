@@ -43,34 +43,21 @@ function append(page: Page, texts: readonly string[], readThrough: number) {
   );
 }
 
-test("ellipsizes a 16-character nick inside the aligned mode slot", async ({
+test("ellipsizes a 16-character nick without a transcript prefix slot", async ({
   page,
 }) => {
   expect(Array.from(longNick)).toHaveLength(16);
-  const prefixedRow = messageRow(
-    page,
-    `earlier message ${harnessHistoryLength - 1}`,
-  );
-  const plainRow = messageRow(page, `earlier message ${harnessHistoryLength}`);
-  const nick = prefixedRow.getByTitle(longNick);
+  const row = messageRow(page, `earlier message ${harnessHistoryLength - 1}`);
+  const nick = row.getByTitle(longNick);
   await expect(nick).toHaveCSS("text-overflow", "ellipsis");
   await expect(nick).toHaveCSS("overflow", "hidden");
   expect(
     await nick.evaluate((element) => element.scrollWidth > element.clientWidth),
   ).toBe(true);
-  const [prefixedSlot, plainSlot] = await Promise.all([
-    prefixedRow
-      .locator("[data-mode-slot]")
-      .evaluate((element) => element.getBoundingClientRect().width),
-    plainRow
-      .locator("[data-mode-slot]")
-      .evaluate((element) => element.getBoundingClientRect().width),
-  ]);
-  expect(prefixedSlot).toBeGreaterThan(0);
-  expect(plainSlot).toBe(prefixedSlot);
+  await expect(row.locator("[data-mode-slot]")).toHaveCount(0);
 
   await mkdir(screenshots, { recursive: true });
-  await prefixedRow.screenshot({
+  await row.screenshot({
     path: path.join(screenshots, "message-long-nick.png"),
   });
 });

@@ -50,7 +50,6 @@ const message: MessageProjection = {
   text: "hello weblounge",
   kind: "text",
   bot: false,
-  mode_symbol: null,
   authorship: "other",
   nick_color_index: 7,
   highlighted: true,
@@ -390,7 +389,6 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           delivery: "optimistic",
           kind: "action",
           highlighted: false,
-          mode_symbol: "@",
           text: "waves",
           received_at_ms: 3,
         },
@@ -401,7 +399,6 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           bot: true,
           delivery: "received",
           highlighted: false,
-          mode_symbol: "@",
           text: "welcome",
           received_at_ms: 4,
         },
@@ -430,10 +427,6 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
   );
   expect(screen.getByText("Sending…")).toBeInTheDocument();
   expect(screen.getByText("BOT")).toBeInTheDocument();
-  expect(screen.getByText("@")).toBeInTheDocument();
-  expect(
-    screen.getByText("welcome").closest("[data-message-row]"),
-  ).toHaveAttribute("data-mode-symbol", "@");
   expect(screen.getByText("A quiet room")).toBeInTheDocument();
   expect(
     screen.getByText(/set by mel/).closest("[data-notice-row]"),
@@ -763,15 +756,14 @@ it("keeps following through a transient one-row render gap", async () => {
 });
 
 it("keeps the full nick accessible when its visual start truncates", () => {
-  const { container } = render(() => (
+  render(() => (
     <MessageList
       messages={[
         {
           ...message,
           author: "an-extremely-long-nickname",
-          mode_symbol: "@",
         },
-        { ...message, id: 2, author: "short", mode_symbol: null },
+        { ...message, id: 2, author: "short" },
       ]}
     />
   ));
@@ -779,11 +771,6 @@ it("keeps the full nick accessible when its visual start truncates", () => {
   expect(screen.getByTitle("an-extremely-long-nickname")).toHaveTextContent(
     "an-extremely-long-nickname",
   );
-  expect(
-    [...container.querySelectorAll<HTMLElement>("[data-mode-slot]")].map(
-      (slot) => slot.textContent,
-    ),
-  ).toEqual(["@", ""]);
 });
 
 it("selects the latest own message for empty-composer Up", async () => {

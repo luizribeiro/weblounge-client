@@ -28,7 +28,6 @@ const messages = Array.from({ length: 10_000 }, (_, index) => {
         : `message ${index + 1} about IRC history and the open web`,
     kind: index % 113 === 0 ? "action" : "text",
     bot: author.nick === "tomo",
-    mode_symbol: author.nick === "luiz" ? "@" : null,
     authorship: author.authorship,
     nick_color_index: author.color,
     highlighted: author.authorship === "other" && index % 97 === 0,
