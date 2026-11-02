@@ -459,15 +459,25 @@ it("anchors visible content when an overscanned row above it grows", async () =>
 
 it("renders action, own, pending, bot, mode, divider, New, and membership variants", async () => {
   const membership: MembershipProjection = {
+    type: "change",
     id: 20,
     kind: "joined",
     nicks: ["mel", "rafa", "cyd"],
     server_time_ms: 2,
     received_at_ms: 2,
   };
+  const kicked: MembershipProjection = {
+    type: "kicked",
+    id: 21,
+    actor: "operator",
+    reason: "too loud",
+    server_time_ms: 6,
+    received_at_ms: 6,
+  };
+  const rejoin = vi.fn();
   render(() => (
     <MessageList
-      memberships={[membership]}
+      memberships={[membership, kicked]}
       messages={[
         {
           ...message,
@@ -511,6 +521,7 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           received_at_ms: 5,
         },
       ]}
+      onRejoin={rejoin}
       readAtMs={1}
     />
   ));
@@ -518,6 +529,9 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
 
   expect(screen.getByText("New")).toBeInTheDocument();
   expect(screen.getByText("→ mel, rafa and cyd joined")).toBeInTheDocument();
+  expect(screen.getByText(/operator kicked you: too loud/u)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Rejoin" }));
+  expect(rejoin).toHaveBeenCalledOnce();
   expect(screen.getByText("waves").closest("[data-message-row]")).toHaveClass(
     /action/,
   );

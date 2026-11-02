@@ -185,6 +185,7 @@ function isSharedStateEvent(event: unknown): boolean {
     event.type === "chat_list_snapshot_loaded" ||
     event.type === "chat_list_live" ||
     event.type === "buffer_added" ||
+    event.type === "buffer_removed" ||
     event.type === "buffer_updated" ||
     event.type === "draft_key_changed" ||
     event.type === "members_changed" ||
@@ -192,6 +193,7 @@ function isSharedStateEvent(event: unknown): boolean {
     event.type === "message_updated" ||
     event.type === "messages_prepended" ||
     event.type === "history_state_changed" ||
+    event.type === "membership_changed" ||
     event.type === "message_confirmed" ||
     event.type === "message_failed" ||
     event.type === "notice" ||

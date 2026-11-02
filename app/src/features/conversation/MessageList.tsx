@@ -49,6 +49,7 @@ interface MessageListProps {
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly onRejoin?: (() => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly registerController?:
     | ((controller: MessageListController) => void)
@@ -455,6 +456,7 @@ export function MessageList(props: MessageListProps) {
                       onOpenChannel={props.onOpenChannel}
                       onOpenDirect={props.onOpenDirect}
                       onOpenExternal={props.onOpenExternal}
+                      onRejoin={props.onRejoin}
                       onRetry={props.onRetry}
                       row={row()}
                     />
@@ -489,6 +491,7 @@ function TimelineRowView(props: {
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
+  readonly onRejoin?: (() => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly row: TimelineRow | undefined;
 }) {
@@ -522,9 +525,20 @@ function TimelineRowView(props: {
           <Match when={row.kind === "membership"}>
             {row.kind === "membership" && (
               <div class={styles.membership} data-membership-row="true">
-                {membershipArrow(row.membership.kind)}{" "}
-                {formatNicks(row.membership.nicks)}{" "}
-                {membershipVerb(row.membership.kind)}
+                {row.membership.type === "kicked" ? (
+                  <>
+                    ← {kickText(row.membership)} ·{" "}
+                    <button onClick={() => props.onRejoin?.()} type="button">
+                      Rejoin
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {membershipArrow(row.membership.kind)}{" "}
+                    {formatNicks(row.membership.nicks)}{" "}
+                    {membershipVerb(row.membership.kind)}
+                  </>
+                )}
               </div>
             )}
           </Match>
@@ -825,14 +839,25 @@ function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight - 22);
 }
 
-function membershipArrow(kind: MembershipProjection["kind"]): string {
+function membershipArrow(
+  kind: Extract<MembershipProjection, { type: "change" }>["kind"],
+): string {
   return kind === "joined" ? "→" : "←";
 }
 
-function membershipVerb(kind: MembershipProjection["kind"]): string {
+function membershipVerb(
+  kind: Extract<MembershipProjection, { type: "change" }>["kind"],
+): string {
   if (kind === "joined") return "joined";
   if (kind === "parted") return "left";
   return "quit";
+}
+
+function kickText(
+  membership: Extract<MembershipProjection, { type: "kicked" }>,
+): string {
+  const reason = membership.reason === null ? "" : `: ${membership.reason}`;
+  return `${membership.actor} kicked you${reason}`;
 }
 
 function formatNicks(nicks: readonly string[]): string {
@@ -849,7 +874,10 @@ function toCopyRows(rows: readonly TimelineRow[]): CopyRow[] {
     if (row.kind === "membership")
       result.push({
         kind: "membership",
-        text: `${membershipArrow(row.membership.kind)} ${formatNicks(row.membership.nicks)} ${membershipVerb(row.membership.kind)}`,
+        text:
+          row.membership.type === "kicked"
+            ? `← ${kickText(row.membership)}`
+            : `${membershipArrow(row.membership.kind)} ${formatNicks(row.membership.nicks)} ${membershipVerb(row.membership.kind)}`,
       });
     if (row.kind === "message" && row.message.kind === "action")
       result.push({

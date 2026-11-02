@@ -195,6 +195,16 @@ pub enum BufferKind {
     Direct,
 }
 
+/// Whether a channel buffer currently represents an active membership.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelStatus {
+    /// The current user is joined and may send.
+    Joined,
+    /// The current user was kicked and must rejoin before sending.
+    Kicked,
+}
+
 /// Identity state for a direct-message peer.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -222,6 +232,10 @@ pub struct BufferProjection {
     pub network_id: NetworkId,
     /// Kind of conversation.
     pub kind: BufferKind,
+    /// Current membership state for a channel buffer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub channel_status: Option<ChannelStatus>,
     /// Whether this row was restored from the launch cache and is not live yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -394,21 +408,48 @@ pub enum MembershipKind {
     Quit,
 }
 
-/// Consecutive membership changes collapsed by the engine.
+/// One channel membership row retained in the timeline.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
-pub struct MembershipProjection {
-    /// Stable timeline identity.
-    pub id: MessageId,
-    /// Membership transition shared by every nick in this run.
-    pub kind: MembershipKind,
-    /// Nicks in arrival order.
-    pub nicks: Vec<String>,
-    #[ts(type = "number | null")]
-    /// Timestamp on the newest event in the run, when supplied by the server.
-    pub server_time_ms: Option<i64>,
-    #[ts(type = "number")]
-    /// Local receipt timestamp of the newest event in the run.
-    pub received_at_ms: i64,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MembershipProjection {
+    /// Consecutive ordinary membership changes collapsed by the engine.
+    Change {
+        /// Stable timeline identity.
+        id: MessageId,
+        /// Membership transition shared by every nick in this run.
+        kind: MembershipKind,
+        /// Nicks in arrival order.
+        nicks: Vec<String>,
+        #[ts(type = "number | null")]
+        /// Timestamp on the newest event in the run, when supplied by the server.
+        server_time_ms: Option<i64>,
+        #[ts(type = "number")]
+        /// Local receipt timestamp of the newest event in the run.
+        received_at_ms: i64,
+    },
+    /// The current user was removed and can explicitly rejoin.
+    Kicked {
+        /// Stable timeline identity.
+        id: MessageId,
+        /// Nick or server that removed the current user.
+        actor: String,
+        /// Optional server-supplied reason.
+        reason: Option<String>,
+        #[ts(type = "number | null")]
+        /// Timestamp supplied by the server, when present.
+        server_time_ms: Option<i64>,
+        #[ts(type = "number")]
+        /// Local receipt timestamp.
+        received_at_ms: i64,
+    },
+}
+
+impl MembershipProjection {
+    pub(crate) const fn id(&self) -> MessageId {
+        match self {
+            Self::Change { id, .. } | Self::Kicked { id, .. } => *id,
+        }
+    }
 }
 
 /// Exclusive presentation group for one channel member.

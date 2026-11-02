@@ -163,6 +163,13 @@ export class IrcClient {
     );
   }
 
+  async kick(channel: string, nick: string, reason: string): Promise<void> {
+    this.send(`KICK ${channel} ${nick} :${reason}`);
+    await this.waitFor(`KICK confirmation for ${nick}`, (line) =>
+      line.includes(` KICK ${channel} ${nick} :${reason}`),
+    );
+  }
+
   async nick(nickname: string): Promise<void> {
     const previous = this.#nickname;
     this.send(`NICK ${nickname}`);

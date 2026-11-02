@@ -12,6 +12,7 @@ import type {
   NetworkProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
+import { t } from "../../features/composer/strings";
 import {
   DirectIdentityBanner,
   directIdentityBlocked,
@@ -229,6 +230,9 @@ export function MobileConversation(props: MobileConversationProps) {
             onOpenDirect={
               props.buffer.kind === "server" ? undefined : props.onOpenDirect
             }
+            onRejoin={() =>
+              void props.onSend(props.buffer.id, `/join ${props.buffer.title}`)
+            }
             onRetry={(localSendId) =>
               props.onRetry?.(props.buffer.id, localSendId)
             }
@@ -241,6 +245,13 @@ export function MobileConversation(props: MobileConversationProps) {
           {props.composerNotice !== undefined && (
             <p class={styles.notice} role="status">
               {props.composerNotice}
+            </p>
+          )}
+          {props.buffer.channel_status === "kicked" && (
+            <p class={styles.notice} role="status">
+              {t("engine.channel_rejoin_required", {
+                target: props.buffer.title,
+              })}
             </p>
           )}
           <Composer
@@ -262,7 +273,10 @@ export function MobileConversation(props: MobileConversationProps) {
               )
             }
             onSelectLast={() => listController?.selectLastOwn()}
-            disabled={directIdentityBlocked(props.buffer)}
+            disabled={
+              props.buffer.channel_status === "kicked" ||
+              directIdentityBlocked(props.buffer)
+            }
             onSend={(text) => props.onSend(props.buffer.id, text)}
           />
         </Show>

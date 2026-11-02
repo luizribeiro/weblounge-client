@@ -92,6 +92,11 @@ another member's departure do not remove a channel projection.
 These are a narrow transport representation of the signed-off projection model, not a second
 state model.
 
+Channel buffers project `ChannelStatus::Kicked` after an own `KICK` and remain addressable but
+unsendable. The membership timeline uses a distinct `Kicked` row carrying the actor and optional
+reason, so the UI can render the event and an explicit Rejoin action without parsing IRC text.
+The own `JOIN` echo restores `ChannelStatus::Joined`; only then does the composer become sendable.
+
 ## Snapshot and patches
 
 ```rust

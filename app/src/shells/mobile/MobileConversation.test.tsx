@@ -107,6 +107,29 @@ it("shows the members action only for channels", () => {
   expect(screen.queryByRole("button", { name: "Show members" })).toBeNull();
 });
 
+it("keeps a kicked channel readable and disables its composer", () => {
+  render(() =>
+    conversation(
+      {
+        ...buffer,
+        kind: "channel",
+        channel_status: "kicked",
+        title: "#room",
+      },
+      () => {},
+    ),
+  );
+
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "You were kicked from #room. Rejoin to send messages.",
+  );
+  expect(document.querySelector("[data-composer]")).toHaveAttribute(
+    "data-disabled",
+    "true",
+  );
+  expect(document.querySelector("[data-message-list]")).not.toBeNull();
+});
+
 it("shows an identity mismatch, blocks sending, and routes both decisions", () => {
   const trust = vi.fn();
   const defer = vi.fn();

@@ -876,21 +876,39 @@ function decodeMembership(value: unknown): MembershipProjection | undefined {
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
-    !isOneOf(value.kind, ["joined", "parted", "quit"]) ||
-    !isStringArray(value.nicks) ||
     !(
       value.server_time_ms === null || typeof value.server_time_ms === "number"
     ) ||
     typeof value.received_at_ms !== "number"
   )
     return undefined;
-  return {
-    id: value.id,
-    kind: value.kind,
-    nicks: value.nicks,
-    server_time_ms: value.server_time_ms,
-    received_at_ms: value.received_at_ms,
-  };
+  if (
+    value.type === "change" &&
+    isOneOf(value.kind, ["joined", "parted", "quit"]) &&
+    isStringArray(value.nicks)
+  )
+    return {
+      type: value.type,
+      id: value.id,
+      kind: value.kind,
+      nicks: value.nicks,
+      server_time_ms: value.server_time_ms,
+      received_at_ms: value.received_at_ms,
+    };
+  if (
+    value.type === "kicked" &&
+    typeof value.actor === "string" &&
+    (value.reason === null || typeof value.reason === "string")
+  )
+    return {
+      type: value.type,
+      id: value.id,
+      actor: value.actor,
+      reason: value.reason,
+      server_time_ms: value.server_time_ms,
+      received_at_ms: value.received_at_ms,
+    };
+  return undefined;
 }
 
 function decodeNetwork(value: unknown): NetworkProjection | undefined {
@@ -962,6 +980,10 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.network_id !== "number" ||
     !isOneOf(value.kind, ["server", "channel", "direct"]) ||
+    !(
+      value.channel_status === undefined ||
+      isOneOf(value.channel_status, ["joined", "kicked"])
+    ) ||
     !(value.cached === undefined || typeof value.cached === "boolean") ||
     !(value.available === undefined || typeof value.available === "boolean") ||
     typeof value.title !== "string" ||
@@ -1005,6 +1027,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     id: value.id,
     network_id: value.network_id,
     kind: value.kind,
+    ...(value.channel_status === undefined
+      ? {}
+      : { channel_status: value.channel_status }),
     cached: value.cached ?? false,
     available: value.available ?? true,
     title: value.title,

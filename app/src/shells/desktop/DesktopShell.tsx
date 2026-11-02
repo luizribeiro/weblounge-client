@@ -21,6 +21,7 @@ import type {
   NetworkProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
+import { t } from "../../features/composer/strings";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
 import {
   DirectIdentityBanner,
@@ -414,6 +415,11 @@ export function DesktopShell(props: DesktopShellProps) {
                 onOpenDirect={
                   activeBuffer()?.kind === "server" ? undefined : openDirect
                 }
+                onRejoin={() => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined)
+                    void props.onSend(buffer.id, `/join ${buffer.title}`);
+                }}
                 onRetry={(localSendId) => {
                   const buffer = activeBuffer();
                   if (buffer !== undefined)
@@ -427,6 +433,13 @@ export function DesktopShell(props: DesktopShellProps) {
               {props.composerNotice !== undefined && (
                 <p class={styles.notice} role="status">
                   {props.composerNotice}
+                </p>
+              )}
+              {activeBuffer()?.channel_status === "kicked" && (
+                <p class={styles.notice} role="status">
+                  {t("engine.channel_rejoin_required", {
+                    target: activeBuffer()?.title ?? "this channel",
+                  })}
                 </p>
               )}
               <Show when={activeBuffer()?.id} keyed>
@@ -446,6 +459,7 @@ export function DesktopShell(props: DesktopShellProps) {
                       }
                       disabled={
                         buffer()?.kind === "server" ||
+                        buffer()?.channel_status === "kicked" ||
                         buffer()?.available === false ||
                         (buffer() !== undefined &&
                           directIdentityBlocked(buffer() as BufferProjection))

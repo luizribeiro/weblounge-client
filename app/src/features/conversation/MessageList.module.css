@@ -217,6 +217,15 @@
   line-height: 34px;
   padding-left: 72px;
 }
+.membership button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-accent);
+  font: inherit;
+  font-style: normal;
+  padding: 0;
+}
 .notice {
   color: var(--wl-color-muted);
   font-size: 12px;

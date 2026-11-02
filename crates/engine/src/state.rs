@@ -5,10 +5,10 @@ use std::{
 };
 
 use crate::{
-    BufferId, BufferKind, BufferProjection, DirectIdentityState, EngineToUi, LocalSendId,
-    MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
-    MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
-    NoticeAction, NoticeTone,
+    BufferId, BufferKind, BufferProjection, ChannelStatus, DirectIdentityState, EngineToUi,
+    LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery,
+    MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
+    NetworkProjection, NoticeAction, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, truncate_preview,
     },
@@ -253,6 +253,7 @@ impl NetworkModel {
                 id: server_id,
                 network_id: id,
                 kind: BufferKind::Server,
+                channel_status: None,
                 cached: None,
                 available: None,
                 title: label.clone(),
@@ -485,11 +486,13 @@ impl NetworkModel {
                 if let Some(buffer) = self.buffers.get_mut(&id) {
                     let title = key.title();
                     if buffer.projection.topic != topic
+                        || buffer.projection.channel_status != Some(ChannelStatus::Joined)
                         || buffer.projection.cached == Some(true)
                         || buffer.projection.available == Some(false)
                         || buffer.projection.title != title
                     {
                         buffer.projection.topic = topic;
+                        buffer.projection.channel_status = Some(ChannelStatus::Joined);
                         buffer.projection.title = title;
                         buffer.projection.cached = None;
                         buffer.projection.available = None;
@@ -705,7 +708,9 @@ impl NetworkModel {
         state: &papo::State,
     ) -> Option<(PendingSend, Vec<EngineToUi>)> {
         let buffer = self.buffers.get(&buffer_id)?;
-        if buffer.projection.available == Some(false) {
+        if buffer.projection.available == Some(false)
+            || buffer.projection.channel_status == Some(ChannelStatus::Kicked)
+        {
             return None;
         }
         let cached = buffer.projection.cached == Some(true);
@@ -835,20 +840,28 @@ impl NetworkModel {
             if let Some(run) = buffer
                 .memberships
                 .iter_mut()
-                .find(|run| run.id == previous && run.kind == kind)
+                .find(|run| run.id() == previous)
+                && let MembershipProjection::Change {
+                    kind: run_kind,
+                    nicks,
+                    server_time_ms: run_server_time_ms,
+                    received_at_ms: run_received_at_ms,
+                    ..
+                } = run
+                && *run_kind == kind
             {
-                if !run.nicks.contains(&nick) {
-                    run.nicks.push(nick);
+                if !nicks.contains(&nick) {
+                    nicks.push(nick);
                 }
-                run.server_time_ms = server_time_ms.or(run.server_time_ms);
-                run.received_at_ms = received_at_ms;
+                *run_server_time_ms = server_time_ms.or(*run_server_time_ms);
+                *run_received_at_ms = received_at_ms;
                 return Some(EngineToUi::MembershipChanged {
                     buffer_id,
                     membership: run.clone(),
                 });
             }
         }
-        let membership = MembershipProjection {
+        let membership = MembershipProjection::Change {
             id: self.allocate_message_id(),
             kind,
             nicks: vec![nick],
@@ -856,7 +869,7 @@ impl NetworkModel {
             received_at_ms,
         };
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        buffer.last_membership = Some(membership.id);
+        buffer.last_membership = Some(membership.id());
         buffer.memberships.push(membership.clone());
         let excess = buffer.memberships.len().saturating_sub(self.window_limit);
         buffer.memberships.drain(..excess);
@@ -864,6 +877,39 @@ impl NetworkModel {
             buffer_id,
             membership,
         })
+    }
+
+    pub(crate) fn receive_own_kick(
+        &mut self,
+        channel: &papo::ChannelName,
+        actor: String,
+        reason: Option<String>,
+        server_time_ms: Option<i64>,
+        received_at_ms: i64,
+    ) -> Option<Vec<EngineToUi>> {
+        let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let membership = MembershipProjection::Kicked {
+            id: self.allocate_message_id(),
+            actor,
+            reason,
+            server_time_ms,
+            received_at_ms,
+        };
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        buffer.projection.channel_status = Some(ChannelStatus::Kicked);
+        buffer.last_membership = Some(membership.id());
+        buffer.memberships.push(membership.clone());
+        let excess = buffer.memberships.len().saturating_sub(self.window_limit);
+        buffer.memberships.drain(..excess);
+        Some(vec![
+            EngineToUi::MembershipChanged {
+                buffer_id,
+                membership,
+            },
+            EngineToUi::BufferUpdated {
+                buffer: buffer.projection.clone(),
+            },
+        ])
     }
 
     pub(crate) fn confirm_send(
@@ -1284,9 +1330,12 @@ impl NetworkModel {
     }
 
     pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> &'static str {
-        if self
-            .buffers
-            .get(&buffer_id)
+        let buffer = self.buffers.get(&buffer_id);
+        if buffer
+            .is_some_and(|buffer| buffer.projection.channel_status == Some(ChannelStatus::Kicked))
+        {
+            "engine.channel_rejoin_required"
+        } else if buffer
             .and_then(|buffer| buffer.direct.as_ref())
             .is_some_and(|direct| matches!(direct, DirectAvailability::MonitorFull))
         {
@@ -1761,6 +1810,7 @@ impl NetworkModel {
             id,
             network_id: self.network.id,
             kind,
+            channel_status: (kind == BufferKind::Channel).then_some(ChannelStatus::Joined),
             cached: None,
             available: None,
             title: key.title(),
@@ -2258,7 +2308,8 @@ mod tests {
         nick_color_index, time_millis,
     };
     use crate::{
-        BufferId, BufferKind, EngineToUi, MembershipKind, MessageAuthorship, NetworkId,
+        BufferId, BufferKind, EngineToUi, MembershipKind, MembershipProjection, MessageAuthorship,
+        NetworkId,
         chat_list_snapshot::{ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow},
     };
 
@@ -2703,8 +2754,11 @@ mod tests {
         else {
             panic!("membership projections expected");
         };
-        assert_eq!(first.id, second.id);
-        assert_eq!(second.nicks, ["mel", "rafa"]);
+        assert_eq!(first.id(), second.id());
+        assert!(matches!(
+            &second,
+            MembershipProjection::Change { nicks, .. } if nicks == &["mel", "rafa"]
+        ));
 
         model.receive_incoming(
             incoming(
@@ -2725,7 +2779,7 @@ mod tests {
         else {
             panic!("membership projection expected");
         };
-        assert_ne!(second.id, third.id);
+        assert_ne!(second.id(), third.id());
     }
 
     #[test]

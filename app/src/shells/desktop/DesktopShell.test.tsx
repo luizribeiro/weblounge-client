@@ -208,6 +208,31 @@ it("blocks a mismatched direct thread and routes both identity decisions", () =>
   expect(defer).toHaveBeenCalledWith(direct.id);
 });
 
+it("keeps a kicked channel readable and disables its composer", () => {
+  render(() => (
+    <DesktopShell
+      activeBufferId={channel.id}
+      buffers={[{ ...channel, channel_status: "kicked" }]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "You were kicked from #room. Rejoin to send messages.",
+  );
+  expect(screen.getByRole("textbox", { name: "Message #room" })).toBeDisabled();
+  expect(document.querySelector("[data-message-list]")).not.toBeNull();
+});
+
 it("shows the projected member total while the panel is closed", () => {
   render(() => (
     <DesktopShell

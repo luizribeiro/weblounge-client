@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use std::rc::Rc;
 
 pub use protocol::{
-    AccountProjection, BufferId, BufferKind, BufferProjection, CompletionCandidate,
+    AccountProjection, BufferId, BufferKind, BufferProjection, ChannelStatus, CompletionCandidate,
     CompletionTrigger, ConnectionFailureReason, DeploymentConfig, DirectIdentityState,
     EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig,
     HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,

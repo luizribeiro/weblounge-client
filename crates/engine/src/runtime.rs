@@ -2784,9 +2784,9 @@ fn process_event_with_direct(
             process_join(&mut running.model, &snapshot, &joined, &mut output)
         }
         papo::Event::Parted(parted) => {
-            process_part(&mut running.model, &snapshot, &parted, &mut output);
-            Vec::new()
+            process_part(&mut running.model, &snapshot, &parted, &mut output)
         }
+        papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, &mut output),
         papo::Event::Quit(quit) => {
             process_quit(&mut running.model, &quit, &mut output);
             Vec::new()
@@ -3122,7 +3122,7 @@ fn process_part(
     snapshot: &papo::State,
     parted: &papo::event::Parted,
     output: &mut Vec<EngineToUi>,
-) {
+) -> Vec<HistoryTarget> {
     if parted.authorship == papo::Authorship::Own {
         if let Some(event) = model.remove_channel(&parted.channel) {
             output.push(event);
@@ -3137,6 +3137,27 @@ fn process_part(
         output.push(event);
     }
     output.extend(model.sync_channels(snapshot));
+    Vec::new()
+}
+
+fn process_kick(
+    model: &mut NetworkModel,
+    kicked: &papo::event::Kicked,
+    output: &mut Vec<EngineToUi>,
+) -> Vec<HistoryTarget> {
+    if kicked.subject_authorship != papo::Authorship::Own {
+        return Vec::new();
+    }
+    if let Some(events) = model.receive_own_kick(
+        &kicked.channel,
+        kicked.actor.to_string(),
+        kicked.reason.clone(),
+        kicked.server_time.map(time_millis),
+        time_millis(kicked.received_at),
+    ) {
+        output.extend(events);
+    }
+    Vec::new()
 }
 
 fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit, output: &mut Vec<EngineToUi>) {
@@ -5179,6 +5200,97 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn own_kick_keeps_a_read_only_buffer_until_rejoin() {
+        let (client, mut events, mut wire) = wire(
+            papo::Client::builder("irc://offline.test", "weblounge").allow_insecure_auth(true),
+        );
+        wire.register(&[]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (outbound, mut receiver) = mpsc::unbounded_channel();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let buffer_id = model
+            .buffer_id_for_channel(&known_channel(&client, "#room"))
+            .expect("joined buffer exists");
+        let runtime = Runtime {
+            state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
+                instance: 1,
+                authentication_kind: AuthenticationKind::SaslPlain,
+                connection_attempt: 1,
+                device_online: true,
+                pending_sends: VecDeque::new(),
+                flushing_sends: false,
+                hosted_reconnect: None,
+                chat_list: ChatListSync::default(),
+                client,
+                model,
+            }))),
+            outbound,
+        };
+        mark_runtime_online(&runtime);
+
+        wire.server(":operator!o@host KICK #room weblounge :too loud")
+            .await;
+        let kicked =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Kicked(_))).await;
+        process_runtime_event(&runtime, kicked);
+        let output = collect(&mut receiver);
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MembershipChanged {
+                buffer_id: id,
+                membership: crate::MembershipProjection::Kicked { actor, reason, .. },
+            } if *id == buffer_id && actor == "operator" && reason.as_deref() == Some("too loud")
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == buffer_id
+                    && buffer.channel_status == Some(crate::ChannelStatus::Kicked)
+        )));
+        let blocked = runtime.request(EngineRequestEnvelope {
+            id: "blocked-send".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "still here".into(),
+            },
+        });
+        assert!(
+            matches!(blocked.as_slice(), [EngineToUi::CommandRejected { message_key, .. }]
+            if message_key == "engine.channel_rejoin_required")
+        );
+
+        runtime.request(EngineRequestEnvelope {
+            id: "rejoin".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "/join #room".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "JOIN #room");
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        process_runtime_event(&runtime, joined);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer| buffer.id == buffer_id
+                    && buffer.channel_status == Some(crate::ChannelStatus::Joined))
+        )));
+        runtime.request(EngineRequestEnvelope {
+            id: "send-after-rejoin".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "back".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "PRIVMSG #room back");
     }
 
     #[test]

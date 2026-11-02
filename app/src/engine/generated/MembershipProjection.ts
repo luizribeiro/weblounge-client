@@ -3,9 +3,9 @@ import type { MembershipKind } from "./MembershipKind";
 import type { MessageId } from "./MessageId";
 
 /**
- * Consecutive membership changes collapsed by the engine.
+ * One channel membership row retained in the timeline.
  */
-export type MembershipProjection = {
+export type MembershipProjection = { "type": "change",
 /**
  * Stable timeline identity.
  */
@@ -24,5 +24,25 @@ nicks: Array<string>,
 server_time_ms: number | null,
 /**
  * Local receipt timestamp of the newest event in the run.
+ */
+received_at_ms: number, } | { "type": "kicked",
+/**
+ * Stable timeline identity.
+ */
+id: MessageId,
+/**
+ * Nick or server that removed the current user.
+ */
+actor: string,
+/**
+ * Optional server-supplied reason.
+ */
+reason: string | null,
+/**
+ * Timestamp supplied by the server, when present.
+ */
+server_time_ms: number | null,
+/**
+ * Local receipt timestamp.
  */
 received_at_ms: number, };

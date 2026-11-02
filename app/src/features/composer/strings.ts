@@ -15,6 +15,7 @@ export const messageKeys = [
   "engine.channel_recreated",
   "engine.channel_required",
   "engine.channel_limit_reached",
+  "engine.channel_rejoin_required",
   "engine.metadata_limit_reached",
   "engine.bouncer_network_limit_reached",
   "engine.command_refused",
@@ -122,6 +123,8 @@ export function t(key: string, values: MessageValues = {}): string {
       return "That command only works in a channel.";
     case "engine.channel_limit_reached":
       return "You're in the maximum number of channels for this server.";
+    case "engine.channel_rejoin_required":
+      return `You were kicked from ${values.target ?? "this channel"}. Rejoin to send messages.`;
     case "engine.metadata_limit_reached":
       return "That profile change exceeds this server's client state limit.";
     case "engine.bouncer_network_limit_reached":
