@@ -267,6 +267,7 @@ async fn active_route_rejects_wrong_pin_audience_and_expiry() {
         vapid(&wrong_key, ORIGIN, expiry_after(3_600)),
         vapid(&home, "https://wrong.example", expiry_after(3_600)),
         vapid(&home, ORIGIN, expiry_after(-1)),
+        vapid(&home, ORIGIN, expiry_after(48 * 60 * 60)),
     ] {
         let status = call_bytes(
             &harness.app,
@@ -279,6 +280,28 @@ async fn active_route_rejects_wrong_pin_audience_and_expiry() {
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+}
+
+#[tokio::test]
+async fn active_route_rejects_ttl_over_28_days() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    let authorization = vapid(&home, ORIGIN, expiry_after(3_600));
+
+    let status = call_bytes(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
+        None,
+        b"ciphertext".to_vec(),
+        &[("Authorization", &authorization), ("TTL", "2419201")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(harness.deliveries.lock().expect("deliveries").is_empty());
 }
 

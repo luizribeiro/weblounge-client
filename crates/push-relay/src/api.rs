@@ -21,6 +21,7 @@ use crate::{
 };
 
 const MAX_HOME_BODY: usize = 2_800;
+const MAX_TTL: u32 = 28 * 24 * 60 * 60;
 
 #[derive(Clone)]
 struct AppState {
@@ -211,6 +212,9 @@ async fn receive_push(
                 .and_then(|value| value.to_str().ok())
                 .and_then(|value| value.parse::<u32>().ok())
                 .ok_or_else(|| Error::BadRequest("TTL must be an unsigned integer".to_owned()))?;
+            if ttl > MAX_TTL {
+                return Err(Error::BadRequest("TTL must not exceed 28 days".to_owned()));
+            }
             let outcome = state
                 .sender
                 .send(Delivery {

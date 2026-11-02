@@ -12,6 +12,7 @@ use url::Url;
 use crate::{Error, Result};
 
 const CONCIERGE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_VAPID_LIFETIME_SECONDS: u64 = 24 * 60 * 60;
 
 /// The member identity returned by concierge for an active session.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -165,7 +166,10 @@ pub(crate) fn verify_vapid(
     };
     let now = u64::try_from(time::OffsetDateTime::now_utc().unix_timestamp())
         .map_err(|_| Error::Unauthorized)?;
-    if !audience_matches || claims.exp <= now {
+    if !audience_matches
+        || claims.exp <= now
+        || claims.exp > now.saturating_add(MAX_VAPID_LIFETIME_SECONDS)
+    {
         return Err(Error::Unauthorized);
     }
 
