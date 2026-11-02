@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import {
   distanceFromBottom,
@@ -136,6 +136,8 @@ test.describe("local Ergo user flow", () => {
   });
 
   test("blocks a reused nick until its new account is trusted", async ({
+    baseURL,
+    browser,
     page,
   }) => {
     const suffix = Date.now().toString(36).slice(-5);
@@ -148,18 +150,43 @@ test.describe("local Ergo user flow", () => {
       `pinb${suffix}`,
       fixtureChannel,
     );
+    const mobileContext = await browser.newContext({
+      baseURL,
+      colorScheme: "dark",
+      hasTouch: true,
+      ignoreHTTPSErrors: process.env.WEBLOUNGE_E2E_SECURE_ERGO === "1",
+      isMobile: true,
+      viewport: { width: 402, height: 874 },
+    });
+    const mobile = await mobileContext.newPage();
     try {
-      await page.goto("/?irc-password=weblounge-test");
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await Promise.all([
+        page.goto("/?irc-password=weblounge-test"),
+        mobile.goto("/?irc-password=weblounge-test"),
+      ]);
       await expect(
         page.getByRole("heading", { name: /#weblounge-test/u }),
       ).toBeVisible();
+      await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
       await first.nick(alias);
       first.privmsg("weblounge", "first account");
       await page
-        .getByRole("button", { name: new RegExp(`^${alias},`) })
+        .getByRole("button", { name: new RegExp(`^${alias}(?:,|$)`) })
         .click();
+      await mobile
+        .getByRole("button", { name: new RegExp(`^${alias}(?:,|$)`) })
+        .click();
+      await expect(mobile.locator("[data-motion]")).toHaveCount(0);
       await expect(
-        page.getByText("first account", { exact: true }),
+        page
+          .locator("[data-message-list]")
+          .getByText("first account", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        mobile
+          .locator("[data-message-list]")
+          .getByText("first account", { exact: true }),
       ).toBeVisible();
 
       await first.nick(`away-${suffix}`);
@@ -167,9 +194,15 @@ test.describe("local Ergo user flow", () => {
       replacement.privmsg("weblounge", "replacement account");
 
       const banner = page.locator("[data-direct-identity-banner]");
+      const mobileBanner = mobile.locator("[data-direct-identity-banner]");
       await expect(banner).toContainText(
         `Can't verify this is the same ${alias}`,
       );
+      await expect(mobileBanner).toContainText(
+        `Can't verify this is the same ${alias}`,
+      );
+      await expectCompactIdentityBanner(page);
+      await expectCompactIdentityBanner(mobile);
       await expect(
         page.getByRole("textbox", { name: `Message ${alias}` }),
       ).toBeDisabled();
@@ -191,6 +224,7 @@ test.describe("local Ergo user flow", () => {
       await expect(page.getByText(reply, { exact: true })).toBeVisible();
       await expect.poll(() => observedDeliveries(page)).toContain("confirmed");
     } finally {
+      await mobileContext.close();
       first.close();
       replacement.close();
     }
@@ -672,6 +706,44 @@ test.describe("local Ergo user flow", () => {
     }
   });
 });
+
+async function expectCompactIdentityBanner(page: Page): Promise<void> {
+  const banner = page.locator("[data-direct-identity-banner]");
+  const list = page.locator("[data-message-list]");
+  const [bannerBox, listBox, maximumHeight] = await Promise.all([
+    banner.boundingBox(),
+    list.boundingBox(),
+    banner.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const fontSize = Number.parseFloat(style.fontSize);
+      const lineHeight =
+        style.lineHeight === "normal"
+          ? fontSize * 1.2
+          : Number.parseFloat(style.lineHeight);
+      return (
+        lineHeight * 3 +
+        Number.parseFloat(style.paddingTop) +
+        Number.parseFloat(style.paddingBottom) +
+        Number.parseFloat(style.borderTopWidth) +
+        Number.parseFloat(style.borderBottomWidth) +
+        4
+      );
+    }),
+  ]);
+  expect(bannerBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect(bannerBox?.height ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+    maximumHeight,
+  );
+  expect(
+    Math.abs(
+      (listBox?.y ?? 0) - ((bannerBox?.y ?? 0) + (bannerBox?.height ?? 0)),
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(listBox?.height ?? 0).toBeGreaterThan(
+    (page.viewportSize()?.height ?? 0) / 2,
+  );
+}
 
 async function observeDeliveries(
   page: import("@playwright/test").Page,

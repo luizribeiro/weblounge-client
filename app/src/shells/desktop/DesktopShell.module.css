@@ -36,6 +36,10 @@
   width: 100%;
 }
 
+.conversationBody:has(> [data-direct-identity-banner]) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .empty {
   align-items: center;
   color: var(--wl-color-muted);

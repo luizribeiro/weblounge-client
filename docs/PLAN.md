@@ -297,7 +297,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     upgrade matching pins, block mismatches without sending, mark unverified rows, and offer Trust
     new identity or a read-only Not now state in both shells. Legacy account draft keys and schema-2
     chat-list rows migrate to nick threads without inventing pins; two nicks on one account remain
-    separate, and verified rename continuity adds a note without merging their histories.
+    separate, and verified rename continuity adds a note without merging their histories. The
+    identity decision stays a compact strip above the full-height scrollable transcript.
   - [x] Update papo to `3508be1` and map bounded-state request failures to product outcomes. Join
     limits use the shared human notice across explicit and automatic paths; read-marker limits log
     while preserving local read state; list-mode limits append a channel notice; metadata and
