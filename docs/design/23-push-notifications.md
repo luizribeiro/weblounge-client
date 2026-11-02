@@ -48,7 +48,8 @@ Five facts shape the design:
   through one weblounge *push relay*. Other networks get no push, and the client says so plainly.
 - **v1 has no settings.** It notifies on DMs and mentions, which is what homes already push. The
   only control is the one-time "Turn on notifications" step the OS requires.
-- **Tapping a notification opens the right buffer**, from a cold start and when the app is open.
+- **Tapping a notification opens the right buffer and shows the pushed message at once**, from a
+  cold start and when the app is open, before the connection is up.
 - **Never a silent push to iOS. Never a duplicate** while the user is looking at the app.
 - **Room to grow without changing the wire format:** per-buffer, per-sender and per-network rules,
   all/mentions/none, keywords, and push and badging controlled separately.
@@ -60,7 +61,8 @@ Five facts shape the design:
 - Settings UI, rule editing, quiet hours and per-device schedules in v1.
 - A hosted bouncer (see Future). Networks whose connection has no `draft/webpush` or
   `soju.im/webpush` get no push; they notify only while the app runs, and the UI says so.
-- Payments and the entitlements service. The hook allows everyone.
+- Payments and the entitlements service. The hook is concierge's introspection, which admits every
+  member.
 - Reactions, replies-to-you and other Activity kinds as push triggers (Activity, 06).
 
 ## Architecture
@@ -149,7 +151,8 @@ probing ──(client: PUT /v1/routes/:id/active, after papo returns REGISTER su
 about 2.13 KB (record plus the 86-byte aes128gcm header), about 2.85 KB in base64url; the envelope
 brings it to about 3.0 KB and the outer encryption to about 3.1 KB, under the 4096-byte Web Push,
 APNs and FCM limits. The ciphertext is base64url-encoded exactly once. An encrypted body can't be
-truncated, so the relay answers **413** to any home body over 2,800 bytes.
+truncated, so the relay answers **413** to any home body over 2,800 bytes. In front of it, nginx
+caps bodies at about 4 KB (`client_max_body_size`) and rate-limits with `limit_req`.
 
 **Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered visibly.
 Anything lower (maintenance `PING`, `MARKREAD`, soju's probe) is **dropped** for web targets; for
@@ -181,11 +184,10 @@ Native targets need no lease: on iOS, `userNotificationCenter(_:willPresent:)` r
 presentation options while the app is foreground; on Android, the app handles the FCM data message
 and posts nothing.
 
-**Cross-device quieting (decision 4).** The hold covers every device of the account while any
-device holds a lease (devices are tied to one concierge account), so a phone stays quiet while you
-type on your laptop. Ergo also sets `webpush.delay` to about 10 s, which skips pushes for buffers marked read within the window. The client already sends
-`MARKREAD` as soon as a buffer is visible and focused (`runtime.rs:1368-1430`); soju uses a fixed
-5 s.
+**Cross-device quieting (decision 4).** The relay lease is the only mechanism: the hold covers
+every device of the account while any device holds a lease (devices are tied to one concierge
+account), so a phone stays quiet while you type on your laptop. Ergo's `webpush.delay` stays at its
+default of 0, so pushes are never delayed by the home.
 
 | Device state | Who posts OS notifications |
 |---|---|
@@ -202,18 +204,20 @@ handlers. On `push`, inside one `waitUntil`:
 2. Decrypt the inner payload with **WebCrypto**: ECDH with the non-extractable key, HKDF, AES-GCM
    (about 80 lines of TS). Rust can't reach a non-extractable key, so the Rust `ece` path is for
    native targets only.
-3. Parse the plaintext line with papo's parser compiled to wasm (papo ask), and call
-   `showNotification` **exactly once**. Chrome and Firefox only check that a notification exists
+3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
+4. Store the message (msgid, time, target, sender, text) in the engine's `Space::Cache` IndexedDB
+   store, keyed so the engine reads it as part of the buffer's history.
+5. Call `showNotification` **exactly once**. Chrome and Firefox only check that a notification exists
    when `waitUntil` settles; Safari falls back to the declarative notification if the handler fails.
    A placeholder-then-replace would duplicate where `tag` replacement isn't supported.
-4. Only if decryption fails: show the generic "New message" for that network and mark the route for
+6. Only if decryption fails: show the generic "New message" for that network and mark the route for
    re-registration.
 
 The service worker is a classic, non-module worker with a precache list. The parser wasm joins the
 precache, is instantiated from the Cache API, and has a `size-limit` budget; shipping a new parser
-is an ordinary service-worker update. The worker never touches the engine, never fetches from the
-network and handles no non-GET traffic (`19-packaging.md` stays true). It persists nothing beyond
-the badge counter (see Conflicts, brief §3.8). iOS lacks `pushsubscriptionchange`, so the page
+is an ordinary service-worker update. The worker never talks to the engine, never fetches from the
+network and handles no non-GET traffic (`19-packaging.md` stays true). It persists only pushed
+messages (step 4) and the badge counter. iOS lacks `pushsubscriptionchange`, so the page
 re-checks the subscription on every launch.
 
 ### Tapping a notification
@@ -224,6 +228,12 @@ includeUncontrolled:true})`; if a window exists, `focus()` it and post `{kind:"o
 (a new channel: the desktop shell has no `popstate` handling today, only `MobileShell.tsx:503`
 listens); otherwise `clients.openWindow(route)`, which works cold because the service worker serves
 the cached `index.html` for any navigation.
+
+**Tap before history.** The engine loads the buffer's stored pushed messages from the local store
+before any connection exists, so the tapped message is on screen on a cold start before the
+connection is up; on a warm tap, `open-route` makes the running engine read them too. When chathistory or the live connection later delivers the same `msgid`, the
+engine deduplicates it, so it never shows twice. The stored messages are also the push source for
+Activity (brief §3.8).
 
 The tag is `<networkKey>/<bufferKey>`. BCD says Safari doesn't support tags: **[verify on
 device]**.
@@ -239,8 +249,7 @@ device]**.
   overwrites it with the engine's value.
 - **On the web the closed-app badge can only go up.** MARKREAD pushes are dropped for web targets,
   so reading elsewhere lowers it only when this device next opens. It undercounts when Ergo's
-  16-item push queue overflows (`client.go:53`); a `delay` makes that likelier, because the worker
-  sleeps per message (`client.go:2084-2098`). It matches the engine for DMs, and for channel
+  16-item push queue overflows (`client.go:53`). It matches the engine for DMs, and for channel
   mentions once the mention rules agree (below).
 - When a buffer's read marker advances, the page closes its delivered notifications
   (`registration.getNotifications()` by tag). Linux, Firefox and Chrome Android have no badging API.
@@ -284,8 +293,10 @@ the two requests above plus a TS `PushRegistrar` interface in `app/src/platform/
 `setBadge`) follows the same split.
 
 `crates/push-payload` (pure, no I/O) holds the RFC 8291 decryption (Mozilla's `ece`) for native
-targets and maps a papo-parsed line to
+targets and maps a line parsed by `papo_proto::LineRef::parse` / `parse_bytes` to
 `PushEvent { Message { source, target, msgid, time, text, kind }, Invite, MarkRead { target, until }, Ping }`.
+That parser has no tokio and no I/O and builds for wasm and as an iOS static lib. `papo-proto` is
+internal and unstable, so it is pinned at the same git rev as papo and the two are bumped together.
 
 ### One rule for mentions
 
@@ -297,8 +308,8 @@ case-mapping").
 
 A pure `crates/notify-rules` owns the classifier: `mentions_self` = nick **or** account,
 casemapped, with Ergo's boundary rule and URL exclusion. The engine badges with it from day one, so
-nick-only mentions on weblounge.org keep badging; pushes are a subset until Ergo is patched to match
-the nick too (server ask). The visible consequence: badges and pushes agree once that lands.
+nick-only mentions on weblounge.org keep badging. Ergo stays unpatched in v1, so a channel line that
+names only the nick badges but doesn't push.
 
 ## Rules data model (room to grow; v1 ships only the defaults)
 
@@ -345,11 +356,12 @@ Where rules live is deferred (see Decisions).
 ## Boundaries
 
 - **papo** owns `draft/webpush` and `soju.im/webpush`, `VAPID`, labelled REGISTER/UNREGISTER, typed
-  refusals, bouncer binding and IRC line parsing. Weblounge never formats WEBPUSH itself.
-- **Engine:** decides whether a network can register (`ConfigurePushAction`); registers on each
-  connection that has a route and refreshes once per 24 h (Ergo expires after 14 d,
+  refusals (including `Refusal::WebPushForbidden`), `RegisterOutcome { persistence_required }`,
+  bouncer binding and IRC line parsing (`papo-proto`). Weblounge never formats WEBPUSH itself.
+- **Engine:** decides whether a network can register (`ConfigurePushAction`), reading
+  `Isupport::vapid()` after each `Connected`; registers on each connection that has a route and refreshes once per 24 h (Ergo expires after 14 d,
   `server.go:327-357`); unregisters on sign-out or network removal; persists `PushRegistration`;
-  owns badge counts and the mention classifier; never holds a private key or talks to the relay.
+  shows stored pushed messages and deduplicates them by `msgid`; owns badge counts and the mention classifier; never holds a private key or talks to the relay.
 - **Platform** (`app/src/platform/push/` on the web): asks for OS permission (from a user gesture
   on iOS and Firefox); creates the push subscription; talks to the relay; generates and stores
   route keys in its own `weblounge-push` database, since the engine's byte store can't hold live
@@ -365,13 +377,17 @@ Where rules live is deferred (see Decisions).
     `PUT /v1/routes/:id/active`, `DELETE /v1/routes/:id`, `POST /v1/devices/:id/lease`,
     `POST /v1/devices/:id/lease/release`, and the public `POST /v1/r/:route` for homes.
   - Device calls carry the device secret. Creating a device requires a concierge session token,
-    checked by introspection; that is the entitlement hook and decision 3.
+    checked by introspection as concierge client `push-relay` over loopback; that is the
+    entitlement hook and decision 3.
   - It stores devices, targets, routes, pinned VAPID keys, counters, leases and held pushes (≤ 75 s)
-    in SQLite, and refuses targets outside an allowlist of push-service hosts (no SSRF).
+    in SQLite. Against SSRF (it runs with `IPAddressAllow=any`), it refuses targets outside an
+    allowlist of push-service hosts, targets that resolve to private or loopback addresses, and
+    redirects.
 
 ## Rollout
 
-- **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: a stable
+- **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: Ergo backups
+  (see Failure modes); a stable
   `NetworkKey`; `Space::Durable` on IndexedDB (`storage.rs:320-341` supports only Cache); a manifest
   `id` and a monochrome badge icon; the shared mention classifier; `config.json` gains
   `push: { relay, relay_vapid }` (`DeploymentConfig`, `ts-rs`, `beta-client.nix`); CSP `connect-src`
@@ -387,8 +403,8 @@ Where rules live is deferred (see Decisions).
   force-quit) and an NSE declared as an app-extension target in Tauri's XcodeGen template
   (`bundle > iOS > template`, added in tauri-cli 2.0.0-rc.2; current key name **[unverified]**),
   never by hand-editing `gen/apple`. XcodeGen has no NSE type, so the template supplies its
-  Info.plist and source. Route keys go in a shared keychain access group, the route → network and
-  buffer map in the App Group container; the NSE has ~24 MB and ~30 s. Android: FCM data messages,
+  Info.plist and source. Route keys go in a shared keychain access group; the route → network and
+  buffer map, and each pushed message for tap before history, in the App Group container; the NSE has ~24 MB and ~30 s. Android: FCM data messages,
   and UnifiedPush (whose endpoints are Web Push endpoints). Desktop push, if ever: macOS APNs,
   Linux UnifiedPush; Windows App SDK push works unpackaged with a sparse package for identity, an
   Azure AppId, and 30-day channel expiry.
@@ -399,8 +415,10 @@ Where rules live is deferred (see Decisions).
 |---|---|
 | permission denied or dismissed | No push; the page notifies while open; status says "off in system settings". Never re-prompt automatically. |
 | iOS subscription revoked | Detected at launch (`getSubscription()` null or changed). Re-subscribe silently if still permitted and re-register every home with new routes; else show the status. |
-| home refuses (`MAX_REGISTRATIONS`, `FORBIDDEN`, no account, Tor) | `PushRegistration::Failed` in network status. Ergo's default of 4 slots is the likeliest (server ask). The route is deleted. |
-| `WARN WEBPUSH PERSISTENCE_REQUIRED` | `Unavailable(PersistenceOff)` plus a hint to turn always-on back on (papo ask). |
+| home refuses (`MAX_REGISTRATIONS`, `FORBIDDEN`, no account, Tor) | `PushRegistration::Failed` in network status. The route is deleted. |
+| soju's 25-subscription cap | soju sends it as `INTERNAL_ERROR`, indistinguishable from other errors, so the engine counts its own registrations and reports `RegistrationLimit` at 25. |
+| `RegisterOutcome { persistence_required: true }` | `Unavailable(PersistenceOff)` plus a hint to turn always-on back on. |
+| Ergo's VAPID key lost | It lives in Ergo's datastore; losing it breaks every pinned route. Ergo backups are a v1 prerequisite. |
 | relay down | Homes retry or drop by their own policy (Ergo: 16-push queue, drops on overflow). Messages stay in history. |
 | route leaked or abused | Pinned VAPID rejects other signers; rate limits; the device can rotate the route. |
 | home's VAPID key changes | The relay rejects the new signer. At the next refresh the engine sees a new `vapid` and creates a new route. |
@@ -429,17 +447,18 @@ Where rules live is deferred (see Decisions).
   fold (mention in a muted buffer, keyword vs Buffer rule, inherited `None` fields).
 - **Engine** (`papo_testing::wire()`): REGISTER when `ConfigurePushAction` is present and none
   without account or VAPID; daily refresh; UNREGISTER on sign-out; each typed refusal becomes
-  `Failed`; a VAPID change forces a new route.
+  `Failed`; a VAPID change forces a new route; a stored pushed message shows before connecting and
+  is deduplicated by `msgid` against chathistory and live lines.
 - **Relay** (Rust integration tests): probing → active (probe discarded with 201), VAPID pin and JWT
   `aud`/`exp`, 404 for dead routes and after a 410 upstream, 413 over budget, TTL passthrough,
-  urgency policy, per-tab leases with hold/discard/deliver, rate limits, envelope bytes against fake
+  SSRF refusals (private and loopback resolution, redirects), urgency policy, per-tab leases with hold/discard/deliver, rate limits, envelope bytes against fake
   upstreams.
-- **Local Ergo end to end** (`nix run .#ergo-weblounge`): the fixture gains `webpush.enabled`,
-  `delay` and the relay; two papo clients drive a DM and a mention; the relay's sink records
-  envelopes; the read-elsewhere case asserts `delay` suppresses the push. Ergo requires `https`
-  (`webpush/security.go:26-35`) and its dialer refuses loopback, private, link-local and CGNAT
-  addresses (`security.go:67-76`), so the fixture needs a test-only Ergo patch plus TLS on the sink
-  from the repo's throwaway local CA (server ask).
+- **Local Ergo end to end** (`nix run .#ergo-weblounge`): the fixture gains `webpush.enabled` and
+  the relay; two papo clients drive a DM and a mention; the relay's sink records envelopes; the
+  read-elsewhere case asserts the MARKREAD push is normal urgency and dropped for web targets. Ergo
+  requires `https` (`webpush/security.go:26-35`) and its dialer refuses loopback, private,
+  link-local and CGNAT addresses (`security.go:67-76`), so the fixture needs an Ergo patch applied
+  only in test overrides, plus TLS on the sink from the repo's throwaway local CA.
 - **Playwright** (Chromium, built app; no service worker in dev): Playwright's Chromium has no push
   service, so `PushManager.prototype.subscribe` is stubbed with `addInitScript` to return a fake
   subscription, and delivery uses CDP `ServiceWorker.deliverPushMessage` with the sink's envelope.
@@ -447,7 +466,9 @@ Where rules live is deferred (see Decisions).
   `getNotifications()` shows title, body, tag and `data.route`; a focused page produces no
   delivered envelope; opening the buffer closes its notifications; app badge via a stubbed
   `setAppBadge`; the page side of `open-route` (warm) and the deep link (cold), with the
-  `notificationclick` routing function unit-tested. `nativeFeelAudit` and the idle/hidden checks
+  `notificationclick` routing function unit-tested; tap before history: on a cold start with the
+  IRC connection blocked, the tapped buffer shows the pushed message, and once the connection and
+  chathistory deliver the same `msgid` it still appears exactly once. `nativeFeelAudit` and the idle/hidden checks
   stay green with the lease heartbeat.
 - **Device checklist** (iPhone 16 Pro, an Android phone), recorded in PLAN.md: a week without
   revocation, tags, badge, cold and warm tap, the generic notification on decrypt failure, a missed
@@ -461,10 +482,9 @@ Where rules live is deferred (see Decisions).
   That stands; push to those servers now goes through our relay with a weblounge account, and the
   per-network copy is "This network doesn't support notifications while weblounge is closed"
   (prototype: "on networks that support push", `Mobile.dc.html:861`).
-- **Brief §3.8** lists "push payloads written by the notification extension" as an Activity source.
-  The v1 service worker persists no payloads; Activity catches up from history when the app opens.
-- **`19-packaging.md:11`** puts Web Push out of scope. The service worker gains push handlers and a
-  precached parser, with no change to its fetch rules.
+- **`19-packaging.md:11`** puts Web Push out of scope. The service worker gains push handlers, a
+  precached parser and writes of pushed messages to the engine's cache, with no change to its fetch
+  rules.
 - **The engine's mention rule** (`state.rs:2090-2098`) contradicts brief §3.8 and
   `01-engine-state-model.md:196-197`; `notify-rules` fixes it.
 
@@ -474,8 +494,8 @@ Where rules live is deferred (see Decisions).
 2. **No hosted bouncer** for now (see Future). Networks without webpush get no push and say so;
    bring-your-own soju or any webpush-capable server gets push through the relay.
 3. **The relay requires a weblounge account** (concierge session).
-4. **Cross-device quieting:** pushes are held on all your devices while any of them holds a lease,
-   and Ergo `webpush.delay` is about 10 s. Cost: every push arrives at least 10 s late.
+4. **Cross-device quieting** relies only on the relay lease: pushes are held on all your devices
+   while any of them holds one.
 5. **Tauri desktop:** local notifications while running, tray/menu-bar and start-at-login option,
    no push when quit.
 
@@ -496,52 +516,43 @@ and network credentials, which onboarding would have to say.
 
 ## Appendix A: server asks
 
-1. Ergo: backport PR #2471 (fix webpush always sending at high urgency) onto the patched 2.19.1 in
-   `pkgs/ergochat.nix`. It makes the maintenance PING and MARKREAD `UrgencyNormal`; the
-   registration probe stays high, which is correct (the relay's probing state handles it). No
-   further urgency patch is needed.
-2. Ergo: raise `webpush.max-subscriptions` from the default 4 (`default.yaml:1205`) to about 10;
-   each browser, phone and later native app uses one slot. Needed for v1.
-3. Ergo: set `webpush.delay` to 10 s (decision 4; default 0 s, `default.yaml:1201`;
-   unset at `~/weblounge/services/ergo.nix:155-158`).
-4. Ergo: a local patch, proposed upstream, so channel highlights match the current nick as well as
-   the account (`irc/channel.go:1445-1460`, `irc/webpush/highlight.go`).
-5. Ergo test fixture: a test-only patch letting webpush post to a loopback HTTPS endpoint
-   (`security.go:26-35,67-76`), plus TLS for the relay sink from the local test CA.
-6. Host the relay at push.weblounge.org: `services/push-relay.nix` in the `weblounge.sandbox`
-   pattern, an nginx vhost, egress on 443 to push services (later APNs and FCM), SQLite state,
-   loopback health checks and alerts.
-7. Secrets via sops: the relay's VAPID P-256 key pair (public key published in `config.json`);
-   later an APNs `.p8` (team id, key id) and FCM service-account credentials.
-8. Concierge: let the relay introspect member session tokens (its own shared secret for
-   `/oauth/introspect`, or a push-device scope) and add a stub entitlement endpoint that allows
-   everyone.
-9. `beta-client.nix`: add `https://push.weblounge.org` to CSP `connect-src` and serve
+In deploy order:
+
+1. Concierge: an introspection client for the relay in concierge's per-client table (client id
+   `push-relay`, its own secret, loopback only). No entitlement endpoint.
+2. The relay host at push.weblounge.org: `services/push-relay.nix` in the `weblounge.sandbox`
+   pattern, DNS, a cert, an nginx vhost with `limit_req` and `client_max_body_size` of about 4 KB,
+   egress on 443 to push services (later APNs and FCM), SQLite state, loopback health checks, smoke
+   tests, an #ops alert and `tests/e2e/push.py`. Secrets via sops: the relay's VAPID P-256 key pair
+   (public key published in `config.json`); later an APNs `.p8` (team id, key id) and FCM
+   service-account credentials.
+3. One combined Ergo deploy: bump to a release containing PR #2471 (fix webpush always sending at
+   high urgency) if there is one, else backport it onto the patched 2.19.1 in `pkgs/ergochat.nix`;
+   and raise `webpush.max-subscriptions` from the default 4 (`default.yaml:1205`) to 10, since each
+   browser, phone and later native app uses one slot. #2471 makes the maintenance PING and MARKREAD
+   `UrgencyNormal`; the registration probe stays high, which the relay's probing state handles.
+4. `beta-client.nix`: add `https://push.weblounge.org` to CSP `connect-src` and serve
    `push: { relay, relay_vapid }` in `/config.json` once `DeploymentConfig` lands.
-10. Future only (hosted bouncer, not requested now): bouncer.weblounge.org, `upstream-user-ip`
-    (credenza is IPv4-only, `hosts/credenza/networking.nix`), identd, egress on 6697, staff heads-up.
+
+Also before v1: backups of Ergo's datastore, which holds its VAPID key (see Failure modes).
+
+Test only: the Ergo patch letting webpush post to a loopback HTTPS endpoint
+(`security.go:26-35,67-76`) goes in test overrides, never the deployed Ergo; the relay sink gets TLS
+from the local test CA.
+
+Not in v1: an Ergo patch so channel highlights match the current nick as well as the account
+(`irc/channel.go:1445-1460`, `irc/webpush/highlight.go`); the hosted bouncer (bouncer.weblounge.org,
+`upstream-user-ip`, though credenza is IPv4-only, `hosts/credenza/networking.nix`; identd, egress on
+6697, a staff heads-up).
 
 ## Appendix B: papo asks
 
-1. Surface `WARN WEBPUSH PERSISTENCE_REQUIRED` on a successful `register()` (e.g.
-   `RegisterOutcome { persistence_required: bool }`); push silently never arrives otherwise. Today
-   `requests::empty` drops it (`papo/src/requests.rs:351-355`).
-2. Type `FAIL WEBPUSH FORBIDDEN` (Ergo: push disabled, no account or Tor, `handlers.go:4327-4402`)
-   as its own `Refusal`; `refusal.rs:520-521` maps only `INVALID_PARAMS` and `MAX_REGISTRATIONS`.
-3. Fix the stale doc comments on `webpush().register`/`unregister` (`ext/webpush.rs:58-59,87-88`),
-   which say refusals are `Refusal::Other`; papo-core already types two of them.
-4. Map soju's subscription-limit failure (sent as `INTERNAL_ERROR` at 25) as clearly as
-   `MAX_REGISTRATIONS`, or document that it can't be told apart.
-5. Accept Ergo's real success reply, `WEBPUSH REGISTER <endpoint> <keys>`, in tests; the fixture
+1. Fix the stale doc comments on `webpush().register`/`unregister` (`ext/webpush.rs:58-59,87-88`),
+   which say refusals are `Refusal::Other`.
+2. Accept Ergo's real success reply, `WEBPUSH REGISTER <endpoint> <keys>`, in tests; the fixture
    uses `WEBPUSH SUCCESS` (`ext/webpush.rs:152`).
-6. Web push conformance scenarios against Ergo 2.19.x and soju 0.11.x: register, refresh,
+3. Web push conformance scenarios against Ergo 2.19.x and soju 0.11.x: register, refresh,
    unregister, limit, `FORBIDDEN` without an account, and register on a bound soju network
    (`docs/ircv3-support.md:50-51` lists no coverage).
-7. A parser entry point for a push payload: one raw line, no CRLF, possibly with dropped tags or
-   multiline-truncated, with the user's own nick as DM target, yielding a typed event (message,
-   notice, action, invite, markread, ping) with msgid and time. No I/O, small enough to precache in
-   a service worker as wasm, and buildable as a native static lib for the iOS NSE.
-8. Emit an event when the `VAPID` ISUPPORT value differs from the previous connection, or confirm
-   that reading `Isupport::vapid()` after each `Connected` is the intended pattern.
-9. Confirm that the `unstable` feature (already enabled, `Cargo.toml:14`) is fine to ship with the
+4. Confirm that the `unstable` feature (already enabled, `Cargo.toml:14`) is fine to ship with the
    webpush and bouncer APIs (`docs/design/README.md:153` lists it as open).
