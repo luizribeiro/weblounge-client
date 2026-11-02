@@ -153,6 +153,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Animate overlay drawers, scrims, and shadows as one progress-linked entrance and exit.
   - [x] Present an overlay drawer's fully off-screen closing endpoint before unmounting it, so
     WebKit cannot remove the panel on its penultimate composited frame.
+  - [x] Start browser-Back drawer motion sampling only after `popstate` has put the drawer into its
+    closing phase, excluding pre-navigation frames with the opening transition token.
   - [x] Open channel members with a protected mid-screen pan while keeping browser-edge and history gestures platform-owned.
   - [x] Apply the bottom safe inset only at the active bottom surface; root lists scroll beneath it and composer padding takes the larger of its normal spacing and the inset.
   - [x] Wait for safe-bottom changes to resize the transcript before asserting its live-edge

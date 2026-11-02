@@ -295,6 +295,45 @@ async function recordMotion(
           if (element === null) throw new Error(`${selector} is missing`);
           element.click();
         };
+        let recordingStarted = false;
+        const startRecording = () => {
+          if (recordingStarted) return;
+          recordingStarted = true;
+          const frames: MotionFrame[] = [];
+          const triggeredAt = performance.now();
+          const step = () => {
+            frames.push(sample());
+            if (settled()) resolve({ before, frames, triggeredAt });
+            else if (performance.now() - triggeredAt > 3_000)
+              reject(
+                new Error(`motion did not settle: ${frames.length} frames`),
+              );
+            else requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        };
+        const startAfterBackTransition = () => {
+          const overlay = document.querySelector<HTMLElement>(
+            "[data-overlay-drawer]",
+          );
+          if (overlay === null) {
+            reject(new Error("the drawer closed before its transition began"));
+            return;
+          }
+          if (overlay.dataset.phase === "closing") {
+            startRecording();
+            return;
+          }
+          const observer = new MutationObserver(() => {
+            if (overlay.dataset.phase !== "closing") return;
+            observer.disconnect();
+            startRecording();
+          });
+          observer.observe(overlay, {
+            attributeFilter: ["data-phase"],
+            attributes: true,
+          });
+        };
         switch (action.kind) {
           case "show":
             click('button[aria-label="Show members"]');
@@ -313,8 +352,11 @@ async function recordMotion(
               );
             break;
           case "back":
+            window.addEventListener("popstate", startAfterBackTransition, {
+              once: true,
+            });
             history.back();
-            break;
+            return;
           case "release": {
             const event = new PointerEvent("pointerup", {
               bubbles: true,
@@ -332,16 +374,7 @@ async function recordMotion(
             break;
           }
         }
-        const frames: MotionFrame[] = [];
-        const triggeredAt = performance.now();
-        const step = () => {
-          frames.push(sample());
-          if (settled()) resolve({ before, frames, triggeredAt });
-          else if (performance.now() - triggeredAt > 3_000)
-            reject(new Error(`motion did not settle: ${frames.length} frames`));
-          else requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
+        startRecording();
       }),
     trigger,
   );
