@@ -127,6 +127,10 @@ export function MobileShell(props: MobileShellProps) {
     preserveCurrent = false,
     currentScrollTop?: number,
   ) => {
+    if (swipe()?.phase === "completing") {
+      completedBeforePop = false;
+      setSwipe(undefined);
+    }
     if (currentScrollTop !== undefined) {
       returnScrollTop = currentScrollTop;
     }
@@ -557,6 +561,7 @@ export function MobileShell(props: MobileShellProps) {
             completion={props.completion}
             filter={filter()}
             hydrating={props.hydrating}
+            inactive={screen !== stack().active}
             memberships={props.memberships}
             messages={props.messages}
             networks={props.networks}

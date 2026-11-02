@@ -347,6 +347,7 @@ test.describe("mobile shell against local Ergo", () => {
         await expect(
           page.locator("[data-mobile-chats]").locator(".."),
         ).toHaveAttribute("aria-hidden", "true");
+        await expect(page.locator("[data-motion]")).toHaveCount(0);
         const shell = page.locator("[data-mobile-shell]");
         await shell.dispatchEvent("pointerdown", {
           clientX: 5,

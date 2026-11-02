@@ -55,6 +55,7 @@ interface MobileScreenProps extends MobileShellData {
   readonly chatsScrollVersion: Accessor<number>;
   readonly filter: ChatFilter;
   readonly motion?: PushMotion | undefined;
+  readonly inactive?: boolean | undefined;
   readonly query: string;
   readonly retained?: boolean | undefined;
   readonly screen: Screen;
@@ -92,10 +93,10 @@ export function MobileScreen(props: MobileScreenProps) {
   };
   return (
     <div
-      aria-hidden={props.retained || undefined}
+      aria-hidden={props.inactive || props.retained || undefined}
       class={styles.screen}
       data-retained={props.retained || undefined}
-      inert={props.retained ?? false}
+      inert={props.inactive || props.retained || false}
       data-motion={props.motion?.phase}
       onTransitionCancel={onOwnTransform(settleSoon)}
       onTransitionEnd={onOwnTransform(settleUnlessMoving)}

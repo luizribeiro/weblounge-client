@@ -110,6 +110,49 @@ it("opens a deep link when its buffer resolves after mount", () => {
   expect(screen.getByRole("heading", { name: "mel" })).toBeVisible();
 });
 
+it("exposes only the active chat during a chat-to-chat transition", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  const nextBuffer = { ...buffer, id: 3, title: "pat", draft_key: "pat" };
+  const [focusRequest, setFocusRequest] = createSignal<{
+    readonly bufferId: number;
+  }>();
+  render(() => (
+    <MobileShell
+      buffers={[buffer, nextBuffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={focusRequest()}
+      initialBufferId={buffer.id}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+    />
+  ));
+  await settledMotion();
+
+  setFocusRequest({ bufferId: nextBuffer.id });
+
+  const outgoing = document
+    .querySelector(`[data-mobile-chat="${buffer.id}"]`)
+    ?.closest("[aria-hidden]");
+  expect(outgoing).toHaveAttribute("aria-hidden", "true");
+  expect((outgoing as HTMLElement).inert).toBe(true);
+  expect(outgoing).not.toHaveAttribute("data-retained");
+  expect(screen.getAllByRole("button", { name: "Back to chats" })).toHaveLength(
+    1,
+  );
+  expect(screen.getByRole("heading", { name: "pat" })).toBeVisible();
+});
+
 it("keeps the chat list mounted without reloading history", async () => {
   vi.stubGlobal(
     "matchMedia",
