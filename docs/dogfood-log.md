@@ -94,3 +94,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 86 | 2026-11-02 | Remove the "Following #channel" chip from the members panel (per-channel member lists make it meaningless; already decided in split-view.md). | fixed locally; awaiting review |
 | 87 | 2026-11-02 | PWA on weak signal: "This deployment is misconfigured… could not be loaded in time"; startup blocks on config.json; "Connecting…" text and a different chair on the error screen (duplicate startup surfaces). | in progress |
 | 88 | 2026-11-02 | Mobile: open a chat with a new message, read it, swipe back, and the unread badge is still there. | went away after a cold start (likely the pre-b6dc15b build still running); checking the 500ms mark-read timer that leaving cancels |
+| 89 | 2026-11-02 | Mobile chat list: centre the unread badge vertically on the whole row. | in progress |
