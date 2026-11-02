@@ -1,7 +1,6 @@
 # 23 — Push notifications
 
-Status: draft, awaiting Luiz's decisions (2026-11-02). Implementation waits for them. This is the
-brief's subsystem 7; it overrides the earlier statements listed under "Conflicts with signed-off
+Status: approved (decisions 2026-11-02); implementation not started. This is the brief's subsystem 7; it overrides the earlier statements listed under "Conflicts with signed-off
 text".
 
 ## Problem
@@ -44,9 +43,9 @@ Five facts shape the design:
 
 ## Goals
 
-- **One model for every network and platform.** Each network is reached through an always-on
-  *home* that speaks `draft/webpush` (or `soju.im/webpush`); every device receives pushes through
-  one weblounge *push relay*.
+- **One model for every network and platform.** A network gets push when its connection reaches an
+  always-on *home* that speaks `draft/webpush` (or `soju.im/webpush`); every device receives pushes
+  through one weblounge *push relay*. Other networks get no push, and the client says so plainly.
 - **v1 has no settings.** It notifies on DMs and mentions, which is what homes already push. The
   only control is the one-time "Turn on notifications" step the OS requires.
 - **Tapping a notification opens the right buffer**, from a cold start and when the app is open.
@@ -59,8 +58,8 @@ Five facts shape the design:
 ## Non-goals
 
 - Settings UI, rule editing, quiet hours and per-device schedules in v1.
-- Push for networks reached directly with no home. Those notify only while the app runs, and the
-  UI says so.
+- A hosted bouncer (see Future). Networks whose connection has no `draft/webpush` or
+  `soju.im/webpush` get no push; they notify only while the app runs, and the UI says so.
 - Payments and the entitlements service. The hook allows everyone.
 - Reactions, replies-to-you and other Activity kinds as push triggers (Activity, 06).
 
@@ -69,9 +68,8 @@ Five facts shape the design:
 ```text
  IRC network ──► home (always-on, speaks webpush) ──POST aes128gcm──► push relay ──► platform push service ──► device
                  • weblounge.org: Ergo itself                         push.weblounge.org   • browser push svc (Web Push)
-                 • 3rd-party: hosted soju (decision 2)                 pins home VAPID     • APNs (Tauri iOS, later)
-                 • the user's own soju / Ergo                          wraps, never decrypts • FCM / UnifiedPush (later)
-                 • direct (no home): no push, local notifications only
+                 • the user's own soju / Ergo                          pins home VAPID     • APNs (Tauri iOS, later)
+                 • no webpush: no push, local notifications only       wraps, never decrypts • FCM / UnifiedPush (later)
 ```
 
 ### Homes
@@ -83,18 +81,12 @@ server doesn't matter.
 | Network | Home | What it pushes today |
 |---|---|---|
 | weblounge.org | Ergo (always-on opt-out, `~/weblounge/services/ergo.nix:132-158`) | every DM, plus channel lines containing the account name (`irc/channel.go:1445-1460`) |
-| Libera, OFTC, private | hosted soju, one bound connection per network (`ClientBuilder::bouncer_network`, papo `builder.rs:258-276`) | DMs, nick highlights and INVITEs, minus `soju.im/muted` / `soju.im/blocked` targets (soju `upstream.go:767-806`) |
-| the user's own soju or Ergo | itself | as the matching row above |
-| direct, no webpush | none | nothing; local notifications while running |
+| the user's own soju, one bound connection per network (`ClientBuilder::bouncer_network`, papo `builder.rs:258-276`) | soju | DMs, nick highlights and INVITEs, minus `soju.im/muted` / `soju.im/blocked` targets (soju `upstream.go:767-806`); caps each user at 25 push subscriptions (`downstream.go:3745`) |
+| the user's own Ergo | itself | as the weblounge.org row |
+| Libera, OFTC, private, reached directly with no webpush | none | nothing; local notifications while running |
 
-Ergo stays direct rather than behind soju: double bouncing has recorded defects in papo
-(`~/papo/docs/conformance-matrix.md:188-222`).
-
-Hosted soju (decision 2) reuses what soju has: `auth oauth2` against concierge introspection, so
-members get no separate bouncer password; `upstream-user-ip <cidr>` for a per-user source address
-(soju(1) says it is "to avoid having the whole bouncer banned"); and built-in identd. It caps each
-user at 25 push subscriptions (`downstream.go:3745`). Its cost is `max-user-networks` per member
-and disk for message storage under `message-expiry`.
+Users with their own soju or any webpush-capable server get push through our relay, which needs a
+weblounge account (decision 3).
 
 ### The push relay, on every platform (decision 1)
 
@@ -189,10 +181,9 @@ Native targets need no lease: on iOS, `userNotificationCenter(_:willPresent:)` r
 presentation options while the app is foreground; on Android, the app handles the FCM data message
 and posts nothing.
 
-**Cross-device quieting (decision 4).** The baseline lease is per device, so a phone still buzzes
-while you type on your laptop. The proposal extends the hold to every device of the account while
-any device holds a lease (devices are tied to one concierge account), plus Ergo `webpush.delay` of
-about 10 s, which skips pushes for buffers marked read within the window. The client already sends
+**Cross-device quieting (decision 4).** The hold covers every device of the account while any
+device holds a lease (devices are tied to one concierge account), so a phone stays quiet while you
+type on your laptop. Ergo also sets `webpush.delay` to about 10 s, which skips pushes for buffers marked read within the window. The client already sends
 `MARKREAD` as soon as a buffer is visible and focused (`runtime.rs:1368-1430`); soju uses a fixed
 5 s.
 
@@ -365,8 +356,9 @@ Where rules live is deferred (see Decisions).
   `CryptoKey`s; holds the lease; sets the app badge.
 - **UI:** one "Turn on notifications" affordance, shown when a network has `ConfigurePushAction`
   and this device hasn't decided; on iOS only in an installed PWA (Safari tabs get "Add to Home
-  Screen to get notifications"). Network settings show per-network status ("on / not available on
-  this network / turned off in iOS Settings"). No rule controls in v1.
+  Screen to get notifications"). Each network's info/settings shows its status: "on", "turned off
+  in iOS Settings", or, when the connection has no webpush, "This network doesn't support
+  notifications while weblounge is closed". No rule controls in v1.
 - **Relay** (`crates/push-relay`, in this repo per `docs/design/README.md:37,144`; brief §3.10 makes
   it infrastructure run for every user; deployed from `~/weblounge`):
   - API: `POST /v1/devices`, `PUT /v1/devices/:id/target`, `POST /v1/devices/:id/routes`,
@@ -388,9 +380,8 @@ Where rules live is deferred (see Decisions).
   and the service worker and page. Platform order: desktop Chrome/Edge/Firefox; the iOS PWA, gated
   on #2471 deployed and a week of dogfooding without revocation; Android; desktop Safari. Any other
   single-network Ergo with webpush uses the same path.
-- **v1.1: hosted soju** for third-party networks, members only, with bring-your-own-bouncer on the
-  same path. It needs multi-network support in the engine (`runtime.rs:130-140` holds one network)
-  and the server prerequisites (decision 2).
+- **Then: bring-your-own soju** on the same path, once the engine supports multiple networks
+  (`runtime.rs:130-140` holds one network).
 - **Later: Tauri native.** Desktop gets local notifications while running (decision 5). iOS: APNs
   alert pushes (`mutable-content: 1`, not background pushes, which are throttled and dropped after
   force-quit) and an NSE declared as an app-extension target in Tauri's XcodeGen template
@@ -417,17 +408,13 @@ Where rules live is deferred (see Decisions).
 | stale notification after reading elsewhere (web) | Cleared when the app next opens; native targets clear it via the background MARKREAD. |
 | service worker update pending | New handlers apply once old clients close; the declarative fallback keeps iOS pushes visible meanwhile. |
 | inner decrypt fails | One generic "New message" for that network; the route is marked for re-registration. |
-| shared-IP ban of hosted soju | Mitigated by `upstream-user-ip` and talking to network staff before launch. |
 
 ## Privacy and security
 
 - **Message content** is end-to-end encrypted from home to device (RFC 8291), padded to a fixed
   record. The relay, Apple, Google and Mozilla see timing, urgency and device. It isn't
   forward-secret (Ergo `docs/MANUAL.md:520-530`).
-- **Homes see plaintext.** Hosted soju sees and stores members' third-party messages plus their
-  network credentials (we prefer a per-network certfp key, which NickServ can revoke). Onboarding
-  says so; bringing your own bouncer is the alternative. Retention: `message-expiry`, encrypted
-  disk.
+- **Homes see plaintext.** Our Ergo already does; a user's own bouncer is theirs to trust.
 - **Private keys** never leave the device; papo redacts the auth secret in logs.
 - **Relay abuse:** device creation needs a weblounge session; routes are unguessable, VAPID-pinned
   and rate-limited.
@@ -471,8 +458,9 @@ Where rules live is deferred (see Decisions).
 - **Brief §3.12** says Web Push doesn't use the relay. Here it does (decision 1). Web push can stay
   free; that is pricing, not architecture.
 - **Brief §3.10** says push works only on servers with `draft/webpush` and points users to soju.
-  Here homes, including a hosted soju, are part of the model; the prototype's copy ("on networks
-  that support push", `Mobile.dc.html:861`) changes to match.
+  That stands; push to those servers now goes through our relay with a weblounge account, and the
+  per-network copy is "This network doesn't support notifications while weblounge is closed"
+  (prototype: "on networks that support push", `Mobile.dc.html:861`).
 - **Brief §3.8** lists "push payloads written by the notification extension" as an Activity source.
   The v1 service worker persists no payloads; Activity catches up from history when the app opens.
 - **`19-packaging.md:11`** puts Web Push out of scope. The service worker gains push handlers and a
@@ -480,28 +468,31 @@ Where rules live is deferred (see Decisions).
 - **The engine's mention rule** (`state.rs:2090-2098`) contradicts brief §3.8 and
   `01-engine-state-model.md:196-197`; `notify-rules` fixes it.
 
-## Decisions (open; recommendations, not yet answered)
+## Decisions (2026-11-02)
 
-1. **Run a weblounge push relay for every platform, including the web.** Recommended. Without it
-   the web app can take pushes from only one server and can't avoid silent pushes on iOS.
-2. **Hosted soju for third-party networks**, members only, with bring-your-own-bouncer also
-   supported. Per-user source addresses via `upstream-user-ip` with an IPv6 prefix (plus a small
-   IPv4 range if needed), and a heads-up to Libera and OFTC staff before launch. Whether they
-   rate-limit per /64 is **[unverified]**; ask them. Recommended; ships after first-party push
-   (v1.1).
-3. **Turning on push requires a weblounge account.** Recommended. It keeps the relay from abuse and
-   is where a paid tier would hook in.
-4. **Cross-device quieting:** suppress pushes to your other devices while any of your devices is
-   active, plus Ergo `webpush.delay` of about 10 s to skip messages read elsewhere. Recommended
-   both. Cost: every push on every device arrives at least 10 s late, even with only one device.
-5. **Tauri desktop:** local notifications while running, an option to stay in the tray or menu bar
-   and start at login, no push when quit. Recommended.
+1. **Our own push relay** (push.weblounge.org) for every platform, including the web.
+2. **No hosted bouncer** for now (see Future). Networks without webpush get no push and say so;
+   bring-your-own soju or any webpush-capable server gets push through the relay.
+3. **The relay requires a weblounge account** (concierge session).
+4. **Cross-device quieting:** pushes are held on all your devices while any of them holds a lease,
+   and Ergo `webpush.delay` is about 10 s. Cost: every push arrives at least 10 s late.
+5. **Tauri desktop:** local notifications while running, tray/menu-bar and start-at-login option,
+   no push when quit.
 
 **Deferred (not v1): where notification rules live.** Proposal: per account on each home (our
-Ergo, hosted soju, a self-hosted soju each hold their own), replicated by the client as the merge
+Ergo, a self-hosted soju each hold their own), replicated by the client as the merge
 point, with only "push on this device" and `AppBadge` kept on the device. This would override
 `22-storage.md:43` ("no settings sync"). The transport would be a vendor extension
 (`weblounge.org/notify-rules`) in our patched Ergo, contributed to soju.
+
+## Future: hosted bouncer
+
+Maybe later, not today: a members-only hosted soju (bouncer.weblounge.org) would bring push to
+third-party networks. It would reuse `auth oauth2` against concierge, `upstream-user-ip` with an
+IPv6 prefix for per-user source addresses, and built-in identd, and would need a heads-up to Libera
+and OFTC staff. Ergo would stay direct rather than behind it: double bouncing has recorded defects
+in papo (`~/papo/docs/conformance-matrix.md:188-222`). It would store members' third-party messages
+and network credentials, which onboarding would have to say.
 
 ## Appendix A: server asks
 
@@ -511,7 +502,7 @@ point, with only "push on this device" and `AppBadge` kept on the device. This w
    further urgency patch is needed.
 2. Ergo: raise `webpush.max-subscriptions` from the default 4 (`default.yaml:1205`) to about 10;
    each browser, phone and later native app uses one slot. Needed for v1.
-3. Ergo: set `webpush.delay` to 10 s if decision 4 is accepted (default 0 s, `default.yaml:1201`;
+3. Ergo: set `webpush.delay` to 10 s (decision 4; default 0 s, `default.yaml:1201`;
    unset at `~/weblounge/services/ergo.nix:155-158`).
 4. Ergo: a local patch, proposed upstream, so channel highlights match the current nick as well as
    the account (`irc/channel.go:1445-1460`, `irc/webpush/highlight.go`).
@@ -527,12 +518,8 @@ point, with only "push on this device" and `AppBadge` kept on the device. This w
    everyone.
 9. `beta-client.nix`: add `https://push.weblounge.org` to CSP `connect-src` and serve
    `push: { relay, relay_vapid }` in `/config.json` once `DeploymentConfig` lands.
-10. Hosted soju (v1.1, decision 2): bouncer.weblounge.org over wss; `auth oauth2` against
-    concierge; `upstream-user-ip` with an IPv6 prefix (credenza is IPv4-only today,
-    `hosts/credenza/networking.nix`, so this needs IPv6 or a small dedicated IPv4 range); built-in
-    identd; `max-user-networks` about 5; `message-expiry`; `disable-inactive-user 30d`; egress on
-    6697; an abuse contact in rDNS or realname; a member cap; a heads-up to support@libera.chat and
-    OFTC staff before launch.
+10. Future only (hosted bouncer, not requested now): bouncer.weblounge.org, `upstream-user-ip`
+    (credenza is IPv4-only, `hosts/credenza/networking.nix`), identd, egress on 6697, staff heads-up.
 
 ## Appendix B: papo asks
 
