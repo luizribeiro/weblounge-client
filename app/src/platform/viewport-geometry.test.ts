@@ -5,7 +5,9 @@ import {
   cacheKeyboardHeight,
   documentPanned,
   type KeyboardLayoutCommit,
+  type KeyboardRollbackDecision,
   keyboardLayoutCommitEvent,
+  keyboardRollbackDecisionEvent,
   keyboardSurfaceOwner,
   observeViewportGeometry,
   requestCachedKeyboardOpen,
@@ -305,6 +307,55 @@ describe("viewport geometry observer", () => {
     expect(document.activeElement).toBe(field);
     expect(root.dataset.keyboard).toBe("open");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+  });
+
+  it("defers a surface rollback while its keyboard field stays focused", () => {
+    const frames = new ManualAnimationFrames();
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport, undefined, frames);
+    const root = document.createElement("div");
+    const surface = document.createElement("div");
+    const field = textField();
+    surface.dataset.keyboardFocusSurface = "true";
+    surface.append(field);
+    document.body.append(root, surface);
+    field.focus();
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+    const commits: KeyboardLayoutCommit[] = [];
+    const rollbacks: KeyboardRollbackDecision[] = [];
+    browserWindow.addEventListener(keyboardLayoutCommitEvent, (event) =>
+      commits.push((event as CustomEvent<KeyboardLayoutCommit>).detail),
+    );
+    browserWindow.addEventListener(keyboardRollbackDecisionEvent, (event) =>
+      rollbacks.push((event as CustomEvent<KeyboardRollbackDecision>).detail),
+    );
+    const startedAt = performance.now();
+
+    surface.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    surface.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    frames.flush(startedAt + 16);
+
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(rollbacks).toEqual([
+      {
+        outcome: "deferred",
+        reason: "pointer-ended-without-focus",
+      },
+    ]);
+    expect(commits).toEqual([]);
+
+    viewport.height = 471;
+    frames.flush(startedAt + 32);
+
+    expect(root.dataset.keyboard).toBe("open");
+    expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+    expect(
+      commits.some(
+        ({ geometry, source }) =>
+          geometry.keyboard === "closed" && source === "rollback",
+      ),
+    ).toBe(false);
   });
 
   it.each(["visibilitychange", "pageshow"] as const)(

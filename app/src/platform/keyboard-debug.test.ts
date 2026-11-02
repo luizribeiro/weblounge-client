@@ -6,7 +6,10 @@ import {
   reportKeyboardInteraction,
   summarizeKeyboardTrace,
 } from "./keyboard-debug";
-import { keyboardLayoutCommitEvent } from "./viewport-geometry";
+import {
+  keyboardLayoutCommitEvent,
+  keyboardRollbackDecisionEvent,
+} from "./viewport-geometry";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -43,8 +46,10 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   const composer = document.createElement("div");
   composer.dataset.composer = "true";
   const field = document.createElement("textarea");
+  const send = document.createElement("button");
+  send.dataset.composerSend = "true";
   const unrelatedButton = document.createElement("button");
-  composer.append(field);
+  composer.append(field, send);
   root.append(composer, unrelatedButton);
   document.body.append(root);
   let callback: FrameRequestCallback | undefined;
@@ -71,6 +76,14 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
       },
     }),
   );
+  window.dispatchEvent(
+    new CustomEvent(keyboardRollbackDecisionEvent, {
+      detail: {
+        outcome: "deferred",
+        reason: "pointer-ended-without-focus",
+      },
+    }),
+  );
   callback?.(500);
   callback?.(1001);
   const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
@@ -78,12 +91,20 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   expect(overlay?.textContent).toContain(
     "commits: rollback:closed(focus-left-keyboard-field)",
   );
+  expect(overlay?.textContent).toContain(
+    "rollbacks: deferred(pointer-ended-without-focus)",
+  );
   expect(overlay?.textContent).toContain("touchstart");
   expect(overlay?.textContent).toContain("touchend:tap");
   expect(overlay?.textContent).toContain("touchend:rejected(moved 14px)");
   expect(overlay?.textContent).toContain("focusin:composer(no-pointer)");
   expect(overlay?.textContent).toContain("focus:landed");
   expect(overlay?.textContent).toContain("frames · tap to copy full trace");
+
+  send.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  send.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  expect(overlay?.textContent).toContain("pointerdown:composer(send)");
+  expect(overlay?.textContent).toContain("pointerup:composer(send)");
 
   unrelatedButton.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
   expect(overlay?.textContent).toContain("trigger: pointerup");

@@ -592,6 +592,26 @@ test.describe("viewport diagnostics overlay", () => {
     await expect(overlay).toContainText("frames · tap to copy full trace");
     await expect(overlay).toHaveCSS("user-select", "text");
   });
+
+  test("tracks and focuses taps on composer padding", async ({ page }) => {
+    await installVisualViewportHook(page, true);
+    await openChannel(page, "&debug=keyboard");
+    const root = page.locator("#root");
+    const overlay = page.locator("[data-debug-overlay]");
+    const surface = page.locator("[data-composer]");
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+
+    await surface.tap({ position: { x: 3, y: 3 } });
+
+    await expect(composer).toBeFocused();
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect(overlay).toContainText("pointerdown:composer(surface)");
+    await expect(overlay).toContainText("pointerup:composer(surface)");
+    await expect(overlay).toContainText("touchstart");
+    await expect(overlay).toContainText("touchend:tap");
+  });
 });
 
 async function openChannel(page: Page, query = "") {

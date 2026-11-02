@@ -275,7 +275,8 @@ export function Composer(props: ComposerProps) {
     if (
       !tap.accepted ||
       platform.environment().input !== "touch" ||
-      document.activeElement === field
+      document.activeElement === field ||
+      !tapMayFocusComposer(event.target, event.currentTarget)
     )
       return;
     event.preventDefault();
@@ -285,7 +286,31 @@ export function Composer(props: ComposerProps) {
   };
 
   return (
-    <div class={styles.wrap} data-composer="true">
+    <div
+      class={styles.wrap}
+      data-composer="true"
+      data-keyboard-focus-surface="true"
+      onTouchCancel={() => {
+        reportKeyboardInteraction("touchcancel");
+        touchFocus.cancel();
+      }}
+      onTouchEnd={(event) => {
+        if (textarea !== undefined) focusFromTap(event, textarea);
+      }}
+      onTouchMove={(event) => {
+        const touch = event.touches[0];
+        if (event.touches.length === 1 && touch !== undefined)
+          touchFocus.move(touch);
+        else touchFocus.cancel();
+      }}
+      onTouchStart={(event) => {
+        reportKeyboardInteraction("touchstart");
+        const touch = event.changedTouches[0];
+        if (event.touches.length === 1 && touch !== undefined)
+          touchFocus.begin(touch, event.timeStamp);
+        else touchFocus.cancel();
+      }}
+    >
       {suggestions() !== undefined && (
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}
@@ -369,24 +394,6 @@ export function Composer(props: ComposerProps) {
               request(value, event.currentTarget.selectionStart, false);
           }}
           onKeyDown={keydown}
-          onTouchCancel={() => {
-            reportKeyboardInteraction("touchcancel");
-            touchFocus.cancel();
-          }}
-          onTouchEnd={(event) => focusFromTap(event, event.currentTarget)}
-          onTouchMove={(event) => {
-            const touch = event.touches[0];
-            if (event.touches.length === 1 && touch !== undefined)
-              touchFocus.move(touch);
-            else touchFocus.cancel();
-          }}
-          onTouchStart={(event) => {
-            reportKeyboardInteraction("touchstart");
-            const touch = event.changedTouches[0];
-            if (event.touches.length === 1 && touch !== undefined)
-              touchFocus.begin(touch, event.timeStamp);
-            else touchFocus.cancel();
-          }}
           placeholder={`Message ${props.bufferTitle}`}
           ref={(element) => {
             textarea = element;
@@ -400,6 +407,7 @@ export function Composer(props: ComposerProps) {
         />
         <button
           class={styles.send}
+          data-composer-send="true"
           disabled={props.disabled}
           onClick={() => {
             submit();
@@ -418,6 +426,17 @@ export function Composer(props: ComposerProps) {
       </p>
     </div>
   );
+}
+
+function tapMayFocusComposer(
+  target: EventTarget | null,
+  surface: EventTarget | null,
+): boolean {
+  if (!(target instanceof Element) || !(surface instanceof Element))
+    return false;
+  if (target.closest("button, [role='option'], [role='alertdialog']") !== null)
+    return false;
+  return target === surface || target.closest("[role='combobox']") !== null;
 }
 
 function candidateMatches(

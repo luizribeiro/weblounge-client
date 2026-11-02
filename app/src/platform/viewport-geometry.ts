@@ -9,6 +9,8 @@ export const appGeometryChangeEvent = "weblounge:app-geometry-change";
 export const keyboardGeometryMeasuredEvent =
   "weblounge:keyboard-geometry-measured";
 export const keyboardLayoutCommitEvent = "weblounge:keyboard-layout-commit";
+export const keyboardRollbackDecisionEvent =
+  "weblounge:keyboard-rollback-decision";
 const cachedKeyboardOpenEvent = "weblounge:cached-keyboard-open";
 
 export interface AppGeometryChange {
@@ -27,6 +29,11 @@ export interface KeyboardLayoutCommit {
   readonly geometry: ViewportGeometry;
   readonly source: KeyboardLayoutCommitSource;
   readonly rollbackReason?: KeyboardRollbackReason;
+}
+
+export interface KeyboardRollbackDecision {
+  readonly outcome: "deferred";
+  readonly reason: KeyboardRollbackReason;
 }
 
 export interface ViewportMeasurements {
@@ -166,6 +173,22 @@ export function observeViewportGeometry(
   };
   const measuredGeometry = () =>
     resolveViewportGeometry(measure(), keyboard !== undefined ? 0 : undefined);
+  const announceLayoutCommit = (
+    geometry: ViewportGeometry,
+    source: KeyboardLayoutCommitSource,
+    rollbackReason?: KeyboardRollbackReason,
+  ) => {
+    const detail: KeyboardLayoutCommit = {
+      geometry,
+      source,
+      ...(rollbackReason === undefined ? {} : { rollbackReason }),
+    };
+    browserWindow.dispatchEvent(
+      new CustomEvent<KeyboardLayoutCommit>(keyboardLayoutCommitEvent, {
+        detail,
+      }),
+    );
+  };
   // iOS can reveal a focused field by panning instead of resizing, while WebKit
   // exposes neither interactive-widget nor the VirtualKeyboard API. We undo the
   // pan without ever publishing its stale offset, size to the visual viewport,
@@ -194,17 +217,8 @@ export function observeViewportGeometry(
     const sameLayout =
       key === published &&
       (geometry.keyboard === "closed" || eventOwner === publishedOwner);
-    const announce = () => {
-      const detail: KeyboardLayoutCommit =
-        rollbackReason === undefined
-          ? { geometry, source }
-          : { geometry, rollbackReason, source };
-      browserWindow.dispatchEvent(
-        new CustomEvent<KeyboardLayoutCommit>(keyboardLayoutCommitEvent, {
-          detail,
-        }),
-      );
-    };
+    const announce = () =>
+      announceLayoutCommit(geometry, source, rollbackReason);
     if (sameLayout) {
       if (geometry.keyboard === "closed") {
         applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
@@ -325,7 +339,7 @@ export function observeViewportGeometry(
   };
   const onPointerDown = (event: Event) => {
     if (!onScreenKeyboard()) return;
-    if (keyboardField(event.target)) {
+    if (keyboardField(event.target) || keyboardFocusSurface(event.target)) {
       pointerMayFocus = true;
       expectKeyboard("open");
     }
@@ -344,13 +358,25 @@ export function observeViewportGeometry(
   const reconcileRollback = (reason: KeyboardRollbackReason) => {
     const activeElement = browserWindow.document.activeElement;
     const measured = measuredGeometry();
-    if (keyboardField(activeElement) && measured.keyboard === "open") {
+    if (keyboardField(activeElement)) {
       owner = keyboardSurfaceOwner(activeElement, root);
       closing = false;
-      expectedKeyboard = undefined;
-      awaitingMeasuredOpen = false;
-      cacheKeyboardHeight(browserWindow, measured.height);
-      publish(measured, "rollback", reason);
+      if (measured.keyboard === "open") {
+        expectedKeyboard = undefined;
+        awaitingMeasuredOpen = false;
+        cacheKeyboardHeight(browserWindow, measured.height);
+        publish(measured, "rollback", reason);
+        return;
+      }
+      expectKeyboard("open");
+      stableFrames = 0;
+      browserWindow.dispatchEvent(
+        new CustomEvent<KeyboardRollbackDecision>(
+          keyboardRollbackDecisionEvent,
+          { detail: { outcome: "deferred", reason } },
+        ),
+      );
+      if (frame === 0) frame = browserWindow.requestAnimationFrame(settle);
       return;
     }
     publish({ keyboard: "closed" }, "rollback", reason);
@@ -529,6 +555,13 @@ function keyboardField(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     target.matches("[contenteditable]:not([contenteditable='false'])")
+  );
+}
+
+function keyboardFocusSurface(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest("[data-keyboard-focus-surface]") !== null
   );
 }
 

@@ -102,7 +102,10 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   returning to a visible page re-arms it when a keyboard field remains focused. A successful open
   height is cached per orientation and may be applied synchronously once later pointer focus actually
   lands; cold and pointerless focus wait for measured geometry. A cancelled tap or drag never commits
-  cached geometry.
+  cached geometry. The composer's complete painted surface participates in pointer and touch tracking,
+  while buttons and suggestions keep their own activation behavior. A rollback that finds a focused
+  keyboard field but closed geometry is deferred through the same bounded watch; it cannot publish a
+  closed layout from that pre-keyboard measurement.
   Drags and long-press callouts remain native. A platform-owned non-passive
   vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
   textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
@@ -146,8 +149,9 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
   `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout, distinguishes
-  pointer and pointerless composer focus, and records whether each layout decision came from cached
-  geometry, measured geometry, or a rollback with its cause.
+  pointer and pointerless composer focus, records composer pointer landings by surface, input, Send,
+  suggestion, or confirmation, and identifies whether each layout decision came from cached geometry,
+  measured geometry, or a rollback with its cause (including a deferred rollback).
 
 `--wl-safe-bottom-effective` follows the bottom safe inset except inside the active keyboard owner,
 where it becomes zero under `data-keyboard="open"`; the scrimmed background therefore retains its

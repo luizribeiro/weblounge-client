@@ -1,7 +1,9 @@
 import { type DebugReading, installDebugSection } from "./debug-overlay";
 import {
   type KeyboardLayoutCommit,
+  type KeyboardRollbackDecision,
   keyboardLayoutCommitEvent,
+  keyboardRollbackDecisionEvent,
 } from "./viewport-geometry";
 
 const traceMilliseconds = 1000;
@@ -12,6 +14,8 @@ export type KeyboardInteractionLabel =
   | "focus:landed"
   | "focus:refused"
   | `focusin:composer(${"no-pointer" | "pointer"})`
+  | `pointerdown:composer(${ComposerPointerLanding})`
+  | `pointerup:composer(${ComposerPointerLanding})`
   | "touchcancel"
   | `touchend:rejected(${string})`
   | "touchend:tap"
@@ -21,6 +25,14 @@ interface KeyboardInteraction {
   readonly at: number;
   readonly label: KeyboardInteractionLabel;
 }
+
+type ComposerPointerLanding =
+  | "confirmation"
+  | "input"
+  | "other"
+  | "send"
+  | "suggestion"
+  | "surface";
 
 export function reportKeyboardInteraction(
   label: KeyboardInteractionLabel,
@@ -92,7 +104,9 @@ export function installKeyboardDebug(
 ): () => void {
   let frames: readonly KeyboardTraceFrame[] = [];
   let commits: readonly string[] = [];
+  let rollbacks: readonly string[] = [];
   let interactions: readonly string[] = [];
+  let interactionOpen = false;
   let interactionStartedAt = 0;
   let pointerMayFocusComposer = false;
   let trigger = "waiting for tap/focusout";
@@ -103,6 +117,7 @@ export function installKeyboardDebug(
     read: (): readonly DebugReading[] => [
       ["trigger", trigger],
       ["commits", commits.join(" · ") || "waiting"],
+      ["rollbacks", rollbacks.join(" · ") || "waiting"],
       ["interactions", interactions.join(" · ") || "waiting"],
       ["trace", summarizeKeyboardTrace(frames)],
     ],
@@ -156,23 +171,40 @@ export function installKeyboardDebug(
         ).detail;
         const reason =
           rollbackReason === undefined ? "" : `(${rollbackReason})`;
-        commits = [
-          ...commits,
-          `${source}:${geometry.keyboard === "open" ? geometry.height : "closed"}${reason}`,
-        ].slice(-5);
+        const state = geometry.keyboard === "open" ? geometry.height : "closed";
+        commits = [...commits, `${source}:${state}${reason}`].slice(-5);
+        render();
+      };
+      const recordRollback = (event: Event) => {
+        const { outcome, reason } = (
+          event as CustomEvent<KeyboardRollbackDecision>
+        ).detail;
+        rollbacks = [...rollbacks, `${outcome}(${reason})`].slice(-5);
         render();
       };
       const recordInteraction = (event: Event) => {
         const { at, label } = (event as CustomEvent<KeyboardInteraction>)
           .detail;
-        if (label === "touchstart" || interactions.length === 0) {
+        const startsInteraction =
+          label === "touchstart" || label.startsWith("pointerdown:");
+        if (
+          (startsInteraction && !interactionOpen) ||
+          interactions.length === 0
+        ) {
           interactionStartedAt = at;
           interactions = [];
         }
+        if (startsInteraction) interactionOpen = true;
         interactions = [
           ...interactions,
           `${compact(at - interactionStartedAt)} ${label}`,
         ].slice(-12);
+        if (
+          label === "touchcancel" ||
+          label.startsWith("touchend:") ||
+          label.startsWith("pointerup:")
+        )
+          interactionOpen = false;
         render();
       };
       const recordComposerFocus = (event: FocusEvent) => {
@@ -187,20 +219,37 @@ export function installKeyboardDebug(
         );
       };
       const recordPointerDown = (event: Event) => {
-        pointerMayFocusComposer =
-          event.target instanceof Element &&
-          event.target.closest("[data-composer]") !== null;
+        const landing = composerPointerLanding(event.target);
+        pointerMayFocusComposer = landing !== undefined;
+        if (landing !== undefined)
+          reportKeyboardInteraction(
+            `pointerdown:composer(${landing})`,
+            browserWindow,
+          );
+      };
+      const recordPointerUp = (event: Event) => {
+        const landing = composerPointerLanding(event.target);
+        if (landing !== undefined)
+          reportKeyboardInteraction(
+            `pointerup:composer(${landing})`,
+            browserWindow,
+          );
       };
       const clearPointerFocus = () => {
         pointerMayFocusComposer = false;
       };
       browserWindow.addEventListener("pointerdown", recordPointerDown);
       browserWindow.addEventListener("pointerup", record);
+      browserWindow.addEventListener("pointerup", recordPointerUp);
       browserWindow.addEventListener("pointerup", clearPointerFocus);
       browserWindow.addEventListener("pointercancel", clearPointerFocus);
       browserWindow.addEventListener("focusout", record);
       browserWindow.addEventListener("focusin", recordComposerFocus);
       browserWindow.addEventListener(keyboardLayoutCommitEvent, recordCommit);
+      browserWindow.addEventListener(
+        keyboardRollbackDecisionEvent,
+        recordRollback,
+      );
       browserWindow.addEventListener(
         keyboardInteractionEvent,
         recordInteraction,
@@ -210,6 +259,7 @@ export function installKeyboardDebug(
           browserWindow.cancelAnimationFrame(animationFrame);
         browserWindow.removeEventListener("pointerup", record);
         browserWindow.removeEventListener("pointerdown", recordPointerDown);
+        browserWindow.removeEventListener("pointerup", recordPointerUp);
         browserWindow.removeEventListener("pointerup", clearPointerFocus);
         browserWindow.removeEventListener("pointercancel", clearPointerFocus);
         browserWindow.removeEventListener("focusout", record);
@@ -217,6 +267,10 @@ export function installKeyboardDebug(
         browserWindow.removeEventListener(
           keyboardLayoutCommitEvent,
           recordCommit,
+        );
+        browserWindow.removeEventListener(
+          keyboardRollbackDecisionEvent,
+          recordRollback,
         );
         browserWindow.removeEventListener(
           keyboardInteractionEvent,
@@ -231,6 +285,21 @@ export function installKeyboardDebug(
     },
   });
   return stopSection;
+}
+
+function composerPointerLanding(
+  target: EventTarget | null,
+): ComposerPointerLanding | undefined {
+  if (!(target instanceof Element)) return undefined;
+  const composer = target.closest("[data-composer]");
+  if (composer === null) return undefined;
+  if (target.closest("textarea, input") !== null) return "input";
+  if (target.closest("[data-composer-send]") !== null) return "send";
+  if (target.closest("[role='option']") !== null) return "suggestion";
+  if (target.closest("[role='alertdialog']") !== null) return "confirmation";
+  if (target === composer || target.closest("[role='combobox']") !== null)
+    return "surface";
+  return "other";
 }
 
 function primaryPointer(event: Event): boolean {

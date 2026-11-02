@@ -162,6 +162,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     foreground resume, stopping as soon as the expected state settles. Pointerless and
     accessory-arrow focus now observe silent late viewport shrink, while focused measured-open
     reality wins stale closed rollbacks and diagnostics identify the focus source and rollback cause.
+  - [x] Defer closed rollbacks while a keyboard field remains focused, preserving the bounded watch
+    for iOS's not-yet-reported shrink. Composer padding, borders, input, and Send-area pointers now
+    arm that watch; touch tracking covers the painted composer and diagnostics label the landing.
   - [x] Prevent iOS composer taps and keyboard-open drags from panning the document while leaving
     composer swipes and long-presses gesture-owned; never publish a stale visual-viewport top, and
     re-anchor the live-edge transcript with the app-height change before paint (#69 and #70,

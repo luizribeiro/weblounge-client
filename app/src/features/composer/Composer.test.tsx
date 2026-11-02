@@ -145,7 +145,9 @@ it("accepts a second tap after a retained-focus send and Done-style blur", async
 
   input.blur();
   expect(input).not.toHaveFocus();
-  tap(input, 8);
+  const surface = input.closest<HTMLElement>("[data-composer]");
+  if (surface === null) throw new Error("composer surface is missing");
+  tap(surface, 8);
 
   expect(input).toHaveFocus();
   window.dispatchEvent(new Event(keyboardGeometryMeasuredEvent));
