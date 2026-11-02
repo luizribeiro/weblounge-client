@@ -56,6 +56,22 @@ oauth_token: string,
 /**
  * Channels joined after registration.
  */
+autojoin: Array<string>, } | { "type": "prepare_hosted",
+/**
+ * Display label for the network.
+ */
+label: string,
+/**
+ * Secure WebSocket endpoint accepted by papo.
+ */
+endpoint: string,
+/**
+ * Initial nickname, replaced by the authenticated account when applicable.
+ */
+nickname: string,
+/**
+ * Channels joined after registration.
+ */
 autojoin: Array<string>, } | { "type": "reconnect_hosted",
 /**
  * Hosted network to reconnect.

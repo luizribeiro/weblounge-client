@@ -214,6 +214,8 @@ impl Runtime {
         }
     }
 
+    // One exhaustive dispatcher keeps protocol routing under a single owner.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn request(&self, envelope: EngineRequestEnvelope) -> Vec<EngineToUi> {
         match envelope.request {
             EngineRequest::Ping => vec![EngineToUi::Pong { id: envelope.id }],
@@ -249,6 +251,12 @@ impl Runtime {
                 envelope.id,
                 hosted_connect_config(label, endpoint, nickname, oauth_token, autojoin),
             ),
+            EngineRequest::PrepareHosted {
+                label,
+                endpoint,
+                nickname,
+                autojoin,
+            } => self.prepare_hosted(envelope.id, label, endpoint, nickname, autojoin),
             EngineRequest::ReconnectHosted {
                 network_id,
                 oauth_token,
@@ -675,6 +683,75 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             drain_events(state, outbound, client, events, instance).await;
+        });
+        output
+    }
+
+    fn prepare_hosted(
+        &self,
+        command_id: String,
+        label: String,
+        endpoint: String,
+        nickname: String,
+        autojoin: Vec<String>,
+    ) -> Vec<EngineToUi> {
+        if !valid_endpoint(&endpoint, false) {
+            return rejected_command(command_id, "engine.invalid_endpoint");
+        }
+
+        let snapshot_fingerprint = chat_list_snapshot::fingerprint(&label, &endpoint);
+        let mut state = lock(&self.state);
+        if let Some(running) = state.network.as_ref() {
+            if running.authentication_kind != AuthenticationKind::HostedOAuth {
+                return rejected_command(command_id, "engine.network_already_connected");
+            }
+            return attach_shell(&running.model, command_id);
+        }
+        let id = NetworkId(state.next_network_id);
+        state.next_network_id += 1;
+        let instance = state.next_instance;
+        state.next_instance += 1;
+        let (client, _events, _driver) =
+            build_pending_hosted_client(&endpoint, &nickname, autojoin.clone());
+        let mut model = NetworkModel::new(id, label, nickname.clone(), DEFAULT_WINDOW_LIMIT);
+        let cached_snapshot = state
+            .cached_snapshot
+            .take()
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
+        let had_cached_chat_list = cached_snapshot.is_some();
+        if let Some(snapshot) = cached_snapshot {
+            model.restore_chat_list(snapshot);
+        }
+        let mut output = vec![model.network_event(), model.buffers_event()];
+        if had_cached_chat_list {
+            output.push(EngineToUi::ChatListSnapshotLoaded {
+                network_id: id,
+                buffers: match model.buffers_event() {
+                    EngineToUi::BuffersChanged { buffers, .. } => buffers,
+                    _ => Vec::new(),
+                },
+            });
+        }
+        output.push(EngineToUi::CommandResult { id: command_id });
+        state.network = Some(RunningNetwork {
+            instance,
+            authentication_kind: AuthenticationKind::HostedOAuth,
+            client,
+            model,
+            connection_attempt: 1,
+            device_online: true,
+            pending_sends: VecDeque::new(),
+            flushing_sends: false,
+            hosted_reconnect: Some(HostedReconnectConfig {
+                endpoint,
+                nickname,
+                autojoin,
+            }),
+            chat_list: ChatListSync {
+                fingerprint: snapshot_fingerprint,
+                restored_from_cache: had_cached_chat_list,
+                ..ChatListSync::default()
+            },
         });
         output
     }
@@ -1570,6 +1647,24 @@ fn build_client(config: ConnectConfig) -> (papo::Client, papo::Events, papo::Dri
         .history_on_reconnect(true);
     if !config.autojoin.is_empty() {
         builder = builder.autojoin(config.autojoin);
+    }
+    builder.build()
+}
+
+fn build_pending_hosted_client(
+    endpoint: &str,
+    nickname: &str,
+    autojoin: Vec<String>,
+) -> (papo::Client, papo::Events, papo::Driver) {
+    let mut builder = papo::Client::builder(endpoint, nickname)
+        .reconnect(
+            papo::Reconnect::exponential()
+                .max_delay(Duration::from_secs(30))
+                .refused_delay(Duration::from_secs(30)),
+        )
+        .history_on_reconnect(true);
+    if !autojoin.is_empty() {
+        builder = builder.autojoin(autojoin);
     }
     builder.build()
 }
@@ -3842,6 +3937,53 @@ mod tests {
             wire.next_sent().await,
             "AUTHENTICATE biwsAWF1dGg9QmVhcmVyIG9hdXRoLXRva2VuLTczOTEBAQ=="
         );
+    }
+
+    #[test]
+    fn hosted_profile_restores_cached_chats_before_a_token_exists() {
+        let endpoint = "wss://beta.weblounge.org/socket";
+        let snapshot = ChatListSnapshot::new(
+            crate::chat_list_snapshot::fingerprint("weblounge", endpoint),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#lounge".into(),
+                },
+                title: "#lounge".into(),
+                last_activity_ms: None,
+                badge: SnapshotBadge::Unread { count: 1 },
+                preview: Some("cached before credentials".into()),
+                peer_pin: None,
+            }],
+        );
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::with_storage(
+            outbound,
+            Arc::new(MemoryKv::default()),
+            Some(snapshot.encode().expect("snapshot encodes")),
+            "weblounge test".into(),
+        );
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "prepare".into(),
+            request: EngineRequest::PrepareHosted {
+                label: "weblounge".into(),
+                endpoint: endpoint.into(),
+                nickname: "*".into(),
+                autojoin: vec!["#lounge".into()],
+            },
+        });
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::ChatListSnapshotLoaded { buffers, .. }
+                if buffers.iter().any(|buffer| {
+                    buffer.title == "#lounge" && buffer.cached == Some(true)
+                })
+        )));
+        let state = lock(&runtime.state);
+        let running = state.network.as_ref().expect("hosted profile is retained");
+        assert_eq!(running.authentication_kind, AuthenticationKind::HostedOAuth);
+        assert!(running.hosted_reconnect.is_some());
     }
 
     #[tokio::test]

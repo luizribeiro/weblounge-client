@@ -520,6 +520,17 @@ pub enum EngineRequest {
         /// Channels joined after registration.
         autojoin: Vec<String>,
     },
+    /// Restore a hosted profile and its cached chat list before a token is available.
+    PrepareHosted {
+        /// Display label for the network.
+        label: String,
+        /// Secure WebSocket endpoint accepted by papo.
+        endpoint: String,
+        /// Initial nickname, replaced by the authenticated account when applicable.
+        nickname: String,
+        /// Channels joined after registration.
+        autojoin: Vec<String>,
+    },
     /// Rebuild a hosted connection with a freshly acquired one-shot token.
     ReconnectHosted {
         /// Hosted network to reconnect.

@@ -92,6 +92,9 @@ With a valid cached snapshot, the splash reveals the cached Chats frame as soon 
 fonts can paint it; it no longer waits for live readiness. The existing live-ready behavior remains
 the fallback when the cache is absent or ignored, including its bounded wait. Live synchronization
 continues behind the normal shell, with only the logo treatment indicating transient progress.
+Hosted startup supplies the public network profile to the engine before the page-owned session
+token request completes, so a slow or offline credential endpoint cannot hold a matching snapshot
+behind the splash. Tokens remain one-shot secrets and are never persisted.
 
 Transient drops that recover use that same shimmer and no error copy. An actionable failure uses
 the one shell-owned connection error strip instead: immediately under the top bar on every mobile
