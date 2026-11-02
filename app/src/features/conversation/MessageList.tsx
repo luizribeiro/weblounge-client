@@ -79,7 +79,6 @@ export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
   let liveEdgeSentinel: HTMLLIElement | undefined;
   let observedWidth: number | undefined;
-  let observedHeight: number | undefined;
   const estimatedDensity = currentMessageDensity(document.documentElement);
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
@@ -147,16 +146,16 @@ export function MessageList(props: MessageListProps) {
         const next = rect.height === 0 ? { width: 1024, height: 768 } : rect;
         const widthChanged =
           observedWidth !== undefined && observedWidth !== next.width;
-        const viewportChanged =
-          (observedWidth !== undefined && observedWidth !== next.width) ||
-          (observedHeight !== undefined && observedHeight !== next.height);
-        const followEnd = viewportChanged && atLiveEdge();
         if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
-        observedHeight = next.height;
+        if (!widthChanged) {
+          // Composer and shell boundaries change height without transcript
+          // content, so updating measurements must not write the scroll offset.
+          callback(next);
+          return;
+        }
         callback(next);
-        if (widthChanged) remeasure();
-        if (followEnd) virtualizer.scrollToEnd();
+        remeasure();
       }),
     estimateSize: (index) => {
       const row = rows()[index];

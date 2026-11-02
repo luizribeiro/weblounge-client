@@ -293,6 +293,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     events no longer re-anchor unrelated message lists (#78, awaiting on-device confirmation).
     Luiz's on-device confirmation). Pixel coverage samples a visible chat row directly because the
     closed composer no longer defines a lower-row region.
+  - [x] Keep transcript rows visually fixed when the composer grows or shrinks. Height-only message
+    viewport changes preserve both live-edge and scrolled-up anchors without an intermediate frame;
+    actual message arrival remains the only reason a live-edge transcript advances (#80).
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;

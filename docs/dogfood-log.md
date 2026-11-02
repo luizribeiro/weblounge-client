@@ -85,7 +85,7 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 77 | 2026-11-01 | Mobile members drawer kept showing the first channel's members after switching channels. | fixed, live (cc1a339); please confirm |
 | 78 | 2026-11-01 | Tapping 'Filter members' re-laid out the chat behind the drawer. | fixed (keyboard owner scoping), live (cc1a339); please confirm |
 | 79 | 2026-11-01 | Sometimes the layout switched to keyboard-open without a keyboard (tap rejected, native focus not followed). | fixed, confirmed by Luiz (0710f96) |
-| 80 | 2026-11-02 | Composer growing to a second line moves the transcript (it should only move for new messages). | in progress |
+| 80 | 2026-11-02 | Composer growing to a second line moves the transcript (it should only move for new messages). | fixed |
 | 81 | 2026-11-02 | "New" marker added in the buffer you're reading with the window focused. | in progress |
 | 82 | 2026-11-02 | "New" marker added for your own messages. | in progress |
 | 83 | 2026-11-02 | "New" marker at the very top of an old, fully-read DM. | in progress |

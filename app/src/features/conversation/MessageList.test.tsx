@@ -155,6 +155,40 @@ it("re-anchors the live edge synchronously with app geometry", () => {
   expect(scrollTo).toHaveBeenCalledOnce();
 });
 
+it("keeps the transcript fixed through a height-only viewport resize", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  render(() => (
+    <MessageList
+      messages={Array.from({ length: 30 }, (_, index) => ({
+        ...message,
+        id: index + 1,
+      }))}
+    />
+  ));
+  const list = screen.getByRole("list", { name: "Messages" });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  for (const observer of observers) observer.flushTarget(list, 600);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  list.scrollTop = 200;
+  const scrollTo = vi.spyOn(list, "scrollTo");
+  for (const observer of observers) observer.flushTarget(list, 560);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(scrollTo).not.toHaveBeenCalled();
+  expect(list.scrollTop).toBe(200);
+});
+
 it("offers Retry for a failed local send", () => {
   const retry = vi.fn();
   render(() => (
