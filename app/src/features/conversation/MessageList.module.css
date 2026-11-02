@@ -27,12 +27,21 @@
   position: absolute;
   width: 1px;
 }
+.geometryLayer,
+.motionClip,
 .motionLayer {
   inset: 0;
+  position: absolute;
+}
+.motionClip {
+  overflow: clip;
+}
+.geometryLayer,
+.motionLayer {
   list-style: none;
   margin: 0;
   padding: 0;
-  position: absolute;
+  will-change: transform;
 }
 .virtualRow {
   left: 0;

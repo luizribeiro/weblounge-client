@@ -1,4 +1,5 @@
 import { type Accessor, createSignal } from "solid-js";
+import { observeKeyboardMotion } from "./keyboard-motion";
 import { observeTouchMoveLock } from "./touch-move-lock";
 import { observeViewportGeometry } from "./viewport-geometry";
 
@@ -100,6 +101,9 @@ export function installPlatformEnvironment(
       publish();
     },
   );
+  const stopKeyboardMotion = observeKeyboardMotion(root, browserWindow, {
+    prefersReducedMotion: () => reducedMotion.matches,
+  });
   const stopViewportObserver = observeViewportGeometry(root, browserWindow, {
     onScreenKeyboard: () => environment().input === "touch",
   });
@@ -120,6 +124,7 @@ export function installPlatformEnvironment(
         visibilityChanged,
       );
       stopViewportObserver();
+      stopKeyboardMotion();
       stopTouchMoveLock();
       stopWidthObserver();
       delete root.dataset.input;

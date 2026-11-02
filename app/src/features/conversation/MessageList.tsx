@@ -78,7 +78,7 @@ const liveEdgeTolerance = 2;
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
-  let liveEdgeSentinel: HTMLLIElement | undefined;
+  let liveEdgeSentinel: HTMLElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
   let syncViewportRect: (() => void) | undefined;
@@ -314,7 +314,7 @@ export function MessageList(props: MessageListProps) {
     const anchorGeometryChange = (event: Event) => {
       const { owner } = (event as CustomEvent<AppGeometryChange>).detail;
       if (list !== undefined && owner.contains(list) && atLiveEdge())
-        virtualizer.scrollToEnd();
+        syncViewportRect?.();
     };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
@@ -400,7 +400,7 @@ export function MessageList(props: MessageListProps) {
           copySelectedRows(event, event.currentTarget, toCopyRows(rows()))
         }
       >
-        <ol class={styles.motionLayer} role="presentation">
+        <ol class={styles.geometryLayer} role="presentation">
           <li
             aria-hidden="true"
             class={styles.spacer}
@@ -413,44 +413,54 @@ export function MessageList(props: MessageListProps) {
             ref={(element) => {
               liveEdgeSentinel = element;
             }}
-            style={{ top: `${Math.max(virtualizer.getTotalSize() - 1, 0)}px` }}
-          />
-          <For each={virtualizer.getVirtualItems()}>
-            {(virtualRow) => {
-              const row = () => rows()[virtualRow.index];
-              const selected = () => {
-                const item = row();
-                return (
-                  item?.kind === "message" &&
-                  item.message.id === selectedMessage()
-                );
-              };
-              return (
-                <li
-                  class={styles.virtualRow}
-                  data-copy-row-index={virtualRow.index}
-                  data-index={virtualRow.index}
-                  data-row-key={String(virtualRow.key)}
-                  data-selected={selected()}
-                  ref={(element) => measureRow(element, virtualRow.index)}
-                  style={{
-                    transform: `translateY(${virtualRow.start + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
-                  }}
-                >
-                  <TimelineRowView
-                    index={virtualRow.index}
-                    nickLookup={nickLookup()}
-                    onOpenChannel={props.onOpenChannel}
-                    onOpenDirect={props.onOpenDirect}
-                    onOpenExternal={props.onOpenExternal}
-                    onRetry={props.onRetry}
-                    row={row()}
-                  />
-                </li>
-              );
+            style={{
+              top: `${Math.max(virtualizer.getTotalSize() - 1, 0)}px`,
             }}
-          </For>
+          />
         </ol>
+        <div class={styles.motionClip}>
+          <ol
+            class={styles.motionLayer}
+            data-message-motion-layer="true"
+            role="presentation"
+          >
+            <For each={virtualizer.getVirtualItems()}>
+              {(virtualRow) => {
+                const row = () => rows()[virtualRow.index];
+                const selected = () => {
+                  const item = row();
+                  return (
+                    item?.kind === "message" &&
+                    item.message.id === selectedMessage()
+                  );
+                };
+                return (
+                  <li
+                    class={styles.virtualRow}
+                    data-copy-row-index={virtualRow.index}
+                    data-index={virtualRow.index}
+                    data-row-key={String(virtualRow.key)}
+                    data-selected={selected()}
+                    ref={(element) => measureRow(element, virtualRow.index)}
+                    style={{
+                      transform: `translateY(${virtualRow.start + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
+                    }}
+                  >
+                    <TimelineRowView
+                      index={virtualRow.index}
+                      nickLookup={nickLookup()}
+                      onOpenChannel={props.onOpenChannel}
+                      onOpenDirect={props.onOpenDirect}
+                      onOpenExternal={props.onOpenExternal}
+                      onRetry={props.onRetry}
+                      row={row()}
+                    />
+                  </li>
+                );
+              }}
+            </For>
+          </ol>
+        </div>
       </div>
       {unseen() > 0 && (
         <button class={styles.jump} onClick={jumpToBottom} type="button">

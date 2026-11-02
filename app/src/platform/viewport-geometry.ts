@@ -8,6 +8,8 @@ export type ViewportGeometry =
 export const appGeometryChangeEvent = "weblounge:app-geometry-change";
 export const keyboardGeometryMeasuredEvent =
   "weblounge:keyboard-geometry-measured";
+export const keyboardLayoutWillCommitEvent =
+  "weblounge:keyboard-layout-will-commit";
 export const keyboardLayoutCommitEvent = "weblounge:keyboard-layout-commit";
 export const keyboardRollbackDecisionEvent =
   "weblounge:keyboard-rollback-decision";
@@ -29,6 +31,11 @@ export interface KeyboardLayoutCommit {
   readonly geometry: ViewportGeometry;
   readonly source: KeyboardLayoutCommitSource;
   readonly rollbackReason?: KeyboardRollbackReason;
+}
+
+export interface KeyboardLayoutWillCommit extends KeyboardLayoutCommit {
+  readonly owner: HTMLElement;
+  readonly previousGeometry: ViewportGeometry;
 }
 
 export interface KeyboardRollbackDecision {
@@ -152,6 +159,7 @@ export function observeViewportGeometry(
   let pointerMayFocus = false;
   let awaitingMeasuredOpen = false;
   let correctingPan = false;
+  let publishedGeometry: ViewportGeometry = { keyboard: "closed" };
   const measure = (): ViewportMeasurements => {
     const keyboardHeight = keyboard?.boundingRect.height ?? 0;
     return {
@@ -228,12 +236,25 @@ export function observeViewportGeometry(
       if (source !== "measured") announce();
       return false;
     }
+    const willCommit: KeyboardLayoutWillCommit = {
+      geometry,
+      owner: eventOwner,
+      previousGeometry: publishedGeometry,
+      source,
+      ...(rollbackReason === undefined ? {} : { rollbackReason }),
+    };
+    browserWindow.dispatchEvent(
+      new CustomEvent<KeyboardLayoutWillCommit>(keyboardLayoutWillCommitEvent, {
+        detail: willCommit,
+      }),
+    );
     published = key;
     if (geometry.keyboard === "open" && publishedOwner !== eventOwner) {
       publishedOwner?.removeAttribute("data-keyboard-owner");
       eventOwner.setAttribute("data-keyboard-owner", "true");
     }
     applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
+    publishedGeometry = geometry;
     publishedOwner = geometry.keyboard === "open" ? eventOwner : undefined;
     browserWindow.dispatchEvent(
       new CustomEvent<AppGeometryChange>(appGeometryChangeEvent, {

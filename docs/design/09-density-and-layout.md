@@ -121,16 +121,22 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   values, each event re-measures on following frames until geometry holds for two of them.
 - `visualViewport.height` is geometry, not animation progress: WKWebView consumes the keyboard's
   final frame once ([WebKit source](https://github.com/WebKit/WebKit/blob/e697080/Source/WebKit/UIProcess/API/ios/WKWebViewIOS.mm#L3704-L3790)).
-  The app deliberately does not animate keyboard layout. On open it applies the final layout in one
+  On open the app applies the final layout in one
   step at the first signal: a cached open height for the current orientation once composer focus
   lands during the pointer gesture, or otherwise the first measured visual-viewport step. Cached
   geometry applies only to the root owner; overlay owners wait for measured geometry. Later measured
   open geometry replaces a cached layout before the next paint and refreshes that orientation's
   cache; multiple readings within one frame collapse to the last one. A root-owned change anchors
   the transcript before paint. Owner-local changes do not disturb surfaces outside that owner.
-  There are no height transitions, transforms, retained layouts, or cloned row layers. This is a
-  deliberate simplification after app-owned animation repeatedly produced worse on-device glitches
-  than an immediate layout change.
+  The one-step layout remains the only geometry source. For a root-owned mobile composer, a
+  transform-only visual layer measures the old and new composer bottoms around that synchronous
+  commit, starts the composer and transcript row layer at their old visual position, and settles
+  them to the committed layout with the measured iOS Messages spring. The scroll box and header do
+  not move; mobile transcript overscan keeps translated rows painted. The 400ms linear easing is
+  back-dated 20ms to align the app's first observable frame with the already-moving system keyboard,
+  with a 380ms cubic-bezier fallback where linear easing is unsupported. A single platform constant
+  disables this layer, and reduced motion bypasses it. Owner-local keyboard surfaces and desktop do
+  not animate.
 - Overlay drawers are keyboard surfaces. While a drawer owns focus, `#root` and the scrimmed chat
   retain their closed geometry and the owning drawer uses `bottom: var(--wl-keyboard-inset)` so its
   list and focused field remain above the keyboard. The drawer consumes
@@ -147,7 +153,7 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   while closed and disabled while open. It never follows an intermediate motion state. Android
   still requests `virtualKeyboard.overlaysContent` and follows `geometrychange`, but applies the
   same one-step policy. Reduced-motion preferences require no separate keyboard behavior because
-  the app owns no keyboard animation.
+  the app's transform layer is bypassed.
 - `?debug=viewport` (persisted until `?debug=off`) shows a platform-owned overlay of the live
   layout, visual viewport, safe-area, app geometry and element rects for on-device checks.
   `/debug keyboard` adds a copyable one-second per-frame trace after taps and focusout, distinguishes
