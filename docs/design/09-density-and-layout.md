@@ -143,8 +143,13 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   `--wl-safe-bottom-effective`, avoiding a home-indicator band while the keyboard is open. Geometry
   consumers such as the message list respond only when the event owner contains them.
 - On focusout, close waits one frame to confirm focus did not return to a keyboard field. It then
-  clears the owner and inset and commits the closed layout immediately, so the departing keyboard
-  uncovers a surface that is already in place. A refocus into a keyboard field cancels that close;
+  clears the owner and inset and commits the closed layout once from the full layout height; later
+  intermediate viewport readings only verify that decision. The transcript snaps to that committed
+  layout, matching Messages, while the composer starts at its old visual bottom and settles with the
+  same spring, back-dated 20ms. If the visual viewport has not begun growing after two frames, the
+  composer reverses from its current progress; a later growth signal sends that same animation
+  forward again. On forward completion a visual-viewport mismatch over 1px receives a 100ms
+  transform correction. A refocus into a keyboard field cancels the close;
   moving between keyboard fields transfers ownership without an intermediate close. This preserves
   taps from the composer into typeahead suggestions. Later viewport events only re-verify the
   chosen layout. Portrait and landscape keep separate cached open heights. A nonzero

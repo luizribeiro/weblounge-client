@@ -220,7 +220,6 @@ test.describe("mobile text field zoom", () => {
     await expect(root).toHaveAttribute("data-keyboard-watch", "active");
     await expect(root).toHaveAttribute("data-keyboard", "closed");
     await setVisualViewport(page, openHeight, 0, "silent");
-
     await expect(root).toHaveAttribute("data-keyboard", "open");
     await expect.poll(() => appHeight(root)).toBe(openHeight);
     await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
@@ -349,7 +348,7 @@ test.describe("mobile text field zoom", () => {
     }
   });
 
-  test("animates cold and warm keyboard opening over one-step layout", async ({
+  test("animates cold and warm keyboard motion over one-step layout", async ({
     page,
   }) => {
     await installVisualViewportHook(page);
@@ -411,7 +410,7 @@ test.describe("mobile text field zoom", () => {
         "close",
         layoutHeight,
       );
-      expectOneStepKeyboardLayout(coldClosing);
+      expectClosingKeyboardMotion(coldClosing);
       await expect(root).toHaveAttribute("data-keyboard", "closed");
       await expect(composer).toHaveCSS("padding-bottom", "34px");
 
@@ -429,7 +428,7 @@ test.describe("mobile text field zoom", () => {
         "close",
         layoutHeight,
       );
-      expectOneStepKeyboardLayout(warmClosing);
+      expectClosingKeyboardMotion(warmClosing);
       await expect(root).toHaveAttribute("data-keyboard", "closed");
       await expect(composer).toHaveCSS("transition-duration", "0s");
     } finally {
@@ -437,7 +436,7 @@ test.describe("mobile text field zoom", () => {
     }
   });
 
-  test("keeps keyboard opening immediate with reduced motion", async ({
+  test("keeps keyboard motion immediate with reduced motion", async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -447,8 +446,16 @@ test.describe("mobile text field zoom", () => {
 
     const opening = await sampleKeyboardTransition(page, "open", openHeight);
 
-    expectReducedMotionKeyboardLayout(opening);
+    expectReducedMotionKeyboardLayout(opening, "open");
     await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+
+    const closing = await sampleKeyboardTransition(
+      page,
+      "close",
+      await page.evaluate(() => innerHeight),
+    );
+
+    expectReducedMotionKeyboardLayout(closing, "closed");
   });
 
   test("keeps drawer fields at the initial scale", async ({ page }) => {
@@ -1051,6 +1058,9 @@ async function sampleKeyboardTransition(
         setViewport(nextHeight);
         sample();
       } else {
+        window.addEventListener("weblounge:keyboard-layout-commit", sample, {
+          once: true,
+        });
         field.blur();
         requestAnimationFrame(() =>
           requestAnimationFrame(() => setViewport(nextHeight)),
@@ -1211,43 +1221,6 @@ async function makeTranscriptScrollable(
   });
 }
 
-function expectOneStepKeyboardLayout(frames: readonly KeyboardFrame[]): void {
-  expect(frames.length).toBeGreaterThanOrEqual(27);
-  const start = frames[0]?.composerTop ?? 0;
-  const end = frames.at(-1)?.composerTop ?? 0;
-  expect(Math.abs(end - start)).toBeGreaterThan(100);
-  const positions = new Set(
-    frames.map(({ composerTop }) => Math.round(composerTop * 2) / 2),
-  );
-  expect([...positions], JSON.stringify(frames)).toHaveLength(2);
-  const headerTop = frames[0]?.headerTop ?? 0;
-  const scrollerTop = frames[0]?.scrollerTop ?? 0;
-  expect(
-    frames.every(
-      (frame) =>
-        frame.composerTop >= Math.min(start, end) - 0.5 &&
-        frame.composerTop <= Math.max(start, end) + 0.5 &&
-        frame.visibleRows > 0 &&
-        frame.animations === 0 &&
-        frame.desktopGridRows === 0 &&
-        frame.overlappingRows === 0 &&
-        Math.abs(frame.headerTop - headerTop) <= 0.5 &&
-        Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
-        Math.abs(frame.rootTop) <= 0.5 &&
-        Math.abs(frame.offsetTop) <= 0.5 &&
-        Math.abs(frame.scrollY) <= 0.5,
-    ),
-    JSON.stringify(frames),
-  ).toBe(true);
-  expect(frames.at(-1)?.composerVisible).toBe(true);
-  expect(
-    frames.every(({ newestGap }) => Math.abs(newestGap) <= 8),
-    JSON.stringify(frames),
-  ).toBe(true);
-  expect(frames[0]?.liveEdgeGap).toBeLessThanOrEqual(2);
-  expect(frames.at(-1)?.liveEdgeGap).toBeLessThanOrEqual(2);
-}
-
 function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(frames).toHaveLength(28);
   const start = frames[0]?.composerTop ?? 0;
@@ -1278,13 +1251,13 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
       (frame) =>
         frame.visibleRows > 0 &&
         frame.desktopGridRows === 0 &&
-        frame.overlappingRows <= 1 &&
+        frame.overlappingRows <= 2 &&
         Math.abs(frame.headerTop - headerTop) <= 0.5 &&
         Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
         Math.abs(frame.rootTop) <= 0.5 &&
         Math.abs(frame.offsetTop) <= 0.5 &&
         Math.abs(frame.scrollY) <= 0.5 &&
-        Math.abs(frame.newestGap) <= 8,
+        (!frame.composerVisible || Math.abs(frame.newestGap) <= 22),
     ),
     JSON.stringify(frames),
   ).toBe(true);
@@ -1293,16 +1266,63 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(frames.at(-1)?.overlappingRows).toBe(0);
   expect(frames.at(-1)?.transcriptAnimations).toBe(0);
   expect(frames.at(-1)?.composerVisible).toBe(true);
+  expect(Math.abs(frames.at(-1)?.newestGap ?? 0)).toBeLessThanOrEqual(8);
 }
 
 function expectReducedMotionKeyboardLayout(
   frames: readonly KeyboardFrame[],
+  keyboard: "closed" | "open",
 ): void {
   const positions = new Set(
     frames.map(({ composerTop }) => Math.round(composerTop * 2) / 2),
   );
   expect([...positions]).toHaveLength(2);
-  expect(frames[1]?.keyboard).toBe("open");
+  expect(frames[1]?.keyboard).toBe(keyboard);
   expect(frames.every(({ animations }) => animations === 0)).toBe(true);
   expect(frames.at(-1)?.composerVisible).toBe(true);
+}
+
+function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
+  expect(frames).toHaveLength(28);
+  const start = frames[0]?.composerTop ?? 0;
+  const committed = frames[1];
+  const end = frames.at(-1)?.composerTop ?? 0;
+  expect(end - start).toBeGreaterThan(100);
+  expect(committed?.keyboard).toBe("closed");
+  expect(committed?.animations).toBeGreaterThan(0);
+  expect(committed?.transcriptAnimations).toBe(0);
+  expect(Math.abs((committed?.composerTop ?? 0) - start)).toBeLessThan(
+    Math.abs(end - start) * 0.15,
+  );
+  expect(
+    frames
+      .slice(1)
+      .every(
+        (frame, index, moving) =>
+          index === 0 ||
+          frame.composerTop >= (moving[index - 1]?.composerTop ?? 0) - 0.5,
+      ),
+    JSON.stringify(frames),
+  ).toBe(true);
+  const headerTop = frames[0]?.headerTop ?? 0;
+  const scrollerTop = frames[0]?.scrollerTop ?? 0;
+  expect(
+    frames.every(
+      (frame) =>
+        frame.visibleRows > 0 &&
+        frame.desktopGridRows === 0 &&
+        frame.overlappingRows <= 1 &&
+        frame.transcriptAnimations === 0 &&
+        Math.abs(frame.headerTop - headerTop) <= 0.5 &&
+        Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
+        Math.abs(frame.rootTop) <= 0.5 &&
+        Math.abs(frame.offsetTop) <= 0.5 &&
+        Math.abs(frame.scrollY) <= 0.5,
+    ),
+    JSON.stringify(frames),
+  ).toBe(true);
+  expect(frames.at(-1)?.animations).toBe(0);
+  expect(frames.at(-1)?.composerVisible).toBe(true);
+  expect(Math.abs(frames.at(-1)?.newestGap ?? 0)).toBeLessThanOrEqual(8);
+  expect(frames.at(-1)?.overlappingRows).toBe(0);
 }

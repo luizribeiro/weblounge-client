@@ -190,7 +190,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     (#69 follow-up, awaiting on-device motion confirmation). The mobile shell clips instead of
     hiding overflow so WebKit's focus reveal cannot scroll it under the keyboard motion. Keyboard
     traces ignore focus leaving unrelated mobile chrome, so a late push transition cannot replace
-    the tap capture.
+    the tap capture. Opening and closing now layer the measured iOS Messages spring over the
+    one-step geometry commit: the transcript follows opening but snaps closed, delayed closes
+    reverse after two unchanged frames, and reduced motion or the platform kill switch stays
+    immediate.
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.

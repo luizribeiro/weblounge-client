@@ -54,10 +54,106 @@ describe("keyboard motion", () => {
     stop();
   });
 
+  it("snaps the transcript and animates only the closing composer", () => {
+    const fixture = motionFixture();
+    fixture.setComposerBottom(516);
+    const stop = observeKeyboardMotion(fixture.root, window);
+
+    fixture.willClose();
+    fixture.setComposerBottom(874);
+    fixture.didClose();
+
+    expect(fixture.composerAnimate).toHaveBeenCalledWith(
+      [{ transform: "translateY(-358px)" }, { transform: "none" }],
+      expect.objectContaining({ delay: -20, fill: "both" }),
+    );
+    expect(fixture.transcriptAnimate).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("reverses a close after two frames without viewport growth", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const fixture = motionFixture();
+    fixture.setComposerBottom(516);
+    const stop = observeKeyboardMotion(fixture.root, window);
+
+    fixture.willClose();
+    fixture.setComposerBottom(874);
+    fixture.didClose();
+    frames.shift()?.(0);
+    frames.shift()?.(16);
+
+    expect(fixture.animations[0]?.reverse).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it("continues a reversed close when viewport growth arrives later", () => {
+    const previousViewport = Object.getOwnPropertyDescriptor(
+      window,
+      "visualViewport",
+    );
+    const viewport = new EventTarget();
+    let viewportHeight = 516;
+    Object.defineProperties(viewport, {
+      height: { get: () => viewportHeight },
+      offsetTop: { value: 0 },
+    });
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: viewport,
+    });
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const fixture = motionFixture();
+    fixture.setComposerBottom(516);
+    const stop = observeKeyboardMotion(fixture.root, window);
+
+    try {
+      fixture.willClose();
+      fixture.setComposerBottom(874);
+      fixture.didClose();
+      frames.shift()?.(0);
+      frames.shift()?.(16);
+      viewportHeight = 874;
+      viewport.dispatchEvent(new Event("resize"));
+
+      expect(fixture.animations[0]?.reverse).toHaveBeenCalledTimes(2);
+      expect(fixture.animations[0]?.animation.playbackRate).toBe(1);
+    } finally {
+      stop();
+      restoreProperty(window, "visualViewport", previousViewport);
+    }
+  });
+
+  it("corrects a closing composer that finishes more than one pixel short", async () => {
+    const fixture = motionFixture();
+    fixture.setComposerBottom(516);
+    const stop = observeKeyboardMotion(fixture.root, window);
+
+    fixture.willClose();
+    fixture.setComposerBottom(window.innerHeight - 3);
+    fixture.didClose();
+    fixture.animations[0]?.finish();
+    await Promise.resolve();
+
+    expect(fixture.composerAnimate).toHaveBeenLastCalledWith(
+      [{ transform: "translateY(3px)" }, { transform: "none" }],
+      expect.objectContaining({ duration: 100 }),
+    );
+    stop();
+  });
+
   it.each([
     { enabled: false, reduced: false, reason: "kill switch" },
     { enabled: true, reduced: true, reason: "reduced motion" },
-  ])("bypasses opening for $reason", ({ enabled, reduced }) => {
+  ])("bypasses keyboard motion for $reason", ({ enabled, reduced }) => {
     const fixture = motionFixture();
     const stop = observeKeyboardMotion(fixture.root, window, {
       enabled,
@@ -67,6 +163,9 @@ describe("keyboard motion", () => {
     fixture.willOpen();
     fixture.setComposerBottom(516);
     fixture.didOpen();
+    fixture.willClose();
+    fixture.setComposerBottom(874);
+    fixture.didClose();
 
     expect(fixture.composerAnimate).not.toHaveBeenCalled();
     expect(fixture.transcriptAnimate).not.toHaveBeenCalled();
@@ -89,12 +188,32 @@ function motionFixture() {
   let composerBottom = 874;
   composer.getBoundingClientRect = () =>
     ({ bottom: composerBottom }) as DOMRect;
-  const composerAnimate = vi.fn(() => fakeAnimation());
-  const transcriptAnimate = vi.fn(() => fakeAnimation());
+  const animations: TestAnimation[] = [];
+  const composerAnimate = vi.fn(() => {
+    const testAnimation = fakeAnimation();
+    animations.push(testAnimation);
+    return testAnimation.animation;
+  });
+  const transcriptAnimate = vi.fn(() => {
+    const testAnimation = fakeAnimation();
+    animations.push(testAnimation);
+    return testAnimation.animation;
+  });
   composer.animate = composerAnimate;
   transcript.animate = transcriptAnimate;
   return {
+    animations,
     composerAnimate,
+    didClose() {
+      window.dispatchEvent(
+        new CustomEvent(keyboardLayoutCommitEvent, {
+          detail: {
+            geometry: { keyboard: "closed" },
+            source: "rollback",
+          },
+        }),
+      );
+    },
     didOpen() {
       window.dispatchEvent(
         new CustomEvent(keyboardLayoutCommitEvent, {
@@ -110,6 +229,18 @@ function motionFixture() {
       composerBottom = value;
     },
     transcriptAnimate,
+    willClose() {
+      window.dispatchEvent(
+        new CustomEvent(keyboardLayoutWillCommitEvent, {
+          detail: {
+            geometry: { keyboard: "closed" },
+            owner: root,
+            previousGeometry: { keyboard: "open", height: 516 },
+            source: "rollback",
+          },
+        }),
+      );
+    },
     willOpen() {
       window.dispatchEvent(
         new CustomEvent(keyboardLayoutWillCommitEvent, {
@@ -125,9 +256,34 @@ function motionFixture() {
   };
 }
 
-function fakeAnimation(): Animation {
-  return {
+interface TestAnimation {
+  readonly animation: Animation;
+  readonly finish: () => void;
+  readonly reverse: ReturnType<typeof vi.fn>;
+}
+
+function fakeAnimation(): TestAnimation {
+  const reverse = vi.fn();
+  let finish: () => void = () => undefined;
+  const animation = {
     cancel: vi.fn(),
-    finished: Promise.resolve(),
+    finished: new Promise<Animation>((resolve) => {
+      finish = () => resolve(animation);
+    }),
+    playbackRate: 1,
+    reverse,
   } as unknown as Animation;
+  reverse.mockImplementation(() => {
+    animation.playbackRate *= -1;
+  });
+  return { animation, finish, reverse };
+}
+
+function restoreProperty(
+  target: object,
+  property: PropertyKey,
+  descriptor: PropertyDescriptor | undefined,
+): void {
+  if (descriptor === undefined) Reflect.deleteProperty(target, property);
+  else Object.defineProperty(target, property, descriptor);
 }
