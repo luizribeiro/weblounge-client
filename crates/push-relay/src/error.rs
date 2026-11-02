@@ -35,6 +35,9 @@ pub enum Error {
     /// The request is syntactically or semantically invalid.
     #[error("invalid request: {0}")]
     BadRequest(String),
+    /// The account or device reached a persistent-object limit.
+    #[error("capacity limit reached")]
+    Capacity,
     /// A recognized platform target belongs to a later relay slice.
     #[error("platform target is not implemented")]
     NotImplemented,
@@ -58,6 +61,7 @@ impl IntoResponse for Error {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::BadRequest(_) | Self::TargetRefused(_) => StatusCode::BAD_REQUEST,
+            Self::Capacity => StatusCode::CONFLICT,
             Self::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             Self::ConciergeUnavailable
             | Self::PushServiceUnavailable
@@ -71,6 +75,7 @@ impl IntoResponse for Error {
             StatusCode::UNAUTHORIZED => "unauthorized",
             StatusCode::NOT_FOUND => "not found",
             StatusCode::BAD_REQUEST => "invalid request",
+            StatusCode::CONFLICT => "capacity limit reached",
             StatusCode::NOT_IMPLEMENTED => "platform target not implemented",
             StatusCode::BAD_GATEWAY => "upstream unavailable",
             _ => "internal error",

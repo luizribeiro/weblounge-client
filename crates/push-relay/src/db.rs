@@ -1,11 +1,14 @@
 use std::{path::PathBuf, sync::Arc};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::{Error, Result};
+
+const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
+const MAX_ROUTES_PER_DEVICE: u32 = 25;
 
 #[derive(Clone, Debug)]
 pub(crate) struct WebPushTarget {
@@ -102,7 +105,18 @@ impl Database {
         let stored = credentials.clone();
         let path = Arc::clone(&self.path);
         tokio::task::spawn_blocking(move || -> Result<()> {
-            connect(&path)?.execute(
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let device_count = transaction.query_row(
+                "SELECT COUNT(*) FROM devices WHERE account = ?1",
+                [&account],
+                |row| row.get::<_, u32>(0),
+            )?;
+            if device_count >= MAX_DEVICES_PER_ACCOUNT {
+                return Err(Error::Capacity);
+            }
+            transaction.execute(
                 "INSERT INTO devices (id, account, secret_hash, endpoint, p256dh, auth)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
@@ -114,6 +128,7 @@ impl Database {
                     target.auth,
                 ],
             )?;
+            transaction.commit()?;
             Ok(())
         })
         .await??;
@@ -132,13 +147,24 @@ impl Database {
         let stored = route.clone();
         let path = Arc::clone(&self.path);
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let connection = connect(&path)?;
-            authenticate_device(&connection, &device_id, &secret)?;
-            connection.execute(
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            authenticate_device(&transaction, &device_id, &secret)?;
+            let route_count = transaction.query_row(
+                "SELECT COUNT(*) FROM routes WHERE device_id = ?1 AND state != 'dead'",
+                [&device_id],
+                |row| row.get::<_, u32>(0),
+            )?;
+            if route_count >= MAX_ROUTES_PER_DEVICE {
+                return Err(Error::Capacity);
+            }
+            transaction.execute(
                 "INSERT INTO routes (id, device_id, state, home_vapid)
                  VALUES (?1, ?2, 'probing', ?3)",
                 params![stored.id, device_id, home_vapid],
             )?;
+            transaction.commit()?;
             Ok(())
         })
         .await??;
@@ -282,4 +308,51 @@ fn random_token() -> Result<String> {
 
 fn secret_hash(secret: &str) -> Vec<u8> {
     Sha256::digest(secret.as_bytes()).to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Database, MAX_DEVICES_PER_ACCOUNT, MAX_ROUTES_PER_DEVICE, WebPushTarget};
+    use crate::Error;
+
+    fn target(index: u32) -> WebPushTarget {
+        WebPushTarget {
+            endpoint: format!("https://push.example/{index}"),
+            p256dh: "key".to_owned(),
+            auth: "auth".to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn caps_devices_per_account_and_live_routes_per_device() {
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let database = Database::open(temporary.path().join("relay.sqlite3"))
+            .await
+            .expect("database");
+        let first = database
+            .create_device("mel".to_owned(), target(0))
+            .await
+            .expect("first device");
+        for index in 1..MAX_DEVICES_PER_ACCOUNT {
+            database
+                .create_device("mel".to_owned(), target(index))
+                .await
+                .expect("device within limit");
+        }
+        let extra_device = database
+            .create_device("mel".to_owned(), target(MAX_DEVICES_PER_ACCOUNT))
+            .await;
+        assert!(matches!(extra_device, Err(Error::Capacity)));
+
+        for _ in 0..MAX_ROUTES_PER_DEVICE {
+            database
+                .create_route(first.id.clone(), first.secret.clone(), vec![4; 65])
+                .await
+                .expect("route within limit");
+        }
+        let extra_route = database
+            .create_route(first.id, first.secret, vec![4; 65])
+            .await;
+        assert!(matches!(extra_route, Err(Error::Capacity)));
+    }
 }
