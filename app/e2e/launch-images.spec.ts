@@ -198,8 +198,18 @@ for (const appearance of ["light", "dark"] as const) {
           }, layout),
         );
       }
+      const devicePixelRatio = await page.evaluate(
+        () => window.devicePixelRatio,
+      );
+      const expectedInlineRect = snapRectToDevicePixels(
+        inlineRects[0],
+        devicePixelRatio,
+      );
       for (const inlineRect of inlineRects) {
-        expect(inlineRect).toEqual(inlineRects[0]);
+        // Browser layout floats can differ below a physical pixel; the same painted pixels are the invariant.
+        expect(snapRectToDevicePixels(inlineRect, devicePixelRatio)).toEqual(
+          expectedInlineRect,
+        );
         for (const edge of ["bottom", "left", "right", "top"] as const) {
           expect(launchRect[edge]).toBeCloseTo(inlineRect[edge], 0);
         }
@@ -208,4 +218,16 @@ for (const appearance of ["light", "dark"] as const) {
       releaseConfig();
     }
   });
+}
+
+function snapRectToDevicePixels(
+  rect: Readonly<Record<"bottom" | "left" | "right" | "top", number>>,
+  devicePixelRatio: number,
+) {
+  return {
+    bottom: Math.round(rect.bottom * devicePixelRatio) / devicePixelRatio,
+    left: Math.round(rect.left * devicePixelRatio) / devicePixelRatio,
+    right: Math.round(rect.right * devicePixelRatio) / devicePixelRatio,
+    top: Math.round(rect.top * devicePixelRatio) / devicePixelRatio,
+  };
 }

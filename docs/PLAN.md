@@ -128,6 +128,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     hydration gate cannot consume the recorder's pre-action frame window in CI.
   - [x] Compare sampled mobile transition curve bounds at device-pixel precision, so fractional
     compositor geometry cannot report a sub-pixel curve overshoot as a visible jump.
+  - [x] Compare inline splash layouts at device-pixel precision so equivalent painted chair bounds
+    cannot fail on browser layout-float noise.
   - [x] Compare offline-hint conversation widths at device-pixel precision while still catching
     visible mobile column growth.
   - [x] Keep touch WebKit navigation replace-only in Safari tabs and standalone PWAs while Android retains a platform Back stack.
