@@ -45,8 +45,11 @@ test.describe("desktop members against local Ergo", () => {
 
       const toggle = page.getByRole("button", { name: "Toggle member list" });
       await toggle.click();
-      const panel = page.getByRole("complementary", { name: "Members" });
+      const panel = page.getByRole("complementary", {
+        name: `Members of ${memberChannel}`,
+      });
       await expect(panel).toHaveCSS("width", "232px");
+      await expect(panel.locator("[data-member-following]")).toHaveCount(0);
       await expect(panel.getByText("Online — 1")).toBeVisible();
       await expect(panel.getByText("Bots — 1")).toBeVisible();
       await expect(
@@ -197,7 +200,8 @@ test.describe("desktop members against local Ergo", () => {
       await page.getByRole("button", { name: channel }).click();
 
       await page.getByRole("button", { name: "Toggle member list" }).click();
-      const panel = page.getByRole("complementary", { name: "Members" });
+      const panel = page.locator("[data-member-buffer]").locator("..");
+      await expect(panel).toHaveAccessibleName(`Members of ${channel}`);
       await expect(
         panel.getByRole("button", {
           name: `Open direct message with ${roomNick}`,
@@ -205,6 +209,7 @@ test.describe("desktop members against local Ergo", () => {
       ).toBeVisible();
       await expect(panel.getByText("2", { exact: true })).toBeVisible();
       await gardenButton.click();
+      await expect(panel).toHaveAccessibleName(`Members of ${garden}`);
       await expect(
         panel.getByRole("button", {
           name: `Open direct message with ${gardenNick}`,
@@ -214,6 +219,7 @@ test.describe("desktop members against local Ergo", () => {
       await expect(panel.getByText(roomNick, { exact: true })).toHaveCount(0);
 
       await page.getByRole("button", { name: channel }).click();
+      await expect(panel).toHaveAccessibleName(`Members of ${channel}`);
       await expect(
         panel.getByRole("button", {
           name: `Open direct message with ${roomNick}`,

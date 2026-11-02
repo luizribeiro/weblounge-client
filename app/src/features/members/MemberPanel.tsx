@@ -105,7 +105,7 @@ export function MemberPanel(props: MemberPanelProps) {
   });
   return (
     <aside
-      aria-label="Members"
+      aria-label={`Members of ${props.bufferTitle}`}
       class={styles.panel}
       style={{
         "--wl-member-group-row-height": `${metrics.group}px`,
@@ -125,9 +125,6 @@ export function MemberPanel(props: MemberPanelProps) {
         </button>
       </header>
       <div class={styles.content} data-member-buffer={props.bufferTitle}>
-        <div class={styles.following} data-member-following={props.bufferTitle}>
-          Following <strong>{props.bufferTitle}</strong>
-        </div>
         {props.onFilter !== undefined && (
           <label class={styles.filter}>
             <span class="visually-hidden">Filter members</span>

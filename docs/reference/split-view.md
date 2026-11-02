@@ -48,7 +48,8 @@ Below the header: the message list and the pane's own composer (each pane has it
 
 ## Member list per pane
 
-Decided by Luiz on 2026-10-28, replacing the prototype's single shared panel and its "Following #channel" chip:
+Decided by Luiz on 2026-10-28, replacing the prototype's single shared panel. Each list is named
+for its channel through its accessible label, without a redundant channel label in the panel:
 
 - Each pane showing a channel has **its own** member list, inside the pane on its right side (232px). Panes are self-contained: moving, swapping or maximizing a pane brings its member list along, and two channels' member lists can be visible at once.
 - Visibility is remembered **per channel**, not per pane: `#papo` looks the same wherever it's opened. A channel never opened before follows the last choice made.

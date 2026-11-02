@@ -105,13 +105,17 @@ it("toggles the channel member panel and routes direct messages", () => {
   expect(toggle).toHaveTextContent("7");
   expect(requestMembers).not.toHaveBeenCalled();
   fireEvent.click(toggle);
-  expect(screen.getByRole("complementary", { name: "Members" })).toBeVisible();
+  expect(
+    screen.getByRole("complementary", { name: "Members of #room" }),
+  ).toBeVisible();
   fireEvent.click(
     screen.getByRole("button", { name: "Open direct message with mel" }),
   );
   expect(openDirect).toHaveBeenCalledWith(1, "mel");
   fireEvent.click(screen.getByRole("button", { name: "Hide members" }));
-  expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
+  expect(
+    screen.queryByRole("complementary", { name: "Members of #room" }),
+  ).toBeNull();
   expect(requestMembers).toHaveBeenCalledWith("test-port:desktop:pane-1", 2, 0);
 });
 
@@ -225,7 +229,9 @@ it("shows the projected member total while the panel is closed", () => {
   expect(
     screen.getByRole("button", { name: "Toggle member list" }),
   ).toHaveTextContent("7");
-  expect(screen.queryByRole("complementary", { name: "Members" })).toBeNull();
+  expect(
+    screen.queryByRole("complementary", { name: "Members of #room" }),
+  ).toBeNull();
 });
 
 it("keeps the desktop shell and opens narrow panels as one drawer", async () => {

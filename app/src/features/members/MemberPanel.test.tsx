@@ -41,9 +41,10 @@ it("renders counted groups with a bounded DOM and panel actions", async () => {
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(screen.getByText("Following").parentElement).toHaveTextContent(
-    "Following #room",
-  );
+  expect(
+    screen.getByRole("complementary", { name: "Members of #room" }),
+  ).toBeInTheDocument();
+  expect(container.querySelector("[data-member-following]")).toBeNull();
   expect(screen.getByText("Operators — 1")).toBeInTheDocument();
   expect(screen.getByText("@")).toBeInTheDocument();
   expect(container.querySelectorAll("li").length).toBeLessThan(80);
@@ -89,9 +90,10 @@ it("uses touch-sized virtual rows in the mobile presentation", async () => {
   expect(container.querySelector("[data-member-virtual-size]")).toHaveStyle({
     height: "440056px",
   });
-  expect(screen.getByText("Following").parentElement).toHaveTextContent(
-    "Following #room",
-  );
+  expect(
+    screen.getByRole("complementary", { name: "Members of #room" }),
+  ).toBeInTheDocument();
+  expect(container.querySelector("[data-member-following]")).toBeNull();
 });
 
 it("requests the first window while loading", () => {

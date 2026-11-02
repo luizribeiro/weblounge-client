@@ -65,7 +65,7 @@ test("keeps normal desktop and mobile flows console-clean", async ({
     phase = "open members";
     await page.getByRole("button", { name: "Toggle member list" }).click();
     await expect(
-      page.getByRole("complementary", { name: "Members" }),
+      page.getByRole("complementary", { name: `Members of ${channel}` }),
     ).toBeVisible();
 
     mobileContext = await browser.newContext({

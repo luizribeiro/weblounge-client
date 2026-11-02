@@ -191,14 +191,15 @@ async function expectOpenDrawer(
     drawer.getByRole("list", { name: `Members of ${channel}` }),
   ).toBeVisible();
   await expect(
+    drawer.getByRole("complementary", { name: `Members of ${channel}` }),
+  ).toBeVisible();
+  await expect(
     drawer.getByRole("button", {
       name: `Open direct message with ${expectedNick}`,
     }),
   ).toBeVisible();
   await expect(drawer.getByText(absentNick, { exact: true })).toHaveCount(0);
-  await expect(drawer.locator("[data-member-following]")).toHaveText(
-    `Following ${channel}`,
-  );
+  await expect(drawer.locator("[data-member-following]")).toHaveCount(0);
 }
 
 async function closeDrawer(page: Page): Promise<void> {

@@ -18,7 +18,9 @@ test("aligns real-font sigil and mode columns", async ({ page }) => {
     "[data-sidebar-name]",
   );
 
-  const members = page.getByRole("complementary", { name: "Members" });
+  const members = page.getByRole("complementary", {
+    name: "Members of #lounge",
+  });
   await expect(
     members.getByRole("button", { name: "Open direct message with plain" }),
   ).toBeVisible();
