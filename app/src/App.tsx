@@ -36,7 +36,7 @@ import {
   t,
 } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
-import type { HostedSession } from "./hosted/HostedSession";
+import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
 import {
   requiresAuthorization,
@@ -74,6 +74,9 @@ interface AppProps {
     reason: "refresh_failed" | "revoked" | "worker_restarted",
   ) => void;
   onRetryStartup?: (() => void) | undefined;
+  onStartupError?:
+    | ((message: string, retry: (() => void) | undefined) => void)
+    | undefined;
 }
 
 export function App(props: AppProps) {
@@ -117,6 +120,13 @@ export function App(props: AppProps) {
   let latestCompletionRequest: string | undefined;
   let restartingHostedAuthorization = false;
   let hostedRefreshNetworkId: number | undefined;
+  let preparedHostedNetwork: NetworkProjection | undefined;
+  let resolvePreparedHostedNetwork = (_network: NetworkProjection) => {};
+  const preparedHostedNetworkReady = new Promise<NetworkProjection>(
+    (resolve) => {
+      resolvePreparedHostedNetwork = resolve;
+    },
+  );
   let hostedRefreshPending = false;
   let hostedFallbackTimer: number | undefined;
   let engineInstance: string | undefined;
@@ -167,6 +177,12 @@ export function App(props: AppProps) {
   );
 
   createEffect(() => {
+    const blockingError =
+      startupError() ?? (!shellReady() ? hostedError() : undefined);
+    if (engineReady() && blockingError !== undefined) {
+      props.onStartupError?.(blockingError, props.onRetryStartup);
+      if (props.onStartupError !== undefined) return;
+    }
     if (
       !engineReady() ||
       (startupError() === undefined &&
@@ -283,6 +299,10 @@ export function App(props: AppProps) {
         setFocusRequest({ bufferId: message.buffer_id });
       }
       if (message.type === "network_state_changed") {
+        if (props.hostedSession !== undefined) {
+          preparedHostedNetwork = message.network;
+          resolvePreparedHostedNetwork(message.network);
+        }
         if (connectionStateKind(message.network.state) === "online") {
           setShellReady(true);
           setHostedError(undefined);
@@ -459,16 +479,21 @@ export function App(props: AppProps) {
     void startEngine(
       mountedClient,
       setEngineStatus,
-      setHostedError,
       debugConnection,
       props.hostedSession,
       clientId,
+      () => setEngineReady(true),
+      () =>
+        preparedHostedNetwork ?? networks()[0] ?? preparedHostedNetworkReady,
     ).then((outcome) => {
       if (outcome === "reloading") return;
       if (outcome === "failed") {
         setStartupError("Couldn't start weblounge.");
       }
-      engineStarted = outcome === "ready";
+      if (typeof outcome === "object") {
+        void handleInitialHostedFailure(outcome.error);
+      }
+      engineStarted = outcome !== "failed";
       publishUpdateReady();
       setEngineReady(true);
     });
@@ -512,6 +537,33 @@ export function App(props: AppProps) {
         .catch(() => undefined);
     }
     props.onHostedAuthorizationRequired?.(reason);
+  }
+
+  async function handleInitialHostedFailure(error: unknown): Promise<void> {
+    if (requiresAuthorization(error)) {
+      props.onHostedAuthorizationRequired?.("revoked");
+      return;
+    }
+    if (error instanceof Error) setHostedError(error.message);
+    const network = networks()[0];
+    if (network !== undefined && client !== undefined) {
+      await client
+        .send({
+          id: crypto.randomUUID(),
+          request: {
+            type: "hosted_token_unavailable",
+            network_id: network.id,
+          },
+        })
+        .catch(() => undefined);
+    }
+    if (error instanceof SessionTokenError && error.kind === "transient") {
+      // wait-ok: a bounded recovery window lets the visible Retry act first.
+      hostedFallbackTimer = window.setTimeout(() => {
+        hostedFallbackTimer = undefined;
+        props.onHostedAuthorizationRequired?.("refresh_failed");
+      }, 3_000);
+    }
   }
 
   async function refreshHostedToken(networkId: number): Promise<void> {
@@ -646,7 +698,7 @@ export function App(props: AppProps) {
         {engineStatus()}
       </p>
       {!engineReady() ? null : startupError() !== undefined ? (
-        startupRevealed() ? (
+        startupRevealed() || props.onStartupError === undefined ? (
           <HostedStatus
             message={startupError() ?? ""}
             error
@@ -654,7 +706,8 @@ export function App(props: AppProps) {
           />
         ) : null
       ) : !shellReady() ? (
-        startupRevealed() && hostedError() !== undefined ? (
+        (startupRevealed() || props.onStartupError === undefined) &&
+        hostedError() !== undefined ? (
           <HostedStatus
             message={hostedError() ?? ""}
             error
@@ -924,11 +977,12 @@ function noticeValues(
 async function startEngine(
   client: EngineClient,
   setStatus: (status: string) => void,
-  setHostedError: (message: string) => void,
   debugConnection: DebugConnection | null,
   hostedSession: HostedSession | undefined,
   clientId: string,
-): Promise<"ready" | "failed" | "reloading"> {
+  onEngineReady: () => void,
+  hostedNetwork: () => NetworkProjection | Promise<NetworkProjection>,
+): Promise<"ready" | "failed" | "reloading" | { readonly error: unknown }> {
   try {
     await withStartupDeadline(
       async () => {
@@ -950,11 +1004,10 @@ async function startEngine(
           await client.send({
             id: crypto.randomUUID(),
             request: {
-              type: "connect_hosted",
+              type: "prepare_hosted",
               label: hostedSession.network.name,
               endpoint: hostedSession.network.endpoint,
               nickname: "*",
-              oauth_token: hostedSession.token.take(),
               autojoin: hostedSession.network.autojoin,
             },
           });
@@ -964,8 +1017,9 @@ async function startEngine(
       },
       () => new Error("the chat engine did not respond in time"),
     );
-    return "ready";
+    onEngineReady();
   } catch (error: unknown) {
+    if (hostedSession?.startupCancelled?.() === true) return "reloading";
     if (error instanceof IncompatibleBuildError) {
       return recoverFromBuildMismatch(setStatus) ? "reloading" : "failed";
     }
@@ -975,10 +1029,33 @@ async function startEngine(
     );
     await client.close().catch(() => undefined);
     setStatus("Engine failed to start");
-    if (hostedSession !== undefined) {
-      setHostedError("Couldn't start the chat.");
-    }
     return "failed";
+  }
+  if (hostedSession === undefined) return "ready";
+  try {
+    const pendingToken = await hostedSession.token;
+    const token =
+      pendingToken instanceof OneShotAccessToken
+        ? pendingToken
+        : pendingToken.type === "token"
+          ? pendingToken.token
+          : (() => {
+              throw pendingToken.error;
+            })();
+    const network = await hostedNetwork();
+    if (connectionStateKind(network.state) !== "online") {
+      await client.send({
+        id: crypto.randomUUID(),
+        request: {
+          type: "reconnect_hosted",
+          network_id: network.id,
+          oauth_token: token.take(),
+        },
+      });
+    }
+    return "ready";
+  } catch (error: unknown) {
+    return { error };
   }
 }
 

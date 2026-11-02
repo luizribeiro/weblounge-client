@@ -22,5 +22,11 @@ export class OneShotAccessToken {
 export interface HostedSession {
   network: HostedNetworkConfig;
   sessionTokenEndpoint: string;
-  token: OneShotAccessToken;
+  startupCancelled?: (() => boolean) | undefined;
+  token:
+    | OneShotAccessToken
+    | Promise<
+        | { readonly type: "token"; readonly token: OneShotAccessToken }
+        | { readonly type: "error"; readonly error: unknown }
+      >;
 }

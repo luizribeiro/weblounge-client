@@ -169,12 +169,9 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     expect(client.requests).toContainEqual({
       id: expect.any(String),
       request: {
-        type: "connect_hosted",
-        label: "weblounge",
-        endpoint: "wss://beta.weblounge.org/socket",
-        nickname: "*",
+        type: "reconnect_hosted",
+        network_id: 1,
         oauth_token: "hosted-secret",
-        autojoin: ["#lounge"],
       },
     }),
   );
@@ -278,7 +275,7 @@ it("acquires hosted reconnect tokens in the page", async () => {
   await waitFor(() =>
     expect(client.requests).toContainEqual(
       expect.objectContaining({
-        request: expect.objectContaining({ type: "connect_hosted" }),
+        request: expect.objectContaining({ type: "reconnect_hosted" }),
       }),
     ),
   );
@@ -1329,6 +1326,17 @@ class FakeEngineClient implements EngineClient {
         type: "diagnostic",
         command_id: request.id,
         message: request.request.message,
+      });
+    }
+    if (request.request.type === "prepare_hosted") {
+      this.emit({
+        type: "network_state_changed",
+        network: {
+          id: 1,
+          label: request.request.label,
+          nickname: request.request.nickname,
+          state: "connecting",
+        },
       });
     }
     return { type: "command_result" as const, id: request.id };
