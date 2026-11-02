@@ -159,9 +159,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     at least screen tall), undo iOS keyboard pans instead of following them, re-measure on the
     frames after viewport events, and add the `?debug=viewport` overlay (awaiting device).
   - [x] Keep late iOS keyboard geometry polling bounded around every keyboard-field focus and
-    foreground resume, stopping as soon as the expected state settles. Pointerless and
-    accessory-arrow focus now observe silent late viewport shrink, while focused measured-open
-    reality wins stale closed rollbacks and diagnostics identify the focus source and rollback cause.
+    foreground resume, stopping as soon as the expected state settles. Pointerless, accessory-arrow,
+    and resumed focus observe the captured four-frame silent late viewport shrink, then stop after
+    six stable frames when no keyboard geometry arrives; pointer-activated focus retains the full
+    iOS bound. Focused measured-open reality still wins stale closed rollbacks and diagnostics
+    identify the focus source and rollback cause.
   - [x] Defer closed rollbacks while a keyboard field remains focused, preserving the bounded watch
     for iOS's not-yet-reported shrink. Composer padding, borders, input, and Send-area pointers now
     arm that watch; touch tracking covers the painted composer and diagnostics label the landing.

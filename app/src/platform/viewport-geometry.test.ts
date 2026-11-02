@@ -270,14 +270,33 @@ describe("viewport geometry observer", () => {
     const startedAt = performance.now();
 
     field.focus();
-    frames.flush(startedAt + 16);
-    frames.flush(startedAt + 32);
+    for (let frame = 1; frame <= 4; frame += 1)
+      frames.flush(startedAt + frame * 16);
     viewport.height = 471;
-    frames.flush(startedAt + 48);
+    frames.flush(startedAt + 80);
 
     expect(root.dataset.keyboard).toBe("open");
     expect(root.dataset.keyboardOwner).toBe("true");
     expect(root.style.getPropertyValue("--wl-app-height")).toBe("471px");
+  });
+
+  it("stops watching pointerless focus after stable closed geometry", () => {
+    const frames = new ManualAnimationFrames();
+    const viewport = new FakeVisualViewport(window.innerHeight);
+    const browserWindow = fakeWindow(viewport, undefined, frames);
+    const root = document.createElement("div");
+    const field = textField();
+    document.body.append(root);
+    const stop = observeViewportGeometry(root, browserWindow);
+    running.push(stop);
+    const startedAt = performance.now();
+
+    field.focus();
+    for (let frame = 1; frame <= 6; frame += 1)
+      frames.flush(startedAt + frame * 16);
+
+    expect(root.dataset.keyboard).toBe("closed");
+    expect(frames.pending).toBe(0);
   });
 
   it("keeps watching pointerless focus after a pending close rollback", () => {

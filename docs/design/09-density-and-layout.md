@@ -97,15 +97,16 @@ platform owns the app geometry: `#root` is fixed and the document never scrolls.
   viewport synchronously and focuses it with `preventScroll`, following [React Aria's iOS
   technique](https://github.com/adobe/react-spectrum/blob/7eae25e124a9d235ff30f12bd86383b894a1ea04/packages/%40react-aria/overlays/src/usePreventScroll.ts#L142-L154).
   The field stays translated until the first keyboard-height step, with a bounded fallback, because
-  iOS may decide its reveal pan several frames after focus. Every keyboard-field focus arms the same
-  bounded geometry watch, including programmatic focus and focus moved by the keyboard accessory;
-  returning to a visible page re-arms it when a keyboard field remains focused. A successful open
-  height is cached per orientation and may be applied synchronously once later pointer focus actually
-  lands; cold and pointerless focus wait for measured geometry. A cancelled tap or drag never commits
-  cached geometry. The composer's complete painted surface participates in pointer and touch tracking,
-  while buttons and suggestions keep their own activation behavior. A rollback that finds a focused
-  keyboard field but closed geometry is deferred through the same bounded watch; it cannot publish a
-  closed layout from that pre-keyboard measurement.
+  iOS may decide its reveal pan several frames after focus. Pointer-activated focus keeps the full
+  one-second bound. Programmatic focus, keyboard-accessory focus, and a focused field returning to
+  a visible page stop after six unchanged frames; this covers the captured four-frame silent iOS
+  shrink without polling indefinitely on emulators that never report an on-screen keyboard. A
+  successful open height is cached per orientation and may be applied synchronously once later
+  pointer focus actually lands; cold and pointerless focus wait for measured geometry. A cancelled
+  tap or drag never commits cached geometry. The composer's complete painted surface participates
+  in pointer and touch tracking, while buttons and suggestions keep their own activation behavior.
+  A rollback that finds a focused keyboard field but closed geometry is deferred through the same
+  bounded watch; it cannot publish a closed layout from that pre-keyboard measurement.
   Drags and long-press callouts remain native. A platform-owned non-passive
   vertical `touchmove` lock prevents document panning while the keyboard is open, but preserves
   textarea caret and loupe gestures, selected text, multitouch, horizontal navigation gestures,
