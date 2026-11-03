@@ -220,6 +220,11 @@ network and handles no non-GET traffic (`19-packaging.md` stays true). It persis
 messages (step 4) and the badge counter. iOS lacks `pushsubscriptionchange`, so the page
 re-checks the subscription on every launch.
 
+The optimized parser Wasm is currently 46,764 bytes and has a build-enforced 128 KiB ceiling. Its
+8 KiB classic `wasm-bindgen` bootstrap and the Wasm are both explicit shell-precache entries; the
+ceiling leaves room for the remaining typed payload variants without letting this narrow parser
+grow into a second engine.
+
 ### Tapping a notification
 
 `notification.data` carries the buffer route, e.g. `/weblounge/@mel` (`10-navigation.md:201-222`,

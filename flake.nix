@@ -157,6 +157,37 @@
             '';
           }
         );
+        pushPayloadWasm = craneLib.mkCargoDerivation (
+          cargoArgs
+          // {
+            pname = "weblounge-push-payload-wasm";
+            cargoArtifacts = null;
+            doInstallCargoArtifacts = false;
+            nativeBuildInputs = [
+              pkgs.binaryen
+              wasmBindgenCli
+            ];
+            buildPhaseCargoCommand = ''
+              cargo build --release --package weblounge-push-payload \
+                --target wasm32-unknown-unknown --locked
+            '';
+            installPhaseCommand = ''
+              mkdir -p $out/bindgen $out/dist
+              raw=target/wasm32-unknown-unknown/release/weblounge_push_payload.wasm
+              wasm-bindgen --target no-modules --out-dir $out/bindgen \
+                --out-name push-payload "$raw"
+              wasm-opt -Oz $out/bindgen/push-payload_bg.wasm -o $out/dist/push-payload_bg.wasm
+              cp $out/bindgen/push-payload.js $out/dist/push-payload.js
+
+              optimized_size=$(stat -c %s $out/dist/push-payload_bg.wasm)
+              if [ "$optimized_size" -gt 131072 ]; then
+                echo "push payload parser exceeds its 128 KiB budget: $optimized_size bytes" >&2
+                exit 1
+              fi
+              echo "push payload parser wasm bytes: optimized=$optimized_size"
+            '';
+          }
+        );
         appSource = pkgs.lib.fileset.toSource {
           root = ./.;
           fileset = pkgs.lib.fileset.unions [
@@ -229,6 +260,7 @@
             pkgs.pnpmConfigHook
           ];
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          WEBLOUNGE_PUSH_PAYLOAD_WASM_DIR = "${pushPayloadWasm}/dist";
           WEBLOUNGE_BUILD_SHA = buildSha;
           WEBLOUNGE_BUILD_TIMESTAMP = buildTimestamp;
           buildPhase = ''
@@ -496,6 +528,7 @@
           protocol-types = protocolTypes;
           push-relay = pushRelayCheck;
           wasm = engineWasm;
+          push-payload-wasm = pushPayloadWasm;
           app-build = app;
           inherit e2e;
           e2e-dev = e2eDev;
@@ -507,6 +540,7 @@
         packages = {
           inherit app;
           engine-wasm = engineWasm;
+          push-payload-wasm = pushPayloadWasm;
           ergo-weblounge = webloungeErgo;
           pnpm-deps = pnpmDeps;
           pnpm-deps-probe = pnpmDeps.overrideAttrs { outputHash = pkgs.lib.fakeHash; };

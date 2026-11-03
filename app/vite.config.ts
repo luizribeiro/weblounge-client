@@ -41,6 +41,11 @@ export default defineConfig(({ mode }) => {
     mode === "test"
       ? resolve(import.meta.dirname, "src/engine/wasm-test-stub.ts")
       : wasmPath;
+  const pushPayloadDirectory =
+    process.env.WEBLOUNGE_PUSH_PAYLOAD_WASM_DIR ??
+    resolve(import.meta.dirname, "../result-push-payload/dist");
+  const pushPayloadJs = resolve(pushPayloadDirectory, "push-payload.js");
+  const pushPayloadWasm = resolve(pushPayloadDirectory, "push-payload_bg.wasm");
   if (mode !== "test" && !existsSync(wasmPath)) {
     throw new Error("engine wasm is missing; run `nix build .#engine-wasm`");
   }
@@ -97,6 +102,7 @@ export default defineConfig(({ mode }) => {
       solid(),
       injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
+      emitPushPayloadParser(pushPayloadJs, pushPayloadWasm),
       emitServiceWorker(),
       ...(development || appConfigHarness ? [appModeConfig()] : []),
     ],
@@ -196,6 +202,32 @@ function emitServiceWorker(): Plugin {
   };
 }
 
+function emitPushPayloadParser(jsPath: string, wasmPath: string): Plugin {
+  return {
+    name: "weblounge-push-payload-parser",
+    apply: "build",
+    buildStart() {
+      for (const path of [jsPath, wasmPath]) {
+        if (!existsSync(path)) {
+          throw new Error(
+            "push payload wasm is missing; run `nix build .#push-payload-wasm`",
+          );
+        }
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: "push-payload.js",
+        source: readFileSync(jsPath),
+      });
+      this.emitFile({
+        type: "asset",
+        fileName: "push-payload_bg.wasm",
+        source: readFileSync(wasmPath),
+      });
+    },
+  };
+}
+
 function appShellUrls(directory: string): string[] {
   return descendants(directory)
     .map((path) => `/${path.slice(directory.length + 1)}`)
@@ -203,6 +235,8 @@ function appShellUrls(directory: string): string[] {
       (url) =>
         url === "/index.html" ||
         url === "/manifest.webmanifest" ||
+        url === "/push-payload.js" ||
+        url === "/push-payload_bg.wasm" ||
         url.startsWith("/assets/") ||
         url.startsWith("/icons/"),
     )

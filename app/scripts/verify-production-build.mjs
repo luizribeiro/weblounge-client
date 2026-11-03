@@ -12,7 +12,11 @@ await verifyCspAssets(outputDirectory);
 
 if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
   const files = await descendants(outputDirectory);
-  const wasmFiles = files.filter((file) => file.endsWith(".wasm"));
+  const wasmFiles = files.filter(
+    (file) =>
+      file.startsWith(resolve(outputDirectory, "assets")) &&
+      file.endsWith(".wasm"),
+  );
   if (
     wasmFiles.length !== 1 ||
     !/^engine_bg-[A-Za-z0-9_-]+\.wasm$/u.test(
@@ -22,6 +26,10 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
     throw new Error(
       `expected one hashed engine wasm asset, found: ${wasmFiles.join(", ")}`,
     );
+  }
+  const pushParser = resolve(outputDirectory, "push-payload_bg.wasm");
+  if (!files.includes(pushParser)) {
+    throw new Error("production build is missing the push payload parser");
   }
   const sourceMaps = files.filter((file) => file.endsWith(".map"));
   if (sourceMaps.length > 0)
@@ -219,6 +227,8 @@ async function verifyServiceWorker(directory) {
       (url) =>
         url === "/index.html" ||
         url === "/manifest.webmanifest" ||
+        url === "/push-payload.js" ||
+        url === "/push-payload_bg.wasm" ||
         url.startsWith("/assets/") ||
         url.startsWith("/icons/"),
     )
