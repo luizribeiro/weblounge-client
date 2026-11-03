@@ -172,21 +172,24 @@ async function showPushNotification(event: WorkerPushEvent): Promise<void> {
     route = await findRoute(envelope.routeId);
     if (route === undefined) throw new Error("push route is unavailable");
     presentation = genericNotification(route.networkLabel);
-    const plaintext = await decryptPushPayload(
-      decodePushBase64Url(envelope.ciphertext),
-      route.privateKey,
-      route.p256dh,
-      route.auth,
-    );
+    let plaintext: Uint8Array<ArrayBuffer>;
+    try {
+      plaintext = await decryptPushPayload(
+        decodePushBase64Url(envelope.ciphertext),
+        route.privateKey,
+        route.p256dh,
+        route.auth,
+      );
+    } catch (error: unknown) {
+      await markForReregistration(route).catch(() => undefined);
+      throw error;
+    }
     const parsed = await parsePushPayload(new TextDecoder().decode(plaintext));
     presentation = notificationFor(route, parsed);
     if (isChatPayload(parsed)) {
       await storePushedMessage(route, parsed).catch(() => undefined);
     }
-  } catch {
-    if (route !== undefined)
-      await markForReregistration(route).catch(() => undefined);
-  }
+  } catch {}
   await worker.registration.showNotification(
     presentation.title,
     presentation.options,

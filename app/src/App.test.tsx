@@ -812,6 +812,75 @@ it("retains command focus when the target buffer arrives later", async () => {
   ).toBeInTheDocument();
 });
 
+it("loads pushed messages and retains a service-worker route until its buffer arrives", async () => {
+  const serviceWorker = new EventTarget();
+  vi.stubGlobal(
+    "navigator",
+    new Proxy(navigator, {
+      get(target, property) {
+        return property === "serviceWorker"
+          ? serviceWorker
+          : Reflect.get(target, property, target);
+      },
+    }),
+  );
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Lounge",
+      nickname: "weblounge",
+      state: "online",
+    },
+  });
+  client.emit({
+    type: "buffers_changed",
+    network_id: 1,
+    buffers: [
+      {
+        id: 2,
+        network_id: 1,
+        kind: "channel",
+        title: "#home",
+        draft_key: "test:#home",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    ],
+  });
+
+  serviceWorker.dispatchEvent(
+    new MessageEvent("message", {
+      data: { kind: "open-route", route: "/Lounge/pushed" },
+    }),
+  );
+
+  expect(client.requests).toContainEqual({
+    id: expect.any(String),
+    request: { type: "load_pushed_messages", network_id: 1 },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 3,
+      network_id: 1,
+      kind: "channel",
+      title: "#pushed",
+      draft_key: "test:#pushed",
+      topic: null,
+      unread: 1,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+
+  expect(await screen.findByRole("heading", { name: "#pushed" })).toBeVisible();
+});
+
 it("retains engine focus until a delayed shell can consume it", async () => {
   const client = new FakeEngineClient();
   render(() => (

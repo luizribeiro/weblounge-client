@@ -878,6 +878,7 @@ impl Runtime {
         }
         if restored_push {
             output.extend(model.snapshot_events());
+            output.push(EngineToUi::PushedMessagesLoaded { network_id: id });
         }
         output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
@@ -963,6 +964,7 @@ impl Runtime {
         }
         if restored_push {
             output.extend(model.snapshot_events());
+            output.push(EngineToUi::PushedMessagesLoaded { network_id: id });
         }
         output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
@@ -4580,6 +4582,12 @@ mod tests {
                 if buffers.iter().any(|buffer| {
                     buffer.title == "#lounge" && buffer.cached == Some(true)
                 })
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::PushedMessagesLoaded {
+                network_id: NetworkId(1)
+            }
         )));
         let state = lock(&runtime.state);
         let running = state.network.as_ref().expect("hosted profile is retained");

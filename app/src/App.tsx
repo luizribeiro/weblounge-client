@@ -45,7 +45,7 @@ import {
   SessionTokenProvider,
 } from "./hosted/session-token";
 import { withStartupDeadline } from "./hosted/startup-deadline";
-import { bufferPath } from "./navigation/buffer-route";
+import { bufferPath, resolveBufferRoute } from "./navigation/buffer-route";
 import {
   initialDestination,
   readLastViewedPath,
@@ -53,6 +53,10 @@ import {
 } from "./navigation/initial-buffer";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
+import {
+  decodeOpenRouteMessage,
+  type OpenRouteMessage,
+} from "./platform/push/open-route-message";
 import { PushSynchronizer } from "./platform/push/push-sync";
 import { RelayClient } from "./platform/push/relay-client";
 import { IndexedDbPushRouteStore } from "./platform/push/route-store";
@@ -107,6 +111,8 @@ export function App(props: AppProps) {
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
   const [focusRequest, setFocusRequest] = createSignal<{ bufferId: number }>();
+  const [pendingOpenRoute, setPendingOpenRoute] =
+    createSignal<OpenRouteMessage>();
   const [bufferRemoval, setBufferRemoval] = createSignal<{
     bufferId: number;
     previousBufferId: number | undefined;
@@ -147,6 +153,7 @@ export function App(props: AppProps) {
   let revealingStartup = false;
   const [cachedChatListActive, setCachedChatListActive] = createSignal(false);
   let initialNavigationResolved = false;
+  let pushedMessagesNetworkId: number | undefined;
   let startupCap: number | undefined;
   let startupSettleFrame: number | undefined;
   let startupConfirmFrame: number | undefined;
@@ -212,6 +219,32 @@ export function App(props: AppProps) {
   });
 
   createEffect(() => {
+    const pending = pendingOpenRoute();
+    if (pending === undefined) return;
+    const network = networks().find(
+      (candidate) =>
+        candidate.label.toLowerCase() === pending.route.network.toLowerCase(),
+    );
+    if (network !== undefined && pushedMessagesNetworkId !== network.id) {
+      pushedMessagesNetworkId = network.id;
+      void client
+        ?.send({
+          id: crypto.randomUUID(),
+          request: {
+            type: "load_pushed_messages",
+            network_id: network.id,
+          },
+        })
+        .catch(() => undefined);
+    }
+    const resolved = resolveBufferRoute(pending.route, networks(), buffers());
+    if (resolved?.kind !== "buffer") return;
+    setPendingOpenRoute(undefined);
+    pushedMessagesNetworkId = undefined;
+    setFocusRequest({ bufferId: resolved.bufferId });
+  });
+
+  createEffect(() => {
     if (initialNavigationResolved) return;
     const currentBuffers = buffers();
     const destination = initialDestination(
@@ -237,6 +270,14 @@ export function App(props: AppProps) {
           });
     const mountedClient = props.engineClient ?? createEngineClient();
     client = mountedClient;
+    const handleServiceWorkerMessage = (event: MessageEvent<unknown>) => {
+      const message = decodeOpenRouteMessage(event.data);
+      if (message !== undefined) setPendingOpenRoute(message);
+    };
+    navigator.serviceWorker?.addEventListener(
+      "message",
+      handleServiceWorkerMessage,
+    );
     const debugConnection =
       __DEBUG_IRC_CONFIG__ === null
         ? null
@@ -397,6 +438,13 @@ export function App(props: AppProps) {
         setShellReady(true);
         setStartupContentReady(true);
       }
+      if (message.type === "pushed_messages_loaded") {
+        setLoadedNetworkIds((current) =>
+          new Set(current).add(message.network_id),
+        );
+        setShellReady(true);
+        setStartupContentReady(true);
+      }
       if (message.type === "chat_list_live") {
         setCachedChatListActive(false);
         setBuffers(message.buffers);
@@ -549,6 +597,10 @@ export function App(props: AppProps) {
       window.removeEventListener("online", updateConnectivity);
       window.removeEventListener("offline", updateConnectivity);
       window.removeEventListener("pageshow", handlePageShow);
+      navigator.serviceWorker?.removeEventListener(
+        "message",
+        handleServiceWorkerMessage,
+      );
       unsubscribe();
       unsubscribeUpdateReady();
       pushSynchronizer?.dispose();

@@ -163,7 +163,11 @@ network_id: NetworkId,
 /**
  * Complete ordered cached rows with fresh session-only IDs.
  */
-buffers: Array<BufferProjection>, } | { "type": "chat_list_live",
+buffers: Array<BufferProjection>, } | { "type": "pushed_messages_loaded",
+/**
+ * Network whose cached messages are now part of its timelines.
+ */
+network_id: NetworkId, } | { "type": "chat_list_live",
 /**
  * Network whose live projection completed.
  */

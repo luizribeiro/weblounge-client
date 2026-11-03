@@ -1,8 +1,12 @@
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { IrcClient } from "./irc-client";
 
 const routeId = "route-push-e2e";
 
-test.beforeEach(async ({ context, page }) => {
+async function prepareServiceWorker(
+  context: BrowserContext,
+  page: Page,
+): Promise<void> {
   test.skip(
     process.env.WEBLOUNGE_E2E_DEV === "1",
     "the service worker is intentionally disabled in development",
@@ -12,12 +16,13 @@ test.beforeEach(async ({ context, page }) => {
     origin: new URL(page.url()).origin,
   });
   await expect.poll(() => activeWorkerState(page)).toBe("activated");
-});
+}
 
 test("decrypts a real envelope into one routed notification", async ({
   context,
   page,
 }) => {
+  await prepareServiceWorker(context, page);
   const line =
     "@time=2026-11-03T12:34:56.789Z;msgid=push-one :mel!m@example.test PRIVMSG #lounge :hello from push";
   const envelope = await seedRouteAndEncrypt(page, line);
@@ -40,6 +45,7 @@ test("shows one generic notification when decryption fails", async ({
   context,
   page,
 }) => {
+  await prepareServiceWorker(context, page);
   const envelope = await seedRouteAndEncrypt(
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=push-bad :mel!m@example.test PRIVMSG weblounge :secret",
@@ -54,6 +60,79 @@ test("shows one generic notification when decryption fails", async ({
   await expect
     .poll(() => notifications(page))
     .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
+  await expect.poll(() => routeNeedsReregistration(page)).toBe(true);
+});
+
+test("shows one generic notification without replacing keys when parsing fails", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const envelope = await seedRouteAndEncrypt(page, "this is not an IRC line");
+
+  await deliverPush(context, page, envelope);
+
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
+  expect(await routeNeedsReregistration(page)).toBe(false);
+});
+
+test("shows a cold pushed row before IRC and deduplicates its history copy", async ({
+  context,
+  page,
+}) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await prepareServiceWorker(context, page);
+  const bot = await IrcClient.connect(
+    "weblounge-bot",
+    "weblounge-bot",
+    "weblounge-bot-test",
+    "#weblounge-test",
+  );
+  const text = `pushed before history ${Date.now()}`;
+  try {
+    const line = await bot.privmsgConfirmed("#weblounge-test", text);
+    const envelope = await seedRouteAndEncrypt(page, line, {
+      networkLabel: "Local Ergo",
+      nickname: "weblounge",
+    });
+    await deliverPush(context, page, envelope);
+    await expect.poll(() => notifications(page)).toHaveLength(1);
+
+    await page.close();
+    await context.setOffline(true);
+    const coldPage = await context.newPage();
+    await coldPage.goto(
+      "/Local%20Ergo/weblounge-test?irc-password=weblounge-test",
+    );
+
+    await expect(coldPage.getByText(text, { exact: true })).toBeVisible();
+    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+      0,
+    );
+
+    await context.setOffline(false);
+    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+      1,
+    );
+    const marker = `history settled ${Date.now()}`;
+    bot.privmsg("#weblounge-test", marker);
+    await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
+    await expect(coldPage.getByText(text, { exact: true })).toHaveCount(1);
+  } finally {
+    await context.setOffline(false);
+    bot.close();
+  }
 });
 
 async function activeWorkerState(page: Page): Promise<string | null> {
@@ -77,6 +156,29 @@ async function notifications(page: Page) {
           ? String(notification.data.route)
           : "",
     }));
+  });
+}
+
+async function routeNeedsReregistration(page: Page): Promise<boolean> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readonly");
+    const route = await new Promise<unknown>((resolve, reject) => {
+      const request = transaction.objectStore("routes").get(1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    return (
+      typeof route === "object" &&
+      route !== null &&
+      "needsReregistration" in route &&
+      route.needsReregistration === true
+    );
   });
 }
 
@@ -108,9 +210,16 @@ async function deliverPush(
   await session.detach();
 }
 
-async function seedRouteAndEncrypt(page: Page, line: string): Promise<string> {
+async function seedRouteAndEncrypt(
+  page: Page,
+  line: string,
+  routeContext: {
+    readonly networkLabel: string;
+    readonly nickname: string;
+  } = { networkLabel: "Lounge", nickname: "weblounge" },
+): Promise<string> {
   return page.evaluate(
-    async ({ plaintext, seededRouteId }) => {
+    async ({ plaintext, route, seededRouteId }) => {
       const encode = (bytes: ArrayBuffer | ArrayBufferView): string => {
         const view = ArrayBuffer.isView(bytes)
           ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -168,8 +277,8 @@ async function seedRouteAndEncrypt(page: Page, line: string): Promise<string> {
         const transaction = database.transaction("routes", "readwrite");
         transaction.objectStore("routes").put({
           networkId: 1,
-          networkLabel: "Lounge",
-          nickname: "weblounge",
+          networkLabel: route.networkLabel,
+          nickname: route.nickname,
           vapid: "test-home",
           routeId: seededRouteId,
           endpoint: `https://push.example.test/v1/r/${seededRouteId}`,
@@ -261,6 +370,6 @@ async function seedRouteAndEncrypt(page: Page, line: string): Promise<string> {
         },
       });
     },
-    { plaintext: line, seededRouteId: routeId },
+    { plaintext: line, route: routeContext, seededRouteId: routeId },
   );
 }

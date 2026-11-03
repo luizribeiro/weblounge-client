@@ -564,6 +564,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       break;
     }
     case "recent_directs_ready":
+    case "pushed_messages_loaded":
       if (typeof value.network_id === "number") {
         return { type: messageType, network_id: value.network_id };
       }
@@ -779,6 +780,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "chat_list_snapshot_loaded" ||
     value === "chat_list_live" ||
     value === "recent_directs_ready" ||
+    value === "pushed_messages_loaded" ||
     value === "buffer_added" ||
     value === "buffer_removed" ||
     value === "buffer_updated" ||

@@ -983,6 +983,11 @@ pub enum EngineToUi {
         /// Complete ordered cached rows with fresh session-only IDs.
         buffers: Vec<BufferProjection>,
     },
+    /// Reveal that service-worker messages are available before network history.
+    PushedMessagesLoaded {
+        /// Network whose cached messages are now part of its timelines.
+        network_id: NetworkId,
+    },
     /// Replace cached rows once live discovery and latest history are complete.
     ChatListLive {
         /// Network whose live projection completed.
