@@ -234,8 +234,9 @@ mod indexed_db {
     };
 
     const DATABASE_NAME: &str = "weblounge";
-    const DATABASE_VERSION: u32 = 1;
+    const DATABASE_VERSION: u32 = 2;
     const CACHE_STORE: &str = "cache";
+    const DURABLE_STORE: &str = "durable";
 
     /// The worker-safe IndexedDB backend used by web engines.
     #[derive(Debug)]
@@ -266,7 +267,8 @@ mod indexed_db {
         async fn get(&self, space: Space, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
             match self {
                 Self::IndexedDb(backend) => backend.get(space, key).await,
-                Self::Memory(backend) => backend.get(space, key).await,
+                Self::Memory(backend) if space == Space::Cache => backend.get(space, key).await,
+                Self::Memory(_) => Err(StorageError::UnsupportedSpace(space)),
             }
         }
 
@@ -279,7 +281,10 @@ mod indexed_db {
         ) -> Result<Page, StorageError> {
             match self {
                 Self::IndexedDb(backend) => backend.range(space, range, direction, limit).await,
-                Self::Memory(backend) => backend.range(space, range, direction, limit).await,
+                Self::Memory(backend) if space == Space::Cache => {
+                    backend.range(space, range, direction, limit).await
+                }
+                Self::Memory(_) => Err(StorageError::UnsupportedSpace(space)),
             }
         }
 
@@ -290,14 +295,18 @@ mod indexed_db {
         ) -> Result<(), StorageError> {
             match self {
                 Self::IndexedDb(backend) => backend.commit(space, operations).await,
-                Self::Memory(backend) => backend.commit(space, operations).await,
+                Self::Memory(backend) if space == Space::Cache => {
+                    backend.commit(space, operations).await
+                }
+                Self::Memory(_) => Err(StorageError::UnsupportedSpace(space)),
             }
         }
 
         async fn clear(&self, space: Space) -> Result<(), StorageError> {
             match self {
                 Self::IndexedDb(backend) => backend.clear(space).await,
-                Self::Memory(backend) => backend.clear(space).await,
+                Self::Memory(backend) if space == Space::Cache => backend.clear(space).await,
+                Self::Memory(_) => Err(StorageError::UnsupportedSpace(space)),
             }
         }
     }
@@ -313,22 +322,19 @@ mod indexed_db {
                 let Ok(database) = event.database() else {
                     return;
                 };
-                if !database
-                    .store_names()
-                    .iter()
-                    .any(|name| name == CACHE_STORE)
-                {
-                    let _ = database.create_object_store(CACHE_STORE, ObjectStoreParams::new());
+                for store in [CACHE_STORE, DURABLE_STORE] {
+                    if !database.store_names().iter().any(|name| name == store) {
+                        let _ = database.create_object_store(store, ObjectStoreParams::new());
+                    }
                 }
             });
             let database = request.await.map_err(open_error)?;
-            if !database
-                .store_names()
+            if [CACHE_STORE, DURABLE_STORE]
                 .iter()
-                .any(|name| name == CACHE_STORE)
+                .any(|required| !database.store_names().iter().any(|name| name == required))
             {
                 return Err(StorageError::Unavailable(
-                    "cache object store was not created".into(),
+                    "required object store was not created".into(),
                 ));
             }
             Ok(Self { database })
@@ -337,7 +343,8 @@ mod indexed_db {
         fn store_name(space: Space) -> Result<&'static str, StorageError> {
             match space {
                 Space::Cache => Ok(CACHE_STORE),
-                Space::Settings | Space::Durable => Err(StorageError::UnsupportedSpace(space)),
+                Space::Durable => Ok(DURABLE_STORE),
+                Space::Settings => Err(StorageError::UnsupportedSpace(space)),
             }
         }
     }
