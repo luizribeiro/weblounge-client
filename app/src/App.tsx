@@ -584,6 +584,14 @@ export function App(props: AppProps) {
       target: subscription.target,
       devices: new EnginePushDeviceStore(mountedClient),
       routes: new IndexedDbPushRouteStore(),
+      routeContext: (networkId) => {
+        const network = networks().find(
+          (candidate) => candidate.id === networkId,
+        );
+        return network === undefined
+          ? undefined
+          : { networkLabel: network.label, nickname: network.nickname };
+      },
       acquireSessionToken: async () => {
         try {
           const token = await new SessionTokenProvider(

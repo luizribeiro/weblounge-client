@@ -5,6 +5,8 @@ const routesStore = "routes";
 
 export interface StoredPushRoute {
   readonly networkId: number;
+  readonly networkLabel: string;
+  readonly nickname: string;
   readonly vapid: string;
   readonly routeId: string;
   readonly endpoint: string;
@@ -126,6 +128,14 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 }
 
 function decodeRoute(value: unknown): StoredPushRoute {
+  const networkLabel =
+    typeof value === "object" && value !== null && "networkLabel" in value
+      ? value.networkLabel
+      : "";
+  const nickname =
+    typeof value === "object" && value !== null && "nickname" in value
+      ? value.nickname
+      : "";
   if (
     typeof value !== "object" ||
     value === null ||
@@ -142,9 +152,15 @@ function decodeRoute(value: unknown): StoredPushRoute {
     !("auth" in value) ||
     typeof value.auth !== "string" ||
     !("privateKey" in value) ||
-    !(value.privateKey instanceof CryptoKey)
+    !(value.privateKey instanceof CryptoKey) ||
+    typeof networkLabel !== "string" ||
+    typeof nickname !== "string"
   ) {
     throw new Error("push database contains an invalid route");
   }
-  return value as StoredPushRoute;
+  return {
+    ...(value as Omit<StoredPushRoute, "networkLabel" | "nickname">),
+    networkLabel,
+    nickname,
+  };
 }

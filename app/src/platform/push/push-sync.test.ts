@@ -132,6 +132,7 @@ function fixture(relayApi = relay()) {
     relay: relayApi,
     relayOrigin,
     target,
+    routeContext: () => ({ networkLabel: "Lounge", nickname: "weblounge" }),
     devices,
     routes,
     acquireSessionToken,
@@ -227,6 +228,8 @@ describe("push state synchronization", () => {
     };
     current.routes.values.set(1, {
       networkId: 1,
+      networkLabel: "Lounge",
+      nickname: "weblounge",
       vapid: "old-vapid",
       routeId: "old-route",
       endpoint: `${relayOrigin}/v1/r/old-route`,
@@ -325,6 +328,8 @@ describe("push state synchronization", () => {
     };
     current.routes.values.set(1, {
       networkId: 1,
+      networkLabel: "Lounge",
+      nickname: "weblounge",
       vapid: "home-vapid",
       routeId: "route-1",
       endpoint: `${relayOrigin}/v1/r/route-1`,

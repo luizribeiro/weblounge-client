@@ -25,8 +25,14 @@ interface PushSynchronizerOptions {
   readonly routes: PushRouteStore;
   readonly acquireSessionToken: () => Promise<string>;
   readonly onAuthorizationRequired: () => void;
+  readonly routeContext: (networkId: number) => PushRouteContext | undefined;
   readonly generateRouteKeys?: () => Promise<RouteKeys>;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
+}
+
+interface PushRouteContext {
+  readonly networkLabel: string;
+  readonly nickname: string;
 }
 
 export class PushSynchronizer {
@@ -38,6 +44,7 @@ export class PushSynchronizer {
   readonly #routes: PushRouteStore;
   readonly #acquireSessionToken: () => Promise<string>;
   readonly #onAuthorizationRequired: () => void;
+  readonly #routeContext: (networkId: number) => PushRouteContext | undefined;
   readonly #generateRouteKeys: () => Promise<RouteKeys>;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly #unsubscribe: () => void;
@@ -52,6 +59,7 @@ export class PushSynchronizer {
     this.#routes = options.routes;
     this.#acquireSessionToken = options.acquireSessionToken;
     this.#onAuthorizationRequired = options.onAuthorizationRequired;
+    this.#routeContext = options.routeContext;
     this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
     this.#exclusive = options.exclusive ?? withExclusiveLock;
     this.#unsubscribe = this.#engine.subscribe((message) =>
@@ -153,7 +161,8 @@ export class PushSynchronizer {
     if (device === undefined) return;
     const existing = await this.#routes.get(networkId);
     if (existing !== undefined && existing.vapid === vapid) {
-      await this.#register(networkId, existing);
+      const current = await this.#refreshContext(existing);
+      await this.#register(networkId, current);
       return;
     }
     if (existing !== undefined || previousRouteId !== undefined) {
@@ -175,6 +184,8 @@ export class PushSynchronizer {
     vapid: string,
     device: RelayDevice,
   ): Promise<void> {
+    const context = this.#routeContext(networkId);
+    if (context === undefined) return;
     const keys = await this.#generateRouteKeys();
     const created = await this.#relay.createRoute(device, vapid);
     if (!created.ok) {
@@ -182,9 +193,23 @@ export class PushSynchronizer {
         await this.#authorizationFailed();
       return;
     }
-    const route = storedRoute(networkId, vapid, keys, created.value);
+    const route = storedRoute(networkId, context, vapid, keys, created.value);
     await this.#routes.put(route);
     await this.#register(networkId, route);
+  }
+
+  async #refreshContext(route: StoredPushRoute): Promise<StoredPushRoute> {
+    const context = this.#routeContext(route.networkId);
+    if (
+      context === undefined ||
+      (route.networkLabel === context.networkLabel &&
+        route.nickname === context.nickname)
+    ) {
+      return route;
+    }
+    const current = { ...route, ...context };
+    await this.#routes.put(current);
+    return current;
   }
 
   async #register(networkId: number, route: StoredPushRoute): Promise<void> {
@@ -286,12 +311,14 @@ export class PushSynchronizer {
 
 function storedRoute(
   networkId: number,
+  context: PushRouteContext,
   vapid: string,
   keys: RouteKeys,
   route: RelayRoute,
 ): StoredPushRoute {
   return {
     networkId,
+    ...context,
     vapid,
     routeId: route.id,
     endpoint: route.endpoint,
