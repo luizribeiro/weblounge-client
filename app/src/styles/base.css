@@ -137,9 +137,6 @@ textarea:focus-visible {
 
 [data-connection-shimmer] {
   --wl-connection-band: 18px;
-  --wl-connection-fill-end: 230px;
-  --wl-connection-sweep-end: 210px;
-  --wl-connection-title-offset: 0px;
   --wl-connection-trail: calc(
     var(--wl-connection-sweep) -
     var(--wl-connection-band)
@@ -213,11 +210,11 @@ textarea:focus-visible {
 [data-connection-shimmer][data-connection-progress] [data-connection-title] {
   --wl-connection-local-sweep: calc(
     var(--wl-connection-sweep) -
-    var(--wl-connection-title-offset)
+    var(--wl-connection-title-offset, 0px)
   );
   --wl-connection-local-trail: calc(
     var(--wl-connection-trail) -
-    var(--wl-connection-title-offset)
+    var(--wl-connection-title-offset, 0px)
   );
   background-image: linear-gradient(
     90deg,
@@ -239,7 +236,7 @@ textarea:focus-visible {
   }
   75%,
   100% {
-    --wl-connection-sweep: var(--wl-connection-sweep-end);
+    --wl-connection-sweep: var(--wl-connection-sweep-end, 210px);
   }
 }
 
@@ -248,7 +245,7 @@ textarea:focus-visible {
     --wl-connection-sweep: -30px;
   }
   to {
-    --wl-connection-sweep: var(--wl-connection-fill-end);
+    --wl-connection-sweep: var(--wl-connection-fill-end, 230px);
   }
 }
 
