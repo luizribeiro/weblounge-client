@@ -299,7 +299,7 @@ async fn wait_for_own_join(events: &mut papo::Events, nickname: &str, channel: &
 }
 
 async fn connect_reader(endpoint: &str) -> (papo::Client, papo::Events) {
-    let (reader, mut events) = papo::Client::builder(endpoint, "multiline-reader")
+    let (reader, mut events) = papo::Client::builder(endpoint, "weblounge-bot")
         .allow_insecure_auth(true)
         .sasl(papo::Sasl::plain(
             "weblounge-bot",
@@ -313,7 +313,7 @@ async fn connect_reader(endpoint: &str) -> (papo::Client, papo::Events) {
         loop {
             match events.next().await {
                 Some(papo::Event::Joined(joined))
-                    if joined.actor.nick() == "multiline-reader"
+                    if joined.actor.nick() == "weblounge-bot"
                         && joined.channel == "#weblounge-test" =>
                 {
                     break;
