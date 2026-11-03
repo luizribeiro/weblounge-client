@@ -1,8 +1,7 @@
 export function encodeBase64Url(bytes: ArrayBuffer | ArrayBufferView): string {
-  const view =
-    bytes instanceof ArrayBuffer
-      ? new Uint8Array(bytes)
-      : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const view = ArrayBuffer.isView(bytes)
+    ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    : new Uint8Array(bytes);
   let binary = "";
   for (const byte of view) binary += String.fromCharCode(byte);
   return btoa(binary)
