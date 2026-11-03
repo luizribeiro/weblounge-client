@@ -267,9 +267,17 @@ async function seedRouteAndEncrypt(
       );
       const authentication = crypto.getRandomValues(new Uint8Array(16));
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push", 1);
-        request.onupgradeneeded = () =>
-          request.result.createObjectStore("routes", { keyPath: "networkId" });
+        const request = indexedDB.open("weblounge-push", 2);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains("routes")) {
+            request.result.createObjectStore("routes", {
+              keyPath: "networkId",
+            });
+          }
+          if (!request.result.objectStoreNames.contains("state")) {
+            request.result.createObjectStore("state");
+          }
+        };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });

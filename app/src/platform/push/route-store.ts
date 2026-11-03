@@ -1,7 +1,10 @@
 import { encodeBase64Url } from "./base64url";
-
-const databaseName = "weblounge-push";
-const routesStore = "routes";
+import {
+  openPushDatabase,
+  pushRoutesStore,
+  requestResult,
+  transactionDone,
+} from "./push-database";
 
 export interface StoredPushRoute {
   readonly networkId: number;
@@ -59,9 +62,9 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
 
   async get(networkId: number): Promise<StoredPushRoute | undefined> {
     const database = await this.#database;
-    const transaction = database.transaction(routesStore, "readonly");
+    const transaction = database.transaction(pushRoutesStore, "readonly");
     const value = await requestResult(
-      transaction.objectStore(routesStore).get(networkId),
+      transaction.objectStore(pushRoutesStore).get(networkId),
     );
     await transactionDone(transaction);
     return value === undefined ? undefined : decodeRoute(value);
@@ -69,23 +72,23 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
 
   async put(route: StoredPushRoute): Promise<void> {
     const database = await this.#database;
-    const transaction = database.transaction(routesStore, "readwrite");
-    transaction.objectStore(routesStore).put(route);
+    const transaction = database.transaction(pushRoutesStore, "readwrite");
+    transaction.objectStore(pushRoutesStore).put(route);
     await transactionDone(transaction);
   }
 
   async delete(networkId: number): Promise<void> {
     const database = await this.#database;
-    const transaction = database.transaction(routesStore, "readwrite");
-    transaction.objectStore(routesStore).delete(networkId);
+    const transaction = database.transaction(pushRoutesStore, "readwrite");
+    transaction.objectStore(pushRoutesStore).delete(networkId);
     await transactionDone(transaction);
   }
 
   async all(): Promise<readonly StoredPushRoute[]> {
     const database = await this.#database;
-    const transaction = database.transaction(routesStore, "readonly");
+    const transaction = database.transaction(pushRoutesStore, "readonly");
     const values = await requestResult(
-      transaction.objectStore(routesStore).getAll(),
+      transaction.objectStore(pushRoutesStore).getAll(),
     );
     await transactionDone(transaction);
     return values.map(decodeRoute);
@@ -93,39 +96,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
 }
 
 function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = factory.open(databaseName, 1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(routesStore)) {
-        request.result.createObjectStore(routesStore, { keyPath: "networkId" });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
-      reject(request.error ?? new Error("push database failed to open"));
-  });
-}
-
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
-      reject(request.error ?? new Error("push database request failed"));
-  });
-}
-
-function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () =>
-      reject(
-        transaction.error ?? new Error("push database transaction aborted"),
-      );
-    transaction.onerror = () =>
-      reject(
-        transaction.error ?? new Error("push database transaction failed"),
-      );
-  });
+  return openPushDatabase(factory);
 }
 
 function decodeRoute(value: unknown): StoredPushRoute {

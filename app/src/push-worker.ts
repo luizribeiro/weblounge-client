@@ -87,8 +87,11 @@ const worker = globalThis as unknown as WorkerScope;
 const shellCache = `weblounge-shell-${SHELL_VERSION}`;
 const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
-const pushDatabase = "weblounge-push";
-const routesStore = "routes";
+const pushDatabaseName = "weblounge-push";
+const pushDatabaseVersion = 2;
+const pushRoutesStore = "routes";
+const pushStateStore = "state";
+const appBadgeKey = "app-badge";
 const engineDatabase = "weblounge";
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
@@ -194,6 +197,22 @@ async function showPushNotification(event: WorkerPushEvent): Promise<void> {
     presentation.title,
     presentation.options,
   );
+  await incrementWorkerBadge().catch(() => undefined);
+}
+
+async function incrementWorkerBadge(): Promise<void> {
+  const badgeNavigator = globalThis.navigator as Navigator & {
+    setAppBadge?: (contents?: number) => Promise<void>;
+  };
+  if (badgeNavigator.setAppBadge === undefined) return;
+  const database = await openPushDatabase();
+  const transaction = database.transaction(pushStateStore, "readwrite");
+  const store = transaction.objectStore(pushStateStore);
+  const current = await requestResult(store.get(appBadgeKey));
+  const count = (typeof current === "number" ? current : 0) + 1;
+  store.put(count, appBadgeKey);
+  await transactionDone(transaction);
+  await badgeNavigator.setAppBadge(count);
 }
 
 function genericNotification(networkLabel?: string): NotificationPresentation {
@@ -343,10 +362,10 @@ function decodeParsedEvent(value: unknown): ParsedPushEvent {
 }
 
 async function findRoute(routeId: string): Promise<StoredRoute | undefined> {
-  const database = await openDatabase(pushDatabase);
-  const transaction = database.transaction(routesStore, "readonly");
+  const database = await openPushDatabase();
+  const transaction = database.transaction(pushRoutesStore, "readonly");
   const routes = await requestResult(
-    transaction.objectStore(routesStore).getAll(),
+    transaction.objectStore(pushRoutesStore).getAll(),
   );
   await transactionDone(transaction);
   return routes
@@ -355,9 +374,9 @@ async function findRoute(routeId: string): Promise<StoredRoute | undefined> {
 }
 
 async function markForReregistration(route: StoredRoute): Promise<void> {
-  const database = await openDatabase(pushDatabase);
-  const transaction = database.transaction(routesStore, "readwrite");
-  transaction.objectStore(routesStore).put({
+  const database = await openPushDatabase();
+  const transaction = database.transaction(pushRoutesStore, "readwrite");
+  transaction.objectStore(pushRoutesStore).put({
     ...route,
     needsReregistration: true,
   });
@@ -423,6 +442,25 @@ function decodeStoredRoute(value: unknown): StoredRoute {
 function openDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(name);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () =>
+      reject(request.error ?? new Error("push database failed to open"));
+  });
+}
+
+function openPushDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(pushDatabaseName, pushDatabaseVersion);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(pushRoutesStore)) {
+        request.result.createObjectStore(pushRoutesStore, {
+          keyPath: "networkId",
+        });
+      }
+      if (!request.result.objectStoreNames.contains(pushStateStore)) {
+        request.result.createObjectStore(pushStateStore);
+      }
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () =>
       reject(request.error ?? new Error("push database failed to open"));

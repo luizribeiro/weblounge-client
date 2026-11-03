@@ -677,6 +677,25 @@ test("creates and activates a relay route after engine registration", async ({
     origin: new URL(baseURL).origin,
   });
   await installPushManagerStub(page);
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "appBadgeCalls", []);
+    Object.defineProperties(Navigator.prototype, {
+      setAppBadge: {
+        configurable: true,
+        value: async (count: number) => {
+          const calls = Reflect.get(globalThis, "appBadgeCalls");
+          if (Array.isArray(calls)) calls.push(["set", count]);
+        },
+      },
+      clearAppBadge: {
+        configurable: true,
+        value: async () => {
+          const calls = Reflect.get(globalThis, "appBadgeCalls");
+          if (Array.isArray(calls)) calls.push(["clear"]);
+        },
+      },
+    });
+  });
   await installFakeEngine(page);
   await installFakeOAuth(page);
   await page.addInitScript(() => {
@@ -790,6 +809,22 @@ test("creates and activates a relay route after engine registration", async ({
   await expect
     .poll(() => relayRequests)
     .toContain("PUT /v1/routes/route-1/active");
+  await page.evaluate(() => {
+    const setUnread = Reflect.get(globalThis, "setHostedUnread");
+    if (typeof setUnread !== "function")
+      throw new Error("hosted unread control is missing");
+    setUnread(7, 2);
+  });
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(globalThis, "appBadgeCalls")))
+    .toContainEqual(["set", 2]);
+  await page.evaluate(() => {
+    const setUnread = Reflect.get(globalThis, "setHostedUnread");
+    if (typeof setUnread === "function") setUnread(0, 0);
+  });
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(globalThis, "appBadgeCalls")))
+    .toContainEqual(["clear"]);
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
       configurable: true,
@@ -1084,6 +1119,18 @@ async function installFakeEngine(
                 },
               ],
             });
+            Reflect.set(
+              globalThis,
+              "setHostedUnread",
+              (unread: number, mentions: number) => {
+                this.emit({
+                  type: "unread_changed",
+                  buffer_id: 2,
+                  unread,
+                  mentions,
+                });
+              },
+            );
             if (Reflect.get(globalThis, "hostedPushEnabled") === true) {
               this.emit({
                 type: "push_route_required",

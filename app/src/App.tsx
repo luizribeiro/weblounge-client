@@ -52,6 +52,7 @@ import {
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
+import { syncAppBadge } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
 import {
@@ -166,6 +167,12 @@ export function App(props: AppProps) {
   const startupHistoryPending = new Set<number>();
   const startupHistoryComplete = new Set<number>();
   const storedNavigationPath = readLastViewedPath();
+
+  createEffect(() => {
+    const current = buffers();
+    if (props.pushConfig === undefined) return;
+    void syncAppBadge(current).catch(() => undefined);
+  });
   const noticeActions = new ActionRegistry(
     {
       "buffer.open-direct": (context) => {
