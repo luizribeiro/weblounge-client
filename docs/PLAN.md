@@ -408,6 +408,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Make startup and render failures retryable in place; standalone retries create a fresh worker and engine, while hosted retries restart authorization.
   - [x] Ellipsize long desktop message nicks within their fixed column without reserving a transcript mode-symbol slot.
   - [x] Give distinct nickname-link browser fixtures distinct accounts so durable DM identity does not merge their conversations.
+  - [x] Make the WebKit reconnect scroll setup use the measured midpoint between the edges and
+    verify it across painted frames without depending on the browser's intermittent `scrollend`.
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
   - B1b. [x] Hosted sign-in hardening: explicit production config, redacted request secrets,

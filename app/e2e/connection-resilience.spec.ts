@@ -45,7 +45,7 @@ test.describe("connection resilience against local Ergo", () => {
             distance: scrollDistance,
             input: "touch",
           })
-        : await scrollDesktopBetweenEdges(page, list, scrollDistance);
+        : await scrollDesktopBetweenEdges(list, scrollDistance);
       expect(scrollTop).toBeGreaterThan(0);
       const scrollAnchor = await list.evaluate(visibleMessageAnchor);
       const draft = `draft survives ${Date.now()}`;
@@ -324,15 +324,15 @@ function messageRow(page: Page, text: string, delivery: string) {
 }
 
 async function scrollDesktopBetweenEdges(
-  page: Page,
   list: Locator,
   minimumMargin: number,
 ): Promise<number> {
   const range = await messageListScrollRange(list);
-  await list.hover();
-  const scrollEnded = await armScrollEndAwayFrom(list);
-  await page.mouse.wheel(0, -range / 2);
-  await scrollEnded();
+  const target = range / 2;
+  await list.evaluate((element, scrollTop) => {
+    element.scrollTop = scrollTop;
+  }, target);
+  await waitForStableScrollTop(list);
   await expect
     .poll(() =>
       list.evaluate((element) =>
@@ -346,30 +346,22 @@ async function scrollDesktopBetweenEdges(
   return list.evaluate((element) => element.scrollTop);
 }
 
-const scrollEndKey = "__resilienceScrollEnd";
-
-// WebKit animates a wheel scroll, so an anchor read before scrollend would
-// record a position the list is still travelling away from.
-async function armScrollEndAwayFrom(
-  list: Locator,
-): Promise<() => Promise<void>> {
-  await list.evaluate((element, key) => {
-    const armedAt = element.scrollTop;
-    Reflect.set(
-      element,
-      key,
-      new Promise<void>((resolve) => {
-        const settle = () => {
-          if (element.scrollTop === armedAt) return;
-          element.removeEventListener("scrollend", settle);
-          resolve();
-        };
-        element.addEventListener("scrollend", settle);
+// WebKit can omit scrollend for completed scrolling, including every no-op.
+async function waitForStableScrollTop(list: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      list.evaluate(async (element) => {
+        const frame = () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          );
+        await frame();
+        const first = element.scrollTop;
+        await frame();
+        return element.scrollTop === first;
       }),
-    );
-  }, scrollEndKey);
-  return () =>
-    list.evaluate((element, key) => Reflect.get(element, key), scrollEndKey);
+    )
+    .toBe(true);
 }
 
 async function scrollAnchorOffset(
