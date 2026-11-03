@@ -150,13 +150,11 @@ interface PanResult {
   readonly base: number;
   readonly chatLeft: number | null;
   readonly devicePixelRatio: number;
-  readonly now: number;
 }
 
 interface Settle {
   readonly devicePixelRatio: number;
   readonly releaseLeft: number;
-  readonly releasedAt: number;
   readonly frames: readonly Frame[];
 }
 
@@ -164,7 +162,6 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
   const shell = document.querySelector("[data-mobile-shell]");
   if (shell === null) throw new Error("mobile shell is missing");
   const start = base ?? performance.now();
-  const triggeredAt = performance.now();
   steps.forEach((step, index) => {
     const type = release
       ? "pointerup"
@@ -188,7 +185,6 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
     base: start,
     chatLeft: chat?.getBoundingClientRect().left ?? null,
     devicePixelRatio: window.devicePixelRatio,
-    now: triggeredAt,
   };
 }
 
@@ -203,14 +199,12 @@ async function swipeAndRelease(
     release: false,
     steps,
   });
-  let releasedAt = 0;
   const frames = await recordMotion(page, async () => {
-    const release = await page.evaluate(dispatchPan, {
+    await page.evaluate(dispatchPan, {
       base: drag.base,
       release: true,
       steps: [last],
     });
-    releasedAt = release.now;
   });
   const released = frames.findIndex((frame) => frame.motion !== "dragging");
   expect(released).toBeGreaterThanOrEqual(0);
@@ -218,7 +212,6 @@ async function swipeAndRelease(
     devicePixelRatio: drag.devicePixelRatio,
     frames: frames.slice(released),
     releaseLeft: drag.chatLeft ?? Number.NaN,
-    releasedAt,
   };
 }
 
@@ -243,9 +236,16 @@ function expectSettlesFromFinger(
     Math.abs(restingLeft - releaseLeft) / width,
     allowShorter,
   );
+  const transitioning = moving.filter((frame) => frame.motion !== null);
+  expect(
+    transitioning.every((frame) => frame.transformElapsedMs !== null),
+  ).toBe(true);
   expectStepsFollowCurve(
-    moving.map((frame) => ({ position: left(frame), time: frame.time })),
-    { position: releaseLeft, time: settle.releasedAt },
+    transitioning.map((frame) => ({
+      position: left(frame),
+      time: frame.transformElapsedMs ?? Number.NaN,
+    })),
+    { position: releaseLeft, time: 0 },
     restingLeft,
     transitionFrame.transition,
     settle.devicePixelRatio,
@@ -278,7 +278,7 @@ interface Frame {
   readonly motion: string | null;
   readonly shadow: string | null;
   readonly shadowOpacity: number;
-  readonly time: number;
+  readonly transformElapsedMs: number | null;
   readonly transformEndElapsedMs: number | null;
   readonly transformEndLeft: number | null;
   readonly tokens: {
@@ -342,6 +342,14 @@ async function recordMotion(
         document.querySelector<HTMLElement>(
           "[data-mobile-chat]",
         )?.parentElement;
+      const chatLeft = chat?.getBoundingClientRect().left ?? null;
+      const transformTime = chat
+        ?.getAnimations()
+        .find(
+          (animation) =>
+            animation instanceof CSSTransition &&
+            animation.transitionProperty === "transform",
+        )?.currentTime;
       const list = document.querySelector<HTMLElement>("[data-mobile-chats]");
       const rect = list?.getBoundingClientRect();
       const motion = chat?.dataset.motion ?? null;
@@ -351,7 +359,7 @@ async function recordMotion(
       const listStyle = list === null ? null : getComputedStyle(list);
       const rootStyle = getComputedStyle(document.documentElement);
       recording.frames.push({
-        chatLeft: chat?.getBoundingClientRect().left ?? null,
+        chatLeft,
         list:
           rect === undefined
             ? null
@@ -380,7 +388,8 @@ async function recordMotion(
         motion,
         shadow: shadow?.content === "none" ? null : (shadow?.boxShadow ?? null),
         shadowOpacity: Number(shadow?.opacity ?? 0),
-        time: performance.now(),
+        transformElapsedMs:
+          typeof transformTime === "number" ? transformTime : null,
         transformEndElapsedMs: recording.transformEndElapsedMs,
         transformEndLeft: recording.transformEndLeft,
         tokens: {
