@@ -457,7 +457,7 @@ it("anchors visible content when an overscanned row above it grows", async () =>
   );
 }, 15_000);
 
-it("renders action, own, pending, bot, mode, divider, New, and membership variants", async () => {
+it("renders action, own, pending, bot, divider, New, and membership variants", async () => {
   const membership: MembershipProjection = {
     type: "change",
     id: 20,
@@ -508,18 +508,6 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
           text: "welcome",
           received_at_ms: 4,
         },
-        {
-          ...message,
-          id: 4,
-          author: "mel",
-          authorship: "own",
-          delivery: "received",
-          kind: "notice",
-          highlighted: false,
-          server_time_ms: Date.UTC(2026, 9, 28, 12),
-          text: "A quiet room",
-          received_at_ms: 5,
-        },
       ]}
       onRejoin={rejoin}
       readAtMs={1}
@@ -537,10 +525,64 @@ it("renders action, own, pending, bot, mode, divider, New, and membership varian
   );
   expect(screen.getByText("Sending…")).toBeInTheDocument();
   expect(screen.getByText("BOT")).toBeInTheDocument();
-  expect(screen.getByText("A quiet room")).toBeInTheDocument();
-  expect(
-    screen.getByText(/set by mel/).closest("[data-notice-row]"),
-  ).toHaveTextContent("Topic: A quiet room");
+});
+
+it("renders topic notices with their setter and time", async () => {
+  const setAt = Date.UTC(2026, 9, 28, 12);
+  render(() => (
+    <MessageList
+      messages={[
+        {
+          ...message,
+          author: "",
+          authorship: "own",
+          delivery: "received",
+          highlighted: false,
+          kind: {
+            notice: { type: "topic", setter: "mel", set_at: setAt },
+          },
+          server_time_ms: null,
+          text: "A quiet room",
+        },
+      ]}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const row = screen.getByText(/set by mel/).closest("[data-notice-row]");
+  expect(row).toHaveAttribute("data-notice-kind", "topic");
+  expect(row).toHaveTextContent("Topic: A quiet room");
+  expect(row?.querySelector("time")).toHaveAttribute(
+    "datetime",
+    new Date(setAt).toISOString(),
+  );
+});
+
+it("renders info notices as plain muted event rows", async () => {
+  render(() => (
+    <MessageList
+      messages={[
+        {
+          ...message,
+          author: "",
+          authorship: "own",
+          delivery: "received",
+          highlighted: false,
+          kind: { notice: { type: "info" } },
+          text: "weblounge test build",
+        },
+      ]}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const row = screen
+    .getByText("weblounge test build")
+    .closest("[data-notice-row]");
+  expect(row).toHaveAttribute("data-notice-kind", "info");
+  expect(row).toHaveTextContent("weblounge test build");
+  expect(row).not.toHaveTextContent("Topic:");
+  expect(row).not.toHaveTextContent("set by");
 });
 
 it("keeps the New boundary frozen while the live marker advances", async () => {

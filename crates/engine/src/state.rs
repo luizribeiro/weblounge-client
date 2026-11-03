@@ -8,7 +8,7 @@ use crate::{
     BufferId, BufferKind, BufferProjection, ChannelStatus, DirectIdentityState, EngineToUi,
     LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery,
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeTone,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, truncate_preview,
     },
@@ -599,7 +599,7 @@ impl NetworkModel {
         }) {
             return Vec::new();
         }
-        self.append_notice(id, format!("{old} is now {new}"), String::new(), None)
+        self.append_notice(id, format!("{old} is now {new}"), NoticeKind::Info)
             .into_iter()
             .collect()
     }
@@ -673,14 +673,13 @@ impl NetworkModel {
         &mut self,
         buffer_id: BufferId,
         text: String,
-        author: String,
-        source_time: Option<SystemTime>,
+        notice: NoticeKind,
     ) -> Option<EngineToUi> {
         let message = MessageProjection {
             id: self.allocate_message_id(),
-            author,
+            author: String::new(),
             text: collapse_blank_lines(text),
-            kind: MessageKind::Notice,
+            kind: MessageKind::Notice(notice),
             bot: Some(false),
             authorship: MessageAuthorship::Own,
             nick_color_index: 0,
@@ -689,7 +688,7 @@ impl NetworkModel {
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
-            server_time_ms: source_time.map(time_millis),
+            server_time_ms: None,
             received_at_ms: time_millis(papo::time::now()),
         };
         self.insert(buffer_id, message.clone(), None, DedupReferences::default())
@@ -750,7 +749,7 @@ impl NetworkModel {
             id: self.allocate_message_id(),
             author: self.network.nickname.clone(),
             text: collapse_blank_lines(text.clone()),
-            kind,
+            kind: kind.clone(),
             bot: state.user(state.nick()).and_then(papo::User::is_bot),
             authorship: MessageAuthorship::Own,
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
@@ -938,7 +937,7 @@ impl NetworkModel {
                     if index != 0 {
                         message.id = self.allocate_message_id();
                     }
-                    message.text = collapse_blank_lines(confirmed_text(message.kind, text));
+                    message.text = collapse_blank_lines(confirmed_text(&message.kind, text));
                     message.server_ids = vec![msgid.to_string()];
                     message.server_time_ms = server_time;
                     message.delivery = MessageDelivery::Confirmed;
@@ -1067,7 +1066,7 @@ impl NetworkModel {
             local_send_id,
             target,
             text,
-            kind: message.projection.kind,
+            kind: message.projection.kind.clone(),
         };
         Some((
             pending,
@@ -1915,7 +1914,7 @@ impl NetworkModel {
         dedup: DedupReferences,
     ) -> Result<bool, StateError> {
         let own_read_at = (projection.authorship == MessageAuthorship::Own
-            && projection.kind != MessageKind::Notice
+            && !matches!(&projection.kind, MessageKind::Notice(_))
             && is_committed(&projection))
         .then(|| message_time(&projection));
         let Some(buffer) = self.buffers.get(&buffer_id) else {
@@ -2054,8 +2053,8 @@ fn collapse_blank_lines(text: String) -> String {
     collapsed
 }
 
-fn confirmed_text(kind: MessageKind, text: &str) -> String {
-    if kind != MessageKind::Action {
+fn confirmed_text(kind: &MessageKind, text: &str) -> String {
+    if kind != &MessageKind::Action {
         return text.to_owned();
     }
     let Some(action) =
@@ -2071,7 +2070,7 @@ fn derive_read_projection(buffer: &mut BufferState) {
     buffer.projection.last_message = buffer
         .timeline
         .iter()
-        .filter(|record| record.projection.kind != MessageKind::Notice)
+        .filter(|record| !matches!(&record.projection.kind, MessageKind::Notice(_)))
         .max_by_key(|record| order_key(record))
         .map(|record| record.projection.clone());
     buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
@@ -2274,7 +2273,7 @@ pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u3
 }
 
 fn order_key(record: &TimelineRecord) -> (i64, i64, u64) {
-    let primary_time = if record.projection.kind == MessageKind::Notice {
+    let primary_time = if matches!(&record.projection.kind, MessageKind::Notice(_)) {
         record.projection.received_at_ms
     } else {
         record
@@ -2825,19 +2824,14 @@ mod tests {
         );
         let unread_before = model.buffers[&buffer.id].projection.unread;
         let event = model
-            .append_notice(
-                buffer.id,
-                "A quiet room".into(),
-                "mel".into(),
-                Some(std::time::UNIX_EPOCH),
-            )
+            .append_notice(buffer.id, "A quiet room".into(), crate::NoticeKind::Info)
             .expect("notice row");
 
         assert!(matches!(
             event,
             EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].kind == crate::MessageKind::Notice
-                    && messages[0].author == "mel"
+                if matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
+                    && messages[0].author.is_empty()
         ));
         assert_eq!(
             model.buffers[&buffer.id]
@@ -2851,8 +2845,8 @@ mod tests {
             model.buffers[&buffer.id]
                 .timeline
                 .last()
-                .map(|record| record.projection.kind),
-            Some(crate::MessageKind::Notice)
+                .map(|record| &record.projection.kind),
+            Some(&crate::MessageKind::Notice(crate::NoticeKind::Info))
         );
         assert_eq!(model.buffers[&buffer.id].projection.unread, unread_before);
     }
@@ -3308,7 +3302,9 @@ mod tests {
         assert!(matches!(
             note.as_slice(),
             [EngineToUi::MessagesAppended { buffer_id, messages }]
-                if *buffer_id == old_buffer && messages[0].text == "alice is now alicia"
+                if *buffer_id == old_buffer
+                    && messages[0].text == "alice is now alicia"
+                    && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
         ));
         assert_eq!(model.buffers[&old_buffer].projection.title, "alice");
         assert!(!model.directs.contains_key(&DirectKey("alicia".into())));

@@ -23,7 +23,7 @@ pub use protocol::{
     HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
-    NoticeTone, OfflineReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
+    NoticeKind, NoticeTone, OfflineReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.

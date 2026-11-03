@@ -361,6 +361,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Remove a channel buffer after a confirmed own PART from any session, preserving in-flight
     sends and navigating away in both shells. Keep own-KICK buffers read-only with their reason and
     an explicit Rejoin action; typed 403/442 refusals now name the affected channel (#85).
+  - [x] Give local transcript notices typed topic or neutral-info semantics. Cached topics retain
+    their setter and server time, while `/version`, verified DM renames, and list-full events render
+    as plain muted rows without a topic label or synthetic setter (#92).
 - **Push notifications (design 23):**
   - [x] Ship relay slice 1 as a flake package: concierge-authenticated Web Push devices,
     VAPID-pinned probing and active routes, opaque RFC 8291 forwarding, dead-target cleanup,

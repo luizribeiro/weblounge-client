@@ -347,15 +347,31 @@ pub enum CompletionCandidate {
 }
 
 /// Semantic presentation of a chat message.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageKind {
     /// A regular chat line.
     Text,
     /// A CTCP ACTION displayed as `/me` prose.
     Action,
-    /// A local informational row generated from current engine state.
-    Notice,
+    /// A local row generated from current engine state.
+    Notice(NoticeKind),
+}
+
+/// Semantic presentation of a local timeline notice.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum NoticeKind {
+    /// A cached channel topic and the server facts describing it.
+    Topic {
+        /// Nick reported as the topic setter, when known.
+        setter: Option<String>,
+        /// Server timestamp in Unix milliseconds, when known.
+        #[ts(type = "number | null")]
+        set_at: Option<i64>,
+    },
+    /// A neutral informational event without topic semantics.
+    Info,
 }
 
 /// UI projection of one chat message.
@@ -367,7 +383,7 @@ pub struct MessageProjection {
     pub author: String,
     /// Plain chat text.
     pub text: String,
-    /// Whether the message is regular text or an action.
+    /// Semantic presentation of this timeline row.
     pub kind: MessageKind,
     /// Whether IRC metadata identifies the author as a bot.
     pub bot: Option<bool>,

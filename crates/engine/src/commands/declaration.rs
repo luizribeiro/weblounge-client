@@ -213,10 +213,13 @@ mod tests {
                     | "app/src/features/conversation/message-size-estimate.ts",
                 "notice",
             ) | ("app/src/actions/action-registry.ts", "help")
-                | ("app/src/engine/EngineClient.ts", "notice" | "part" | "quit")
+                | (
+                    "app/src/engine/EngineClient.ts",
+                    "notice" | "part" | "quit" | "topic",
+                )
                 | (
                     "app/src/features/conversation/MessageList.tsx",
-                    "notice" | "quit",
+                    "notice" | "quit" | "topic",
                 )
                 | (
                     "app/src/features/conversation/MessageText.tsx"

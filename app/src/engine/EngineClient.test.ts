@@ -251,7 +251,7 @@ describe("WorkerEngineClient", () => {
     });
   });
 
-  it("decodes local notice messages", () => {
+  it("decodes typed topic notice messages", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
     client.subscribe(listener);
@@ -259,7 +259,13 @@ describe("WorkerEngineClient", () => {
       id: 9,
       author: "weblounge",
       text: "A quiet place",
-      kind: "notice",
+      kind: {
+        notice: {
+          type: "topic",
+          setter: "mel",
+          set_at: 20,
+        },
+      },
       bot: false,
       authorship: "own",
       nick_color_index: 0,

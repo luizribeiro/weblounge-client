@@ -424,13 +424,23 @@ test.describe("local Ergo user flow", () => {
     ).toBeVisible();
   });
 
-  test("shows the cached topic as a notice", async ({ page }) => {
+  test("distinguishes version info from a cached topic", async ({ page }) => {
     await page.goto("/?irc-password=weblounge-test");
     await expect(
       page.getByRole("heading", { name: /#weblounge-test/ }),
     ).toBeVisible();
     const composer = page.getByRole("textbox", { name: "Message" });
     const topic = `browser topic ${Date.now()}`;
+
+    await composer.fill("/version");
+    await composer.press("Enter");
+    const version = await page.evaluate(() => window.weblounge.version);
+    const info = page
+      .locator('[data-notice-row][data-notice-kind="info"]')
+      .filter({ hasText: version });
+    await expect(info).toBeVisible();
+    await expect(info).not.toContainText("Topic:");
+    await expect(info).not.toContainText("set by");
 
     await composer.fill(`/topic ${topic}`);
     await composer.press("Enter");

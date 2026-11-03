@@ -17,6 +17,7 @@ import {
 import type {
   MembershipProjection,
   MessageProjection,
+  NoticeKind,
 } from "../../engine/protocol";
 import {
   type AppGeometryChange,
@@ -74,6 +75,10 @@ type TimelineRow =
       readonly key: string;
       readonly message: MessageProjection;
     };
+
+type NoticeMessage = MessageProjection & {
+  readonly kind: { readonly notice: NoticeKind };
+};
 
 const liveEdgeTolerance = 2;
 
@@ -246,7 +251,7 @@ export function MessageList(props: MessageListProps) {
   const selectLastOwn = () => {
     const message = [...props.messages]
       .reverse()
-      .find((item) => item.authorship === "own" && item.kind !== "notice");
+      .find((item) => item.authorship === "own" && !isNoticeMessage(item));
     if (message === undefined) return;
     const index = rows().findIndex(
       (row) => row.kind === "message" && row.message.id === message.id,
@@ -563,7 +568,7 @@ function MessageRow(props: {
   readonly onRetry?: ((localSendId: number) => void) | undefined;
 }) {
   const message = props.message;
-  if (message.kind === "notice")
+  if (isNoticeMessage(message))
     return (
       <NoticeRow
         message={message}
@@ -659,46 +664,78 @@ function UnverifiedSenderMark(props: { readonly message: MessageProjection }) {
 }
 
 function NoticeRow(props: {
-  readonly message: MessageProjection;
+  readonly message: NoticeMessage;
   readonly nickLookup: ReadonlyMap<string, NickDisplay>;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
 }) {
   const message = props.message;
-  return (
-    <div
-      class={styles.notice}
-      data-message-row="true"
-      data-message-text={message.text}
-      data-notice-row="true"
-    >
-      <span>Topic: </span>
-      <Selectable
-        class={styles.noticeTopic}
-        surfaceId={`message-${message.id}`}
-      >
-        {message.text === "" ? (
-          "No topic is set."
-        ) : (
-          <MessageText
-            authors={props.nickLookup}
-            onOpenChannel={props.onOpenChannel}
-            onOpenDirect={props.onOpenDirect}
-            onOpenExternal={props.onOpenExternal}
-            text={message.text}
-          />
-        )}
-      </Selectable>
-      {message.author !== "" && <span> — set by {message.author}</span>}
-      {message.server_time_ms !== null && (
-        <time dateTime={new Date(message.server_time_ms).toISOString()}>
-          {" ·"}
-          {formatNoticeTime(message.server_time_ms)}
-        </time>
-      )}
-    </div>
-  );
+  const notice = message.kind.notice;
+  switch (notice.type) {
+    case "info":
+      return (
+        <div
+          class={styles.notice}
+          data-message-row="true"
+          data-message-text={message.text}
+          data-notice-kind="info"
+          data-notice-row="true"
+        >
+          <Selectable
+            class={styles.noticeText}
+            surfaceId={`message-${message.id}`}
+          >
+            <MessageText
+              authors={props.nickLookup}
+              onOpenChannel={props.onOpenChannel}
+              onOpenDirect={props.onOpenDirect}
+              onOpenExternal={props.onOpenExternal}
+              text={message.text}
+            />
+          </Selectable>
+        </div>
+      );
+    case "topic":
+      return (
+        <div
+          class={styles.notice}
+          data-message-row="true"
+          data-message-text={message.text}
+          data-notice-kind="topic"
+          data-notice-row="true"
+        >
+          <span>Topic: </span>
+          <Selectable
+            class={styles.noticeTopic}
+            surfaceId={`message-${message.id}`}
+          >
+            {message.text === "" ? (
+              "No topic is set."
+            ) : (
+              <MessageText
+                authors={props.nickLookup}
+                onOpenChannel={props.onOpenChannel}
+                onOpenDirect={props.onOpenDirect}
+                onOpenExternal={props.onOpenExternal}
+                text={message.text}
+              />
+            )}
+          </Selectable>
+          {notice.setter !== null && notice.setter !== "" && (
+            <span> — set by {notice.setter}</span>
+          )}
+          {notice.set_at !== null && (
+            <time dateTime={new Date(notice.set_at).toISOString()}>
+              {" ·"}
+              {formatNoticeTime(notice.set_at)}
+            </time>
+          )}
+        </div>
+      );
+    default:
+      return assertNever(notice);
+  }
 }
 
 function Delivery(props: {
@@ -797,7 +834,7 @@ function unreadStartId(
   const effectiveReadAt = ordered.reduce(
     (current, message) =>
       message.authorship === "own" &&
-      message.kind !== "notice" &&
+      !isNoticeMessage(message) &&
       (message.delivery === "received" || message.delivery === "confirmed")
         ? Math.max(current, messageTime(message))
         : current,
@@ -830,7 +867,7 @@ function formatDay(time: Date): string {
 }
 
 function messageTime(message: MessageProjection): number {
-  if (message.kind === "notice") return message.received_at_ms;
+  if (isNoticeMessage(message)) return message.received_at_ms;
   return message.server_time_ms ?? message.received_at_ms;
 }
 
@@ -897,18 +934,36 @@ function toCopyRows(rows: readonly TimelineRow[]): CopyRow[] {
         author: row.message.author,
         text: row.message.text,
       });
-    if (row.kind === "message" && row.message.kind === "notice")
-      result.push({ kind: "membership", text: topicNoticeText(row.message) });
+    if (row.kind === "message" && isNoticeMessage(row.message))
+      result.push({ kind: "membership", text: noticeText(row.message) });
   }
   return result;
 }
 
-function topicNoticeText(message: MessageProjection): string {
-  const topic = message.text || "No topic is set.";
-  const setter = message.author === "" ? "" : ` — set by ${message.author}`;
-  const time =
-    message.server_time_ms === null
-      ? ""
-      : ` · ${formatNoticeTime(message.server_time_ms)}`;
-  return `Topic: ${topic}${setter}${time}`;
+function noticeText(message: NoticeMessage): string {
+  const notice = message.kind.notice;
+  switch (notice.type) {
+    case "info":
+      return message.text;
+    case "topic": {
+      const topic = message.text || "No topic is set.";
+      const setter =
+        notice.setter === null || notice.setter === ""
+          ? ""
+          : ` — set by ${notice.setter}`;
+      const time =
+        notice.set_at === null ? "" : ` · ${formatNoticeTime(notice.set_at)}`;
+      return `Topic: ${topic}${setter}${time}`;
+    }
+    default:
+      return assertNever(notice);
+  }
+}
+
+function isNoticeMessage(message: MessageProjection): message is NoticeMessage {
+  return typeof message.kind === "object";
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled notice kind: ${String(value)}`);
 }

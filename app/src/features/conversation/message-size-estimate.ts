@@ -3,11 +3,9 @@ import {
   densityDefaults,
   densityPresets,
 } from "../../density/density";
+import type { MessageProjection } from "../../engine/protocol";
 
-interface EstimatedMessage {
-  readonly kind: "action" | "notice" | "text";
-  readonly text: string;
-}
+type EstimatedMessage = Pick<MessageProjection, "kind" | "text">;
 
 const baseFontSize = 14;
 const listInlinePadding = 28;

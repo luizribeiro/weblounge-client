@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineRequest,
     EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
-    NetworkConnectionState, NetworkId, OfflineReason,
+    NetworkConnectionState, NetworkId, NoticeKind, OfflineReason,
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
     request_error::{StateLimitOutcome, state_limit_outcome},
@@ -283,7 +283,7 @@ impl Runtime {
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
             EngineRequest::SendMessage { buffer_id, text } => {
-                self.send_input(envelope.id, buffer_id, text, crate::MessageKind::Text)
+                self.send_input(envelope.id, buffer_id, text, &crate::MessageKind::Text)
             }
             EngineRequest::RetryMessage {
                 buffer_id,
@@ -367,10 +367,10 @@ impl Runtime {
         }
         match parsed {
             Ok(Command::Say { text }) => {
-                self.send_input(id, buffer_id, text.0, crate::MessageKind::Text)
+                self.send_input(id, buffer_id, text.0, &crate::MessageKind::Text)
             }
             Ok(Command::Me { text }) => {
-                self.send_input(id, buffer_id, text.0, crate::MessageKind::Action)
+                self.send_input(id, buffer_id, text.0, &crate::MessageKind::Action)
             }
             Ok(Command::Join { channels, keys }) => {
                 let keys = keys.map_or_else(Vec::new, |keys| keys.0);
@@ -439,7 +439,7 @@ impl Runtime {
         };
         let Some(event) = running
             .model
-            .append_notice(buffer_id, text, "weblounge".into(), None)
+            .append_notice(buffer_id, text, NoticeKind::Info)
         else {
             return rejected_command(command_id, "engine.buffer_not_sendable");
         };
@@ -995,7 +995,7 @@ impl Runtime {
         command_id: String,
         buffer_id: crate::BufferId,
         text: String,
-        kind: crate::MessageKind,
+        kind: &crate::MessageKind,
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
@@ -1013,7 +1013,7 @@ impl Runtime {
                     .model
                     .begin_action(buffer_id, text, &running.client.state())
             }
-            crate::MessageKind::Notice => None,
+            crate::MessageKind::Notice(_) => None,
         };
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
@@ -1424,11 +1424,10 @@ impl Runtime {
             .append_notice(
                 buffer_id,
                 channel.topic().unwrap_or_default().to_owned(),
-                channel
-                    .topic_set_by()
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
-                channel.topic_set_at(),
+                NoticeKind::Topic {
+                    setter: channel.topic_set_by().map(ToString::to_string),
+                    set_at: channel.topic_set_at().map(time_millis),
+                },
             )
             .into_iter()
             .collect::<Vec<_>>();
@@ -3575,7 +3574,7 @@ fn state_limit_events(
         StateLimitOutcome::ChannelNotice(text) => {
             if let Some((model, buffer_id)) = channel {
                 model
-                    .append_notice(buffer_id, text.into(), "weblounge".into(), None)
+                    .append_notice(buffer_id, text.into(), NoticeKind::Info)
                     .into_iter()
                     .collect()
             } else {
@@ -4517,9 +4516,9 @@ mod tests {
             events,
             [EngineToUi::MessagesAppended { messages, .. }, EngineToUi::CommandResult { .. }]
                 if messages.len() == 1
-                    && messages[0].kind == crate::MessageKind::Notice
+                    && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
                     && messages[0].text == text
-                    && messages[0].author == "weblounge"
+                    && messages[0].author.is_empty()
         ));
     }
 
@@ -5911,7 +5910,7 @@ mod tests {
             output.as_slice(),
             [EngineToUi::MessagesAppended { buffer_id: actual, messages }]
                 if *actual == buffer_id
-                    && messages[0].kind == crate::MessageKind::Notice
+                    && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
                     && messages[0].text == "No entry was added because this channel's list is full."
         ));
     }
@@ -6147,9 +6146,15 @@ mod tests {
         assert!(shown.iter().any(|event| matches!(
             event,
             EngineToUi::MessagesAppended { messages, .. }
-                if messages[0].kind == crate::MessageKind::Notice
+                if matches!(
+                    &messages[0].kind,
+                    crate::MessageKind::Notice(crate::NoticeKind::Topic {
+                        setter: Some(setter),
+                        set_at: None,
+                    }) if setter == "weblounge"
+                )
                     && messages[0].text == "new topic"
-                    && messages[0].author == "weblounge"
+                    && messages[0].author.is_empty()
         )));
     }
 

@@ -22,7 +22,7 @@ author: string,
  */
 text: string,
 /**
- * Whether the message is regular text or an action.
+ * Semantic presentation of this timeline row.
  */
 kind: MessageKind,
 /**

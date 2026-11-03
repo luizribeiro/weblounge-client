@@ -1068,12 +1068,13 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
 }
 
 function decodeMessage(value: unknown): MessageProjection | undefined {
+  const kind = isRecord(value) ? decodeMessageKind(value.kind) : undefined;
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
     typeof value.author !== "string" ||
     typeof value.text !== "string" ||
-    !isOneOf(value.kind, ["text", "action", "notice"]) ||
+    kind === undefined ||
     !(value.bot === null || typeof value.bot === "boolean") ||
     !isOneOf(value.authorship, ["own", "other", "unknown"]) ||
     typeof value.nick_color_index !== "number" ||
@@ -1103,7 +1104,7 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     id: value.id,
     author: value.author,
     text: value.text,
-    kind: value.kind,
+    kind,
     bot: value.bot,
     authorship: value.authorship,
     nick_color_index: value.nick_color_index,
@@ -1117,6 +1118,30 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     server_time_ms: value.server_time_ms,
     received_at_ms: value.received_at_ms,
   };
+}
+
+function decodeMessageKind(
+  value: unknown,
+): MessageProjection["kind"] | undefined {
+  if (isOneOf(value, ["text", "action"])) return value;
+  if (!isRecord(value)) return undefined;
+  const notice = decodeNoticeKind(value.notice);
+  return notice === undefined ? undefined : { notice };
+}
+
+function decodeNoticeKind(
+  value: unknown,
+): Extract<MessageProjection["kind"], object>["notice"] | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.type === "info") return { type: "info" };
+  if (
+    value.type === "topic" &&
+    (value.setter === null || typeof value.setter === "string") &&
+    (value.set_at === null || typeof value.set_at === "number")
+  ) {
+    return { type: "topic", setter: value.setter, set_at: value.set_at };
+  }
+  return undefined;
 }
 
 function decodeArray<T>(

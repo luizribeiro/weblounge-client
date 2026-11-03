@@ -133,6 +133,7 @@
 }
 .text .nickAction,
 .actionText .nickAction,
+.noticeText .nickAction,
 .noticeTopic .nickAction {
   -webkit-touch-callout: default;
   user-select: text;
@@ -140,6 +141,7 @@
 @media (hover: hover) {
   .text .nickAction,
   .actionText .nickAction,
+  .noticeText .nickAction,
   .noticeTopic .nickAction,
   .nickColumn .nickAction {
     cursor: pointer;
@@ -174,6 +176,7 @@
 }
 .text a.messageLink,
 .actionText a.messageLink,
+.noticeText a.messageLink,
 .noticeTopic a.messageLink {
   cursor: pointer;
 }
@@ -232,6 +235,9 @@
   font-size: 12px;
   min-height: 34px;
   padding: 8px 14px 8px 72px;
+}
+.noticeText {
+  color: inherit;
 }
 .noticeTopic {
   color: var(--wl-color-fg);
