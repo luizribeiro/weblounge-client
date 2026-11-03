@@ -1,4 +1,4 @@
-import { expect, type Locator } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export async function expectTranscriptHitTarget(
   list: Locator,
@@ -43,7 +43,15 @@ export async function expectTranscriptPixelVariance(
   list: Locator,
 ): Promise<void> {
   const screenshot = await list.screenshot({ scale: "css" });
-  const variance = await list.page().evaluate(async (base64) => {
+  const variance = await screenshotPixelVariance(list.page(), screenshot);
+  expect(variance).toBeGreaterThan(1);
+}
+
+export async function screenshotPixelVariance(
+  page: Page,
+  screenshot: Buffer,
+): Promise<number> {
+  return page.evaluate(async (base64) => {
     const bytes = Uint8Array.from(atob(base64), (character) =>
       character.charCodeAt(0),
     );
@@ -78,5 +86,4 @@ export async function expectTranscriptPixelVariance(
     }
     return sumSquares / count;
   }, screenshot.toString("base64"));
-  expect(variance).toBeGreaterThan(1);
 }

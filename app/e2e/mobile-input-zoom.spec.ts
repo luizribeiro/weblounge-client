@@ -2,7 +2,10 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
-import { expectTranscriptHitTarget } from "./transcript-paint";
+import {
+  expectTranscriptHitTarget,
+  screenshotPixelVariance,
+} from "./transcript-paint";
 
 test.describe("mobile text field zoom", () => {
   test.use({
@@ -477,6 +480,84 @@ test.describe("mobile text field zoom", () => {
       await expectTranscriptHitTarget(messages, "last");
     } finally {
       bot.close();
+    }
+  });
+
+  test("keeps every opening frame painted and hit-testable", async ({
+    page,
+  }) => {
+    await installPausedKeyboardAnimations(page);
+    await installVisualViewportHook(page);
+    await openChannel(page);
+    const suffix = Date.now().toString(36);
+    const bots = await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        IrcClient.connect(
+          `keyboard-paint-${index}-${suffix}`,
+          "weblounge-bot",
+          "weblounge-bot-test",
+          "#weblounge-test",
+        ),
+      ),
+    );
+    try {
+      await Promise.all(
+        bots.map((bot, index) =>
+          bot.privmsgConfirmed(
+            "#weblounge-test",
+            `keyboard painted row ${index} ${suffix}`,
+          ),
+        ),
+      );
+      const last = page.getByText(`keyboard painted row 9 ${suffix}`, {
+        exact: true,
+      });
+      await expect(last).toBeVisible();
+      const messages = page.locator("[data-message-list]");
+      await messages.press("End");
+      const openHeight = (await page.evaluate(() => innerHeight)) - 358;
+
+      await pauseOpeningMotion(page, openHeight);
+      const root = page.locator("#root");
+      await expect(root).not.toHaveAttribute("data-keyboard-watch", "active");
+      await page.evaluate(() => {
+        window.__setVisualViewport?.(innerHeight, 0, "silent");
+      });
+      for (let frame = 0; frame < 24; frame += 1) {
+        const audit = await seekOpeningMotion(page, (frame * 380) / 23);
+        const screenshot = await page.screenshot({
+          animations: "allow",
+          clip: audit.clip,
+          scale: "css",
+        });
+        expect(audit.composerHit, JSON.stringify(audit)).toBe(true);
+        expect(audit.transcriptHit, JSON.stringify(audit)).toBe(true);
+        expect(
+          Math.abs(audit.newestGap),
+          JSON.stringify(audit),
+        ).toBeLessThanOrEqual(22);
+        expect(await screenshotPixelVariance(page, screenshot)).toBeGreaterThan(
+          1,
+        );
+      }
+      await page.evaluate((height) => {
+        window.__setVisualViewport?.(height, 0, "silent");
+        for (const animation of document.getAnimations()) {
+          const target = animation.effect?.target;
+          if (
+            target instanceof Element &&
+            target.matches(
+              "[data-composer], [data-keyboard-transcript-snapshot-layer]",
+            )
+          )
+            animation.play();
+        }
+      }, openHeight);
+      await expect(
+        page.locator("[data-keyboard-transcript-snapshot]"),
+      ).toHaveCount(0);
+    } finally {
+      for (const bot of bots) bot.close();
     }
   });
 
@@ -1014,6 +1095,9 @@ async function sampleKeyboardTransition(
       const sample = () => {
         const composerRect = composer.getBoundingClientRect();
         const headerRect = header.getBoundingClientRect();
+        const snapshot = document.querySelector<HTMLElement>(
+          "[data-keyboard-transcript-snapshot-layer]",
+        );
         let scrollerTop = 0;
         for (
           let element: HTMLElement | null = scrollerFrame;
@@ -1022,7 +1106,9 @@ async function sampleKeyboardTransition(
         )
           scrollerTop += element.offsetTop;
         const rows = [
-          ...messages.querySelectorAll<HTMLElement>("li[data-index]"),
+          ...(snapshot ?? messages).querySelectorAll<HTMLElement>(
+            "li[data-index]",
+          ),
         ];
         const rowRects = rows.map((row) => row.getBoundingClientRect());
         const newest = rowRects.at(-1);
@@ -1059,7 +1145,9 @@ async function sampleKeyboardTransition(
           scrollerTop,
           scrollTop: messages.scrollTop,
           scrollY: window.scrollY,
-          transcriptAnimations: transcript.getAnimations().length,
+          transcriptAnimations:
+            transcript.getAnimations().length +
+            (snapshot?.getAnimations().length ?? 0),
           visibleRows: rowRects.filter(
             (row) =>
               row.bottom > headerRect.bottom && row.top < composerRect.top,
@@ -1106,6 +1194,153 @@ async function liveEdgeGap(locator: ReturnType<Page["locator"]>) {
       messages.scrollHeight - messages.clientHeight - messages.scrollTop,
     ),
   );
+}
+
+async function pauseOpeningMotion(page: Page, height: number): Promise<void> {
+  await page.evaluate((nextHeight) => {
+    const field = document.querySelector<HTMLTextAreaElement>(
+      "[data-composer] textarea",
+    );
+    const setViewport = window.__setVisualViewport;
+    if (field === null || setViewport === undefined)
+      throw new Error("keyboard paint surfaces are missing");
+    field.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        isPrimary: true,
+        pointerType: "touch",
+      }),
+    );
+    field.focus({ preventScroll: true });
+    setViewport(nextHeight);
+    for (const animation of document.getAnimations()) {
+      const target = animation.effect?.target;
+      if (
+        target instanceof Element &&
+        target.matches(
+          "[data-composer], [data-keyboard-transcript-snapshot-layer]",
+        )
+      )
+        animation.currentTime = 0;
+    }
+  }, height);
+}
+
+async function installPausedKeyboardAnimations(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (...arguments_) {
+      const animation = animate.apply(this, arguments_);
+      if (
+        this.matches(
+          "[data-composer], [data-keyboard-transcript-snapshot-layer]",
+        )
+      )
+        animation.pause();
+      return animation;
+    };
+  });
+}
+
+interface OpeningPaintAudit {
+  readonly clip: {
+    readonly height: number;
+    readonly width: number;
+    readonly x: number;
+    readonly y: number;
+  };
+  readonly composerHit: boolean;
+  readonly composerTarget: string;
+  readonly newestGap: number;
+  readonly surfaces: readonly string[];
+  readonly transcriptHit: boolean;
+  readonly transcriptTarget: string;
+}
+
+async function seekOpeningMotion(
+  page: Page,
+  currentTime: number,
+): Promise<OpeningPaintAudit> {
+  return page.evaluate(async (time) => {
+    for (const animation of document.getAnimations()) {
+      const target = animation.effect?.target;
+      if (
+        target instanceof Element &&
+        target.matches(
+          "[data-composer], [data-keyboard-transcript-snapshot-layer]",
+        )
+      )
+        animation.currentTime = time;
+    }
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    const composer = document.querySelector<HTMLElement>("[data-composer]");
+    const field = composer?.querySelector("textarea");
+    const snapshot = document.querySelector<HTMLElement>(
+      "[data-keyboard-transcript-snapshot-layer]",
+    );
+    const rows = [
+      ...(snapshot?.querySelectorAll<HTMLElement>("li[data-index]") ?? []),
+    ];
+    const newest = rows.at(-1);
+    if (composer === null || field === null || newest === undefined)
+      throw new Error(
+        `opening paint frame is incomplete: composer=${composer !== null} field=${field !== null} snapshot=${snapshot !== null} rows=${rows.length}`,
+      );
+    const composerRect = composer.getBoundingClientRect();
+    const fieldRect = field.getBoundingClientRect();
+    const newestRect = newest.getBoundingClientRect();
+    const hit = (rect: DOMRect) => {
+      const target = document.elementFromPoint(
+        (rect.left + rect.right) / 2,
+        (rect.top + rect.bottom) / 2,
+      );
+      return {
+        targetElement: target,
+        target:
+          target instanceof HTMLElement
+            ? `${target.tagName.toLowerCase()}[${[...target.attributes]
+                .map((attribute) => `${attribute.name}=${attribute.value}`)
+                .join(",")}]`
+            : "none",
+      };
+    };
+    const composerHit = hit(fieldRect);
+    const transcriptHit = hit(newestRect);
+    const clipHeight = Math.min(64, composerRect.top);
+    const surfaces = [
+      document.querySelector<HTMLElement>("#root"),
+      document.querySelector<HTMLElement>("[data-application-mount]"),
+      document.querySelector<HTMLElement>("[data-app-root]"),
+      document.querySelector<HTMLElement>("[data-shell-container]"),
+      document.querySelector<HTMLElement>("[data-mobile-shell]"),
+      composer.closest<HTMLElement>("[data-mobile-chat]"),
+    ].map((element) => {
+      if (element === null) return "missing";
+      const rect = element.getBoundingClientRect();
+      return `${element.tagName.toLowerCase()}:${rect.top}-${rect.bottom}:${getComputedStyle(element).overflow}`;
+    });
+    return {
+      clip: {
+        height: clipHeight,
+        width: innerWidth,
+        x: 0,
+        y: composerRect.top - clipHeight,
+      },
+      composerHit:
+        composerHit.targetElement !== null &&
+        field.contains(composerHit.targetElement),
+      composerTarget: composerHit.target,
+      newestGap: composerRect.top - newestRect.bottom,
+      surfaces,
+      transcriptHit:
+        transcriptHit.targetElement instanceof Element &&
+        transcriptHit.targetElement.closest("[data-message-row]") !== null,
+      transcriptTarget: transcriptHit.target,
+    };
+  }, currentTime);
 }
 
 interface AppPositionFrame {

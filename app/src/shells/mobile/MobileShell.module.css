@@ -11,6 +11,50 @@
   touch-action: pan-y;
 }
 
+:global(#root[data-keyboard-motion]),
+:global(#root[data-keyboard-motion] [data-application-mount]),
+:global(#root[data-keyboard-motion] [data-app-root]),
+:global(#root[data-keyboard-motion] [data-shell-container]),
+:global(#root[data-keyboard-motion] [data-mobile-shell]) {
+  overflow: visible;
+}
+
+:global(#root[data-shell][data-keyboard-motion]) {
+  block-size: calc(var(--wl-app-height, 100%) + var(--wl-keyboard-inset));
+}
+
+:global(#root[data-keyboard-motion]) .shell {
+  height: 100%;
+}
+
+:global(#root[data-keyboard-motion])
+  .conversation
+  > :global(:has(> [data-message-list])) {
+  grid-row: 1 / -1;
+}
+
+:global(#root[data-keyboard-motion] [data-message-list]) {
+  padding-block-end: calc(
+    22px +
+    var(--wl-keyboard-inset) +
+    var(--wl-keyboard-composer-height)
+  );
+}
+
+:global(#root[data-keyboard-motion] [data-message-motion-layer]) {
+  translate: 0
+    calc(
+      -1 *
+      (var(--wl-keyboard-inset) + var(--wl-keyboard-composer-height) - 22px)
+    );
+}
+
+:global(#root[data-keyboard-motion] [data-composer]) {
+  bottom: var(--wl-keyboard-inset);
+  grid-row: -2 / -1;
+  z-index: 3;
+}
+
 .screen {
   background: var(--wl-color-surface);
   display: flex;

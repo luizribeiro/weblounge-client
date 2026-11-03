@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe("keyboard motion", () => {
-  it("animates opening from the pre-commit composer position", () => {
+  it("animates opening from a full-height transcript snapshot", async () => {
     const fixture = motionFixture();
     const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
@@ -29,9 +29,19 @@ describe("keyboard motion", () => {
       }),
     );
     expect(fixture.transcriptAnimate).toHaveBeenCalledWith(
-      [{ transform: "translateY(358px)" }, { transform: "none" }],
+      [{ transform: "none" }, { transform: "translateY(-358px)" }],
       expect.any(Object),
     );
+    expect(fixture.root.dataset.keyboardMotion).toBe("opening");
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).not.toBeNull();
+    fixture.animations[1]?.finish();
+    await Promise.resolve();
+    expect(fixture.root.dataset.keyboardMotion).toBe("open");
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).toBeNull();
     stop();
   });
 
@@ -187,7 +197,11 @@ function motionFixture() {
   document.body.append(root);
   let composerBottom = 874;
   composer.getBoundingClientRect = () =>
-    ({ bottom: composerBottom }) as DOMRect;
+    ({
+      bottom: composerBottom,
+      height: 63,
+      top: composerBottom - 63,
+    }) as DOMRect;
   const animations: TestAnimation[] = [];
   const composerAnimate = vi.fn(() => {
     const testAnimation = fakeAnimation();

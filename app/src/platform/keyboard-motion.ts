@@ -23,7 +23,14 @@ export interface KeyboardMotionOptions {
 interface OpeningSnapshot {
   readonly composer: HTMLElement;
   readonly composerBottom: number;
+  readonly composerTop: number;
+  readonly screen: HTMLElement;
   readonly transcript: HTMLElement;
+}
+
+interface OpeningLayout {
+  readonly snapshot: HTMLElement;
+  readonly screen: HTMLElement;
 }
 
 interface ClosingSnapshot {
@@ -46,9 +53,17 @@ export function observeKeyboardMotion(
   }: KeyboardMotionOptions = {},
 ): () => void {
   let opening: OpeningSnapshot | undefined;
+  let openingLayout: OpeningLayout | undefined;
   let closingSnapshot: ClosingSnapshot | undefined;
   let closing: ClosingMotion | undefined;
   const running = new Set<Animation>();
+  const clearOpeningLayout = (layout = openingLayout) => {
+    if (layout === undefined || openingLayout !== layout) return;
+    delete root.dataset.keyboardMotion;
+    layout.snapshot.remove();
+    layout.screen.style.removeProperty("--wl-keyboard-composer-height");
+    openingLayout = undefined;
+  };
   const cancelRunning = () => {
     const closingMotion = closing;
     if (closingMotion !== undefined && closingMotion.checkFrame !== 0)
@@ -56,6 +71,7 @@ export function observeKeyboardMotion(
     closing = undefined;
     for (const animation of running) animation.cancel();
     running.clear();
+    clearOpeningLayout();
   };
   const willCommit = (event: Event) => {
     opening = undefined;
@@ -70,13 +86,27 @@ export function observeKeyboardMotion(
       return;
     const surfaces = motionSurfaces(root);
     if (surfaces === undefined) return;
-    const composerBottom = surfaces.composer.getBoundingClientRect().bottom;
+    const composerRect = surfaces.composer.getBoundingClientRect();
+    const composerBottom = composerRect.bottom;
     cancelRunning();
     if (
       detail.previousGeometry.keyboard === "closed" &&
       detail.geometry.keyboard === "open"
     ) {
-      opening = { ...surfaces, composerBottom };
+      const layout = {
+        screen: surfaces.screen,
+        snapshot: createTranscriptSnapshot(
+          surfaces.transcript,
+          surfaces.screen,
+        ),
+      };
+      openingLayout = layout;
+      root.dataset.keyboardMotion = "opening";
+      surfaces.screen.style.setProperty(
+        "--wl-keyboard-composer-height",
+        `${composerRect.height}px`,
+      );
+      opening = { ...surfaces, composerBottom, composerTop: composerRect.top };
     } else if (
       detail.previousGeometry.keyboard === "open" &&
       detail.geometry.keyboard === "closed"
@@ -110,20 +140,34 @@ export function observeKeyboardMotion(
       easing: timing.easing,
       fill: "both",
     };
-    track(
-      snapshot.composer.animate(
-        [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
-        options,
-      ),
-      running,
+    const transcriptDelta =
+      snapshot.composer.getBoundingClientRect().top - snapshot.composerTop;
+    const composerAnimation = snapshot.composer.animate(
+      [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
+      options,
     );
-    track(
-      snapshot.transcript.animate(
-        [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
-        options,
-      ),
-      running,
+    const transcriptAnimation = snapshot.transcript.animate.call(
+      openingLayout?.snapshot.querySelector<HTMLElement>(
+        "[data-keyboard-transcript-snapshot-layer]",
+      ) ?? snapshot.transcript,
+      [
+        { transform: "none" },
+        { transform: `translateY(${transcriptDelta}px)` },
+      ],
+      options,
     );
+    track(composerAnimation, running);
+    track(transcriptAnimation, running);
+    const layout = openingLayout;
+    if (layout !== undefined)
+      void transcriptAnimation.finished.then(
+        () => {
+          if (openingLayout !== layout) return;
+          root.dataset.keyboardMotion = "open";
+          layout.snapshot.remove();
+        },
+        () => undefined,
+      );
   };
   const startClosing = (snapshot: ClosingSnapshot) => {
     const delta =
@@ -227,6 +271,7 @@ function viewportHeight(browserWindow: Window): number {
 function motionSurfaces(root: HTMLElement):
   | {
       readonly composer: HTMLElement;
+      readonly screen: HTMLElement;
       readonly transcript: HTMLElement;
     }
   | undefined {
@@ -239,7 +284,7 @@ function motionSurfaces(root: HTMLElement):
       "[data-message-motion-layer]",
     );
     if (composer !== null && transcript !== null)
-      return { composer, transcript };
+      return { composer, screen, transcript };
   }
   return undefined;
 }
@@ -256,6 +301,45 @@ function motionTiming(browserWindow: Window): {
   return css?.supports("animation-timing-function", measuredSpring) === true
     ? { duration: durationMilliseconds, easing: measuredSpring }
     : { duration: 380, easing: springFallback };
+}
+
+function createTranscriptSnapshot(
+  transcript: HTMLElement,
+  screen: HTMLElement,
+): HTMLElement {
+  const list = transcript.closest<HTMLElement>("[data-message-list]");
+  const listRect =
+    list?.getBoundingClientRect() ?? transcript.getBoundingClientRect();
+  const transcriptRect = transcript.getBoundingClientRect();
+  const screenRect = screen.getBoundingClientRect();
+  const snapshot = document.createElement("div");
+  const layer = transcript.cloneNode(true) as HTMLElement;
+  layer.removeAttribute("data-message-motion-layer");
+  layer.dataset.keyboardTranscriptSnapshotLayer = "true";
+  layer.setAttribute("aria-hidden", "true");
+  layer.style.height = `${transcriptRect.height}px`;
+  layer.style.left = "0";
+  layer.style.pointerEvents = "auto";
+  layer.style.position = "absolute";
+  layer.style.top = `${transcriptRect.top - listRect.top}px`;
+  layer.style.width = "100%";
+  if (list !== null) {
+    snapshot.className = list.className;
+    snapshot.dataset.presentation = list.dataset.presentation;
+  }
+  snapshot.dataset.keyboardTranscriptSnapshot = "true";
+  snapshot.style.bottom = "0";
+  snapshot.style.left = `${listRect.left - screenRect.left}px`;
+  snapshot.style.overflow = "clip";
+  snapshot.style.padding = "0";
+  snapshot.style.pointerEvents = "none";
+  snapshot.style.position = "absolute";
+  snapshot.style.top = `${listRect.top - screenRect.top}px`;
+  snapshot.style.width = `${listRect.width}px`;
+  snapshot.style.zIndex = "2";
+  snapshot.append(layer);
+  screen.append(snapshot);
+  return snapshot;
 }
 
 function track(animation: Animation, running: Set<Animation>): void {
