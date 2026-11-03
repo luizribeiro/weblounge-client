@@ -322,6 +322,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     least the viewport height for short channels. Desktop and mobile browser coverage hit-tests
     painted rows and checks screenshot variance at the live edge, midpoint, and top; composer and
     keyboard-motion final states carry the same paint invariant.
+  - [x] Recheck the bounded keyboard watch and keyboard-motion transcript overlap at low host load.
+    The full iPhone WebKit mobile-input suite passes 21/21, including twelve slow frames before a
+    silent viewport step and every cold/warm motion frame; native-feel and composer-anchor coverage
+    remains green, so neither prior high-load failure warrants an app or test change.
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;
