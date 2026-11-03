@@ -21,6 +21,9 @@ const hosted = {
   },
 };
 
+const relayVapid =
+  "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU";
+
 describe("deployment config", () => {
   const storage = () => {
     const values = new Map<string, string>();
@@ -33,6 +36,18 @@ describe("deployment config", () => {
 
   it("decodes the beta hosted preset", () => {
     expect(decodeDeploymentConfig(hosted)).toEqual(hosted);
+  });
+
+  it("strictly decodes optional push configuration", () => {
+    const configured = {
+      ...hosted,
+      push: {
+        relay: "https://push.weblounge.org",
+        relay_vapid: relayVapid,
+      },
+    };
+    expect(decodeDeploymentConfig(configured)).toEqual(configured);
+    expect(decodeDeploymentConfig(hosted)).not.toHaveProperty("push");
   });
 
   it.each([
@@ -83,6 +98,41 @@ describe("deployment config", () => {
         },
       },
       'This deployment is misconfigured. Invalid /config.json: "oauth.session_token_endpoint" must use the issuer origin',
+    ],
+    [
+      {
+        ...hosted,
+        push: {
+          relay: "https://push.example.test/v1",
+          relay_vapid: relayVapid,
+        },
+      },
+      'This deployment is misconfigured. Invalid /config.json: "push.relay" must be an https origin',
+    ],
+    [
+      {
+        ...hosted,
+        push: { relay: "http://push.example.test", relay_vapid: relayVapid },
+      },
+      'This deployment is misconfigured. Invalid /config.json: "push.relay" must be an https origin',
+    ],
+    [
+      {
+        ...hosted,
+        push: { relay: "https://push.example.test", relay_vapid: "not-a-key" },
+      },
+      'This deployment is misconfigured. Invalid /config.json: "push.relay_vapid" must be a base64url P-256 public key',
+    ],
+    [
+      {
+        ...hosted,
+        push: {
+          relay: "https://push.example.test",
+          relay_vapid: relayVapid,
+          extra: true,
+        },
+      },
+      'This deployment is misconfigured. Invalid /config.json: "push" has unknown field "extra"',
     ],
   ])("rejects malformed input", (value, message) => {
     expect(() => decodeDeploymentConfig(value)).toThrow(message);
@@ -173,6 +223,24 @@ describe("deployment config", () => {
         JSON.parse(cache.getItem(deploymentConfigCacheKey) ?? "null"),
       ).toEqual({ config: { mode: "app" }, schema: 1 }),
     );
+  });
+
+  it("restores validated push configuration from the cache", async () => {
+    const cache = storage();
+    const configured = {
+      ...hosted,
+      push: { relay: "https://push.weblounge.org", relay_vapid: relayVapid },
+    };
+    cache.setItem(
+      deploymentConfigCacheKey,
+      JSON.stringify({ config: configured, schema: 1 }),
+    );
+    await expect(
+      loadDeploymentConfig(
+        vi.fn(() => new Promise<Response>(() => {})),
+        cache,
+      ),
+    ).resolves.toEqual(configured);
   });
 
   it("ignores corrupt cache records and keeps the last good config on failure", async () => {

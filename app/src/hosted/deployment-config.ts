@@ -135,7 +135,7 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
   if (root.mode !== "hosted") {
     throw new DeploymentConfigError('"mode" must be "app" or "hosted"');
   }
-  exactKeys(root, ["mode", "network", "oauth"], "hosted configuration");
+  exactKeys(root, ["mode", "network", "oauth", "push"], "hosted configuration");
   const network = record(root.network, '"network"');
   exactKeys(network, ["name", "endpoint", "autojoin"], '"network"');
   const oauth = record(root.oauth, '"oauth"');
@@ -158,6 +158,7 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
     oauth.session_token_endpoint,
     issuer,
   );
+  const push = root.push === undefined ? undefined : pushConfig(root.push);
 
   return {
     mode: "hosted",
@@ -168,6 +169,16 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
       redirect_uri: redirectUri,
       session_token_endpoint: sessionTokenEndpoint,
     },
+    ...(push === undefined ? {} : { push }),
+  };
+}
+
+function pushConfig(value: unknown): { relay: string; relay_vapid: string } {
+  const push = record(value, '"push"');
+  exactKeys(push, ["relay", "relay_vapid"], '"push"');
+  return {
+    relay: httpsOrigin(push.relay, '"push.relay"'),
+    relay_vapid: p256PublicKey(push.relay_vapid, '"push.relay_vapid"'),
   };
 }
 
@@ -269,6 +280,63 @@ function requireSecure(url: URL, field: string): void {
   ) {
     throw new DeploymentConfigError(`${field} must use https`);
   }
+}
+
+function httpsOrigin(value: unknown, field: string): string {
+  const url = parsedUrl(value, field);
+  if (
+    url.protocol !== "https:" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw new DeploymentConfigError(`${field} must be an https origin`);
+  }
+  return url.origin;
+}
+
+function p256PublicKey(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new DeploymentConfigError(
+      `${field} must be a base64url P-256 public key`,
+    );
+  }
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(
+      atob(value.replaceAll("-", "+").replaceAll("_", "/") + padding),
+      (character) => character.charCodeAt(0),
+    );
+  } catch {
+    throw new DeploymentConfigError(
+      `${field} must be a base64url P-256 public key`,
+    );
+  }
+  if (bytes.length !== 65 || bytes[0] !== 4 || !isP256Point(bytes)) {
+    throw new DeploymentConfigError(
+      `${field} must be a base64url P-256 public key`,
+    );
+  }
+  return value;
+}
+
+function isP256Point(bytes: Uint8Array): boolean {
+  const prime = (1n << 256n) - (1n << 224n) + (1n << 192n) + (1n << 96n) - 1n;
+  const curveB =
+    0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604bn;
+  const coordinate = (start: number) =>
+    bytes
+      .slice(start, start + 32)
+      .reduce((value, byte) => (value << 8n) | BigInt(byte), 0n);
+  const x = coordinate(1);
+  const y = coordinate(33);
+  if (x >= prime || y >= prime) return false;
+  const left = (y * y) % prime;
+  const right = (((x * x) % prime) * x - 3n * x + curveB) % prime;
+  return left === (right + prime) % prime;
 }
 
 function isLoopback(url: URL): boolean {

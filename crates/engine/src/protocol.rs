@@ -141,7 +141,20 @@ pub enum DeploymentConfig {
         network: HostedNetworkConfig,
         /// Public OAuth authorization-code client configuration.
         oauth: HostedOAuthConfig,
+        /// Optional hosted Web Push relay configuration.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        push: Option<Box<PushDeploymentConfig>>,
     },
+}
+
+/// Public Web Push relay configuration supplied by the deployment.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct PushDeploymentConfig {
+    /// HTTPS relay origin used by the page-side client.
+    pub relay: String,
+    /// URL-safe Base64 uncompressed P-256 public key used for browser subscriptions.
+    pub relay_vapid: String,
 }
 
 /// Hosted network preset supplied by the deployment.

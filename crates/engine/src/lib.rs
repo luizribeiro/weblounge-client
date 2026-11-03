@@ -23,7 +23,7 @@ pub use protocol::{
     HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
-    NoticeKind, NoticeTone, OfflineReason, PushFailure, PushRoute, PushState,
+    NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig, PushFailure, PushRoute, PushState,
     PushUnsupportedReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
 
