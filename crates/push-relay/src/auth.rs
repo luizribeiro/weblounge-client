@@ -128,15 +128,8 @@ struct JwtHeader {
 
 #[derive(Deserialize)]
 struct JwtClaims {
-    aud: Audience,
+    aud: String,
     exp: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Audience {
-    One(String),
-    Many(Vec<String>),
 }
 
 pub(crate) fn verify_vapid(
@@ -168,15 +161,9 @@ pub(crate) fn verify_vapid(
         return Err(Error::Unauthorized);
     }
     let claims: JwtClaims = decode_json(encoded_claims)?;
-    let audience_matches = match claims.aud {
-        Audience::One(audience) => audience == expected_audience,
-        Audience::Many(audiences) => audiences
-            .iter()
-            .any(|audience| audience == expected_audience),
-    };
     let now = u64::try_from(time::OffsetDateTime::now_utc().unix_timestamp())
         .map_err(|_| Error::Unauthorized)?;
-    if !audience_matches
+    if claims.aud != expected_audience
         || claims.exp <= now
         || claims.exp > now.saturating_add(MAX_VAPID_LIFETIME_SECONDS)
     {

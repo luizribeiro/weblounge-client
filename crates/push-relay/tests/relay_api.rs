@@ -292,6 +292,64 @@ async fn active_route_rejects_wrong_pin_audience_and_expiry() {
 }
 
 #[tokio::test]
+async fn active_route_rejects_malformed_or_untrusted_vapid_jwts() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    let path = format!("/v1/r/{}", route["id"].as_str().expect("route identifier"));
+    let expiry = expiry_after(3_600);
+    let public = URL_SAFE_NO_PAD.encode(home.public_key().to_encoded_point(false).as_bytes());
+    let valid = vapid(&home, ORIGIN, expiry);
+    let four_part = valid.replacen(",k=", ".extra,k=", 1);
+
+    let authorizations = [
+        vapid_custom(&home, "none", json!(ORIGIN), expiry, None, false, None),
+        vapid_custom(&home, "HS256", json!(ORIGIN), expiry, None, false, None),
+        vapid_custom(&home, "ES384", json!(ORIGIN), expiry, None, false, None),
+        vapid_custom(
+            &home,
+            "ES256",
+            json!(ORIGIN),
+            expiry,
+            Some(json!("https://signed.example")),
+            false,
+            None,
+        ),
+        vapid_custom(&home, "ES256", json!(ORIGIN), expiry, None, true, None),
+        vapid_custom(&home, "ES256", json!(ORIGIN), expiry, None, false, Some(63)),
+        format!("vapid k={public}"),
+        "vapid t=header.claims.signature".to_owned(),
+        four_part,
+        vapid_custom(&home, "ES256", json!([ORIGIN]), expiry, None, false, None),
+    ];
+    for authorization in &authorizations {
+        let status = call_bytes(
+            &harness.app,
+            Method::POST,
+            &path,
+            None,
+            b"ciphertext".to_vec(),
+            &[("Authorization", authorization), ("TTL", "60")],
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    let missing_authorization = call_bytes(
+        &harness.app,
+        Method::POST,
+        &path,
+        None,
+        b"ciphertext".to_vec(),
+        &[("TTL", "60")],
+    )
+    .await;
+    assert_eq!(missing_authorization, StatusCode::UNAUTHORIZED);
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+}
+
+#[tokio::test]
 async fn active_route_rejects_ttl_over_28_days() {
     let harness = Harness::new().await;
     let device = harness.create_device().await;
@@ -451,6 +509,44 @@ fn vapid(key: &SecretKey, audience: &str, expiry: u64) -> String {
     format!(
         "vapid t={input}.{},k={}",
         URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+        URL_SAFE_NO_PAD.encode(public.as_bytes())
+    )
+}
+
+fn vapid_custom(
+    key: &SecretKey,
+    algorithm: &str,
+    audience: Value,
+    expiry: u64,
+    signed_audience: Option<Value>,
+    tamper_signature: bool,
+    signature_length: Option<usize>,
+) -> String {
+    let header = URL_SAFE_NO_PAD
+        .encode(serde_json::to_vec(&json!({"typ": "JWT", "alg": algorithm})).expect("header"));
+    let claims = |audience| {
+        URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(
+                &json!({"aud": audience, "exp": expiry, "sub": "mailto:test@example"}),
+            )
+            .expect("claims"),
+        )
+    };
+    let encoded_claims = claims(audience);
+    let signed_claims = signed_audience.map_or_else(|| encoded_claims.clone(), claims);
+    let signing_input = format!("{header}.{signed_claims}");
+    let signature: Signature = SigningKey::from(key.clone()).sign(signing_input.as_bytes());
+    let mut signature = signature.to_bytes().to_vec();
+    if tamper_signature {
+        signature[0] ^= 1;
+    }
+    if let Some(length) = signature_length {
+        signature.truncate(length);
+    }
+    let public = key.public_key().to_encoded_point(false);
+    format!(
+        "vapid t={header}.{encoded_claims}.{},k={}",
+        URL_SAFE_NO_PAD.encode(signature),
         URL_SAFE_NO_PAD.encode(public.as_bytes())
     )
 }
