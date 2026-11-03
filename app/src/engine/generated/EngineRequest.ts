@@ -118,7 +118,11 @@ ready: boolean, } | { "type": "load_push_device",
 /**
  * Relay origin used as the durable namespace.
  */
-relay: string, } | { "type": "store_push_device",
+relay: string, } | { "type": "load_pushed_messages",
+/**
+ * Network whose matching cached messages should become visible.
+ */
+network_id: NetworkId, } | { "type": "store_push_device",
 /**
  * Complete credentials returned by the relay.
  */

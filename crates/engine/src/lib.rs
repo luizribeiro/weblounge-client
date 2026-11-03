@@ -7,6 +7,7 @@ mod members;
 mod name_key;
 mod protocol;
 mod push_device;
+mod pushed_messages;
 mod request_error;
 mod runtime;
 mod state;
@@ -28,6 +29,14 @@ pub use protocol::{
     PushFailure, PushRoute, PushState, PushUnsupportedReason, RedactedSecret, SaslCredentials,
     ShellKind, UiToEngine,
 };
+
+/// Reads service-worker push records while constructing the web engine.
+#[doc(hidden)]
+pub async fn load_pushed_messages<B: storage::KvBackend>(
+    storage: &B,
+) -> Result<Vec<pushed_messages::PushedMessage>, storage::StorageError> {
+    pushed_messages::read(storage).await
+}
 
 /// The product engine owned by a platform host.
 pub struct Engine {
@@ -61,6 +70,7 @@ impl Engine {
         build_version: impl Into<String>,
         storage: Rc<storage::WebKv>,
         cached_snapshot: Option<Vec<u8>>,
+        cached_pushed_messages: Vec<pushed_messages::PushedMessage>,
     ) -> (Self, mpsc::UnboundedReceiver<EngineToUi>) {
         let (outbound, events) = mpsc::unbounded_channel();
         (
@@ -71,6 +81,7 @@ impl Engine {
                     outbound,
                     storage,
                     cached_snapshot,
+                    cached_pushed_messages,
                     build_version.into(),
                 ),
             },

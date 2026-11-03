@@ -13,12 +13,14 @@ use crate::{
         ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, truncate_preview,
     },
     name_key::NameKey,
+    pushed_messages::{PushedMessage, PushedMessageKind},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TimelineOrigin {
     Live,
     History,
+    Push,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -653,6 +655,63 @@ impl NetworkModel {
             origin,
         };
         self.receive_incoming(incoming, state)
+    }
+
+    pub(crate) fn restore_pushed_messages(
+        &mut self,
+        mut messages: Vec<PushedMessage>,
+        state: &papo::State,
+    ) -> Vec<EngineToUi> {
+        messages.sort_by_key(|message| papo_proto::time::parse(&message.time).map(time_millis));
+        let mut events = Vec::new();
+        for message in messages {
+            if message.network_label != self.network.label {
+                continue;
+            }
+            let Some(server_time_ms) = papo_proto::time::parse(&message.time).map(time_millis)
+            else {
+                continue;
+            };
+            let direct = self.casemapping.nick(message.target.clone())
+                == self.casemapping.nick(message.nickname);
+            let (conversation, direct_key, availability) = if direct {
+                let nick = self.casemapping.nick(message.sender.clone());
+                (
+                    NameKey::Direct(nick.clone()),
+                    Some(DirectKey::from_nick(&nick)),
+                    Some(DirectAvailability::Pending),
+                )
+            } else {
+                (
+                    NameKey::Channel(self.casemapping.channel(message.target)),
+                    None,
+                    None,
+                )
+            };
+            events.extend(self.receive_incoming(
+                Incoming {
+                    conversation,
+                    direct: availability,
+                    direct_key,
+                    peer_key: None,
+                    legacy_account_key: None,
+                    author: message.sender,
+                    text: message.text,
+                    kind: match message.kind {
+                        PushedMessageKind::Message | PushedMessageKind::Notice => MessageKind::Text,
+                        PushedMessageKind::Action => MessageKind::Action,
+                    },
+                    bot: None,
+                    authorship: MessageAuthorship::Other,
+                    msgid: Some(message.msgid),
+                    server_time_ms: Some(server_time_ms),
+                    received_at_ms: server_time_ms,
+                    origin: TimelineOrigin::Push,
+                },
+                state,
+            ));
+        }
+        events
     }
 
     pub(crate) fn begin_send(
@@ -2335,6 +2394,7 @@ mod tests {
         BufferId, BufferKind, EngineToUi, MembershipKind, MembershipProjection, MessageAuthorship,
         NetworkId,
         chat_list_snapshot::{ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow},
+        pushed_messages::PushedMessage,
     };
 
     #[test]
@@ -2412,6 +2472,62 @@ mod tests {
                 if messages[0].text == "first\n\nsecond"
         )));
         assert_eq!(timeline(&model), ["first\n\nsecond"]);
+    }
+
+    #[test]
+    fn pushed_message_is_visible_then_deduplicates_history_and_live() {
+        let (mut model, state) = model(10);
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed-one",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+
+        let restored = model.restore_pushed_messages(vec![pushed], &state);
+
+        assert!(restored.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].text == "arrived while closed"
+        )));
+        assert!(
+            model
+                .receive_incoming(
+                    incoming(
+                        &state,
+                        "arrived while closed",
+                        Some("pushed-one"),
+                        Some(1_793_708_096_789),
+                        1_793_708_096_789,
+                        TimelineOrigin::History,
+                    ),
+                    &state,
+                )
+                .is_empty()
+        );
+        assert!(
+            model
+                .receive_incoming(
+                    incoming(
+                        &state,
+                        "arrived while closed",
+                        Some("pushed-one"),
+                        Some(1_793_708_096_789),
+                        1_793_708_096_789,
+                        TimelineOrigin::Live,
+                    ),
+                    &state,
+                )
+                .is_empty()
+        );
+        assert_eq!(timeline(&model), ["arrived while closed"]);
     }
 
     fn timeline(model: &NetworkModel) -> Vec<&str> {

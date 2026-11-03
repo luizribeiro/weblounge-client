@@ -732,6 +732,11 @@ pub enum EngineRequest {
         /// Relay origin used as the durable namespace.
         relay: String,
     },
+    /// Read service-worker message records into one running network.
+    LoadPushedMessages {
+        /// Network whose matching cached messages should become visible.
+        network_id: NetworkId,
+    },
     /// Persist relay device credentials in durable engine storage.
     StorePushDevice {
         /// Complete credentials returned by the relay.

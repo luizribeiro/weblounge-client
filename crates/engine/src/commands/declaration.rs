@@ -210,7 +210,8 @@ mod tests {
                 "app/src/App.tsx"
                     | "app/src/engine/createEngineClient.ts"
                     | "app/src/engine/worker-runtime.ts"
-                    | "app/src/features/conversation/message-size-estimate.ts",
+                    | "app/src/features/conversation/message-size-estimate.ts"
+                    | "app/src/push-worker.ts",
                 "notice",
             ) | ("app/src/actions/action-registry.ts", "help")
                 | (

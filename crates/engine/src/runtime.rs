@@ -23,6 +23,7 @@ use crate::{
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
     push_device,
+    pushed_messages::{self, PushedMessage},
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
         DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
@@ -171,6 +172,7 @@ struct RuntimeState {
     storage: RuntimeStorage,
     snapshot_generation: Arc<AtomicU64>,
     cached_snapshot: Option<Vec<u8>>,
+    cached_pushed_messages: Vec<PushedMessage>,
     build_version: String,
     update_ready: bool,
 }
@@ -224,7 +226,7 @@ impl Runtime {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let storage = Arc::new(MemoryKv::default());
-            Self::with_storage(outbound, storage, None, "weblounge dev".into())
+            Self::with_storage(outbound, storage, None, Vec::new(), "weblounge dev".into())
         }
     }
 
@@ -232,6 +234,7 @@ impl Runtime {
         outbound: mpsc::UnboundedSender<EngineToUi>,
         storage: RuntimeStorage,
         cached_snapshot: Option<Vec<u8>>,
+        cached_pushed_messages: Vec<PushedMessage>,
         build_version: String,
     ) -> Self {
         Self {
@@ -243,6 +246,7 @@ impl Runtime {
                 storage,
                 snapshot_generation: Arc::new(AtomicU64::new(0)),
                 cached_snapshot,
+                cached_pushed_messages,
                 build_version,
                 update_ready: false,
             })),
@@ -312,6 +316,9 @@ impl Runtime {
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
             EngineRequest::LoadPushDevice { relay } => self.load_push_device(envelope.id, relay),
+            EngineRequest::LoadPushedMessages { network_id } => {
+                self.load_pushed_messages(envelope.id, network_id)
+            }
             EngineRequest::StorePushDevice { credentials } => {
                 self.store_push_device(envelope.id, credentials)
             }
@@ -396,6 +403,34 @@ impl Runtime {
                 ],
                 Err(_) => rejected_command(command_id, "engine.storage_unavailable"),
             };
+            send_events(&outbound, events);
+        });
+        Vec::new()
+    }
+
+    fn load_pushed_messages(&self, command_id: String, network_id: NetworkId) -> Vec<EngineToUi> {
+        let shared_state = Arc::clone(&self.state);
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let Ok(messages) = pushed_messages::read(storage.as_ref()).await else {
+                let _ = outbound.send(command_rejection(command_id, "engine.storage_unavailable"));
+                return;
+            };
+            let mut state = lock(&shared_state);
+            let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.model.id() == network_id)
+            else {
+                drop(state);
+                let _ = outbound.send(command_rejection(command_id, "engine.network_not_found"));
+                return;
+            };
+            let snapshot = running.client.state();
+            let mut events = running.model.restore_pushed_messages(messages, &snapshot);
+            events.push(EngineToUi::CommandResult { id: command_id });
+            drop(state);
             send_events(&outbound, events);
         });
         Vec::new()
@@ -827,6 +862,10 @@ impl Runtime {
         if let Some(snapshot) = cached_snapshot {
             model.restore_chat_list(snapshot);
         }
+        let pushed = std::mem::take(&mut state.cached_pushed_messages);
+        let restored_push = !model
+            .restore_pushed_messages(pushed, &client.state())
+            .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
         if had_cached_chat_list {
             output.push(EngineToUi::ChatListSnapshotLoaded {
@@ -836,6 +875,9 @@ impl Runtime {
                     _ => Vec::new(),
                 },
             });
+        }
+        if restored_push {
+            output.extend(model.snapshot_events());
         }
         output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
@@ -905,6 +947,10 @@ impl Runtime {
         if let Some(snapshot) = cached_snapshot {
             model.restore_chat_list(snapshot);
         }
+        let pushed = std::mem::take(&mut state.cached_pushed_messages);
+        let restored_push = !model
+            .restore_pushed_messages(pushed, &client.state())
+            .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
         if had_cached_chat_list {
             output.push(EngineToUi::ChatListSnapshotLoaded {
@@ -914,6 +960,9 @@ impl Runtime {
                     _ => Vec::new(),
                 },
             });
+        }
+        if restored_push {
+            output.extend(model.snapshot_events());
         }
         output.push(EngineToUi::CommandResult { id: command_id });
         state.network = Some(RunningNetwork {
@@ -4245,10 +4294,11 @@ mod tests {
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
         },
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
+        pushed_messages::PushedMessage,
         state::{
             DirectAvailability, HistoryTarget, NetworkModel, PendingSend, ReadAdvance, SendTarget,
         },
-        storage::MemoryKv,
+        storage::{KvBackend, MemoryKv, Operation, Space},
     };
 
     fn runtime_state(network: RunningNetwork) -> RuntimeState {
@@ -4259,6 +4309,7 @@ mod tests {
             storage: Arc::default(),
             snapshot_generation: Arc::default(),
             cached_snapshot: None,
+            cached_pushed_messages: Vec::new(),
             build_version: "weblounge test".into(),
             update_ready: false,
             network: Some(network),
@@ -4509,6 +4560,7 @@ mod tests {
             outbound,
             Arc::new(MemoryKv::default()),
             Some(snapshot.encode().expect("snapshot encodes")),
+            Vec::new(),
             "weblounge test".into(),
         );
 
@@ -4533,6 +4585,102 @@ mod tests {
         let running = state.network.as_ref().expect("hosted profile is retained");
         assert_eq!(running.authentication_kind, AuthenticationKind::HostedOAuth);
         assert!(running.hosted_reconnect.is_some());
+    }
+
+    #[test]
+    fn hosted_profile_restores_pushed_messages_before_a_token_exists() {
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Lounge",
+            "nickname": "weblounge",
+            "sender": "mel",
+            "target": "#lounge",
+            "msgid": "push-before-connect",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "visible before history",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        let (outbound, _receiver) = mpsc::unbounded_channel();
+        let runtime = Runtime::with_storage(
+            outbound,
+            Arc::new(MemoryKv::default()),
+            None,
+            vec![pushed],
+            "weblounge test".into(),
+        );
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "prepare".into(),
+            request: EngineRequest::PrepareHosted {
+                label: "Lounge".into(),
+                endpoint: "wss://beta.weblounge.org/socket".into(),
+                nickname: "weblounge".into(),
+                autojoin: vec!["#lounge".into()],
+            },
+        });
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::BufferSnapshot { messages, .. }
+                if messages.iter().any(|message| {
+                    message.text == "visible before history"
+                        && message.server_ids == ["push-before-connect"]
+                })
+        )));
+    }
+
+    #[tokio::test]
+    async fn running_network_loads_new_service_worker_messages() {
+        let storage = Arc::new(MemoryKv::default());
+        storage
+            .commit(
+                Space::Cache,
+                vec![Operation::Put {
+                    key: b"pushed-message\0Test\0warm-push".to_vec(),
+                    value: br##"{"schema":1,"network_label":"Test","nickname":"weblounge","sender":"mel","target":"#lounge","msgid":"warm-push","time":"2026-11-03T12:34:56.789Z","text":"loaded into the open app","kind":"message"}"##.to_vec(),
+                }],
+            )
+            .await
+            .expect("seed pushed message");
+        let (client, _events, _wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client);
+        lock(&state).storage = storage;
+        let runtime = Runtime { state, outbound };
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "load-push".into(),
+                    request: EngineRequest::LoadPushedMessages {
+                        network_id: NetworkId(1),
+                    },
+                })
+                .is_empty()
+        );
+        let events = tokio::time::timeout(Duration::from_secs(1), async {
+            let mut events = Vec::new();
+            loop {
+                let event = receiver.recv().await.expect("runtime event");
+                let complete = matches!(
+                    &event,
+                    EngineToUi::CommandResult { id } if id == "load-push"
+                );
+                events.push(event);
+                if complete {
+                    break events;
+                }
+            }
+        })
+        .await
+        .expect("push load completes");
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].text == "loaded into the open app"
+        )));
     }
 
     #[tokio::test]
@@ -5238,6 +5386,7 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 network: Some(RunningNetwork {
@@ -5328,6 +5477,7 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 network: Some(RunningNetwork {
@@ -5946,6 +6096,7 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 network: Some(RunningNetwork {
@@ -6336,6 +6487,7 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 network: Some(RunningNetwork {
@@ -6461,6 +6613,7 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 network: Some(RunningNetwork {
@@ -6527,6 +6680,7 @@ mod tests {
                 storage: Arc::default(),
                 snapshot_generation: Arc::default(),
                 cached_snapshot: None,
+                cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
                 network: Some(RunningNetwork {
@@ -6736,6 +6890,7 @@ mod tests {
             storage: Arc::default(),
             snapshot_generation: Arc::default(),
             cached_snapshot: None,
+            cached_pushed_messages: Vec::new(),
             build_version: "weblounge test".into(),
             update_ready: false,
             network: Some(RunningNetwork {

@@ -41,12 +41,16 @@ pub async fn create_wasm_engine(
         .get(Space::Cache, b"chat-list-snapshot")
         .await
         .unwrap_or(None);
+    let cached_pushed_messages = weblounge_engine::load_pushed_messages(storage.as_ref())
+        .await
+        .unwrap_or_default();
     let (engine, mut events) = Engine::with_events_and_storage(
         build_id,
         instance_id,
         build_version,
         storage,
         cached_snapshot,
+        cached_pushed_messages,
     );
     wasm_bindgen_futures::spawn_local(async move {
         while let Some(event) = events.recv().await {
