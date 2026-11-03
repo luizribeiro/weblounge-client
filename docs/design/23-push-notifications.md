@@ -500,6 +500,30 @@ the cached deep link while offline, shows the pushed row, reconnects, receives t
 from CHATHISTORY and still renders it once. The unmocked Ergo → relay → push-service half remains a
 later infrastructure slice.
 
+### Badge and active-device slice 4 implementation (2026-11-03)
+
+The relay now stores per-tab leases and opaque held pushes in SQLite. Leases are account-wide for
+delivery decisions: any unexpired tab on any device holds pushes for every device on that account.
+A renewal atomically discards ciphertext held before it, because the foreground account has read
+past that delivery point. Releasing the last tab or letting every lease expire wakes one persisted
+delivery drainer; upstream death still marks all routes on the target device dead. Release accepts
+the ordinary authenticated JSON request and a form-encoded POST carrying the device secret, which
+lets a cross-origin `sendBeacon` release without a preflight or custom headers.
+
+The page derives foreground from visibility and focus once, feeds that result to the existing
+engine `setVisibility` boundary, and uses the same result for its per-tab relay lease. It renews
+every 30 seconds while foreground and clears the heartbeat before release on blur, hide,
+`pagehide`, or disposal. A renewal that finishes after hiding cannot recreate the timer. Relay
+credentials flow directly from existing durable storage or device creation into the lease, so the
+page never polls.
+
+The app-icon badge is the unread count of direct buffers plus the mention count of other buffers.
+The page overwrites both the Badging API and a versioned `weblounge-push` counter from engine
+projections; zero uses `clearAppBadge`. After showing a notification, the classic worker atomically
+increments that counter and applies it through its own Badging API. Both sides feature-detect and
+remain inert when the deployment has no `push` block. Urgency filtering, application rate limits,
+stable network identity, and the unmocked delivery chain remain later slices.
+
 ## Rollout
 
 - **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: Ergo backups
