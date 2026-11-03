@@ -406,9 +406,9 @@ The process contract for `weblounge-server` is:
 - use `https://push.weblounge.org` as the default VAPID audience and route origin, overridable with
   `--origin` / `PUSH_RELAY_ORIGIN` for tests or another deployment.
 
-Web targets are restricted to `fcm.googleapis.com`, `updates.push.services.mozilla.com` and
-`web.push.apple.com`. Registration and every delivery resolve the target again, reject the whole
-answer set if any address is non-public, then pin the selected validated address for the HTTPS
+Web targets are restricted to `fcm.googleapis.com`, `updates.push.services.mozilla.com`,
+`web.push.apple.com` and Edge's `*.notify.windows.com`. Registration and every delivery resolve
+the target again, reject the whole answer set if any address is non-public, then pin the selected validated address for the HTTPS
 connection. Concierge calls and DNS resolution each have a five-second deadline. An account may
 hold at most 20 devices and each device at most 25 live routes; dead routes do not consume the
 route limit. Slice 1 stores only Web Push targets; APNs and FCM target variants return 501. Leases,

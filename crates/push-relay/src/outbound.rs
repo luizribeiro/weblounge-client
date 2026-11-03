@@ -194,6 +194,7 @@ impl DnsResolver for SystemDns {
 #[derive(Clone)]
 pub struct EndpointValidator {
     allowed_hosts: Arc<HashSet<String>>,
+    allowed_suffixes: Arc<Vec<String>>,
     resolver: Arc<dyn DnsResolver>,
     dns_timeout: Duration,
 }
@@ -203,6 +204,7 @@ impl std::fmt::Debug for EndpointValidator {
         formatter
             .debug_struct("EndpointValidator")
             .field("allowed_hosts", &self.allowed_hosts)
+            .field("allowed_suffixes", &self.allowed_suffixes)
             .finish_non_exhaustive()
     }
 }
@@ -211,14 +213,16 @@ impl EndpointValidator {
     /// Uses the Web Push services supported by the first relay slice.
     #[must_use]
     pub fn production() -> Self {
-        Self::new(
+        let mut validator = Self::new(
             [
                 "fcm.googleapis.com",
                 "updates.push.services.mozilla.com",
                 "web.push.apple.com",
             ],
             Arc::new(SystemDns),
-        )
+        );
+        validator.allowed_suffixes = Arc::new(vec![".notify.windows.com".to_owned()]);
+        validator
     }
 
     /// Constructs a validator with an explicit allowlist and resolver.
@@ -229,6 +233,7 @@ impl EndpointValidator {
     ) -> Self {
         Self {
             allowed_hosts: Arc::new(allowed_hosts.into_iter().map(Into::into).collect()),
+            allowed_suffixes: Arc::new(Vec::new()),
             resolver,
             dns_timeout: DNS_LOOKUP_TIMEOUT,
         }
@@ -258,7 +263,7 @@ impl EndpointValidator {
         let host = endpoint
             .host_str()
             .ok_or_else(|| Error::TargetRefused("endpoint has no host".to_owned()))?;
-        if !self.allowed_hosts.contains(host) {
+        if !self.host_is_allowed(host) {
             return Err(Error::TargetRefused(
                 "endpoint host is not an allowed push service".to_owned(),
             ));
@@ -280,6 +285,14 @@ impl EndpointValidator {
             ));
         }
         Ok(std::net::SocketAddr::new(addresses[0], port))
+    }
+
+    fn host_is_allowed(&self, host: &str) -> bool {
+        self.allowed_hosts.contains(host)
+            || self
+                .allowed_suffixes
+                .iter()
+                .any(|suffix| host.ends_with(suffix))
     }
 }
 
@@ -695,5 +708,13 @@ mod tests {
             .validate(&Url::parse("https://push.example/send").expect("URL"))
             .await;
         assert!(matches!(result, Err(crate::Error::TargetRefused(_))));
+    }
+
+    #[test]
+    fn production_allows_windows_push_hosts_only_on_a_label_boundary() {
+        let validator = EndpointValidator::production();
+        assert!(validator.host_is_allowed("db5.notify.windows.com"));
+        assert!(!validator.host_is_allowed("evilnotify.windows.com"));
+        assert!(!validator.host_is_allowed("notify.windows.com.evil.example"));
     }
 }
