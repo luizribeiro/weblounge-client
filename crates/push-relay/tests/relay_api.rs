@@ -220,6 +220,84 @@ async fn health_checks_sqlite_and_device_creation_introspects_only_once() {
 }
 
 #[tokio::test]
+async fn device_secret_authorization_is_scoped_to_its_own_device() {
+    let harness = Harness::new().await;
+    let first = harness.create_device().await;
+    let second = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let first_id = first["id"].as_str().expect("first device id");
+    let second_secret = second["secret"].as_str().expect("second device secret");
+    let home_vapid = URL_SAFE_NO_PAD.encode(home.public_key().to_encoded_point(false).as_bytes());
+
+    let wrong_create = call_json(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/devices/{first_id}/routes"),
+        Some(second_secret),
+        json!({"home_vapid": home_vapid}),
+        &[],
+    )
+    .await;
+    assert_eq!(wrong_create.0, StatusCode::UNAUTHORIZED);
+    let route = harness.create_route(&first, &home).await;
+    let route_id = route["id"].as_str().expect("route id");
+    let activate_path = format!("/v1/routes/{route_id}/active");
+
+    for (bearer, headers) in [
+        (Some(second_secret), Vec::new()),
+        (None, Vec::new()),
+        (None, vec![("Authorization", "Basic malformed")]),
+        (None, vec![("Authorization", "Bearer")]),
+    ] {
+        let response = call_json(
+            &harness.app,
+            Method::PUT,
+            &activate_path,
+            bearer,
+            Value::Null,
+            &headers,
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::UNAUTHORIZED);
+    }
+    harness.activate(&first, &route).await;
+
+    let wrong_delete = call_json(
+        &harness.app,
+        Method::DELETE,
+        &format!("/v1/routes/{route_id}"),
+        Some(second_secret),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(wrong_delete.0, StatusCode::UNAUTHORIZED);
+    let deleted = call_json(
+        &harness.app,
+        Method::DELETE,
+        &format!("/v1/routes/{route_id}"),
+        first["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(deleted.0, StatusCode::NO_CONTENT);
+
+    let authorization = vapid(&home, ORIGIN, expiry_after(3_600));
+    let after_delete = call_bytes(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/r/{route_id}"),
+        None,
+        b"ciphertext".to_vec(),
+        &[("Authorization", &authorization), ("TTL", "60")],
+    )
+    .await;
+    assert_eq!(after_delete, StatusCode::NOT_FOUND);
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+}
+
+#[tokio::test]
 async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
     let harness = Harness::new().await;
     let device = harness.create_device().await;
