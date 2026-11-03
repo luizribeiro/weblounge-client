@@ -450,6 +450,35 @@ async fn active_route_rejects_ttl_over_28_days() {
 }
 
 #[tokio::test]
+async fn active_route_requires_a_non_negative_numeric_ttl() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    let path = format!("/v1/r/{}", route["id"].as_str().expect("route id"));
+    let authorization = vapid(&home, ORIGIN, expiry_after(3_600));
+
+    for ttl in [None, Some("not-a-number"), Some("-1")] {
+        let mut headers = vec![("Authorization", authorization.as_str())];
+        if let Some(ttl) = ttl {
+            headers.push(("TTL", ttl));
+        }
+        let status = call_bytes(
+            &harness.app,
+            Method::POST,
+            &path,
+            None,
+            b"ciphertext".to_vec(),
+            &headers,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+}
+
+#[tokio::test]
 async fn dead_upstream_kills_every_device_route_and_always_maps_to_404() {
     let harness = Harness::new().await;
     let device = harness.create_device().await;
@@ -513,6 +542,20 @@ async fn oversized_home_body_is_413_before_route_handling() {
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
+#[tokio::test]
+async fn chunked_body_limit_accepts_exactly_2800_bytes_and_rejects_one_more() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    let path = format!("/v1/r/{}", route["id"].as_str().expect("route id"));
+
+    let exact = call_chunks(&harness.app, &path, [1_400, 1_400]).await;
+    assert_eq!(exact, StatusCode::CREATED);
+    let oversized = call_chunks(&harness.app, &path, [1_400, 1_401]).await;
+    assert_eq!(oversized, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
 async fn call_json(
     app: &Router,
     method: Method,
@@ -570,6 +613,24 @@ async fn call_bytes(
     }
     app.clone()
         .oneshot(request.body(Body::from(body)).expect("request"))
+        .await
+        .expect("response")
+        .status()
+}
+
+async fn call_chunks(app: &Router, path: &str, chunk_lengths: [usize; 2]) -> StatusCode {
+    let chunks = chunk_lengths.map(|length| {
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![0_u8; length]))
+    });
+    let body = Body::from_stream(futures::stream::iter(chunks));
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(path)
+                .body(body)
+                .expect("request"),
+        )
         .await
         .expect("response")
         .status()
