@@ -94,10 +94,14 @@ export class EngineWorkerRuntime {
       isRecord(event) &&
       (event.type === "command_result" ||
         event.type === "command_rejected" ||
-        event.type === "focus_buffer_requested")
+        event.type === "focus_buffer_requested" ||
+        event.type === "push_device_loaded")
     ) {
       const requestId =
-        event.type === "focus_buffer_requested" ? event.command_id : event.id;
+        event.type === "focus_buffer_requested" ||
+        event.type === "push_device_loaded"
+          ? event.command_id
+          : event.id;
       const port =
         typeof requestId === "string"
           ? this.#requestPorts.get(requestId)
@@ -181,6 +185,8 @@ function isSharedStateEvent(event: unknown): boolean {
   if (!isRecord(event)) return false;
   return (
     event.type === "network_state_changed" ||
+    event.type === "push_state_changed" ||
+    event.type === "push_route_required" ||
     event.type === "buffers_changed" ||
     event.type === "chat_list_snapshot_loaded" ||
     event.type === "chat_list_live" ||

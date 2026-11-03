@@ -69,6 +69,73 @@ it("routes asynchronous buffer focus requests only to the submitting port", asyn
   expect(second.sent).toEqual([]);
 });
 
+it("routes durable push credentials only to the requesting port", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  let requestHandled = false;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return {
+      handle: () => {
+        requestHandled = true;
+        return "[]";
+      },
+    };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  first.receive({ type: "request", payload: { id: "load-device" } });
+  await vi.waitFor(() => expect(requestHandled).toBe(true));
+
+  emit?.(
+    JSON.stringify({
+      type: "push_device_loaded",
+      command_id: "load-device",
+      credentials: {
+        relay: "https://push.example.test",
+        device_id: "device-1",
+        secret: "device-secret",
+      },
+    }),
+  );
+
+  expect(first.sent).toContainEqual(
+    expect.objectContaining({ type: "push_device_loaded" }),
+  );
+  expect(second.sent).toEqual([]);
+});
+
+it("broadcasts asynchronous push state to every shared port", async () => {
+  const first = new FakePort();
+  const second = new FakePort();
+  let emit: ((encoded: string) => void) | undefined;
+  const runtime = new EngineWorkerRuntime(async (onEvent) => {
+    emit = onEvent;
+    return { handle: () => "[]" };
+  });
+  runtime.attach(first);
+  runtime.attach(second);
+  const events = [
+    {
+      type: "push_route_required",
+      network_id: 1,
+      vapid: "home-vapid",
+      previous_route_id: null,
+    },
+    {
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "registered", route_id: "route-1" },
+    },
+  ];
+
+  for (const event of events) emit?.(JSON.stringify(event));
+
+  expect(first.sent).toEqual(events);
+  expect(second.sent).toEqual(events);
+});
+
 it("broadcasts asynchronous buffer and member patches to every shared port", async () => {
   const first = new FakePort();
   const second = new FakePort();
