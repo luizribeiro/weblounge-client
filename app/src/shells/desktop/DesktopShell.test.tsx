@@ -77,6 +77,39 @@ const members: MemberWindow = {
   ],
 };
 
+it("places the notification prompt above the desktop channel list", () => {
+  const turnOn = vi.fn();
+  const dismiss = vi.fn();
+  render(() => (
+    <DesktopShell
+      buffers={[channel]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[]}
+      notificationPromptVisible
+      onDismissNotificationPrompt={dismiss}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+      onTurnOnNotifications={turnOn}
+    />
+  ));
+
+  const prompt = screen.getByRole("region", { name: "Notifications" });
+  const sidebar = screen.getByRole("complementary", { name: "Channel list" });
+  expect(sidebar.contains(prompt)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Dismiss notification prompt" }),
+  );
+  expect(turnOn).toHaveBeenCalledOnce();
+  expect(dismiss).toHaveBeenCalledOnce();
+});
+
 it("resolves a cached direct through normal history", () => {
   const loadHistory = vi.fn();
   render(() => (

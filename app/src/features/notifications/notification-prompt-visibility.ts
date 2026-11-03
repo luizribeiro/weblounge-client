@@ -33,10 +33,15 @@ export function supportsWebPush(
 }
 
 export function isIos(
-  browserNavigator: Pick<Navigator, "maxTouchPoints" | "platform">,
+  browserNavigator: Pick<
+    Navigator,
+    "maxTouchPoints" | "platform" | "userAgent"
+  >,
 ): boolean {
   return (
-    /iPad|iPhone|iPod/u.test(browserNavigator.platform) ||
+    /iPad|iPhone|iPod/u.test(
+      `${browserNavigator.platform} ${browserNavigator.userAgent}`,
+    ) ||
     (browserNavigator.platform === "MacIntel" &&
       browserNavigator.maxTouchPoints > 1)
   );

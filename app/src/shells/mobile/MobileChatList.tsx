@@ -16,6 +16,10 @@ import type {
   BufferProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import {
+  NotificationPrompt,
+  type NotificationPromptControls,
+} from "../../features/notifications/NotificationPrompt";
 import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import {
@@ -32,7 +36,7 @@ import {
   networkLabel,
 } from "./mobile-chats";
 
-interface MobileChatListProps {
+interface MobileChatListProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly hydrating?: boolean | undefined;
@@ -164,6 +168,12 @@ export function MobileChatList(props: MobileChatListProps) {
             onAction={(networkId) => props.onRetryNetwork?.(networkId)}
           />
         )}
+      </Show>
+      <Show when={props.notificationPromptVisible}>
+        <NotificationPrompt
+          onDismiss={() => props.onDismissNotificationPrompt?.()}
+          onTurnOn={() => props.onTurnOnNotifications?.()}
+        />
       </Show>
       <label class={styles.search}>
         <span class="visually-hidden">Search chats</span>

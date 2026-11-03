@@ -1,5 +1,11 @@
 import styles from "./NotificationPrompt.module.css";
 
+export interface NotificationPromptControls {
+  readonly notificationPromptVisible?: boolean | undefined;
+  readonly onDismissNotificationPrompt?: (() => void) | undefined;
+  readonly onTurnOnNotifications?: (() => void) | undefined;
+}
+
 interface NotificationPromptProps {
   readonly onDismiss: () => void;
   readonly onTurnOn: () => void;

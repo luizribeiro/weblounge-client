@@ -18,6 +18,38 @@ const buffers: BufferProjection[] = [
   { ...base, id: 3, kind: "direct", title: "mel" },
 ];
 
+it("places the notification prompt above the mobile chat list", () => {
+  const turnOn = vi.fn();
+  const dismiss = vi.fn();
+  render(() => (
+    <MobileChatList
+      buffers={buffers}
+      filter="all"
+      networks={[]}
+      notificationPromptVisible
+      onDismissNotificationPrompt={dismiss}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={() => {}}
+      onTurnOnNotifications={turnOn}
+      query=""
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
+    />
+  ));
+
+  const prompt = screen.getByRole("region", { name: "Notifications" });
+  const chats = screen.getByRole("region", { name: "Chats" });
+  expect(chats.contains(prompt)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Dismiss notification prompt" }),
+  );
+  expect(turnOn).toHaveBeenCalledOnce();
+  expect(dismiss).toHaveBeenCalledOnce();
+});
+
 it("updates chat filters and search through accessible controls", () => {
   const open = vi.fn();
   const Harness = () => {

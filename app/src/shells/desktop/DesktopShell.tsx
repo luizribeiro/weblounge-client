@@ -35,6 +35,7 @@ import {
   MemberPanel,
   type MemberWindow,
 } from "../../features/members/MemberPanel";
+import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import {
   Sidebar,
   type SidebarListController,
@@ -48,7 +49,7 @@ import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";
 
-export interface DesktopShellProps {
+export interface DesktopShellProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly hydrating?: boolean | undefined;
@@ -558,7 +559,10 @@ export function DesktopShell(props: DesktopShellProps) {
         commandContext={context()}
         hydrating={props.hydrating}
         networks={props.networks}
+        notificationPromptVisible={props.notificationPromptVisible}
+        onDismissNotificationPrompt={props.onDismissNotificationPrompt}
         onRetryNetwork={props.onRetryNetwork}
+        onTurnOnNotifications={props.onTurnOnNotifications}
         registerListController={(controller) => {
           listController = controller;
         }}

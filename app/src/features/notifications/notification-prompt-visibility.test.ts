@@ -42,10 +42,31 @@ describe("notification prompt visibility", () => {
   });
 
   it("recognizes iPhone, iPad, and touch-capable iPadOS desktop identity", () => {
-    expect(isIos({ platform: "iPhone", maxTouchPoints: 5 })).toBe(true);
-    expect(isIos({ platform: "iPad", maxTouchPoints: 5 })).toBe(true);
-    expect(isIos({ platform: "MacIntel", maxTouchPoints: 5 })).toBe(true);
-    expect(isIos({ platform: "MacIntel", maxTouchPoints: 0 })).toBe(false);
-    expect(isIos({ platform: "Linux armv8l", maxTouchPoints: 5 })).toBe(false);
+    expect(
+      isIos({ platform: "iPhone", maxTouchPoints: 5, userAgent: "Mobile" }),
+    ).toBe(true);
+    expect(
+      isIos({ platform: "iPad", maxTouchPoints: 5, userAgent: "Mobile" }),
+    ).toBe(true);
+    expect(
+      isIos({ platform: "MacIntel", maxTouchPoints: 5, userAgent: "Safari" }),
+    ).toBe(true);
+    expect(
+      isIos({
+        platform: "MacIntel",
+        maxTouchPoints: 0,
+        userAgent: "iPhone Mobile",
+      }),
+    ).toBe(true);
+    expect(
+      isIos({ platform: "MacIntel", maxTouchPoints: 0, userAgent: "Safari" }),
+    ).toBe(false);
+    expect(
+      isIos({
+        platform: "Linux armv8l",
+        maxTouchPoints: 5,
+        userAgent: "Android",
+      }),
+    ).toBe(false);
   });
 });

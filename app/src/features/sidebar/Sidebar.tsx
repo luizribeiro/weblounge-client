@@ -13,6 +13,10 @@ import {
   readConnectionSweep,
 } from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
+import {
+  NotificationPrompt,
+  type NotificationPromptControls,
+} from "../notifications/NotificationPrompt";
 import { NetworkSection, type SidebarBuffer } from "./NetworkSection";
 import styles from "./Sidebar.module.css";
 import { SidebarFooter } from "./SidebarFooter";
@@ -23,7 +27,7 @@ export interface SidebarListController {
   readonly previous: () => void;
 }
 
-interface SidebarProps {
+interface SidebarProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly SidebarBuffer[];
   readonly hydrating?: boolean | undefined;
@@ -138,6 +142,13 @@ export function Sidebar(props: SidebarProps) {
             onAction={(networkId) => props.onRetryNetwork?.(networkId)}
           />
         )}
+      </Show>
+
+      <Show when={props.notificationPromptVisible}>
+        <NotificationPrompt
+          onDismiss={() => props.onDismissNotificationPrompt?.()}
+          onTurnOn={() => props.onTurnOnNotifications?.()}
+        />
       </Show>
 
       <button

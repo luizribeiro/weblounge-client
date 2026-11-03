@@ -37,6 +37,11 @@ import {
   t,
 } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
+import {
+  isIos,
+  shouldShowNotificationPrompt,
+  supportsWebPush,
+} from "./features/notifications/notification-prompt-visibility";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import { HostedStatus } from "./hosted/HostedStatus";
 import {
@@ -52,6 +57,7 @@ import {
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
+import { platformEnvironment } from "./platform/environment";
 import { syncAppBadge } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
@@ -133,9 +139,17 @@ export function App(props: AppProps) {
   const [loadedNetworkIds, setLoadedNetworkIds] = createSignal<
     ReadonlySet<number>
   >(new Set());
+  const [notificationPromptDismissed, setNotificationPromptDismissed] =
+    createSignal<boolean>();
+  const [notificationPermission, setNotificationPermission] =
+    createSignal<NotificationPermission>(
+      "Notification" in window ? Notification.permission : "default",
+    );
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
+  let pushStartup: Promise<void> | undefined;
+  let notificationPromptLoadId: string | undefined;
   let foregroundLease: ForegroundLease | undefined;
   let appIsForeground = false;
   const pendingPushEvents: EngineClientMessage[] = [];
@@ -167,6 +181,15 @@ export function App(props: AppProps) {
   const startupHistoryPending = new Set<number>();
   const startupHistoryComplete = new Set<number>();
   const storedNavigationPath = readLastViewedPath();
+  const notificationPromptVisible = () =>
+    shouldShowNotificationPrompt({
+      configured: props.pushConfig !== undefined,
+      supported: supportsWebPush(window, navigator),
+      permission: notificationPermission(),
+      dismissed: notificationPromptDismissed() ?? true,
+      ios: isIos(navigator),
+      display: platformEnvironment().environment().display,
+    });
 
   createEffect(() => {
     const current = buffers();
@@ -306,6 +329,12 @@ export function App(props: AppProps) {
       if (message.type === "hosted_token_required") {
         void refreshHostedToken(message.network_id);
         return;
+      }
+      if (
+        message.type === "notification_prompt_dismissal_loaded" &&
+        message.command_id === notificationPromptLoadId
+      ) {
+        setNotificationPromptDismissed(message.dismissed);
       }
       if (message.type === "ready") {
         const restarted =
@@ -540,8 +569,11 @@ export function App(props: AppProps) {
       foregroundLease?.setForeground(foreground);
       if (foreground) reconnectNetworks();
     };
-    const updateVisibility = () =>
+    const updateVisibility = () => {
+      if ("Notification" in window)
+        setNotificationPermission(Notification.permission);
       setAppForeground(!document.hidden && document.hasFocus());
+    };
     const reconnectNetworks = () => {
       for (const network of networks()) {
         void mountedClient
@@ -581,8 +613,6 @@ export function App(props: AppProps) {
     window.addEventListener("offline", updateConnectivity);
     window.addEventListener("pageshow", handlePageShow);
     updateVisibility();
-    void startConfiguredPush(mountedClient);
-
     void startEngine(
       mountedClient,
       setEngineStatus,
@@ -601,6 +631,18 @@ export function App(props: AppProps) {
         void handleInitialHostedFailure(outcome.error);
       }
       engineStarted = outcome !== "failed";
+      if (engineStarted && props.pushConfig !== undefined) {
+        notificationPromptLoadId = crypto.randomUUID();
+        void mountedClient
+          .send({
+            id: notificationPromptLoadId,
+            request: { type: "load_notification_prompt_dismissal" },
+          })
+          .catch(() => undefined);
+        if ("Notification" in window && Notification.permission === "granted") {
+          void startConfiguredPush(mountedClient);
+        }
+      }
       publishUpdateReady();
       setEngineReady(true);
     });
@@ -633,6 +675,11 @@ export function App(props: AppProps) {
   async function startConfiguredPush(
     mountedClient: EngineClient,
   ): Promise<void> {
+    pushStartup ??= runConfiguredPush(mountedClient);
+    return pushStartup;
+  }
+
+  async function runConfiguredPush(mountedClient: EngineClient): Promise<void> {
     const config = props.pushConfig;
     const session = props.hostedSession;
     if (
@@ -705,6 +752,29 @@ export function App(props: AppProps) {
     });
     pushSynchronizer = synchronizer;
     for (const event of pendingPushEvents.splice(0)) synchronizer.handle(event);
+  }
+
+  function dismissNotificationPrompt(): void {
+    setNotificationPromptDismissed(true);
+    if (client === undefined) return;
+    void client
+      .send({
+        id: crypto.randomUUID(),
+        request: { type: "dismiss_notification_prompt" },
+      })
+      .catch(() => undefined);
+  }
+
+  function turnOnNotifications(): void {
+    const permission = Notification.requestPermission();
+    void permission
+      .then(async (result) => {
+        setNotificationPermission(result);
+        if (result === "granted" && client !== undefined) {
+          await startConfiguredPush(client);
+        }
+      })
+      .catch(() => undefined);
   }
 
   async function restartHostedAuthorization(
@@ -922,6 +992,8 @@ export function App(props: AppProps) {
           hydrating={cachedChatListActive()}
           memberViewScope={clientId}
           networks={networks()}
+          notificationPromptVisible={notificationPromptVisible()}
+          onDismissNotificationPrompt={dismissNotificationPrompt}
           buffers={buffers()}
           bufferRemoval={bufferRemoval()}
           commandSpecs={commandSpecs()}
@@ -953,6 +1025,7 @@ export function App(props: AppProps) {
             const path = pathForBuffer(bufferId);
             if (path !== undefined) writeLastViewedPath(path);
           }}
+          onTurnOnNotifications={turnOnNotifications}
           pathForBuffer={pathForBuffer}
           onSend={(bufferId, text) => {
             if (client === undefined) return Promise.resolve(false);

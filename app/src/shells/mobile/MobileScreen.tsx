@@ -7,6 +7,7 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import { movingTransform } from "../../ui/transform-motion";
 import { MobileChatList } from "./MobileChatList";
 import { MobileConversation } from "./MobileConversation";
@@ -19,7 +20,7 @@ import {
   settlesByTransition,
 } from "./push-motion";
 
-export interface MobileShellData {
+export interface MobileShellData extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly hydrating?: boolean | undefined;
@@ -115,10 +116,13 @@ export function MobileScreen(props: MobileScreenProps) {
           filter={props.filter}
           hydrating={props.hydrating}
           networks={props.networks}
+          notificationPromptVisible={props.notificationPromptVisible}
+          onDismissNotificationPrompt={props.onDismissNotificationPrompt}
           onFilter={props.onFilter}
           onOpen={props.onOpen}
           onQuery={props.onQuery}
           onRetryNetwork={props.onRetryNetwork}
+          onTurnOnNotifications={props.onTurnOnNotifications}
           showConnectionError={!props.retained}
           onScroll={props.onScroll}
           query={props.query}
