@@ -383,6 +383,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     delivery failures, and cover authorization, malformed JWT, body-limit, deletion, DNS-rebinding
     and concierge-outage negatives. Edge endpoints, schema versioning, WAL, private state modes,
     pinned-client reuse and secret-free delivery tracing are included.
+  - [x] Scope Tokio server features to the push relay so workspace feature inheritance cannot pull
+    `mio` networking into the browser engine's `wasm32-unknown-unknown` build.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
     registration, service-worker delivery, and the local-Ergo and Playwright journeys.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
