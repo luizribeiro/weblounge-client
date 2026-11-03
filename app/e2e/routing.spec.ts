@@ -1,4 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { useDedicatedWorker } from "./production-ergo";
+
+const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 test.describe("buffer routing against local Ergo", () => {
   test.skip(
@@ -11,8 +14,11 @@ test.describe("buffer routing against local Ergo", () => {
   }) => {
     const channel = `#route-${Date.now().toString(36)}`;
     await page.goto("/?irc-password=weblounge-test");
+    await page
+      .getByRole("button", { name: fixtureChannel, exact: true })
+      .click();
     const composer = page.getByRole("textbox", {
-      name: "Message #weblounge-test",
+      name: `Message ${fixtureChannel}`,
     });
     await expect(composer).toBeVisible();
     await composer.fill(`/join ${channel}`);
@@ -24,18 +30,56 @@ test.describe("buffer routing against local Ergo", () => {
     );
     await expect.poll(() => cachedChatList(page)).toContain(channel);
 
-    await page.evaluate(() => {
-      const url = new URL(location.href);
-      url.searchParams.set("irc-password", "weblounge-test");
-      history.replaceState(history.state, "", url);
-    });
+    await restoreDebugPassword(page);
     await page.reload();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     await expect(page).toHaveURL(
       new RegExp(`/Local%20Ergo/${channel.slice(1)}$`, "u"),
     );
   });
+
+  test("restores the URL from live always-on membership before caching", async ({
+    page,
+  }) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_PRODUCTION_ERGO !== "1",
+      "requires the production-shaped always-on Ergo profile",
+    );
+    await useDedicatedWorker(page);
+    const channel = `#route-live-${Date.now().toString(36)}`;
+    await page.goto("/?irc-password=weblounge-test");
+    await page
+      .getByRole("button", { name: fixtureChannel, exact: true })
+      .click();
+    const composer = page.getByRole("textbox", {
+      name: `Message ${fixtureChannel}`,
+    });
+    await expect(composer).toBeVisible();
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await expect(page).toHaveURL(
+      new RegExp(`/Local%20Ergo/${channel.slice(1)}$`, "u"),
+    );
+
+    await restoreDebugPassword(page);
+    await deleteCachedChatList(page);
+    await page.reload();
+
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await expect(page).toHaveURL(
+      new RegExp(`/Local%20Ergo/${channel.slice(1)}$`, "u"),
+    );
+  });
 });
+
+async function restoreDebugPassword(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const url = new URL(location.href);
+    url.searchParams.set("irc-password", "weblounge-test");
+    history.replaceState(history.state, "", url);
+  });
+}
 
 async function cachedChatList(page: Page): Promise<string> {
   return page.evaluate(async () => {
@@ -56,6 +100,29 @@ async function cachedChatList(page: Page): Promise<string> {
       return snapshot instanceof Uint8Array
         ? new TextDecoder().decode(snapshot)
         : "";
+    } finally {
+      database.close();
+    }
+  });
+}
+
+async function deleteCachedChatList(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge", 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction("cache", "readwrite");
+        transaction
+          .objectStore("cache")
+          .delete(new TextEncoder().encode("chat-list-snapshot"));
+        transaction.onabort = () => reject(transaction.error);
+        transaction.onerror = () => reject(transaction.error);
+        transaction.oncomplete = () => resolve();
+      });
     } finally {
       database.close();
     }
