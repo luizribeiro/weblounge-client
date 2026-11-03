@@ -399,9 +399,17 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     capability, account and VAPID prerequisites; expose typed registration outcomes; refresh on
     reconnect; replace routes after a VAPID change; and unregister on explicit removal or hosted
     sign-out. Exercise Ergo's real success, persistence-warning and refusal replies over the wire.
+  - [x] Add the page-to-relay client slice: strictly validated optional deployment config; a
+    granted-permission browser subscription pinned to the relay VAPID key; one cross-tab,
+    engine-durable relay device; per-network non-extractable route keys in IndexedDB; probing route
+    activation only after engine `Registered`; reconnect and VAPID-rotation synchronization; typed
+    404 recreation and 401 reauthorization; and route cleanup on failure, unregister and hosted
+    sign-out. Unit tests cover config, relay calls, subscription and state synchronization;
+    Chromium covers the built and development page through a fake relay to the engine boundary.
+    The real local-Ergo probe still waits for the design's TEST-NET/TLS test seam.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
-    route creation and persistence, service-worker delivery, and the local-Ergo and Playwright
-    journeys.
+    stable network identity, service-worker delivery, and the local-Ergo delivery and Playwright
+    notification journeys.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
