@@ -28,6 +28,7 @@ use url::Url;
 use crate::{Error, Result, db::WebPushTarget};
 
 const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
+const DELIVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// An opaque home push and the browser subscription that should receive it.
 #[derive(Clone, Debug)]
@@ -160,7 +161,7 @@ impl ReqwestTransport {
             .no_proxy()
             .redirect(Policy::none())
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(15))
+            .timeout(DELIVERY_TIMEOUT)
             .resolve(host, address);
         if let Some(root) = &self.root {
             builder = builder.add_root_certificate(root.clone());
@@ -197,7 +198,7 @@ impl HttpTransport for ReqwestTransport {
             .host_str()
             .ok_or_else(|| Error::TargetRefused("endpoint has no host".to_owned()))?;
         let client = self.client_for(host, request.address)?;
-        Ok(client
+        client
             .post(request.endpoint)
             .header("TTL", request.ttl)
             .header("Content-Encoding", "aes128gcm")
@@ -205,8 +206,15 @@ impl HttpTransport for ReqwestTransport {
             .header("Authorization", request.authorization)
             .body(request.body)
             .send()
-            .await?
-            .status())
+            .await
+            .map(|response| response.status())
+            .map_err(|error| {
+                if error.is_connect() {
+                    Error::DeliveryUnavailable
+                } else {
+                    Error::Http(error)
+                }
+            })
     }
 }
 
@@ -285,12 +293,12 @@ impl EndpointValidator {
         self
     }
 
-    /// Validates the URL and every current DNS answer, returning one pinned address.
+    /// Validates the URL and every current DNS answer, returning pinned addresses IPv4 first.
     ///
     /// # Errors
     ///
     /// Returns an error for malformed, disallowed, unresolvable, or non-public targets.
-    pub async fn validate(&self, endpoint: &Url) -> Result<std::net::SocketAddr> {
+    pub async fn validate(&self, endpoint: &Url) -> Result<Vec<std::net::SocketAddr>> {
         if endpoint.scheme() != "https"
             || !endpoint.username().is_empty()
             || endpoint.password().is_some()
@@ -324,7 +332,12 @@ impl EndpointValidator {
                 "endpoint resolves to a non-public address".to_owned(),
             ));
         }
-        Ok(std::net::SocketAddr::new(addresses[0], port))
+        let mut addresses: Vec<_> = addresses
+            .into_iter()
+            .map(|address| std::net::SocketAddr::new(address, port))
+            .collect();
+        addresses.sort_by_key(std::net::SocketAddr::is_ipv6);
+        Ok(addresses)
     }
 
     fn host_is_allowed(&self, host: &str) -> bool {
@@ -419,7 +432,7 @@ impl PushSender for WebPushSender {
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome> {
         let endpoint = Url::parse(&delivery.target.endpoint)
             .map_err(|_| Error::TargetRefused("endpoint is not a URL".to_owned()))?;
-        let address = self
+        let addresses = self
             .targets
             .validate(&endpoint)
             .await
@@ -447,16 +460,28 @@ impl PushSender for WebPushSender {
             &endpoint.origin().ascii_serialization(),
         )?;
 
-        let status = self
-            .transport
-            .send(OutboundRequest {
-                endpoint,
-                address,
-                ttl: delivery.ttl,
-                authorization,
-                body: payload,
-            })
-            .await?;
+        let status = tokio::time::timeout(DELIVERY_TIMEOUT, async {
+            for address in addresses {
+                match self
+                    .transport
+                    .send(OutboundRequest {
+                        endpoint: endpoint.clone(),
+                        address,
+                        ttl: delivery.ttl,
+                        authorization: authorization.clone(),
+                        body: payload.clone(),
+                    })
+                    .await
+                {
+                    Ok(status) => return Ok(status),
+                    Err(Error::DeliveryUnavailable) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(Error::DeliveryUnavailable)
+        })
+        .await
+        .map_err(|_| Error::DeliveryUnavailable)??;
         match status {
             status if status.is_success() => Ok(PushOutcome::Accepted),
             StatusCode::NOT_FOUND | StatusCode::GONE => Ok(PushOutcome::Dead),

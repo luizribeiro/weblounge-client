@@ -2,7 +2,7 @@
 
 use std::{
     collections::VecDeque,
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, Mutex},
 };
 
@@ -11,6 +11,7 @@ use aes_gcm::{
     aead::{Aead as _, KeyInit as _},
 };
 use async_trait::async_trait;
+use axum::response::IntoResponse as _;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
 use p256::{
@@ -57,6 +58,25 @@ impl DnsResolver for SequenceDns {
 struct FakePushService {
     requests: Arc<Mutex<Vec<OutboundRequest>>>,
     status: StatusCode,
+}
+
+#[derive(Clone)]
+struct AddressPushService {
+    requests: Arc<Mutex<Vec<OutboundRequest>>>,
+    reachable: Option<IpAddr>,
+}
+
+#[async_trait]
+impl HttpTransport for AddressPushService {
+    async fn send(&self, request: OutboundRequest) -> Result<StatusCode> {
+        let address = request.address.ip();
+        self.requests.lock().expect("request lock").push(request);
+        if self.reachable == Some(address) {
+            Ok(StatusCode::CREATED)
+        } else {
+            Err(Error::DeliveryUnavailable)
+        }
+    }
 }
 
 #[async_trait]
@@ -267,6 +287,84 @@ async fn delivery_revalidation_maps_private_dns_to_upstream_unavailable() {
         ))
         .await;
     assert!(matches!(result, Err(Error::DeliveryUnavailable)));
+}
+
+#[tokio::test]
+async fn delivery_prefers_ipv4_when_dns_returns_ipv6_first() {
+    let ipv6 = IpAddr::V6("2606:4700:4700::1111".parse::<Ipv6Addr>().expect("IPv6"));
+    let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let sender = sender_for_addresses(
+        vec![ipv6, ipv4],
+        AddressPushService {
+            requests: Arc::clone(&requests),
+            reachable: Some(ipv4),
+        },
+    );
+
+    let outcome = sender.send(test_delivery()).await.expect("IPv4 delivery");
+
+    assert_eq!(outcome, PushOutcome::Accepted);
+    let addresses: Vec<_> = requests
+        .lock()
+        .expect("requests")
+        .iter()
+        .map(|request| request.address.ip())
+        .collect();
+    assert_eq!(addresses, vec![ipv4]);
+}
+
+#[tokio::test]
+async fn delivery_tries_every_validated_address_before_reporting_unavailable() {
+    let ipv6 = IpAddr::V6("2606:4700:4700::1111".parse::<Ipv6Addr>().expect("IPv6"));
+    let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let sender = sender_for_addresses(
+        vec![ipv6, ipv4],
+        AddressPushService {
+            requests: Arc::clone(&requests),
+            reachable: None,
+        },
+    );
+
+    let error = sender
+        .send(test_delivery())
+        .await
+        .expect_err("all addresses fail");
+
+    assert!(matches!(&error, Error::DeliveryUnavailable));
+    let addresses: Vec<_> = requests
+        .lock()
+        .expect("requests")
+        .iter()
+        .map(|request| request.address.ip())
+        .collect();
+    assert_eq!(addresses, vec![ipv4, ipv6]);
+    assert_eq!(
+        error.into_response().status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}
+
+fn sender_for_addresses(addresses: Vec<IpAddr>, transport: impl HttpTransport) -> WebPushSender {
+    let relay_key = SecretKey::random(&mut OsRng)
+        .to_pkcs8_pem(LineEnding::LF)
+        .expect("relay PEM");
+    let validator = EndpointValidator::new(["push.example"], Arc::new(FixedDns(addresses)));
+    WebPushSender::with_transport(relay_key.as_bytes(), validator, Arc::new(transport))
+        .expect("sender")
+}
+
+fn test_delivery() -> Delivery {
+    let receiver = SecretKey::random(&mut OsRng);
+    Delivery::web_push(
+        "route",
+        "https://push.example/send",
+        URL_SAFE_NO_PAD.encode(receiver.public_key().to_encoded_point(false).as_bytes()),
+        URL_SAFE_NO_PAD.encode([0_u8; 16]),
+        b"ciphertext".to_vec(),
+        60,
+    )
 }
 
 fn decrypt(body: &[u8], receiver: &SecretKey, auth: &[u8]) -> Vec<u8> {

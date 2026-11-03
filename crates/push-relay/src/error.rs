@@ -50,7 +50,7 @@ pub enum Error {
     /// The push service failed without declaring the subscription dead.
     #[error("push service failed")]
     PushServiceUnavailable,
-    /// A previously registered delivery target cannot currently be validated.
+    /// A previously registered delivery target cannot currently be validated or reached.
     #[error("delivery target is unavailable")]
     DeliveryUnavailable,
 }

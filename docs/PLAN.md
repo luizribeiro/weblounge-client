@@ -393,6 +393,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     `mio` networking into the browser engine's `wasm32-unknown-unknown` build.
   - [x] Give the relay's browser-facing device and route APIs an exact, configurable CORS origin
     allowlist while keeping the server-to-server push ingress outside the CORS boundary.
+  - [x] Try every validated push-service address within one delivery deadline, preferring IPv4 so
+    the IPv4-only relay host can fall back from unusable AAAA answers.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
     registration, service-worker delivery, and the local-Ergo and Playwright journeys.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
