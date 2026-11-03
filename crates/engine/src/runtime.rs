@@ -4583,12 +4583,6 @@ mod tests {
                     buffer.title == "#lounge" && buffer.cached == Some(true)
                 })
         )));
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::PushedMessagesLoaded {
-                network_id: NetworkId(1)
-            }
-        )));
         let state = lock(&runtime.state);
         let running = state.network.as_ref().expect("hosted profile is retained");
         assert_eq!(running.authentication_kind, AuthenticationKind::HostedOAuth);
@@ -4635,6 +4629,12 @@ mod tests {
                     message.text == "visible before history"
                         && message.server_ids == ["push-before-connect"]
                 })
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::PushedMessagesLoaded {
+                network_id: NetworkId(1)
+            }
         )));
     }
 

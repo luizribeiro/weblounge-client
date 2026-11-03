@@ -418,6 +418,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     fallback, Cache-space message handoff, and warm/cold notification routing. Full Chromium drives
     real encrypted CDP delivery; local Ergo proves an offline cold row appears before IRC and its
     later history copy is removed by engine `msgid` deduplication.
+  - [x] Keep hosted startup coverage deterministic: cached-chat readiness is independent of pushed
+    rows, while a seeded pushed row is restored and signals readiness in the same `PrepareHosted`
+    output before credentials or a connection exist.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
     stable network identity, and the unmocked local-Ergo → relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
