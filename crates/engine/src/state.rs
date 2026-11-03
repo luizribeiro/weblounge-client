@@ -16,6 +16,8 @@ use crate::{
     pushed_messages::{PushedMessage, PushedMessageKind},
 };
 
+const HISTORY_CATCHUP_LIMIT: usize = 500;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TimelineOrigin {
     Live,
@@ -84,6 +86,7 @@ struct BufferState {
     direct_mismatch: Option<DirectMismatch>,
     read_at_ms: Option<i64>,
     history: HistoryState,
+    newest: Option<HistoryCursor>,
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +110,15 @@ enum HistoryState {
     LoadingOlder {
         oldest: papo::HistoryReference,
     },
+    CatchingUp {
+        oldest: Option<papo::HistoryReference>,
+        at_start: bool,
+        fetched: usize,
+    },
+    CatchingUpLatest {
+        oldest: Option<papo::HistoryReference>,
+        at_start: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +128,52 @@ pub(crate) enum HistoryFetch {
         target: HistoryTarget,
         oldest: papo::HistoryReference,
     },
+    After {
+        target: HistoryTarget,
+        newest: HistoryCursor,
+    },
+    LatestAfterGap(HistoryTarget),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HistoryCursor {
+    msgid: Option<papo::MessageId>,
+    server_time: SystemTime,
+}
+
+impl HistoryCursor {
+    pub(crate) fn new(msgid: Option<String>, server_time_ms: i64) -> Self {
+        Self {
+            msgid: msgid.map(papo::MessageId::from),
+            server_time: system_time_from_millis(server_time_ms),
+        }
+    }
+
+    pub(crate) fn reference(&self) -> papo::HistoryReference {
+        self.msgid.as_ref().map_or_else(
+            || papo::HistoryReference::from(self.server_time),
+            papo::HistoryReference::from,
+        )
+    }
+
+    pub(crate) const fn server_time(&self) -> SystemTime {
+        self.server_time
+    }
+}
+
+pub(crate) struct HistoryCompletion {
+    pub(crate) buffer_id: BufferId,
+    pub(crate) at_start: Option<bool>,
+    pub(crate) next: Option<HistoryFetch>,
+    pub(crate) gap: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum HistoryLoad {
+    Latest,
+    Older,
+    Catchup,
+    CatchupLatest,
 }
 
 #[derive(Clone, Debug)]
@@ -242,6 +300,7 @@ pub(crate) struct NetworkModel {
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     recent_commands: VecDeque<String>,
+    connected_once: bool,
     #[cfg(test)]
     name_rebuilds: usize,
 }
@@ -285,6 +344,7 @@ impl NetworkModel {
                 oldest: None,
                 at_start: true,
             },
+            newest: None,
         };
         Self {
             network: NetworkProjection {
@@ -306,6 +366,7 @@ impl NetworkModel {
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
             recent_commands: VecDeque::new(),
+            connected_once: false,
             #[cfg(test)]
             name_rebuilds: 0,
         }
@@ -762,6 +823,35 @@ impl NetworkModel {
         })
     }
 
+    pub(crate) fn append_history_gap(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
+        let received_at_ms = self.buffers.get(&buffer_id)?.newest.as_ref().map_or_else(
+            || time_millis(papo::time::now()),
+            |cursor| time_millis(cursor.server_time),
+        );
+        let message = MessageProjection {
+            id: self.allocate_message_id(),
+            author: String::new(),
+            text: "Some messages were skipped while reconnecting.".into(),
+            kind: MessageKind::Notice(NoticeKind::Info),
+            bot: Some(false),
+            authorship: MessageAuthorship::Own,
+            nick_color_index: 0,
+            highlighted: false,
+            unverified_sender: None,
+            delivery: MessageDelivery::Received,
+            local_send_id: None,
+            server_ids: Vec::new(),
+            server_time_ms: None,
+            received_at_ms,
+        };
+        self.insert(buffer_id, message.clone(), None, DedupReferences::default())
+            .ok()?;
+        Some(EngineToUi::MessagesAppended {
+            buffer_id,
+            messages: vec![message],
+        })
+    }
+
     fn begin_send_kind(
         &mut self,
         buffer_id: BufferId,
@@ -1168,6 +1258,8 @@ impl NetworkModel {
             }
             HistoryState::LoadingLatest
             | HistoryState::LoadingOlder { .. }
+            | HistoryState::CatchingUp { .. }
+            | HistoryState::CatchingUpLatest { .. }
             | HistoryState::Ready { .. } => None,
         }
     }
@@ -1183,7 +1275,7 @@ impl NetworkModel {
         true
     }
 
-    pub(crate) fn take_queued_history(&mut self) -> Vec<HistoryTarget> {
+    pub(crate) fn connected_history(&mut self) -> Vec<HistoryFetch> {
         let queued = self
             .buffer_order
             .iter()
@@ -1195,14 +1287,45 @@ impl NetworkModel {
                     .map(|target| (*id, target))
             })
             .collect::<Vec<_>>();
-        queued
+        let mut fetches = queued
             .into_iter()
             .filter_map(|(buffer_id, target)| {
                 self.promote_cached_for_history(buffer_id);
                 self.buffers.get_mut(&buffer_id)?.history = HistoryState::LoadingLatest;
-                Some(target)
+                Some(HistoryFetch::Latest(target))
             })
-            .collect()
+            .collect::<Vec<_>>();
+        if self.connected_once {
+            let ready = self
+                .buffer_order
+                .iter()
+                .filter_map(|id| {
+                    let buffer = self.buffers.get(id)?;
+                    let HistoryState::Ready { oldest, at_start } = &buffer.history else {
+                        return None;
+                    };
+                    Some((
+                        *id,
+                        HistoryTarget::from_key(buffer.key.clone()?),
+                        buffer.newest.clone()?,
+                        oldest.clone(),
+                        *at_start,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            for (buffer_id, target, newest, oldest, at_start) in ready {
+                if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+                    buffer.history = HistoryState::CatchingUp {
+                        oldest,
+                        at_start,
+                        fetched: 0,
+                    };
+                    fetches.push(HistoryFetch::After { target, newest });
+                }
+            }
+        }
+        self.connected_once = true;
+        fetches
     }
 
     pub(crate) fn promote_cached_for_history(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
@@ -1233,43 +1356,136 @@ impl NetworkModel {
         Some(target)
     }
 
+    pub(crate) fn history_load(&self, conversation: &papo::Conversation) -> Option<HistoryLoad> {
+        let key = NameKey::from_conversation(conversation)?;
+        let buffer = self.buffers.get(self.names.get(&key)?)?;
+        match buffer.history {
+            HistoryState::LoadingLatest => Some(HistoryLoad::Latest),
+            HistoryState::LoadingOlder { .. } => Some(HistoryLoad::Older),
+            HistoryState::CatchingUp { .. } => Some(HistoryLoad::Catchup),
+            HistoryState::CatchingUpLatest { .. } => Some(HistoryLoad::CatchupLatest),
+            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
+                None
+            }
+        }
+    }
+
     pub(crate) fn finish_history(
         &mut self,
         conversation: &papo::Conversation,
         oldest: Option<papo::HistoryReference>,
-        empty: bool,
-    ) -> Option<(BufferId, bool)> {
+        newest: Option<HistoryCursor>,
+        item_count: usize,
+        end: bool,
+    ) -> Option<HistoryCompletion> {
         let key = NameKey::from_conversation(conversation)?;
         let buffer_id = self.names.get(&key).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        let previous = match &buffer.history {
-            HistoryState::LoadingOlder { oldest } => Some(oldest.clone()),
-            HistoryState::LoadingLatest => None,
-            _ => return None,
+        let target = HistoryTarget::from_key(buffer.key.clone()?);
+        let mut next = None;
+        let mut gap = false;
+        let at_start = match buffer.history.clone() {
+            HistoryState::LoadingOlder { oldest: previous } => {
+                let oldest = oldest.or(Some(previous));
+                buffer.history = HistoryState::Ready {
+                    oldest,
+                    at_start: item_count == 0,
+                };
+                Some(item_count == 0)
+            }
+            HistoryState::LoadingLatest => {
+                buffer.history = HistoryState::Ready {
+                    oldest,
+                    at_start: item_count == 0,
+                };
+                Some(item_count == 0)
+            }
+            HistoryState::CatchingUp {
+                oldest,
+                at_start,
+                fetched,
+            } => {
+                let retained_oldest = oldest;
+                let retained_at_start = at_start;
+                let fetched = fetched.saturating_add(item_count);
+                advance_cursor(buffer, newest);
+                if item_count == 0 || end {
+                    buffer.history = HistoryState::Ready {
+                        oldest: retained_oldest,
+                        at_start: retained_at_start,
+                    };
+                } else if fetched >= HISTORY_CATCHUP_LIMIT {
+                    buffer.history = HistoryState::CatchingUpLatest {
+                        oldest: retained_oldest,
+                        at_start: retained_at_start,
+                    };
+                    next = Some(HistoryFetch::LatestAfterGap(target));
+                    gap = true;
+                } else if let Some(newest) = buffer.newest.clone() {
+                    buffer.history = HistoryState::CatchingUp {
+                        oldest: retained_oldest,
+                        at_start: retained_at_start,
+                        fetched,
+                    };
+                    next = Some(HistoryFetch::After { target, newest });
+                } else {
+                    buffer.history = HistoryState::CatchingUpLatest {
+                        oldest: retained_oldest,
+                        at_start: retained_at_start,
+                    };
+                    next = Some(HistoryFetch::LatestAfterGap(target));
+                    gap = true;
+                }
+                None
+            }
+            HistoryState::CatchingUpLatest { oldest, at_start } => {
+                advance_cursor(buffer, newest);
+                buffer.history = HistoryState::Ready { oldest, at_start };
+                None
+            }
+            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
+                return None;
+            }
         };
-        let oldest = oldest.or(previous);
-        let at_start = empty;
-        buffer.history = HistoryState::Ready { oldest, at_start };
-        Some((buffer_id, at_start))
+        Some(HistoryCompletion {
+            buffer_id,
+            at_start,
+            next,
+            gap,
+        })
     }
 
     pub(crate) fn fail_history(&mut self, fetch: &HistoryFetch) -> Option<BufferId> {
         let target = match fetch {
-            HistoryFetch::Latest(target) | HistoryFetch::Before { target, .. } => target,
+            HistoryFetch::Latest(target)
+            | HistoryFetch::Before { target, .. }
+            | HistoryFetch::After { target, .. }
+            | HistoryFetch::LatestAfterGap(target) => target,
         };
         let buffer_id = self.names.get(&target.name_key()).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
+        let visible = matches!(
+            buffer.history,
+            HistoryState::LoadingLatest | HistoryState::LoadingOlder { .. }
+        );
         buffer.history = match &buffer.history {
             HistoryState::LoadingLatest => HistoryState::Unrequested,
             HistoryState::LoadingOlder { oldest } => HistoryState::Ready {
                 oldest: Some(oldest.clone()),
                 at_start: false,
             },
+            HistoryState::CatchingUp {
+                oldest, at_start, ..
+            }
+            | HistoryState::CatchingUpLatest { oldest, at_start } => HistoryState::Ready {
+                oldest: oldest.clone(),
+                at_start: *at_start,
+            },
             HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
                 return None;
             }
         };
-        Some(buffer_id)
+        visible.then_some(buffer_id)
     }
 
     pub(crate) fn channel_for_buffer(&self, buffer_id: BufferId) -> Option<papo::ChannelName> {
@@ -1400,7 +1616,7 @@ impl NetworkModel {
 
     pub(crate) fn restore_direct(
         &mut self,
-        nick: papo::Nick,
+        nick: &papo::Nick,
         latest: SystemTime,
         _state: &papo::State,
     ) -> (
@@ -1410,16 +1626,33 @@ impl NetworkModel {
     ) {
         let key = NameKey::Direct(nick.clone());
         let should_resolve = !matches!(
-            self.direct(&nick),
+            self.direct(nick),
             Some(DirectAvailability::Guarded(_) | DirectAvailability::Resolving)
         );
-        let direct_key = DirectKey::from_nick(&nick);
+        let direct_key = DirectKey::from_nick(nick);
         let (buffer_id, added) = self.ensure_buffer(key, Some(direct_key.clone()), None);
-        let should_fetch = self.buffers.get(&buffer_id).is_some_and(|buffer| {
-            matches!(
-                buffer.history,
-                HistoryState::Unrequested | HistoryState::QueuedLatest
-            )
+        let fetch = self.buffers.get(&buffer_id).and_then(|buffer| {
+            let target = HistoryTarget::Direct(nick.clone());
+            match &buffer.history {
+                HistoryState::Unrequested | HistoryState::QueuedLatest => {
+                    Some(HistoryFetch::Latest(target))
+                }
+                HistoryState::Ready { .. }
+                    if buffer
+                        .newest
+                        .as_ref()
+                        .is_some_and(|cursor| latest > cursor.server_time) =>
+                {
+                    Some(HistoryFetch::After {
+                        target,
+                        newest: buffer.newest.clone()?,
+                    })
+                }
+                HistoryState::Ready { .. } if buffer.newest.is_none() => {
+                    Some(HistoryFetch::Latest(target))
+                }
+                _ => None,
+            }
         });
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             buffer.projection.last_activity_ms =
@@ -1427,19 +1660,26 @@ impl NetworkModel {
                     || time_millis(latest),
                     |current| current.max(time_millis(latest)),
                 ));
-            if should_fetch {
-                buffer.history = HistoryState::LoadingLatest;
+            match &fetch {
+                Some(HistoryFetch::Latest(_)) => buffer.history = HistoryState::LoadingLatest,
+                Some(HistoryFetch::After { .. }) => {
+                    let HistoryState::Ready { oldest, at_start } = &buffer.history else {
+                        unreachable!("after fetch starts from ready history")
+                    };
+                    buffer.history = HistoryState::CatchingUp {
+                        oldest: oldest.clone(),
+                        at_start: *at_start,
+                        fetched: 0,
+                    };
+                }
+                Some(HistoryFetch::Before { .. } | HistoryFetch::LatestAfterGap(_)) | None => {}
             }
             if should_resolve {
                 buffer.direct = Some(DirectAvailability::Resolving);
             }
         }
         self.sort_buffer_order();
-        (
-            should_fetch.then_some(HistoryFetch::Latest(HistoryTarget::Direct(nick))),
-            should_resolve.then_some(buffer_id),
-            added,
-        )
+        (fetch, should_resolve.then_some(buffer_id), added)
     }
 
     pub(crate) fn direct(&self, nick: &papo::Nick) -> Option<DirectAvailability> {
@@ -1713,6 +1953,10 @@ impl NetworkModel {
                     .then(|| self.reveal_buffer(buffer_id))
                     .flatten()
             });
+        let cursor = incoming
+            .server_time_ms
+            .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
+        let origin = incoming.origin;
         let highlighted = incoming.authorship != MessageAuthorship::Own
             && matches_highlight_rules(&incoming.text, state);
         let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
@@ -1738,6 +1982,12 @@ impl NetworkModel {
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
             return inconsistent_state_notice();
         };
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id)
+            && !(origin == TimelineOrigin::History
+                && matches!(buffer.history, HistoryState::LoadingOlder { .. }))
+        {
+            advance_cursor(buffer, cursor);
+        }
         let (unread, mentions, added) = {
             let Some(buffer) = self.buffers.get(&buffer_id) else {
                 return inconsistent_state_notice();
@@ -1917,6 +2167,7 @@ impl NetworkModel {
                 direct_mismatch: None,
                 read_at_ms: None,
                 history: HistoryState::Unrequested,
+                newest: None,
             },
         );
         if let Some(direct_key) = direct_key {
@@ -2057,6 +2308,19 @@ fn promote_cached_buffer(buffer: &mut BufferState) {
     buffer.projection.read_through = None;
     buffer.projection.read_at_ms = None;
     buffer.read_at_ms = None;
+}
+
+fn advance_cursor(buffer: &mut BufferState, cursor: Option<HistoryCursor>) {
+    let Some(cursor) = cursor else {
+        return;
+    };
+    if buffer
+        .newest
+        .as_ref()
+        .is_none_or(|current| cursor.server_time >= current.server_time)
+    {
+        buffer.newest = Some(cursor);
+    }
 }
 
 fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
@@ -2381,7 +2645,7 @@ pub(crate) fn time_millis(time: SystemTime) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use papo_testing::{StateBuilder, wire};
 
@@ -2702,14 +2966,100 @@ mod tests {
     fn restored_direct_order_uses_target_activity_before_history_arrives() {
         let (mut model, state) = model(10);
         for (nick, seconds) in [("Bob", 100), ("alice", 100), ("carol", 200)] {
+            let nick = nick_name(&state, nick);
             model.restore_direct(
-                nick_name(&state, nick),
+                &nick,
                 std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
                 &state,
             );
         }
 
         assert_eq!(ordered_titles(&model), ["Test", "carol", "alice", "Bob"]);
+    }
+
+    #[test]
+    fn newer_recent_direct_target_catches_up_ready_history_after_its_cursor() {
+        let (mut model, state) = model(10);
+        let nick = nick_name(&state, "alice");
+        model.receive_incoming(direct_incoming(&state, "alice", "before", 100), &state);
+        let buffer_id = model.names[&NameKey::Direct(nick.clone())];
+        model
+            .buffers
+            .get_mut(&buffer_id)
+            .expect("direct exists")
+            .history = HistoryState::Ready {
+            oldest: None,
+            at_start: false,
+        };
+
+        let (fetch, _, _) =
+            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200), &state);
+
+        assert!(matches!(
+            fetch,
+            Some(HistoryFetch::After { newest, .. })
+                if newest.reference()
+                    == papo::HistoryReference::from(papo::MessageId::from("alice-100"))
+        ));
+        assert!(matches!(
+            model.buffers[&buffer_id].history,
+            HistoryState::CatchingUp { .. }
+        ));
+    }
+
+    #[test]
+    fn reconnect_catchup_caps_after_five_pages_and_falls_back_to_latest() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(
+            incoming(
+                &state,
+                "before",
+                Some("before"),
+                Some(0),
+                0,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let channel = channel_name(&state, "#room");
+        let buffer_id = model.names[&NameKey::Channel(channel.clone())];
+        model
+            .buffers
+            .get_mut(&buffer_id)
+            .expect("channel exists")
+            .history = HistoryState::CatchingUp {
+            oldest: None,
+            at_start: false,
+            fetched: 0,
+        };
+
+        for page in 1..=5 {
+            let completion = model
+                .finish_history(
+                    &papo::Conversation::Channel(channel.clone()),
+                    None,
+                    Some(super::HistoryCursor::new(
+                        Some(format!("page-{page}")),
+                        page,
+                    )),
+                    100,
+                    false,
+                )
+                .expect("catch-up page completes");
+            assert_eq!(completion.gap, page == 5);
+            if page < 5 {
+                assert!(matches!(completion.next, Some(HistoryFetch::After { .. })));
+            } else {
+                assert!(matches!(
+                    completion.next,
+                    Some(HistoryFetch::LatestAfterGap(_))
+                ));
+            }
+        }
+        assert!(matches!(
+            model.buffers[&buffer_id].history,
+            HistoryState::CatchingUpLatest { .. }
+        ));
     }
 
     #[test]
@@ -3742,8 +4092,11 @@ mod tests {
         model.mark_vanished_cached_rows();
         assert_eq!(model.buffers[&buffer_id].projection.cached, Some(true));
 
-        let targets = model.take_queued_history();
-        assert!(matches!(targets.as_slice(), [HistoryTarget::Direct(_)]));
+        let fetches = model.connected_history();
+        assert!(matches!(
+            fetches.as_slice(),
+            [HistoryFetch::Latest(HistoryTarget::Direct(_))]
+        ));
         let buffer = &model.buffers[&buffer_id];
         assert_eq!(buffer.projection.cached, None);
         assert_eq!(buffer.projection.cached_preview, None);
@@ -3753,10 +4106,14 @@ mod tests {
         );
         assert!(matches!(buffer.history, HistoryState::LoadingLatest));
 
-        assert_eq!(
-            model.finish_history(&targets[0].conversation(), None, true),
-            Some((buffer_id, true))
-        );
+        let HistoryFetch::Latest(target) = &fetches[0] else {
+            panic!("cached direct requests latest history")
+        };
+        let completion = model
+            .finish_history(&target.conversation(), None, None, 0, false)
+            .expect("latest history completes");
+        assert_eq!(completion.buffer_id, buffer_id);
+        assert_eq!(completion.at_start, Some(true));
         assert!(matches!(
             model.buffers[&buffer_id].history,
             HistoryState::Ready {

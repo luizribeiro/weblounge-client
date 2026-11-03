@@ -193,6 +193,59 @@ test.describe("connection resilience against local Ergo", () => {
     }
   });
 
+  test("catches up an opened DM and channel after a silently dead socket", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    await installNativeFeelInstrumentation(page);
+    const bot = await connectBot("gap");
+    const mobile = isMobile(testInfo.project.name);
+    let dropped = false;
+    try {
+      await openChannel(page, testInfo.project.name);
+      const suffix = Date.now();
+      const beforeChannel = `before channel gap ${suffix}`;
+      await bot.privmsgConfirmed(channel, beforeChannel);
+      await expect(transcriptRow(page, beforeChannel)).toHaveCount(1);
+
+      const beforeDm = `before direct gap ${suffix}`;
+      await bot.privmsgConfirmed("weblounge", beforeDm);
+      if (mobile)
+        await page.getByRole("button", { name: "Back to chats" }).click();
+      await page
+        .getByRole("button", { name: new RegExp(`^${bot.nickname}`) })
+        .click();
+      await expect(transcriptRow(page, beforeDm)).toHaveCount(1);
+
+      await controlForwarder("drop");
+      dropped = true;
+      const gapDm = `missed direct ${suffix}`;
+      const gapChannel = `missed channel ${suffix}`;
+      await bot.privmsgConfirmed("weblounge", gapDm);
+      await bot.privmsgConfirmed(channel, gapChannel);
+
+      await setVisibility(page, true);
+      await setVisibility(page, false);
+      await dispatchPersistedPageShow(page);
+      await expectTransientConnectionPresentation(page, mobile);
+      await controlForwarder("restore");
+      dropped = false;
+
+      await expectOnline(page, testInfo.project.name);
+      await expect(transcriptRow(page, gapDm)).toHaveCount(1);
+      if (mobile)
+        await page.getByRole("button", { name: "Back to chats" }).click();
+      await page.getByRole("button", { name: channel }).first().click();
+      await expect(transcriptRow(page, gapChannel)).toHaveCount(1);
+    } finally {
+      if (dropped) await controlForwarder("restore");
+      bot.close();
+    }
+  });
+
   test("recovers transparently after the dedicated worker is terminated", async ({
     page,
   }, testInfo) => {
@@ -326,6 +379,7 @@ async function openChannel(page: Page, projectName: string) {
           .getAttribute("data-network-state"),
       )
       .toMatch(/registering|online/);
+    await page.getByRole("button", { name: channel }).first().click();
   }
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
   await expectOnline(page, projectName);
@@ -356,6 +410,12 @@ async function sendAndExpectEcho(
 function messageRow(page: Page, text: string, delivery: string) {
   return page
     .locator(`[data-message-row][data-delivery="${delivery}"]`)
+    .filter({ has: page.getByText(text, { exact: true }) });
+}
+
+function transcriptRow(page: Page, text: string) {
+  return page
+    .locator("[data-message-row]")
     .filter({ has: page.getByText(text, { exact: true }) });
 }
 
@@ -465,6 +525,13 @@ async function dispatchPersistedPageShow(page: Page): Promise<void> {
     Object.defineProperty(event, "persisted", { value: true });
     window.dispatchEvent(event);
   });
+}
+
+async function controlForwarder(action: "drop" | "restore"): Promise<void> {
+  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
+  if (base === undefined) throw new Error("socket forwarder is unavailable");
+  const response = await fetch(`${base}/${action}`, { method: "POST" });
+  if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
 }
 
 async function installWorkerControl(page: Page): Promise<void> {

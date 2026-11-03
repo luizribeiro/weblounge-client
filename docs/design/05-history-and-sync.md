@@ -19,15 +19,28 @@ enum HistoryState {
     LoadingLatest,
     Ready { oldest: Option<papo::HistoryReference>, at_start: bool },
     LoadingOlder { oldest: papo::HistoryReference },
+    CatchingUp { oldest: Option<papo::HistoryReference>, at_start: bool, fetched: usize },
+    CatchingUpLatest { oldest: Option<papo::HistoryReference>, at_start: bool },
 }
 ```
 
-The cursor comes from the chronologically oldest referenced event before the page is consumed. It
-therefore uses a msgid whenever the server supplied one, includes non-message history items in the
-boundary, tolerates servers that reverse page delivery, and survives timeline eviction. A
+Each buffer separately retains its oldest paging reference and newest reconnect cursor. The newest
+cursor keeps both the latest server time and its msgid when present; it belongs to `NetworkModel`,
+not papo's `Client`, so hosted reconnects that replace the client retain it. Both cursors survive
+timeline eviction. The oldest cursor comes from the chronologically oldest referenced event before
+the page is consumed. It therefore uses a msgid whenever the server supplied one, includes
+non-message history items in the boundary, and tolerates servers that reverse page delivery. A
 non-empty `BEFORE` page always advances to another requestable cursor. Only an empty older page
 sets `at_start`; page length and a server end hint do not. An empty initial page is terminal because
 it establishes that the conversation has no available entries.
+
+After every `Connected` following the first, each ready channel and direct conversation requests
+`Client::history(target).after(newest)`. Non-terminal pages advance the retained cursor and request
+the next page until the server reports the end or returns an empty page. Catch-up is capped at 500
+items per buffer; crossing the cap inserts a transcript gap notice and merges one `LATEST` page so
+the live edge is still current. `CHATHISTORY TARGETS` also starts `AFTER` for a ready direct when its
+reported latest server time is newer than the retained cursor. All pages use the same msgid dedupe
+as live delivery.
 
 History events are sorted before delivery to the UI and merged through the engine's existing msgid
 deduplication. The UI may retain more rendered rows than the engine window; cursor ownership stays
@@ -69,13 +82,18 @@ notification policy, or background push delivery.
   and the badge/highlight matrix for direct messages and channels with and without a nick match.
   UI derivation tests cover no unread, unread with and without mentions, DMs, and counts above 99.
 - Scripted papo transcripts page through more than 1,000 same-time messages and assert every msgid
-  is delivered once in chronological order. Separate transcripts cover initial marker fetch,
-  online and queued-offline marker sends, and live remote advances.
+  is delivered once in chronological order. Reconnect transcripts cover ready direct messages,
+  channels retained across a fresh hosted client, multi-page catch-up, and the catch-up cap.
+  Separate transcripts cover initial marker fetch, online and queued-offline marker sends, and live
+  remote advances.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
   configured limits.
 - Production-profile Playwright reconnects after own multiline and bot split/multiline sends,
   asserting exact text, authorship, sender, server-time ordering, and a stable live-edge viewport
   on every animation frame during the first second after history appears.
+- Desktop and iPhone WebKit route the app through a controllable TCP forwarder, silently strand the
+  browser socket, deliver channel and direct messages to the always-on account, foreground the app,
+  and assert both opened conversations catch up without reload.
 - Playwright uses two independent browser contexts signed in to the same account: reading at the
   live edge in one clears the unread and mention indicators in the other. Native-feel idle and
   hidden-tab audits remain green. A direct message without a nick match keeps its red total-unread
@@ -85,4 +103,4 @@ notification policy, or background push delivery.
 ## Out of scope
 
 Persistent local timelines and cursors, offline read-marker queues, search, around-message jumps,
-newer-direction paging, and unread counts for rows outside the fetched window are later work.
+and unread counts for rows outside the fetched window are later work.

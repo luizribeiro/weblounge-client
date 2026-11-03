@@ -26,8 +26,8 @@ use crate::{
     pushed_messages::{self, PushedMessage},
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
-        DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
-        PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
+        DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget, NetworkModel,
+        PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
     },
 };
 
@@ -46,6 +46,7 @@ const HISTORY_PAGE_SIZE: usize = 100;
 const RECENT_DIRECT_LIMIT: usize = 100;
 const RECENT_DIRECT_WINDOW: Duration = Duration::from_hours(30 * 24);
 const COMPLETION_LIMIT: usize = 100;
+const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 
 struct CompletionContext {
     trigger: CompletionTrigger,
@@ -1142,7 +1143,7 @@ impl Runtime {
             let alive = if online {
                 tokio::select! {
                     result = client.ping() => result.is_ok(),
-                    () = delay(Duration::from_secs(5)) => false,
+                    () = delay(FOREGROUND_PROBE_TIMEOUT) => false,
                 }
             } else {
                 false
@@ -1977,8 +1978,7 @@ fn build_client(config: ConnectConfig) -> (papo::Client, papo::Events, papo::Dri
             papo::Reconnect::exponential()
                 .max_delay(Duration::from_secs(30))
                 .refused_delay(Duration::from_secs(30)),
-        )
-        .history_on_reconnect(true);
+        );
     if !config.autojoin.is_empty() {
         builder = builder.autojoin(config.autojoin);
     }
@@ -1996,8 +1996,7 @@ fn build_pending_hosted_client(
             papo::Reconnect::exponential()
                 .max_delay(Duration::from_secs(30))
                 .refused_delay(Duration::from_secs(30)),
-        )
-        .history_on_reconnect(true);
+        );
     if !autojoin.is_empty() {
         builder = builder.autojoin(autojoin);
     }
@@ -2592,7 +2591,7 @@ async fn drain_events(
             }
             _ => None,
         };
-        let history_targets =
+        let history_fetches =
             process_event_with_direct(&state, &outbound, &client, instance, event, None);
         if let Some(message) = direct_message {
             spawn_direct_resolution(
@@ -2603,13 +2602,13 @@ async fn drain_events(
                 message,
             );
         }
-        for target in history_targets {
+        for fetch in history_fetches {
             spawn_history_fetch(
                 Arc::clone(&state),
                 outbound.clone(),
                 client.clone(),
                 instance,
-                HistoryFetch::Latest(target),
+                fetch,
             );
         }
         if restore_directs {
@@ -2805,14 +2804,16 @@ async fn fetch_history(
     fetch: HistoryFetch,
 ) -> Result<papo::HistoryPage, papo::Error> {
     match fetch {
-        HistoryFetch::Latest(HistoryTarget::Channel(channel)) => {
+        HistoryFetch::Latest(HistoryTarget::Channel(channel))
+        | HistoryFetch::LatestAfterGap(HistoryTarget::Channel(channel)) => {
             client
                 .history(channel)
                 .latest()
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
-        HistoryFetch::Latest(HistoryTarget::Direct(nick)) => {
+        HistoryFetch::Latest(HistoryTarget::Direct(nick))
+        | HistoryFetch::LatestAfterGap(HistoryTarget::Direct(nick)) => {
             client.history(nick).latest().limit(HISTORY_PAGE_SIZE).await
         }
         HistoryFetch::Before {
@@ -2835,15 +2836,27 @@ async fn fetch_history(
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
+        HistoryFetch::After {
+            target: HistoryTarget::Channel(channel),
+            newest,
+        } => {
+            client
+                .history(channel)
+                .after(newest.reference())
+                .limit(HISTORY_PAGE_SIZE)
+                .await
+        }
+        HistoryFetch::After {
+            target: HistoryTarget::Direct(nick),
+            newest,
+        } => {
+            client
+                .history(nick)
+                .after(newest.reference())
+                .limit(HISTORY_PAGE_SIZE)
+                .await
+        }
     }
-}
-
-#[cfg(test)]
-async fn fetch_latest(
-    client: &papo::Client,
-    target: HistoryTarget,
-) -> Result<papo::HistoryPage, papo::Error> {
-    fetch_history(client, HistoryFetch::Latest(target)).await
 }
 
 fn spawn_recent_direct_restore(
@@ -2897,11 +2910,7 @@ fn spawn_recent_direct_restore(
                     .network
                     .as_mut()
                     .filter(|running| running.instance == instance)
-                    .map(|running| {
-                        running
-                            .model
-                            .restore_direct(nick.clone(), latest, &snapshot)
-                    })
+                    .map(|running| running.model.restore_direct(&nick, latest, &snapshot))
             };
             let Some((fetch, buffer_id, added)) = restored else {
                 return;
@@ -3033,7 +3042,7 @@ fn process_event(
     client: &papo::Client,
     instance: u64,
     event: papo::Event,
-) -> Vec<HistoryTarget> {
+) -> Vec<HistoryFetch> {
     process_event_with_direct(state, outbound, client, instance, event, None)
 }
 
@@ -3044,7 +3053,7 @@ fn process_event_with_direct(
     instance: u64,
     event: papo::Event,
     direct: Option<papo::DirectRef>,
-) -> Vec<HistoryTarget> {
+) -> Vec<HistoryFetch> {
     let snapshot = client.state();
     let shared_state = Arc::clone(state);
     let mut state = lock(state);
@@ -3088,12 +3097,12 @@ fn process_event_with_direct(
             None,
         );
     }
-    effects.history_targets
+    effects.history_fetches
 }
 
 #[derive(Default)]
 struct EventEffects {
-    history_targets: Vec<HistoryTarget>,
+    history_fetches: Vec<HistoryFetch>,
     own_read_advances: Vec<ReadAdvance>,
     clear_hosted_authentication: bool,
     flush_sends: bool,
@@ -3109,13 +3118,13 @@ fn process_papo_event(
     output: &mut Vec<EngineToUi>,
 ) -> EventEffects {
     let mut effects = EventEffects::default();
-    effects.history_targets = match event {
+    effects.history_fetches = match event {
         papo::Event::Connecting(connecting) => {
             process_connecting(running, &connecting, output);
             Vec::new()
         }
         papo::Event::Connected(connected) => {
-            let (history_targets, push_register) =
+            let (history_fetches, push_register) =
                 process_connected(running, snapshot, &connected, output);
             effects.push_register = push_register;
             if !running.pending_sends.is_empty() && !running.flushing_sends {
@@ -3123,10 +3132,13 @@ fn process_papo_event(
                 effects.flush_sends = true;
             }
             effects.read_flush = start_read_flush(running);
-            history_targets
+            history_fetches
         }
         papo::Event::Lagged(lagged) => {
             process_lagged(&mut running.model, snapshot, &lagged, output)
+                .into_iter()
+                .map(HistoryFetch::Latest)
+                .collect()
         }
         papo::Event::Warning(warning) => {
             process_warning(&warning, output);
@@ -3162,9 +3174,18 @@ fn process_papo_event(
             process_read_marker(&mut running.model, &marker, output);
             Vec::new()
         }
-        papo::Event::Joined(joined) => process_join(&mut running.model, snapshot, &joined, output),
-        papo::Event::Parted(parted) => process_part(&mut running.model, snapshot, &parted, output),
-        papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, output),
+        papo::Event::Joined(joined) => process_join(&mut running.model, snapshot, &joined, output)
+            .into_iter()
+            .map(HistoryFetch::Latest)
+            .collect(),
+        papo::Event::Parted(parted) => process_part(&mut running.model, snapshot, &parted, output)
+            .into_iter()
+            .map(HistoryFetch::Latest)
+            .collect(),
+        papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, output)
+            .into_iter()
+            .map(HistoryFetch::Latest)
+            .collect(),
         papo::Event::Quit(quit) => {
             process_quit(&mut running.model, &quit, output);
             Vec::new()
@@ -3273,7 +3294,7 @@ fn process_connected(
     snapshot: &papo::State,
     connected: &papo::event::Connected,
     output: &mut Vec<EngineToUi>,
-) -> (Vec<HistoryTarget>, Option<PushRegisterTask>) {
+) -> (Vec<HistoryFetch>, Option<PushRegisterTask>) {
     running.model.rebuild_name_keys(snapshot);
     let next = next_connection_state(
         running.model.connection(),
@@ -3286,12 +3307,12 @@ fn process_connected(
             .set_connection(next, Some(connected.nick.to_string())),
     );
     output.extend(running.model.sync_channels(snapshot));
-    let history_targets = running.model.take_queued_history();
-    if !history_targets.is_empty() {
+    let history_fetches = running.model.connected_history();
+    if !history_fetches.is_empty() {
         output.push(running.model.buffers_event());
     }
     let push_register = connected_push_action(running, snapshot, output);
-    (history_targets, push_register)
+    (history_fetches, push_register)
 }
 
 fn connected_push_action(
@@ -3646,8 +3667,10 @@ fn process_history(
     page: papo::HistoryPage,
 ) {
     let shared_state = Arc::clone(state);
-    let prepend = page.reason == papo::HistoryReason::Requested;
-    let requested = requested_history_boundary(&page);
+    let conversation = page.conversation.clone();
+    let item_count = page.items.len();
+    let end = page.end;
+    let (oldest, newest) = history_page_bounds(&page);
     let snapshot = client.state();
     let mut state = lock(state);
     let Some(running) = state
@@ -3657,6 +3680,8 @@ fn process_history(
     else {
         return;
     };
+    let load = running.model.history_load(&conversation);
+    let prepend = matches!(load, Some(HistoryLoad::Latest | HistoryLoad::Older));
     let mut output = Vec::new();
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut unread = None;
@@ -3725,23 +3750,82 @@ fn process_history(
     if let Some(unread) = unread {
         output.push(unread);
     }
-    if let Some((conversation, oldest, empty)) = requested
-        && let Some((buffer_id, at_start)) =
-            running.model.finish_history(&conversation, oldest, empty)
-    {
-        output.push(EngineToUi::HistoryStateChanged {
-            buffer_id,
-            loading: false,
-            at_start,
-        });
-    }
+    let (finished, next) = finish_history_page(
+        &mut running.model,
+        load,
+        &conversation,
+        oldest,
+        newest,
+        item_count,
+        end,
+    );
+    output.extend(finished);
     let read_advances = own_read_advance.into_iter().collect::<Vec<_>>();
     drop(state);
     send_events(outbound, output);
-    if !read_advances.is_empty() {
-        record_deferred_read_advances(&shared_state, outbound.clone(), instance, read_advances);
-    }
+    flush_history_read_advances(&shared_state, outbound, instance, read_advances);
+    spawn_next_history(&shared_state, outbound, client, instance, next);
     update_chat_list(&shared_state, outbound, instance);
+}
+
+fn flush_history_read_advances(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+    advances: Vec<ReadAdvance>,
+) {
+    if !advances.is_empty() {
+        record_deferred_read_advances(state, outbound.clone(), instance, advances);
+    }
+}
+
+fn spawn_next_history(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    next: Option<HistoryFetch>,
+) {
+    if let Some(fetch) = next {
+        spawn_history_fetch(
+            Arc::clone(state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+            fetch,
+        );
+    }
+}
+
+fn finish_history_page(
+    model: &mut NetworkModel,
+    load: Option<HistoryLoad>,
+    conversation: &papo::Conversation,
+    oldest: Option<papo::HistoryReference>,
+    newest: Option<HistoryCursor>,
+    item_count: usize,
+    end: bool,
+) -> (Vec<EngineToUi>, Option<HistoryFetch>) {
+    let Some(completion) =
+        load.and_then(|_| model.finish_history(conversation, oldest, newest, item_count, end))
+    else {
+        return (Vec::new(), None);
+    };
+    let mut output = completion
+        .at_start
+        .map(|at_start| EngineToUi::HistoryStateChanged {
+            buffer_id: completion.buffer_id,
+            loading: false,
+            at_start,
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    if completion.gap
+        && let Some(event) = model.append_history_gap(completion.buffer_id)
+    {
+        output.push(event);
+    }
+    (output, completion.next)
 }
 
 fn record_deferred_read_advances(
@@ -3868,26 +3952,42 @@ fn schedule_snapshot_write_after(
     });
 }
 
-fn requested_history_boundary(
+fn history_page_bounds(
     page: &papo::HistoryPage,
-) -> Option<(papo::Conversation, Option<papo::HistoryReference>, bool)> {
-    (page.reason == papo::HistoryReason::Requested).then(|| {
-        let oldest = page
-            .items
-            .iter()
-            .filter_map(|event| {
-                let time = event.server_time().or_else(|| event.received_at())?;
-                let reference = event
-                    .msgid()
-                    .cloned()
-                    .map(papo::HistoryReference::from)
-                    .or_else(|| event.server_time().map(papo::HistoryReference::from))?;
-                Some((time, reference))
+) -> (Option<papo::HistoryReference>, Option<HistoryCursor>) {
+    let oldest = page
+        .items
+        .iter()
+        .filter_map(|event| {
+            let time = event.server_time().or_else(|| event.received_at())?;
+            let reference = event
+                .msgid()
+                .cloned()
+                .map(papo::HistoryReference::from)
+                .or_else(|| event.server_time().map(papo::HistoryReference::from))?;
+            Some((time, reference))
+        })
+        .min_by_key(|(time, _)| *time)
+        .map(|(_, reference)| reference);
+    let newest = page
+        .items
+        .iter()
+        .filter_map(|event| {
+            event.server_time().map(|time| {
+                HistoryCursor::new(event.msgid().map(ToString::to_string), time_millis(time))
             })
-            .min_by_key(|(time, _)| *time)
-            .map(|(_, reference)| reference);
-        (page.conversation.clone(), oldest, page.items.is_empty())
-    })
+        })
+        .fold(None, |newest: Option<HistoryCursor>, cursor| {
+            if newest
+                .as_ref()
+                .is_none_or(|current| cursor.server_time() >= current.server_time())
+            {
+                Some(cursor)
+            } else {
+                newest
+            }
+        });
+    (oldest, newest)
 }
 
 fn history_timeline_event(
@@ -4332,9 +4432,9 @@ mod tests {
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, PushRegistration, RunningNetwork, Runtime,
         RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_history,
-        fetch_latest, join_request_events, lock, next_connection_state, person_candidates,
-        process_event, process_history, queue_read_advance, schedule_snapshot_write_after,
-        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
+        join_request_events, lock, next_connection_state, person_candidates, process_event,
+        process_history, queue_read_advance, schedule_snapshot_write_after, spawn_history_fetch,
+        spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -4346,7 +4446,8 @@ mod tests {
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         pushed_messages::PushedMessage,
         state::{
-            DirectAvailability, HistoryTarget, NetworkModel, PendingSend, ReadAdvance, SendTarget,
+            DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
+            ReadAdvance, SendTarget,
         },
         storage::{KvBackend, MemoryKv, Operation, Space},
     };
@@ -7224,6 +7325,16 @@ async fn delay(duration: Duration) {
         items: &[&str],
         end: bool,
     ) {
+        send_history_page_for(wire, label, "#room", items, end).await;
+    }
+
+    async fn send_history_page_for(
+        wire: &mut papo_testing::Wire,
+        label: &str,
+        conversation: &str,
+        items: &[&str],
+        end: bool,
+    ) {
         let reply = format!("reply{label}");
         let history = format!("history{label}");
         wire.server(format!(
@@ -7232,7 +7343,7 @@ async fn delay(duration: Duration) {
         .await;
         let end_tag = if end { ";draft/chathistory-end" } else { "" };
         wire.server(format!(
-            "@batch={reply}{end_tag} :offline.test BATCH +{history} chathistory #room"
+            "@batch={reply}{end_tag} :offline.test BATCH +{history} chathistory {conversation}"
         ))
         .await;
         for item in items {
@@ -7322,11 +7433,11 @@ async fn delay(duration: Duration) {
         let joined =
             next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let (state, outbound, _receiver) = harness(client.clone());
-        let target = process_event(&state, &outbound, &client, 1, joined)
+        let fetch_request = process_event(&state, &outbound, &client, 1, joined)
             .pop()
             .expect("joined channel requests history");
         let fetch_client = client.clone();
-        let fetch = tokio::spawn(async move { fetch_latest(&fetch_client, target).await });
+        let fetch = tokio::spawn(async move { fetch_history(&fetch_client, fetch_request).await });
         let request = wire.next_sent().await;
         let label = request_label(&request);
         let items = (0..50)
@@ -7430,6 +7541,116 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn second_connected_catches_up_a_ready_direct_after_its_newest_msgid() {
+        let (client, events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let drain = tokio::spawn(drain_events(
+            Arc::clone(&state),
+            outbound,
+            client.clone(),
+            events,
+            1,
+        ));
+
+        register_for_history(&mut wire).await;
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        send_recent_targets(
+            &mut wire,
+            request_label(&targets),
+            &[("Bob", "2026-10-30T12:00:01.000Z")],
+        )
+        .await;
+        let latest = next_sent_containing(&mut wire, " CHATHISTORY LATEST Bob ").await;
+        send_history_page_for(
+            &mut wire,
+            request_label(&latest),
+            "Bob",
+            &["time=2026-10-30T12:00:01.000Z;msgid=dm-1 :Bob!b@host PRIVMSG weblounge :before disconnect"],
+            false,
+        )
+        .await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if matches!(
+                    receiver.recv().await,
+                    Some(EngineToUi::HistoryStateChanged { loading: false, .. })
+                ) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("direct latest history becomes ready");
+
+        wire.close().await;
+        client.reconnect().await.expect("manual reconnect starts");
+        register_for_history(&mut wire).await;
+        let after = tokio::time::timeout(
+            Duration::from_secs(1),
+            next_sent_containing(&mut wire, " CHATHISTORY AFTER Bob "),
+        )
+        .await
+        .expect("ready direct catch-up starts on the second connection");
+        assert!(after.ends_with("CHATHISTORY AFTER Bob msgid=dm-1 100"));
+
+        drain.abort();
+    }
+
+    #[tokio::test]
+    async fn hosted_fresh_client_catches_up_a_ready_channel_with_the_retained_cursor() {
+        let (first, mut first_events, mut first_wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        register_for_history(&mut first_wire).await;
+        let connected = next_matching(&mut first_events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, _receiver) = harness(first.clone());
+        process_event(&state, &outbound, &first, 1, connected);
+        assert!(first_wire.next_sent().await.ends_with("JOIN #room"));
+        first_wire.server(":weblounge!u@host JOIN #room").await;
+        let joined = next_matching(&mut first_events, |event| {
+            matches!(event, papo::Event::Joined(_))
+        })
+        .await;
+        let latest = process_event(&state, &outbound, &first, 1, joined)
+            .pop()
+            .expect("joined channel requests latest history");
+        let first_fetch = first.clone();
+        let latest_task = tokio::spawn(async move { fetch_history(&first_fetch, latest).await });
+        let request = next_sent_containing(&mut first_wire, " CHATHISTORY LATEST #room ").await;
+        send_history_page(
+            &mut first_wire,
+            request_label(&request),
+            &["time=2026-10-30T12:00:01.000Z;msgid=channel-1 :alice!a@host PRIVMSG #room :before reconnect"],
+        )
+        .await;
+        let page = latest_task
+            .await
+            .expect("latest task completes")
+            .expect("latest history succeeds");
+        process_history(&state, &outbound, &first, 1, page);
+
+        let (fresh, mut fresh_events, mut fresh_wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_for_history(&mut fresh_wire).await;
+        let connected = next_matching(&mut fresh_events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let after = process_event(&state, &outbound, &fresh, 1, connected)
+            .into_iter()
+            .find(|fetch| matches!(fetch, HistoryFetch::After { .. }))
+            .expect("fresh hosted client catches up the retained channel");
+        let fresh_fetch = fresh.clone();
+        let after_task = tokio::spawn(async move { fetch_history(&fresh_fetch, after).await });
+        let request = next_sent_containing(&mut fresh_wire, " CHATHISTORY AFTER #room ").await;
+        assert!(request.ends_with("CHATHISTORY AFTER #room msgid=channel-1 100"));
+        after_task.abort();
+    }
+
+    #[tokio::test]
     async fn history_pages_before_oldest_msgid_sort_deduplicate_and_stop_at_start() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
@@ -7463,8 +7684,8 @@ async fn delay(duration: Duration) {
         _ = collect(&mut receiver);
 
         let fetch_client = client.clone();
-        let target = targets[0].clone();
-        let fetch = tokio::spawn(async move { fetch_latest(&fetch_client, target).await });
+        let fetch_request = targets[0].clone();
+        let fetch = tokio::spawn(async move { fetch_history(&fetch_client, fetch_request).await });
         let request = wire.next_sent().await;
         assert!(request.ends_with("CHATHISTORY LATEST #room * 100"));
         let label = request_label(&request);
@@ -7555,7 +7776,7 @@ async fn delay(duration: Duration) {
         let joined =
             next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
         let (state, outbound, mut event_rx) = harness(client.clone());
-        let target = process_event(&state, &outbound, &client, 1, joined)
+        let fetch_request = process_event(&state, &outbound, &client, 1, joined)
             .pop()
             .expect("joined channel requests history");
         _ = collect(&mut event_rx);
@@ -7566,7 +7787,7 @@ async fn delay(duration: Duration) {
         let page = fetch_requested_page(
             &client,
             &mut wire,
-            crate::state::HistoryFetch::Latest(target),
+            fetch_request,
             "CHATHISTORY LATEST #room * 100",
             &latest_refs,
         )
@@ -7657,8 +7878,8 @@ async fn delay(duration: Duration) {
         _ = collect(&mut receiver);
 
         let fetch_client = client.clone();
-        let target = targets[0].clone();
-        let fetch = tokio::spawn(async move { fetch_latest(&fetch_client, target).await });
+        let fetch_request = targets[0].clone();
+        let fetch = tokio::spawn(async move { fetch_history(&fetch_client, fetch_request).await });
         let request = wire.next_sent().await;
         let label = request_label(&request);
         send_history_page(&mut wire, label, &[]).await;
@@ -8788,7 +9009,7 @@ async fn delay(duration: Duration) {
         let targets = process_event(&state, &outbound, &client, 1, lagged);
 
         assert!(
-            matches!(targets.as_slice(), [HistoryTarget::Channel(channel)] if channel == "#room")
+            matches!(targets.as_slice(), [HistoryFetch::Latest(HistoryTarget::Channel(channel))] if channel == "#room")
         );
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
@@ -8851,23 +9072,32 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn catchup_history_page_merges_and_deduplicates_live_overlap() {
-        let (client, mut events, mut wire) = wire(
-            papo::Client::builder("irc://offline.test", "weblounge")
-                .history_on_reconnect(true)
-                .autojoin(["#room"]),
-        );
+    async fn engine_catchup_pages_and_deduplicates_live_overlap() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
         register_for_history(&mut wire).await;
-        _ = next_matching(&mut events, |event| {
+        let connected = next_matching(&mut events, |event| {
             matches!(event, papo::Event::Connected(_))
         })
         .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, connected);
         assert!(wire.next_sent().await.ends_with("JOIN #room"));
         wire.server(":weblounge!u@host JOIN #room").await;
         let joined =
             next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let (state, outbound, mut receiver) = harness(client.clone());
-        process_event(&state, &outbound, &client, 1, joined);
+        let latest = process_event(&state, &outbound, &client, 1, joined)
+            .pop()
+            .expect("joined channel requests latest history");
+        let latest_client = client.clone();
+        let latest_task = tokio::spawn(async move { fetch_history(&latest_client, latest).await });
+        let latest_request = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room ").await;
+        send_history_page(&mut wire, request_label(&latest_request), &[]).await;
+        let latest_page = latest_task
+            .await
+            .expect("latest task completes")
+            .expect("latest history succeeds");
+        process_history(&state, &outbound, &client, 1, latest_page);
         _ = collect(&mut receiver);
 
         wire.server(
@@ -8893,10 +9123,15 @@ async fn delay(duration: Duration) {
             |event| matches!(event, papo::Event::Connected(connected) if connected.reconnected),
         )
         .await;
-        process_event(&state, &outbound, &client, 1, connected);
+        let after = process_event(&state, &outbound, &client, 1, connected)
+            .into_iter()
+            .find(|fetch| matches!(fetch, HistoryFetch::After { .. }))
+            .expect("engine schedules channel catch-up");
         _ = collect(&mut receiver);
         assert!(wire.next_sent().await.ends_with("JOIN #room"));
-        let request = wire.next_sent().await;
+        let catchup_client = client.clone();
+        let catchup_task = tokio::spawn(async move { fetch_history(&catchup_client, after).await });
+        let request = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
         let label = request_label(&request);
         assert!(request.contains("CHATHISTORY AFTER #room msgid=live-1"));
         send_history_page(
@@ -8908,24 +9143,15 @@ async fn delay(duration: Duration) {
             ],
         )
         .await;
-
-        let final_request = wire.next_sent().await;
+        let page = catchup_task
+            .await
+            .expect("catch-up task completes")
+            .expect("catch-up page succeeds");
+        process_history(&state, &outbound, &client, 1, page);
+        let final_request = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
         let final_label = request_label(&final_request);
         assert!(final_request.contains("CHATHISTORY AFTER #room msgid=missed-1"));
         send_history_page(&mut wire, final_label, &[]).await;
-
-        let history = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::History(_))
-        })
-        .await;
-        assert!(matches!(
-            &history,
-            papo::Event::History(page) if page.reason == papo::HistoryReason::Catchup
-        ));
-        let papo::Event::History(page) = history else {
-            panic!("history page expected")
-        };
-        process_history(&state, &outbound, &client, 1, page);
         let appended = collect(&mut receiver)
             .into_iter()
             .filter_map(|event| match event {

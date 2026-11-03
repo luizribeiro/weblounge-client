@@ -258,7 +258,7 @@ function descendants(directory: string): string[] {
 function testWebSocketProxy() {
   return {
     "/socket": {
-      target: "ws://127.0.0.1:8067",
+      target: process.env.WEBLOUNGE_E2E_IRC_TARGET ?? "ws://127.0.0.1:8067",
       ws: true,
     },
   };

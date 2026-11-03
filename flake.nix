@@ -289,6 +289,7 @@
             pkgs.pnpm
             pkgs.pnpmConfigHook
             pkgs.fontconfig
+            pkgs.curl
             localErgo
           ];
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
@@ -299,13 +300,17 @@
           WEBLOUNGE_APP_DIR = "${e2eApp}";
           WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
           WEBLOUNGE_E2E_ERGO = "1";
+          WEBLOUNGE_E2E_IRC_TARGET = "ws://127.0.0.1:8066";
+          WEBLOUNGE_E2E_FORWARDER_URL = "http://127.0.0.1:8091";
           WEBLOUNGE_EXPECTED_BUILD_SHA = buildSha;
           buildPhase = ''
             runHook preBuild
             weblounge-ergo >ergo.log 2>&1 &
             ergo_pid=$!
+            node e2e/socket-forwarder.mjs >forwarder.log 2>&1 &
+            forwarder_pid=$!
             export WEBLOUNGE_ERGO_CONTROL_PID="$ergo_pid"
-            trap 'kill "$ergo_pid" 2>/dev/null || true; wait "$ergo_pid" 2>/dev/null || true' EXIT
+            trap 'kill "$forwarder_pid" "$ergo_pid" 2>/dev/null || true; wait "$forwarder_pid" "$ergo_pid" 2>/dev/null || true' EXIT
             ready=false
             for _ in $(seq 1 200); do
               if grep --quiet 'local Ergo is ready' ergo.log; then
@@ -320,6 +325,22 @@
             done
             if [[ "$ready" != true ]]; then
               cat ergo.log >&2
+              exit 1
+            fi
+            forwarder_ready=false
+            for _ in $(seq 1 200); do
+              if curl --silent --fail http://127.0.0.1:8091/health >/dev/null; then
+                forwarder_ready=true
+                break
+              fi
+              if ! kill -0 "$forwarder_pid" 2>/dev/null; then
+                cat forwarder.log >&2
+                exit 1
+              fi
+              sleep 0.05
+            done
+            if [[ "$forwarder_ready" != true ]]; then
+              cat forwarder.log >&2
               exit 1
             fi
             ${playwrightCommand}

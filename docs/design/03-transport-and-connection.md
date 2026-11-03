@@ -193,13 +193,17 @@ retries. “Reconnect now” asks one active page for a hosted token and then re
 The hosted connection owner must not let an automatic papo reconnect bypass that credential gate
 with the preceding attempt's token; papo remains authoritative for transport failure
 classification and the reported retry schedule.
-Papo's keepalive detects a dead resumed socket; if measurements show its deadline is too slow,
-weblounge will request a public short-timeout liveness operation instead of implementing IRC PING.
+Foreground reconnect requests race papo's `Client::ping` against the engine's wasm-safe platform
+delay, then ask papo to reconnect when the probe does not finish. The engine never implements IRC
+PING or a second transport retry policy.
 Authentication and permanent failures enter `Failed`; device-offline conditions enter `Offline`.
 
 On every `Connected`, the engine increments the connection epoch and reads `Client::state()` before
-publishing `Online`. `ChannelSynced` marks autojoins ready. On `Event::Lagged`, it re-reads papo
-state and schedules history repair where supported.
+publishing `Online`. After the first connection it also schedules engine-owned `CHATHISTORY AFTER`
+repair for every ready channel and direct conversation from that buffer's retained cursor. This is
+required even when papo builds a fresh hosted client: papo's optional reconnect catch-up covers
+only channels retained by one client instance. `ChannelSynced` marks autojoins ready. On
+`Event::Lagged`, the engine re-reads papo state and schedules history repair where supported.
 
 Papo disconnects with `DisconnectCause::SlowConsumer` when both event queues fill, including during
 connect at the current revision. The event loop therefore starts immediately and performs no slow
@@ -210,7 +214,8 @@ projections from the fresh snapshot after `Connected`.
 Deliberate disconnect stops command intake, awaits `Client::quit()` within a bounded shutdown, and
 drops the task. Mobile backgrounding does not replace the shell or deliberately quit: the worker
 and papo connection remain authoritative for as long as the platform keeps them alive. Foreground
-requests an immediate reconnect/liveness check, and papo history catch-up repairs the gap.
+requests an immediate reconnect/liveness check, and the engine's retained per-buffer cursors repair
+the gap through papo's history API.
 
 ### Shell presentation
 

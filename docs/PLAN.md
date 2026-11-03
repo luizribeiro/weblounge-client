@@ -65,12 +65,16 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - D2. [x] Rebuild the DM list from a 30-day `CHATHISTORY TARGETS` window on connect and
     reconnect, capped at 100 direct conversations and ordered by server-reported recent activity.
     Latest history hydrates desktop and mobile previews without disturbing older-page cursors.
-  - D3. [x] Clean resume after reconnect: papo catch-up gap fill and `Lagged` resync; one
+  - D3. [x] Clean resume after reconnect: engine-owned channel and DM gap fill and `Lagged` resync; one
     engine-owned lifecycle; quiet desktop/mobile indicators; visible-only worker liveness and
     transparent respawn; ordered in-memory composer sends across network reconnects. Desktop and
     iPhone 16 Pro WebKit cover background/server loss, browser offline, worker termination, Ergo
     restart, hosted-token expiry, and preservation of the established shell, draft, and message
     viewport. The in-memory send queue cannot survive worker termination.
+  - [x] Keep foreground reconnect probes wasm-safe and retain each ready buffer's newest msgid and
+    server time outside papo's client. Normal and fresh hosted reconnects page channel and DM gaps
+    through `CHATHISTORY AFTER`; a silently stranded browser socket recovers both opened
+    conversations without a reload (#93).
   - [x] Omit channel mode prefixes from every transcript row. IRC history cannot preserve the
     sender's status at message time, so the message protocol carries no mode symbol and live and
     optimistic rows do not guess one. The Mode symbols setting remains scoped to the member list;
