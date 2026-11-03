@@ -1139,10 +1139,14 @@ impl Runtime {
         drop(state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
-            let alive = online
-                && tokio::time::timeout(Duration::from_secs(5), client.ping())
-                    .await
-                    .is_ok_and(|result| result.is_ok());
+            let alive = if online {
+                tokio::select! {
+                    result = client.ping() => result.is_ok(),
+                    () = delay(Duration::from_secs(5)) => false,
+                }
+            } else {
+                false
+            };
             let result = if alive {
                 Ok(())
             } else if hosted {
@@ -3803,22 +3807,28 @@ fn schedule_snapshot_write(
     generation: Arc<AtomicU64>,
     snapshot: ChatListSnapshot,
 ) {
-    schedule_snapshot_write_after(storage, generation, snapshot, snapshot_write_delay());
+    schedule_snapshot_write_after(
+        storage,
+        generation,
+        snapshot,
+        delay(Duration::from_millis(750)),
+    );
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-async fn snapshot_write_delay() {
-    tokio::time::sleep(Duration::from_millis(750)).await;
+async fn delay(duration: Duration) {
+    tokio::time::sleep(duration).await;
 }
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-async fn snapshot_write_delay() {
+async fn delay(duration: Duration) {
     let promise = js_sys::Promise::new(&mut |resolve, _| {
         let timeout = js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("setTimeout"))
             .ok()
             .and_then(|value| value.dyn_into::<js_sys::Function>().ok());
         if let Some(timeout) = timeout {
-            let _ = timeout.call2(&JsValue::NULL, &resolve, &JsValue::from_f64(750.0));
+            let milliseconds = duration.as_secs_f64() * 1_000.0;
+            let _ = timeout.call2(&JsValue::NULL, &resolve, &JsValue::from_f64(milliseconds));
         } else {
             let _ = resolve.call0(&JsValue::NULL);
         }
@@ -4340,6 +4350,21 @@ mod tests {
         },
         storage::{KvBackend, MemoryKv, Operation, Space},
     };
+
+    #[test]
+    fn wasm_reachable_runtime_uses_the_platform_delay() {
+        let production = include_str!("runtime.rs")
+            .rsplit_once("\n#[cfg(test)]\nmod tests")
+            .map_or(include_str!("runtime.rs"), |(production, _)| production);
+        let native_delay = r#"#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+async fn delay(duration: Duration) {
+    tokio::time::sleep(duration).await;
+}"#;
+        let wasm_reachable = production.replacen(native_delay, "", 1);
+
+        assert!(production.contains(native_delay));
+        assert!(!wasm_reachable.contains("tokio::time"));
+    }
 
     fn runtime_state(network: RunningNetwork) -> RuntimeState {
         RuntimeState {

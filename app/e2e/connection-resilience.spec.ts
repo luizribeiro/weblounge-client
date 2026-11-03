@@ -157,6 +157,42 @@ test.describe("connection resilience against local Ergo", () => {
     await expectShellToRemain(page, channel);
   });
 
+  test("keeps the online wasm engine alive through a foreground probe", async ({
+    page,
+  }, testInfo) => {
+    test.skip(isMobile(testInfo.project.name), "covered in desktop WebKit");
+    await installWorkerControl(page);
+    await installNativeFeelInstrumentation(page);
+    const bot = await connectBot("probe");
+    try {
+      await openChannel(page, testInfo.project.name);
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
+          ),
+        )
+        .toBe(1);
+
+      await setVisibility(page, true);
+      await setVisibility(page, false);
+      await dispatchPersistedPageShow(page);
+      await sendAndExpectEcho(
+        page,
+        bot,
+        `after foreground probe ${Date.now()}`,
+      );
+
+      expect(
+        await page.evaluate(() =>
+          Number(Reflect.get(globalThis, "engineWorkerGeneration") ?? 0),
+        ),
+      ).toBe(1);
+    } finally {
+      bot.close();
+    }
+  });
+
   test("recovers transparently after the dedicated worker is terminated", async ({
     page,
   }, testInfo) => {
