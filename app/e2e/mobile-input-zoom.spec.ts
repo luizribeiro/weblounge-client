@@ -762,6 +762,7 @@ interface KeyboardFrame {
   readonly keyboard: string | undefined;
   readonly liveEdgeGap: number;
   readonly newestGap: number;
+  readonly newestBottom: number | undefined;
   readonly offsetTop: number;
   readonly overlappingRows: number;
   readonly rootTop: number;
@@ -1140,6 +1141,7 @@ async function sampleKeyboardTransition(
             newest === undefined
               ? Number.POSITIVE_INFINITY
               : composerRect.top - newest.bottom,
+          newestBottom: newest?.bottom,
           offsetTop: viewport.offsetTop,
           overlappingRows: rowRects.filter(
             (row, index) =>
@@ -1565,12 +1567,27 @@ function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(committed?.keyboard).toBe("closed");
   expect(committed?.animations).toBeGreaterThan(0);
   expect(committed?.transcriptAnimations).toBe(0);
-  expect(Math.abs((committed?.composerTop ?? 0) - start)).toBeLessThan(
+  expect(Math.abs((committed?.composerTop ?? 0) - start)).toBeLessThanOrEqual(
+    1.5,
+  );
+  const firstPaint = frames[2];
+  const firstPaintLead =
+    (firstPaint?.animationTime ?? Number.POSITIVE_INFINITY) - 1000 / 60;
+  expect(firstPaintLead).toBeLessThan(1000 / 120);
+  expect(Math.abs((firstPaint?.composerTop ?? 0) - start)).toBeLessThan(
     Math.abs(end - start) * 0.15,
   );
+  const pinnedTranscript = frames.slice(1, 5);
+  const pinnedBottom = pinnedTranscript[0]?.newestBottom ?? 0;
+  expect(
+    pinnedTranscript.every(
+      ({ newestBottom }) => Math.abs((newestBottom ?? 0) - pinnedBottom) <= 0.5,
+    ),
+    JSON.stringify(frames),
+  ).toBe(true);
   expect(
     frames
-      .slice(1)
+      .slice(2)
       .every(
         (frame, index, moving) =>
           index === 0 ||

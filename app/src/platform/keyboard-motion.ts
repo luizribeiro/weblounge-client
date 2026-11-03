@@ -8,7 +8,6 @@ import {
 export const keyboardMotionEnabled = false;
 
 const durationMilliseconds = 400;
-const closeLeadMilliseconds = 20;
 const correctionMilliseconds = 100;
 const measuredSpring =
   "linear(0, .024 2.5%, .081 5%, .158 7.5%, .243 10%, .329 12.5%, .412 15%, .490 17.5%, .561 20%, .681 25%, .773 30%, .841 35%, .890 40%, .948 50%, .977 60%, .990 70%, .997 85%, 1)";
@@ -27,18 +26,22 @@ interface OpeningSnapshot {
 }
 
 interface OpeningLayout {
+  composerTop: number;
   readonly snapshot: HTMLElement;
   readonly screen: HTMLElement;
 }
 
 interface ClosingSnapshot {
   readonly composer: HTMLElement;
-  readonly composerBottom: number;
+  readonly composerTop: number;
+  readonly screen: HTMLElement;
+  readonly transcript: HTMLElement;
   readonly viewportHeight: number;
 }
 
 interface ClosingMotion extends ClosingSnapshot {
   readonly animation: Animation;
+  readonly transcriptSnapshot: HTMLElement;
   checkFrame: number;
 }
 
@@ -66,6 +69,7 @@ export function observeKeyboardMotion(
     const closingMotion = closing;
     if (closingMotion !== undefined && closingMotion.checkFrame !== 0)
       browserWindow.cancelAnimationFrame(closingMotion.checkFrame);
+    closingMotion?.transcriptSnapshot.remove();
     closing = undefined;
     for (const animation of running) animation.cancel();
     running.clear();
@@ -85,13 +89,14 @@ export function observeKeyboardMotion(
     const surfaces = motionSurfaces(root);
     if (surfaces === undefined) return;
     const composerRect = surfaces.composer.getBoundingClientRect();
-    const composerBottom = composerRect.bottom;
+    const settledComposerTop = openingLayout?.composerTop;
     cancelRunning();
     if (
       detail.previousGeometry.keyboard === "closed" &&
       detail.geometry.keyboard === "open"
     ) {
       const layout = {
+        composerTop: composerRect.top,
         screen: surfaces.screen,
         snapshot: createTranscriptSnapshot(
           surfaces.transcript,
@@ -110,8 +115,8 @@ export function observeKeyboardMotion(
       detail.geometry.keyboard === "closed"
     ) {
       closingSnapshot = {
-        composer: surfaces.composer,
-        composerBottom,
+        ...surfaces,
+        composerTop: settledComposerTop ?? composerRect.top,
         viewportHeight: viewportHeight(browserWindow),
       };
     }
@@ -128,6 +133,8 @@ export function observeKeyboardMotion(
       return;
     }
     const committedComposerTop = snapshot.composer.getBoundingClientRect().top;
+    if (openingLayout !== undefined)
+      openingLayout.composerTop = committedComposerTop;
     const delta = snapshot.composerTop - committedComposerTop;
     if (Math.abs(delta) <= 1) return;
     const timing = motionTiming(browserWindow);
@@ -173,22 +180,33 @@ export function observeKeyboardMotion(
   };
   const startClosing = (snapshot: ClosingSnapshot) => {
     const delta =
-      snapshot.composerBottom -
-      snapshot.composer.getBoundingClientRect().bottom;
+      snapshot.composerTop - snapshot.composer.getBoundingClientRect().top;
     if (Math.abs(delta) <= 1) return;
     const timing = motionTiming(browserWindow);
+    const transcriptSnapshot = createTranscriptSnapshot(
+      snapshot.transcript,
+      snapshot.screen,
+    );
     const animation = snapshot.composer.animate(
       [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
       {
-        delay: -closeLeadMilliseconds,
         duration: timing.duration,
         easing: timing.easing,
         fill: "both",
       },
     );
-    const state: ClosingMotion = { ...snapshot, animation, checkFrame: 0 };
+    const state: ClosingMotion = {
+      ...snapshot,
+      animation,
+      checkFrame: 0,
+      transcriptSnapshot,
+    };
     closing = state;
     running.add(animation);
+    browserWindow.queueMicrotask(() => {
+      if (running.has(animation))
+        anchorAnimation(animation, browserWindow.performance.now());
+    });
     watchClosing(state);
     state.checkFrame = browserWindow.requestAnimationFrame(() => {
       state.checkFrame = browserWindow.requestAnimationFrame(() => {
@@ -218,6 +236,7 @@ export function observeKeyboardMotion(
     closing = undefined;
     running.delete(state.animation);
     state.animation.cancel();
+    state.transcriptSnapshot.remove();
     const viewportBottom =
       (browserWindow.visualViewport?.offsetTop ?? 0) +
       viewportHeight(browserWindow);

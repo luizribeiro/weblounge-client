@@ -16,12 +16,14 @@ describe("keyboard motion", () => {
     const fixture = motionFixture();
     const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
+    fixture.setComposerHeight(83);
     fixture.willOpen();
+    fixture.setComposerHeight(63);
     fixture.setComposerBottom(516);
     fixture.didOpen();
 
     expect(fixture.composerAnimate).toHaveBeenCalledWith(
-      [{ transform: "translateY(358px)" }, { transform: "none" }],
+      [{ transform: "translateY(338px)" }, { transform: "none" }],
       expect.objectContaining({
         duration: 400,
         easing: expect.stringMatching(/^linear\(/u),
@@ -29,7 +31,7 @@ describe("keyboard motion", () => {
       }),
     );
     expect(fixture.transcriptAnimate).toHaveBeenCalledWith(
-      [{ transform: "none" }, { transform: "translateY(-358px)" }],
+      [{ transform: "none" }, { transform: "translateY(-338px)" }],
       expect.any(Object),
     );
     await Promise.resolve();
@@ -67,20 +69,34 @@ describe("keyboard motion", () => {
     stop();
   });
 
-  it("snaps the transcript and animates only the closing composer", () => {
+  it("pins the transcript and animates the closing composer from its input position", async () => {
     const fixture = motionFixture();
-    fixture.setComposerBottom(516);
     const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
+    fixture.setComposerHeight(83);
+    fixture.willOpen();
+    fixture.setComposerHeight(63);
+    fixture.setComposerBottom(516);
+    fixture.didOpen();
+    await Promise.resolve();
+    fixture.setComposerHeight(83);
     fixture.willClose();
     fixture.setComposerBottom(874);
     fixture.didClose();
 
-    expect(fixture.composerAnimate).toHaveBeenCalledWith(
-      [{ transform: "translateY(-358px)" }, { transform: "none" }],
-      expect.objectContaining({ delay: -20, fill: "both" }),
+    expect(fixture.composerAnimate).toHaveBeenLastCalledWith(
+      [{ transform: "translateY(-338px)" }, { transform: "none" }],
+      expect.objectContaining({ fill: "both" }),
     );
-    expect(fixture.transcriptAnimate).not.toHaveBeenCalled();
+    expect(fixture.transcriptAnimate).toHaveBeenCalledOnce();
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).not.toBeNull();
+    fixture.animations[2]?.finish();
+    await Promise.resolve();
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).toBeNull();
     stop();
   });
 
@@ -199,11 +215,12 @@ function motionFixture() {
   root.append(screen);
   document.body.append(root);
   let composerBottom = 874;
+  let composerHeight = 63;
   composer.getBoundingClientRect = () =>
     ({
       bottom: composerBottom,
-      height: 63,
-      top: composerBottom - 63,
+      height: composerHeight,
+      top: composerBottom - composerHeight,
     }) as DOMRect;
   const animations: TestAnimation[] = [];
   const composerAnimate = vi.fn(() => {
@@ -242,6 +259,9 @@ function motionFixture() {
       );
     },
     root,
+    setComposerHeight(value: number) {
+      composerHeight = value;
+    },
     setComposerBottom(value: number) {
       composerBottom = value;
     },
