@@ -50,6 +50,9 @@ pub enum Error {
     /// The push service failed without declaring the subscription dead.
     #[error("push service failed")]
     PushServiceUnavailable,
+    /// A previously registered delivery target cannot currently be validated.
+    #[error("delivery target is unavailable")]
+    DeliveryUnavailable,
 }
 
 /// Relay result alias.
@@ -67,6 +70,7 @@ impl IntoResponse for Error {
             | Self::PushServiceUnavailable
             | Self::Http(_)
             | Self::Crypto(_) => StatusCode::BAD_GATEWAY,
+            Self::DeliveryUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Config(_) | Self::Io(_) | Self::Database(_) | Self::DatabaseTask(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -77,7 +81,7 @@ impl IntoResponse for Error {
             StatusCode::BAD_REQUEST => "invalid request",
             StatusCode::CONFLICT => "capacity limit reached",
             StatusCode::NOT_IMPLEMENTED => "platform target not implemented",
-            StatusCode::BAD_GATEWAY => "upstream unavailable",
+            StatusCode::BAD_GATEWAY | StatusCode::SERVICE_UNAVAILABLE => "upstream unavailable",
             _ => "internal error",
         };
         (status, Json(json!({ "error": message }))).into_response()

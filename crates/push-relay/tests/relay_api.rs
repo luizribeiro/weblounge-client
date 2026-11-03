@@ -56,11 +56,15 @@ impl Concierge for FakeConcierge {
 struct FakeSender {
     deliveries: Deliveries,
     outcome: Arc<Mutex<PushOutcome>>,
+    unavailable: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[async_trait]
 impl PushSender for FakeSender {
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome> {
+        if self.unavailable.load(Ordering::SeqCst) {
+            return Err(Error::DeliveryUnavailable);
+        }
         self.deliveries.lock().expect("delivery lock").push((
             delivery.route_id().to_owned(),
             delivery.body().to_vec(),
@@ -86,6 +90,7 @@ struct Harness {
     concierge_calls: Arc<AtomicUsize>,
     deliveries: Deliveries,
     outcome: Arc<Mutex<PushOutcome>>,
+    unavailable: Arc<std::sync::atomic::AtomicBool>,
     subscription_key: SecretKey,
 }
 
@@ -98,6 +103,7 @@ impl Harness {
         let concierge_calls = Arc::new(AtomicUsize::new(0));
         let deliveries = Arc::new(Mutex::new(Vec::new()));
         let outcome = Arc::new(Mutex::new(PushOutcome::Accepted));
+        let unavailable = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let targets = EndpointValidator::new(["push.example"], Arc::new(PublicDns));
         let app = app(
             database,
@@ -107,6 +113,7 @@ impl Harness {
             FakeSender {
                 deliveries: Arc::clone(&deliveries),
                 outcome: Arc::clone(&outcome),
+                unavailable: Arc::clone(&unavailable),
             },
             targets,
             &Url::parse(ORIGIN).expect("origin"),
@@ -117,6 +124,7 @@ impl Harness {
             concierge_calls,
             deliveries,
             outcome,
+            unavailable,
             subscription_key: SecretKey::random(&mut OsRng),
         }
     }
@@ -330,6 +338,28 @@ async fn dead_upstream_kills_every_device_route_and_always_maps_to_404() {
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
     assert_eq!(harness.deliveries.lock().expect("deliveries").len(), 1);
+}
+
+#[tokio::test]
+async fn delivery_target_failures_map_to_503() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    harness.unavailable.store(true, Ordering::SeqCst);
+    let authorization = vapid(&home, ORIGIN, expiry_after(3_600));
+
+    let status = call_bytes(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
+        None,
+        b"ciphertext".to_vec(),
+        &[("Authorization", &authorization), ("TTL", "60")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]

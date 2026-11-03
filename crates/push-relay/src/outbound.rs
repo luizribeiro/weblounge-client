@@ -366,7 +366,14 @@ impl PushSender for WebPushSender {
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome> {
         let endpoint = Url::parse(&delivery.target.endpoint)
             .map_err(|_| Error::TargetRefused("endpoint is not a URL".to_owned()))?;
-        let address = self.targets.validate(&endpoint).await?;
+        let address = self
+            .targets
+            .validate(&endpoint)
+            .await
+            .map_err(|error| match error {
+                Error::TargetRefused(_) => Error::DeliveryUnavailable,
+                other => other,
+            })?;
         let envelope = serde_json::to_vec(&Envelope {
             web_push: 8030,
             mutable: true,

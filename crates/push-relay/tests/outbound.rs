@@ -1,6 +1,7 @@
 //! Web Push wrapping, SSRF policy, and fake push-service behavior.
 
 use std::{
+    collections::VecDeque,
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex},
 };
@@ -35,6 +36,20 @@ struct FixedDns(Vec<IpAddr>);
 impl DnsResolver for FixedDns {
     async fn resolve(&self, _host: &str, _port: u16) -> Result<Vec<IpAddr>> {
         Ok(self.0.clone())
+    }
+}
+
+#[derive(Debug)]
+struct SequenceDns(Mutex<VecDeque<Vec<IpAddr>>>);
+
+#[async_trait]
+impl DnsResolver for SequenceDns {
+    async fn resolve(&self, _host: &str, _port: u16) -> Result<Vec<IpAddr>> {
+        self.0
+            .lock()
+            .expect("DNS answers")
+            .pop_front()
+            .ok_or_else(|| Error::TargetRefused("no DNS answer".to_owned()))
     }
 }
 
@@ -213,6 +228,45 @@ async fn both_upstream_404_and_410_mean_the_subscription_is_dead() {
             .expect("dead outcome");
         assert_eq!(outcome, PushOutcome::Dead);
     }
+}
+
+#[tokio::test]
+async fn delivery_revalidation_maps_private_dns_to_upstream_unavailable() {
+    let resolver = Arc::new(SequenceDns(Mutex::new(VecDeque::from([
+        vec![IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))],
+        vec![IpAddr::V4(Ipv4Addr::LOCALHOST)],
+    ]))));
+    let validator = EndpointValidator::new(["push.example"], resolver);
+    let endpoint = Url::parse("https://push.example/send").expect("URL");
+    validator
+        .validate(&endpoint)
+        .await
+        .expect("registration validation");
+    let relay_key = SecretKey::random(&mut OsRng)
+        .to_pkcs8_pem(LineEnding::LF)
+        .expect("relay PEM");
+    let receiver = SecretKey::random(&mut OsRng);
+    let sender = WebPushSender::with_transport(
+        relay_key.as_bytes(),
+        validator,
+        Arc::new(FakePushService {
+            requests: Arc::new(Mutex::new(Vec::new())),
+            status: StatusCode::CREATED,
+        }),
+    )
+    .expect("sender");
+
+    let result = sender
+        .send(Delivery::web_push(
+            "route",
+            endpoint.to_string(),
+            URL_SAFE_NO_PAD.encode(receiver.public_key().to_encoded_point(false).as_bytes()),
+            URL_SAFE_NO_PAD.encode([0_u8; 16]),
+            b"ciphertext".to_vec(),
+            60,
+        ))
+        .await;
+    assert!(matches!(result, Err(Error::DeliveryUnavailable)));
 }
 
 fn decrypt(body: &[u8], receiver: &SecretKey, auth: &[u8]) -> Vec<u8> {
