@@ -13,6 +13,7 @@ export interface StoredPushRoute {
   readonly p256dh: string;
   readonly auth: string;
   readonly privateKey: CryptoKey;
+  readonly needsReregistration?: boolean;
 }
 
 export interface PushRouteStore {
@@ -162,5 +163,8 @@ function decodeRoute(value: unknown): StoredPushRoute {
     ...(value as Omit<StoredPushRoute, "networkLabel" | "nickname">),
     networkLabel,
     nickname,
+    ...("needsReregistration" in value && value.needsReregistration === true
+      ? { needsReregistration: true }
+      : {}),
   };
 }

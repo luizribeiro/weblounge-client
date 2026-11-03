@@ -3,6 +3,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -103,7 +104,7 @@ export default defineConfig(({ mode }) => {
       injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
       emitPushPayloadParser(pushPayloadJs, pushPayloadWasm),
-      emitServiceWorker(),
+      emitServiceWorker(resolve(import.meta.dirname, "src/push-worker.ts")),
       ...(development || appConfigHarness ? [appModeConfig()] : []),
     ],
     ...(!cspEnabled
@@ -176,28 +177,32 @@ function injectStartupImageLinks(): Plugin {
   };
 }
 
-function emitServiceWorker(): Plugin {
+function emitServiceWorker(workerEntry: string): Plugin {
   return {
     name: "weblounge-service-worker",
     apply: "build",
+    buildStart() {
+      this.emitFile({
+        type: "chunk",
+        id: workerEntry,
+        fileName: "service-worker-source.js",
+      });
+    },
     writeBundle(options) {
       const directory = resolve(
         options.dir ?? resolve(import.meta.dirname, "dist"),
       );
       const urls = appShellUrls(directory);
-      const hash = createHash("sha256");
+      const sourcePath = resolve(directory, "service-worker-source.js");
+      const source = readFileSync(sourcePath, "utf8");
+      const hash = createHash("sha256").update(source);
       for (const url of urls) {
         hash.update(url).update(readFileSync(resolve(directory, `.${url}`)));
       }
       const version = hash.digest("hex").slice(0, 16);
-      const template = readFileSync(
-        resolve(import.meta.dirname, "service-worker.js"),
-        "utf8",
-      );
-      const worker = template
-        .replace("__SHELL_VERSION__", version)
-        .replace("/* __PRECACHE_URLS__ */", JSON.stringify(urls));
+      const worker = `const SHELL_VERSION = ${JSON.stringify(version)};\nconst PRECACHE_URLS = Object.freeze(${JSON.stringify(urls)});\n${source}`;
       writeFileSync(resolve(directory, "service-worker.js"), worker);
+      rmSync(sourcePath);
     },
   };
 }

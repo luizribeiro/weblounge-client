@@ -160,7 +160,11 @@ export class PushSynchronizer {
     const device = await this.#ensureDevice();
     if (device === undefined) return;
     const existing = await this.#routes.get(networkId);
-    if (existing !== undefined && existing.vapid === vapid) {
+    if (
+      existing !== undefined &&
+      existing.vapid === vapid &&
+      existing.needsReregistration !== true
+    ) {
       const current = await this.#refreshContext(existing);
       await this.#register(networkId, current);
       return;

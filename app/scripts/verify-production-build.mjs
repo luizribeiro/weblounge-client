@@ -238,7 +238,8 @@ async function verifyServiceWorker(directory) {
       "service worker precache manifest does not match the build",
     );
   }
-  const hash = createHash("sha256");
+  const sourceStart = worker.indexOf("\n", worker.indexOf("\n") + 1) + 1;
+  const hash = createHash("sha256").update(worker.slice(sourceStart));
   for (const url of expectedUrls) {
     hash.update(url).update(await readFile(resolve(directory, `.${url}`)));
   }
@@ -251,8 +252,9 @@ async function verifyServiceWorker(directory) {
     urls.includes("/config.json") ||
     urls.some((url) => url.startsWith("/startup/")) ||
     worker.includes("skipWaiting") ||
-    !worker.includes('priority: "low"') ||
-    !worker.includes('name.startsWith("weblounge-shell-")')
+    !/priority:\s*["'`]low["'`]/u.test(worker) ||
+    !worker.includes("weblounge-shell-") ||
+    /^import\b/mu.test(worker.slice(sourceStart))
   ) {
     throw new Error("service worker cache or update policy is unsafe");
   }

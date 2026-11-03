@@ -1,5 +1,3 @@
-import { decodeBase64Url } from "./base64url";
-
 const saltLength = 16;
 const recordSizeLength = 4;
 const keyLengthLength = 1;
@@ -23,8 +21,8 @@ export async function decryptPushPayload(
   webCrypto: Crypto = crypto,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const record = decodeRecord(encrypted);
-  const receiverPublic = decodeBase64Url(receiverPublicKey);
-  const authentication = decodeBase64Url(authenticationSecret);
+  const receiverPublic = decodePushBase64Url(receiverPublicKey);
+  const authentication = decodePushBase64Url(authenticationSecret);
   if (
     receiverPublic.byteLength !== p256PublicKeyLength ||
     authentication.byteLength !== 16
@@ -84,6 +82,16 @@ export async function decryptPushPayload(
     ),
   );
   return unpadRecord(decrypted);
+}
+
+// The classic service worker must stay one self-contained script, so its push crypto cannot share
+// the page bundle's otherwise canonical base64url helper.
+export function decodePushBase64Url(value: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const binary = atob(
+    value.replaceAll("-", "+").replaceAll("_", "/") + padding,
+  );
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function decodeRecord(encrypted: Uint8Array<ArrayBuffer>): EncryptedRecord {

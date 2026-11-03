@@ -16,12 +16,18 @@ export default defineConfig({
     {
       name: "chromium",
       testIgnore: [
+        "**/push-notifications.spec.ts",
         "**/mobile-input-zoom.spec.ts",
         "**/mobile-page-zoom.spec.ts",
         "**/mobile-read-state.spec.ts",
         "**/connection-resilience.spec.ts",
       ],
       use: { browserName: "chromium" },
+    },
+    {
+      name: "chromium-push",
+      testMatch: "**/push-notifications.spec.ts",
+      use: { browserName: "chromium", channel: "chromium" },
     },
     {
       name: "firefox-timestamps",
