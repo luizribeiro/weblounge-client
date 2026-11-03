@@ -23,7 +23,8 @@ pub use protocol::{
     HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
-    NoticeKind, NoticeTone, OfflineReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
+    NoticeKind, NoticeTone, OfflineReason, PushFailure, PushRoute, PushState,
+    PushUnsupportedReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.
@@ -118,7 +119,7 @@ impl Engine {
 
 /// Creates a papo client builder for a weblounge connection.
 pub fn client_builder(endpoint: &str, nickname: &str) -> papo::Builder {
-    papo::Client::builder(endpoint, nickname)
+    papo::Client::builder(endpoint, nickname).enable(papo::Feature::WebPush)
 }
 
 #[cfg(test)]

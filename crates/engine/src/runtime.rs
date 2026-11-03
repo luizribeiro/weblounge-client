@@ -18,7 +18,8 @@ use tokio::sync::mpsc;
 use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineRequest,
     EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
-    NetworkConnectionState, NetworkId, NoticeKind, OfflineReason,
+    NetworkConnectionState, NetworkId, NoticeKind, OfflineReason, PushFailure, PushState,
+    PushUnsupportedReason,
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
     request_error::{StateLimitOutcome, state_limit_outcome},
@@ -67,6 +68,31 @@ struct RunningNetwork {
     flushing_reads: bool,
     hosted_reconnect: Option<HostedReconnectConfig>,
     chat_list: ChatListSync,
+    push: PushRegistration,
+}
+
+#[derive(Default)]
+struct PushRegistration {
+    generation: u64,
+    route: Option<RegisteredPushRoute>,
+    state: Option<PushState>,
+}
+
+#[derive(Clone)]
+struct RegisteredPushRoute {
+    route_id: String,
+    endpoint: String,
+    p256dh: String,
+    auth: papo::Secret,
+    vapid: String,
+}
+
+#[derive(Clone)]
+struct PushRegisterTask {
+    instance: u64,
+    generation: u64,
+    network_id: NetworkId,
+    route: RegisteredPushRoute,
 }
 
 #[derive(Clone)]
@@ -284,6 +310,12 @@ impl Runtime {
                 self.set_device_online(envelope.id, network_id, online)
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
+            EngineRequest::RegisterPush { network_id, route } => {
+                self.register_push(envelope.id, network_id, route)
+            }
+            EngineRequest::UnregisterPush { network_id } => {
+                self.unregister_push(envelope.id, network_id)
+            }
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, &crate::MessageKind::Text)
             }
@@ -342,6 +374,96 @@ impl Runtime {
     fn set_update_ready(&self, command_id: String, ready: bool) -> Vec<EngineToUi> {
         lock(&self.state).update_ready = ready;
         vec![EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn register_push(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        route: crate::PushRoute,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.model.id() == network_id)
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let snapshot = running.client.state();
+        if let Some(reason) = push_unsupported_reason(&snapshot) {
+            let push_state = PushState::Unsupported { reason };
+            running.push.route = None;
+            running.push.state = Some(push_state.clone());
+            return vec![
+                EngineToUi::PushStateChanged {
+                    network_id,
+                    state: push_state,
+                },
+                EngineToUi::CommandResult { id: command_id },
+            ];
+        }
+        let vapid = snapshot
+            .isupport()
+            .vapid()
+            .map(str::to_owned)
+            .unwrap_or_default();
+        running.push.generation = running.push.generation.saturating_add(1);
+        let generation = running.push.generation;
+        let registered = RegisteredPushRoute {
+            route_id: route.route_id,
+            endpoint: route.endpoint,
+            p256dh: route.p256dh,
+            auth: papo::Secret::new(route.auth.into_inner()),
+            vapid,
+        };
+        running.push.route = Some(registered.clone());
+        let task = PushRegisterTask {
+            instance: running.instance,
+            generation,
+            network_id,
+            route: registered,
+        };
+        let client = running.client.clone();
+        drop(state);
+        spawn_push_register(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            client,
+            task,
+            Some(command_id),
+        );
+        Vec::new()
+    }
+
+    fn unregister_push(&self, command_id: String, network_id: NetworkId) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.model.id() == network_id)
+        else {
+            return rejected_command(command_id, "engine.network_not_found");
+        };
+        let Some(route) = running.push.route.clone() else {
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        };
+        running.push.generation = running.push.generation.saturating_add(1);
+        let generation = running.push.generation;
+        let instance = running.instance;
+        let client = running.client.clone();
+        drop(state);
+        spawn_push_unregister(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            client,
+            instance,
+            generation,
+            network_id,
+            route,
+            command_id,
+        );
+        Vec::new()
     }
 
     fn submit_input(&self, id: String, buffer_id: BufferId, input: &str) -> Vec<EngineToUi> {
@@ -621,7 +743,7 @@ impl Runtime {
             if authentication_kind != running.authentication_kind {
                 return rejected_command(command_id, "engine.network_already_connected");
             }
-            return attach_shell(&running.model, command_id);
+            return attach_shell(running, command_id);
         }
         let id = NetworkId(state.next_network_id);
         state.next_network_id += 1;
@@ -678,6 +800,7 @@ impl Runtime {
                 restored_from_cache: had_cached_chat_list,
                 ..ChatListSync::default()
             },
+            push: PushRegistration::default(),
         });
         drop(state);
 
@@ -710,7 +833,7 @@ impl Runtime {
             if running.authentication_kind != AuthenticationKind::HostedOAuth {
                 return rejected_command(command_id, "engine.network_already_connected");
             }
-            return attach_shell(&running.model, command_id);
+            return attach_shell(running, command_id);
         }
         let id = NetworkId(state.next_network_id);
         state.next_network_id += 1;
@@ -759,6 +882,7 @@ impl Runtime {
                 restored_from_cache: had_cached_chat_list,
                 ..ChatListSync::default()
             },
+            push: PushRegistration::default(),
         });
         output
     }
@@ -836,9 +960,13 @@ impl Runtime {
             },
             None,
         );
+        let push_endpoint = running.push.route.map(|route| route.endpoint);
         let client = running.client;
         drop(state);
         spawn_task(async move {
+            if let Some(endpoint) = push_endpoint {
+                let _ = client.webpush().unregister(endpoint).await;
+            }
             let _ = client.quit(reason.unwrap_or_default()).await;
         });
         vec![event, EngineToUi::CommandResult { id: command_id }]
@@ -957,11 +1085,15 @@ impl Runtime {
             papo::time::now(),
         );
         let event = running.model.set_connection(next, None);
+        let push_endpoint = running.push.route.map(|route| route.endpoint);
         let client = running.client;
         let storage = state.storage.clone();
         state.snapshot_generation.fetch_add(1, Ordering::Relaxed);
         drop(state);
         spawn_task(async move {
+            if let Some(endpoint) = push_endpoint {
+                let _ = client.webpush().unregister(endpoint).await;
+            }
             let _ = client.quit(String::new()).await;
             let _ = chat_list_snapshot::clear(storage.as_ref()).await;
         });
@@ -1524,7 +1656,8 @@ impl Runtime {
 
 /// Another tab sharing this engine starts with no rows, so it receives the running network's
 /// retained timelines along with the buffer list.
-fn attach_shell(model: &NetworkModel, command_id: String) -> Vec<EngineToUi> {
+fn attach_shell(running: &RunningNetwork, command_id: String) -> Vec<EngineToUi> {
+    let model = &running.model;
     let mut output = vec![
         model.network_event(),
         model.buffers_event(),
@@ -1533,6 +1666,12 @@ fn attach_shell(model: &NetworkModel, command_id: String) -> Vec<EngineToUi> {
         },
     ];
     output.extend(model.snapshot_events());
+    if let Some(state) = running.push.state.clone() {
+        output.push(EngineToUi::PushStateChanged {
+            network_id: model.id(),
+            state,
+        });
+    }
     output.push(EngineToUi::CommandResult { id: command_id });
     output
 }
@@ -1672,6 +1811,7 @@ struct ConnectConfig {
 fn build_client(config: ConnectConfig) -> (papo::Client, papo::Events, papo::Driver) {
     let sasl = config.authentication.into_sasl();
     let mut builder = papo::Client::builder(&config.endpoint, &config.nickname)
+        .enable(papo::Feature::WebPush)
         .sasl(sasl)
         .allow_insecure_auth(config.allow_insecure)
         .reconnect(
@@ -1692,6 +1832,7 @@ fn build_pending_hosted_client(
     autojoin: Vec<String>,
 ) -> (papo::Client, papo::Events, papo::Driver) {
     let mut builder = papo::Client::builder(endpoint, nickname)
+        .enable(papo::Feature::WebPush)
         .reconnect(
             papo::Reconnect::exponential()
                 .max_delay(Duration::from_secs(30))
@@ -2779,6 +2920,15 @@ fn process_event_with_direct(
         effects.flush_sends,
         effects.read_flush,
     );
+    if let Some(task) = effects.push_register {
+        spawn_push_register(
+            Arc::clone(&shared_state),
+            outbound.clone(),
+            client.clone(),
+            task,
+            None,
+        );
+    }
     effects.history_targets
 }
 
@@ -2789,6 +2939,7 @@ struct EventEffects {
     clear_hosted_authentication: bool,
     flush_sends: bool,
     read_flush: Option<(papo::Client, u64)>,
+    push_register: Option<PushRegisterTask>,
 }
 
 fn process_papo_event(
@@ -2805,7 +2956,9 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::Connected(connected) => {
-            let history_targets = process_connected(running, snapshot, &connected, output);
+            let (history_targets, push_register) =
+                process_connected(running, snapshot, &connected, output);
+            effects.push_register = push_register;
             if !running.pending_sends.is_empty() && !running.flushing_sends {
                 running.flushing_sends = true;
                 effects.flush_sends = true;
@@ -2961,7 +3114,7 @@ fn process_connected(
     snapshot: &papo::State,
     connected: &papo::event::Connected,
     output: &mut Vec<EngineToUi>,
-) -> Vec<HistoryTarget> {
+) -> (Vec<HistoryTarget>, Option<PushRegisterTask>) {
     running.model.rebuild_name_keys(snapshot);
     let next = next_connection_state(
         running.model.connection(),
@@ -2978,7 +3131,44 @@ fn process_connected(
     if !history_targets.is_empty() {
         output.push(running.model.buffers_event());
     }
-    history_targets
+    let push_register = connected_push_action(running, snapshot, output);
+    (history_targets, push_register)
+}
+
+fn connected_push_action(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    output: &mut Vec<EngineToUi>,
+) -> Option<PushRegisterTask> {
+    let route = running.push.route.clone()?;
+    if let Some(reason) = push_unsupported_reason(snapshot) {
+        let state = PushState::Unsupported { reason };
+        running.push.state = Some(state.clone());
+        output.push(EngineToUi::PushStateChanged {
+            network_id: running.model.id(),
+            state,
+        });
+        return None;
+    }
+    let vapid = snapshot.isupport().vapid()?;
+    if vapid != route.vapid {
+        running.push.generation = running.push.generation.saturating_add(1);
+        running.push.route = None;
+        running.push.state = None;
+        output.push(EngineToUi::PushRouteRequired {
+            network_id: running.model.id(),
+            vapid: vapid.to_owned(),
+            previous_route_id: route.route_id,
+        });
+        return None;
+    }
+    running.push.generation = running.push.generation.saturating_add(1);
+    Some(PushRegisterTask {
+        instance: running.instance,
+        generation: running.push.generation,
+        network_id: running.model.id(),
+        route,
+    })
 }
 
 fn process_disconnect(
@@ -3593,6 +3783,40 @@ fn valid_name_check(check: papo::NameCheck) -> bool {
     !matches!(check, papo::NameCheck::Invalid(_))
 }
 
+fn push_unsupported_reason(state: &papo::State) -> Option<PushUnsupportedReason> {
+    if !state.supports(papo::Feature::WebPush) {
+        Some(PushUnsupportedReason::NoWebPush)
+    } else if state.account().name().is_none() {
+        Some(PushUnsupportedReason::NoAccount)
+    } else if state.isupport().vapid().is_none() {
+        Some(PushUnsupportedReason::NoVapid)
+    } else {
+        None
+    }
+}
+
+fn push_failure(error: &papo::Error) -> PushFailure {
+    match error {
+        papo::Error::Server(error) => match error.refusal() {
+            papo::Refusal::WebPushForbidden => PushFailure::WebPushForbidden,
+            papo::Refusal::WebPushRegistrationLimit => PushFailure::RegistrationLimit,
+            papo::Refusal::InvalidWebPushParameters => PushFailure::InvalidParameters,
+            papo::Refusal::InternalError => PushFailure::Internal,
+            _ => PushFailure::Other,
+        },
+        papo::Error::InvalidInput(_) => PushFailure::InvalidParameters,
+        papo::Error::TooManyPendingRequests | papo::Error::StateLimit(_) => {
+            PushFailure::RequestLimit
+        }
+        papo::Error::Disconnected(_)
+        | papo::Error::Interrupted(_)
+        | papo::Error::Timeout
+        | papo::Error::Unconfirmed
+        | papo::Error::Connect(_) => PushFailure::Connection,
+        _ => PushFailure::Other,
+    }
+}
+
 fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
     vec![command_rejection(command_id, message_key)]
 }
@@ -3746,6 +3970,112 @@ fn spawn_request<T: Send + 'static>(
     });
 }
 
+fn spawn_push_register(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    task: PushRegisterTask,
+    command_id: Option<String>,
+) {
+    spawn_task(async move {
+        let result = client
+            .webpush()
+            .register(
+                task.route.endpoint.clone(),
+                papo::PushKeys::new(task.route.p256dh.clone(), task.route.auth.clone()),
+            )
+            .await;
+        let push_state = match result {
+            Ok(outcome) if outcome.persistence_required() => PushState::RegisteredButNoDelivery {
+                route_id: task.route.route_id.clone(),
+            },
+            Ok(_) => PushState::Registered {
+                route_id: task.route.route_id.clone(),
+            },
+            Err(error) => PushState::Failed {
+                reason: push_failure(&error),
+            },
+        };
+        let current = {
+            let mut state = lock(&state);
+            state
+                .network
+                .as_mut()
+                .filter(|running| {
+                    running.instance == task.instance
+                        && running.push.generation == task.generation
+                        && running
+                            .push
+                            .route
+                            .as_ref()
+                            .is_some_and(|route| route.route_id == task.route.route_id)
+                })
+                .map(|running| {
+                    running.push.state = Some(push_state.clone());
+                })
+                .is_some()
+        };
+        if current {
+            let _ = outbound.send(EngineToUi::PushStateChanged {
+                network_id: task.network_id,
+                state: push_state,
+            });
+        }
+        if let Some(id) = command_id {
+            let _ = outbound.send(EngineToUi::CommandResult { id });
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_push_unregister(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    generation: u64,
+    network_id: NetworkId,
+    route: RegisteredPushRoute,
+    command_id: String,
+) {
+    spawn_task(async move {
+        let result = client.webpush().unregister(route.endpoint.clone()).await;
+        let event = {
+            let mut state = lock(&state);
+            state
+                .network
+                .as_mut()
+                .filter(|running| {
+                    running.instance == instance
+                        && running.push.generation == generation
+                        && running
+                            .push
+                            .route
+                            .as_ref()
+                            .is_some_and(|current| current.route_id == route.route_id)
+                })
+                .and_then(|running| match &result {
+                    Ok(()) => {
+                        running.push.route = None;
+                        running.push.state = None;
+                        None
+                    }
+                    Err(error) => {
+                        let state = PushState::Failed {
+                            reason: push_failure(error),
+                        };
+                        running.push.state = Some(state.clone());
+                        Some(EngineToUi::PushStateChanged { network_id, state })
+                    }
+                })
+        };
+        if let Some(event) = event {
+            let _ = outbound.send(event);
+        }
+        let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+    });
+}
+
 fn spawn_channel_request<T: Send + 'static>(
     outbound: mpsc::UnboundedSender<EngineToUi>,
     command_id: String,
@@ -3827,11 +4157,11 @@ mod tests {
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
-        HostedReconnectConfig, MemberViews, RunningNetwork, Runtime, RuntimeState,
-        completion_context, connection_failure_notice, drain_events, fetch_history, fetch_latest,
-        join_request_events, lock, next_connection_state, person_candidates, process_event,
-        process_history, queue_read_advance, schedule_snapshot_write_after, spawn_history_fetch,
-        spawn_read_marker_fetch, state_limit_events, utf16_len,
+        HostedReconnectConfig, MemberViews, PushRegistration, RunningNetwork, Runtime,
+        RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_history,
+        fetch_latest, join_request_events, lock, next_connection_state, person_candidates,
+        process_event, process_history, queue_read_advance, schedule_snapshot_write_after,
+        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -4575,6 +4905,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -4645,6 +4976,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -4845,6 +5177,7 @@ mod tests {
                     flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
+                    push: PushRegistration::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -4938,6 +5271,7 @@ mod tests {
                         autojoin: vec!["#lounge".into()],
                     }),
                     chat_list: ChatListSync::default(),
+                    push: PushRegistration::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -5051,6 +5385,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -5201,6 +5536,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -5298,6 +5634,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model,
             }))),
@@ -5367,6 +5704,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model,
             }))),
@@ -5444,6 +5782,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model,
             }))),
@@ -5546,6 +5885,7 @@ mod tests {
                     flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
+                    push: PushRegistration::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -5935,6 +6275,7 @@ mod tests {
                     flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
+                    push: PushRegistration::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -6059,6 +6400,7 @@ mod tests {
                     flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
+                    push: PushRegistration::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -6124,6 +6466,7 @@ mod tests {
                     flushing_reads: false,
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
+                    push: PushRegistration::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -6332,6 +6675,7 @@ mod tests {
                 flushing_reads: false,
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
+                push: PushRegistration::default(),
                 client,
                 model,
             }),
@@ -6432,6 +6776,108 @@ mod tests {
         wire.server(":offline.test 001 weblounge :Welcome").await;
         wire.server(":offline.test 376 weblounge :End of MOTD")
             .await;
+    }
+
+    fn push_wire() -> (papo::Client, papo::Events, papo_testing::Wire) {
+        wire(
+            papo::Client::builder("irc://offline.test", "weblounge")
+                .enable(papo::Feature::WebPush)
+                .allow_insecure_auth(true),
+        )
+    }
+
+    async fn register_push_connection(
+        wire: &mut papo_testing::Wire,
+        vapid: Option<&str>,
+        account: bool,
+    ) {
+        register_connection(
+            wire,
+            &["batch", "draft/webpush", "labeled-response"],
+            vapid,
+            account,
+        )
+        .await;
+    }
+
+    async fn register_connection(
+        wire: &mut papo_testing::Wire,
+        caps: &[&str],
+        vapid: Option<&str>,
+        account: bool,
+    ) {
+        assert_eq!(wire.next_sent().await, "CAP LS 302");
+        assert_eq!(wire.next_sent().await, "NICK weblounge");
+        assert!(wire.next_sent().await.starts_with("USER "));
+        wire.server(format!(":offline.test CAP * LS :{}", caps.join(" ")))
+            .await;
+        let negotiation = wire.next_sent().await;
+        if let Some(requested) = negotiation.strip_prefix("CAP REQ :") {
+            wire.server(format!(":offline.test CAP * ACK :{requested}"))
+                .await;
+            assert_eq!(wire.next_sent().await, "CAP END");
+        } else {
+            assert_eq!(negotiation, "CAP END");
+        }
+        let vapid = vapid.map_or_else(String::new, |key| format!(" VAPID={key}"));
+        wire.server(format!(
+            ":offline.test 005 weblounge CASEMAPPING=rfc1459 CHANTYPES=#{vapid} :supported"
+        ))
+        .await;
+        if account {
+            wire.server(
+                ":offline.test 900 weblounge weblounge!u@host account :You are now logged in as account",
+            )
+            .await;
+        }
+        wire.server(":offline.test 001 weblounge :Welcome").await;
+        wire.server(":offline.test 376 weblounge :End of MOTD")
+            .await;
+    }
+
+    fn push_request(command_id: &str, route_id: &str) -> EngineRequestEnvelope {
+        EngineRequestEnvelope {
+            id: command_id.into(),
+            request: EngineRequest::RegisterPush {
+                network_id: NetworkId(1),
+                route: crate::PushRoute {
+                    route_id: route_id.into(),
+                    endpoint: format!("https://push.example.test/v1/r/{route_id}"),
+                    p256dh: "AQIDBAUGBwgJCgsMDQ4P_w".into(),
+                    auth: "-vv8_f7_".into(),
+                },
+            },
+        }
+    }
+
+    fn request_without_label(request: &str) -> &str {
+        request
+            .split_once(' ')
+            .map(|(_, request)| request)
+            .expect("request has a label")
+    }
+
+    async fn send_push_success(
+        wire: &mut papo_testing::Wire,
+        request: &str,
+        persistence_required: bool,
+    ) {
+        let label = request_label(request);
+        let reply = format!("push{label}");
+        let response = request_without_label(request);
+        wire.server(format!(
+            "@label={label} :offline.test BATCH +{reply} labeled-response"
+        ))
+        .await;
+        wire.server(format!("@batch={reply} :offline.test {response}"))
+            .await;
+        if persistence_required {
+            wire.server(format!(
+                "@batch={reply} :offline.test WARN WEBPUSH PERSISTENCE_REQUIRED :Always-on is required"
+            ))
+            .await;
+        }
+        wire.server(format!(":offline.test BATCH -{reply}")).await;
     }
 
     async fn send_recent_targets(
@@ -7408,6 +7854,353 @@ mod tests {
             EngineToUi::NetworkStateChanged { network }
                 if network.state == crate::NetworkConnectionState::Online
         )));
+    }
+
+    #[tokio::test]
+    async fn push_registration_uses_ergo_replies_and_typed_outcomes() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let runtime = Runtime { state, outbound };
+        process_runtime_event(&runtime, connected);
+        _ = collect(&mut receiver);
+
+        assert_no_output(&runtime.request(push_request("register", "route-1")));
+        let request = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&request),
+            "WEBPUSH REGISTER https://push.example.test/v1/r/route-1 p256dh=AQIDBAUGBwgJCgsMDQ4P_w;auth=-vv8_f7_"
+        );
+        send_push_success(&mut wire, &request, false).await;
+        assert!(
+            command_output(&mut receiver)
+                .await
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    EngineToUi::PushStateChanged {
+                        state: crate::PushState::Registered { route_id },
+                        ..
+                    } if route_id == "route-1"
+                ))
+        );
+
+        assert_no_output(&runtime.request(push_request("persistence", "route-2")));
+        let request = wire.next_sent().await;
+        send_push_success(&mut wire, &request, true).await;
+        assert!(
+            command_output(&mut receiver)
+                .await
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    EngineToUi::PushStateChanged {
+                        state: crate::PushState::RegisteredButNoDelivery { route_id },
+                        ..
+                    } if route_id == "route-2"
+                ))
+        );
+
+        assert_no_output(&runtime.request(EngineRequestEnvelope {
+            id: "unregister".into(),
+            request: EngineRequest::UnregisterPush {
+                network_id: NetworkId(1),
+            },
+        }));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
+        ))
+        .await;
+        assert!(matches!(
+            command_output(&mut receiver).await.as_slice(),
+            [EngineToUi::CommandResult { id }] if id == "unregister"
+        ));
+        assert!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .is_some_and(|running| running.push.route.is_none())
+        );
+    }
+
+    #[tokio::test]
+    async fn push_registration_maps_ergo_refusals_to_typed_failures() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+
+        assert_no_output(&runtime.request(push_request("limit", "route-1")));
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        wire.server(format!(
+            "@label={label} :offline.test FAIL WEBPUSH MAX_REGISTRATIONS :Too many registrations"
+        ))
+        .await;
+        assert!(
+            command_output(&mut receiver)
+                .await
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    EngineToUi::PushStateChanged {
+                        state: crate::PushState::Failed {
+                            reason: crate::PushFailure::RegistrationLimit,
+                        },
+                        ..
+                    }
+                ))
+        );
+
+        assert_no_output(&runtime.request(push_request("forbidden", "route-2")));
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        wire.server(format!(
+            "@label={label} :offline.test FAIL WEBPUSH FORBIDDEN :Web Push is forbidden"
+        ))
+        .await;
+        assert!(
+            command_output(&mut receiver)
+                .await
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    EngineToUi::PushStateChanged {
+                        state: crate::PushState::Failed {
+                            reason: crate::PushFailure::WebPushForbidden,
+                        },
+                        ..
+                    }
+                ))
+        );
+    }
+
+    #[tokio::test]
+    async fn push_registration_reports_each_missing_prerequisite_without_a_route() {
+        for (caps, vapid, account, expected) in [
+            (
+                &[][..],
+                None,
+                false,
+                crate::PushUnsupportedReason::NoWebPush,
+            ),
+            (
+                &["batch", "draft/webpush", "labeled-response"][..],
+                Some("home-vapid"),
+                false,
+                crate::PushUnsupportedReason::NoAccount,
+            ),
+            (
+                &["batch", "draft/webpush", "labeled-response"][..],
+                None,
+                true,
+                crate::PushUnsupportedReason::NoVapid,
+            ),
+        ] {
+            let builder = papo::Client::builder("irc://offline.test", "weblounge")
+                .enable(papo::Feature::WebPush);
+            let (client, mut events, mut wire) = wire(builder);
+            register_connection(&mut wire, caps, vapid, account).await;
+            _ = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::Connected(_))
+            })
+            .await;
+            let (state, outbound, _receiver) = harness(client);
+            let runtime = Runtime { state, outbound };
+
+            assert!(matches!(
+                runtime.request(push_request("unsupported", "unused"))
+                    .as_slice(),
+                [
+                    EngineToUi::PushStateChanged {
+                        state: crate::PushState::Unsupported { reason },
+                        ..
+                    },
+                    EngineToUi::CommandResult { .. }
+                ] if *reason == expected
+            ));
+            assert!(
+                lock(&runtime.state)
+                    .network
+                    .as_ref()
+                    .is_some_and(|running| running.push.route.is_none())
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn reconnect_refreshes_push_until_a_vapid_change_requires_a_new_route() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let runtime = Runtime { state, outbound };
+        process_runtime_event(&runtime, connected);
+        _ = collect(&mut receiver);
+        assert_no_output(&runtime.request(push_request("register", "route-1")));
+        let request = wire.next_sent().await;
+        send_push_success(&mut wire, &request, false).await;
+        _ = command_output(&mut receiver).await;
+
+        wire.close().await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Disconnected(_))
+        })
+        .await;
+        client.reconnect().await.expect("manual reconnect starts");
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        let reconnected = next_matching(
+            &mut events,
+            |event| matches!(event, papo::Event::Connected(connected) if connected.reconnected),
+        )
+        .await;
+        process_runtime_event(&runtime, reconnected);
+        let refresh = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&refresh),
+            request_without_label(&request)
+        );
+        send_push_success(&mut wire, &refresh, false).await;
+        loop {
+            let event = receiver.recv().await.expect("push refresh completes");
+            if matches!(
+                event,
+                EngineToUi::PushStateChanged {
+                    state: crate::PushState::Registered { .. },
+                    ..
+                }
+            ) {
+                break;
+            }
+        }
+
+        wire.close().await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Disconnected(_))
+        })
+        .await;
+        client.reconnect().await.expect("manual reconnect starts");
+        register_push_connection(&mut wire, Some("new-home-vapid"), true).await;
+        let reconnected = next_matching(
+            &mut events,
+            |event| matches!(event, papo::Event::Connected(connected) if connected.reconnected),
+        )
+        .await;
+        process_runtime_event(&runtime, reconnected);
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::PushRouteRequired {
+                vapid,
+                previous_route_id,
+                ..
+            } if vapid == "new-home-vapid" && previous_route_id == "route-1"
+        )));
+        assert!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .is_some_and(|running| running.push.route.is_none())
+        );
+    }
+
+    #[tokio::test]
+    async fn hosted_sign_out_unregisters_push_before_quitting() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        lock(&runtime.state)
+            .network
+            .as_mut()
+            .expect("network remains running")
+            .authentication_kind = AuthenticationKind::HostedOAuth;
+        assert_no_output(&runtime.request(push_request("register", "route-1")));
+        let register = wire.next_sent().await;
+        send_push_success(&mut wire, &register, false).await;
+        _ = command_output(&mut receiver).await;
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "sign-out".into(),
+            request: EngineRequest::ExpireHostedAuthentication {
+                network_id: NetworkId(1),
+            },
+        });
+        assert!(matches!(
+            output.last(),
+            Some(EngineToUi::CommandResult { id }) if id == "sign-out"
+        ));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        ))
+        .await;
+        assert_eq!(wire.next_sent().await, "QUIT");
+    }
+
+    #[tokio::test]
+    async fn network_removal_unregisters_push_before_quitting() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        assert_no_output(&runtime.request(push_request("register", "route-1")));
+        let register = wire.next_sent().await;
+        send_push_success(&mut wire, &register, false).await;
+        _ = command_output(&mut receiver).await;
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "remove".into(),
+            request: EngineRequest::Disconnect {
+                network_id: NetworkId(1),
+                reason: None,
+            },
+        });
+        assert!(matches!(
+            output.last(),
+            Some(EngineToUi::CommandResult { id }) if id == "remove"
+        ));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        ))
+        .await;
+        assert_eq!(wire.next_sent().await, "QUIT");
     }
 
     #[tokio::test]

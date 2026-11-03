@@ -3,6 +3,7 @@ import type { BufferId } from "./BufferId";
 import type { LocalSendId } from "./LocalSendId";
 import type { MessageId } from "./MessageId";
 import type { NetworkId } from "./NetworkId";
+import type { PushRoute } from "./PushRoute";
 import type { SaslCredentials } from "./SaslCredentials";
 
 /**
@@ -112,7 +113,19 @@ online: boolean, } | { "type": "set_update_ready",
 /**
  * Whether a waiting service worker is ready to activate after this session closes.
  */
-ready: boolean, } | { "type": "send_message",
+ready: boolean, } | { "type": "register_push",
+/**
+ * Network whose home should receive the route.
+ */
+network_id: NetworkId,
+/**
+ * Relay route and encryption keys created by the platform.
+ */
+route: PushRoute, } | { "type": "unregister_push",
+/**
+ * Network whose registration should be removed.
+ */
+network_id: NetworkId, } | { "type": "send_message",
 /**
  * Destination buffer.
  */

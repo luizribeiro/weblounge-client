@@ -419,6 +419,27 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         return { type: messageType, network_id: value.network_id };
       }
       break;
+    case "push_state_changed": {
+      const state = decodePushState(value.state);
+      if (typeof value.network_id === "number" && state !== undefined) {
+        return { type: messageType, network_id: value.network_id, state };
+      }
+      break;
+    }
+    case "push_route_required":
+      if (
+        typeof value.network_id === "number" &&
+        typeof value.vapid === "string" &&
+        typeof value.previous_route_id === "string"
+      ) {
+        return {
+          type: messageType,
+          network_id: value.network_id,
+          vapid: value.vapid,
+          previous_route_id: value.previous_route_id,
+        };
+      }
+      break;
     case "notice": {
       const values = decodeStringRecord(value.values);
       const action = decodeNoticeAction(value.action);
@@ -731,6 +752,8 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "incompatible_build" ||
     value === "diagnostic" ||
     value === "hosted_token_required" ||
+    value === "push_state_changed" ||
+    value === "push_route_required" ||
     value === "notice" ||
     value === "command_help_requested" ||
     value === "command_result" ||
@@ -759,6 +782,40 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "unread_changed" ||
     value === "read_marker_moved"
   );
+}
+
+function decodePushState(
+  value: unknown,
+): Extract<EngineToUi, { type: "push_state_changed" }>["state"] | undefined {
+  if (!isRecord(value) || typeof value.status !== "string") return undefined;
+  if (
+    (value.status === "registered" ||
+      value.status === "registered_but_no_delivery") &&
+    typeof value.route_id === "string"
+  ) {
+    return { status: value.status, route_id: value.route_id };
+  }
+  if (
+    value.status === "unsupported" &&
+    isOneOf(value.reason, ["no_web_push", "no_account", "no_vapid"])
+  ) {
+    return { status: value.status, reason: value.reason };
+  }
+  if (
+    value.status === "failed" &&
+    isOneOf(value.reason, [
+      "web_push_forbidden",
+      "registration_limit",
+      "request_limit",
+      "invalid_parameters",
+      "internal",
+      "connection",
+      "other",
+    ])
+  ) {
+    return { status: value.status, reason: value.reason };
+  }
+  return undefined;
 }
 
 function decodeStringRecord(

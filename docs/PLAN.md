@@ -395,8 +395,13 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     allowlist while keeping the server-to-server push ingress outside the CORS boundary.
   - [x] Try every validated push-service address within one delivery deadline, preferring IPv4 so
     the IPv4-only relay host can fall back from unusable AAAA answers.
+  - [x] Wire page-owned relay routes through the engine to IRC Web Push: classify missing
+    capability, account and VAPID prerequisites; expose typed registration outcomes; refresh on
+    reconnect; replace routes after a VAPID change; and unregister on explicit removal or hosted
+    sign-out. Exercise Ergo's real success, persistence-warning and refusal replies over the wire.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
-    registration, service-worker delivery, and the local-Ergo and Playwright journeys.
+    route creation and persistence, service-worker delivery, and the local-Ergo and Playwright
+    journeys.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.

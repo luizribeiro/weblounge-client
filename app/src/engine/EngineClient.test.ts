@@ -329,6 +329,47 @@ describe("WorkerEngineClient", () => {
     );
   });
 
+  it("decodes push registration outcomes and route replacement requests", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    const messages = [
+      {
+        type: "push_state_changed",
+        network_id: 1,
+        state: { status: "registered", route_id: "route-1" },
+      },
+      {
+        type: "push_state_changed",
+        network_id: 1,
+        state: { status: "failed", reason: "web_push_forbidden" },
+      },
+      {
+        type: "push_route_required",
+        network_id: 1,
+        vapid: "new-home-key",
+        previous_route_id: "route-1",
+      },
+    ];
+    for (const message of messages) port.emit(message);
+    frames[0]?.(0);
+
+    expect(listener.mock.calls.map(([message]) => message)).toEqual(messages);
+  });
+
+  it("rejects an unknown push failure", () => {
+    const { port } = fixture();
+
+    expect(() =>
+      port.emit({
+        type: "push_state_changed",
+        network_id: 1,
+        state: { status: "failed", reason: "future_failure" },
+      }),
+    ).toThrow("invalid engine message");
+  });
+
   it("preserves the casemapped member filter", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();

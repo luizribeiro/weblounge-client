@@ -9,6 +9,7 @@ import type { MembershipProjection } from "./generated/MembershipProjection";
 import type { MessageProjection } from "./generated/MessageProjection";
 import type { NetworkProjection } from "./generated/NetworkProjection";
 import type { NoticeKind } from "./generated/NoticeKind";
+import type { PushState } from "./generated/PushState";
 import type { UiToEngine } from "./generated/UiToEngine";
 
 export type {
@@ -23,6 +24,7 @@ export type {
   MessageProjection,
   NetworkProjection,
   NoticeKind,
+  PushState,
   UiToEngine,
 };
 

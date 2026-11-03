@@ -13,6 +13,7 @@ import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
 import type { NoticeAction } from "./NoticeAction";
 import type { NoticeTone } from "./NoticeTone";
+import type { PushState } from "./PushState";
 
 /**
  * Events emitted to a UI client.
@@ -53,7 +54,27 @@ message: string, } | { "type": "hosted_token_required",
 /**
  * Hosted network waiting for a new connection attempt.
  */
-network_id: NetworkId, } | { "type": "notice",
+network_id: NetworkId, } | { "type": "push_state_changed",
+/**
+ * Network whose registration changed.
+ */
+network_id: NetworkId,
+/**
+ * Complete current outcome.
+ */
+state: PushState, } | { "type": "push_route_required",
+/**
+ * Network whose route must be replaced.
+ */
+network_id: NetworkId,
+/**
+ * Newly advertised home VAPID public key.
+ */
+vapid: string,
+/**
+ * Relay route that the platform should discard.
+ */
+previous_route_id: string, } | { "type": "notice",
 /**
  * Localization key interpreted by the UI shell.
  */

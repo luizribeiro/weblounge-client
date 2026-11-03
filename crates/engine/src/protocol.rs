@@ -29,6 +29,78 @@ impl RedactedSecret {
     }
 }
 
+/// Relay route material needed by the IRC home to encrypt Web Push messages.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct PushRoute {
+    /// Stable relay route identity, separate from its delivery URL.
+    pub route_id: String,
+    /// Relay route URL registered with the IRC home.
+    pub endpoint: String,
+    /// URL-safe Base64 P-256 public key.
+    pub p256dh: String,
+    /// URL-safe Base64 authentication secret.
+    #[ts(type = "string")]
+    pub auth: RedactedSecret,
+}
+
+/// Why a connected network cannot register Web Push.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PushUnsupportedReason {
+    /// The IRC home did not negotiate a Web Push capability.
+    NoWebPush,
+    /// The connection has no authenticated account.
+    NoAccount,
+    /// The IRC home did not advertise a VAPID key.
+    NoVapid,
+}
+
+/// Stable classification of a failed IRC Web Push request.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PushFailure {
+    /// The IRC home rejected this account or connection for Web Push.
+    WebPushForbidden,
+    /// The IRC home's subscription limit was reached.
+    RegistrationLimit,
+    /// The client could not start another bounded IRC request.
+    RequestLimit,
+    /// The endpoint or encryption keys were invalid.
+    InvalidParameters,
+    /// The IRC home reported an internal failure.
+    Internal,
+    /// The request could not complete on the current connection.
+    Connection,
+    /// A future or server-specific refusal was returned.
+    Other,
+}
+
+/// Current Web Push registration outcome for one network.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PushState {
+    /// The home accepted the relay route and can deliver notifications.
+    Registered {
+        /// Active relay route.
+        route_id: String,
+    },
+    /// The route exists, but the account must enable persistence before delivery works.
+    RegisteredButNoDelivery {
+        /// Active relay route.
+        route_id: String,
+    },
+    /// This connection cannot register Web Push.
+    Unsupported {
+        /// Missing prerequisite.
+        reason: PushUnsupportedReason,
+    },
+    /// The home or connection refused registration.
+    Failed {
+        /// Stable failure classification.
+        reason: PushFailure,
+    },
+}
+
 impl From<String> for RedactedSecret {
     fn from(value: String) -> Self {
         Self(value)
@@ -630,6 +702,18 @@ pub enum EngineRequest {
         /// Whether a waiting service worker is ready to activate after this session closes.
         ready: bool,
     },
+    /// Register a page-owned relay route with one IRC home.
+    RegisterPush {
+        /// Network whose home should receive the route.
+        network_id: NetworkId,
+        /// Relay route and encryption keys created by the platform.
+        route: PushRoute,
+    },
+    /// Remove this device's relay route from one IRC home.
+    UnregisterPush {
+        /// Network whose registration should be removed.
+        network_id: NetworkId,
+    },
     /// Send plain chat text to a channel or direct buffer.
     SendMessage {
         /// Destination buffer.
@@ -757,6 +841,22 @@ pub enum EngineToUi {
     HostedTokenRequired {
         /// Hosted network waiting for a new connection attempt.
         network_id: NetworkId,
+    },
+    /// A network's Web Push registration outcome changed.
+    PushStateChanged {
+        /// Network whose registration changed.
+        network_id: NetworkId,
+        /// Complete current outcome.
+        state: PushState,
+    },
+    /// The home changed VAPID keys, so the platform must replace its pinned relay route.
+    PushRouteRequired {
+        /// Network whose route must be replaced.
+        network_id: NetworkId,
+        /// Newly advertised home VAPID public key.
+        vapid: String,
+        /// Relay route that the platform should discard.
+        previous_route_id: String,
     },
     /// Stable user-facing notice emitted by an engine adapter.
     Notice {
@@ -1124,6 +1224,30 @@ mod tests {
                 "nickname": "*",
                 "oauth_token": "unique-oauth-token",
                 "autojoin": ["#lounge"],
+            })
+        );
+
+        let push = EngineRequest::RegisterPush {
+            network_id: crate::NetworkId(7),
+            route: crate::PushRoute {
+                route_id: "route-1".into(),
+                endpoint: "https://push.example.test/route-1".into(),
+                p256dh: "public-key".into(),
+                auth: "unique-push-auth".into(),
+            },
+        };
+        assert!(!format!("{push:?}").contains("unique-push-auth"));
+        assert_eq!(
+            serde_json::to_value(push).expect("push request serializes"),
+            serde_json::json!({
+                "type": "register_push",
+                "network_id": 7,
+                "route": {
+                    "route_id": "route-1",
+                    "endpoint": "https://push.example.test/route-1",
+                    "p256dh": "public-key",
+                    "auth": "unique-push-auth",
+                },
             })
         );
     }

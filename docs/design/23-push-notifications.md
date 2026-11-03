@@ -448,6 +448,17 @@ never include authorization, device secrets, endpoints or bodies.
   Linux UnifiedPush; Windows App SDK push works unpackaged with a sparse package for identity, an
   Azure AppId, and 30-day channel expiry.
 
+The first engine slice keeps the platform/IRC boundary explicit before durable route storage
+lands. The page creates and owns each relay subscription and route; the engine accepts its opaque
+route material, owns the IRC `REGISTER`/`UNREGISTER` exchange, and reports `Registered`,
+`RegisteredButNoDelivery`, `Unsupported`, or a typed `Failed` outcome. A reconnect refreshes an
+existing registration. A changed home VAPID key instead emits a route-replacement request so the
+page can discard the old relay route and create one pinned to the new key. Hosted sign-out
+and explicit network removal unregister before quitting; a transient socket disconnect retains
+the registration so it can keep delivering while the client is offline. This slice keys its
+in-memory state by the current `NetworkId`; durable `NetworkKey` storage remains a v1 prerequisite
+above.
+
 ## Failure modes
 
 | Failure | Behaviour |
