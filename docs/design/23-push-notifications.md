@@ -491,8 +491,19 @@ never include authorization, device secrets, endpoints or bodies.
   the relay; two papo clients drive a DM and a mention; the relay's sink records envelopes; the
   read-elsewhere case asserts the MARKREAD push is normal urgency and dropped for web targets. Ergo
   requires `https` (`webpush/security.go:26-35`) and its dialer refuses loopback, private,
-  link-local and CGNAT addresses (`security.go:67-76`), so the fixture needs an Ergo patch applied
-  only in test overrides, plus TLS on the sink from the repo's throwaway local CA.
+  link-local and CGNAT addresses (`security.go:67-76`), but Ergo 2.19.1's `isInternalIP` does not
+  block TEST-NET-3. So no Ergo patch: the relay, as Ergo's push target, listens on a 203.0.113.0/24 address with a test CA
+  that Ergo trusts, reusing papo's `nix/webpush-receiver.nix` once it lands. Our relay, in turn,
+  refuses documentation addresses and unlisted hosts and trusts only WebPKI roots, so the test
+  starts it with a test-only target allowlist and CA for the fake push service; the binary has no
+  such seam yet.
+- **One unmocked chain.** One test runs the whole path with no stubs between the ends: Ergo sends a
+  real encrypted push → our relay → the fake push service → CDP `ServiceWorker.deliverPushMessage`
+  → the service worker decrypts and parses it with the real `papo-proto` → the notification → the
+  tap opens the buffer.
+- **Upgrade guard.** The captured Ergo and soju payload fixtures are recorded from that end-to-end
+  run and checked in. The `push-payload` tests over them and the full chain run in CI on every
+  push, so every papo or `papo-proto` bump commit must pass both.
 - **Playwright** (Chromium, built app; no service worker in dev): Playwright's Chromium has no push
   service, so `PushManager.prototype.subscribe` is stubbed with `addInitScript` to return a fake
   subscription, and delivery uses CDP `ServiceWorker.deliverPushMessage` with the sink's envelope.
