@@ -94,8 +94,11 @@ export function MessageList(props: MessageListProps) {
   let currentBuffer = props.bufferId;
   const initialReadAt = props.readAtMs ?? null;
   let boundaryFrozen = hasUnreadAfter(props.messages, initialReadAt);
+  let logicallyAtLiveEdge = true;
+  let scrollLiveEdgeFrame: number | undefined;
+  let scrollFrozenReadAt: number | undefined;
   const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
-  const [atLiveEdge, setAtLiveEdge] = createSignal(true);
+  const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
@@ -109,18 +112,44 @@ export function MessageList(props: MessageListProps) {
     return (index: number) => current[index]?.key ?? index;
   });
   const nickLookup = createMemo(() => createNickLookup(props.messages));
+  const freezeUnreadBoundary = (write: (readAtMs: number) => void) => {
+    if (boundaryFrozen) return;
+    const lastSeen = latestMessageTime(props.messages);
+    if (lastSeen === undefined) return;
+    boundaryFrozen = true;
+    if (!hasUnreadAfter(props.messages, frozenReadAt())) write(lastSeen);
+  };
   const setLiveEdge = (live: boolean) => {
-    if (!live && atLiveEdge() && !boundaryFrozen) {
-      const lastSeen = latestMessageTime(props.messages);
-      if (lastSeen !== undefined) {
-        boundaryFrozen = true;
-        if (!hasUnreadAfter(props.messages, frozenReadAt()))
-          setFrozenReadAt(lastSeen);
-      }
+    if (scrollLiveEdgeFrame !== undefined) {
+      window.cancelAnimationFrame(scrollLiveEdgeFrame);
+      scrollLiveEdgeFrame = undefined;
+      scrollFrozenReadAt = undefined;
     }
-    setAtLiveEdge(live);
+    if (!live && logicallyAtLiveEdge) freezeUnreadBoundary(setFrozenReadAt);
+    logicallyAtLiveEdge = live;
+    setPublishedAtLiveEdge(live);
     if (live) setUnseen(0);
     props.onLiveEdgeChange?.(live);
+  };
+  const deferScrollLiveEdge = (live: boolean) => {
+    if (!live && logicallyAtLiveEdge)
+      freezeUnreadBoundary((readAtMs) => {
+        scrollFrozenReadAt = readAtMs;
+      });
+    // Arrivals must observe the user's position immediately, while reactive
+    // publication waits because it can rewrite virtual transcript geometry.
+    logicallyAtLiveEdge = live;
+    if (scrollLiveEdgeFrame !== undefined) return;
+    scrollLiveEdgeFrame = window.requestAnimationFrame(() => {
+      scrollLiveEdgeFrame = undefined;
+      if (scrollFrozenReadAt !== undefined) {
+        setFrozenReadAt(scrollFrozenReadAt);
+        scrollFrozenReadAt = undefined;
+      }
+      setPublishedAtLiveEdge(logicallyAtLiveEdge);
+      if (logicallyAtLiveEdge) setUnseen(0);
+      props.onLiveEdgeChange?.(logicallyAtLiveEdge);
+    });
   };
   const userScrollIntent = new ScrollIntentTracker(() => list?.scrollTop ?? 0, {
     request: (callback) => window.requestAnimationFrame(callback),
@@ -160,7 +189,7 @@ export function MessageList(props: MessageListProps) {
         const viewportChanged =
           widthChanged ||
           (observedHeight !== undefined && observedHeight !== next.height);
-        const followEnd = viewportChanged && atLiveEdge();
+        const followEnd = viewportChanged && logicallyAtLiveEdge;
         if (observedWidth !== next.width) estimatedSizes.clear();
         observedWidth = next.width;
         observedHeight = next.height;
@@ -218,7 +247,7 @@ export function MessageList(props: MessageListProps) {
     // reached the end. Arrival can therefore come from either source, while
     // only user input can leave the edge; layout gaps must not freeze it.
     onChange: (instance) => {
-      if (!atLiveEdge() && instance.isAtEnd()) setLiveEdge(true);
+      if (!logicallyAtLiveEdge && instance.isAtEnd()) setLiveEdge(true);
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
   });
@@ -277,7 +306,8 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const marker = props.readAtMs ?? null;
     const hasUnread = hasUnreadAfter(props.messages, marker);
-    const away = !atLiveEdge() || document.hidden || !document.hasFocus();
+    const away =
+      !publishedAtLiveEdge() || document.hidden || !document.hasFocus();
     if (hasUnread && away) {
       boundaryFrozen = true;
       setFrozenReadAt(marker);
@@ -290,10 +320,10 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const messages = props.messages;
     const previousCount = renderedCount;
-    if (messages.length > previousCount && !atLiveEdge())
+    if (messages.length > previousCount && !logicallyAtLiveEdge)
       setUnseen((count) => count + messages.length - previousCount);
     renderedCount = messages.length;
-    if (messages.length !== previousCount && atLiveEdge())
+    if (messages.length !== previousCount && logicallyAtLiveEdge)
       virtualizer.scrollToEnd();
   });
   onMount(() => {
@@ -304,7 +334,7 @@ export function MessageList(props: MessageListProps) {
     };
     const handleFontsLoaded = () => {
       remeasure();
-      if (atLiveEdge()) virtualizer.scrollToEnd();
+      if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
     };
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
@@ -320,7 +350,7 @@ export function MessageList(props: MessageListProps) {
           );
     const anchorGeometryChange = (event: Event) => {
       const { owner } = (event as CustomEvent<AppGeometryChange>).detail;
-      if (list !== undefined && owner.contains(list) && atLiveEdge()) {
+      if (list !== undefined && owner.contains(list) && logicallyAtLiveEdge) {
         const followedResizedViewport = syncViewportRect?.() ?? false;
         if (!followedResizedViewport) virtualizer.scrollToEnd();
       }
@@ -350,6 +380,8 @@ export function MessageList(props: MessageListProps) {
       window.removeEventListener("pointercancel", cancelPointerScrollIntent);
       window.removeEventListener("touchend", endTouchScrollIntent);
       window.removeEventListener("touchcancel", endTouchScrollIntent);
+      if (scrollLiveEdgeFrame !== undefined)
+        window.cancelAnimationFrame(scrollLiveEdgeFrame);
       userScrollIntent.dispose();
     });
     queueMicrotask(jumpToBottom);
@@ -367,7 +399,7 @@ export function MessageList(props: MessageListProps) {
         onScroll={(event) => {
           if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
-          setLiveEdge(
+          deferScrollLiveEdge(
             element.scrollHeight - element.scrollTop - element.clientHeight <=
               liveEdgeTolerance,
           );

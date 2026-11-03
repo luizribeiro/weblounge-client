@@ -730,6 +730,37 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
   );
 });
 
+it("defers live-edge geometry until after the scroll handler", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const messages = Array.from({ length: 3 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    text: `message ${index + 1}`,
+    received_at_ms: index + 1,
+  }));
+  const [readAtMs, setReadAtMs] = createSignal(3);
+  const { container } = render(() => (
+    <MessageList messages={messages} readAtMs={readAtMs()} />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 50 },
+    scrollHeight: { configurable: true, value: 500 },
+  });
+  setReadAtMs(1);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(container.querySelector("[data-new-line]")).toBeNull();
+
+  fireEvent.wheel(list, { deltaY: -100 });
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+
+  expect(container.querySelector("[data-new-line]")).toBeNull();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  expect(container.querySelector("[data-new-line]")).not.toBeNull();
+});
+
 it("does not add New for a message arriving at the focused live edge", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>([

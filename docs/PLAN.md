@@ -144,6 +144,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep production consoles clean through desktop and mobile load, navigation, scrolling,
     sending, and member-list flows in Chromium, Firefox, and WebKit. Wasm initializes through
     the object API, and virtualizer offset and resize delivery avoid browser diagnostics.
+  - [x] Keep live-edge publication out of native scroll handlers so Firefox async panning never
+    observes app-owned transcript geometry writes. Logical scroll state remains immediate for
+    arrivals while unread, row, spacer, sentinel, and clip updates coalesce into the next frame.
   - [x] Fill the dimmed logo and title with one real-colour connection band while a cached chat
     list hydrates, then finish the current cycle and one final filling pass when the complete live
     list replaces the cache. Reduced motion stays static; connected and hidden states do no work.
