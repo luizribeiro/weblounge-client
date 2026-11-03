@@ -667,6 +667,130 @@ for (const shell of [
   });
 }
 
+test("creates and activates a relay route after engine registration", async ({
+  baseURL,
+  context,
+  page,
+}) => {
+  if (baseURL === undefined) throw new Error("app base URL is missing");
+  await context.grantPermissions(["notifications"], {
+    origin: new URL(baseURL).origin,
+  });
+  await installPushManagerStub(page);
+  await installFakeEngine(page);
+  await installFakeOAuth(page);
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "hostedPushEnabled", true);
+  });
+  await page.route("**/config.json", async (route) => {
+    const config = hostedConfig(route.request().url());
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...config,
+        push: {
+          relay: "https://push.weblounge.org",
+          relay_vapid:
+            "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        },
+      }),
+    });
+  });
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(baseURL).origin);
+      return;
+    }
+    await fulfillSessionToken(route, baseURL, "push-session-token");
+  });
+  const relayRequests: string[] = [];
+  await page.route("https://push.weblounge.org/**", async (route) => {
+    const request = route.request();
+    const cors = {
+      "Access-Control-Allow-Origin": new URL(baseURL).origin,
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Allow-Methods": "POST, PUT, DELETE",
+    };
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: cors });
+      return;
+    }
+    const path = new URL(request.url()).pathname;
+    relayRequests.push(`${request.method()} ${path}`);
+    if (path === "/v1/devices") {
+      expect(await request.headerValue("authorization")).toBe(
+        "Bearer push-session-token",
+      );
+      expect(request.postDataJSON()).toMatchObject({
+        target: {
+          platform: "web_push",
+          endpoint: "https://fcm.googleapis.com/fcm/send/e2e",
+        },
+      });
+      await route.fulfill({
+        status: 201,
+        headers: cors,
+        contentType: "application/json",
+        body: JSON.stringify({ id: "device-1", secret: "device-secret" }),
+      });
+      return;
+    }
+    if (path === "/v1/devices/device-1/routes") {
+      expect(await request.headerValue("authorization")).toBe(
+        "Bearer device-secret",
+      );
+      expect(request.postDataJSON()).toEqual({ home_vapid: "home-vapid" });
+      await route.fulfill({
+        status: 201,
+        headers: cors,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "route-1",
+          endpoint: "https://push.weblounge.org/v1/r/route-1",
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 204, headers: cors });
+  });
+
+  await page.goto("/");
+
+  await expect
+    .poll(() => relayRequests)
+    .toEqual(["POST /v1/devices", "POST /v1/devices/device-1/routes"]);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const requests = Reflect.get(globalThis, "hostedEngineRequests");
+        return Array.isArray(requests) ? requests : [];
+      }),
+    )
+    .toContainEqual(
+      expect.objectContaining({
+        type: "register_push",
+        network_id: 1,
+        route: expect.objectContaining({ route_id: "route-1" }),
+      }),
+    );
+  expect(relayRequests).not.toContain("PUT /v1/routes/route-1/active");
+
+  await page.evaluate(() => {
+    const complete = Reflect.get(globalThis, "completePushRegistration");
+    if (typeof complete !== "function")
+      throw new Error("push registration release is missing");
+    complete();
+  });
+  await expect
+    .poll(() => relayRequests)
+    .toContain("PUT /v1/routes/route-1/active");
+  await expect
+    .poll(() =>
+      page.evaluate(() => Reflect.get(globalThis, "pushSubscribeOptions")),
+    )
+    .toMatchObject({ userVisibleOnly: true });
+});
+
 async function installHostedConfig(page: Page): Promise<() => string> {
   let redirectUri = "";
   await installFakeOAuth(page);
@@ -781,6 +905,11 @@ async function installFakeEngine(
     const workerKind = Reflect.get(globalThis, "hostedWorkerKind");
     Reflect.set(globalThis, "hostedEngineRequests", []);
     Reflect.set(globalThis, "hostedStartupSequence", []);
+    let pushDevice: {
+      relay: string;
+      device_id: string;
+      secret: string;
+    } | null = null;
     if (holdHostedConnection) {
       const originalFetch = globalThis.fetch.bind(globalThis);
       globalThis.fetch = (input, init) => {
@@ -802,7 +931,10 @@ async function installFakeEngine(
         if (typeof message !== "object" || message === null) return;
         const envelope = message as {
           type?: string;
-          payload?: { id?: string; request?: { type?: string } };
+          payload?: {
+            id?: string;
+            request?: { type?: string; credentials?: typeof pushDevice };
+          };
         };
         if (envelope.type === "hello") {
           this.emit({
@@ -856,6 +988,28 @@ async function installFakeEngine(
               ],
             });
           }
+        }
+        if (request?.type === "load_push_device") {
+          this.emit({
+            type: "push_device_loaded",
+            command_id: id,
+            credentials: pushDevice,
+          });
+        }
+        if (request?.type === "store_push_device") {
+          pushDevice = request.credentials ?? null;
+        }
+        if (request?.type === "clear_push_device") pushDevice = null;
+        if (request?.type === "register_push") {
+          const requests = Reflect.get(globalThis, "hostedEngineRequests");
+          if (Array.isArray(requests)) requests.push(request);
+          Reflect.set(globalThis, "completePushRegistration", () => {
+            this.emit({
+              type: "push_state_changed",
+              network_id: 1,
+              state: { status: "registered", route_id: "route-1" },
+            });
+          });
         }
         if (request?.type === "reconnect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
@@ -914,6 +1068,14 @@ async function installFakeEngine(
                 },
               ],
             });
+            if (Reflect.get(globalThis, "hostedPushEnabled") === true) {
+              this.emit({
+                type: "push_route_required",
+                network_id: 1,
+                vapid: "home-vapid",
+                previous_route_id: null,
+              });
+            }
           };
           if (holdHostedConnection) {
             Reflect.set(globalThis, "completeHostedConnection", complete);
@@ -953,6 +1115,44 @@ async function installFakeEngine(
     });
     Reflect.set(globalThis, "Worker", FakeDedicatedWorker);
   }, holdConnection);
+}
+
+async function installPushManagerStub(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(Notification, "permission", {
+      configurable: true,
+      get: () => "granted",
+    });
+    const applicationServerKey = Uint8Array.from({ length: 65 }, (_, index) =>
+      index === 0 ? 4 : index,
+    ).buffer;
+    PushManager.prototype.getSubscription = async () => null;
+    PushManager.prototype.subscribe = async (options) => {
+      Reflect.set(globalThis, "pushSubscribeOptions", {
+        userVisibleOnly: options.userVisibleOnly,
+        applicationServerKey: Array.from(
+          new Uint8Array(options.applicationServerKey as ArrayBuffer),
+        ),
+      });
+      return {
+        endpoint: "https://fcm.googleapis.com/fcm/send/e2e",
+        expirationTime: null,
+        options: { applicationServerKey, userVisibleOnly: true },
+        getKey: (name: PushEncryptionKeyName) =>
+          name === "p256dh"
+            ? Uint8Array.from({ length: 65 }, (_, index) => index).buffer
+            : Uint8Array.from({ length: 16 }, (_, index) => index).buffer,
+        toJSON: () => ({}),
+        unsubscribe: async () => true,
+      } as PushSubscription;
+    };
+    const pushManager = Object.create(PushManager.prototype) as PushManager;
+    const registration = { pushManager } as ServiceWorkerRegistration;
+    Object.defineProperty(ServiceWorkerContainer.prototype, "ready", {
+      configurable: true,
+      get: () => Promise.resolve(registration),
+    });
+  });
 }
 
 async function disableSharedWorker(page: Page): Promise<void> {
