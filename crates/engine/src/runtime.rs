@@ -1726,6 +1726,17 @@ fn attach_shell(running: &RunningNetwork, command_id: String) -> Vec<EngineToUi>
             network_id: model.id(),
             state,
         });
+    } else if running.push.route.is_none() {
+        let snapshot = running.client.state();
+        if push_unsupported_reason(&snapshot).is_none()
+            && let Some(vapid) = snapshot.isupport().vapid()
+        {
+            output.push(EngineToUi::PushRouteRequired {
+                network_id: model.id(),
+                vapid: vapid.to_owned(),
+                previous_route_id: None,
+            });
+        }
     }
     output.push(EngineToUi::CommandResult { id: command_id });
     output
@@ -3195,7 +3206,6 @@ fn connected_push_action(
     snapshot: &papo::State,
     output: &mut Vec<EngineToUi>,
 ) -> Option<PushRegisterTask> {
-    let route = running.push.route.clone()?;
     if let Some(reason) = push_unsupported_reason(snapshot) {
         let state = PushState::Unsupported { reason };
         running.push.state = Some(state.clone());
@@ -3206,6 +3216,15 @@ fn connected_push_action(
         return None;
     }
     let vapid = snapshot.isupport().vapid()?;
+    let Some(route) = running.push.route.clone() else {
+        running.push.state = None;
+        output.push(EngineToUi::PushRouteRequired {
+            network_id: running.model.id(),
+            vapid: vapid.to_owned(),
+            previous_route_id: None,
+        });
+        return None;
+    };
     if vapid != route.vapid {
         running.push.generation = running.push.generation.saturating_add(1);
         running.push.route = None;
@@ -3213,7 +3232,7 @@ fn connected_push_action(
         output.push(EngineToUi::PushRouteRequired {
             network_id: running.model.id(),
             vapid: vapid.to_owned(),
-            previous_route_id: route.route_id,
+            previous_route_id: Some(route.route_id),
         });
         return None;
     }
@@ -7922,7 +7941,14 @@ mod tests {
         let (state, outbound, mut receiver) = harness(client.clone());
         let runtime = Runtime { state, outbound };
         process_runtime_event(&runtime, connected);
-        _ = collect(&mut receiver);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::PushRouteRequired {
+                vapid,
+                previous_route_id: None,
+                ..
+            } if vapid == "home-vapid"
+        )));
 
         assert_no_output(&runtime.request(push_request("register", "route-1")));
         let request = wire.next_sent().await;
@@ -8166,7 +8192,7 @@ mod tests {
                 vapid,
                 previous_route_id,
                 ..
-            } if vapid == "new-home-vapid" && previous_route_id == "route-1"
+            } if vapid == "new-home-vapid" && previous_route_id.as_deref() == Some("route-1")
         )));
         assert!(
             lock(&runtime.state)

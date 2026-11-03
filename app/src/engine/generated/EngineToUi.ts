@@ -81,9 +81,9 @@ network_id: NetworkId,
  */
 vapid: string,
 /**
- * Relay route that the platform should discard.
+ * Relay route that the platform should discard after a VAPID change.
  */
-previous_route_id: string, } | { "type": "notice",
+previous_route_id: string | null, } | { "type": "notice",
 /**
  * Localization key interpreted by the UI shell.
  */

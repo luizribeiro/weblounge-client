@@ -443,7 +443,8 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (
         typeof value.network_id === "number" &&
         typeof value.vapid === "string" &&
-        typeof value.previous_route_id === "string"
+        (value.previous_route_id === null ||
+          typeof value.previous_route_id === "string")
       ) {
         return {
           type: messageType,

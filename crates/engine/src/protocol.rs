@@ -896,14 +896,14 @@ pub enum EngineToUi {
         /// Complete current outcome.
         state: PushState,
     },
-    /// The home changed VAPID keys, so the platform must replace its pinned relay route.
+    /// The platform must create or replace a relay route pinned to this home.
     PushRouteRequired {
         /// Network whose route must be replaced.
         network_id: NetworkId,
         /// Newly advertised home VAPID public key.
         vapid: String,
-        /// Relay route that the platform should discard.
-        previous_route_id: String,
+        /// Relay route that the platform should discard after a VAPID change.
+        previous_route_id: Option<String>,
     },
     /// Stable user-facing notice emitted by an engine adapter.
     Notice {

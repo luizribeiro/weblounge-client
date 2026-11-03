@@ -351,6 +351,12 @@ describe("WorkerEngineClient", () => {
         vapid: "new-home-key",
         previous_route_id: "route-1",
       },
+      {
+        type: "push_route_required",
+        network_id: 2,
+        vapid: "first-home-key",
+        previous_route_id: null,
+      },
     ];
     for (const message of messages) port.emit(message);
     frames[0]?.(0);
