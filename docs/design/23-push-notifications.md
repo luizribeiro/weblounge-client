@@ -435,8 +435,9 @@ The engine's web IndexedDB schema now has a real `Space::Durable` object store. 
 and redacted device secret are read, written and cleared through a narrow engine protocol; they are
 never placed in local storage or the page-owned database. Device creation is serialized across
 tabs with a Web Lock and rechecks durable storage inside the lock, so one hosted browser profile
-creates one relay device. Cache storage may still fall back to memory, but Durable fails closed
-when IndexedDB is unavailable.
+creates one relay device. Route creation, replacement, activation and deletion are likewise locked
+per network so tabs sharing the engine cannot create competing relay routes. Cache storage may
+still fall back to memory, but Durable fails closed when IndexedDB is unavailable.
 
 The page owns `weblounge-push`, whose route records contain the current `NetworkId`, pinned home
 VAPID key, relay endpoint, public key, auth secret and a non-extractable ECDH private `CryptoKey`.

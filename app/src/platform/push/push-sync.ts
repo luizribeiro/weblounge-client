@@ -103,10 +103,12 @@ export class PushSynchronizer {
   #onEngineMessage(message: EngineClientMessage): void {
     if (message.type === "push_route_required") {
       this.#enqueue(() =>
-        this.#routeRequired(
-          message.network_id,
-          message.vapid,
-          message.previous_route_id ?? undefined,
+        this.#withNetworkLock(message.network_id, () =>
+          this.#routeRequired(
+            message.network_id,
+            message.vapid,
+            message.previous_route_id ?? undefined,
+          ),
         ),
       );
       return;
@@ -114,17 +116,32 @@ export class PushSynchronizer {
     if (message.type !== "push_state_changed") return;
     if (message.state.status === "registered") {
       const routeId = message.state.route_id;
-      this.#enqueue(() => this.#activate(message.network_id, routeId));
+      this.#enqueue(() =>
+        this.#withNetworkLock(message.network_id, () =>
+          this.#activate(message.network_id, routeId),
+        ),
+      );
     } else if (
       message.state.status === "failed" ||
       message.state.status === "unsupported"
     ) {
-      this.#enqueue(() => this.#dropRoute(message.network_id));
+      this.#enqueue(() =>
+        this.#withNetworkLock(message.network_id, () =>
+          this.#dropRoute(message.network_id),
+        ),
+      );
     }
   }
 
   #enqueue(work: () => Promise<void>): void {
     this.#pending = this.#pending.then(work).catch(() => undefined);
+  }
+
+  #withNetworkLock(
+    networkId: number,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    return this.#exclusive(`weblounge-push-route-${networkId}`, work);
   }
 
   async #routeRequired(
