@@ -1,0 +1,53 @@
+.prompt {
+  align-items: center;
+  background: var(--wl-color-panel-alt);
+  border-block: 1px solid var(--wl-color-panel-border);
+  color: var(--wl-color-fg);
+  display: grid;
+  flex: 0 0 auto;
+  font-size: 12px;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  line-height: 1.25;
+  padding: 7px 8px 7px 12px;
+}
+
+.prompt button {
+  appearance: none;
+  border-radius: var(--wl-radius-control);
+  font: inherit;
+}
+
+.turnOn {
+  background: var(--wl-color-accent);
+  border: 1px solid var(--wl-color-accent);
+  color: var(--wl-color-accent-fg);
+  font-weight: 650;
+  padding: 4px 7px;
+}
+
+.dismiss {
+  background: transparent;
+  border: 0;
+  color: var(--wl-color-muted);
+  font-size: 18px;
+  height: 28px;
+  line-height: 1;
+  padding: 0;
+  width: 28px;
+}
+
+@media (hover: hover) {
+  .prompt button:hover {
+    cursor: pointer;
+  }
+
+  .turnOn:hover {
+    filter: brightness(1.06);
+  }
+
+  .dismiss:hover {
+    background: var(--wl-color-chip);
+    color: var(--wl-color-fg);
+  }
+}
