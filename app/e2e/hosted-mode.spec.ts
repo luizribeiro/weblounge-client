@@ -758,7 +758,13 @@ test("creates and activates a relay route after engine registration", async ({
 
   await expect
     .poll(() => relayRequests)
-    .toEqual(["POST /v1/devices", "POST /v1/devices/device-1/routes"]);
+    .toEqual(
+      expect.arrayContaining([
+        "POST /v1/devices",
+        "POST /v1/devices/device-1/routes",
+        "POST /v1/devices/device-1/lease",
+      ]),
+    );
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -784,6 +790,16 @@ test("creates and activates a relay route after engine registration", async ({
   await expect
     .poll(() => relayRequests)
     .toContain("PUT /v1/routes/route-1/active");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect
+    .poll(() => relayRequests)
+    .toContain("POST /v1/devices/device-1/lease/release");
   await expect
     .poll(() =>
       page.evaluate(() => Reflect.get(globalThis, "pushSubscribeOptions")),

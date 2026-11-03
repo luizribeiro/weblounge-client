@@ -53,6 +53,7 @@ import {
 } from "./navigation/initial-buffer";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
+import { ForegroundLease } from "./platform/push/foreground-lease";
 import {
   decodeOpenRouteMessage,
   type OpenRouteMessage,
@@ -134,6 +135,8 @@ export function App(props: AppProps) {
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
+  let foregroundLease: ForegroundLease | undefined;
+  let appIsForeground = false;
   const pendingPushEvents: EngineClientMessage[] = [];
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
@@ -524,10 +527,14 @@ export function App(props: AppProps) {
       updateReady = true;
       publishUpdateReady();
     });
-    const updateVisibility = () => {
-      mountedClient.setVisibility(document.hidden ? "hidden" : "visible");
-      if (!document.hidden) reconnectNetworks();
+    const setAppForeground = (foreground: boolean) => {
+      appIsForeground = foreground;
+      mountedClient.setVisibility(foreground ? "visible" : "hidden");
+      foregroundLease?.setForeground(foreground);
+      if (foreground) reconnectNetworks();
     };
+    const updateVisibility = () =>
+      setAppForeground(!document.hidden && document.hasFocus());
     const reconnectNetworks = () => {
       for (const network of networks()) {
         void mountedClient
@@ -541,9 +548,10 @@ export function App(props: AppProps) {
     const handlePageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
         mountedClient.checkLiveness();
-        reconnectNetworks();
+        updateVisibility();
       }
     };
+    const handlePageHide = () => setAppForeground(false);
     const updateConnectivity = () => {
       for (const network of networks()) {
         void mountedClient
@@ -559,6 +567,9 @@ export function App(props: AppProps) {
       }
     };
     document.addEventListener("visibilitychange", updateVisibility);
+    window.addEventListener("focus", updateVisibility);
+    window.addEventListener("blur", updateVisibility);
+    window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("online", updateConnectivity);
     window.addEventListener("offline", updateConnectivity);
     window.addEventListener("pageshow", handlePageShow);
@@ -594,6 +605,9 @@ export function App(props: AppProps) {
       unregisterContextSurface();
       removeContextMenuHandler();
       document.removeEventListener("visibilitychange", updateVisibility);
+      window.removeEventListener("focus", updateVisibility);
+      window.removeEventListener("blur", updateVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("online", updateConnectivity);
       window.removeEventListener("offline", updateConnectivity);
       window.removeEventListener("pageshow", handlePageShow);
@@ -603,6 +617,7 @@ export function App(props: AppProps) {
       );
       unsubscribe();
       unsubscribeUpdateReady();
+      foregroundLease?.dispose();
       pushSynchronizer?.dispose();
       void mountedClient.close();
     });
@@ -629,12 +644,33 @@ export function App(props: AppProps) {
       config.relay_vapid,
     );
     if (subscription.status !== "ready" || disposed) return;
+    const relay = new RelayClient(config.relay);
+    const devices = new EnginePushDeviceStore(mountedClient);
+    const lease = new ForegroundLease({
+      renew: (device, tabId) => relay.renewLease(device, tabId),
+      release: (device, tabId) => relay.releaseLease(device, tabId),
+    });
+    foregroundLease = lease;
+    lease.setForeground(appIsForeground);
+    const storedDevice = await devices
+      .load(config.relay)
+      .catch(() => undefined);
+    if (disposed) {
+      lease.dispose();
+      return;
+    }
+    if (storedDevice !== undefined) {
+      lease.setDevice({
+        id: storedDevice.device_id,
+        secret: storedDevice.secret,
+      });
+    }
     const synchronizer = new PushSynchronizer({
       engine: mountedClient,
-      relay: new RelayClient(config.relay),
+      relay,
       relayOrigin: config.relay,
       target: subscription.target,
-      devices: new EnginePushDeviceStore(mountedClient),
+      devices,
       routes: new IndexedDbPushRouteStore(),
       routeContext: (networkId) => {
         const network = networks().find(
@@ -658,6 +694,7 @@ export function App(props: AppProps) {
         }
       },
       onAuthorizationRequired: () => void restartHostedAuthorization("revoked"),
+      onDeviceReady: (device) => lease.setDevice(device),
     });
     pushSynchronizer = synchronizer;
     for (const event of pendingPushEvents.splice(0)) synchronizer.handle(event);

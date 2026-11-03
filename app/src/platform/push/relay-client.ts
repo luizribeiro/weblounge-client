@@ -81,12 +81,50 @@ export class RelayClient {
     );
   }
 
+  renewLease(device: RelayDevice, tabId: string): Promise<RelayResult<null>> {
+    return this.request(
+      `/v1/devices/${encodeURIComponent(device.id)}/lease`,
+      device.secret,
+      "POST",
+      { tab_id: tabId },
+      isNull,
+    );
+  }
+
+  releaseLease(
+    device: RelayDevice,
+    tabId: string,
+    sendBeacon:
+      | Navigator["sendBeacon"]
+      | undefined = navigator.sendBeacon?.bind(navigator),
+  ): Promise<RelayResult<null>> {
+    const path = `/v1/devices/${encodeURIComponent(device.id)}/lease/release`;
+    if (sendBeacon !== undefined) {
+      const body = new URLSearchParams({
+        secret: device.secret,
+        tab_id: tabId,
+      });
+      if (sendBeacon(`${this.origin}${path}`, body)) {
+        return Promise.resolve({ ok: true, value: null });
+      }
+    }
+    return this.request(
+      path,
+      device.secret,
+      "POST",
+      { tab_id: tabId },
+      isNull,
+      true,
+    );
+  }
+
   private async request<T>(
     path: string,
     bearer: string,
     method: "POST" | "PUT" | "DELETE",
     body: Readonly<Record<string, unknown>> | undefined,
     decode: (value: unknown) => value is T,
+    keepalive = false,
   ): Promise<RelayResult<T>> {
     let response: Response;
     try {
@@ -102,6 +140,7 @@ export class RelayClient {
               : { "Content-Type": "application/json" }),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          ...(keepalive ? { keepalive: true } : {}),
         },
       );
     } catch {

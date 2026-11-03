@@ -26,6 +26,7 @@ interface PushSynchronizerOptions {
   readonly acquireSessionToken: () => Promise<string>;
   readonly onAuthorizationRequired: () => void;
   readonly routeContext: (networkId: number) => PushRouteContext | undefined;
+  readonly onDeviceReady?: (device: RelayDevice) => void;
   readonly generateRouteKeys?: () => Promise<RouteKeys>;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
 }
@@ -45,6 +46,7 @@ export class PushSynchronizer {
   readonly #acquireSessionToken: () => Promise<string>;
   readonly #onAuthorizationRequired: () => void;
   readonly #routeContext: (networkId: number) => PushRouteContext | undefined;
+  readonly #onDeviceReady: (device: RelayDevice) => void;
   readonly #generateRouteKeys: () => Promise<RouteKeys>;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly #unsubscribe: () => void;
@@ -60,6 +62,7 @@ export class PushSynchronizer {
     this.#acquireSessionToken = options.acquireSessionToken;
     this.#onAuthorizationRequired = options.onAuthorizationRequired;
     this.#routeContext = options.routeContext;
+    this.#onDeviceReady = options.onDeviceReady ?? (() => {});
     this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
     this.#exclusive = options.exclusive ?? withExclusiveLock;
     this.#unsubscribe = this.#engine.subscribe((message) =>
@@ -283,7 +286,11 @@ export class PushSynchronizer {
   #ensureDevice(): Promise<RelayDevice | undefined> {
     return this.#exclusive("weblounge-push-device", async () => {
       const stored = await this.#devices.load(this.#relayOrigin);
-      if (stored !== undefined) return asRelayDevice(stored);
+      if (stored !== undefined) {
+        const device = asRelayDevice(stored);
+        this.#onDeviceReady(device);
+        return device;
+      }
       const sessionToken = await this.#acquireSessionToken();
       const created = await this.#relay.createDevice(
         sessionToken,
@@ -299,6 +306,7 @@ export class PushSynchronizer {
         device_id: created.value.id,
         secret: created.value.secret,
       });
+      this.#onDeviceReady(created.value);
       return created.value;
     });
   }

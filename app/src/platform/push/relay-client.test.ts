@@ -110,4 +110,60 @@ describe("relay client", () => {
       error: { kind: "unavailable" },
     });
   });
+
+  it("renews with authorization and releases through a beacon form", async () => {
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const sendBeacon = vi.fn<Navigator["sendBeacon"]>(() => true);
+    const client = new RelayClient("https://push.example.test", fetchRelay);
+    const device = { id: "device/1", secret: "device-secret" };
+
+    await expect(client.renewLease(device, "tab-1")).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+    await expect(
+      client.releaseLease(device, "tab-1", sendBeacon),
+    ).resolves.toEqual({ ok: true, value: null });
+
+    expect(fetchRelay).toHaveBeenCalledWith(
+      "https://push.example.test/v1/devices/device%2F1/lease",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer device-secret",
+        }),
+        body: JSON.stringify({ tab_id: "tab-1" }),
+      }),
+    );
+    const [url, body] = sendBeacon.mock.calls[0] ?? [];
+    expect(url).toBe(
+      "https://push.example.test/v1/devices/device%2F1/lease/release",
+    );
+    expect(body).toBeInstanceOf(URLSearchParams);
+    expect(String(body)).toBe("secret=device-secret&tab_id=tab-1");
+  });
+
+  it("falls back to a keepalive release when sendBeacon declines it", async () => {
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay);
+
+    await client.releaseLease(
+      { id: "device-1", secret: "secret" },
+      "tab-1",
+      () => false,
+    );
+
+    expect(fetchRelay).toHaveBeenCalledWith(
+      "https://push.example.test/v1/devices/device-1/lease/release",
+      expect.objectContaining({
+        method: "POST",
+        keepalive: true,
+        body: JSON.stringify({ tab_id: "tab-1" }),
+      }),
+    );
+  });
 });
