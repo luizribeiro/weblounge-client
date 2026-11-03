@@ -19,6 +19,7 @@ import {
   EngineCommandError,
   IncompatibleBuildError,
 } from "./engine/EngineClient";
+import type { PushDeploymentConfig } from "./engine/generated/PushDeploymentConfig";
 import type {
   BufferProjection,
   CommandSpec,
@@ -51,6 +52,11 @@ import {
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
+import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
+import { PushSynchronizer } from "./platform/push/push-sync";
+import { RelayClient } from "./platform/push/relay-client";
+import { IndexedDbPushRouteStore } from "./platform/push/route-store";
+import { ensurePushSubscription } from "./platform/push/subscription";
 import {
   onServiceWorkerUpdateReady,
   serviceWorkerUpdateIsReady,
@@ -69,6 +75,7 @@ interface AppProps {
   beforeReveal?: () => Promise<void>;
   engineClient?: EngineClient;
   hostedSession?: HostedSession;
+  pushConfig?: PushDeploymentConfig;
   onReady?: () => void;
   onHostedAuthorizationRequired?: (
     reason: "refresh_failed" | "revoked" | "worker_restarted",
@@ -120,6 +127,8 @@ export function App(props: AppProps) {
   >(new Set());
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
   let client: EngineClient | undefined;
+  let pushSynchronizer: PushSynchronizer | undefined;
+  const pendingPushEvents: EngineClientMessage[] = [];
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
   let restartingHostedAuthorization = false;
@@ -235,6 +244,14 @@ export function App(props: AppProps) {
             window.history.replaceState(window.history.state, "", path),
           );
     const unsubscribe = mountedClient.subscribe((message) => {
+      if (
+        pushSynchronizer === undefined &&
+        props.pushConfig !== undefined &&
+        (message.type === "push_route_required" ||
+          message.type === "push_state_changed")
+      ) {
+        pendingPushEvents.push(message);
+      }
       if (message.type === "hosted_token_required") {
         void refreshHostedToken(message.network_id);
         return;
@@ -498,6 +515,7 @@ export function App(props: AppProps) {
     window.addEventListener("offline", updateConnectivity);
     window.addEventListener("pageshow", handlePageShow);
     updateVisibility();
+    void startConfiguredPush(mountedClient);
 
     void startEngine(
       mountedClient,
@@ -533,12 +551,60 @@ export function App(props: AppProps) {
       window.removeEventListener("pageshow", handlePageShow);
       unsubscribe();
       unsubscribeUpdateReady();
+      pushSynchronizer?.dispose();
       void mountedClient.close();
     });
   });
 
+  async function startConfiguredPush(
+    mountedClient: EngineClient,
+  ): Promise<void> {
+    const config = props.pushConfig;
+    const session = props.hostedSession;
+    if (
+      config === undefined ||
+      session === undefined ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted" ||
+      !("serviceWorker" in navigator)
+    ) {
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    if (disposed) return;
+    const subscription = await ensurePushSubscription(
+      registration,
+      config.relay_vapid,
+    );
+    if (subscription.status !== "ready" || disposed) return;
+    const synchronizer = new PushSynchronizer({
+      engine: mountedClient,
+      relay: new RelayClient(config.relay),
+      relayOrigin: config.relay,
+      target: subscription.target,
+      devices: new EnginePushDeviceStore(mountedClient),
+      routes: new IndexedDbPushRouteStore(),
+      acquireSessionToken: async () => {
+        try {
+          const token = await new SessionTokenProvider(
+            session.sessionTokenEndpoint,
+          ).acquire();
+          return token.accessToken;
+        } catch (error: unknown) {
+          if (requiresAuthorization(error)) {
+            void restartHostedAuthorization("revoked");
+          }
+          throw error;
+        }
+      },
+      onAuthorizationRequired: () => void restartHostedAuthorization("revoked"),
+    });
+    pushSynchronizer = synchronizer;
+    for (const event of pendingPushEvents.splice(0)) synchronizer.handle(event);
+  }
+
   async function restartHostedAuthorization(
-    reason: "revoked" | "worker_restarted",
+    reason: "refresh_failed" | "revoked" | "worker_restarted",
   ): Promise<void> {
     if (restartingHostedAuthorization) return;
     restartingHostedAuthorization = true;
@@ -547,6 +613,9 @@ export function App(props: AppProps) {
         ? "Restoring the chat…"
         : "Your session expired. Signing in again…",
     );
+    if (reason !== "worker_restarted") {
+      await pushSynchronizer?.signOut().catch(() => undefined);
+    }
     const network = networks()[0];
     if (network !== undefined && client !== undefined) {
       await client
@@ -564,7 +633,7 @@ export function App(props: AppProps) {
 
   async function handleInitialHostedFailure(error: unknown): Promise<void> {
     if (requiresAuthorization(error)) {
-      props.onHostedAuthorizationRequired?.("revoked");
+      await restartHostedAuthorization("revoked");
       return;
     }
     if (error instanceof Error) setHostedError(error.message);
@@ -584,7 +653,7 @@ export function App(props: AppProps) {
       // wait-ok: a bounded recovery window lets the visible Retry act first.
       hostedFallbackTimer = window.setTimeout(() => {
         hostedFallbackTimer = undefined;
-        props.onHostedAuthorizationRequired?.("refresh_failed");
+        void restartHostedAuthorization("refresh_failed");
       }, 3_000);
     }
   }
@@ -629,7 +698,7 @@ export function App(props: AppProps) {
         // wait-ok: a bounded recovery window lets the visible Retry act first.
         hostedFallbackTimer = window.setTimeout(() => {
           hostedFallbackTimer = undefined;
-          props.onHostedAuthorizationRequired?.("refresh_failed");
+          void restartHostedAuthorization("refresh_failed");
         }, 3_000);
       }
     } finally {
@@ -889,7 +958,7 @@ export function App(props: AppProps) {
               "failed" in network.state &&
               network.state.failed.reason === "authentication"
             ) {
-              props.onHostedAuthorizationRequired?.("revoked");
+              void restartHostedAuthorization("revoked");
               return;
             }
             void client.send({

@@ -264,6 +264,9 @@ function Bootstrap(props: BootstrapProps) {
                 beforeReveal={props.beforeReveal}
                 engineClient={current.engineClient}
                 hostedSession={session}
+                {...(current.config.push === undefined
+                  ? {}
+                  : { pushConfig: current.config.push })}
                 onReady={props.onReady}
                 onStartupError={(message, retry) =>
                   props.showError(

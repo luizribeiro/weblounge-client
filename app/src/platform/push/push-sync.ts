@@ -55,8 +55,12 @@ export class PushSynchronizer {
     this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
     this.#exclusive = options.exclusive ?? withExclusiveLock;
     this.#unsubscribe = this.#engine.subscribe((message) =>
-      this.#onEngineMessage(message),
+      this.handle(message),
     );
+  }
+
+  handle(message: EngineClientMessage): void {
+    this.#onEngineMessage(message);
   }
 
   dispose(): void {
