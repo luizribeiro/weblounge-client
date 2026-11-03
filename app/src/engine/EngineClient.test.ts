@@ -358,6 +358,32 @@ describe("WorkerEngineClient", () => {
     expect(listener.mock.calls.map(([message]) => message)).toEqual(messages);
   });
 
+  it("decodes durable push device credentials", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    port.emit({
+      type: "push_device_loaded",
+      command_id: "load-device",
+      credentials: {
+        relay: "https://push.example.test",
+        device_id: "device-1",
+        secret: "device-secret",
+      },
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "push_device_loaded",
+      command_id: "load-device",
+      credentials: {
+        relay: "https://push.example.test",
+        device_id: "device-1",
+        secret: "device-secret",
+      },
+    });
+  });
+
   it("rejects an unknown push failure", () => {
     const { port } = fixture();
 

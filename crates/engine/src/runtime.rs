@@ -22,6 +22,7 @@ use crate::{
     PushUnsupportedReason,
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
+    push_device,
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
         DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
@@ -310,6 +311,11 @@ impl Runtime {
                 self.set_device_online(envelope.id, network_id, online)
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
+            EngineRequest::LoadPushDevice { relay } => self.load_push_device(envelope.id, relay),
+            EngineRequest::StorePushDevice { credentials } => {
+                self.store_push_device(envelope.id, credentials)
+            }
+            EngineRequest::ClearPushDevice { relay } => self.clear_push_device(envelope.id, relay),
             EngineRequest::RegisterPush { network_id, route } => {
                 self.register_push(envelope.id, network_id, route)
             }
@@ -374,6 +380,55 @@ impl Runtime {
     fn set_update_ready(&self, command_id: String, ready: bool) -> Vec<EngineToUi> {
         lock(&self.state).update_ready = ready;
         vec![EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn load_push_device(&self, command_id: String, relay: String) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let events = match push_device::read(storage.as_ref(), &relay).await {
+                Ok(credentials) => vec![
+                    EngineToUi::PushDeviceLoaded {
+                        command_id: command_id.clone(),
+                        credentials,
+                    },
+                    EngineToUi::CommandResult { id: command_id },
+                ],
+                Err(_) => rejected_command(command_id, "engine.storage_unavailable"),
+            };
+            send_events(&outbound, events);
+        });
+        Vec::new()
+    }
+
+    fn store_push_device(
+        &self,
+        command_id: String,
+        credentials: crate::PushDeviceCredentials,
+    ) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let event = match push_device::write(storage.as_ref(), &credentials).await {
+                Ok(()) => EngineToUi::CommandResult { id: command_id },
+                Err(_) => command_rejection(command_id, "engine.storage_unavailable"),
+            };
+            let _ = outbound.send(event);
+        });
+        Vec::new()
+    }
+
+    fn clear_push_device(&self, command_id: String, relay: String) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let event = match push_device::clear(storage.as_ref(), &relay).await {
+                Ok(()) => EngineToUi::CommandResult { id: command_id },
+                Err(_) => command_rejection(command_id, "engine.storage_unavailable"),
+            };
+            let _ = outbound.send(event);
+        });
+        Vec::new()
     }
 
     fn register_push(

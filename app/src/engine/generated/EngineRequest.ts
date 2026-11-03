@@ -3,6 +3,7 @@ import type { BufferId } from "./BufferId";
 import type { LocalSendId } from "./LocalSendId";
 import type { MessageId } from "./MessageId";
 import type { NetworkId } from "./NetworkId";
+import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushRoute } from "./PushRoute";
 import type { SaslCredentials } from "./SaslCredentials";
 
@@ -113,7 +114,19 @@ online: boolean, } | { "type": "set_update_ready",
 /**
  * Whether a waiting service worker is ready to activate after this session closes.
  */
-ready: boolean, } | { "type": "register_push",
+ready: boolean, } | { "type": "load_push_device",
+/**
+ * Relay origin used as the durable namespace.
+ */
+relay: string, } | { "type": "store_push_device",
+/**
+ * Complete credentials returned by the relay.
+ */
+credentials: PushDeviceCredentials, } | { "type": "clear_push_device",
+/**
+ * Relay origin used as the durable namespace.
+ */
+relay: string, } | { "type": "register_push",
 /**
  * Network whose home should receive the route.
  */

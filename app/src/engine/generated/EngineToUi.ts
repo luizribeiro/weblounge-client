@@ -13,6 +13,7 @@ import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
 import type { NoticeAction } from "./NoticeAction";
 import type { NoticeTone } from "./NoticeTone";
+import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushState } from "./PushState";
 
 /**
@@ -54,7 +55,15 @@ message: string, } | { "type": "hosted_token_required",
 /**
  * Hosted network waiting for a new connection attempt.
  */
-network_id: NetworkId, } | { "type": "push_state_changed",
+network_id: NetworkId, } | { "type": "push_device_loaded",
+/**
+ * Request correlation identifier.
+ */
+command_id: string,
+/**
+ * Stored credentials, or none before this device is registered.
+ */
+credentials: PushDeviceCredentials | null, } | { "type": "push_state_changed",
 /**
  * Network whose registration changed.
  */

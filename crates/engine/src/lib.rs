@@ -6,6 +6,7 @@ pub mod commands;
 mod members;
 mod name_key;
 mod protocol;
+mod push_device;
 mod request_error;
 mod runtime;
 mod state;
@@ -23,8 +24,9 @@ pub use protocol::{
     HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
     MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
     MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
-    NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig, PushFailure, PushRoute, PushState,
-    PushUnsupportedReason, RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
+    NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig, PushDeviceCredentials,
+    PushFailure, PushRoute, PushState, PushUnsupportedReason, RedactedSecret, SaslCredentials,
+    ShellKind, UiToEngine,
 };
 
 /// The product engine owned by a platform host.

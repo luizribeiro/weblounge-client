@@ -43,6 +43,18 @@ pub struct PushRoute {
     pub auth: RedactedSecret,
 }
 
+/// Relay credentials persisted by the engine and used only by the page-side push client.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct PushDeviceCredentials {
+    /// Relay origin that owns this device.
+    pub relay: String,
+    /// Opaque relay device identifier.
+    pub device_id: String,
+    /// Bearer secret for device and route operations.
+    #[ts(type = "string")]
+    pub secret: RedactedSecret,
+}
+
 /// Why a connected network cannot register Web Push.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -715,6 +727,21 @@ pub enum EngineRequest {
         /// Whether a waiting service worker is ready to activate after this session closes.
         ready: bool,
     },
+    /// Read this relay's device credentials from durable engine storage.
+    LoadPushDevice {
+        /// Relay origin used as the durable namespace.
+        relay: String,
+    },
+    /// Persist relay device credentials in durable engine storage.
+    StorePushDevice {
+        /// Complete credentials returned by the relay.
+        credentials: PushDeviceCredentials,
+    },
+    /// Forget relay device credentials after authorization fails or sign-out completes.
+    ClearPushDevice {
+        /// Relay origin used as the durable namespace.
+        relay: String,
+    },
     /// Register a page-owned relay route with one IRC home.
     RegisterPush {
         /// Network whose home should receive the route.
@@ -854,6 +881,13 @@ pub enum EngineToUi {
     HostedTokenRequired {
         /// Hosted network waiting for a new connection attempt.
         network_id: NetworkId,
+    },
+    /// Result of reading relay device credentials from durable engine storage.
+    PushDeviceLoaded {
+        /// Request correlation identifier.
+        command_id: String,
+        /// Stored credentials, or none before this device is registered.
+        credentials: Option<PushDeviceCredentials>,
     },
     /// A network's Web Push registration outcome changed.
     PushStateChanged {
@@ -1260,6 +1294,26 @@ mod tests {
                     "endpoint": "https://push.example.test/route-1",
                     "p256dh": "public-key",
                     "auth": "unique-push-auth",
+                },
+            })
+        );
+
+        let device = EngineRequest::StorePushDevice {
+            credentials: crate::PushDeviceCredentials {
+                relay: "https://push.example.test".into(),
+                device_id: "device-1".into(),
+                secret: "unique-device-secret".into(),
+            },
+        };
+        assert!(!format!("{device:?}").contains("unique-device-secret"));
+        assert_eq!(
+            serde_json::to_value(device).expect("device request serializes"),
+            serde_json::json!({
+                "type": "store_push_device",
+                "credentials": {
+                    "relay": "https://push.example.test",
+                    "device_id": "device-1",
+                    "secret": "unique-device-secret",
                 },
             })
         );

@@ -419,6 +419,19 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         return { type: messageType, network_id: value.network_id };
       }
       break;
+    case "push_device_loaded":
+      if (
+        typeof value.command_id === "string" &&
+        (value.credentials === null ||
+          isPushDeviceCredentials(value.credentials))
+      ) {
+        return {
+          type: messageType,
+          command_id: value.command_id,
+          credentials: value.credentials,
+        };
+      }
+      break;
     case "push_state_changed": {
       const state = decodePushState(value.state);
       if (typeof value.network_id === "number" && state !== undefined) {
@@ -752,6 +765,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "incompatible_build" ||
     value === "diagnostic" ||
     value === "hosted_token_required" ||
+    value === "push_device_loaded" ||
     value === "push_state_changed" ||
     value === "push_route_required" ||
     value === "notice" ||
@@ -781,6 +795,19 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "message_retrying" ||
     value === "unread_changed" ||
     value === "read_marker_moved"
+  );
+}
+
+function isPushDeviceCredentials(value: unknown): value is {
+  relay: string;
+  device_id: string;
+  secret: string;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.relay === "string" &&
+    typeof value.device_id === "string" &&
+    typeof value.secret === "string"
   );
 }
 
