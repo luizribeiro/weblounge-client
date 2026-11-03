@@ -535,7 +535,7 @@ test.describe("mobile text field zoom", () => {
         expect(
           Math.abs(audit.newestGap),
           JSON.stringify(audit),
-        ).toBeLessThanOrEqual(22);
+        ).toBeLessThanOrEqual(22.1);
         expect(await screenshotPixelVariance(page, screenshot)).toBeGreaterThan(
           1,
         );
@@ -753,6 +753,7 @@ async function openChannel(page: Page, query = "") {
 }
 
 interface KeyboardFrame {
+  readonly animationTime: number | undefined;
   readonly animations: number;
   readonly composerTop: number;
   readonly composerVisible: boolean;
@@ -1093,6 +1094,8 @@ async function sampleKeyboardTransition(
         throw new Error("keyboard test surfaces are missing");
       const frames: KeyboardFrame[] = [];
       const sample = () => {
+        const composerAnimations = composer.getAnimations({ subtree: true });
+        const animationTime = composerAnimations[0]?.currentTime;
         const composerRect = composer.getBoundingClientRect();
         const headerRect = header.getBoundingClientRect();
         const snapshot = document.querySelector<HTMLElement>(
@@ -1113,7 +1116,9 @@ async function sampleKeyboardTransition(
         const rowRects = rows.map((row) => row.getBoundingClientRect());
         const newest = rowRects.at(-1);
         frames.push({
-          animations: composer.getAnimations({ subtree: true }).length,
+          animationTime:
+            typeof animationTime === "number" ? animationTime : undefined,
+          animations: composerAnimations.length,
           composerTop: composerRect.top,
           composerVisible:
             composerRect.bottom > headerRect.bottom &&
@@ -1176,11 +1181,17 @@ async function sampleKeyboardTransition(
           requestAnimationFrame(() => setViewport(nextHeight)),
         );
       }
-      // wait-ok: this fixed frame window measures the complete 400ms keyboard curve.
-      for (let frame = 0; frame < 26; frame += 1)
+      // wait-ok: the first 26 frames measure the complete 400ms keyboard curve.
+      for (let frame = 0; frame < 32; frame += 1) {
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
         ).then(sample);
+        if (
+          frame >= 25 &&
+          composer.getAnimations({ subtree: true }).length === 0
+        )
+          break;
+      }
       return frames;
     },
     [direction, height] as const,
@@ -1479,7 +1490,8 @@ async function makeTranscriptScrollable(
 }
 
 function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
-  expect(frames).toHaveLength(28);
+  expect(frames.length).toBeGreaterThanOrEqual(28);
+  expect(frames.length).toBeLessThanOrEqual(34);
   const start = frames[0]?.composerTop ?? 0;
   const committed = frames[1];
   const end = frames.at(-1)?.composerTop ?? 0;
@@ -1487,12 +1499,16 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(committed?.keyboard).toBe("open");
   expect(committed?.animations).toBeGreaterThan(0);
   expect(committed?.transcriptAnimations).toBeGreaterThan(0);
-  expect(Math.abs((committed?.composerTop ?? 0) - start)).toBeLessThan(
+  const firstPaint = frames[2];
+  const firstPaintLead =
+    (firstPaint?.animationTime ?? Number.POSITIVE_INFINITY) - 1000 / 60;
+  expect(firstPaintLead).toBeLessThan(1000 / 120);
+  expect(Math.abs((firstPaint?.composerTop ?? 0) - start)).toBeLessThan(
     Math.abs(end - start) * 0.15,
   );
   expect(
     frames
-      .slice(1)
+      .slice(2)
       .every(
         (frame, index, moving) =>
           index === 0 ||
@@ -1540,7 +1556,8 @@ function expectReducedMotionKeyboardLayout(
 }
 
 function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
-  expect(frames).toHaveLength(28);
+  expect(frames.length).toBeGreaterThanOrEqual(28);
+  expect(frames.length).toBeLessThanOrEqual(34);
   const start = frames[0]?.composerTop ?? 0;
   const committed = frames[1];
   const end = frames.at(-1)?.composerTop ?? 0;

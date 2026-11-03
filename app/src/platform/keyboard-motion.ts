@@ -8,7 +8,6 @@ import {
 export const keyboardMotionEnabled = false;
 
 const durationMilliseconds = 400;
-const openLeadMilliseconds = 20;
 const closeLeadMilliseconds = 20;
 const correctionMilliseconds = 100;
 const measuredSpring =
@@ -22,7 +21,6 @@ export interface KeyboardMotionOptions {
 
 interface OpeningSnapshot {
   readonly composer: HTMLElement;
-  readonly composerBottom: number;
   readonly composerTop: number;
   readonly screen: HTMLElement;
   readonly transcript: HTMLElement;
@@ -106,7 +104,7 @@ export function observeKeyboardMotion(
         "--wl-keyboard-composer-height",
         `${composerRect.height}px`,
       );
-      opening = { ...surfaces, composerBottom, composerTop: composerRect.top };
+      opening = { ...surfaces, composerTop: composerRect.top };
     } else if (
       detail.previousGeometry.keyboard === "open" &&
       detail.geometry.keyboard === "closed"
@@ -129,19 +127,16 @@ export function observeKeyboardMotion(
         startClosing(closingStart);
       return;
     }
-    const delta =
-      snapshot.composerBottom -
-      snapshot.composer.getBoundingClientRect().bottom;
+    const committedComposerTop = snapshot.composer.getBoundingClientRect().top;
+    const delta = snapshot.composerTop - committedComposerTop;
     if (Math.abs(delta) <= 1) return;
     const timing = motionTiming(browserWindow);
     const options: KeyframeAnimationOptions = {
-      delay: -openLeadMilliseconds,
       duration: timing.duration,
       easing: timing.easing,
       fill: "both",
     };
-    const transcriptDelta =
-      snapshot.composer.getBoundingClientRect().top - snapshot.composerTop;
+    const transcriptDelta = committedComposerTop - snapshot.composerTop;
     const composerAnimation = snapshot.composer.animate(
       [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
       options,
@@ -158,6 +153,13 @@ export function observeKeyboardMotion(
     );
     track(composerAnimation, running);
     track(transcriptAnimation, running);
+    browserWindow.queueMicrotask(() => {
+      if (!running.has(composerAnimation) || !running.has(transcriptAnimation))
+        return;
+      const commitTime = browserWindow.performance.now();
+      anchorAnimation(composerAnimation, commitTime);
+      anchorAnimation(transcriptAnimation, commitTime);
+    });
     const layout = openingLayout;
     if (layout !== undefined)
       void transcriptAnimation.finished.then(
@@ -353,4 +355,9 @@ function track(animation: Animation, running: Set<Animation>): void {
       running.delete(animation);
     },
   );
+}
+
+function anchorAnimation(animation: Animation, startTime: number): void {
+  if (animation.playState === "paused") animation.currentTime = 0;
+  else animation.startTime = startTime;
 }

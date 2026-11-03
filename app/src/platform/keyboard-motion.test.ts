@@ -12,6 +12,7 @@ afterEach(() => {
 
 describe("keyboard motion", () => {
   it("animates opening from a full-height transcript snapshot", async () => {
+    vi.spyOn(window.performance, "now").mockReturnValue(125);
     const fixture = motionFixture();
     const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
@@ -22,7 +23,6 @@ describe("keyboard motion", () => {
     expect(fixture.composerAnimate).toHaveBeenCalledWith(
       [{ transform: "translateY(358px)" }, { transform: "none" }],
       expect.objectContaining({
-        delay: -20,
         duration: 400,
         easing: expect.stringMatching(/^linear\(/u),
         fill: "both",
@@ -32,6 +32,9 @@ describe("keyboard motion", () => {
       [{ transform: "none" }, { transform: "translateY(-358px)" }],
       expect.any(Object),
     );
+    await Promise.resolve();
+    expect(fixture.animations[0]?.animation.startTime).toBe(125);
+    expect(fixture.animations[1]?.animation.startTime).toBe(125);
     expect(fixture.root.dataset.keyboardMotion).toBe("opening");
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
@@ -286,6 +289,7 @@ function fakeAnimation(): TestAnimation {
     }),
     playbackRate: 1,
     reverse,
+    startTime: null,
   } as unknown as Animation;
   reverse.mockImplementation(() => {
     animation.playbackRate *= -1;
