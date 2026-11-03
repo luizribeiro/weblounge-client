@@ -886,7 +886,7 @@ for (const surface of [
   { browser: "webkit", name: "mobile", use: iphone16Pro },
 ] as const) {
   test.describe(`${surface.name} ${surface.browser} notification prompt`, () => {
-    test.use(surface.use);
+    test.use({ ...surface.use, serviceWorkers: "block" });
     test("requests permission and activates a relay route", async ({
       baseURL,
       page,
@@ -902,7 +902,7 @@ for (const surface of [
   { browser: "webkit", use: iphone16Pro },
 ] as const) {
   test.describe(`mobile ${surface.browser} notification prompt decisions`, () => {
-    test.use(surface.use);
+    test.use({ ...surface.use, serviceWorkers: "block" });
 
     test("dismissal persists across reload", async ({
       baseURL,
@@ -1415,10 +1415,15 @@ async function installPushManagerStub(
         PushManagerConstructor.prototype,
       ) as PushManager;
       const registration = { pushManager } as ServiceWorkerRegistration;
-      Object.defineProperty(ServiceWorkerContainer.prototype, "ready", {
-        configurable: true,
-        get: () => Promise.resolve(registration),
-      });
+      for (const target of [
+        ServiceWorkerContainer.prototype,
+        navigator.serviceWorker,
+      ]) {
+        Object.defineProperty(target, "ready", {
+          configurable: true,
+          get: () => Promise.resolve(registration),
+        });
+      }
     },
     { initial: initialPermission, result: requestResult },
   );
