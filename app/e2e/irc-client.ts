@@ -190,6 +190,13 @@ export class IrcClient {
     );
   }
 
+  async setAlwaysOn(enabled: boolean): Promise<void> {
+    this.privmsg("NickServ", `SET ALWAYS-ON ${enabled ? "true" : "false"}`);
+    await this.waitFor("always-on setting confirmation", (line) =>
+      line.includes("Successfully changed your account settings"),
+    );
+  }
+
   close(): void {
     this.#socket.end("QUIT :test complete\r\n");
   }

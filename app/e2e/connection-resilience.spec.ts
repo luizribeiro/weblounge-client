@@ -1,3 +1,4 @@
+import { createConnection } from "node:net";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
@@ -12,6 +13,12 @@ test.describe("connection resilience against local Ergo", () => {
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
+
+  test.beforeEach(async () => {
+    await setAppAlwaysOn(false);
+    await setAppAlwaysOn(true);
+  });
+  test.afterAll(async () => setAppAlwaysOn(false));
 
   test("keeps the same screen, scroll, and draft through background socket loss", async ({
     page,
@@ -62,6 +69,7 @@ test.describe("connection resilience against local Ergo", () => {
         isMobile(testInfo.project.name),
       );
       await expectShellToRemain(page, channel);
+      await expectErgoStopped();
 
       if (!isMobile(testInfo.project.name)) {
         await page.emulateMedia({ colorScheme: "light" });
@@ -301,6 +309,7 @@ test.describe("connection resilience against local Ergo", () => {
       process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR1");
       ergoStopped = true;
       await expectTransientConnectionPresentation(page, false);
+      await expectErgoStopped();
       process.kill(Number(process.env.WEBLOUNGE_ERGO_CONTROL_PID), "SIGUSR2");
       await expectErgoReady();
       await dispatchPersistedPageShow(page);
@@ -396,6 +405,20 @@ async function connectBot(label: string): Promise<IrcClient> {
     "weblounge-bot-test",
     channel,
   );
+}
+
+async function setAppAlwaysOn(enabled: boolean): Promise<void> {
+  const client = await IrcClient.connect(
+    "weblounge",
+    "weblounge",
+    "weblounge-test",
+    channel,
+  );
+  try {
+    await client.setAlwaysOn(enabled);
+  } finally {
+    client.close();
+  }
 }
 
 async function sendAndExpectEcho(
@@ -499,15 +522,34 @@ async function expectOnline(page: Page, projectName: string): Promise<void> {
 
 async function expectErgoReady(): Promise<void> {
   await expect
-    .poll(async () => {
-      try {
-        await fetch("http://127.0.0.1:8089/");
-        return true;
-      } catch {
-        return false;
-      }
-    })
+    .poll(async () => (await ergoApiIsReady()) && (await ircPortIsReady()))
     .toBe(true);
+}
+
+async function expectErgoStopped(): Promise<void> {
+  await expect
+    .poll(async () => !(await ergoApiIsReady()) && !(await ircPortIsReady()))
+    .toBe(true);
+}
+
+async function ergoApiIsReady(): Promise<boolean> {
+  try {
+    await fetch("http://127.0.0.1:8089/");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ircPortIsReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: "127.0.0.1", port: 6667 });
+    socket.once("connect", () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+  });
 }
 
 async function setVisibility(page: Page, hidden: boolean): Promise<void> {

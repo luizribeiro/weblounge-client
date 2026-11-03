@@ -22,7 +22,7 @@ let
       .accounts.require-sasl.exempted = [] |
       .accounts.login-throttling.enabled = false |
       .accounts.nick-reservation.force-nick-equals-account = false |
-      .accounts.multiclient.always-on = "opt-out" |
+      .accounts.multiclient.always-on = "opt-in" |
       .channels.max-channels-per-client = 4 |
       .history.enabled = true |
       .history.persistent.enabled = false |
@@ -40,6 +40,7 @@ pkgs.writeShellApplication {
     pkgs.curl
     pkgs.ergochat
     pkgs.jq
+    pkgs.util-linux
   ];
   text = ''
     state_dir="$(mktemp -d -t weblounge-ergo.XXXXXXXX)"
@@ -72,6 +73,8 @@ pkgs.writeShellApplication {
       resume_requested=false
       if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
         kill "$server_pid"
+        flock --timeout 5 ircd.lock true
+        wait "$server_pid" || true
       fi
     }
     resume_restart() {
@@ -126,7 +129,6 @@ pkgs.writeShellApplication {
       echo "Could not create the local Ergo test accounts" >&2
       exit 1
     fi
-
     printf '\nWebLounge local Ergo is ready\n'
     printf '  IRC:      irc://127.0.0.1:6667\n'
     printf '  WebSocket: ws://127.0.0.1:8067\n'

@@ -75,8 +75,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     server time outside papo's client. Normal and fresh hosted reconnects page channel and DM gaps
     through `CHATHISTORY AFTER`; a silently stranded browser socket recovers both opened
     conversations without a reload (#93).
-  - [x] Keep the local Ergo smoke reader compatible with always-on account nickname enforcement,
-    while retaining strict join and message-confirmation coverage.
+  - [x] Scope local Ergo always-on state to connection-resilience scenarios, preserving both
+    reconnect catch-up and isolated multi-nick engine coverage.
   - [x] Omit channel mode prefixes from every transcript row. IRC history cannot preserve the
     sender's status at message time, so the message protocol carries no mode symbol and live and
     optimistic rows do not guess one. The Mode symbols setting remains scoped to the member list;
