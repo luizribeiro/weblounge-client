@@ -11,9 +11,9 @@ repository = "https://github.com/luizribeiro/weblounge-client"
 
 [workspace.dependencies]
 idb = { version = "0.6.5", default-features = false, features = ["futures"] }
-papo = { git = "https://github.com/luizribeiro/papo", rev = "3508be1", features = ["precis", "unstable"] }
-papo-proto = { git = "https://github.com/luizribeiro/papo", rev = "3508be1" }
-papo-testing = { git = "https://github.com/luizribeiro/papo", rev = "3508be1" }
+papo = { git = "https://github.com/luizribeiro/papo", rev = "20c6a95", features = ["precis", "unstable"] }
+papo-proto = { git = "https://github.com/luizribeiro/papo", rev = "20c6a95" }
+papo-testing = { git = "https://github.com/luizribeiro/papo", rev = "20c6a95" }
 js-sys = "0.3.79"
 proc-macro2 = "1.0.103"
 quote = "1.0.42"
