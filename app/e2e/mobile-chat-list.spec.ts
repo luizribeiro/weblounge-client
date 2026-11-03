@@ -18,7 +18,7 @@ test.describe("mobile chat list against local Ergo", () => {
     page,
   }) => {
     const suffix = Date.now().toString(36).slice(-6);
-    const nick = `badge-center-long-name-xxx${suffix}`;
+    const nick = `${"W".repeat(25)}-${suffix}`;
     const bot = await IrcClient.connect(
       nick,
       "weblounge-bot",

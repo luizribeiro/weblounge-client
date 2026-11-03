@@ -361,6 +361,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     Chromium and WebKit return through both Back and swipe without restoring the unread badge (#88).
   - [x] Center mobile chat-list unread badges against the full row in preview and compact densities,
     including truncated names and one- through three-digit mention counts (#89).
+  - [x] Make the mobile badge geometry journey guarantee title truncation with a maximum-length,
+    wide-glyph nickname instead of depending on browser font metrics.
   - [x] Start from the last validated public deployment configuration and revalidate it in the
     background, while keeping session tokens one-shot and uncached. Hosted profiles restore the
     engine-owned chat-list snapshot before credential acquisition completes; cold reachability
