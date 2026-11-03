@@ -415,6 +415,8 @@ connection. Concierge calls and DNS resolution each have a five-second deadline.
 hold at most 20 devices and each device at most 25 live routes; dead routes do not consume the
 route limit. Slice 1 stores only Web Push targets; APNs and FCM target variants return 501. Leases,
 held pushes, the urgency policy and application rate limits remain later slices.
+Delivery logs contain only an eight-character route-id prefix and the resulting HTTP status; they
+never include authorization, device secrets, endpoints or bodies.
 
 ## Rollout
 

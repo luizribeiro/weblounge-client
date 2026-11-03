@@ -58,9 +58,9 @@ pub enum Error {
 /// Relay result alias.
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        let status = match self {
+impl Error {
+    pub(crate) fn status(&self) -> StatusCode {
+        match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::BadRequest(_) | Self::TargetRefused(_) => StatusCode::BAD_REQUEST,
@@ -74,7 +74,13 @@ impl IntoResponse for Error {
             Self::Config(_) | Self::Io(_) | Self::Database(_) | Self::DatabaseTask(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-        };
+        }
+    }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let status = self.status();
         let message = match status {
             StatusCode::UNAUTHORIZED => "unauthorized",
             StatusCode::NOT_FOUND => "not found",

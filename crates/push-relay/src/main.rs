@@ -10,6 +10,9 @@ use weblounge_push_relay::{
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

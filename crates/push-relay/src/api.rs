@@ -199,6 +199,22 @@ async fn receive_push(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response> {
+    let route_prefix: String = route_id.chars().take(8).collect();
+    let result = deliver_push(&state, route_id, &headers, &body).await;
+    let status = match &result {
+        Ok(response) => response.status(),
+        Err(error) => error.status(),
+    };
+    tracing::info!(route = %route_prefix, status = status.as_u16(), "push delivery");
+    result
+}
+
+async fn deliver_push(
+    state: &AppState,
+    route_id: String,
+    headers: &HeaderMap,
+    body: &Bytes,
+) -> Result<Response> {
     match state.database.route(route_id.clone()).await? {
         Route::Probing => Ok(StatusCode::CREATED.into_response()),
         Route::Active {
@@ -206,7 +222,7 @@ async fn receive_push(
             home_vapid,
             target,
         } => {
-            verify_vapid(&headers, &home_vapid, &state.origin)?;
+            verify_vapid(headers, &home_vapid, &state.origin)?;
             let ttl = headers
                 .get("TTL")
                 .and_then(|value| value.to_str().ok())
