@@ -2832,6 +2832,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "weblounge-push-payload"
+version = "0.1.0"
+dependencies = [
+ "papo-proto",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "weblounge-push-relay"
 version = "0.1.0"
 dependencies = [
