@@ -366,6 +366,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     VAPID-pinned probing and active routes, opaque RFC 8291 forwarding, dead-target cleanup,
     body limits, push-service SSRF defenses, SQLite state and `/healthz`, covered through fake
     concierge and push-service integration tests.
+  - [x] Close the relay deployment security review: disable proxy discovery, exercise the real
+    pinned no-redirect TLS transport, constrain IPv4/IPv6 and transition addresses, bound upstream
+    waits and stored registrations, enforce VAPID/TTL lifetimes, redact credentials, distinguish
+    delivery failures, and cover authorization, malformed JWT, body-limit, deletion, DNS-rebinding
+    and concierge-outage negatives. Edge endpoints, schema versioning, WAL, private state modes,
+    pinned-client reuse and secret-free delivery tracing are included.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
     registration, service-worker delivery, and the local-Ergo and Playwright journeys.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
