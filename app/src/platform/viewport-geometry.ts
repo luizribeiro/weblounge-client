@@ -212,6 +212,7 @@ export function observeViewportGeometry(
     source: KeyboardLayoutCommitSource,
     rollbackReason?: KeyboardRollbackReason,
   ) => {
+    const layoutHeight = browserWindow.innerHeight;
     const activeElement = browserWindow.document.activeElement;
     if (geometry.keyboard === "closed" && keyboardField(activeElement)) {
       const measured = measuredGeometry();
@@ -229,7 +230,7 @@ export function observeViewportGeometry(
       announceLayoutCommit(geometry, source, rollbackReason);
     if (sameLayout) {
       if (geometry.keyboard === "closed") {
-        applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
+        applyGeometry(root, geometry, eventOwner, layoutHeight);
         publishedOwner?.removeAttribute("data-keyboard-owner");
         publishedOwner = undefined;
       }
@@ -253,7 +254,7 @@ export function observeViewportGeometry(
       publishedOwner?.removeAttribute("data-keyboard-owner");
       eventOwner.setAttribute("data-keyboard-owner", "true");
     }
-    applyGeometry(root, geometry, eventOwner, measure().layoutHeight);
+    applyGeometry(root, geometry, eventOwner, layoutHeight);
     publishedGeometry = geometry;
     publishedOwner = geometry.keyboard === "open" ? eventOwner : undefined;
     browserWindow.dispatchEvent(

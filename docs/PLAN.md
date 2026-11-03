@@ -339,6 +339,13 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     The full iPhone WebKit mobile-input suite passes 21/21, including twelve slow frames before a
     silent viewport step and every cold/warm motion frame; native-feel and composer-anchor coverage
     remains green, so neither prior high-load failure warrants an app or test change.
+  - [x] Keep the experimental keyboard animation disabled by default while making its next device
+    trial frame-complete: opening uses full-screen, hit-testable transcript and composer surfaces;
+    opening and closing share commit-frame clocks without backdating; closing preserves the focused
+    composer origin and one pinned transcript frame. A browser timeline removed the redundant
+    post-`willCommit` layout-height read while retaining the synchronous live-edge pin; frame-by-frame
+    WebKit coverage protects pixels, hit targets, clock lead, and close anchoring (awaiting a new
+    on-device video before re-enabling).
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;

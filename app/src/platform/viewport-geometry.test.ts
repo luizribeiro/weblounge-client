@@ -7,6 +7,7 @@ import {
   type KeyboardLayoutCommit,
   type KeyboardRollbackDecision,
   keyboardLayoutCommitEvent,
+  keyboardLayoutWillCommitEvent,
   keyboardRollbackDecisionEvent,
   keyboardSurfaceOwner,
   observeViewportGeometry,
@@ -199,6 +200,38 @@ describe("viewport geometry observer", () => {
       },
     ]);
     window.removeEventListener("weblounge:app-geometry-change", changed);
+  });
+
+  it("carries the measured layout height across will-commit listeners", () => {
+    const previousHeight = Object.getOwnPropertyDescriptor(
+      window,
+      "innerHeight",
+    );
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 874,
+    });
+    const { root, viewport } = observe();
+    const field = textField();
+    const mutateLayout = () => {
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: 974,
+      });
+    };
+    window.addEventListener(keyboardLayoutWillCommitEvent, mutateLayout);
+
+    try {
+      field.focus();
+      viewport.set(574, 0, "resize");
+
+      expect(root.style.getPropertyValue("--wl-keyboard-inset")).toBe("300px");
+    } finally {
+      window.removeEventListener(keyboardLayoutWillCommitEvent, mutateLayout);
+      if (previousHeight === undefined)
+        Reflect.deleteProperty(window, "innerHeight");
+      else Object.defineProperty(window, "innerHeight", previousHeight);
+    }
   });
 
   it("re-measures on later frames when an event reported stale values", async () => {
