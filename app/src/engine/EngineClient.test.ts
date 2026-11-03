@@ -390,6 +390,24 @@ describe("WorkerEngineClient", () => {
     });
   });
 
+  it("decodes the device-local notification prompt preference", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    port.emit({
+      type: "notification_prompt_dismissal_loaded",
+      command_id: "load-prompt",
+      dismissed: true,
+    });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "notification_prompt_dismissal_loaded",
+      command_id: "load-prompt",
+      dismissed: true,
+    });
+  });
+
   it("rejects an unknown push failure", () => {
     const { port } = fixture();
 

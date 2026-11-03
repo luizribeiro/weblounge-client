@@ -114,7 +114,7 @@ online: boolean, } | { "type": "set_update_ready",
 /**
  * Whether a waiting service worker is ready to activate after this session closes.
  */
-ready: boolean, } | { "type": "load_push_device",
+ready: boolean, } | { "type": "load_notification_prompt_dismissal" } | { "type": "dismiss_notification_prompt" } | { "type": "load_push_device",
 /**
  * Relay origin used as the durable namespace.
  */

@@ -727,6 +727,10 @@ pub enum EngineRequest {
         /// Whether a waiting service worker is ready to activate after this session closes.
         ready: bool,
     },
+    /// Read whether this device dismissed the notification permission prompt.
+    LoadNotificationPromptDismissal,
+    /// Permanently dismiss the notification permission prompt on this device.
+    DismissNotificationPrompt,
     /// Read this relay's device credentials from durable engine storage.
     LoadPushDevice {
         /// Relay origin used as the durable namespace.
@@ -893,6 +897,13 @@ pub enum EngineToUi {
         command_id: String,
         /// Stored credentials, or none before this device is registered.
         credentials: Option<PushDeviceCredentials>,
+    },
+    /// Result of reading the device-local notification prompt preference.
+    NotificationPromptDismissalLoaded {
+        /// Request correlation identifier.
+        command_id: String,
+        /// Whether this device has dismissed the prompt.
+        dismissed: bool,
     },
     /// A network's Web Push registration outcome changed.
     PushStateChanged {

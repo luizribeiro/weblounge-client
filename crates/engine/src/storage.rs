@@ -5,9 +5,9 @@ use std::{collections::BTreeMap, sync::Mutex};
 /// Browser database name shared with generated test support.
 pub const WEB_DATABASE_NAME: &str = "weblounge";
 /// Current browser database schema version.
-pub const WEB_DATABASE_VERSION: u32 = 2;
+pub const WEB_DATABASE_VERSION: u32 = 3;
 /// Object stores created by the current browser database schema.
-pub const WEB_DATABASE_STORES: [&str; 2] = ["cache", "durable"];
+pub const WEB_DATABASE_STORES: [&str; 3] = ["cache", "durable", "settings"];
 
 /// One storage namespace with a distinct persistence contract.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -245,6 +245,7 @@ mod indexed_db {
 
     const CACHE_STORE: &str = WEB_DATABASE_STORES[0];
     const DURABLE_STORE: &str = WEB_DATABASE_STORES[1];
+    const SETTINGS_STORE: &str = WEB_DATABASE_STORES[2];
 
     /// The worker-safe IndexedDB backend used by web engines.
     #[derive(Debug)]
@@ -368,7 +369,7 @@ mod indexed_db {
                     database.close();
                 }
             });
-            if [CACHE_STORE, DURABLE_STORE]
+            if [CACHE_STORE, DURABLE_STORE, SETTINGS_STORE]
                 .iter()
                 .any(|required| !database.store_names().iter().any(|name| name == required))
             {
@@ -383,7 +384,7 @@ mod indexed_db {
             match space {
                 Space::Cache => Ok(CACHE_STORE),
                 Space::Durable => Ok(DURABLE_STORE),
-                Space::Settings => Err(StorageError::UnsupportedSpace(space)),
+                Space::Settings => Ok(SETTINGS_STORE),
             }
         }
     }

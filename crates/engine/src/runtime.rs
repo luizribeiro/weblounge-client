@@ -22,7 +22,7 @@ use crate::{
     PushUnsupportedReason,
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
-    push_device,
+    notification_settings, push_device,
     pushed_messages::{self, PushedMessage},
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
@@ -315,6 +315,12 @@ impl Runtime {
                 self.set_device_online(envelope.id, network_id, online)
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
+            EngineRequest::LoadNotificationPromptDismissal => {
+                self.load_notification_prompt_dismissal(envelope.id)
+            }
+            EngineRequest::DismissNotificationPrompt => {
+                self.dismiss_notification_prompt(envelope.id)
+            }
             EngineRequest::LoadPushDevice { relay } => self.load_push_device(envelope.id, relay),
             EngineRequest::LoadPushedMessages { network_id } => {
                 self.load_pushed_messages(envelope.id, network_id)
@@ -387,6 +393,38 @@ impl Runtime {
     fn set_update_ready(&self, command_id: String, ready: bool) -> Vec<EngineToUi> {
         lock(&self.state).update_ready = ready;
         vec![EngineToUi::CommandResult { id: command_id }]
+    }
+
+    fn load_notification_prompt_dismissal(&self, command_id: String) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let events = match notification_settings::prompt_dismissed(storage.as_ref()).await {
+                Ok(dismissed) => vec![
+                    EngineToUi::NotificationPromptDismissalLoaded {
+                        command_id: command_id.clone(),
+                        dismissed,
+                    },
+                    EngineToUi::CommandResult { id: command_id },
+                ],
+                Err(_) => rejected_command(command_id, "engine.storage_unavailable"),
+            };
+            send_events(&outbound, events);
+        });
+        Vec::new()
+    }
+
+    fn dismiss_notification_prompt(&self, command_id: String) -> Vec<EngineToUi> {
+        let storage = lock(&self.state).storage.clone();
+        let outbound = self.outbound.clone();
+        spawn_task(async move {
+            let event = match notification_settings::dismiss_prompt(storage.as_ref()).await {
+                Ok(()) => EngineToUi::CommandResult { id: command_id },
+                Err(_) => command_rejection(command_id, "engine.storage_unavailable"),
+            };
+            let _ = outbound.send(event);
+        });
+        Vec::new()
     }
 
     fn load_push_device(&self, command_id: String, relay: String) -> Vec<EngineToUi> {

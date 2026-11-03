@@ -432,6 +432,18 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
+    case "notification_prompt_dismissal_loaded":
+      if (
+        typeof value.command_id === "string" &&
+        typeof value.dismissed === "boolean"
+      ) {
+        return {
+          type: messageType,
+          command_id: value.command_id,
+          dismissed: value.dismissed,
+        };
+      }
+      break;
     case "push_state_changed": {
       const state = decodePushState(value.state);
       if (typeof value.network_id === "number" && state !== undefined) {
@@ -768,6 +780,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "diagnostic" ||
     value === "hosted_token_required" ||
     value === "push_device_loaded" ||
+    value === "notification_prompt_dismissal_loaded" ||
     value === "push_state_changed" ||
     value === "push_route_required" ||
     value === "notice" ||

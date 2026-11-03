@@ -5,6 +5,7 @@ mod chat_list_snapshot;
 pub mod commands;
 mod members;
 mod name_key;
+mod notification_settings;
 mod protocol;
 mod push_device;
 mod pushed_messages;

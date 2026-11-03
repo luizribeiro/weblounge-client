@@ -63,7 +63,15 @@ command_id: string,
 /**
  * Stored credentials, or none before this device is registered.
  */
-credentials: PushDeviceCredentials | null, } | { "type": "push_state_changed",
+credentials: PushDeviceCredentials | null, } | { "type": "notification_prompt_dismissal_loaded",
+/**
+ * Request correlation identifier.
+ */
+command_id: string,
+/**
+ * Whether this device has dismissed the prompt.
+ */
+dismissed: boolean, } | { "type": "push_state_changed",
 /**
  * Network whose registration changed.
  */
