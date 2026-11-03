@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
       __BUILD_ID__: JSON.stringify(buildId(wasmPath)),
       __BUILD_SHA__: JSON.stringify(buildSha),
       __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+      __KEYBOARD_MOTION_TEST_ENABLED__: JSON.stringify(performanceHarness),
       __DEBUG_IRC_CONFIG__: JSON.stringify(
         buildDebugIrcConfig(mode, process.env, performanceHarness),
       ),

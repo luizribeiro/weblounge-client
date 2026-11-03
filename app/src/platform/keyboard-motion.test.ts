@@ -13,7 +13,7 @@ afterEach(() => {
 describe("keyboard motion", () => {
   it("animates opening from the pre-commit composer position", () => {
     const fixture = motionFixture();
-    const stop = observeKeyboardMotion(fixture.root, window);
+    const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
     fixture.willOpen();
     fixture.setComposerBottom(516);
@@ -38,7 +38,7 @@ describe("keyboard motion", () => {
   it("uses the measured cubic fallback without linear easing", () => {
     vi.spyOn(CSS, "supports").mockReturnValue(false);
     const fixture = motionFixture();
-    const stop = observeKeyboardMotion(fixture.root, window);
+    const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
     fixture.willOpen();
     fixture.setComposerBottom(516);
@@ -57,7 +57,7 @@ describe("keyboard motion", () => {
   it("snaps the transcript and animates only the closing composer", () => {
     const fixture = motionFixture();
     fixture.setComposerBottom(516);
-    const stop = observeKeyboardMotion(fixture.root, window);
+    const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
     fixture.willClose();
     fixture.setComposerBottom(874);
@@ -79,7 +79,7 @@ describe("keyboard motion", () => {
     });
     const fixture = motionFixture();
     fixture.setComposerBottom(516);
-    const stop = observeKeyboardMotion(fixture.root, window);
+    const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
     fixture.willClose();
     fixture.setComposerBottom(874);
@@ -113,7 +113,7 @@ describe("keyboard motion", () => {
     });
     const fixture = motionFixture();
     fixture.setComposerBottom(516);
-    const stop = observeKeyboardMotion(fixture.root, window);
+    const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
     try {
       fixture.willClose();
@@ -135,7 +135,7 @@ describe("keyboard motion", () => {
   it("corrects a closing composer that finishes more than one pixel short", async () => {
     const fixture = motionFixture();
     fixture.setComposerBottom(516);
-    const stop = observeKeyboardMotion(fixture.root, window);
+    const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
     fixture.willClose();
     fixture.setComposerBottom(window.innerHeight - 3);

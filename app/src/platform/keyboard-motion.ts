@@ -5,7 +5,7 @@ import {
   keyboardLayoutWillCommitEvent,
 } from "./viewport-geometry";
 
-export const keyboardMotionEnabled = true;
+export const keyboardMotionEnabled = false;
 
 const durationMilliseconds = 400;
 const openLeadMilliseconds = 20;
@@ -41,7 +41,7 @@ export function observeKeyboardMotion(
   root: HTMLElement,
   browserWindow: Window,
   {
-    enabled = keyboardMotionEnabled,
+    enabled = keyboardMotionEnabled || __KEYBOARD_MOTION_TEST_ENABLED__,
     prefersReducedMotion = () => false,
   }: KeyboardMotionOptions = {},
 ): () => void {
