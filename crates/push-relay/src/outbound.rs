@@ -1,7 +1,7 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -124,19 +124,68 @@ pub trait HttpTransport: Send + Sync + 'static {
     async fn send(&self, request: OutboundRequest) -> Result<StatusCode>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct ReqwestTransport {
     root: Option<Certificate>,
+    clients: Arc<Mutex<HashMap<(String, std::net::SocketAddr), reqwest::Client>>>,
 }
 
 impl ReqwestTransport {
     fn production() -> Self {
-        Self { root: None }
+        Self {
+            root: None,
+            clients: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     #[cfg(test)]
     fn with_root_certificate(root: Certificate) -> Self {
-        Self { root: Some(root) }
+        Self {
+            root: Some(root),
+            clients: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn client_for(&self, host: &str, address: std::net::SocketAddr) -> Result<reqwest::Client> {
+        let key = (host.to_owned(), address);
+        let cache = self
+            .clients
+            .lock()
+            .map_err(|_| Error::Config("HTTP client cache is unavailable".to_owned()))?;
+        if let Some(client) = cache.get(&key) {
+            return Ok(client.clone());
+        }
+        drop(cache);
+        let mut builder = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(15))
+            .resolve(host, address);
+        if let Some(root) = &self.root {
+            builder = builder.add_root_certificate(root.clone());
+        }
+        let client = builder.build()?;
+        let mut cache = self
+            .clients
+            .lock()
+            .map_err(|_| Error::Config("HTTP client cache is unavailable".to_owned()))?;
+        Ok(cache.entry(key).or_insert(client).clone())
+    }
+
+    #[cfg(test)]
+    fn client_count(&self) -> usize {
+        self.clients.lock().expect("client cache").len()
+    }
+}
+
+impl std::fmt::Debug for ReqwestTransport {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let cached_clients = self.clients.lock().map_or(0, |clients| clients.len());
+        formatter
+            .debug_struct("ReqwestTransport")
+            .field("cached_clients", &cached_clients)
+            .finish_non_exhaustive()
     }
 }
 
@@ -147,16 +196,7 @@ impl HttpTransport for ReqwestTransport {
             .endpoint
             .host_str()
             .ok_or_else(|| Error::TargetRefused("endpoint has no host".to_owned()))?;
-        let mut builder = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(15))
-            .resolve(host, request.address);
-        if let Some(root) = &self.root {
-            builder = builder.add_root_certificate(root.clone());
-        }
-        let client = builder.build()?;
+        let client = self.client_for(host, request.address)?;
         Ok(client
             .post(request.endpoint)
             .header("TTL", request.ttl)
@@ -621,9 +661,19 @@ mod tests {
             .expect("request completed")
             .expect("request succeeded");
             assert_eq!(status, StatusCode::CREATED);
+            let second = transport
+                .send(request(
+                    Url::parse(&format!("https://push.example:{}/again", server.port()))
+                        .expect("URL"),
+                    server.address(),
+                ))
+                .await
+                .expect("second request");
+            assert_eq!(second, StatusCode::CREATED);
         })
         .await;
-        assert_eq!(server.requests(), 1);
+        assert_eq!(server.requests(), 2);
+        assert_eq!(transport.client_count(), 1);
     }
 
     #[tokio::test]
