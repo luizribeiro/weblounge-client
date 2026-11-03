@@ -470,6 +470,36 @@ device and route creation occur before the engine boundary while activation wait
 `Registered`. It stops there: the local Ergo profile still lacks the documented TEST-NET address,
 test CA and relay target-allowlist seam needed for a real registration probe.
 
+### Service-worker client slice 3 implementation (2026-11-03)
+
+The classic worker is generated from typed source as one self-contained script. It imports only
+the classic `wasm-bindgen` parser bootstrap, loads the parser Wasm from the versioned shell cache,
+and keeps the existing same-origin GET-only fetch boundary. `crates/push-payload` is a pure
+`papo-proto` adapter for message, notice, action, invite, MARKREAD and PING lines. Its optimized
+Wasm is 46,764 bytes under a build-enforced 128 KiB ceiling; both bootstrap and Wasm are explicit
+precache entries.
+
+Push delivery reads the route's non-extractable P-256 key, derives the RFC 8291 content key and
+nonce with WebCrypto ECDH and HKDF, decrypts AES-GCM, and sends only the plaintext IRC line to the
+parser. One `waitUntil` reaches exactly one `showNotification`. Valid chat lines carry the sender,
+body, current `<NetworkId>/<buffer>` tag and buffer route; every failure falls back to one generic
+notification. Only a decryption failure marks the route for replacement, because a parser failure
+does not imply that its key material is stale.
+
+Chat pushes are written as versioned `pushed-message\0...` records in the engine's Cache object
+store. The web engine scans at most its 500-row timeline budget before connecting and exposes an
+explicit reload request for a warm notification tap. Both paths feed the ordinary timeline insert,
+so ordering, unread projection and `msgid` deduplication against history or live delivery retain
+one source of truth. A cold cached timeline can reveal the addressed buffer while IRC is offline;
+an `open-route` message remains pending in a warm page until the engine creates that buffer.
+
+Playwright uses the full Chromium channel because its legacy headless shell hard-denies
+notification permission. CDP delivers envelopes encrypted from the stored route keys and asserts
+the routed notification plus decrypt and parse fallbacks. With local Ergo, the browser starts from
+the cached deep link while offline, shows the pushed row, reconnects, receives the same `msgid`
+from CHATHISTORY and still renders it once. The unmocked Ergo → relay → push-service half remains a
+later infrastructure slice.
+
 ## Rollout
 
 - **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: Ergo backups
