@@ -226,6 +226,10 @@ UI. The last projection, navigation, scroll position, and drafts stay mounted. T
 The weblounge logo and title are the sole transient progress indicator: the pair in the mobile
 Chats header and desktop sidebar fills while connecting, registering, reconnecting, or hydrating
 the first complete live projection. A transient drop that recovers produces only this treatment.
+The active conversation title uses the same shared fill while its network is making progress or
+its buffer has an initial-history, reconnect-catch-up, or older-history request in flight. Buffer
+sync is an engine-owned typed projection; the shell does not infer it with a timer. Mobile and
+desktop stop with the same final filling pass when the buffer becomes current.
 During progress, the logo tile, chair, and title have a theme-derived dim base. One straight,
 soft-edged band reveals a full-colour copy from left to right across the real logo geometry and then
 the title, driven by one shared coordinate so it reads as one continuous pass. On recovery, the
@@ -333,6 +337,9 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
   visibility, socket loss, Ergo restart, and worker replacement. Transient recovery shows only the
   logo treatment and never connection copy or an error strip. Reduced-motion coverage asserts a
   static dim with no animation.
+- Playwright desktop and mobile coverage holds a local-Ergo history request and reconnect catch-up
+  open, then asserts the conversation title fills until the engine reports that buffer current.
+  Light and dark captures cover the shared treatment; hidden-page and idle audits stay green.
 - Presentation tests keep exactly one actionable strip while navigating between mobile Chats and a
   conversation, place the desktop strip at the sidebar top, exercise Sign in again and Retry, tint
   the logo, and remove the strip and tint on resolution. Per-header status/retry components and the
