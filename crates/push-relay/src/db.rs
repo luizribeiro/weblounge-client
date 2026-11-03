@@ -13,6 +13,7 @@ use crate::{Error, Result};
 
 const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
+const MAX_HELD_PUSHES_PER_ACCOUNT: u32 = 100;
 const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug)]
@@ -419,6 +420,23 @@ impl Database {
                      VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![account, route_id, body, ttl, now],
                 )?;
+                let held_count = transaction.query_row(
+                    "SELECT COUNT(*) FROM held_pushes WHERE account = ?1",
+                    [&account],
+                    |row| row.get::<_, u32>(0),
+                )?;
+                let overflow = held_count.saturating_sub(MAX_HELD_PUSHES_PER_ACCOUNT);
+                if overflow > 0 {
+                    transaction.execute(
+                        "DELETE FROM held_pushes WHERE id IN (
+                           SELECT id FROM held_pushes
+                           WHERE account = ?1
+                           ORDER BY id
+                           LIMIT ?2
+                         )",
+                        params![account, overflow],
+                    )?;
+                }
             }
             transaction.commit()?;
             Ok(leased)
@@ -432,6 +450,10 @@ impl Database {
             let connection = connect(&path)?;
             connection.execute("DELETE FROM leases WHERE expires_at <= ?1", [now])?;
             connection.execute(
+                "DELETE FROM held_pushes WHERE held_at + ttl * 1000 <= ?1",
+                [now],
+            )?;
+            connection.execute(
                 "DELETE FROM held_pushes WHERE route_id IN (
                    SELECT id FROM routes WHERE state != 'active'
                  )",
@@ -441,7 +463,7 @@ impl Database {
                 .query_row(
                     "SELECT held_pushes.id, routes.device_id, held_pushes.route_id,
                             devices.endpoint, devices.p256dh, devices.auth,
-                            held_pushes.body, held_pushes.ttl
+                            held_pushes.body, held_pushes.ttl, held_pushes.held_at
                      FROM held_pushes
                      JOIN routes ON routes.id = held_pushes.route_id
                      JOIN devices ON devices.id = routes.device_id
@@ -455,6 +477,8 @@ impl Database {
                      LIMIT 1",
                     [now],
                     |row| {
+                        let ttl = row.get::<_, u32>(7)?;
+                        let held_at = row.get::<_, i64>(8)?;
                         Ok(HeldPush {
                             id: row.get(0)?,
                             device_id: row.get(1)?,
@@ -465,7 +489,7 @@ impl Database {
                                 auth: row.get(5)?,
                             },
                             body: row.get(6)?,
-                            ttl: row.get(7)?,
+                            ttl: remaining_ttl(ttl, held_at, now),
                         })
                     },
                 )
@@ -489,13 +513,23 @@ impl Database {
         tokio::task::spawn_blocking(move || -> Result<Option<i64>> {
             connect(&path)?
                 .query_row(
-                    "SELECT MIN(deadline) FROM (
-                       SELECT MAX(leases.expires_at) AS deadline
+                    "SELECT MIN(
+                       CASE
+                         WHEN lease_deadline IS NULL OR push_deadline < lease_deadline
+                           THEN push_deadline
+                         ELSE lease_deadline
+                       END
+                     )
+                     FROM (
+                       SELECT held_at + ttl * 1000 AS push_deadline,
+                              (
+                                SELECT MAX(leases.expires_at)
+                                FROM leases
+                                JOIN devices ON devices.id = leases.device_id
+                                WHERE devices.account = held_pushes.account
+                                  AND leases.expires_at > ?1
+                              ) AS lease_deadline
                        FROM held_pushes
-                       JOIN devices ON devices.account = held_pushes.account
-                       JOIN leases ON leases.device_id = devices.id
-                       WHERE leases.expires_at > ?1
-                       GROUP BY held_pushes.account
                      )",
                     [now],
                     |row| row.get(0),
@@ -579,6 +613,13 @@ fn random_token() -> Result<String> {
 
 fn secret_hash(secret: &str) -> Vec<u8> {
     Sha256::digest(secret.as_bytes()).to_vec()
+}
+
+fn remaining_ttl(ttl: u32, held_at: i64, now: i64) -> u32 {
+    let elapsed_milliseconds = now.saturating_sub(held_at);
+    let elapsed_seconds = elapsed_milliseconds.saturating_add(999) / 1_000;
+    let elapsed_seconds = u32::try_from(elapsed_seconds).unwrap_or(u32::MAX);
+    ttl.saturating_sub(elapsed_seconds)
 }
 
 #[cfg(test)]

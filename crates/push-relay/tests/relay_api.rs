@@ -92,7 +92,7 @@ impl DnsResolver for PublicDns {
 }
 
 struct Harness {
-    _temporary: TempDir,
+    temporary: TempDir,
     app: Router,
     concierge_calls: Arc<AtomicUsize>,
     deliveries: Deliveries,
@@ -135,7 +135,7 @@ impl Harness {
             lease_ttl,
         );
         Self {
-            _temporary: temporary,
+            temporary,
             app,
             concierge_calls,
             deliveries,
@@ -232,14 +232,25 @@ impl Harness {
     }
 
     async fn push(&self, route: &Value, home: &SecretKey, body: &[u8]) -> StatusCode {
+        self.push_with_ttl(route, home, body, 60).await
+    }
+
+    async fn push_with_ttl(
+        &self,
+        route: &Value,
+        home: &SecretKey,
+        body: &[u8],
+        ttl: u32,
+    ) -> StatusCode {
         let authorization = vapid(home, ORIGIN, expiry_after(3_600));
+        let ttl = ttl.to_string();
         call_bytes(
             &self.app,
             Method::POST,
             &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
             None,
             body.to_vec(),
-            &[("Authorization", &authorization), ("TTL", "60")],
+            &[("Authorization", &authorization), ("TTL", &ttl)],
         )
         .await
     }
@@ -256,6 +267,29 @@ impl Harness {
         })
         .await
         .expect("held delivery deadline");
+    }
+
+    fn held_bodies(&self) -> Vec<Vec<u8>> {
+        let connection = rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+            .expect("relay database");
+        let mut statement = connection
+            .prepare("SELECT body FROM held_pushes ORDER BY id")
+            .expect("held push query");
+        statement
+            .query_map([], |row| row.get(0))
+            .expect("held push rows")
+            .collect::<rusqlite::Result<Vec<Vec<u8>>>>()
+            .expect("held push bodies")
+    }
+
+    async fn wait_for_held_count(&self, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while self.held_bodies().len() != expected {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("held push count");
     }
 }
 
@@ -693,6 +727,57 @@ async fn beacon_form_release_delivers_without_an_authorization_header() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     harness.wait_for_deliveries(1).await;
+}
+
+#[tokio::test]
+async fn held_pushes_drop_the_oldest_row_at_the_account_cap() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "busy-tab").await;
+
+    for index in 0..=100 {
+        let body = format!("held-{index}");
+        assert_eq!(
+            harness.push(&route, &home, body.as_bytes()).await,
+            StatusCode::CREATED
+        );
+    }
+    let held = harness.held_bodies();
+    assert_eq!(held.len(), 100);
+    assert_eq!(held[0], b"held-1");
+    assert_eq!(held[99], b"held-100");
+}
+
+#[tokio::test]
+async fn expired_held_pushes_are_deleted_instead_of_delivered() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "busy-tab").await;
+    assert_eq!(
+        harness
+            .push_with_ttl(&route, &home, b"already expired", 0)
+            .await,
+        StatusCode::CREATED
+    );
+    harness.wait_for_held_count(0).await;
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+
+    harness.release_lease(&device, "busy-tab").await;
+    assert_eq!(
+        harness.push(&route, &home, b"delivery sentinel").await,
+        StatusCode::CREATED
+    );
+    harness.wait_for_deliveries(1).await;
+
+    let deliveries = harness.deliveries.lock().expect("deliveries");
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].1, b"delivery sentinel");
 }
 
 #[tokio::test]
