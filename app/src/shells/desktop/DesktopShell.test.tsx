@@ -12,6 +12,7 @@ import { DesktopShell } from "./DesktopShell";
 const channel: BufferProjection = {
   id: 2,
   network_id: 1,
+  sync_state: "synced" as const,
   kind: "channel",
   title: "#room",
   draft_key: "1:#room",
@@ -30,6 +31,7 @@ const otherChannel: BufferProjection = {
 const direct: BufferProjection = {
   id: 4,
   network_id: 1,
+  sync_state: "synced" as const,
   kind: "direct",
   title: "mel",
   direct_identity: "different_account",

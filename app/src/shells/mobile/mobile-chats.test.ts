@@ -54,6 +54,7 @@ function buffer(
   return {
     id,
     network_id: id === 3 ? 2 : 1,
+    sync_state: "synced",
     kind,
     title,
     draft_key: title,

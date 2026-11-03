@@ -20,15 +20,15 @@ use tokio::sync::mpsc;
 use std::rc::Rc;
 
 pub use protocol::{
-    AccountProjection, BufferId, BufferKind, BufferProjection, ChannelStatus, CompletionCandidate,
-    CompletionTrigger, ConnectionFailureReason, DeploymentConfig, DirectIdentityState,
-    EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, HostedNetworkConfig,
-    HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection, MembershipKind,
-    MembershipProjection, MessageAuthorship, MessageDelivery, MessageId, MessageKind,
-    MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction,
-    NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig, PushDeviceCredentials,
-    PushFailure, PushRoute, PushState, PushUnsupportedReason, RedactedSecret, SaslCredentials,
-    ShellKind, UiToEngine,
+    AccountProjection, BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus,
+    CompletionCandidate, CompletionTrigger, ConnectionFailureReason, DeploymentConfig,
+    DirectIdentityState, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
+    HostedNetworkConfig, HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection,
+    MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
+    MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
+    NoticeAction, NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig,
+    PushDeviceCredentials, PushFailure, PushRoute, PushState, PushUnsupportedReason,
+    RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
 
 /// Reads service-worker push records while constructing the web engine.

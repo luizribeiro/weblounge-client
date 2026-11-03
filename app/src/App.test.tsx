@@ -201,6 +201,7 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
       {
         id: 2,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         title: "#lounge",
         draft_key: "test:#lounge",
@@ -341,6 +342,7 @@ it("caps startup history hydration at 400ms", async () => {
       {
         id: 2,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         title: "#lounge",
         draft_key: "test:#lounge",
@@ -395,6 +397,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
       {
         id: 2,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         cached: true,
         available: true,
@@ -454,6 +457,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
       {
         id: 2,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         title: "#cached",
         draft_key: "weblounge:#cached",
@@ -501,6 +505,7 @@ it("lists projected networks, buffers, and messages", async () => {
     buffer: {
       id: 1,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "server",
       title: "Local Ergo",
       ...{ draft_key: "test:server" },
@@ -515,6 +520,7 @@ it("lists projected networks, buffers, and messages", async () => {
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       ...{ draft_key: "test:#room" },
@@ -593,6 +599,7 @@ it("removes a parted channel and navigates to the previous buffer", async () => 
   const room = {
     id: 2,
     network_id: 1,
+    sync_state: "synced" as const,
     kind: "channel" as const,
     title: "#room",
     draft_key: "Local:#room",
@@ -642,6 +649,7 @@ it("replaces a buffer's rows from the snapshot an attaching tab receives", async
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       ...{ draft_key: "test:#room" },
@@ -687,6 +695,7 @@ it("opens the projected member panel and routes a member to a DM", async () => {
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       draft_key: "test:#room",
@@ -750,6 +759,7 @@ it("focuses command-created buffers only from engine buffer ids", async () => {
       buffer: {
         id,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         title,
         ...{ draft_key: `test:${title}` },
@@ -788,6 +798,7 @@ it("retains command focus when the target buffer arrives later", async () => {
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#home",
       draft_key: "test:#home",
@@ -802,6 +813,7 @@ it("retains command focus when the target buffer arrives later", async () => {
     buffer: {
       id: 3,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#restored",
       draft_key: "test:#restored",
@@ -847,6 +859,7 @@ it("loads pushed messages and retains a service-worker route until its buffer ar
       {
         id: 2,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         title: "#home",
         draft_key: "test:#home",
@@ -873,6 +886,7 @@ it("loads pushed messages and retains a service-worker route until its buffer ar
     buffer: {
       id: 3,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#pushed",
       draft_key: "test:#pushed",
@@ -912,6 +926,7 @@ it("retains engine focus until a delayed shell can consume it", async () => {
       buffer: {
         id,
         network_id: 1,
+        sync_state: "synced",
         kind,
         title,
         draft_key: `test:${title}`,
@@ -952,6 +967,7 @@ it("renders command error and engine notice keys as human text", async () => {
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#home",
       ...{ draft_key: "test:#home" },
@@ -1011,6 +1027,7 @@ it("prepends requested history before live rows", async () => {
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       ...{ draft_key: "test:#room" },
@@ -1091,6 +1108,7 @@ it("shows a confirmation received without this tab's optimistic row", async () =
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       ...{ draft_key: "test:#room" },
@@ -1114,6 +1132,7 @@ it("does not resurrect a closed buffer from a later projection update", async ()
   const direct = {
     id: 2,
     network_id: 1,
+    sync_state: "synced" as const,
     kind: "direct" as const,
     title: "ana",
     draft_key: "test:ana",
@@ -1143,6 +1162,7 @@ it("shows an optimistic message as failed when sending fails", async () => {
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       ...{ draft_key: "test:#room" },
@@ -1198,6 +1218,7 @@ it("reopens a hidden failed DM from its typed notice", async () => {
   const buffer = {
     id: 2,
     network_id: 1,
+    sync_state: "synced" as const,
     kind: "direct" as const,
     title: "ana",
     draft_key: "test:ana",
@@ -1308,6 +1329,7 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell, tole
     buffer: {
       id: 2,
       network_id: 1,
+      sync_state: "synced" as const,
       kind: "channel",
       title: "#room",
       ...{ draft_key: "test:#room" },

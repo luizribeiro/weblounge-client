@@ -85,6 +85,7 @@ function buffer(
   return {
     id,
     network_id: 1,
+    sync_state: "synced",
     kind,
     title,
     draft_key: `10:weblounge:rfc1459:${title.toLowerCase()}`,

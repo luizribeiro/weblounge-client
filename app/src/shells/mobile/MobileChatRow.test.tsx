@@ -27,6 +27,7 @@ function buffer(overrides: Partial<BufferProjection> = {}): BufferProjection {
   return {
     id: 2,
     network_id: 2,
+    sync_state: "synced" as const,
     kind: "channel",
     title: "#garden",
     draft_key: "garden",

@@ -6,6 +6,7 @@ import { SidebarRow } from "./SidebarRow";
 const buffer: BufferProjection = {
   id: 1,
   network_id: 2,
+  sync_state: "synced" as const,
   kind: "channel",
   title: "#lounge",
   ...{ draft_key: "test:#lounge" },

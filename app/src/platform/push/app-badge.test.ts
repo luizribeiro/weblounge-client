@@ -18,6 +18,7 @@ function buffer(
   return {
     id: 1,
     network_id: 1,
+    sync_state: "synced",
     title: "buffer",
     draft_key: "draft",
     topic: null,

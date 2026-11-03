@@ -1782,6 +1782,7 @@ impl Runtime {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
         let promoted = running.model.promote_cached_for_history(buffer_id);
+        let sync = running.model.buffer_updated(buffer_id);
         spawn_history_fetch(
             Arc::clone(&self.state),
             self.outbound.clone(),
@@ -1791,6 +1792,7 @@ impl Runtime {
         );
         promoted
             .into_iter()
+            .chain(sync)
             .chain([
                 EngineToUi::HistoryStateChanged {
                     buffer_id,
@@ -2755,11 +2757,21 @@ fn spawn_history_fetch(
                 .and_then(|running| running.model.fail_history(&fetch))
         };
         if let Some(buffer_id) = buffer_id {
-            let _ = outbound.send(EngineToUi::HistoryStateChanged {
-                buffer_id,
-                loading: false,
-                at_start: false,
-            });
+            let sync = lock(&state)
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .and_then(|running| running.model.buffer_updated(buffer_id));
+            send_events(
+                &outbound,
+                sync.into_iter()
+                    .chain([EngineToUi::HistoryStateChanged {
+                        buffer_id,
+                        loading: false,
+                        at_start: false,
+                    }])
+                    .collect(),
+            );
         }
     });
 }
@@ -3641,10 +3653,14 @@ fn process_join(
 ) -> Vec<HistoryTarget> {
     output.extend(model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
-        model
-            .request_latest_channel(&joined.channel)
-            .into_iter()
-            .collect()
+        let target = model.request_latest_channel(&joined.channel);
+        if let Some(buffer_id) = model.buffer_id_for_channel(&joined.channel)
+            && target.is_some()
+            && let Some(event) = model.buffer_updated(buffer_id)
+        {
+            output.push(event);
+        }
+        target.into_iter().collect()
     } else {
         if let Some(event) = model.receive_membership(
             &joined.channel,
@@ -3811,14 +3827,18 @@ fn finish_history_page(
     else {
         return (Vec::new(), None);
     };
-    let mut output = completion
-        .at_start
-        .map(|at_start| EngineToUi::HistoryStateChanged {
-            buffer_id: completion.buffer_id,
-            loading: false,
-            at_start,
-        })
+    let mut output = model
+        .buffer_updated(completion.buffer_id)
         .into_iter()
+        .chain(
+            completion
+                .at_start
+                .map(|at_start| EngineToUi::HistoryStateChanged {
+                    buffer_id: completion.buffer_id,
+                    loading: false,
+                    at_start,
+                }),
+        )
         .collect::<Vec<_>>();
     if completion.gap
         && let Some(event) = model.append_history_gap(completion.buffer_id)
@@ -7891,11 +7911,14 @@ async fn delay(duration: Duration) {
 
         assert!(matches!(
             collect(&mut receiver).as_slice(),
-            [EngineToUi::HistoryStateChanged {
-                loading: false,
-                at_start: true,
-                ..
-            }]
+            [
+                EngineToUi::BufferUpdated { buffer },
+                EngineToUi::HistoryStateChanged {
+                    loading: false,
+                    at_start: true,
+                    ..
+                }
+            ] if buffer.sync_state == crate::BufferSyncState::Synced
         ));
         let buffers = lock(&state)
             .network

@@ -22,6 +22,7 @@ vi.mock("./MobileConversation", () => ({
 const buffer: BufferProjection = {
   id: 2,
   network_id: 1,
+  sync_state: "synced" as const,
   kind: "direct",
   title: "mel",
   draft_key: "mel",

@@ -18,6 +18,7 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
         {
           id: 1,
           network_id: 7,
+          sync_state: "synced" as const,
           kind: "server",
           title: "Local Ergo",
           ...{ draft_key: "test:server" },
@@ -29,6 +30,7 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
         {
           id: 2,
           network_id: 7,
+          sync_state: "synced" as const,
           kind: "channel",
           title: "#lounge",
           ...{ draft_key: "test:#lounge" },
@@ -82,6 +84,7 @@ it("moves roving focus through real list commands", () => {
           {
             id: 1,
             network_id: 7,
+            sync_state: "synced" as const,
             kind: "server",
             title: "Local Ergo",
             ...{ draft_key: "test:server" },
@@ -93,6 +96,7 @@ it("moves roving focus through real list commands", () => {
           {
             id: 2,
             network_id: 7,
+            sync_state: "synced" as const,
             kind: "channel",
             title: "#lounge",
             ...{ draft_key: "test:#lounge" },

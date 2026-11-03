@@ -292,6 +292,18 @@ pub enum BufferKind {
     Direct,
 }
 
+/// Whether one buffer is currently resolving server history into its timeline.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum BufferSyncState {
+    /// No history request is active and the buffer has not completed its initial load.
+    Pending,
+    /// Initial history, older history, or reconnect catch-up is in flight.
+    Syncing,
+    /// The latest requested history has been applied.
+    Synced,
+}
+
 /// Whether a channel buffer currently represents an active membership.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -329,6 +341,8 @@ pub struct BufferProjection {
     pub network_id: NetworkId,
     /// Kind of conversation.
     pub kind: BufferKind,
+    /// Current per-buffer history synchronization state.
+    pub sync_state: BufferSyncState,
     /// Current membership state for a channel buffer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

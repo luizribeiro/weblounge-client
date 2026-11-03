@@ -564,6 +564,7 @@ describe("WorkerEngineClient", () => {
       buffer: {
         id: 3,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "channel",
         title: "#Room[",
         draft_key: "5:Local:rfc1459:#room{",
@@ -594,6 +595,7 @@ describe("WorkerEngineClient", () => {
       buffer: {
         id: 4,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "direct",
         title: "mel",
         nick_color_index: 7,
@@ -642,6 +644,7 @@ describe("WorkerEngineClient", () => {
       buffer: {
         id: 4,
         network_id: 1,
+        sync_state: "synced" as const,
         kind: "direct",
         title: "mel",
         direct_identity: "different_account",

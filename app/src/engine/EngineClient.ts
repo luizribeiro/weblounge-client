@@ -1089,6 +1089,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     typeof value.id !== "number" ||
     typeof value.network_id !== "number" ||
     !isOneOf(value.kind, ["server", "channel", "direct"]) ||
+    !isOneOf(value.sync_state, ["pending", "syncing", "synced"]) ||
     !(
       value.channel_status === undefined ||
       isOneOf(value.channel_status, ["joined", "kicked"])
@@ -1136,6 +1137,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     id: value.id,
     network_id: value.network_id,
     kind: value.kind,
+    sync_state: value.sync_state,
     ...(value.channel_status === undefined
       ? {}
       : { channel_status: value.channel_status }),

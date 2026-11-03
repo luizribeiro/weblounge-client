@@ -7,6 +7,7 @@ import type { ChatFilter } from "./mobile-chats";
 
 const base = {
   network_id: 1,
+  sync_state: "synced" as const,
   draft_key: "draft",
   topic: null,
   unread: 0,

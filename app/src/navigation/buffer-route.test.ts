@@ -80,6 +80,7 @@ function buffer(
   return {
     id: 2,
     network_id: network.id,
+    sync_state: "synced",
     kind,
     title,
     draft_key: `test:${title}`,

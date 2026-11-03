@@ -132,6 +132,7 @@ function buffer(id: number, title: string): BufferProjection {
   return {
     id,
     network_id: 1,
+    sync_state: "synced" as const,
     kind: "channel",
     title,
     draft_key: `1:${title}`,

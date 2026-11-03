@@ -22,6 +22,7 @@ it("keeps network rows and account chrome in focused components", () => {
           {
             id: 1,
             network_id: 7,
+            sync_state: "synced" as const,
             kind: "server",
             title: "Local Ergo",
             ...{ draft_key: "test:server" },
@@ -33,6 +34,7 @@ it("keeps network rows and account chrome in focused components", () => {
           {
             id: 2,
             network_id: 7,
+            sync_state: "synced" as const,
             kind: "channel",
             title: "#lounge",
             ...{ draft_key: "test:#lounge" },

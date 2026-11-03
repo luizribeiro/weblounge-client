@@ -5,9 +5,9 @@ use std::{
 };
 
 use crate::{
-    BufferId, BufferKind, BufferProjection, ChannelStatus, DirectIdentityState, EngineToUi,
-    LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery,
-    MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
+    BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
+    EngineToUi, LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship,
+    MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
     NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, truncate_preview,
@@ -119,6 +119,24 @@ enum HistoryState {
         oldest: Option<papo::HistoryReference>,
         at_start: bool,
     },
+}
+
+impl HistoryState {
+    const fn sync_state(&self) -> BufferSyncState {
+        match self {
+            Self::LoadingLatest
+            | Self::LoadingOlder { .. }
+            | Self::CatchingUp { .. }
+            | Self::CatchingUpLatest { .. } => BufferSyncState::Syncing,
+            Self::Ready { .. } => BufferSyncState::Synced,
+            Self::Unrequested | Self::QueuedLatest => BufferSyncState::Pending,
+        }
+    }
+}
+
+fn set_history_state(buffer: &mut BufferState, history: HistoryState) {
+    buffer.history = history;
+    buffer.projection.sync_state = buffer.history.sync_state();
 }
 
 #[derive(Clone, Debug)]
@@ -314,6 +332,7 @@ impl NetworkModel {
                 id: server_id,
                 network_id: id,
                 kind: BufferKind::Server,
+                sync_state: BufferSyncState::Synced,
                 channel_status: None,
                 cached: None,
                 available: None,
@@ -1238,12 +1257,18 @@ impl NetworkModel {
             .collect()
     }
 
+    pub(crate) fn buffer_updated(&self, buffer_id: BufferId) -> Option<EngineToUi> {
+        Some(EngineToUi::BufferUpdated {
+            buffer: self.buffers.get(&buffer_id)?.projection.clone(),
+        })
+    }
+
     pub(crate) fn request_history(&mut self, buffer_id: BufferId) -> Option<HistoryFetch> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let target = HistoryTarget::from_key(buffer.key.clone()?);
         match &buffer.history {
             HistoryState::Unrequested | HistoryState::QueuedLatest => {
-                buffer.history = HistoryState::LoadingLatest;
+                set_history_state(buffer, HistoryState::LoadingLatest);
                 Some(HistoryFetch::Latest(target))
             }
             HistoryState::Ready {
@@ -1251,9 +1276,12 @@ impl NetworkModel {
                 at_start: false,
             } => {
                 let oldest = oldest.clone();
-                buffer.history = HistoryState::LoadingOlder {
-                    oldest: oldest.clone(),
-                };
+                set_history_state(
+                    buffer,
+                    HistoryState::LoadingOlder {
+                        oldest: oldest.clone(),
+                    },
+                );
                 Some(HistoryFetch::Before { target, oldest })
             }
             HistoryState::LoadingLatest
@@ -1271,7 +1299,7 @@ impl NetworkModel {
         if !matches!(buffer.history, HistoryState::Unrequested) {
             return false;
         }
-        buffer.history = HistoryState::QueuedLatest;
+        set_history_state(buffer, HistoryState::QueuedLatest);
         true
     }
 
@@ -1291,7 +1319,10 @@ impl NetworkModel {
             .into_iter()
             .filter_map(|(buffer_id, target)| {
                 self.promote_cached_for_history(buffer_id);
-                self.buffers.get_mut(&buffer_id)?.history = HistoryState::LoadingLatest;
+                set_history_state(
+                    self.buffers.get_mut(&buffer_id)?,
+                    HistoryState::LoadingLatest,
+                );
                 Some(HistoryFetch::Latest(target))
             })
             .collect::<Vec<_>>();
@@ -1315,11 +1346,14 @@ impl NetworkModel {
                 .collect::<Vec<_>>();
             for (buffer_id, target, newest, oldest, at_start) in ready {
                 if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
-                    buffer.history = HistoryState::CatchingUp {
-                        oldest,
-                        at_start,
-                        fetched: 0,
-                    };
+                    set_history_state(
+                        buffer,
+                        HistoryState::CatchingUp {
+                            oldest,
+                            at_start,
+                            fetched: 0,
+                        },
+                    );
                     fetches.push(HistoryFetch::After { target, newest });
                 }
             }
@@ -1352,7 +1386,7 @@ impl NetworkModel {
             return None;
         }
         let target = HistoryTarget::from_key(buffer.key.clone()?);
-        buffer.history = HistoryState::LoadingLatest;
+        set_history_state(buffer, HistoryState::LoadingLatest);
         Some(target)
     }
 
@@ -1447,6 +1481,7 @@ impl NetworkModel {
                 return None;
             }
         };
+        buffer.projection.sync_state = buffer.history.sync_state();
         Some(HistoryCompletion {
             buffer_id,
             at_start,
@@ -1464,11 +1499,7 @@ impl NetworkModel {
         };
         let buffer_id = self.names.get(&target.name_key()).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        let visible = matches!(
-            buffer.history,
-            HistoryState::LoadingLatest | HistoryState::LoadingOlder { .. }
-        );
-        buffer.history = match &buffer.history {
+        let history = match &buffer.history {
             HistoryState::LoadingLatest => HistoryState::Unrequested,
             HistoryState::LoadingOlder { oldest } => HistoryState::Ready {
                 oldest: Some(oldest.clone()),
@@ -1485,7 +1516,8 @@ impl NetworkModel {
                 return None;
             }
         };
-        visible.then_some(buffer_id)
+        set_history_state(buffer, history);
+        Some(buffer_id)
     }
 
     pub(crate) fn channel_for_buffer(&self, buffer_id: BufferId) -> Option<papo::ChannelName> {
@@ -1661,16 +1693,21 @@ impl NetworkModel {
                     |current| current.max(time_millis(latest)),
                 ));
             match &fetch {
-                Some(HistoryFetch::Latest(_)) => buffer.history = HistoryState::LoadingLatest,
+                Some(HistoryFetch::Latest(_)) => {
+                    set_history_state(buffer, HistoryState::LoadingLatest);
+                }
                 Some(HistoryFetch::After { .. }) => {
                     let HistoryState::Ready { oldest, at_start } = &buffer.history else {
                         unreachable!("after fetch starts from ready history")
                     };
-                    buffer.history = HistoryState::CatchingUp {
-                        oldest: oldest.clone(),
-                        at_start: *at_start,
-                        fetched: 0,
-                    };
+                    set_history_state(
+                        buffer,
+                        HistoryState::CatchingUp {
+                            oldest: oldest.clone(),
+                            at_start: *at_start,
+                            fetched: 0,
+                        },
+                    );
                 }
                 Some(HistoryFetch::Before { .. } | HistoryFetch::LatestAfterGap(_)) | None => {}
             }
@@ -2133,6 +2170,7 @@ impl NetworkModel {
             id,
             network_id: self.network.id,
             kind,
+            sync_state: BufferSyncState::Pending,
             channel_status: (kind == BufferKind::Channel).then_some(ChannelStatus::Joined),
             cached: None,
             available: None,
@@ -2655,11 +2693,119 @@ mod tests {
         derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
-        BufferId, BufferKind, EngineToUi, MembershipKind, MembershipProjection, MessageAuthorship,
-        NetworkId,
+        BufferId, BufferKind, BufferSyncState, EngineToUi, MembershipKind, MembershipProjection,
+        MessageAuthorship, NetworkId,
         chat_list_snapshot::{ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow},
         pushed_messages::PushedMessage,
     };
+
+    #[test]
+    fn history_state_derives_buffer_sync_state() {
+        assert_eq!(
+            HistoryState::Unrequested.sync_state(),
+            BufferSyncState::Pending
+        );
+        assert_eq!(
+            HistoryState::QueuedLatest.sync_state(),
+            BufferSyncState::Pending
+        );
+        assert_eq!(
+            HistoryState::LoadingLatest.sync_state(),
+            BufferSyncState::Syncing
+        );
+        assert_eq!(
+            HistoryState::Ready {
+                oldest: None,
+                at_start: true,
+            }
+            .sync_state(),
+            BufferSyncState::Synced
+        );
+        assert_eq!(
+            HistoryState::CatchingUp {
+                oldest: None,
+                at_start: true,
+                fetched: 0,
+            }
+            .sync_state(),
+            BufferSyncState::Syncing
+        );
+    }
+
+    #[test]
+    fn history_requests_update_projected_buffer_sync_state() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, projection) =
+            model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        assert_eq!(
+            projection.expect("new buffer").sync_state,
+            BufferSyncState::Pending
+        );
+
+        let fetch = model.request_history(buffer_id).expect("initial request");
+        assert_eq!(
+            model.buffers[&buffer_id].projection.sync_state,
+            BufferSyncState::Syncing
+        );
+        let target = match &fetch {
+            HistoryFetch::Latest(target)
+            | HistoryFetch::Before { target, .. }
+            | HistoryFetch::After { target, .. }
+            | HistoryFetch::LatestAfterGap(target) => target,
+        };
+        let completion = model
+            .finish_history(&target.conversation(), None, None, 0, true)
+            .expect("history finishes");
+        assert_eq!(completion.buffer_id, buffer_id);
+        assert_eq!(completion.at_start, Some(true));
+        assert_eq!(
+            model.buffers[&buffer_id].projection.sync_state,
+            BufferSyncState::Synced
+        );
+    }
+
+    #[test]
+    fn reconnect_after_fetch_updates_projected_buffer_sync_state() {
+        let (mut model, state) = model(10);
+        model.connected_history();
+        model.receive_incoming(
+            incoming(
+                &state,
+                "before reconnect",
+                Some("before-reconnect"),
+                Some(100),
+                100,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let channel = channel_name(&state, "#room");
+        let buffer_id = model.names[&NameKey::Channel(channel.clone())];
+        super::set_history_state(
+            model.buffers.get_mut(&buffer_id).expect("channel exists"),
+            HistoryState::Ready {
+                oldest: None,
+                at_start: false,
+            },
+        );
+
+        let fetches = model.connected_history();
+
+        assert!(matches!(fetches.as_slice(), [HistoryFetch::After { .. }]));
+        assert_eq!(
+            model.buffers[&buffer_id].projection.sync_state,
+            BufferSyncState::Syncing
+        );
+        let completion = model
+            .finish_history(&papo::Conversation::Channel(channel), None, None, 0, true)
+            .expect("catch-up finishes");
+        assert_eq!(completion.buffer_id, buffer_id);
+        assert_eq!(
+            model.buffers[&buffer_id].projection.sync_state,
+            BufferSyncState::Synced
+        );
+    }
 
     #[test]
     fn message_text_keeps_at_most_one_blank_line() {
