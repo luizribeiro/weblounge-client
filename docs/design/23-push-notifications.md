@@ -399,6 +399,8 @@ The process contract for `weblounge-server` is:
 - listen on `127.0.0.1:8098` by default (`--listen` / `PUSH_RELAY_LISTEN`);
 - put SQLite at `<state-dir>/push-relay.sqlite3`, with `./state` as the development default
   (`--state-dir` / `PUSH_RELAY_STATE_DIR`);
+- keep the state directory mode at 0700 and the WAL-mode database at 0600, with SQLite
+  `user_version` tracking schema migrations;
 - serve the database-backed health check at `GET /healthz`;
 - read the relay VAPID PEM from `--vapid-key-file` / `PUSH_RELAY_VAPID_KEY_FILE` and the concierge
   client secret from `--concierge-secret-file` / `PUSH_RELAY_CONCIERGE_SECRET_FILE`;

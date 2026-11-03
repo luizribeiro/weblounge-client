@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser;
 use url::Url;
@@ -9,6 +12,22 @@ use crate::{Error, Result};
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8098";
 /// The database name within the configured state directory.
 pub const DATABASE_FILE: &str = "push-relay.sqlite3";
+
+/// Creates the state directory and restricts it to the service account on Unix.
+///
+/// # Errors
+///
+/// Returns an error if the directory cannot be created or secured.
+pub async fn prepare_state_directory(path: &Path) -> Result<()> {
+    tokio::fs::create_dir_all(path).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).await?;
+    }
+    Ok(())
+}
 
 /// Process configuration. Every setting has a flag and environment equivalent.
 #[derive(Clone, Debug, Parser)]
@@ -77,5 +96,25 @@ impl Config {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    #[tokio::test]
+    async fn state_directory_is_private() {
+        let temporary = tempfile::tempdir().expect("temporary parent");
+        let state = temporary.path().join("state");
+        super::prepare_state_directory(&state)
+            .await
+            .expect("state directory");
+        let mode = std::fs::metadata(state)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
     }
 }

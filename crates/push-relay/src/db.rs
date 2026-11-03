@@ -1,4 +1,8 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    fs::OpenOptions,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -9,6 +13,7 @@ use crate::{Error, Result};
 
 const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
+const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug)]
 pub(crate) struct WebPushTarget {
@@ -66,9 +71,20 @@ impl Database {
         };
         let schema_path = Arc::clone(&database.path);
         tokio::task::spawn_blocking(move || -> Result<()> {
+            secure_database_file(&schema_path)?;
             let connection = connect(&schema_path)?;
-            connection.execute_batch(
-                "BEGIN;
+            let journal_mode = connection.query_row("PRAGMA journal_mode = WAL", [], |row| {
+                row.get::<_, String>(0)
+            })?;
+            if journal_mode != "wal" {
+                return Err(Error::Config("SQLite WAL mode is unavailable".to_owned()));
+            }
+            let schema_version = connection.pragma_query_value(None, "user_version", |row| {
+                row.get::<_, u32>(0)
+            })?;
+            match schema_version {
+                0 => connection.execute_batch(
+                    "BEGIN;
                  CREATE TABLE IF NOT EXISTS devices (
                    id TEXT PRIMARY KEY,
                    account TEXT NOT NULL,
@@ -86,8 +102,16 @@ impl Database {
                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
                  );
                  CREATE INDEX IF NOT EXISTS routes_device ON routes(device_id);
+                 PRAGMA user_version = 1;
                  COMMIT;",
-            )?;
+                )?,
+                SCHEMA_VERSION => {}
+                version => {
+                    return Err(Error::Config(format!(
+                        "database schema version {version} is newer than supported version {SCHEMA_VERSION}"
+                    )));
+                }
+            }
             Ok(())
         })
         .await??;
@@ -279,6 +303,22 @@ fn connect(path: &PathBuf) -> Result<Connection> {
     Ok(connection)
 }
 
+fn secure_database_file(path: &Path) -> Result<()> {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+
+        options.mode(0o600);
+        drop(options.open(path)?);
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    drop(options.open(path)?);
+    Ok(())
+}
+
 fn authenticate_device(connection: &Connection, id: &str, secret: &str) -> Result<()> {
     let expected = connection
         .query_row(
@@ -376,5 +416,30 @@ mod tests {
         assert!(debug.contains("device-id"));
         assert!(!debug.contains("should-never-appear"));
         assert!(debug.contains("[redacted]"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn database_uses_wal_versioning_and_private_permissions() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let path = temporary.path().join("relay.sqlite3");
+        Database::open(path.clone()).await.expect("database");
+        let connection = rusqlite::Connection::open(&path).expect("connection");
+        let version = connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .expect("schema version");
+        let journal = connection
+            .pragma_query_value(None, "journal_mode", |row| row.get::<_, String>(0))
+            .expect("journal mode");
+        let mode = std::fs::metadata(path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(version, 1);
+        assert_eq!(journal, "wal");
+        assert_eq!(mode, 0o600);
     }
 }

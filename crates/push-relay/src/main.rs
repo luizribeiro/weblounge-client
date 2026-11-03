@@ -5,6 +5,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use weblounge_push_relay::{
     ConciergeClient, Config, Database, EndpointValidator, WebPushSender, app,
+    prepare_state_directory,
 };
 
 #[tokio::main]
@@ -21,7 +22,7 @@ async fn main() -> ExitCode {
 async fn run() -> weblounge_push_relay::Result<()> {
     let config = Config::parse();
     config.validate()?;
-    tokio::fs::create_dir_all(&config.state_dir).await?;
+    prepare_state_directory(&config.state_dir).await?;
 
     let secret = tokio::fs::read_to_string(&config.concierge_secret_file)
         .await?
