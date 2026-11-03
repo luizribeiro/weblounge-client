@@ -6,6 +6,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -23,11 +24,12 @@ use p256::{
 use rand_core::OsRng;
 use serde_json::{Value, json};
 use tempfile::TempDir;
+use tokio::sync::Notify;
 use tower::ServiceExt as _;
 use url::Url;
 use weblounge_push_relay::{
     Concierge, Database, Delivery, DnsResolver, EndpointValidator, Error, Introspection,
-    PushOutcome, PushSender, Result, app,
+    PushOutcome, PushSender, Result, app_with_lease_ttl,
 };
 
 const ORIGIN: &str = "https://push.weblounge.test";
@@ -58,6 +60,7 @@ impl Concierge for FakeConcierge {
 #[derive(Clone)]
 struct FakeSender {
     deliveries: Deliveries,
+    delivered: Arc<Notify>,
     outcome: Arc<Mutex<PushOutcome>>,
     unavailable: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -73,6 +76,7 @@ impl PushSender for FakeSender {
             delivery.body().to_vec(),
             delivery.ttl(),
         ));
+        self.delivered.notify_waiters();
         Ok(*self.outcome.lock().expect("outcome lock"))
     }
 }
@@ -92,6 +96,7 @@ struct Harness {
     app: Router,
     concierge_calls: Arc<AtomicUsize>,
     deliveries: Deliveries,
+    delivered: Arc<Notify>,
     outcome: Arc<Mutex<PushOutcome>>,
     unavailable: Arc<std::sync::atomic::AtomicBool>,
     subscription_key: SecretKey,
@@ -99,34 +104,42 @@ struct Harness {
 
 impl Harness {
     async fn new() -> Self {
+        Self::with_lease_ttl(Duration::from_secs(75)).await
+    }
+
+    async fn with_lease_ttl(lease_ttl: Duration) -> Self {
         let temporary = tempfile::tempdir().expect("temporary state");
         let database = Database::open(temporary.path().join("relay.sqlite3"))
             .await
             .expect("database");
         let concierge_calls = Arc::new(AtomicUsize::new(0));
         let deliveries = Arc::new(Mutex::new(Vec::new()));
+        let delivered = Arc::new(Notify::new());
         let outcome = Arc::new(Mutex::new(PushOutcome::Accepted));
         let unavailable = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let targets = EndpointValidator::new(["push.example"], Arc::new(PublicDns));
-        let app = app(
+        let app = app_with_lease_ttl(
             database,
             FakeConcierge {
                 calls: Arc::clone(&concierge_calls),
             },
             FakeSender {
                 deliveries: Arc::clone(&deliveries),
+                delivered: Arc::clone(&delivered),
                 outcome: Arc::clone(&outcome),
                 unavailable: Arc::clone(&unavailable),
             },
             targets,
             &Url::parse(ORIGIN).expect("origin"),
             &[Url::parse(CLIENT_ORIGIN).expect("client origin")],
+            lease_ttl,
         );
         Self {
             _temporary: temporary,
             app,
             concierge_calls,
             deliveries,
+            delivered,
             outcome,
             unavailable,
             subscription_key: SecretKey::random(&mut OsRng),
@@ -187,6 +200,62 @@ impl Harness {
         )
         .await;
         assert_eq!(response.0, StatusCode::NO_CONTENT);
+    }
+
+    async fn renew_lease(&self, device: &Value, tab_id: &str) {
+        let response = call_json(
+            &self.app,
+            Method::POST,
+            &format!("/v1/devices/{}/lease", device["id"].as_str().expect("id")),
+            device["secret"].as_str(),
+            json!({ "tab_id": tab_id }),
+            &[],
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::NO_CONTENT);
+    }
+
+    async fn release_lease(&self, device: &Value, tab_id: &str) {
+        let response = call_json(
+            &self.app,
+            Method::POST,
+            &format!(
+                "/v1/devices/{}/lease/release",
+                device["id"].as_str().expect("id")
+            ),
+            device["secret"].as_str(),
+            json!({ "tab_id": tab_id }),
+            &[],
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::NO_CONTENT);
+    }
+
+    async fn push(&self, route: &Value, home: &SecretKey, body: &[u8]) -> StatusCode {
+        let authorization = vapid(home, ORIGIN, expiry_after(3_600));
+        call_bytes(
+            &self.app,
+            Method::POST,
+            &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
+            None,
+            body.to_vec(),
+            &[("Authorization", &authorization), ("TTL", "60")],
+        )
+        .await
+    }
+
+    async fn wait_for_deliveries(&self, count: usize) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let notified = self.delivered.notified();
+                if self.deliveries.lock().expect("deliveries").len() >= count {
+                    return;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .expect("held delivery deadline");
     }
 }
 
@@ -522,6 +591,108 @@ async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
             604_800,
         )]
     );
+}
+
+#[tokio::test]
+async fn account_lease_holds_another_device_push_until_expiry() {
+    let harness = Harness::with_lease_ttl(Duration::from_millis(250)).await;
+    let active_device = harness.create_device().await;
+    let receiving_device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&receiving_device, &home).await;
+    harness.activate(&receiving_device, &route).await;
+    harness.renew_lease(&active_device, "active-tab").await;
+
+    assert_eq!(
+        harness.push(&route, &home, b"held until expiry").await,
+        StatusCode::CREATED
+    );
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+
+    harness.wait_for_deliveries(1).await;
+    assert_eq!(
+        harness.deliveries.lock().expect("deliveries")[0].1,
+        b"held until expiry"
+    );
+}
+
+#[tokio::test]
+async fn lease_renewal_discards_pushes_the_account_read() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "tab").await;
+    assert_eq!(
+        harness.push(&route, &home, b"read while active").await,
+        StatusCode::CREATED
+    );
+
+    harness.renew_lease(&device, "tab").await;
+    harness.release_lease(&device, "tab").await;
+    assert_eq!(
+        harness.push(&route, &home, b"after release").await,
+        StatusCode::CREATED
+    );
+    harness.wait_for_deliveries(1).await;
+
+    let deliveries = harness.deliveries.lock().expect("deliveries");
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].1, b"after release");
+}
+
+#[tokio::test]
+async fn every_tab_must_release_before_a_held_push_is_delivered() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "first-tab").await;
+    harness.renew_lease(&device, "second-tab").await;
+    assert_eq!(
+        harness.push(&route, &home, b"two tabs").await,
+        StatusCode::CREATED
+    );
+
+    harness.release_lease(&device, "first-tab").await;
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+    harness.release_lease(&device, "second-tab").await;
+    harness.wait_for_deliveries(1).await;
+}
+
+#[tokio::test]
+async fn beacon_form_release_delivers_without_an_authorization_header() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "beacon-tab").await;
+    assert_eq!(
+        harness.push(&route, &home, b"beacon release").await,
+        StatusCode::CREATED
+    );
+
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("secret", device["secret"].as_str().expect("secret"))
+        .append_pair("tab_id", "beacon-tab")
+        .finish();
+    let status = call_bytes(
+        &harness.app,
+        Method::POST,
+        &format!(
+            "/v1/devices/{}/lease/release",
+            device["id"].as_str().expect("id")
+        ),
+        None,
+        form.into_bytes(),
+        &[("Content-Type", "application/x-www-form-urlencoded")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    harness.wait_for_deliveries(1).await;
 }
 
 #[tokio::test]

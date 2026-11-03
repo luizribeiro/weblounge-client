@@ -9,7 +9,7 @@ mod outbound;
 #[cfg(test)]
 mod test_tls;
 
-pub use api::{App, app};
+pub use api::{App, app, app_with_lease_ttl};
 pub use auth::{Concierge, ConciergeClient, Introspection};
 pub use config::{Config, DATABASE_FILE, DEFAULT_LISTEN, prepare_state_directory};
 pub use db::Database;

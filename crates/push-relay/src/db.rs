@@ -13,7 +13,7 @@ use crate::{Error, Result};
 
 const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug)]
 pub(crate) struct WebPushTarget {
@@ -48,9 +48,20 @@ pub(crate) enum Route {
     Probing,
     Active {
         device_id: String,
+        account: String,
         home_vapid: Vec<u8>,
         target: WebPushTarget,
     },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct HeldPush {
+    pub id: i64,
+    pub device_id: String,
+    pub route_id: String,
+    pub target: WebPushTarget,
+    pub body: Vec<u8>,
+    pub ttl: u32,
 }
 
 /// A small SQLite state store. Connections are short-lived and run off the async executor.
@@ -102,8 +113,43 @@ impl Database {
                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
                  );
                  CREATE INDEX IF NOT EXISTS routes_device ON routes(device_id);
-                 PRAGMA user_version = 1;
+                 CREATE TABLE IF NOT EXISTS leases (
+                   device_id TEXT NOT NULL REFERENCES devices(id),
+                   tab_id TEXT NOT NULL,
+                   expires_at INTEGER NOT NULL,
+                   PRIMARY KEY (device_id, tab_id)
+                 );
+                 CREATE TABLE IF NOT EXISTS held_pushes (
+                   id INTEGER PRIMARY KEY,
+                   account TEXT NOT NULL,
+                   route_id TEXT NOT NULL REFERENCES routes(id),
+                   body BLOB NOT NULL,
+                   ttl INTEGER NOT NULL,
+                   held_at INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS held_pushes_account ON held_pushes(account);
+                 PRAGMA user_version = 2;
                  COMMIT;",
+                )?,
+                1 => connection.execute_batch(
+                    "BEGIN;
+                     CREATE TABLE leases (
+                       device_id TEXT NOT NULL REFERENCES devices(id),
+                       tab_id TEXT NOT NULL,
+                       expires_at INTEGER NOT NULL,
+                       PRIMARY KEY (device_id, tab_id)
+                     );
+                     CREATE TABLE held_pushes (
+                       id INTEGER PRIMARY KEY,
+                       account TEXT NOT NULL,
+                       route_id TEXT NOT NULL REFERENCES routes(id),
+                       body BLOB NOT NULL,
+                       ttl INTEGER NOT NULL,
+                       held_at INTEGER NOT NULL
+                     );
+                     CREATE INDEX held_pushes_account ON held_pushes(account);
+                     PRAGMA user_version = 2;
+                     COMMIT;",
                 )?,
                 SCHEMA_VERSION => {}
                 version => {
@@ -245,7 +291,7 @@ impl Database {
             let connection = connect(&path)?;
             let row = connection
                 .query_row(
-                    "SELECT routes.state, routes.device_id, routes.home_vapid,
+                    "SELECT routes.state, routes.device_id, devices.account, routes.home_vapid,
                             devices.endpoint, devices.p256dh, devices.auth
                      FROM routes JOIN devices ON devices.id = routes.device_id
                      WHERE routes.id = ?1",
@@ -254,21 +300,23 @@ impl Database {
                         Ok((
                             row.get::<_, String>(0)?,
                             row.get::<_, String>(1)?,
-                            row.get::<_, Vec<u8>>(2)?,
-                            row.get::<_, String>(3)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, Vec<u8>>(3)?,
                             row.get::<_, String>(4)?,
                             row.get::<_, String>(5)?,
+                            row.get::<_, String>(6)?,
                         ))
                     },
                 )
                 .optional()?;
             match row {
-                Some((state, _, _, _, _, _)) if state == "probing" => Ok(Route::Probing),
-                Some((state, device_id, home_vapid, endpoint, p256dh, auth))
+                Some((state, _, _, _, _, _, _)) if state == "probing" => Ok(Route::Probing),
+                Some((state, device_id, account, home_vapid, endpoint, p256dh, auth))
                     if state == "active" =>
                 {
                     Ok(Route::Active {
                         device_id,
+                        account,
                         home_vapid,
                         target: WebPushTarget {
                             endpoint,
@@ -291,6 +339,168 @@ impl Database {
                 [&device_id],
             )?;
             Ok(())
+        })
+        .await?
+    }
+
+    pub(crate) async fn renew_lease(
+        &self,
+        device_id: String,
+        secret: String,
+        tab_id: String,
+        now: i64,
+        expires_at: i64,
+    ) -> Result<()> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            authenticate_device(&transaction, &device_id, &secret)?;
+            let account = device_account(&transaction, &device_id)?;
+            transaction.execute("DELETE FROM leases WHERE expires_at <= ?1", [now])?;
+            transaction.execute("DELETE FROM held_pushes WHERE account = ?1", [&account])?;
+            transaction.execute(
+                "INSERT INTO leases (device_id, tab_id, expires_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(device_id, tab_id) DO UPDATE SET expires_at = excluded.expires_at",
+                params![device_id, tab_id, expires_at],
+            )?;
+            transaction.commit()?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub(crate) async fn release_lease(
+        &self,
+        device_id: String,
+        secret: String,
+        tab_id: String,
+    ) -> Result<()> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let connection = connect(&path)?;
+            authenticate_device(&connection, &device_id, &secret)?;
+            connection.execute(
+                "DELETE FROM leases WHERE device_id = ?1 AND tab_id = ?2",
+                params![device_id, tab_id],
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub(crate) async fn hold_if_leased(
+        &self,
+        account: String,
+        route_id: String,
+        body: Vec<u8>,
+        ttl: u32,
+        now: i64,
+    ) -> Result<bool> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<bool> {
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute("DELETE FROM leases WHERE expires_at <= ?1", [now])?;
+            let leased = transaction.query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM leases
+                   JOIN devices ON devices.id = leases.device_id
+                   WHERE devices.account = ?1 AND leases.expires_at > ?2
+                 )",
+                params![account, now],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if leased {
+                transaction.execute(
+                    "INSERT INTO held_pushes (account, route_id, body, ttl, held_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![account, route_id, body, ttl, now],
+                )?;
+            }
+            transaction.commit()?;
+            Ok(leased)
+        })
+        .await?
+    }
+
+    pub(crate) async fn next_held(&self, now: i64) -> Result<Option<HeldPush>> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<Option<HeldPush>> {
+            let connection = connect(&path)?;
+            connection.execute("DELETE FROM leases WHERE expires_at <= ?1", [now])?;
+            connection.execute(
+                "DELETE FROM held_pushes WHERE route_id IN (
+                   SELECT id FROM routes WHERE state != 'active'
+                 )",
+                [],
+            )?;
+            connection
+                .query_row(
+                    "SELECT held_pushes.id, routes.device_id, held_pushes.route_id,
+                            devices.endpoint, devices.p256dh, devices.auth,
+                            held_pushes.body, held_pushes.ttl
+                     FROM held_pushes
+                     JOIN routes ON routes.id = held_pushes.route_id
+                     JOIN devices ON devices.id = routes.device_id
+                     WHERE NOT EXISTS (
+                       SELECT 1 FROM leases
+                       JOIN devices AS leased_devices ON leased_devices.id = leases.device_id
+                       WHERE leased_devices.account = held_pushes.account
+                         AND leases.expires_at > ?1
+                     )
+                     ORDER BY held_pushes.id
+                     LIMIT 1",
+                    [now],
+                    |row| {
+                        Ok(HeldPush {
+                            id: row.get(0)?,
+                            device_id: row.get(1)?,
+                            route_id: row.get(2)?,
+                            target: WebPushTarget {
+                                endpoint: row.get(3)?,
+                                p256dh: row.get(4)?,
+                                auth: row.get(5)?,
+                            },
+                            body: row.get(6)?,
+                            ttl: row.get(7)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(Into::into)
+        })
+        .await?
+    }
+
+    pub(crate) async fn delete_held(&self, id: i64) -> Result<()> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            connect(&path)?.execute("DELETE FROM held_pushes WHERE id = ?1", [id])?;
+            Ok(())
+        })
+        .await?
+    }
+
+    pub(crate) async fn next_held_deadline(&self, now: i64) -> Result<Option<i64>> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<Option<i64>> {
+            connect(&path)?
+                .query_row(
+                    "SELECT MIN(deadline) FROM (
+                       SELECT MAX(leases.expires_at) AS deadline
+                       FROM held_pushes
+                       JOIN devices ON devices.account = held_pushes.account
+                       JOIN leases ON leases.device_id = devices.id
+                       WHERE leases.expires_at > ?1
+                       GROUP BY held_pushes.account
+                     )",
+                    [now],
+                    |row| row.get(0),
+                )
+                .map_err(Into::into)
         })
         .await?
     }
@@ -343,6 +553,17 @@ fn route_device(connection: &Connection, route_id: &str) -> Result<String> {
         .query_row(
             "SELECT device_id FROM routes WHERE id = ?1 AND state != 'dead'",
             [route_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(Error::NotFound)
+}
+
+fn device_account(connection: &Connection, device_id: &str) -> Result<String> {
+    connection
+        .query_row(
+            "SELECT account FROM devices WHERE id = ?1",
+            [device_id],
             |row| row.get(0),
         )
         .optional()?
@@ -438,7 +659,7 @@ mod tests {
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
         assert_eq!(journal, "wal");
         assert_eq!(mode, 0o600);
     }
