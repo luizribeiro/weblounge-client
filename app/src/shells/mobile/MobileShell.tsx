@@ -582,6 +582,8 @@ export function MobileShell(props: MobileShellProps) {
             memberships={props.memberships}
             messages={props.messages}
             networks={props.networks}
+            notificationPromptVisible={props.notificationPromptVisible}
+            onDismissNotificationPrompt={props.onDismissNotificationPrompt}
             onBack={requestBack}
             onFilter={setFilter}
             onLoadHistory={requestHistoryOnce}
@@ -603,6 +605,7 @@ export function MobileShell(props: MobileShellProps) {
                 returnScrollTop = nextScrollTop;
             }}
             onSend={props.onSend}
+            onTurnOnNotifications={props.onTurnOnNotifications}
             motion={screen === movingScreen() ? motion() : undefined}
             onMotionEnd={settleMotion}
             query={query()}

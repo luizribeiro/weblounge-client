@@ -1,11 +1,18 @@
-import { expect, type Page, type Route, test } from "@playwright/test";
+import { devices, expect, type Page, type Route, test } from "@playwright/test";
 import { installFakeOAuth, oauthIssuer } from "./fake-oauth-route";
+import {
+  installNativeFeelInstrumentation,
+  nativeFeelAudit,
+} from "./native-feel-audit";
 
 const engineWasmRequest = /\/engine_bg(?:-[^/?]+)?\.wasm(?:\?.*)?$/u;
 const builtEngineWorkerRequest =
   /\/engine\.(?:shared|dedicated)-worker-[^/]+\.js$/u;
 const developmentEngineWorkerRequest =
   /\/engine\.(?:shared|dedicated)-worker\.ts$/u;
+const { defaultBrowserType: _pixelBrowser, ...pixel7 } = devices["Pixel 7"];
+const { defaultBrowserType: _iphoneBrowser, ...iphone16Pro } =
+  devices["iPhone 16 Pro"];
 
 function isEngineWorkerRequest(url: URL): boolean {
   return (
@@ -667,16 +674,20 @@ for (const shell of [
   });
 }
 
-test("creates and activates a relay route after engine registration", async ({
-  baseURL,
-  context,
-  page,
-}) => {
+async function exerciseNotificationPromptRegistration(
+  page: Page,
+  baseURL: string | undefined,
+  surface: {
+    readonly browser: "chromium" | "webkit";
+    readonly name: "desktop" | "mobile";
+  },
+): Promise<void> {
   if (baseURL === undefined) throw new Error("app base URL is missing");
-  await context.grantPermissions(["notifications"], {
-    origin: new URL(baseURL).origin,
-  });
-  await installPushManagerStub(page);
+  if (surface.name === "desktop" && surface.browser === "chromium") {
+    await installNativeFeelInstrumentation(page);
+  }
+  if (surface.name === "mobile") await installStandaloneDisplay(page);
+  await installPushManagerStub(page, "default", "granted");
   await page.addInitScript(() => {
     Reflect.set(globalThis, "appBadgeCalls", []);
     Object.defineProperties(Navigator.prototype, {
@@ -775,6 +786,31 @@ test("creates and activates a relay route after engine registration", async ({
 
   await page.goto("/");
 
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  const prompt = page.getByRole("region", { name: "Notifications" });
+  await expect(prompt).toBeVisible();
+  if (surface.browser === "chromium") {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.screenshot({
+      path: `e2e/screenshots/notification-prompt-${surface.name}-light.png`,
+    });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.screenshot({
+      path: `e2e/screenshots/notification-prompt-${surface.name}-dark.png`,
+    });
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  if (surface.name === "desktop" && surface.browser === "chromium") {
+    await nativeFeelAudit(page);
+  }
+  await page.getByRole("button", { name: "Turn on" }).click();
+  await expect(prompt).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      Reflect.get(globalThis, "notificationPermissionRequests"),
+    ),
+  ).toBe(1);
+
   await expect
     .poll(() => relayRequests)
     .toEqual(
@@ -825,22 +861,140 @@ test("creates and activates a relay route after engine registration", async ({
   await expect
     .poll(() => page.evaluate(() => Reflect.get(globalThis, "appBadgeCalls")))
     .toContainEqual(["clear"]);
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", {
-      configurable: true,
-      get: () => true,
+  if (surface.browser === "chromium") {
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
     });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await expect
-    .poll(() => relayRequests)
-    .toContain("POST /v1/devices/device-1/lease/release");
+    await expect
+      .poll(() => relayRequests)
+      .toContain("POST /v1/devices/device-1/lease/release");
+  }
   await expect
     .poll(() =>
       page.evaluate(() => Reflect.get(globalThis, "pushSubscribeOptions")),
     )
     .toMatchObject({ userVisibleOnly: true });
-});
+}
+
+for (const surface of [
+  { browser: "chromium", name: "desktop", use: {} },
+  { browser: "chromium", name: "mobile", use: pixel7 },
+  { browser: "webkit", name: "mobile", use: iphone16Pro },
+] as const) {
+  test.describe(`${surface.name} ${surface.browser} notification prompt`, () => {
+    test.use(surface.use);
+    test("requests permission and activates a relay route", async ({
+      baseURL,
+      page,
+    }, testInfo) => {
+      test.skip(testInfo.project.use.browserName !== surface.browser);
+      await exerciseNotificationPromptRegistration(page, baseURL, surface);
+    });
+  });
+}
+
+for (const surface of [
+  { browser: "chromium", use: pixel7 },
+  { browser: "webkit", use: iphone16Pro },
+] as const) {
+  test.describe(`mobile ${surface.browser} notification prompt decisions`, () => {
+    test.use(surface.use);
+
+    test("dismissal persists across reload", async ({
+      baseURL,
+      page,
+    }, testInfo) => {
+      test.skip(testInfo.project.use.browserName !== surface.browser);
+      if (baseURL === undefined) throw new Error("app base URL is missing");
+      await prepareNotificationPrompt(page, baseURL, "granted");
+
+      await page.goto("/");
+      await expect(
+        page.getByRole("region", { name: "Notifications" }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Dismiss notification prompt" })
+        .click();
+      await expect(
+        page.getByRole("region", { name: "Notifications" }),
+      ).toHaveCount(0);
+
+      await page.reload();
+      await expect(
+        page.getByRole("heading", { name: "weblounge" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("region", { name: "Notifications" }),
+      ).toHaveCount(0);
+    });
+
+    test("denied permission hides without starting push", async ({
+      baseURL,
+      page,
+    }, testInfo) => {
+      test.skip(testInfo.project.use.browserName !== surface.browser);
+      if (baseURL === undefined) throw new Error("app base URL is missing");
+      await prepareNotificationPrompt(page, baseURL, "denied");
+      const relayRequests: string[] = [];
+      await page.route("https://push.weblounge.org/**", async (route) => {
+        relayRequests.push(route.request().url());
+        await route.fulfill({ status: 204 });
+      });
+
+      await page.goto("/");
+      await page.getByRole("button", { name: "Turn on" }).click();
+
+      await expect(
+        page.getByRole("region", { name: "Notifications" }),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          Reflect.get(globalThis, "notificationPermissionRequests"),
+        ),
+      ).toBe(1);
+      expect(relayRequests).toEqual([]);
+    });
+  });
+}
+
+async function prepareNotificationPrompt(
+  page: Page,
+  baseURL: string,
+  requestResult: NotificationPermission,
+): Promise<void> {
+  await installStandaloneDisplay(page);
+  await installPushManagerStub(page, "default", requestResult);
+  await installFakeEngine(page);
+  await installFakeOAuth(page);
+  await page.route("**/config.json", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(pushHostedConfig(route.request().url())),
+    });
+  });
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(baseURL).origin);
+      return;
+    }
+    await fulfillSessionToken(route, baseURL, "push-session-token");
+  });
+}
+
+function pushHostedConfig(requestUrl: string) {
+  return {
+    ...hostedConfig(requestUrl),
+    push: {
+      relay: "https://push.weblounge.org",
+      relay_vapid:
+        "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    },
+  };
+}
 
 async function installHostedConfig(page: Page): Promise<() => string> {
   let redirectUri = "";
@@ -1047,6 +1201,18 @@ async function installFakeEngine(
             credentials: pushDevice,
           });
         }
+        if (request?.type === "load_notification_prompt_dismissal") {
+          this.emit({
+            type: "notification_prompt_dismissal_loaded",
+            command_id: id,
+            dismissed:
+              localStorage.getItem("e2e.notification-prompt-dismissed") ===
+              "true",
+          });
+        }
+        if (request?.type === "dismiss_notification_prompt") {
+          localStorage.setItem("e2e.notification-prompt-dismissed", "true");
+        }
         if (request?.type === "store_push_device") {
           pushDevice = request.credentials ?? null;
         }
@@ -1180,41 +1346,100 @@ async function installFakeEngine(
   }, holdConnection);
 }
 
-async function installPushManagerStub(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(Notification, "permission", {
-      configurable: true,
-      get: () => "granted",
-    });
-    const applicationServerKey = Uint8Array.from({ length: 65 }, (_, index) =>
-      index === 0 ? 4 : index,
-    ).buffer;
-    PushManager.prototype.getSubscription = async () => null;
-    PushManager.prototype.subscribe = async (options) => {
-      Reflect.set(globalThis, "pushSubscribeOptions", {
-        userVisibleOnly: options.userVisibleOnly,
-        applicationServerKey: Array.from(
-          new Uint8Array(options.applicationServerKey as ArrayBuffer),
-        ),
+async function installPushManagerStub(
+  page: Page,
+  initialPermission: NotificationPermission = "granted",
+  requestResult: NotificationPermission = initialPermission,
+): Promise<void> {
+  await page.addInitScript(
+    ({ initial, result }) => {
+      let permission = initial;
+      Reflect.set(globalThis, "notificationPermissionRequests", 0);
+      const PushManagerConstructor =
+        globalThis.PushManager ?? class PushManagerStub {};
+      const NotificationConstructor =
+        globalThis.Notification ?? class NotificationStub {};
+      Object.defineProperty(globalThis, "PushManager", {
+        configurable: true,
+        value: PushManagerConstructor,
       });
+      Object.defineProperty(globalThis, "Notification", {
+        configurable: true,
+        value: NotificationConstructor,
+      });
+      Object.defineProperty(NotificationConstructor, "permission", {
+        configurable: true,
+        get: () => permission,
+      });
+      Object.defineProperty(NotificationConstructor, "requestPermission", {
+        configurable: true,
+        value: () => {
+          const calls = Reflect.get(
+            globalThis,
+            "notificationPermissionRequests",
+          );
+          Reflect.set(
+            globalThis,
+            "notificationPermissionRequests",
+            typeof calls === "number" ? calls + 1 : 1,
+          );
+          permission = result;
+          return Promise.resolve(result);
+        },
+      });
+      const applicationServerKey = Uint8Array.from(
+        { length: 65 },
+        (_, index) => (index === 0 ? 4 : index),
+      ).buffer;
+      PushManagerConstructor.prototype.getSubscription = async () => null;
+      PushManagerConstructor.prototype.subscribe = async (options) => {
+        Reflect.set(globalThis, "pushSubscribeOptions", {
+          userVisibleOnly: options.userVisibleOnly,
+          applicationServerKey: Array.from(
+            new Uint8Array(options.applicationServerKey as ArrayBuffer),
+          ),
+        });
+        return {
+          endpoint: "https://fcm.googleapis.com/fcm/send/e2e",
+          expirationTime: null,
+          options: { applicationServerKey, userVisibleOnly: true },
+          getKey: (name: PushEncryptionKeyName) =>
+            name === "p256dh"
+              ? Uint8Array.from({ length: 65 }, (_, index) => index).buffer
+              : Uint8Array.from({ length: 16 }, (_, index) => index).buffer,
+          toJSON: () => ({}),
+          unsubscribe: async () => true,
+        } as PushSubscription;
+      };
+      const pushManager = Object.create(
+        PushManagerConstructor.prototype,
+      ) as PushManager;
+      const registration = { pushManager } as ServiceWorkerRegistration;
+      Object.defineProperty(ServiceWorkerContainer.prototype, "ready", {
+        configurable: true,
+        get: () => Promise.resolve(registration),
+      });
+    },
+    { initial: initialPermission, result: requestResult },
+  );
+}
+
+async function installStandaloneDisplay(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const matchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query: string) => {
+      if (query !== "(display-mode: standalone)") return matchMedia(query);
       return {
-        endpoint: "https://fcm.googleapis.com/fcm/send/e2e",
-        expirationTime: null,
-        options: { applicationServerKey, userVisibleOnly: true },
-        getKey: (name: PushEncryptionKeyName) =>
-          name === "p256dh"
-            ? Uint8Array.from({ length: 65 }, (_, index) => index).buffer
-            : Uint8Array.from({ length: 16 }, (_, index) => index).buffer,
-        toJSON: () => ({}),
-        unsubscribe: async () => true,
-      } as PushSubscription;
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => true,
+      };
     };
-    const pushManager = Object.create(PushManager.prototype) as PushManager;
-    const registration = { pushManager } as ServiceWorkerRegistration;
-    Object.defineProperty(ServiceWorkerContainer.prototype, "ready", {
-      configurable: true,
-      get: () => Promise.resolve(registration),
-    });
   });
 }
 

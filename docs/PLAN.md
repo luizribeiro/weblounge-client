@@ -428,6 +428,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     open, then increment the same persisted counter for each worker-shown notification. Hold
     account-wide delivery behind per-tab visible-and-focused leases; renewals discard ciphertext
     already read, while last-tab beacon release or expiry delivers it without hidden-page timers.
+  - [x] Offer the one-time notification permission prompt above desktop and mobile chat lists only
+    on supported, configured platforms (installed home-screen mode on iOS). Request permission
+    directly from the tap, enter the existing relay route flow on grant, hide on denial, and keep
+    explicit dismissal in the engine-owned device Settings space across reloads.
   - [ ] Add urgency policy, rate limits, engine/platform stable network identity, and the unmocked
     local-Ergo → relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)

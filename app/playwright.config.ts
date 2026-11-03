@@ -61,6 +61,12 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "webkit-notification-prompt",
+      grep: /mobile webkit notification prompt/,
+      testMatch: "**/hosted-mode.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-startup-desktop",
       testMatch: "**/startup.spec.ts",
       use: { browserName: "webkit" },

@@ -524,6 +524,25 @@ increments that counter and applies it through its own Badging API. Both sides f
 remain inert when the deployment has no `push` block. Urgency filtering, application rate limits,
 stable network identity, and the unmocked delivery chain remain later slices.
 
+### Permission prompt slice 5 implementation (2026-11-03)
+
+The desktop sidebar and mobile chat list show one compact notification prompt only when push is
+configured, Web Push is available, browser permission remains `default`, and the device has not
+dismissed it. iOS additionally requires the installed `display-mode: standalone`; Android and
+desktop browsers do not. The UI waits for the engine-owned preference read before painting, so a
+remembered dismissal never flashes during startup.
+
+The tap handler calls `Notification.requestPermission()` before doing any asynchronous work. A
+grant enters the existing subscription, relay-device, route, and IRC registration path; denial
+hides the prompt without starting push. Explicit dismissal writes a versioned record through the
+engine's Settings space. The web database now implements that approved space as its own IndexedDB
+store rather than letting the page own settings persistence.
+
+Chromium desktop, Android-profile Chromium, and installed-iPhone-profile WebKit drive the built
+app through permission, relay registration, dismissal across reload, and denial. The visible
+prompt also passes the native-feel and idle-work audit; light and dark references cover both shell
+placements.
+
 ## Rollout
 
 - **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: Ergo backups
