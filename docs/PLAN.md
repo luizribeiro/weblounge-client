@@ -249,6 +249,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     names sharing one left edge and normal in-word, theme-independent spacing (#68).
   - [x] Keep resilience scroll-preservation journeys between both transcript edges with one
     user-owned wheel input, and assert the visual row anchor across reconnects.
+  - [x] Measure reconnect scroll preservation from a fully visible message row, ignoring a row
+    whose box barely intersects the transcript while its text remains clipped, then return to the
+    live edge before asserting later traffic.
   - [x] Open direct messages from transcript authors and known nick mentions without making the
     own nick or server-buffer text interactive. Desktop mouse and keyboard activation restores
     composer focus; mobile taps preserve the closed keyboard and nickname-originated swipes keep

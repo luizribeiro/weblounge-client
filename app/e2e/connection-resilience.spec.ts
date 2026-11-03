@@ -3,6 +3,7 @@ import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
+import { visibleMessageAnchor } from "./visible-message-anchor";
 
 const channel = "#weblounge-test";
 
@@ -46,7 +47,7 @@ test.describe("connection resilience against local Ergo", () => {
           })
         : await scrollDesktopBetweenEdges(page, list, scrollDistance);
       expect(scrollTop).toBeGreaterThan(0);
-      const scrollAnchor = await visibleScrollAnchor(list);
+      const scrollAnchor = await list.evaluate(visibleMessageAnchor);
       const draft = `draft survives ${Date.now()}`;
       await composer.fill(draft);
 
@@ -88,6 +89,10 @@ test.describe("connection resilience against local Ergo", () => {
 
       bot.close();
       bot = await connectBot("resumed");
+      await list.press("End");
+      await expect(
+        page.getByRole("button", { name: /new message/ }),
+      ).toHaveCount(0);
       await sendAndExpectEcho(page, bot, `after resume ${Date.now()}`);
       await expectShellToRemain(page, channel);
     } finally {
@@ -316,20 +321,6 @@ function messageRow(page: Page, text: string, delivery: string) {
   return page
     .locator(`[data-message-row][data-delivery="${delivery}"]`)
     .filter({ has: page.getByText(text, { exact: true }) });
-}
-
-async function visibleScrollAnchor(list: ReturnType<Page["locator"]>) {
-  return list.evaluate((element) => {
-    const listTop = element.getBoundingClientRect().top;
-    const row = [
-      ...element.querySelectorAll<HTMLElement>("[data-message-row]"),
-    ].find((candidate) => candidate.getBoundingClientRect().bottom > listTop);
-    if (row === undefined) throw new Error("visible message anchor missing");
-    return {
-      offset: row.getBoundingClientRect().top - listTop,
-      text: row.dataset.messageText ?? "",
-    };
-  });
 }
 
 async function scrollDesktopBetweenEdges(
