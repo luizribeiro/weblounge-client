@@ -422,7 +422,12 @@ export function MessageList(props: MessageListProps) {
             }}
           />
         </ol>
-        <div class={styles.motionClip}>
+        <div
+          class={styles.motionClip}
+          style={{
+            height: `${Math.max(viewportHeight(), virtualizer.getTotalSize())}px`,
+          }}
+        >
           <ol
             class={styles.motionLayer}
             data-message-motion-layer="true"

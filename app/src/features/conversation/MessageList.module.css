@@ -34,6 +34,7 @@
   position: absolute;
 }
 .motionClip {
+  bottom: auto;
   overflow: clip;
 }
 .geometryLayer,

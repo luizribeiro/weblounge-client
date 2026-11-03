@@ -4,6 +4,7 @@ import {
   distanceFromBottom,
   scrollAwayFromLiveEdge,
 } from "./message-list-scroll";
+import { expectTranscriptHitTarget } from "./transcript-paint";
 
 interface AnchorFrame {
   readonly bottom: number;
@@ -134,6 +135,7 @@ async function expectLiveEdgePinned(
     JSON.stringify(frames),
   ).toBe(true);
   await expect(composer).toBeFocused();
+  await expectTranscriptHitTarget(page.locator("[data-message-list]"), "last");
 }
 
 async function expectScrolledAnchorFixed(
@@ -149,6 +151,7 @@ async function expectScrolledAnchorFixed(
     new Set([frames[0]?.top]),
   );
   await expect(composer).toBeFocused();
+  await expectTranscriptHitTarget(page.locator("[data-message-list]"));
 }
 
 async function startAnchorRecording(

@@ -2,6 +2,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
+import { expectTranscriptHitTarget } from "./transcript-paint";
 
 test.describe("mobile text field zoom", () => {
   test.use({
@@ -404,6 +405,7 @@ test.describe("mobile text field zoom", () => {
       await expect(root).toHaveAttribute("data-keyboard", "open");
       await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
       await expect(composer).toHaveCSS("padding-bottom", "14px");
+      await expectTranscriptHitTarget(messages, "last");
 
       const coldClosing = await sampleKeyboardTransition(
         page,
@@ -413,6 +415,7 @@ test.describe("mobile text field zoom", () => {
       expectClosingKeyboardMotion(coldClosing);
       await expect(root).toHaveAttribute("data-keyboard", "closed");
       await expect(composer).toHaveCSS("padding-bottom", "34px");
+      await expectTranscriptHitTarget(messages, "last");
 
       const warmOpening = await sampleKeyboardTransition(
         page,
@@ -422,6 +425,7 @@ test.describe("mobile text field zoom", () => {
       expectOpeningKeyboardMotion(warmOpening);
       await expect(root).toHaveAttribute("data-keyboard", "open");
       await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+      await expectTranscriptHitTarget(messages, "last");
 
       const warmClosing = await sampleKeyboardTransition(
         page,
@@ -431,6 +435,7 @@ test.describe("mobile text field zoom", () => {
       expectClosingKeyboardMotion(warmClosing);
       await expect(root).toHaveAttribute("data-keyboard", "closed");
       await expect(composer).toHaveCSS("transition-duration", "0s");
+      await expectTranscriptHitTarget(messages, "last");
     } finally {
       for (const bot of bots) bot.close();
     }
@@ -442,20 +447,37 @@ test.describe("mobile text field zoom", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await installVisualViewportHook(page);
     await openChannel(page);
-    const openHeight = (await page.evaluate(() => innerHeight)) - 358;
-
-    const opening = await sampleKeyboardTransition(page, "open", openHeight);
-
-    expectReducedMotionKeyboardLayout(opening, "open");
-    await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
-
-    const closing = await sampleKeyboardTransition(
-      page,
-      "close",
-      await page.evaluate(() => innerHeight),
+    const suffix = Date.now().toString(36);
+    const bot = await IrcClient.connect(
+      `reduced-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
     );
+    try {
+      const marker = `reduced motion row ${suffix}`;
+      await bot.privmsgConfirmed("#weblounge-test", marker);
+      await expect(page.getByText(marker, { exact: true })).toBeVisible();
+      const openHeight = (await page.evaluate(() => innerHeight)) - 358;
 
-    expectReducedMotionKeyboardLayout(closing, "closed");
+      const opening = await sampleKeyboardTransition(page, "open", openHeight);
+
+      expectReducedMotionKeyboardLayout(opening, "open");
+      await expect.poll(() => composerKeyboardGap(page)).toBeLessThanOrEqual(1);
+      const messages = page.locator("[data-message-list]");
+      await expectTranscriptHitTarget(messages, "last");
+
+      const closing = await sampleKeyboardTransition(
+        page,
+        "close",
+        await page.evaluate(() => innerHeight),
+      );
+
+      expectReducedMotionKeyboardLayout(closing, "closed");
+      await expectTranscriptHitTarget(messages, "last");
+    } finally {
+      bot.close();
+    }
   });
 
   test("keeps drawer fields at the initial scale", async ({ page }) => {

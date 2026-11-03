@@ -311,6 +311,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     while preserving the visible anchor after the reader scrolls away.
   - [x] Re-pin a root-owned live transcript synchronously on every app-geometry commit, after
     reconciling its viewport rectangle and before the keyboard transform animates the row layer.
+  - [x] Size the transcript motion clip to the full virtual content height while retaining at
+    least the viewport height for short channels. Desktop and mobile browser coverage hit-tests
+    painted rows and checks screenshot variance at the live edge, midpoint, and top; composer and
+    keyboard-motion final states carry the same paint invariant.
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;
