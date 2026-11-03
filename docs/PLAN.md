@@ -201,6 +201,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep the transcript's touch-action boundary vertical so WebKit cannot cancel an in-app
     edge swipe while preserving long-press message selection.
   - [x] Synchronize desktop buffer routes in Firefox and restore the addressed channel on reload.
+  - [x] Make the reload journey wait for the selected channel's coalesced chat-list snapshot before
+    navigating, so Firefox SharedWorker teardown cannot race the state needed for restoration.
   - [x] Keep joined-buffer snapshots from overriding committed desktop selection before command
     focus arrives.
   - [x] Keep unresolved buffer routes above provisional startup fallbacks while explicit engine

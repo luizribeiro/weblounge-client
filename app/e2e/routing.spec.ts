@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 test.describe("buffer routing against local Ergo", () => {
   test.skip(
@@ -22,6 +22,7 @@ test.describe("buffer routing against local Ergo", () => {
     await expect(page).toHaveURL(
       new RegExp(`/Local%20Ergo/${channel.slice(1)}$`, "u"),
     );
+    await expect.poll(() => cachedChatList(page)).toContain(channel);
 
     await page.evaluate(() => {
       const url = new URL(location.href);
@@ -35,3 +36,28 @@ test.describe("buffer routing against local Ergo", () => {
     );
   });
 });
+
+async function cachedChatList(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge", 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    try {
+      const snapshot = await new Promise<unknown>((resolve, reject) => {
+        const request = database
+          .transaction("cache")
+          .objectStore("cache")
+          .get(new TextEncoder().encode("chat-list-snapshot"));
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      return snapshot instanceof Uint8Array
+        ? new TextDecoder().decode(snapshot)
+        : "";
+    } finally {
+      database.close();
+    }
+  });
+}
