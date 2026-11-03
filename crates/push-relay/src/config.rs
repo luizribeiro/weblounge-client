@@ -49,6 +49,10 @@ pub struct Config {
     )]
     pub origin: Url,
 
+    /// Browser origins allowed to call the device and route APIs.
+    #[arg(long, env = "PUSH_RELAY_ALLOWED_ORIGINS", value_delimiter = ',')]
+    pub allowed_origins: Vec<Url>,
+
     /// PEM file containing the relay's P-256 VAPID private key.
     #[arg(long, env = "PUSH_RELAY_VAPID_KEY_FILE")]
     pub vapid_key_file: PathBuf,
@@ -95,6 +99,20 @@ impl Config {
                 "--concierge-url must use HTTP or HTTPS".to_owned(),
             ));
         }
+        for origin in &self.allowed_origins {
+            if !matches!(origin.scheme(), "http" | "https")
+                || origin.cannot_be_a_base()
+                || !origin.username().is_empty()
+                || origin.password().is_some()
+                || origin.path() != "/"
+                || origin.query().is_some()
+                || origin.fragment().is_some()
+            {
+                return Err(Error::Config(
+                    "--allowed-origins values must be exact HTTP or HTTPS origins".to_owned(),
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -102,6 +120,9 @@ impl Config {
 #[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::PermissionsExt as _;
+
+    use clap::Parser as _;
+    use url::Url;
 
     #[tokio::test]
     async fn state_directory_is_private() {
@@ -116,5 +137,44 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o700);
+    }
+
+    #[test]
+    fn parses_and_validates_comma_separated_allowed_origins() {
+        let config = super::Config::try_parse_from([
+            "push-relay",
+            "--allowed-origins",
+            "https://beta.weblounge.org,http://localhost:5173",
+            "--vapid-key-file",
+            "vapid.pem",
+            "--concierge-url",
+            "http://127.0.0.1/introspect",
+            "--concierge-secret-file",
+            "concierge.secret",
+        ])
+        .expect("configuration");
+
+        config.validate().expect("valid origins");
+        assert_eq!(config.allowed_origins.len(), 2);
+    }
+
+    #[test]
+    fn rejects_allowed_origin_with_more_than_an_origin() {
+        let mut config = super::Config::try_parse_from([
+            "push-relay",
+            "--allowed-origins",
+            "https://beta.weblounge.org/client",
+            "--vapid-key-file",
+            "vapid.pem",
+            "--concierge-url",
+            "http://127.0.0.1/introspect",
+            "--concierge-secret-file",
+            "concierge.secret",
+        ])
+        .expect("configuration");
+
+        assert!(config.validate().is_err());
+        config.allowed_origins = vec![Url::parse("ftp://beta.weblounge.org").expect("URL")];
+        assert!(config.validate().is_err());
     }
 }

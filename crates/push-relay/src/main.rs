@@ -42,7 +42,14 @@ async fn run() -> weblounge_push_relay::Result<()> {
     let concierge = ConciergeClient::new(config.concierge_url.clone(), secret)?;
     let targets = EndpointValidator::production();
     let sender = WebPushSender::new(&vapid_key, targets.clone())?;
-    let service = app(database, concierge, sender, targets, &config.origin);
+    let service = app(
+        database,
+        concierge,
+        sender,
+        targets,
+        &config.origin,
+        &config.allowed_origins,
+    );
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     axum::serve(listener, service).await.map_err(Into::into)
 }

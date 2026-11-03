@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{Method, Request, StatusCode},
+    http::{HeaderValue, Method, Request, StatusCode, header},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use p256::{
@@ -31,6 +31,7 @@ use weblounge_push_relay::{
 };
 
 const ORIGIN: &str = "https://push.weblounge.test";
+const CLIENT_ORIGIN: &str = "https://beta.weblounge.test";
 type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32)>>>;
 
 #[derive(Clone)]
@@ -119,6 +120,7 @@ impl Harness {
             },
             targets,
             &Url::parse(ORIGIN).expect("origin"),
+            &[Url::parse(CLIENT_ORIGIN).expect("client origin")],
         );
         Self {
             _temporary: temporary,
@@ -186,6 +188,155 @@ impl Harness {
         .await;
         assert_eq!(response.0, StatusCode::NO_CONTENT);
     }
+}
+
+#[tokio::test]
+async fn allowed_client_preflight_reflects_the_origin_and_api_contract() {
+    let harness = Harness::new().await;
+    let response = harness
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/v1/devices")
+                .header(header::ORIGIN, CLIENT_ORIGIN)
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header(
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "authorization,content-type",
+                )
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
+        Some(&HeaderValue::from_static(CLIENT_ORIGIN))
+    );
+    assert_eq!(
+        response.headers().get(header::ACCESS_CONTROL_ALLOW_HEADERS),
+        Some(&HeaderValue::from_static("authorization,content-type"))
+    );
+    let methods = response
+        .headers()
+        .get(header::ACCESS_CONTROL_ALLOW_METHODS)
+        .expect("allowed methods")
+        .to_str()
+        .expect("method header");
+    assert!(methods.split(',').any(|method| method.trim() == "POST"));
+    assert!(methods.split(',').any(|method| method.trim() == "PUT"));
+    assert!(methods.split(',').any(|method| method.trim() == "DELETE"));
+}
+
+#[tokio::test]
+async fn disallowed_client_preflight_has_no_cors_permission() {
+    let harness = Harness::new().await;
+    let response = harness
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/v1/devices")
+                .header(header::ORIGIN, "https://attacker.example")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn allowed_actual_client_response_reflects_origin_and_varies() {
+    let harness = Harness::new().await;
+    let public = harness
+        .subscription_key
+        .public_key()
+        .to_encoded_point(false);
+    let body = serde_json::to_vec(&json!({
+        "target": {
+            "platform": "web_push",
+            "endpoint": "https://push.example/send/device",
+            "p256dh": URL_SAFE_NO_PAD.encode(public.as_bytes()),
+            "auth": URL_SAFE_NO_PAD.encode([7_u8; 16]),
+        }
+    }))
+    .expect("request JSON");
+    let response = harness
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/v1/devices")
+                .header(header::ORIGIN, CLIENT_ORIGIN)
+                .header(header::AUTHORIZATION, "Bearer member-session")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(
+        response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
+        Some(&HeaderValue::from_static(CLIENT_ORIGIN))
+    );
+    assert!(
+        response
+            .headers()
+            .get_all(header::VARY)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .flat_map(|value| value.split(','))
+            .any(|value| value.trim().eq_ignore_ascii_case("origin"))
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn public_push_ingress_never_emits_cors_headers() {
+    let harness = Harness::new().await;
+    let response = harness
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/v1/r/missing-route")
+                .header(header::ORIGIN, CLIENT_ORIGIN)
+                .body(Body::from("ciphertext"))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none()
+    );
+    assert!(response.headers().get(header::VARY).is_none());
 }
 
 #[tokio::test]

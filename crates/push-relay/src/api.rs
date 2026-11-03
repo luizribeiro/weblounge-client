@@ -4,13 +4,14 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, Path, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use p256::PublicKey;
 use serde::{Deserialize, Serialize};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use url::Url;
 
 use crate::{
@@ -42,6 +43,7 @@ pub fn app(
     sender: impl PushSender,
     targets: EndpointValidator,
     origin: &Url,
+    allowed_origins: &[Url],
 ) -> App {
     let state = AppState {
         database,
@@ -50,17 +52,31 @@ pub fn app(
         targets,
         origin: origin.origin().ascii_serialization(),
     };
-    Router::new()
-        .route("/healthz", get(health))
+    let client_api = Router::new()
         .route("/v1/devices", post(create_device))
         .route("/v1/devices/{device}/routes", post(create_route))
         .route("/v1/routes/{route}/active", put(activate_route))
         .route("/v1/routes/{route}", delete(delete_route))
+        .layer(client_cors(allowed_origins));
+    Router::new()
+        .route("/healthz", get(health))
+        .merge(client_api)
         .route(
             "/v1/r/{route}",
             post(receive_push).layer(DefaultBodyLimit::max(MAX_HOME_BODY)),
         )
         .with_state(state)
+}
+
+fn client_cors(allowed_origins: &[Url]) -> CorsLayer {
+    let origins = allowed_origins.iter().map(|origin| {
+        HeaderValue::from_str(&origin.origin().ascii_serialization())
+            .expect("validated origins are HTTP header values")
+    });
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 
 async fn health(State(state): State<AppState>) -> Result<Response> {
