@@ -222,6 +222,8 @@ fn bound_allows_end(bound: &KeyBound, key: &[u8]) -> bool {
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 mod indexed_db {
+    use std::future::IntoFuture;
+
     use idb::{
         CursorDirection, Database, DatabaseEvent, Factory, KeyRange as IdbKeyRange,
         ObjectStoreParams, Query, TransactionMode,
@@ -328,7 +330,38 @@ mod indexed_db {
                     }
                 }
             });
-            let database = request.await.map_err(open_error)?;
+            let (blocked_sender, mut blocked_receiver) = tokio::sync::oneshot::channel();
+            request.on_blocked(move |_| {
+                let _ = blocked_sender.send(());
+            });
+            let mut opening = Box::pin(request.into_future());
+            let result = tokio::select! {
+                result = &mut opening => Some(result),
+                blocked = &mut blocked_receiver => {
+                    if blocked.is_err() {
+                        return Err(StorageError::Unavailable(
+                            "IndexedDB blocked handler stopped unexpectedly".into(),
+                        ));
+                    }
+                    None
+                }
+            };
+            let Some(result) = result else {
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Ok(database) = opening.await {
+                        database.close();
+                    }
+                });
+                return Err(StorageError::Unavailable(
+                    "IndexedDB upgrade is blocked by another page".into(),
+                ));
+            };
+            let mut database = result.map_err(open_error)?;
+            database.on_version_change(|event| {
+                if let Ok(database) = event.database() {
+                    database.close();
+                }
+            });
             if [CACHE_STORE, DURABLE_STORE]
                 .iter()
                 .any(|required| !database.store_names().iter().any(|name| name == required))
