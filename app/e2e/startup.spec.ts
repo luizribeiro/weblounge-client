@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
+import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 
 test.use({
@@ -574,30 +575,25 @@ async function seedChatListSnapshot(
   page: Page,
   snapshot: Record<string, unknown>,
 ): Promise<void> {
-  await page.evaluate(async (record) => {
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge", 1);
-      request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains("cache"))
-          request.result.createObjectStore("cache");
-      };
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction("cache", "readwrite");
-      transaction
-        .objectStore("cache")
-        .put(
-          new TextEncoder().encode(JSON.stringify(record)),
-          new TextEncoder().encode("chat-list-snapshot"),
-        );
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
-    database.close();
-  }, snapshot);
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(async (value, record) => {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = value.transaction("cache", "readwrite");
+        transaction
+          .objectStore("cache")
+          .put(
+            new TextEncoder().encode(JSON.stringify(record)),
+            new TextEncoder().encode("chat-list-snapshot"),
+          );
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }, snapshot);
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 interface ShimmerObservation {

@@ -1,4 +1,5 @@
 import { devices, expect, type Page, test } from "@playwright/test";
+import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 import {
   distanceFromBottom,
@@ -876,45 +877,44 @@ async function seedCachedDirect(
   } else {
     endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
   }
-  await page.evaluate(
-    async ({ fingerprint, nick, text }) => {
-      const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge", 1);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction("cache", "readwrite");
-        transaction.objectStore("cache").put(
-          new TextEncoder().encode(
-            JSON.stringify({
-              schema: 4,
-              fingerprint,
-              rows: [
-                {
-                  conversation: { kind: "direct", key: nick },
-                  title: nick,
-                  last_activity_ms: Date.now(),
-                  badge: { kind: "mentions", count: 2, mentions: 2 },
-                  preview: `${nick}: ${text}`,
-                },
-              ],
-            }),
-          ),
-          new TextEncoder().encode("chat-list-snapshot"),
-        );
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error);
-      });
-      database.close();
-    },
-    {
-      fingerprint: `${"Local Ergo".length}:Local Ergo${endpoint.href.length}:${endpoint.href}`,
-      nick,
-      text,
-    },
-  );
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(
+      async (value, { fingerprint, nick, text }) => {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = value.transaction("cache", "readwrite");
+          transaction.objectStore("cache").put(
+            new TextEncoder().encode(
+              JSON.stringify({
+                schema: 4,
+                fingerprint,
+                rows: [
+                  {
+                    conversation: { kind: "direct", key: nick },
+                    title: nick,
+                    last_activity_ms: Date.now(),
+                    badge: { kind: "mentions", count: 2, mentions: 2 },
+                    preview: `${nick}: ${text}`,
+                  },
+                ],
+              }),
+            ),
+            new TextEncoder().encode("chat-list-snapshot"),
+          );
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      },
+      {
+        fingerprint: `${"Local Ergo".length}:Local Ergo${endpoint.href.length}:${endpoint.href}`,
+        nick,
+        text,
+      },
+    );
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 async function expectMeasuredTimeline(

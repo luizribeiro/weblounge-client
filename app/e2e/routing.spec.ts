@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { useDedicatedWorker } from "./production-ergo";
 
 const fixtureChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
@@ -82,15 +83,11 @@ async function restoreDebugPassword(page: Page): Promise<void> {
 }
 
 async function cachedChatList(page: Page): Promise<string> {
-  return page.evaluate(async () => {
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-    try {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(async (value) => {
       const snapshot = await new Promise<unknown>((resolve, reject) => {
-        const request = database
+        const request = value
           .transaction("cache")
           .objectStore("cache")
           .get(new TextEncoder().encode("chat-list-snapshot"));
@@ -100,22 +97,18 @@ async function cachedChatList(page: Page): Promise<string> {
       return snapshot instanceof Uint8Array
         ? new TextDecoder().decode(snapshot)
         : "";
-    } finally {
-      database.close();
-    }
-  });
+    });
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 async function deleteCachedChatList(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-    try {
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(async (value) => {
       await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction("cache", "readwrite");
+        const transaction = value.transaction("cache", "readwrite");
         transaction
           .objectStore("cache")
           .delete(new TextEncoder().encode("chat-list-snapshot"));
@@ -123,8 +116,8 @@ async function deleteCachedChatList(page: Page): Promise<void> {
         transaction.onerror = () => reject(transaction.error);
         transaction.oncomplete = () => resolve();
       });
-    } finally {
-      database.close();
-    }
-  });
+    });
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }

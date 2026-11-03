@@ -407,6 +407,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     sign-out. Unit tests cover config, relay calls, subscription and state synchronization;
     Chromium covers the built and development page through a fake relay to the engine boundary.
     The real local-Ergo probe still waits for the design's TEST-NET/TLS test seam.
+  - [x] Keep browser IndexedDB fixtures on the engine's generated database name, schema version,
+    and store set. One shared Playwright helper upgrades the test database exactly like the engine,
+    so future schema bumps cannot strand startup, routing, or cached-history journeys on an old
+    hard-coded version.
   - [ ] Add foreground leases and held pushes, urgency policy, rate limits, engine/platform
     stable network identity, service-worker delivery, and the local-Ergo delivery and Playwright
     notification journeys.

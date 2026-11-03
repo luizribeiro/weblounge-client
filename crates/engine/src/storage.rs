@@ -2,6 +2,13 @@
 
 use std::{collections::BTreeMap, sync::Mutex};
 
+/// Browser database name shared with generated test support.
+pub const WEB_DATABASE_NAME: &str = "weblounge";
+/// Current browser database schema version.
+pub const WEB_DATABASE_VERSION: u32 = 2;
+/// Object stores created by the current browser database schema.
+pub const WEB_DATABASE_STORES: [&str; 2] = ["cache", "durable"];
+
 /// One storage namespace with a distinct persistence contract.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Space {
@@ -233,12 +240,11 @@ mod indexed_db {
 
     use super::{
         Direction, KeyBound, KeyRange, KvBackend, MemoryKv, Operation, Page, Space, StorageError,
+        WEB_DATABASE_NAME, WEB_DATABASE_STORES, WEB_DATABASE_VERSION,
     };
 
-    const DATABASE_NAME: &str = "weblounge";
-    const DATABASE_VERSION: u32 = 2;
-    const CACHE_STORE: &str = "cache";
-    const DURABLE_STORE: &str = "durable";
+    const CACHE_STORE: &str = WEB_DATABASE_STORES[0];
+    const DURABLE_STORE: &str = WEB_DATABASE_STORES[1];
 
     /// The worker-safe IndexedDB backend used by web engines.
     #[derive(Debug)]
@@ -318,13 +324,13 @@ mod indexed_db {
         pub async fn open() -> Result<Self, StorageError> {
             let factory = Factory::new().map_err(open_error)?;
             let mut request = factory
-                .open(DATABASE_NAME, Some(DATABASE_VERSION))
+                .open(WEB_DATABASE_NAME, Some(WEB_DATABASE_VERSION))
                 .map_err(open_error)?;
             request.on_upgrade_needed(|event| {
                 let Ok(database) = event.database() else {
                     return;
                 };
-                for store in [CACHE_STORE, DURABLE_STORE] {
+                for store in WEB_DATABASE_STORES {
                     if !database.store_names().iter().any(|name| name == store) {
                         let _ = database.create_object_store(store, ObjectStoreParams::new());
                     }
