@@ -99,3 +99,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 91 | 2026-11-02 | Beta 35682e7: channels with scrollback render as an empty background; messages occluded (keyboard-animation clip layer). Beta rolled back to b6dc15b. | fixed (76804eb: motion clip now spans the content), awaiting CI and beta |
 | 92 | 2026-11-02 | /version (and other local notices like "alice is now bob") render as "Topic: … set by weblounge". | fixed locally; awaiting review |
 | 93 | 2026-11-03 | Reopening the PWA often shows no new messages (seen in DMs, maybe channels) until the app is restarted. | investigating |
+| 94 | 2026-11-03 | Request: show loading (connecting/fetching history) on the conversation title, e.g. the logo shimmer on the channel name. | in progress |
