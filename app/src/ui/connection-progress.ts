@@ -13,9 +13,9 @@ export type ConnectionProgressPhase =
   | "reduced";
 
 interface ConnectionProgressOptions {
+  readonly atRest: () => boolean;
   readonly interrupted: Accessor<boolean>;
   readonly prefersReducedMotion: Accessor<boolean>;
-  readonly sweepPosition: () => number;
 }
 
 export interface ConnectionProgress {
@@ -25,13 +25,16 @@ export interface ConnectionProgress {
   readonly handleAnimationIteration: (event: AnimationEvent) => void;
 }
 
-export function readConnectionSweep(element: Element | undefined): number {
-  if (element === undefined) return Number.NEGATIVE_INFINITY;
-  const value = getComputedStyle(element).getPropertyValue(
-    "--wl-connection-sweep",
-  );
-  const position = Number.parseFloat(value);
-  return Number.isFinite(position) ? position : Number.NEGATIVE_INFINITY;
+export function connectionSweepAtRest(element: Element | undefined): boolean {
+  if (element === undefined || typeof element.getAnimations !== "function")
+    return false;
+  const animation = element.getAnimations().find((candidate) => {
+    const timing = candidate.effect?.getTiming();
+    return timing?.duration === 1_000;
+  });
+  const currentTime = animation?.currentTime;
+  if (typeof currentTime !== "number") return false;
+  return currentTime % 1_000 >= 750;
 }
 
 export function createConnectionProgress(
@@ -52,7 +55,7 @@ export function createConnectionProgress(
       return;
     }
     if (phase() === "loading") {
-      setPhase(options.sweepPosition() >= 205 ? "filling" : "finishing");
+      setPhase(options.atRest() ? "filling" : "finishing");
     } else if (phase() === "reduced" || options.interrupted()) {
       setPhase("idle");
     }

@@ -23,8 +23,8 @@ import {
 import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import {
+  connectionSweepAtRest,
   createConnectionProgress,
-  readConnectionSweep,
 } from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatList.module.css";
@@ -93,9 +93,9 @@ export function MobileChatList(props: MobileChatListProps) {
   const connection = () =>
     connectionPresentation(props.networks, props.hydrating);
   const progress = createConnectionProgress(() => connection().progressing, {
+    atRest: () => connectionSweepAtRest(header),
     interrupted: () => connection().error !== undefined,
     prefersReducedMotion: platform.prefersReducedMotion,
-    sweepPosition: () => readConnectionSweep(header),
   });
   createEffect(() => {
     props.restoreVersion();
@@ -128,6 +128,7 @@ export function MobileChatList(props: MobileChatListProps) {
       <header
         class={styles.header}
         data-connection-brand="true"
+        data-connection-shimmer="true"
         data-connection-phase={
           progress.phase() === "idle" ? undefined : progress.phase()
         }

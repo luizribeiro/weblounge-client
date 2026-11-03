@@ -7,9 +7,9 @@ it("waits for the loading iteration before running the final fill", () => {
   const [progressing, setProgressing] = createSignal(true);
   const { container } = render(() => {
     const progress = createConnectionProgress(progressing, {
+      atRest: () => false,
       interrupted: () => false,
       prefersReducedMotion: () => false,
-      sweepPosition: () => 100,
     });
     return (
       <div
@@ -34,9 +34,9 @@ it("starts the final fill immediately from the loading rest phase", () => {
   const [progressing, setProgressing] = createSignal(true);
   const { container } = render(() => {
     const progress = createConnectionProgress(progressing, {
+      atRest: () => true,
       interrupted: () => false,
       prefersReducedMotion: () => false,
-      sweepPosition: () => 205,
     });
     return <div data-phase={progress.phase()} />;
   });
@@ -51,9 +51,9 @@ it("uses a static loading phase with reduced motion and snaps to idle", () => {
   const [progressing, setProgressing] = createSignal(true);
   const { container } = render(() => {
     const progress = createConnectionProgress(progressing, {
+      atRest: () => false,
       interrupted: () => false,
       prefersReducedMotion: () => true,
-      sweepPosition: () => 100,
     });
     return <div data-phase={progress.phase()} />;
   });

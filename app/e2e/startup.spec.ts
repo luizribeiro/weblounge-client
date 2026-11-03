@@ -537,6 +537,7 @@ async function installSnapshotSwapEngine(
     id: index + 2,
     network_id: 1,
     kind: "direct",
+    sync_state: "pending",
     cached: true,
     title: row.title,
     draft_key: `Local Ergo:${row.title}`,
@@ -551,6 +552,7 @@ async function installSnapshotSwapEngine(
     const { cached: _, cached_preview: text, ...projection } = buffer;
     return {
       ...projection,
+      sync_state: "synced",
       last_message: {
         id: index + 1,
         author: buffer.title,
@@ -772,6 +774,7 @@ async function installHistoryStallEngine(
                 id: 2,
                 network_id: 1,
                 kind: "channel",
+                sync_state: "synced",
                 title: "#weblounge-test",
                 draft_key: "test:#weblounge-test",
                 topic: null,
@@ -866,6 +869,7 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
       id,
       network_id: 1,
       kind: "channel",
+      sync_state: cached ? "pending" : "synced",
       title,
       draft_key: `test:${title}`,
       topic: null,

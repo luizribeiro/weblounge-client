@@ -6,6 +6,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { bufferSyncPresentation } from "../../engine/buffer-sync";
 import {
   connectionPresentation,
   connectionStateKind,
@@ -20,6 +21,7 @@ import type {
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import { t } from "../../features/composer/strings";
+import { ConversationTitle } from "../../features/conversation/ConversationTitle";
 import {
   DirectIdentityBanner,
   directIdentityBlocked,
@@ -78,6 +80,8 @@ export function MobileConversation(props: MobileConversationProps) {
       props.network === undefined ? [] : [props.network],
       props.hydrating,
     );
+  const sync = () =>
+    bufferSyncPresentation(props.buffer, props.network, props.hydrating);
   const bufferId = createMemo(() => props.buffer.id);
   const unread = createMemo(() => props.buffer.unread);
   const newestMessageId = createMemo(() =>
@@ -140,9 +144,7 @@ export function MobileConversation(props: MobileConversationProps) {
           <span aria-hidden="true">‹</span>
         </button>
         <span class={styles.chatIdentity}>
-          <h2>
-            <Line>{props.buffer.title}</Line>
-          </h2>
+          <ConversationTitle sync={sync} title={props.buffer.title} />
           <Line class={styles.subtitle}>
             {props.buffer.kind === "direct" ? (
               "Direct message"

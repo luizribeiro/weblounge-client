@@ -9,8 +9,8 @@ import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import {
+  connectionSweepAtRest,
   createConnectionProgress,
-  readConnectionSweep,
 } from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 import {
@@ -50,9 +50,9 @@ export function Sidebar(props: SidebarProps) {
   const connection = () =>
     connectionPresentation(props.networks, props.hydrating);
   const progress = createConnectionProgress(() => connection().progressing, {
+    atRest: () => connectionSweepAtRest(brand),
     interrupted: () => connection().error !== undefined,
     prefersReducedMotion: platform.prefersReducedMotion,
-    sweepPosition: () => readConnectionSweep(brand),
   });
   const run = (id: UiActionId, target?: SidebarBuffer) =>
     props.registry.run(id, {
@@ -104,6 +104,7 @@ export function Sidebar(props: SidebarProps) {
       <div
         class={styles.brand}
         data-connection-brand="true"
+        data-connection-shimmer="true"
         data-connection-phase={
           progress.phase() === "idle" ? undefined : progress.phase()
         }

@@ -348,10 +348,15 @@ async function expectTransientConnectionPresentation(
           errors: document.querySelectorAll("[data-connection-error]").length,
           indicators: document.querySelectorAll("[data-connection-indicator]")
             .length,
-          progress: progress.length,
+          brandProgress: document.querySelectorAll(
+            "[data-connection-brand][data-connection-progress]",
+          ).length,
           statusCopy: /Connecting|Reconnecting|Offline/u.test(
             document.body.innerText,
           ),
+          titleProgress: document.querySelectorAll(
+            "[data-conversation-title][data-connection-progress]",
+          ).length,
           visible: mobileShell || visible,
         };
       }, mobile),
@@ -359,8 +364,9 @@ async function expectTransientConnectionPresentation(
     .toEqual({
       errors: 0,
       indicators: 0,
-      progress: 1,
+      brandProgress: 1,
       statusCopy: false,
+      titleProgress: 1,
       visible: true,
     });
 }

@@ -296,6 +296,7 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
       id,
       network_id: 1,
       kind: "channel",
+      sync_state: cached ? "pending" : "synced",
       title,
       draft_key: `test:${title}`,
       topic: null,

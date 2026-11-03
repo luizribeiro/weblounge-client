@@ -14,6 +14,7 @@ it("renders one-line identity and routes both header controls", () => {
       onToggleMembers={toggleMembers}
       onToggleSidebar={toggleSidebar}
       sidebarTooltip="Toggle channel list (Ctrl+Alt+S)"
+      sync={() => ({ interrupted: false, progressing: false })}
       title="#lounge"
       topic="A very long channel topic"
     />
@@ -50,6 +51,7 @@ it("switches from a channel with a cleared topic to a DM", () => {
       onToggleMembers={() => {}}
       onToggleSidebar={() => {}}
       sidebarTooltip="Toggle channel list"
+      sync={() => ({ interrupted: false, progressing: false })}
       title={active().title}
       topic={topicShown() ? active().title : undefined}
     />

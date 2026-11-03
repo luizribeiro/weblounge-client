@@ -469,12 +469,15 @@ it("reveals and navigates a cached chat list before live synchronization", async
       },
     ],
   });
-  const progressLogo = container.querySelector("[data-connection-progress]");
-  if (!(progressLogo instanceof HTMLElement))
-    throw new Error("missing connection progress logo");
-  fireEvent.animationIteration(progressLogo);
-  expect(progressLogo).toHaveAttribute("data-connection-phase", "filling");
-  fireEvent.animationEnd(progressLogo);
+  const progressElements = container.querySelectorAll(
+    "[data-connection-progress]",
+  );
+  expect(progressElements).toHaveLength(2);
+  for (const element of progressElements) {
+    fireEvent.animationIteration(element);
+    expect(element).toHaveAttribute("data-connection-phase", "filling");
+    fireEvent.animationEnd(element);
+  }
   await waitFor(() =>
     expect(container.querySelector("[data-connection-progress]")).toBeNull(),
   );

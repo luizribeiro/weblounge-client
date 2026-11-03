@@ -156,6 +156,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Fill the dimmed logo and title with one real-colour connection band while a cached chat
     list hydrates, then finish the current cycle and one final filling pass when the complete live
     list replaces the cache. Reduced motion stays static; connected and hidden states do no work.
+  - [x] Reuse that connection fill on the active desktop and mobile conversation title while its
+    engine-owned buffer sync is pending. Initial history, reconnect catch-up, cached resolution,
+    interruption, reduced motion, hidden pages, and the shared final pass follow one presentation
+    controller without UI timers.
   - [x] Sync read markers through papo on restore, live remote advances, and a 500ms foreground
     live-edge dwell. DMs count every peer message as a mention; unread-only rows keep the subtle
     dot while mentions use the accent count badge on both shells. Cross-context coverage targets

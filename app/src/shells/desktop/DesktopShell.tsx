@@ -12,6 +12,7 @@ import {
   ActionRegistry,
   type UiActionId,
 } from "../../actions/action-registry";
+import { bufferSyncPresentation } from "../../engine/buffer-sync";
 import type {
   BufferProjection,
   CommandSpec,
@@ -127,6 +128,16 @@ export function DesktopShell(props: DesktopShellProps) {
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
   const activeBufferId = createMemo(() => activeBuffer()?.id);
+  const activeBufferSync = createMemo(() => {
+    const buffer = activeBuffer();
+    return buffer === undefined
+      ? { interrupted: false, progressing: false }
+      : bufferSyncPresentation(
+          buffer,
+          props.networks.find((network) => network.id === buffer.network_id),
+          props.hydrating,
+        );
+  });
   const activeUnread = createMemo(() => activeBuffer()?.unread ?? 0);
   const newestMessageId = createMemo(() =>
     newestCommittedMessageId(props.messages.get(activeBufferId() ?? -1) ?? []),
@@ -368,6 +379,7 @@ export function DesktopShell(props: DesktopShellProps) {
               onToggleMembers={() => run("members.toggle")}
               onToggleSidebar={() => run("sidebar.toggle")}
               sidebarTooltip={tooltip(registry, "sidebar.toggle")}
+              sync={activeBufferSync}
               title={activeBuffer()?.title ?? ""}
               topic={activeBuffer()?.topic ?? undefined}
             />

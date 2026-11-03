@@ -1,10 +1,13 @@
 import type { JSX } from "solid-js";
+import type { BufferSyncPresentation } from "../../engine/buffer-sync";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./ConversationHeader.module.css";
+import { ConversationTitle } from "./ConversationTitle";
 
 interface ConversationHeaderProps {
   readonly title: string;
+  readonly sync: () => BufferSyncPresentation;
   readonly topic?: string | undefined;
   readonly sidebarTooltip: string;
   readonly membersTooltip: string;
@@ -27,9 +30,11 @@ export function ConversationHeader(props: ConversationHeaderProps) {
         <span aria-hidden="true">☰</span>
       </button>
       <div class={styles.identity}>
-        <h2 class={styles.title}>
-          <Line>{props.title}</Line>
-        </h2>
+        <ConversationTitle
+          class={styles.title}
+          sync={props.sync}
+          title={props.title}
+        />
         {props.topic !== undefined && props.topic !== "" && (
           <Line class={styles.topic}>
             <Selectable surfaceId="conversation-topic">

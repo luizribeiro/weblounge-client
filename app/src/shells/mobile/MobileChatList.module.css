@@ -11,6 +11,10 @@
   --wl-connection-fg: var(--wl-color-fg);
   --wl-connection-gap: 10px;
   --wl-connection-logo-size: 36px;
+  --wl-connection-title-offset: calc(
+    var(--wl-connection-logo-size) +
+    var(--wl-connection-gap)
+  );
   align-items: center;
   display: flex;
   gap: var(--wl-connection-gap);

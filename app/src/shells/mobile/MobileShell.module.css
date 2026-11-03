@@ -157,6 +157,10 @@
   text-align: center;
 }
 .chatIdentity h2 {
+  --wl-connection-bg: var(--wl-color-surface);
+  --wl-connection-fg: var(--wl-color-fg);
+  --wl-connection-fill-end: calc(100% + 50px);
+  --wl-connection-sweep-end: calc(100% + 30px);
   font-size: 16px;
   margin: 0;
 }
