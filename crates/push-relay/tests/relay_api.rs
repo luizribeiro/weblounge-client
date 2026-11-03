@@ -46,6 +46,8 @@ impl Concierge for FakeConcierge {
             Ok(Introspection {
                 account: "mel".to_owned(),
             })
+        } else if session_token == "concierge-down" {
+            Err(Error::ConciergeUnavailable)
         } else {
             Err(Error::Unauthorized)
         }
@@ -217,6 +219,38 @@ async fn health_checks_sqlite_and_device_creation_introspects_only_once() {
     .await;
     assert_eq!(unauthorized.0, StatusCode::UNAUTHORIZED);
     assert_eq!(harness.concierge_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn concierge_failure_is_502_without_created_credentials_or_request_secrets() {
+    let harness = Harness::new().await;
+    let public = harness
+        .subscription_key
+        .public_key()
+        .to_encoded_point(false);
+    let response = call_json(
+        &harness.app,
+        Method::POST,
+        "/v1/devices",
+        Some("concierge-down"),
+        json!({
+            "target": {
+                "platform": "web_push",
+                "endpoint": "https://push.example/send/device",
+                "p256dh": URL_SAFE_NO_PAD.encode(public.as_bytes()),
+                "auth": "subscription-auth-secret",
+            }
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::BAD_GATEWAY);
+    assert_eq!(response.1, json!({"error": "upstream unavailable"}));
+    let body = response.1.to_string();
+    assert!(!body.contains("concierge-down"));
+    assert!(!body.contains("subscription-auth-secret"));
+    assert!(response.1.get("id").is_none());
+    assert!(response.1.get("secret").is_none());
 }
 
 #[tokio::test]

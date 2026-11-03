@@ -67,6 +67,54 @@ async fn concierge_rejects_inactive_sessions() {
     server.abort();
 }
 
+#[tokio::test]
+async fn concierge_maps_server_failures_to_unavailable() {
+    let router = Router::new().route(
+        "/oauth/introspect",
+        post(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move { axum::serve(listener, router).await });
+    let client = ConciergeClient::new(
+        Url::parse(&format!("http://{address}/oauth/introspect")).expect("URL"),
+        "client secret".to_owned(),
+    )
+    .expect("client");
+
+    assert!(matches!(
+        client.introspect("session").await,
+        Err(Error::ConciergeUnavailable)
+    ));
+    server.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn concierge_maps_request_timeout_to_unavailable() {
+    let router = Router::new().route(
+        "/oauth/introspect",
+        post(|| async { std::future::pending::<StatusCode>().await }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move { axum::serve(listener, router).await });
+    let client = ConciergeClient::new(
+        Url::parse(&format!("http://{address}/oauth/introspect")).expect("URL"),
+        "client secret".to_owned(),
+    )
+    .expect("client");
+
+    assert!(matches!(
+        client.introspect("session").await,
+        Err(Error::ConciergeUnavailable)
+    ));
+    server.abort();
+}
+
 async fn introspect(
     State(seen): State<Seen>,
     headers: HeaderMap,
