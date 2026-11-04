@@ -85,6 +85,8 @@ export const messages = {
   "debug.network": "{label}: {nickname} ({state})",
   "debug.networks": "Networks",
   "debug.view": "Temporary engine debug view",
+  "debug.engine_ready": "Engine ready: {message}",
+  "debug.wasm_round_trip": "wasm worker round trip complete",
   "engine.bouncer_network_limit_reached":
     "You can't add another network because this server's client state limit was reached.",
   "engine.buffer_not_sendable": "Messages can't be sent to this conversation.",
@@ -134,8 +136,41 @@ export const messages = {
   "engine.unsupported_conversation": "That conversation isn't supported.",
   "engine.worker_failed": "Something went wrong. Try again.",
   "hosted.misconfigured": "This deployment is misconfigured.",
+  "hosted.config_invalid":
+    "This deployment is misconfigured. Invalid /config.json: {message}",
+  "hosted.config_redirect":
+    'Invalid /config.json: "oauth.redirect_uri" must be {expected}',
+  "hosted.oauth.code_expired":
+    "The sign-in code expired. Please sign in again.",
+  "hosted.oauth.denied": "Authorization was denied. Sign in again to continue.",
+  "hosted.oauth.incomplete":
+    "Sign-in could not be completed. Please try again.",
+  "hosted.oauth.invalid_field": "The sign-in {field} is invalid.",
+  "hosted.oauth.invalid_metadata":
+    "The sign-in service returned invalid metadata.",
+  "hosted.oauth.invalid_session":
+    "The sign-in service returned an invalid session.",
+  "hosted.oauth.issue_session":
+    "The sign-in service couldn't issue a session. Please try again.",
+  "hosted.oauth.origin_field":
+    "The sign-in {field} must use the issuer's origin.",
+  "hosted.oauth.pkce": "The sign-in service doesn't support secure PKCE.",
+  "hosted.oauth.response_mismatch":
+    "The sign-in response did not match this tab. Sign in again.",
+  "hosted.oauth.timeout":
+    "The sign-in service did not respond. Please try again.",
+  "hosted.oauth.unreachable": "Couldn't reach the sign-in service.",
+  "hosted.oauth.unreachable_status":
+    "Couldn't reach the sign-in service ({status}).",
+  "hosted.oauth.wrong_issuer": "The sign-in service reported the wrong issuer.",
+  "hosted.oauth.https_field": "The sign-in {field} must use HTTPS.",
   "hosted.reset_app": "Reset app",
   "hosted.resetting": "Resetting weblounge…",
+  "hosted.restoring": "Restoring the chat…",
+  "hosted.session_expired": "Your session expired. Signing in again…",
+  "hosted.start_failed": "Couldn't start the app.",
+  "hosted.starting": "Starting engine…",
+  "hosted.starting_weblounge": "Starting weblounge…",
   "hosted.unreachable": "Can't reach weblounge. Check your connection.",
   "mobile.preview.own": "You: {text}",
   "mobile.back_to_chats": "Back to chats",
@@ -190,6 +225,7 @@ export const messages = {
   "notifications.label": "Notifications",
   "notifications.prompt": "Get notified about DMs and mentions",
   "notifications.turn_on": "Turn on",
+  "notifications.new_message": "New message",
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
   "sidebar.add_network": "Add network",
   "sidebar.channel_list": "Channel list",
@@ -212,6 +248,9 @@ export const messages = {
   "shell.conversation_unavailable": "This conversation is not available.",
   "shell.connection_failed": "Couldn't connect",
   "shell.session_expired": "Session expired",
+  "shell.engine_start_failed": "Engine failed to start",
+  "shell.engine_timeout": "the chat engine did not respond in time",
+  "shell.unexpected_failure": "Something went wrong.",
 } as const;
 
 export type MessageKey = keyof typeof messages;

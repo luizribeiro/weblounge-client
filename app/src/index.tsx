@@ -49,6 +49,7 @@ import {
   registerProductionServiceWorker,
 } from "./service-worker";
 import "./styles/base.css";
+import { t } from "./strings";
 import { installTheme } from "./theme/theme-controller";
 
 type HostedConfig = Extract<DeploymentConfig, { mode: "hosted" }>;
@@ -152,7 +153,9 @@ function Bootstrap(props: BootstrapProps) {
       console.error(`[weblounge startup] ${message}`);
       props.showError(
         message,
-        error instanceof HostedAuthorizationError ? "Sign in again" : "Retry",
+        error instanceof HostedAuthorizationError
+          ? t("common.sign_in_again")
+          : t("common.retry"),
         () => void start(),
         error instanceof DeploymentConfigUnavailableError,
       );
@@ -185,7 +188,7 @@ function Bootstrap(props: BootstrapProps) {
       ) {
         props.showError(
           result.error.message,
-          "Sign in again",
+          t("common.sign_in_again"),
           () => void restartAuthorization(config),
           false,
         );
@@ -236,7 +239,7 @@ function Bootstrap(props: BootstrapProps) {
       console.error(`[weblounge startup] ${message}`);
       props.showError(
         message,
-        "Sign in again",
+        t("common.sign_in_again"),
         () => void restartAuthorization(config),
         false,
       );
@@ -259,7 +262,7 @@ function Bootstrap(props: BootstrapProps) {
                 onStartupError={(message, retry) =>
                   props.showError(
                     message,
-                    "Retry",
+                    t("common.retry"),
                     retry ?? (() => void start()),
                     false,
                   )
@@ -288,7 +291,7 @@ function Bootstrap(props: BootstrapProps) {
                 onStartupError={(message, retry) =>
                   props.showError(
                     message,
-                    "Retry",
+                    t("common.retry"),
                     retry ?? (() => retryHosted(current.config)),
                     false,
                   )
@@ -414,9 +417,7 @@ function acquireSession(endpoint: string): Promise<InitialSessionResult> {
 function requireCurrentRedirect(config: HostedConfig): void {
   const expected = new URL("/", window.location.origin).href;
   if (config.oauth.redirect_uri !== expected) {
-    throw new Error(
-      `Invalid /config.json: "oauth.redirect_uri" must be ${expected}`,
-    );
+    throw new Error(t("hosted.config_redirect", { expected }));
   }
 }
 
@@ -424,7 +425,7 @@ function userFacingError(error: unknown): string {
   if (error instanceof HostedAuthorizationError || error instanceof Error) {
     return error.message;
   }
-  return "Couldn't start the app.";
+  return t("hosted.start_failed");
 }
 
 const root = document.getElementById("root");
@@ -462,7 +463,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
   let retryPending = false;
   let retryOnRecovery: (() => void) | undefined;
   const fontReady = withStartupDeadline(
-    () => document.fonts.load("400 13px Inter", "Starting weblounge…"),
+    () => document.fonts.load("400 13px Inter", t("hosted.starting_weblounge")),
     () => new Error("startup font did not load in time"),
     1_000,
   ).catch(() => []);
@@ -523,7 +524,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
         return;
       if (
         status.textContent === message &&
-        retryButton.textContent === "Sign in again"
+        retryButton.textContent === t("common.sign_in_again")
       ) {
         return;
       }
@@ -543,7 +544,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
         status.textContent = "";
         const a11y = document.createElement("span");
         a11y.dataset.splashA11y = "true";
-        a11y.textContent = "Starting weblounge…";
+        a11y.textContent = t("hosted.starting_weblounge");
         const visible = document.createElement("span");
         visible.dataset.splashMessage = "true";
         visible.setAttribute("aria-hidden", "true");
@@ -551,7 +552,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
         retryPending = countFailure;
         onRetry();
       };
-      retryButton.onclick = () => beginRetry(retryLabel === "Retry");
+      retryButton.onclick = () => beginRetry(retryLabel === t("common.retry"));
       resetButton.onclick = () => {
         retryButton.hidden = true;
         resetButton.hidden = true;

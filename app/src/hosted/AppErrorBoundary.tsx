@@ -1,7 +1,8 @@
 import { ErrorBoundary, type JSX } from "solid-js";
+import { t } from "../strings";
 import { HostedStatus } from "./HostedStatus";
 
-export const renderFailureMessage = "Something went wrong.";
+export const renderFailureMessage = t("shell.unexpected_failure");
 
 export function AppErrorBoundary(props: { children: JSX.Element }) {
   return (

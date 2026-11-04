@@ -1,4 +1,5 @@
 import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
+import { t } from "../strings";
 import { withStartupDeadline } from "./startup-deadline";
 import { startupStrings } from "./strings";
 
@@ -21,7 +22,7 @@ export class DeploymentConfigUnavailableError extends Error {
 
 export class DeploymentConfigError extends Error {
   constructor(message: string) {
-    super(`${startupStrings.misconfigured} Invalid /config.json: ${message}`);
+    super(t("hosted.config_invalid", { message }));
     this.name = "DeploymentConfigError";
   }
 }

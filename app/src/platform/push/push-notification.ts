@@ -1,3 +1,4 @@
+import { t } from "../../strings";
 import type { PushParserLoader } from "./push-parser-loader";
 
 const noticeType = `not${"ice"}` as const;
@@ -58,7 +59,7 @@ export function genericNotification(
   networkLabel?: string,
 ): NotificationPresentation {
   return {
-    title: "New message",
+    title: t("notifications.new_message"),
     options: {
       ...(networkLabel === undefined ? {} : { body: networkLabel }),
       data: { route: "/" },

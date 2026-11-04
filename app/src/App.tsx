@@ -117,7 +117,7 @@ export function App(props: AppProps) {
     props.hostedSession !== undefined ||
     (__DEBUG_IRC_CONFIG__ !== null &&
       new URL(window.location.href).searchParams.has("irc-password"));
-  const [engineStatus, setEngineStatus] = createSignal("Starting engine…");
+  const [engineStatus, setEngineStatus] = createSignal(t("hosted.starting"));
   const notifier = createNotifier();
   const [hostedError, setHostedError] = createSignal<string>();
   const [shellReady, setShellReady] = createSignal(!startupSyncRequired);
@@ -437,7 +437,7 @@ export function App(props: AppProps) {
         }
       }
       if (message.type === "diagnostic") {
-        setEngineStatus(`Engine ready: ${message.message}`);
+        setEngineStatus(t("debug.engine_ready", { message: message.message }));
       }
       if (message.type === "notice") {
         if (isMessageKey(message.key)) {
@@ -866,8 +866,8 @@ export function App(props: AppProps) {
     restartingHostedAuthorization = true;
     setHostedError(
       reason === "worker_restarted"
-        ? "Restoring the chat…"
-        : "Your session expired. Signing in again…",
+        ? t("hosted.restoring")
+        : t("hosted.session_expired"),
     );
     if (reason !== "worker_restarted") {
       await pushSynchronizer?.signOut().catch(() => undefined);
@@ -1336,7 +1336,7 @@ async function startEngine(
           id: crypto.randomUUID(),
           request: {
             type: "diagnostic",
-            message: "wasm worker round trip complete",
+            message: t("debug.wasm_round_trip"),
           },
         });
         if (hostedSession !== undefined) {
@@ -1354,7 +1354,7 @@ async function startEngine(
           await connectDebugNetwork(client, debugConnection);
         }
       },
-      () => new Error("the chat engine did not respond in time"),
+      () => new Error(t("shell.engine_timeout")),
     );
     onEngineReady();
   } catch (error: unknown) {
@@ -1367,7 +1367,7 @@ async function startEngine(
       error,
     );
     await client.close().catch(() => undefined);
-    setStatus("Engine failed to start");
+    setStatus(t("shell.engine_start_failed"));
     return "failed";
   }
   if (hostedSession === undefined) return "ready";

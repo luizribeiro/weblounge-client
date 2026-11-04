@@ -1,5 +1,6 @@
 import type { HostedOAuthConfig } from "../engine/generated/HostedOAuthConfig";
 import { parseBufferRoute } from "../navigation/buffer-route";
+import { t } from "../strings";
 import { withStartupDeadline } from "./startup-deadline";
 
 const pendingKey = "weblounge.oauth.pending";
@@ -40,40 +41,31 @@ export async function discoverOAuthMetadata(
           headers: { Accept: "application/json" },
           signal,
         }),
-      () =>
-        new HostedAuthorizationError(
-          "The sign-in service did not respond. Please try again.",
-        ),
+      () => new HostedAuthorizationError(t("hosted.oauth.timeout")),
     );
   } catch (error: unknown) {
     if (error instanceof HostedAuthorizationError) throw error;
-    throw new HostedAuthorizationError("Couldn't reach the sign-in service.");
+    throw new HostedAuthorizationError(t("hosted.oauth.unreachable"));
   }
   if (!response.ok) {
     throw new HostedAuthorizationError(
-      `Couldn't reach the sign-in service (${response.status}).`,
+      t("hosted.oauth.unreachable_status", { status: String(response.status) }),
     );
   }
   const value: unknown = await response.json().catch(() => undefined);
   if (!isRecord(value)) {
-    throw new HostedAuthorizationError(
-      "The sign-in service returned invalid metadata.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.invalid_metadata"));
   }
   const issuer = normalizeIssuer(secureUrl(value.issuer, "issuer"));
   if (normalizeIssuer(issuer) !== normalizeIssuer(config.issuer)) {
-    throw new HostedAuthorizationError(
-      "The sign-in service reported the wrong issuer.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.wrong_issuer"));
   }
   const methods = value.code_challenge_methods_supported;
   if (
     methods !== undefined &&
     (!Array.isArray(methods) || !methods.includes("S256"))
   ) {
-    throw new HostedAuthorizationError(
-      "The sign-in service doesn't support secure PKCE.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.pkce"));
   }
   const authorizationEndpoint = secureUrl(
     value.authorization_endpoint,
@@ -132,13 +124,9 @@ export function consumeAuthorizationCallback(
     const pending = consumePending(url.searchParams.get("state"), storage);
     if (oauthError !== null) {
       if (oauthError === "access_denied") {
-        throw new HostedAuthorizationError(
-          "Authorization was denied. Sign in again to continue.",
-        );
+        throw new HostedAuthorizationError(t("hosted.oauth.denied"));
       }
-      throw new HostedAuthorizationError(
-        "Sign-in could not be completed. Please try again.",
-      );
+      throw new HostedAuthorizationError(t("hosted.oauth.incomplete"));
     }
     return {
       code: code ?? "",
@@ -179,27 +167,22 @@ export async function exchangeAuthorizationCode(
           body,
           signal,
         }),
-      () =>
-        new HostedAuthorizationError(
-          "The sign-in service did not respond. Please try again.",
-        ),
+      () => new HostedAuthorizationError(t("hosted.oauth.timeout")),
     );
   } catch (error: unknown) {
     if (error instanceof HostedAuthorizationError) throw error;
-    throw new HostedAuthorizationError("Couldn't reach the sign-in service.");
+    throw new HostedAuthorizationError(t("hosted.oauth.unreachable"));
   }
   const value: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
     throw new HostedAuthorizationError(
       response.status === 400
-        ? "The sign-in code expired. Please sign in again."
-        : "The sign-in service couldn't issue a session. Please try again.",
+        ? t("hosted.oauth.code_expired")
+        : t("hosted.oauth.issue_session"),
     );
   }
   if (!isRecord(value)) {
-    throw new HostedAuthorizationError(
-      "The sign-in service returned an invalid session.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.invalid_session"));
   }
   if (
     typeof value.access_token !== "string" ||
@@ -210,9 +193,7 @@ export async function exchangeAuthorizationCode(
     !Number.isFinite(value.expires_in) ||
     value.expires_in <= 0
   ) {
-    throw new HostedAuthorizationError(
-      "The sign-in service returned an invalid session.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.invalid_session"));
   }
   return {
     accessToken: value.access_token,
@@ -260,26 +241,20 @@ function consumePending(
   const encoded = storage.getItem(pendingKey);
   storage.removeItem(pendingKey);
   if (encoded === null || state === null) {
-    throw new HostedAuthorizationError(
-      "The sign-in response did not match this tab. Sign in again.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.response_mismatch"));
   }
   let pending: unknown;
   try {
     pending = JSON.parse(encoded);
   } catch {
-    throw new HostedAuthorizationError(
-      "The sign-in response did not match this tab. Sign in again.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.response_mismatch"));
   }
   if (
     !isRecord(pending) ||
     pending.state !== state ||
     typeof pending.verifier !== "string"
   ) {
-    throw new HostedAuthorizationError(
-      "The sign-in response did not match this tab. Sign in again.",
-    );
+    throw new HostedAuthorizationError(t("hosted.oauth.response_mismatch"));
   }
   const returnPath = validReturnPath(pending.returnPath);
   return {
@@ -309,13 +284,17 @@ function base64Url(bytes: Uint8Array): string {
 
 function secureUrl(value: unknown, field: string): string {
   if (typeof value !== "string") {
-    throw new HostedAuthorizationError(`The sign-in ${field} is invalid.`);
+    throw new HostedAuthorizationError(
+      t("hosted.oauth.invalid_field", { field }),
+    );
   }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new HostedAuthorizationError(`The sign-in ${field} is invalid.`);
+    throw new HostedAuthorizationError(
+      t("hosted.oauth.invalid_field", { field }),
+    );
   }
   if (
     url.protocol !== "https:" &&
@@ -324,7 +303,9 @@ function secureUrl(value: unknown, field: string): string {
       (url.hostname === "127.0.0.1" || url.hostname === "localhost")
     )
   ) {
-    throw new HostedAuthorizationError(`The sign-in ${field} must use HTTPS.`);
+    throw new HostedAuthorizationError(
+      t("hosted.oauth.https_field", { field }),
+    );
   }
   return url.href;
 }
@@ -340,7 +321,7 @@ function requireIssuerOrigin(
 ): void {
   if (new URL(endpoint).origin !== new URL(issuer).origin) {
     throw new HostedAuthorizationError(
-      `The sign-in ${field} must use the issuer's origin.`,
+      t("hosted.oauth.origin_field", { field }),
     );
   }
 }
