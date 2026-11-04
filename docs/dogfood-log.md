@@ -102,3 +102,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 94 | 2026-11-03 | Request: show loading (connecting/fetching history) on the conversation title, e.g. the logo shimmer on the channel name. | in progress |
 | 95 | 2026-11-04 | Firefox desktop (8ae24d1, fresh site data): "Couldn't start weblounge." — engine worker crashes during startup ("engine worker restarted" from setVisibility). | investigating |
 | 96 | 2026-11-04 | Startup error screen: the Retry button text is white on the light-green button. | in progress |
+| 97 | 2026-11-04 | Desktop Firefox: the logo/title shimmer is not visible. | in progress |
