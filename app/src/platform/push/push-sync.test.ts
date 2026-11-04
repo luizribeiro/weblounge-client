@@ -603,7 +603,7 @@ describe("push state synchronization", () => {
     ).toHaveLength(1);
   });
 
-  it("keeps a failed retirement decryptable and retries it on launch", async () => {
+  it("unregisters a failed retirement before retrying relay deletion", async () => {
     const relayApi = statefulRelay(["old-route"], ["unavailable"]);
     const current = fixture(relayApi);
     current.devices.credentials = {
@@ -663,9 +663,24 @@ describe("push state synchronization", () => {
       exclusive: async (_name, work) => work(),
     });
     await relaunched.settled();
+    expect(relayApi.routes.has("old-route")).toBe(true);
+
+    current.engine.emit({
+      type: "push_route_required",
+      network_id: 1,
+      vapid: "new-vapid",
+      previous_route_id: "old-route",
+    });
+    await relaunched.settled();
 
     expect(relayApi.routes).toEqual(new Map([["new-route-1", "active"]]));
     expect(current.routes.values.has("old-route")).toBe(false);
+    expect(current.engine.requests.at(-2)?.request).toEqual({
+      type: "unregister_push_route",
+      network_id: 1,
+      route_id: "old-route",
+      endpoint: `${relayOrigin}/v1/r/old-route`,
+    });
   });
 
   it("keeps old route keys after a 401 while registering a new device", async () => {

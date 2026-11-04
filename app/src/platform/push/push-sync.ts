@@ -90,7 +90,6 @@ export class PushSynchronizer {
     this.#unsubscribe = this.#engine.subscribe((message) =>
       this.handle(message),
     );
-    this.#enqueue(() => this.#retryRetiringRoutes());
   }
 
   handle(message: EngineClientMessage): void {
@@ -217,6 +216,15 @@ export class PushSynchronizer {
     }
     const device = deviceResult.value;
     const routes = await this.#routes.all();
+    for (const route of routes) {
+      if (
+        route.retiring === true &&
+        route.networkLabel === context.networkLabel
+      ) {
+        if (!(await this.#unregisterRouteEngine(networkId, route))) return;
+        if (!(await this.#retire(route, device))) return;
+      }
+    }
     const matching = routes.filter(
       (route) =>
         route.retiring !== true && route.networkLabel === context.networkLabel,
@@ -578,19 +586,6 @@ export class PushSynchronizer {
       return false;
     }
     return true;
-  }
-
-  async #retryRetiringRoutes(): Promise<void> {
-    const device = await this.#devices.load(this.#relayOrigin);
-    if (device === undefined) return;
-    for (const route of await this.#routes.all()) {
-      if (
-        route.retiring === true &&
-        (route.deviceId === undefined || route.deviceId === device.device_id)
-      ) {
-        if (!(await this.#retire(route, asRelayDevice(device)))) return;
-      }
-    }
   }
 
   #ensureDevice(): Promise<RelayResult<RelayDevice>> {
