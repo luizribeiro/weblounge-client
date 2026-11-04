@@ -1,12 +1,4 @@
-import {
-  chmod,
-  cp,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
@@ -175,56 +167,47 @@ test("uses network HTML online and the cached shell offline", async ({
   );
 });
 
-test("moves an open profile to the next build on its next launch", async ({
+test("upgrades the last deployed build to the current build", async ({
   context,
 }) => {
   test.skip(
-    development,
-    "the service worker is intentionally disabled in development",
+    development ||
+      process.env.WEBLOUNGE_PREVIOUS_APP_DIR === undefined ||
+      process.env.WEBLOUNGE_PREVIOUS_BUILD_SHA === undefined,
+    "requires both production app artifacts",
   );
-  const builds = await swappableBuildServer();
+  const builds = await swappableBuildServer(
+    process.env.WEBLOUNGE_PREVIOUS_APP_DIR ?? "",
+  );
   try {
-    const oldPage = await context.newPage();
-    await oldPage.goto(builds.origin);
-    await expect.poll(() => activeWorkerState(oldPage)).toBe("activated");
+    const page = await context.newPage();
+    await page.goto(builds.origin);
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    await expect.poll(() => activeWorkerState(page)).toBe("activated");
     await expect
       .poll(() =>
-        oldPage.evaluate(() => navigator.serviceWorker.controller !== null),
+        page.evaluate(() => navigator.serviceWorker.controller !== null),
       )
       .toBe(true);
+    expect(await page.evaluate(() => window.weblounge.version)).toContain(
+      process.env.WEBLOUNGE_PREVIOUS_BUILD_SHA,
+    );
 
-    await oldPage.evaluate(() =>
+    await page.evaluate(() =>
       localStorage.removeItem("weblounge.deployment-config.v1"),
     );
     builds.serveNext();
-    const nextPage = await context.newPage();
-    await nextPage.addInitScript(() => {
-      const count = Number.parseInt(
-        sessionStorage.getItem("build-launch-count") ?? "0",
-        10,
-      );
-      sessionStorage.setItem("build-launch-count", String(count + 1));
-    });
-    await nextPage.goto(builds.origin);
-    await expect(nextPage.locator('meta[name="next-build"]')).toHaveCount(1);
-    await expect(
-      nextPage.getByRole("heading", { name: "weblounge" }),
-    ).toBeVisible();
-    await oldPage.bringToFront();
+    await page.reload();
 
     await expect
-      .poll(() =>
-        nextPage.evaluate(async () =>
-          (await caches.keys()).includes("weblounge-shell-1111111111111111"),
-        ),
-      )
-      .toBe(true);
-    expect(oldPage.isClosed()).toBe(false);
-    const launchCount = await nextPage.evaluate(() =>
-      Number.parseInt(sessionStorage.getItem("build-launch-count") ?? "0", 10),
-    );
-    expect(launchCount).toBeGreaterThanOrEqual(1);
-    expect(launchCount).toBeLessThanOrEqual(2);
+      .poll(() => page.evaluate(() => window.weblounge.version))
+      .toMatch(/^weblounge ci · built /u);
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    expect(page.isClosed()).toBe(false);
   } finally {
     await builds.close();
   }
@@ -353,7 +336,7 @@ async function poisonCachedIndex(page: import("@playwright/test").Page) {
   });
 }
 
-async function swappableBuildServer(): Promise<{
+async function swappableBuildServer(previous: string): Promise<{
   readonly origin: string;
   serveNext(): void;
   close(): Promise<void>;
@@ -364,26 +347,10 @@ async function swappableBuildServer(): Promise<{
   const temporary = await mkdtemp(join(tmpdir(), "weblounge-build-swap-"));
   const first = join(temporary, "first");
   const next = join(temporary, "next");
-  await cp(source, first, { recursive: true });
+  await cp(previous, first, { recursive: true });
   await cp(source, next, { recursive: true });
-  await chmod(join(next, "index.html"), 0o600);
-  await chmod(join(next, "service-worker.js"), 0o600);
-  await writeFile(
-    join(next, "index.html"),
-    (await readFile(join(next, "index.html"), "utf8")).replace(
-      "</head>",
-      '<meta name="next-build"></head>',
-    ),
-  );
-  await writeFile(
-    join(next, "service-worker.js"),
-    (await readFile(join(next, "service-worker.js"), "utf8")).replace(
-      /const SHELL_VERSION = "[0-9a-f]{16}";/u,
-      'const SHELL_VERSION = "1111111111111111";',
-    ),
-  );
   let served = first;
-  let config = '{"mode":"app"}';
+  const config = '{"mode":"app","future_server_field":true}';
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname === "/config.json") {
@@ -422,7 +389,6 @@ async function swappableBuildServer(): Promise<{
     origin: `http://127.0.0.1:${address.port}`,
     serveNext: () => {
       served = next;
-      config = '{"mode":"app","future_server_field":true}';
     },
     close: async () => {
       await new Promise<void>((resolveClose, reject) =>

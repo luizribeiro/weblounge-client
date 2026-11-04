@@ -13,6 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
+    weblounge-client-previous.url = "github:luizribeiro/weblounge-client/9d5c99f";
   };
 
   outputs =
@@ -23,6 +24,7 @@
       nixpkgs,
       rust-overlay,
       self,
+      weblounge-client-previous,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -427,6 +429,36 @@
           '';
           installPhase = "touch $out";
         };
+        previousApp = weblounge-client-previous.packages.${system}.app;
+        upgradeE2e = pkgs.stdenvNoCC.mkDerivation {
+          pname = "weblounge-upgrade-e2e";
+          version = "0.1.0";
+          src = appSource;
+          inherit pnpmDeps;
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.pnpmConfigHook
+            pkgs.fontconfig
+          ];
+          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = "ubuntu-24.04";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
+          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
+          WEBLOUNGE_APP_DIR = "${e2eApp}";
+          WEBLOUNGE_ENGINE_WASM_DIR = "${engineWasm}/dist";
+          WEBLOUNGE_E2E_APP_ONLY = "1";
+          WEBLOUNGE_PREVIOUS_APP_DIR = "${previousApp}";
+          WEBLOUNGE_PREVIOUS_BUILD_SHA = weblounge-client-previous.shortRev;
+          buildPhase = ''
+            runHook preBuild
+            pnpm --filter @weblounge/app e2e \
+              --project=chromium service-worker.spec.ts
+            runHook postBuild
+          '';
+          installPhase = "touch $out";
+        };
         cargoHook = name: command: {
           enable = true;
           entry = "${
@@ -611,6 +643,7 @@
           e2e-network-fallback = e2eNetworkFallbackTest;
           inherit e2e;
           e2e-dev = e2eDev;
+          upgrade-e2e = upgradeE2e;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
           vitest = appCheck "vitest" (vitestCommand "${pkgs.pnpm}/bin/pnpm test");
@@ -618,6 +651,7 @@
         formatter = pkgs.nixfmt-tree;
         packages = {
           inherit app;
+          previous-app = previousApp;
           ci-deps = ciDeps;
           engine-wasm = engineWasm;
           push-payload-wasm = pushPayloadWasm;

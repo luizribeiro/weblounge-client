@@ -560,7 +560,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   served a cached shell, new workers never activated, and the old strict config decoder rejected
   the new `push` field. The immediate fixes (fresh navigations, activation at launch,
   forward-compatible config) are in the stale-shell branch. Follow-ups:
-  - U1. [ ] An upgrade test in CI. Install the previously deployed build with its service worker
+  - U1. [x] An upgrade test in CI. Install the previously deployed build with its service worker
     (a flake input pinned to the last deployed SHA, served from Cachix), then serve the current
     build. The client must move to it without closing tabs, and the previous build must start with
     the current config.json.

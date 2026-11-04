@@ -100,3 +100,14 @@ green in development and production.
 
 Build-identity coverage formats UTC timestamps in a unit test and drives the production composer
 and debug overlay to prove that both show the revision baked into the Nix artifact.
+
+CI also boots the last deployed production artifact, lets its worker control and cache the profile,
+then swaps the same origin to the candidate artifact. The open profile must reload safely onto the
+candidate build, and the deployed artifact must boot against the candidate deployment config so a
+config addition cannot strand existing clients.
+
+`weblounge-client-previous` in `flake.nix` is the deployed-client record. After every client deploy,
+the weblounge-server deploy owner updates its revision to the SHA that was just deployed and runs
+`nix flake update weblounge-client-previous`; the next client change then tests the
+real deployed-to-candidate transition. Cachix must contain that deploy's `packages.app` output so
+the upgrade check substitutes the deployed artifact rather than rebuilding it.
