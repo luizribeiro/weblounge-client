@@ -1,6 +1,22 @@
 import type { RelayDevice, RelayResult } from "./relay-client";
 
 const heartbeatMilliseconds = 30_000;
+const tabIdStorageKey = "weblounge-push-tab-id";
+
+export function foregroundLeaseTabId(
+  storage: Pick<Storage, "getItem" | "setItem"> = sessionStorage,
+  create: () => string = () => crypto.randomUUID(),
+): string {
+  try {
+    const existing = storage.getItem(tabIdStorageKey);
+    if (existing !== null) return existing;
+    const created = create();
+    storage.setItem(tabIdStorageKey, created);
+    return created;
+  } catch {
+    return create();
+  }
+}
 
 interface ForegroundLeaseOptions {
   readonly renew: (

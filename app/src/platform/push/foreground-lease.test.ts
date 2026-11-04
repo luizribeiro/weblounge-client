@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ForegroundLease } from "./foreground-lease";
+import { ForegroundLease, foregroundLeaseTabId } from "./foreground-lease";
 
 const device = { id: "device-1", secret: "device-secret" };
 const accepted = Promise.resolve({ ok: true as const, value: null });
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
+
+it("keeps one lease identity across a tab reload", () => {
+  const storage = new Map<string, string>();
+  const adapter = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  };
+
+  expect(foregroundLeaseTabId(adapter, () => "tab-1")).toBe("tab-1");
+  expect(foregroundLeaseTabId(adapter, () => "tab-2")).toBe("tab-1");
+});
 
 it("renews only while foreground and releases immediately on hide", async () => {
   const renew = vi.fn(() => accepted);

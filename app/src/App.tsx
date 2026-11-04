@@ -62,7 +62,10 @@ import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { syncAppPushState } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
-import { ForegroundLease } from "./platform/push/foreground-lease";
+import {
+  ForegroundLease,
+  foregroundLeaseTabId,
+} from "./platform/push/foreground-lease";
 import {
   decodeOpenRouteMessage,
   type OpenRouteMessage,
@@ -796,6 +799,7 @@ export function App(props: AppProps) {
     const lease = new ForegroundLease({
       renew: (device, tabId) => relay.renewLease(device, tabId),
       release: (device, tabId) => relay.releaseLease(device, tabId),
+      tabId: foregroundLeaseTabId(),
     });
     foregroundLease = lease;
     lease.setForeground(appIsForeground);
