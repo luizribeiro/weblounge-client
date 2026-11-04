@@ -536,19 +536,20 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     priorities return 201 without forwarding. Record urgency outcomes in privacy-safe tracing (#100).
   - [ ] Keep control pushes invisible: non-Apple workers already consume `MARKREAD`, close its
     conversation tag, and recompute per-conversation badge state, while page open/read updates
-    correct Apple badges from engine counts. Chromium and Firefox still show a generic notification
-    for `MARKREAD`; stock Ergo 2.19.1 sends `MARKREAD` and `PING` at high urgency, and both controls
-    still show the generic notification after reaching an Apple-kind route. The full-chain tests
-    preserve these as expected failures for the push-redesign work.
+    correct Apple badges from engine counts. The production Ergo package already backports
+    `9975d8d`; relay logs confirm its normal-urgency controls are dropped for Apple and MARKREAD is
+    forwarded to Firefox. Firefox still shows a generic notification after the worker receives
+    `MARKREAD`; the full-chain test preserves that worker bug as an expected failure. Firefox and
+    Chromium workers must tidy `MARKREAD` and `PING` without presenting either control.
   - [x] Cover the unmocked local-Ergo → relay → push-service → worker delivery journey, including
     the pinned previous build, route/subscription convergence, real encrypted DM and mention
     payloads, Apple MARKREAD filtering, multiple tabs and devices, missing keys, and refusal
     recovery. The isolated relay test feature trusts only the fixture CA and TEST-NET target;
     feature isolation checks keep the production binary identical with the feature disabled.
     Chromium, Firefox, and WebKit now cover provider-specific controls, Apple badge convergence,
-    blocked worker storage, exact registration-probe replay, and a persisted restart from the
-    urgency-patched server to stock Ergo 2.19.1. The blocked-storage fallback remains an expected
-    failure because notification presentation still waits beyond its deadline.
+    and blocked worker storage against the production-equivalent urgency-patched Ergo. The
+    blocked-storage fallback remains an expected failure because notification presentation still
+    waits beyond its deadline.
   - [ ] Add rate limits and engine/platform stable network identity.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
