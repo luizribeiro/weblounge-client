@@ -2,6 +2,7 @@ export type ServiceWorkerUpdateListener = () => void;
 
 let updateReady = false;
 const updateListeners = new Set<ServiceWorkerUpdateListener>();
+let productionUpdateSettled = Promise.resolve();
 
 interface ControllerContainer {
   readonly controller: ServiceWorker | null;
@@ -43,7 +44,11 @@ export function checkForProductionServiceWorkerUpdate(): void {
   reloadAfterControllerChange(container, document, () =>
     window.location.reload(),
   );
-  void registerAfterLoad(container);
+  productionUpdateSettled = updateProductionServiceWorker(container);
+}
+
+export function waitForProductionServiceWorkerUpdate(): Promise<void> {
+  return productionUpdateSettled;
 }
 
 export async function prepareProductionServiceWorkerUpdate(): Promise<void> {
@@ -106,24 +111,76 @@ function scheduleRegistration(container: ServiceWorkerContainer): void {
   });
 }
 
-async function registerAfterLoad(container: ServiceWorkerContainer) {
+async function registerAfterLoad(
+  container: ServiceWorkerContainer,
+): Promise<ServiceWorkerRegistration | undefined> {
   try {
     const registration = await container.register("/service-worker.js", {
       scope: "/",
       updateViaCache: "none",
     });
-    if (registration.waiting !== null) announceUpdate();
-    registration.addEventListener("updatefound", () => {
-      const installing = registration.installing;
-      installing?.addEventListener("statechange", () => {
-        if (installing.state === "installed" && container.controller !== null) {
-          announceUpdate();
-        }
-      });
-    });
+    observeRegistrationUpdate(container, registration);
+    return registration;
   } catch {
     // An online page remains usable when private browsing or policy rejects registration.
+    return undefined;
   }
+}
+
+export async function updateProductionServiceWorker(
+  container: ServiceWorkerContainer,
+): Promise<void> {
+  const registration = await container.getRegistration("/");
+  if (registration === undefined) {
+    const created = await registerAfterLoad(container);
+    if (created !== undefined) await waitForServiceWorkerActivation(created);
+    return;
+  }
+  observeRegistrationUpdate(container, registration);
+  const previousActive = registration.active;
+  await registration.update();
+  await waitForServiceWorkerActivation(registration, previousActive);
+}
+
+export function waitForServiceWorkerActivation(
+  registration: ServiceWorkerRegistration,
+  previousActive?: ServiceWorker | null,
+): Promise<void> {
+  const active = registration.active;
+  const worker =
+    registration.installing ??
+    registration.waiting ??
+    (previousActive === undefined || active !== previousActive ? active : null);
+  if (
+    worker === null ||
+    worker.state === "activated" ||
+    worker.state === "redundant"
+  ) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const stateChanged = () => {
+      if (worker.state !== "activated" && worker.state !== "redundant") return;
+      worker.removeEventListener("statechange", stateChanged);
+      resolve();
+    };
+    worker.addEventListener("statechange", stateChanged);
+  });
+}
+
+function observeRegistrationUpdate(
+  container: ServiceWorkerContainer,
+  registration: ServiceWorkerRegistration,
+): void {
+  if (registration.waiting !== null) announceUpdate();
+  registration.addEventListener("updatefound", () => {
+    const installing = registration.installing;
+    installing?.addEventListener("statechange", () => {
+      if (installing.state === "installed" && container.controller !== null) {
+        announceUpdate();
+      }
+    });
+  });
 }
 
 function announceUpdate(): void {

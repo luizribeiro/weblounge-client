@@ -81,6 +81,7 @@ import { ensurePushSubscription } from "./platform/push/subscription";
 import {
   onServiceWorkerUpdateReady,
   serviceWorkerUpdateIsReady,
+  waitForProductionServiceWorkerUpdate,
 } from "./service-worker";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
 import {
@@ -263,6 +264,7 @@ export function App(props: AppProps) {
       networks().map((network) => [network.id, network.label]),
     );
     appPushStateSync = appPushStateSync
+      .then(() => waitForProductionServiceWorkerUpdate())
       .then(() => syncAppPushState(current, networkLabels))
       .catch(() => undefined);
   };
@@ -855,6 +857,7 @@ export function App(props: AppProps) {
     ) {
       return;
     }
+    await waitForProductionServiceWorkerUpdate();
     const registration = await navigator.serviceWorker.ready;
     if (disposed || generation !== pushSetupGeneration) return;
     const subscription = await ensurePushSubscription(

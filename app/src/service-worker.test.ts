@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   prepareProductionServiceWorkerUpdate,
   reloadAfterControllerChange,
+  updateProductionServiceWorker,
+  waitForServiceWorkerActivation,
 } from "./service-worker";
 
 describe("service worker controller activation", () => {
@@ -28,6 +30,92 @@ describe("service worker controller activation", () => {
         value: previous,
       });
     }
+  });
+
+  it("settles an update only after its installing worker activates", async () => {
+    const worker = new EventTarget() as EventTarget & {
+      state: ServiceWorkerState;
+    };
+    worker.state = "installing";
+    const registration = {
+      installing: worker,
+      waiting: null,
+    } as unknown as ServiceWorkerRegistration;
+    let settled = false;
+
+    const activation = waitForServiceWorkerActivation(registration).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    worker.state = "activated";
+    worker.dispatchEvent(new Event("statechange"));
+    await activation;
+
+    expect(settled).toBe(true);
+  });
+
+  it("waits for an update that was promoted to active while activating", async () => {
+    const worker = new EventTarget() as EventTarget & {
+      state: ServiceWorkerState;
+    };
+    worker.state = "activating";
+    const registration = {
+      active: worker,
+      installing: null,
+      waiting: null,
+    } as unknown as ServiceWorkerRegistration;
+    let settled = false;
+
+    const activation = waitForServiceWorkerActivation(registration).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    worker.state = "activated";
+    worker.dispatchEvent(new Event("statechange"));
+    await activation;
+
+    expect(settled).toBe(true);
+  });
+
+  it("runs one update job and waits for its replacement worker", async () => {
+    const previous = { state: "activated" } as ServiceWorker;
+    const replacement = new EventTarget() as EventTarget & {
+      state: ServiceWorkerState;
+    };
+    replacement.state = "installing";
+    const registration = {
+      active: previous,
+      installing: null,
+      waiting: null,
+      addEventListener: vi.fn(),
+      update: vi.fn(async () => {
+        Reflect.set(registration, "installing", replacement);
+        return registration;
+      }),
+    } as unknown as ServiceWorkerRegistration;
+    const container = {
+      controller: previous,
+      getRegistration: vi.fn(async () => registration),
+    } as unknown as ServiceWorkerContainer;
+    let settled = false;
+
+    const update = updateProductionServiceWorker(container).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(registration.update).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    replacement.state = "activated";
+    replacement.dispatchEvent(new Event("statechange"));
+    await update;
+
+    expect(settled).toBe(true);
   });
 
   it("reloads an existing client once while startup is covered", () => {

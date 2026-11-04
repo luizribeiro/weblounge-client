@@ -444,6 +444,7 @@ const startup = createStartupGate(splash);
 const application = document.createElement("div");
 application.dataset.applicationMount = "true";
 root.append(application);
+checkForProductionServiceWorkerUpdate();
 render(
   () => (
     <Bootstrap
@@ -454,7 +455,6 @@ render(
   ),
   application,
 );
-checkForProductionServiceWorkerUpdate();
 
 function createStartupGate(splash: HTMLElement): BootstrapProps {
   let active = true;
