@@ -1,6 +1,6 @@
 import type { CommandPermission } from "../engine/generated/CommandPermission";
 import type { CommandSpec, CompletionResult } from "../engine/protocol";
-import { translate } from "../strings";
+import { t, translate } from "../strings";
 
 export type UiActionId =
   | "buffer.next"
@@ -91,64 +91,72 @@ const needsList = (context: ActionContext): ActionAvailability => ({
 const specs: readonly ActionSpec[] = [
   command(
     "switcher.open",
-    "Jump to",
+    t("action.switcher"),
     alwaysAvailable,
     mod("k", "⌘K", "Ctrl+K"),
   ),
   {
-    ...command("debug.overlay", "Debug diagnostics", alwaysAvailable),
+    ...command("debug.overlay", t("action.debug"), alwaysAvailable),
     discoverable: false,
   },
-  command("settings.open", "Settings", alwaysAvailable, {
+  command("settings.open", t("action.settings"), alwaysAvailable, {
     ...mod(",", "⇧⌘,", "Ctrl+Shift+,"),
     shift: true,
   }),
-  command("sidebar.toggle", "Toggle channel list", alwaysAvailable, {
+  command("sidebar.toggle", t("action.sidebar_toggle"), alwaysAvailable, {
     ...mod("s", "⌥⌘S", "Ctrl+Alt+S"),
     alt: true,
   }),
   command(
     "members.toggle",
-    "Toggle member list",
+    t("action.members_toggle"),
     alwaysAvailable,
     mod(".", "⌘.", "Ctrl+."),
   ),
-  command(
-    "buffer.open",
-    "Join a channel or start a direct message",
-    alwaysAvailable,
-    { ...mod("k", "⇧⌘K", "Ctrl+Shift+K"), shift: true },
-  ),
-  command("buffer.open-direct", "Open direct message", alwaysAvailable),
-  command("network.add", "Add network", alwaysAvailable),
-  command("network.open-server", "Open server messages", alwaysAvailable),
+  command("buffer.open", t("action.open_buffer"), alwaysAvailable, {
+    ...mod("k", "⇧⌘K", "Ctrl+Shift+K"),
+    shift: true,
+  }),
+  command("buffer.open-direct", t("action.open_direct"), alwaysAvailable),
+  command("network.add", t("action.add_network"), alwaysAvailable),
+  command("network.open-server", t("action.network_server"), alwaysAvailable),
   command(
     "message.jump-bottom",
-    "Jump to latest message",
+    t("action.jump_bottom"),
     alwaysAvailable,
     key("End", "End", "desktop"),
   ),
-  command("pane.show-buffer", "Show buffer", alwaysAvailable),
+  command("pane.show-buffer", t("action.show_buffer"), alwaysAvailable),
   command(
     "buffer.previous",
-    "Previous buffer",
+    t("action.previous_buffer"),
     needsBuffers,
     altKey("ArrowUp", "⌥↑", "Alt+↑", "desktop"),
   ),
   command(
     "buffer.next",
-    "Next buffer",
+    t("action.next_buffer"),
     needsBuffers,
     altKey("ArrowDown", "⌥↓", "Alt+↓", "desktop"),
   ),
   command(
     "list.previous",
-    "Previous item",
+    t("action.list_previous"),
     needsList,
     key("ArrowUp", "↑", "list"),
   ),
-  command("list.next", "Next item", needsList, key("ArrowDown", "↓", "list")),
-  command("list.open", "Open item", needsList, key("Enter", "↵", "list")),
+  command(
+    "list.next",
+    t("action.list_next"),
+    needsList,
+    key("ArrowDown", "↓", "list"),
+  ),
+  command(
+    "list.open",
+    t("action.list_open"),
+    needsList,
+    key("Enter", "↵", "list"),
+  ),
 ];
 
 export function isActionId(id: string): id is ActionId {
