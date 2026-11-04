@@ -36,7 +36,6 @@ import {
   failedStartupRetryCount,
   shouldOfferAppReset,
 } from "./hosted/startup-recovery";
-import { startupStrings } from "./hosted/strings";
 import {
   installPlatformEnvironment,
   platformEnvironment,
@@ -473,7 +472,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
   const resetButton = splash.querySelector<HTMLButtonElement>(
     "[data-splash-reset]",
   );
-  if (resetButton !== null) resetButton.textContent = startupStrings.resetApp;
+  if (resetButton !== null) resetButton.textContent = t("hosted.reset_app");
   const status = splash.querySelector<HTMLElement>("[data-splash-status]");
   const retry = () => {
     const action = retryOnRecovery;
@@ -556,7 +555,7 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       resetButton.onclick = () => {
         retryButton.hidden = true;
         resetButton.hidden = true;
-        status.textContent = startupStrings.resetting;
+        status.textContent = t("hosted.resetting");
         void resetWebApp();
       };
       retryOnRecovery = retryWhenReachable

@@ -1,8 +1,8 @@
 import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
-import { t } from "../../features/composer/strings";
 import { nickColor } from "../../features/conversation/nick-color";
 import { unreadBadge } from "../../features/unread/unread-badge";
+import { t } from "../../strings";
 import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";

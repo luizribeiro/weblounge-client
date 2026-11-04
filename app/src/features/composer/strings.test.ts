@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type MessageKey, messages, t } from "./strings";
+import { type MessageKey, messages, t } from "../../strings";
 
 const messageKeys = Object.keys(messages).filter(
   (key): key is MessageKey =>

@@ -22,7 +22,6 @@ import type {
   NetworkProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
-import { t } from "../../features/composer/strings";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
 import {
   DirectIdentityBanner,
@@ -46,6 +45,7 @@ import {
   newestCommittedMessageId,
 } from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
+import { t } from "../../strings";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
 import { createSinglePane, showInFocusedPane } from "./pane-layout";

@@ -1,7 +1,6 @@
 import type { DeploymentConfig } from "../engine/generated/DeploymentConfig";
 import { t } from "../strings";
 import { withStartupDeadline } from "./startup-deadline";
-import { startupStrings } from "./strings";
 
 export const deploymentConfigCacheKey = "weblounge.deployment-config.v1";
 const unknownFields = new Set<string>();
@@ -15,7 +14,7 @@ type ConfigStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export class DeploymentConfigUnavailableError extends Error {
   constructor() {
-    super(startupStrings.unreachable);
+    super(t("hosted.unreachable"));
     this.name = "DeploymentConfigUnavailableError";
   }
 }

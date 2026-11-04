@@ -10,13 +10,13 @@ import {
   TouchTapGesture,
 } from "../../platform/focus-without-pan";
 import { reportKeyboardInteraction } from "../../platform/keyboard-debug";
+import { t, translate } from "../../strings";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import { composerGeometryChangeEvent } from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
-import { t, translate } from "./strings";
 
 interface ComposerProps {
   readonly bufferId: number;

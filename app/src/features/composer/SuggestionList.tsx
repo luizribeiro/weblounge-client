@@ -1,10 +1,10 @@
 import { createMemo, For, onCleanup } from "solid-js";
 import type { CompletionCandidate } from "../../engine/protocol";
 import { TouchTapGesture } from "../../platform/focus-without-pan";
+import { t, translate } from "../../strings";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import { Line } from "../../ui/Line";
 import styles from "../conversation/SimpleComposer.module.css";
-import { t, translate } from "./strings";
 
 interface SuggestionListProps {
   readonly candidates: readonly CompletionCandidate[];

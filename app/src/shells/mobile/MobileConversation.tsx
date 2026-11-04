@@ -20,7 +20,6 @@ import type {
   NetworkProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
-import { t } from "../../features/composer/strings";
 import { ConversationTitle } from "../../features/conversation/ConversationTitle";
 import {
   DirectIdentityBanner,
@@ -34,6 +33,7 @@ import {
   createReadDwell,
   newestCommittedMessageId,
 } from "../../features/unread/createReadDwell";
+import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";

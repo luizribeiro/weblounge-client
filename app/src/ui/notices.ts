@@ -1,6 +1,6 @@
 import { type Accessor, createSignal } from "solid-js";
 import type { ActionId } from "../actions/action-registry";
-import type { MessageKey, MessageValues } from "../features/composer/strings";
+import type { MessageKey, MessageValues } from "../strings";
 
 export interface NoticeInput {
   readonly message: {

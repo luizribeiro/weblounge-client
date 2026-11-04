@@ -1,6 +1,6 @@
 import { createEffect, onCleanup } from "solid-js";
 import type { ActionId } from "../actions/action-registry";
-import { t } from "../features/composer/strings";
+import { t } from "../strings";
 import type { ToastNotice } from "./notices";
 import styles from "./Toast.module.css";
 

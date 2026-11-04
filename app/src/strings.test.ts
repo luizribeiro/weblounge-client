@@ -24,6 +24,19 @@ describe("app strings", () => {
     error.mockRestore();
   });
 
+  it("gives every previously missing key specific copy", () => {
+    expect(t("composer.unexpected_argument")).toBe(
+      "That command has an unexpected argument.",
+    );
+    expect(t("engine.channel_not_found")).toBe("That channel isn't available.");
+    expect(t("engine.read_marker_invalid")).toBe(
+      "That read position isn't available on this server.",
+    );
+    expect(t("engine.mark_read_failed")).toBe(
+      "Couldn't mark this conversation as read.",
+    );
+  });
+
   it("contains every literal key passed to t in the app", () => {
     const usedKeys = sourceFiles(appSource, [".ts", ".tsx"]).flatMap((file) =>
       [

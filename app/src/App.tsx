@@ -31,13 +31,6 @@ import type {
   NetworkProjection,
 } from "./engine/protocol";
 import { migrateDraft } from "./features/composer/draft-storage";
-import {
-  isMessageKey,
-  type MessageKey,
-  type MessageValues,
-  t,
-  translate,
-} from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
   formatNotificationPromptVisibility,
@@ -86,6 +79,13 @@ import {
   serviceWorkerUpdateIsReady,
 } from "./service-worker";
 import { ResponsiveShell } from "./shells/ResponsiveShell";
+import {
+  isMessageKey,
+  type MessageKey,
+  type MessageValues,
+  t,
+  translate,
+} from "./strings";
 import {
   contextMenuRegistry,
   installContextMenuHandler,

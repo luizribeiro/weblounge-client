@@ -522,6 +522,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     verify it across painted frames without depending on the browser's intermittent `scrollend`.
   - [x] Keep the opening-keyboard transcript snapshot through one settled paint before revealing
     the resized virtual rows, so measurement delivery cannot expose an overlapping final frame.
+  - [x] Centralize every app-owned user-facing message in one typed, interpolation-ready strings
+    table. Rust engine literals and app call sites are checked against it, missing runtime keys
+    render visibly instead of falling back, and production TSX rejects hard-coded copy.
 - **Milestone 4 at beta.weblounge.org:**
   - B1. [x] Hosted-mode build configuration and the concierge OAuth handover (design 03).
   - B1b. [x] Hosted sign-in hardening: explicit production config, redacted request secrets,
