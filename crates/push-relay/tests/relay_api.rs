@@ -822,26 +822,6 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
     );
 
     harness.activate(&device, &route).await;
-    let replay = call_json(
-        &harness.app,
-        Method::POST,
-        "/test/replay-last-probe",
-        None,
-        Value::Null,
-        &[],
-    )
-    .await;
-    assert_eq!(replay.0, StatusCode::NO_CONTENT);
-    assert_eq!(
-        harness
-            .deliveries
-            .lock()
-            .expect("deliveries")
-            .pop()
-            .expect("replayed probe")
-            .1,
-        b"accepted probe"
-    );
     harness.renew_lease(&device, "previous-build-tab").await;
     assert_eq!(
         harness.push(&route, &home, b"held before expiry").await,

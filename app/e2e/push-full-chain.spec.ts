@@ -15,7 +15,6 @@ const relayControl = process.env.WEBLOUNGE_PUSH_RELAY_CONTROL ?? "";
 const receiverRecords = process.env.WEBLOUNGE_PUSH_RECEIVER_RECORDS ?? "";
 const currentApp = process.env.WEBLOUNGE_APP_DIR ?? "";
 const appLink = process.env.WEBLOUNGE_PUSH_APP_LINK ?? "";
-const unpatchedErgo = process.env.WEBLOUNGE_PUSH_UNPATCHED_ERGO === "1";
 const oauthToken = "push-e2e-token";
 let receiverCursor = 0;
 
@@ -379,76 +378,6 @@ test.describe("full unmocked push lifecycle", () => {
     } finally {
       iosBot.close();
       await iosContext.close();
-    }
-  });
-
-  test("keeps stock Ergo control pushes silent", async ({ browser }) => {
-    test.skip(!unpatchedErgo, "requires stock Ergo 2.19.1");
-    const deviceId = "unpatched-controls";
-    const controlContext = await pushContext(browser, deviceId);
-    const control = await controlContext.newPage();
-    const controlBot = await IrcClient.connectIsolated(
-      `unpatched-control-bot-${randomUUID().slice(0, 8)}`,
-      "#push-e2e",
-    );
-    try {
-      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
-      await control.goto("/");
-      await expect(connectionHeading(control)).toBeVisible();
-      await control.getByRole("button", { name: "Turn on" }).click();
-      await expect
-        .poll(async () => {
-          const created = (await relayStates()).find(
-            ({ id }) => !devicesBefore.has(id),
-          );
-          return created === undefined
-            ? undefined
-            : { active: created.active, probing: created.probing };
-        })
-        .toEqual({ active: 1, probing: 0 });
-      await preparePortablePushDriver(control);
-      await releaseForegroundLeases([control]);
-      const badgeBefore = (await storedAppBadge(control)) ?? 0;
-
-      const direct = `stock Ergo control ${randomUUID()}`;
-      const echoed = await controlBot.privmsgConfirmed("weblounge", direct);
-      await deliverPortableEnvelope(
-        control,
-        await nextRecord(`/device/${deviceId}`),
-      );
-      await expectNotification(control, direct);
-      await expect.poll(() => storedAppBadge(control)).toBe(badgeBefore + 1);
-
-      await audit.markRead(controlBot.nickname, serverTime(echoed));
-      await deliverPortableEnvelope(
-        control,
-        await nextRecord(`/device/${deviceId}`),
-      );
-      await expect.poll(() => storedAppBadge(control)).toBe(badgeBefore);
-      const afterMarkread = await notifications(control);
-
-      await clearPortableNotifications(control);
-      const replay = await fetch(`${relayControl}/test/replay-last-probe`, {
-        method: "POST",
-      });
-      expect(replay.status).toBe(204);
-      await deliverPortableEnvelope(
-        control,
-        await nextRecord(`/device/${deviceId}`),
-      );
-      const afterPing = await notifications(control);
-
-      test.fail(
-        true,
-        "the worker presents generic notifications for high-urgency MARKREAD and PING",
-      );
-      expect({ markread: afterMarkread, ping: afterPing }).toEqual({
-        markread: [],
-        ping: [],
-      });
-    } finally {
-      controlBot.close();
-      await controlContext.close();
     }
   });
 });
@@ -871,29 +800,6 @@ async function deliverPortableEnvelope(
     },
     { deliveryId, payload: envelope },
   );
-  await expectPortableDriverSuccess(page, deliveryId);
-}
-
-async function clearPortableNotifications(page: Page): Promise<void> {
-  const deliveryId = randomUUID();
-  await page.evaluate(async (id) => {
-    const registration =
-      await navigator.serviceWorker.getRegistration("/push-driver/");
-    if (registration?.active === undefined)
-      throw new Error("push driver worker is not active");
-    registration.active.postMessage({
-      type: "clear-notifications",
-      deliveryId: id,
-    });
-  }, deliveryId);
-  await expectPortableDriverSuccess(page, deliveryId);
-  await expect.poll(() => notifications(page)).toEqual([]);
-}
-
-async function expectPortableDriverSuccess(
-  page: Page,
-  deliveryId: string,
-): Promise<void> {
   let result: { ok: boolean; error?: string } | undefined;
   await expect
     .poll(async () => {

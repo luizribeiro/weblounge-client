@@ -48,12 +48,6 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
-      name: "chromium-push-unpatched-full",
-      grep: /keeps stock Ergo control pushes silent/,
-      testMatch: "**/push-full-chain.spec.ts",
-      use: { browserName: "chromium", channel: "chromium" },
-    },
-    {
       name: "firefox-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "firefox" },

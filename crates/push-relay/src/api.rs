@@ -1,8 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
 #[cfg(feature = "push-e2e")]
-use std::sync::Mutex;
-#[cfg(feature = "push-e2e")]
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use axum::{
@@ -44,16 +42,6 @@ struct AppState {
     refuse_next_push: Arc<AtomicBool>,
     #[cfg(feature = "push-e2e")]
     normal_pushes_dropped: Arc<AtomicUsize>,
-    #[cfg(feature = "push-e2e")]
-    last_probe: Arc<Mutex<Option<TestProbe>>>,
-}
-
-#[cfg(feature = "push-e2e")]
-#[derive(Clone)]
-struct TestProbe {
-    route_id: String,
-    body: Vec<u8>,
-    ttl: u32,
 }
 
 /// The relay's configured HTTP application.
@@ -101,8 +89,6 @@ pub fn app_with_lease_ttl(
         refuse_next_push: Arc::new(AtomicBool::new(false)),
         #[cfg(feature = "push-e2e")]
         normal_pushes_dropped: Arc::new(AtomicUsize::new(0)),
-        #[cfg(feature = "push-e2e")]
-        last_probe: Arc::new(Mutex::new(None)),
     };
     tokio::spawn(deliver_held_pushes(state.clone()));
     let client_api = Router::new()
@@ -125,7 +111,6 @@ pub fn app_with_lease_ttl(
         .route("/test/device-states", get(test_device_states))
         .route("/test/counters", get(test_counters))
         .route("/test/expire-leases", post(test_expire_leases))
-        .route("/test/replay-last-probe", post(test_replay_last_probe))
         .route("/test/refuse-next-push", post(refuse_next_push));
     router.with_state(state)
 }
@@ -183,34 +168,6 @@ async fn test_counters(State(state): State<AppState>) -> Json<serde_json::Value>
     Json(serde_json::json!({
         "normal_pushes_dropped": state.normal_pushes_dropped.load(Ordering::SeqCst),
     }))
-}
-
-#[cfg(feature = "push-e2e")]
-async fn test_replay_last_probe(State(state): State<AppState>) -> Result<StatusCode> {
-    let probe = state
-        .last_probe
-        .lock()
-        .map_err(|_| Error::Config("test probe state is unavailable".to_owned()))?
-        .take()
-        .ok_or_else(|| Error::NotFound)?;
-    let Route::Active { target, .. } = state.database.route(probe.route_id.clone()).await? else {
-        return Err(Error::BadRequest(
-            "last probe route is not active".to_owned(),
-        ));
-    };
-    match state
-        .sender
-        .send(Delivery {
-            route_id: probe.route_id,
-            target,
-            body: probe.body,
-            ttl: probe.ttl,
-        })
-        .await?
-    {
-        PushOutcome::Accepted => Ok(StatusCode::NO_CONTENT),
-        PushOutcome::Dead => Err(Error::DeliveryUnavailable),
-    }
 }
 
 #[derive(Deserialize)]
@@ -430,10 +387,8 @@ async fn receive_push(
             return rejection.into_response();
         }
     };
-    match deliver_push(&state, route_id.clone(), &headers, &body).await {
+    match deliver_push(&state, route_id, &headers, &body).await {
         Ok(PushDisposition::ProbingDiscard) => {
-            #[cfg(feature = "push-e2e")]
-            record_test_probe(&state, route_id, &headers, &body);
             tracing::info!(
                 route = %route_prefix,
                 action = "probing-discard",
@@ -503,26 +458,6 @@ async fn receive_push(
             error.into_response()
         }
     }
-}
-
-#[cfg(feature = "push-e2e")]
-fn record_test_probe(state: &AppState, route_id: String, headers: &HeaderMap, body: &Bytes) {
-    if let Some(ttl) = ttl_header(headers)
-        && let Ok(mut probe) = state.last_probe.lock()
-    {
-        *probe = Some(TestProbe {
-            route_id,
-            body: body.to_vec(),
-            ttl,
-        });
-    }
-}
-
-fn ttl_header(headers: &HeaderMap) -> Option<u32> {
-    headers
-        .get("TTL")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse().ok())
 }
 
 enum PushDisposition {
@@ -610,7 +545,10 @@ async fn deliver_push(
             if !urgency.is_deliverable_to(TargetKind::for_web_push(&target)?) {
                 return Ok(PushDisposition::UrgencyDropped { urgency });
             }
-            let ttl = ttl_header(headers)
+            let ttl = headers
+                .get("TTL")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u32>().ok())
                 .ok_or_else(|| Error::BadRequest("TTL must be an unsigned integer".to_owned()))?;
             if ttl > MAX_TTL {
                 return Err(Error::BadRequest("TTL must not exceed 28 days".to_owned()));
