@@ -77,6 +77,13 @@ struct RunningNetwork {
     push: PushRegistration,
 }
 
+impl RunningNetwork {
+    fn read_markers_server_backed(&self) -> bool {
+        !self.client.state().is_connected()
+            || self.client.state().supports(papo::Feature::ReadMarkers)
+    }
+}
+
 #[derive(Default)]
 struct PushRegistration {
     generation: u64,
@@ -1820,14 +1827,14 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let server_backed = !running.client.state().is_connected()
-            || running.client.state().supports(papo::Feature::ReadMarkers);
-        let advance = match running
+        let server_backed = running.read_markers_server_backed();
+        let preparation = match running
             .model
             .request_mark_read(buffer_id, through, server_backed)
         {
-            ReadPreparation::Ready(advance) => Some(advance),
-            ReadPreparation::Deferred => None,
+            preparation @ (ReadPreparation::Ready(_) | ReadPreparation::LocalOnly(_)) => {
+                preparation
+            }
             ReadPreparation::Invalid => {
                 engine_log(EngineMessageKey::ReadMarkerInvalid.as_str());
                 return vec![
@@ -1839,7 +1846,7 @@ impl Runtime {
                 ];
             }
         };
-        let mut output = record_read_advances(running, advance);
+        let mut output = record_read_preparations(running, [preparation]);
         let flush = start_read_flush(running);
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
@@ -1859,10 +1866,9 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let server_backed = !running.client.state().is_connected()
-            || running.client.state().supports(papo::Feature::ReadMarkers);
-        let advances = running.model.prepare_mark_all_read(server_backed);
-        let mut output = record_read_advances(running, advances);
+        let server_backed = running.read_markers_server_backed();
+        let preparations = running.model.request_mark_all_read(server_backed);
+        let mut output = record_read_preparations(running, preparations);
         let flush = start_read_flush(running);
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
@@ -1961,8 +1967,7 @@ fn record_read_advances(
     running: &mut RunningNetwork,
     advances: impl IntoIterator<Item = ReadAdvance>,
 ) -> Vec<EngineToUi> {
-    let server_backed = !running.client.state().is_connected()
-        || running.client.state().supports(papo::Feature::ReadMarkers);
+    let server_backed = running.read_markers_server_backed();
     let mut output = Vec::new();
     for advance in advances {
         output.extend(
@@ -1972,6 +1977,29 @@ fn record_read_advances(
         );
         if server_backed {
             queue_read_advance(&mut running.pending_reads, advance);
+        }
+    }
+    output
+}
+
+fn record_read_preparations(
+    running: &mut RunningNetwork,
+    preparations: impl IntoIterator<Item = ReadPreparation>,
+) -> Vec<EngineToUi> {
+    let mut output = Vec::new();
+    for preparation in preparations {
+        match preparation {
+            ReadPreparation::Ready(advance) => {
+                output.extend(record_read_advances(running, [advance]));
+            }
+            ReadPreparation::LocalOnly(advance) => {
+                output.extend(
+                    running
+                        .model
+                        .apply_read_time(advance.buffer_id, advance.time),
+                );
+            }
+            ReadPreparation::Invalid => {}
         }
     }
     output
@@ -2454,8 +2482,21 @@ fn receive_message(
         .then(|| appended_read_advance(model, &events))
         .flatten();
     let mut advances = own_advance.into_iter().collect::<Vec<_>>();
-    advances.extend(model.take_deferred_read_advances());
+    if !history
+        && let Some(buffer_id) = message_event_buffer_id(&events)
+        && let Some(advance) = model.resolve_deferred_read(buffer_id)
+    {
+        advances.push(advance);
+    }
     (events, advances)
+}
+
+fn message_event_buffer_id(events: &[EngineToUi]) -> Option<BufferId> {
+    events.iter().find_map(|event| match event {
+        EngineToUi::MessagesAppended { buffer_id, .. }
+        | EngineToUi::MessageUpdated { buffer_id, .. } => Some(*buffer_id),
+        _ => None,
+    })
 }
 
 fn completion_context(
@@ -3511,6 +3552,7 @@ fn process_disconnect(
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running.model.invalidate_direct_handles();
+    running.model.clear_deferred_reads();
     running.flushing_reads = false;
     let mut retained = VecDeque::new();
     for queued in running.pending_sends.drain(..) {
@@ -3909,11 +3951,20 @@ fn process_history(
         end,
     );
     output.extend(finished);
+    resolve_history_read(&mut running.model, &conversation, &mut read_advances);
     drop(state);
     send_events(outbound, output);
     flush_history_read_advances(&shared_state, outbound, instance, read_advances);
     spawn_next_history(&shared_state, outbound, client, instance, next);
     update_chat_list(&shared_state, outbound, instance);
+}
+
+fn resolve_history_read(
+    model: &mut NetworkModel,
+    conversation: &papo::Conversation,
+    advances: &mut Vec<ReadAdvance>,
+) {
+    advances.extend(model.resolve_deferred_read_for(conversation));
 }
 
 fn flush_history_read_advances(
@@ -8330,12 +8381,25 @@ async fn delay(duration: Duration) {
             },
         });
 
-        assert_eq!(
-            output,
-            [EngineToUi::CommandResult {
-                id: "mark-pushed".into()
-            }]
-        );
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                buffer_id: current_buffer,
+                unread: 0,
+                mentions: 0,
+            } if *current_buffer == buffer_id
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::ReadMarkerMoved {
+                buffer_id: current_buffer,
+                through: Some(current_message),
+            } if *current_buffer == buffer_id && *current_message == message_id
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::CommandResult { id } if id == "mark-pushed"
+        )));
         assert!(
             lock(&state)
                 .network
@@ -8352,13 +8416,7 @@ async fn delay(duration: Duration) {
         .await;
         process_event(&state, &outbound, &client, 1, message);
 
-        assert!(collect(&mut receiver).iter().any(|event| matches!(
-            event,
-            EngineToUi::ReadMarkerMoved {
-                buffer_id: current_buffer,
-                through: Some(current_message),
-            } if *current_buffer == buffer_id && *current_message == message_id
-        )));
+        _ = collect(&mut receiver);
         let request = wire.next_sent().await;
         assert!(request.ends_with("MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"));
         let label = request_label(&request);
@@ -9737,6 +9795,16 @@ async fn delay(duration: Duration) {
         let buffer_id = model
             .buffer_id_for_target(&SendTarget::Channel(channel))
             .expect("projected channel has a stable id");
+        wire.server(":alice!a@host PRIVMSG #room :unread before own send")
+            .await;
+        let papo::Event::Message(peer) = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await
+        else {
+            panic!("peer message expected");
+        };
+        model.receive(&peer, false, &client.state(), None);
         let (pending, _) = model
             .begin_action(buffer_id, "waves".into(), &client.state())
             .expect("channel is sendable");
@@ -9758,11 +9826,26 @@ async fn delay(duration: Duration) {
             .confirm_send(&pending, &metadata)
             .expect("optimistic row exists");
 
-        assert!(confirmation_events.iter().any(|event| matches!(
-            event,
-            EngineToUi::MessageConfirmed { message, .. }
-                if message.server_ids.is_empty() && message.server_time_ms.is_none()
-        )));
+        let confirmed = confirmation_events
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessageConfirmed { message, .. }
+                    if message.server_ids.is_empty() && message.server_time_ms.is_none() =>
+                {
+                    Some(message.id)
+                }
+                _ => None,
+            })
+            .expect("confirmation has no server metadata");
+        let advance = model
+            .prepare_mark_read(buffer_id, confirmed)
+            .expect("a committed local row is a valid local read target");
+        assert!(
+            confirmation_events
+                .iter()
+                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
+        );
+        assert!(model.apply_read_time(buffer_id, advance.time).is_empty());
     }
 
     #[tokio::test]

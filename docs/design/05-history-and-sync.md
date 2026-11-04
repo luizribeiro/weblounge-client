@@ -53,14 +53,16 @@ moves forward. Without server support, `MarkRead` advances the local marker.
 
 Visible conversation instances remain the source of read intent. A foreground instance at the
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that
-row to a server time and records that local read position immediately. A row restored from push is
-provisional: read intent through it waits until live delivery or history verifies its server msgid
-and time. When read markers are supported, the engine coalesces pending advances per conversation
-and calls `Client::mark_read`; an unavailable connection leaves the advance queued until
-`Connected` instead of rejecting or losing it. A server refusal is retried with capped exponential
-backoff and recorded in diagnostics rather than shown as a notice. Cached conversations use this
-same dwell and queue after history paints; they have no separate mark-read action or protocol
-request. The engine does not poll. For badge counts, DMs
+row to a server time and records that local read position immediately. This local advance always
+clears unread state, including when the row was restored from push. Such a row remains provisional
+for server sync: `Client::mark_read` waits until live delivery or the next history result verifies
+its server msgid and time, then uses the newest verified row in that buffer. A missing verified row
+or a disconnect drops that deferred server intent without restoring local unread state. When read
+markers are supported, the engine coalesces pending advances per conversation; an unavailable
+connection leaves a validated advance queued until `Connected` instead of rejecting or losing it.
+A server refusal is retried with bounded backoff and recorded in diagnostics rather than shown as a
+notice. Cached conversations use this same dwell and queue after history paints; they have no
+separate mark-read action or protocol request. The engine does not poll. For badge counts, DMs
 classify every incoming message as a mention, while channels classify only messages matching the
 highlight rules. Row highlighting is independent of that DM badge policy: in every conversation, a
 row is highlighted only when its text matches the rules. The initial rule is the current nick as an
@@ -88,8 +90,9 @@ notification policy, or background push delivery.
   is delivered once in chronological order. Reconnect transcripts cover ready direct messages,
   channels retained across a fresh hosted client, multi-page catch-up, and the catch-up cap.
   Separate transcripts cover initial marker fetch, online and queued-offline marker sends, and live
-  remote advances. A restored pushed DM defers its read intent until authoritative history
-  reconciles the row; a refused marker is diagnostic-only and retries after backoff.
+  remote advances. A restored pushed DM clears locally at once while deferring only its server
+  marker until authoritative history reconciles the row; a refused marker is diagnostic-only and
+  retries after bounded backoff.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
   configured limits.
 - Production-profile Playwright reconnects after own multiline and bot split/multiline sends,

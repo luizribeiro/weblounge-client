@@ -312,7 +312,7 @@ pub(crate) struct ReadAdvance {
 
 pub(crate) enum ReadPreparation {
     Ready(ReadAdvance),
-    Deferred,
+    LocalOnly(ReadAdvance),
     Invalid,
 }
 
@@ -1905,7 +1905,7 @@ impl NetworkModel {
         &mut self,
         buffer_id: BufferId,
         through: MessageId,
-        require_server_metadata: bool,
+        server_backed: bool,
     ) -> ReadPreparation {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return ReadPreparation::Invalid;
@@ -1917,12 +1917,18 @@ impl NetworkModel {
         else {
             return ReadPreparation::Invalid;
         };
-        if record.provisional_identity.is_some() {
+        let provisional = record.provisional_identity.is_some();
+        if provisional && server_backed {
             buffer.deferred_read = Some(through);
-            return ReadPreparation::Deferred;
         }
-        read_advance(buffer_id, buffer, through, require_server_metadata)
-            .map_or(ReadPreparation::Invalid, ReadPreparation::Ready)
+        let Some(advance) = read_advance(buffer_id, buffer, through, true) else {
+            return ReadPreparation::Invalid;
+        };
+        if provisional && server_backed {
+            ReadPreparation::LocalOnly(advance)
+        } else {
+            ReadPreparation::Ready(advance)
+        }
     }
 
     pub(crate) fn prepare_mark_read(
@@ -1934,26 +1940,53 @@ impl NetworkModel {
         read_advance(buffer_id, buffer, through, false)
     }
 
-    pub(crate) fn take_deferred_read_advances(&mut self) -> Vec<ReadAdvance> {
-        self.buffers
-            .iter_mut()
-            .filter_map(|(buffer_id, buffer)| {
-                let through = buffer.deferred_read?;
-                let advance = read_advance(*buffer_id, buffer, through, true)?;
-                buffer.deferred_read = None;
-                Some(advance)
-            })
-            .collect()
+    pub(crate) fn resolve_deferred_read(&mut self, buffer_id: BufferId) -> Option<ReadAdvance> {
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        buffer.deferred_read.take()?;
+        buffer
+            .timeline
+            .iter()
+            .rev()
+            .find_map(|record| verified_read_advance(buffer_id, buffer, record.projection.id))
     }
 
-    pub(crate) fn prepare_mark_all_read(&self, require_server_metadata: bool) -> Vec<ReadAdvance> {
-        self.buffer_order
+    pub(crate) fn resolve_deferred_read_for(
+        &mut self,
+        conversation: &papo::Conversation,
+    ) -> Option<ReadAdvance> {
+        let key = NameKey::from_conversation(conversation)?;
+        self.resolve_deferred_read(*self.names.get(&key)?)
+    }
+
+    pub(crate) fn clear_deferred_reads(&mut self) {
+        for buffer in self.buffers.values_mut() {
+            buffer.deferred_read = None;
+        }
+    }
+
+    pub(crate) fn request_mark_all_read(&mut self, server_backed: bool) -> Vec<ReadPreparation> {
+        let targets = self
+            .buffer_order
             .iter()
             .filter_map(|id| {
                 let buffer = self.buffers.get(id)?;
-                buffer.timeline.iter().rev().find_map(|record| {
-                    read_advance(*id, buffer, record.projection.id, require_server_metadata)
-                })
+                let through = buffer
+                    .timeline
+                    .iter()
+                    .rev()
+                    .find(|record| is_committed(&record.projection))?
+                    .projection
+                    .id;
+                Some((*id, through))
+            })
+            .collect::<Vec<_>>();
+        targets
+            .into_iter()
+            .filter_map(|(buffer_id, through)| {
+                match self.request_mark_read(buffer_id, through, server_backed) {
+                    ReadPreparation::Invalid => None,
+                    preparation => Some(preparation),
+                }
             })
             .collect()
     }
@@ -2650,15 +2683,12 @@ fn read_advance(
     buffer_id: BufferId,
     buffer: &BufferState,
     through: MessageId,
-    require_server_metadata: bool,
+    allow_provisional: bool,
 ) -> Option<ReadAdvance> {
     let record = buffer.timeline.iter().find(|record| {
         record.projection.id == through
             && is_committed(&record.projection)
-            && record.provisional_identity.is_none()
-            && (!require_server_metadata
-                || (!record.projection.server_ids.is_empty()
-                    && record.projection.server_time_ms.is_some()))
+            && (allow_provisional || record.provisional_identity.is_none())
     })?;
     Some(ReadAdvance {
         buffer_id,
@@ -2672,6 +2702,20 @@ fn read_advance(
         },
         time: system_time_from_millis(message_time(&record.projection)),
     })
+}
+
+fn verified_read_advance(
+    buffer_id: BufferId,
+    buffer: &BufferState,
+    through: MessageId,
+) -> Option<ReadAdvance> {
+    let record = buffer.timeline.iter().find(|record| {
+        record.projection.id == through
+            && record.provisional_identity.is_none()
+            && !record.projection.server_ids.is_empty()
+            && record.projection.server_time_ms.is_some()
+    })?;
+    read_advance(buffer_id, buffer, record.projection.id, false)
 }
 
 fn message_time(message: &MessageProjection) -> i64 {
@@ -2872,7 +2916,7 @@ mod tests {
 
     use super::{
         DirectKey, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey, NetworkModel,
-        PendingTargetState, SendTarget, TimelineOrigin, collapse_blank_lines,
+        PendingTargetState, ReadPreparation, SendTarget, TimelineOrigin, collapse_blank_lines,
         derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
@@ -3767,19 +3811,110 @@ mod tests {
             );
         }
 
-        let advances = model.prepare_mark_all_read(false);
-        assert_eq!(advances.len(), 1);
-        let events = model.apply_read_time(advances[0].buffer_id, advances[0].time);
+        let preparations = model.request_mark_all_read(false);
+        let [ReadPreparation::Ready(advance)] = preparations.as_slice() else {
+            panic!("one ready advance expected");
+        };
+        let events = model.apply_read_time(advance.buffer_id, advance.time);
         assert!(events.iter().any(|event| matches!(
             event,
             crate::EngineToUi::BufferUpdated { buffer }
-                if buffer.read_at_ms == Some(time_millis(advances[0].time))
+                if buffer.read_at_ms == Some(time_millis(advance.time))
         )));
         assert!(
             events
                 .iter()
                 .any(|event| matches!(event, crate::EngineToUi::UnreadChanged { unread: 0, .. }))
         );
+    }
+
+    #[test]
+    fn mark_all_read_clears_a_provisional_push_locally() {
+        let (mut model, state) = model(10);
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "weblounge",
+            "msgid": "pushed-direct",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        model.restore_pushed_messages(vec![pushed], &state);
+
+        let preparations = model.request_mark_all_read(true);
+        let [ReadPreparation::LocalOnly(advance)] = preparations.as_slice() else {
+            panic!("one local-only advance expected");
+        };
+        let events = model.apply_read_time(advance.buffer_id, advance.time);
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::EngineToUi::UnreadChanged {
+                unread: 0,
+                mentions: 0,
+                ..
+            }
+        )));
+        assert_eq!(
+            model.buffers[&advance.buffer_id].deferred_read,
+            model.buffers[&advance.buffer_id]
+                .timeline
+                .last()
+                .map(|record| record.projection.id)
+        );
+    }
+
+    #[test]
+    fn deferred_push_read_uses_the_newest_verified_row_once() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(
+            incoming(
+                &state,
+                "verified earlier",
+                Some("verified"),
+                Some(1_000),
+                1_000,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "missing-from-history",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        let restored = model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, pushed_id) = restored
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("pushed row is restored");
+        assert!(matches!(
+            model.request_mark_read(buffer_id, pushed_id, true),
+            ReadPreparation::LocalOnly(_)
+        ));
+
+        let advance = model
+            .resolve_deferred_read(buffer_id)
+            .expect("the earlier verified row is used");
+        assert_eq!(time_millis(advance.time), 1_000);
+        assert!(model.resolve_deferred_read(buffer_id).is_none());
     }
 
     #[test]
