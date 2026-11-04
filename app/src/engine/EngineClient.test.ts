@@ -379,7 +379,11 @@ describe("WorkerEngineClient", () => {
       {
         type: "push_state_changed",
         network_id: 1,
-        state: { status: "failed", reason: "web_push_forbidden" },
+        state: {
+          status: "failed",
+          route_id: "route-1",
+          reason: "web_push_forbidden",
+        },
       },
       {
         type: "push_route_required",
@@ -451,7 +455,11 @@ describe("WorkerEngineClient", () => {
       port.emit({
         type: "push_state_changed",
         network_id: 1,
-        state: { status: "failed", reason: "future_failure" },
+        state: {
+          status: "failed",
+          route_id: "route-1",
+          reason: "future_failure",
+        },
       }),
     ).toThrow("invalid engine message");
   });

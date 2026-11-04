@@ -1446,7 +1446,11 @@ async function installFakeEngine(
             this.emit({
               type: "push_state_changed",
               network_id: 1,
-              state: { status: "failed", reason: "invalid_parameters" },
+              state: {
+                status: "failed",
+                route_id: routeId,
+                reason: "invalid_parameters",
+              },
             });
           });
         }

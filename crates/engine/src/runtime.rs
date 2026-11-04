@@ -4381,6 +4381,7 @@ fn spawn_push_register(
                 route_id: task.route.route_id.clone(),
             },
             Err(error) => PushState::Failed {
+                route_id: task.route.route_id.clone(),
                 reason: push_failure(&error),
             },
         };
@@ -4451,6 +4452,7 @@ fn spawn_push_unregister(
                     }
                     Err(error) => {
                         let push_state = PushState::Failed {
+                            route_id: task.route_id.clone(),
                             reason: push_failure(error),
                         };
                         running.push.state = Some(push_state.clone());
@@ -8669,10 +8671,11 @@ async fn delay(duration: Duration) {
                     event,
                     EngineToUi::PushStateChanged {
                         state: crate::PushState::Failed {
+                            route_id,
                             reason: crate::PushFailure::RegistrationLimit,
                         },
                         ..
-                    }
+                    } if route_id == "route-1"
                 ))
         );
 
@@ -8701,10 +8704,11 @@ async fn delay(duration: Duration) {
                     event,
                     EngineToUi::PushStateChanged {
                         state: crate::PushState::Failed {
+                            route_id,
                             reason: crate::PushFailure::WebPushForbidden,
                         },
                         ..
-                    }
+                    } if route_id == "route-2"
                 ))
         );
 
@@ -8733,10 +8737,11 @@ async fn delay(duration: Duration) {
                     event,
                     EngineToUi::PushStateChanged {
                         state: crate::PushState::Failed {
+                            route_id,
                             reason: crate::PushFailure::InvalidParameters,
                         },
                         ..
-                    }
+                    } if route_id == "route-3"
                 ))
         );
     }

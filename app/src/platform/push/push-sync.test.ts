@@ -42,7 +42,14 @@ class FakeEngine implements EngineClient {
       this.emit({
         type: "push_state_changed",
         network_id: request.request.network_id,
-        state: { status: "failed", reason: "connection" },
+        state: {
+          status: "failed",
+          route_id:
+            request.request.type === "unregister_push_route"
+              ? request.request.route_id
+              : "current-route",
+          reason: "connection",
+        },
       });
       return Promise.reject(new Error("unregister failed"));
     }
@@ -446,7 +453,11 @@ describe("push state synchronization", () => {
     current.engine.emit({
       type: "push_state_changed",
       network_id: 1,
-      state: { status: "failed", reason: "invalid_parameters" },
+      state: {
+        status: "failed",
+        route_id: "route-1",
+        reason: "invalid_parameters",
+      },
     });
     await current.synchronizer.settled();
 
@@ -471,7 +482,11 @@ describe("push state synchronization", () => {
     current.engine.emit({
       type: "push_state_changed",
       network_id: 1,
-      state: { status: "failed", reason: "invalid_parameters" },
+      state: {
+        status: "failed",
+        route_id: "route-2",
+        reason: "invalid_parameters",
+      },
     });
     await current.synchronizer.settled();
     expect(current.relay.createRoute).toHaveBeenCalledTimes(2);
@@ -494,6 +509,69 @@ describe("push state synchronization", () => {
     });
   });
 
+  it("retires only the failed route when another tab registers its replacement", async () => {
+    const current = fixture();
+    current.engine.emit({
+      type: "push_route_required",
+      network_id: 1,
+      vapid: "home-vapid",
+      previous_route_id: null,
+    });
+    await current.synchronizer.settled();
+    current.routes.values.set("route-2", {
+      networkId: 1,
+      networkLabel: "Lounge",
+      nickname: "weblounge",
+      vapid: "home-vapid",
+      routeId: "route-2",
+      deviceId: "device-1",
+      endpoint: `${relayOrigin}/v1/r/route-2`,
+      p256dh: "replacement-key",
+      auth: "replacement-auth",
+      privateKey: {} as CryptoKey,
+    });
+
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: {
+        status: "failed",
+        route_id: "route-1",
+        reason: "invalid_parameters",
+      },
+    });
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "registered", route_id: "route-2" },
+    });
+    await current.synchronizer.settled();
+
+    expect(current.engine.requests.at(-1)?.request).toEqual({
+      type: "unregister_push_route",
+      network_id: 1,
+      route_id: "route-1",
+      endpoint: `${relayOrigin}/v1/r/route-1`,
+    });
+    expect(current.relay.deleteRoute).toHaveBeenCalledTimes(1);
+    expect(current.relay.deleteRoute).toHaveBeenCalledWith(
+      { id: "device-1", secret: "device-secret" },
+      "route-1",
+    );
+    expect(current.routes.values.has("route-1")).toBe(false);
+    expect(current.routes.values.has("route-2")).toBe(true);
+    expect(current.relay.createRoute).toHaveBeenCalledOnce();
+    expect(current.relay.activateRoute).toHaveBeenCalledWith(
+      { id: "device-1", secret: "device-secret" },
+      "route-2",
+    );
+    expect(current.routeDiagnostic).toHaveBeenLastCalledWith({
+      networkId: 1,
+      state: "active",
+      routeIdPrefix: "route-2",
+    });
+  });
+
   it("keeps the relay route when home unregistration fails", async () => {
     const current = fixture();
     current.engine.emit({
@@ -508,7 +586,11 @@ describe("push state synchronization", () => {
     current.engine.emit({
       type: "push_state_changed",
       network_id: 1,
-      state: { status: "failed", reason: "invalid_parameters" },
+      state: {
+        status: "failed",
+        route_id: "route-1",
+        reason: "invalid_parameters",
+      },
     });
     await current.synchronizer.settled();
 

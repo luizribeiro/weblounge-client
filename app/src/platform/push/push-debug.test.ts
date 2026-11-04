@@ -20,7 +20,14 @@ it("formats prompt inputs and every typed engine and relay route state", () => {
       },
     ],
     [3, { status: "unsupported", reason: "no_web_push" }],
-    [4, { status: "failed", reason: "invalid_parameters" }],
+    [
+      4,
+      {
+        status: "failed",
+        route_id: "failed-route-secret",
+        reason: "invalid_parameters",
+      },
+    ],
   ]);
   const relay = new Map<number, PushRouteDiagnostic>([
     [1, { networkId: 1, state: "active", routeIdPrefix: "register" }],

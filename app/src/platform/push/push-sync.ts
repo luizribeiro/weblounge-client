@@ -70,6 +70,7 @@ export class PushSynchronizer {
   readonly #registrationRecoveries = new Map<number, number>();
   readonly #unregistering = new Set<number>();
   readonly #currentRoutes = new Map<number, string>();
+  readonly #pushStateVersions = new Map<number, number>();
   #pending: Promise<void> = Promise.resolve();
 
   constructor(options: PushSynchronizerOptions) {
@@ -150,6 +151,9 @@ export class PushSynchronizer {
       return;
     }
     if (message.type !== "push_state_changed") return;
+    const stateVersion =
+      (this.#pushStateVersions.get(message.network_id) ?? 0) + 1;
+    this.#pushStateVersions.set(message.network_id, stateVersion);
     if (message.state.status === "registered") {
       this.#registrationRecoveries.delete(message.network_id);
       const routeId = message.state.route_id;
@@ -162,9 +166,15 @@ export class PushSynchronizer {
     } else if (message.state.status === "failed") {
       if (this.#unregistering.has(message.network_id)) return;
       const reason = message.state.reason;
+      const routeId = message.state.route_id;
       this.#enqueue(() =>
         this.#withNetworkLock(message.network_id, () =>
-          this.#recoverRegistration(message.network_id, reason),
+          this.#recoverRegistration(
+            message.network_id,
+            routeId,
+            reason,
+            stateVersion,
+          ),
         ),
       );
     } else if (message.state.status === "unsupported") {
@@ -375,12 +385,26 @@ export class PushSynchronizer {
     }
   }
 
-  async #recoverRegistration(networkId: number, reason: string): Promise<void> {
+  async #recoverRegistration(
+    networkId: number,
+    failedRouteId: string,
+    reason: string,
+    stateVersion: number,
+  ): Promise<void> {
     const lastError = `engine: ${reason}`;
     const context = this.#routeContext(networkId);
-    const routeId = this.#currentRoutes.get(networkId);
-    const route =
-      routeId === undefined ? undefined : await this.#routes.get(routeId);
+    const route = await this.#routes.get(failedRouteId);
+    const currentRouteId = this.#currentRoutes.get(networkId);
+    if (this.#pushStateVersions.get(networkId) !== stateVersion) {
+      if (
+        route !== undefined &&
+        currentRouteId !== undefined &&
+        currentRouteId !== failedRouteId
+      ) {
+        await this.#retireSupersededFailure(networkId, route);
+      }
+      return;
+    }
     this.#publish(
       networkId,
       route === undefined ? "none" : "probing",
@@ -401,6 +425,12 @@ export class PushSynchronizer {
       return;
     }
     if (!(await this.#retire(route, asRelayDevice(device)))) return;
+    if (
+      this.#pushStateVersions.get(networkId) !== stateVersion ||
+      this.#currentRoutes.has(networkId)
+    ) {
+      return;
+    }
     this.#publish(networkId, "none", undefined, lastError);
 
     if (reason !== "invalid_parameters") return;
@@ -414,6 +444,19 @@ export class PushSynchronizer {
       asRelayDevice(device),
       lastError,
     );
+  }
+
+  async #retireSupersededFailure(
+    networkId: number,
+    route: StoredPushRoute,
+  ): Promise<void> {
+    if (!(await this.#unregisterRouteEngine(networkId, route))) return;
+    const device = await this.#devices.load(this.#relayOrigin);
+    if (device === undefined) {
+      await this.#routes.put({ ...route, retiring: true });
+      return;
+    }
+    await this.#retire(route, asRelayDevice(device));
   }
 
   async #unregisterCurrentEngine(networkId: number): Promise<boolean> {

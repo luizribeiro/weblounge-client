@@ -846,6 +846,7 @@ function decodePushState(
   }
   if (
     value.status === "failed" &&
+    typeof value.route_id === "string" &&
     isOneOf(value.reason, [
       "web_push_forbidden",
       "registration_limit",
@@ -856,7 +857,11 @@ function decodePushState(
       "other",
     ])
   ) {
-    return { status: value.status, reason: value.reason };
+    return {
+      status: value.status,
+      route_id: value.route_id,
+      reason: value.reason,
+    };
   }
   return undefined;
 }

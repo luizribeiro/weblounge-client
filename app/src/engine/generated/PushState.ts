@@ -19,6 +19,10 @@ route_id: string, } | { "status": "unsupported",
  */
 reason: PushUnsupportedReason, } | { "status": "failed",
 /**
+ * Relay route whose registration or removal failed.
+ */
+route_id: string,
+/**
  * Stable failure classification.
  */
 reason: PushFailure, };

@@ -173,6 +173,8 @@ pub enum PushState {
     },
     /// The home or connection refused registration.
     Failed {
+        /// Relay route whose registration or removal failed.
+        route_id: String,
         /// Stable failure classification.
         reason: PushFailure,
     },
