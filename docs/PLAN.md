@@ -12,7 +12,8 @@ The single place a fresh session reads to know where the project stands. Update 
 Each task is one fresh codex session, reviewed before the next starts. The orchestrating session pushes `main` to https://github.com/luizribeiro/weblounge-client after each reviewed task; codex sessions never push.
 
 1. [x] Flake, Rust workspace (papo pinned by git rev), SolidJS app skeleton, and Cachix-backed
-   GitHub Actions that build each uncached flake check in parallel behind one required status.
+   GitHub Actions that cache shared Rust, wasm, app, and relay dependencies once, then build each
+   uncached flake check in parallel behind one required status.
 2. [x] wasm engine in a SharedWorker (dedicated Worker fallback) talking to the UI through `EngineClient`; local Ergo for dev.
 3. [x] Engine connects through papo; network and buffer state; protocol types generated with ts-rs.
 3a. [x] Design doc `15-selection-and-native-feel.md` (brief §2): selectable surfaces, copy-as-IRC-text, the context-menu hook, motion tokens, base CSS defaults and primitives (`selectable`, `Line`), and a Playwright native-feel audit (chrome not selectable, no I-beam or browser context menu on chrome, selection doesn't spill, no layout shift on font load) plus idle/hidden-tab waste checks. Task 4 and later UI tasks must pass the audit in CI.

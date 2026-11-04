@@ -40,8 +40,31 @@ jobs:
           jq -cs 'map(select(.isCached | not) | .attr)' jobs.jsonl \
             | sed 's/^/checks=/' >> "$GITHUB_OUTPUT"
 
-  outputs:
+  deps:
     needs: list
+    if: >-
+      ${{ !cancelled() && needs.list.result == 'success'
+      && needs.list.outputs.checks != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      # v6
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      # v35
+      # yamllint disable-line rule:line-length
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+        with:
+          nix_conf: max-jobs = auto
+      - uses: cachix/cachix-action@v17
+        with:
+          name: weblounge
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build shared dependencies
+        run: nix build --print-build-logs --no-link
+          .#packages.x86_64-linux.ci-deps
+
+  outputs:
+    needs: [list, deps]
     if: ${{ !cancelled() && needs.list.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -67,7 +90,7 @@ jobs:
           .#devShells.x86_64-linux.default
 
   build:
-    needs: list
+    needs: [list, deps]
     if: >-
       ${{ !cancelled() && needs.list.result == 'success'
       && needs.list.outputs.checks != '[]' }}
@@ -96,7 +119,7 @@ jobs:
           ".#checks.x86_64-linux.$CHECK"
 
   ci:
-    needs: [list, outputs, build]
+    needs: [list, deps, outputs, build]
     if: always()
     runs-on: ubuntu-latest
     name: CI
@@ -104,6 +127,8 @@ jobs:
       - env:
           RESULTS: >-
             ${{ needs.list.result }}
+            ${{ needs.list.outputs.checks == '[]' && 'success'
+            || needs.deps.result }}
             ${{ needs.outputs.result }}
             ${{ needs.list.outputs.checks == '[]' && 'success'
             || needs.build.result }}

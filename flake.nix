@@ -304,6 +304,28 @@
           WEBLOUNGE_BUILD_SHA = "ci";
           WEBLOUNGE_BUILD_TIMESTAMP = "0";
         };
+        ciDeps = pkgs.linkFarm "weblounge-ci-deps" [
+          {
+            name = "app";
+            path = checkApp;
+          }
+          {
+            name = "engine-wasm";
+            path = engineWasm;
+          }
+          {
+            name = "rust-check-dependencies";
+            path = checkCargoArtifacts;
+          }
+          {
+            name = "rust-release-dependencies";
+            path = cargoArtifacts;
+          }
+          {
+            name = "push-relay";
+            path = pushRelay;
+          }
+        ];
         e2eApp = checkApp.overrideAttrs {
           WEBLOUNGE_E2E_HARNESS = "1";
           WEBLOUNGE_IRC_ENDPOINT = "ws://127.0.0.1:4173/socket";
@@ -596,6 +618,7 @@
         formatter = pkgs.nixfmt-tree;
         packages = {
           inherit app;
+          ci-deps = ciDeps;
           engine-wasm = engineWasm;
           push-payload-wasm = pushPayloadWasm;
           ergo-weblounge = webloungeErgo;
