@@ -100,6 +100,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 92 | 2026-11-02 | /version (and other local notices like "alice is now bob") render as "Topic: … set by weblounge". | fixed locally; awaiting review |
 | 93 | 2026-11-03 | Reopening the PWA often shows no new messages (seen in DMs, maybe channels) until the app is restarted. | cause found: reconnect never catches up opened buffers (hosted loses channels too), and the foreground probe traps wasm (tokio timer); fix in progress |
 | 94 | 2026-11-03 | Request: show loading (connecting/fetching history) on the conversation title, e.g. the logo shimmer on the channel name. | in progress |
-| 95 | 2026-11-04 | Firefox desktop (8ae24d1, fresh site data): "Couldn't start weblounge." — engine worker crashes during startup ("engine worker restarted" from setVisibility). | investigating |
+| 95 | 2026-11-04 | Firefox desktop (8ae24d1, fresh site data): "Couldn't start weblounge." — engine worker crashes during startup ("engine worker restarted" from setVisibility). | cause found: startup liveness probe times out a slow cold start and is treated as fatal (all browsers); fix in progress |
 | 96 | 2026-11-04 | Startup error screen: the Retry button text is white on the light-green button. | in progress |
 | 97 | 2026-11-04 | Desktop Firefox: the logo/title shimmer is not visible. | in progress |
