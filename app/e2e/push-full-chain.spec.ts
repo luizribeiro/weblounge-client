@@ -205,10 +205,10 @@ test.describe("full unmocked push lifecycle", () => {
           name: new RegExp(`^${bot.nickname},`, "u"),
         })
         .click();
-      await expect.poll(() => normalPushesDropped()).toBe(droppedBefore + 1);
+      await expect.poll(() => normalPushesDropped()).toBe(droppedBefore + 2);
       expect((await records()).length).toBe(receiverCursor);
       await expect.poll(() => notifications(other)).toEqual([]);
-      await expect(notifications(page)).resolves.toHaveLength(1);
+      await expect.poll(() => notifications(page)).toEqual([]);
     } finally {
       await otherContext.close();
     }
