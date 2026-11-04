@@ -135,6 +135,7 @@ test.describe("full unmocked push lifecycle", () => {
     await closeNotifications(page);
     await seedReadConversationState(page, `1/${bot.nickname.toLowerCase()}`);
     await releaseForegroundLeases([page]);
+    const badgeBefore = (await storedAppBadge(page)) ?? 0;
 
     const direct = `tidy keeps current push ${randomUUID()}`;
     await bot.privmsgConfirmed("weblounge", direct);
@@ -142,7 +143,7 @@ test.describe("full unmocked push lifecycle", () => {
     await deliverRecordedEnvelope(context, page, record);
 
     await expectNotification(page, direct);
-    await expect.poll(() => storedAppBadge(page)).toBe(1);
+    await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
   });
 
   test("shows a notification before a blocked IndexedDB deadline", async () => {
