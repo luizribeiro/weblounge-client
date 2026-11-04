@@ -409,6 +409,7 @@ export class PushSynchronizer {
       return;
     }
     if (reason === "web_push_forbidden") {
+      await this.#unregisterExact(networkId, route).catch(() => undefined);
       const device = await this.#devices.load(this.#relayOrigin);
       if (device !== undefined) {
         await this.#relay.deleteRoute(asRelayDevice(device), route.routeId);

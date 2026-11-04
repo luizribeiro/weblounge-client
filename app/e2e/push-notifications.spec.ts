@@ -142,6 +142,41 @@ test("re-shows a duplicate msgid without incrementing its badge", async ({
   await expect.poll(() => storedAppBadge(page)).toBe(1);
 });
 
+test("serializes concurrent pushes without closing either notification", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const envelopes = await seedRouteAndEncryptMany(page, [
+    "@time=2026-11-03T12:34:56.789Z;msgid=push-concurrent-one :mel!m@example.test PRIVMSG #one :first concurrent push",
+    "@time=2026-11-03T12:34:56.790Z;msgid=push-concurrent-two :sam!s@example.test PRIVMSG #two :second concurrent push",
+  ]);
+
+  await deliverPushes(context, page, envelopes);
+
+  await expect
+    .poll(async () =>
+      (await notifications(page))?.toSorted((left, right) =>
+        left.tag.localeCompare(right.tag),
+      ),
+    )
+    .toEqual([
+      {
+        title: "mel in #one",
+        body: "first concurrent push",
+        tag: "Lounge/#one",
+        route: "/Lounge/one",
+      },
+      {
+        title: "sam in #two",
+        body: "second concurrent push",
+        tag: "Lounge/#two",
+        route: "/Lounge/two",
+      },
+    ]);
+  await expect.poll(() => storedAppBadge(page)).toBe(2);
+});
+
 test("migrates and decrypts an active route from the previous schema", async ({
   context,
   page,
@@ -635,6 +670,14 @@ async function deliverPush(
   page: Page,
   data: string,
 ): Promise<void> {
+  await deliverPushes(context, page, [data]);
+}
+
+async function deliverPushes(
+  context: BrowserContext,
+  page: Page,
+  data: readonly string[],
+): Promise<void> {
   const session = await context.newCDPSession(page);
   const registration = new Promise<string>((resolve) => {
     session.on(
@@ -650,11 +693,16 @@ async function deliverPush(
     );
   });
   await session.send("ServiceWorker.enable");
-  await session.send("ServiceWorker.deliverPushMessage", {
-    origin: new URL(page.url()).origin,
-    registrationId: await registration,
-    data,
-  });
+  const registrationId = await registration;
+  await Promise.all(
+    data.map((payload) =>
+      session.send("ServiceWorker.deliverPushMessage", {
+        origin: new URL(page.url()).origin,
+        registrationId,
+        data: payload,
+      }),
+    ),
+  );
   await session.detach();
 }
 
@@ -667,8 +715,27 @@ async function seedRouteAndEncrypt(
   } = { networkLabel: "Lounge", nickname: "weblounge" },
   databaseVersion: 3 | 4 = 4,
 ): Promise<string> {
+  const [envelope] = await seedRouteAndEncryptMany(
+    page,
+    [line],
+    routeContext,
+    databaseVersion,
+  );
+  if (envelope === undefined) throw new Error("push envelope was not created");
+  return envelope;
+}
+
+async function seedRouteAndEncryptMany(
+  page: Page,
+  lines: readonly string[],
+  routeContext: {
+    readonly networkLabel: string;
+    readonly nickname: string;
+  } = { networkLabel: "Lounge", nickname: "weblounge" },
+  databaseVersion: 3 | 4 = 4,
+): Promise<readonly string[]> {
   return page.evaluate(
-    async ({ plaintext, route, seededRouteId, seededDatabaseVersion }) => {
+    async ({ plaintexts, route, seededRouteId, seededDatabaseVersion }) => {
       const encode = (bytes: ArrayBuffer | ArrayBufferView): string => {
         const view = ArrayBuffer.isView(bytes)
           ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -783,55 +850,62 @@ async function seedRouteAndEncrypt(
         ),
         256,
       );
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const contentKey = await hkdf(
-        inputKeyMaterial,
-        salt,
-        encoder.encode("Content-Encoding: aes128gcm\0"),
-        128,
+      return Promise.all(
+        plaintexts.map(async (plaintext) => {
+          const salt = crypto.getRandomValues(new Uint8Array(16));
+          const contentKey = await hkdf(
+            inputKeyMaterial,
+            salt,
+            encoder.encode("Content-Encoding: aes128gcm\0"),
+            128,
+          );
+          const nonce = await hkdf(
+            inputKeyMaterial,
+            salt,
+            encoder.encode("Content-Encoding: nonce\0"),
+            96,
+          );
+          const key = await crypto.subtle.importKey(
+            "raw",
+            contentKey,
+            "AES-GCM",
+            false,
+            ["encrypt"],
+          );
+          const record = concatenate(
+            encoder.encode(plaintext),
+            Uint8Array.of(2),
+          );
+          const ciphertext = new Uint8Array(
+            await crypto.subtle.encrypt(
+              { name: "AES-GCM", iv: nonce, tagLength: 128 },
+              key,
+              record,
+            ),
+          );
+          const recordSize = new Uint8Array(4);
+          new DataView(recordSize.buffer).setUint32(0, 4_096);
+          const encrypted = concatenate(
+            salt,
+            recordSize,
+            Uint8Array.of(senderPublic.byteLength),
+            senderPublic,
+            ciphertext,
+          );
+          return JSON.stringify({
+            web_push: 8030,
+            mutable: true,
+            notification: {
+              title: "New message",
+              navigate: "/",
+              data: { r: seededRouteId, c: encode(encrypted) },
+            },
+          });
+        }),
       );
-      const nonce = await hkdf(
-        inputKeyMaterial,
-        salt,
-        encoder.encode("Content-Encoding: nonce\0"),
-        96,
-      );
-      const key = await crypto.subtle.importKey(
-        "raw",
-        contentKey,
-        "AES-GCM",
-        false,
-        ["encrypt"],
-      );
-      const record = concatenate(encoder.encode(plaintext), Uint8Array.of(2));
-      const ciphertext = new Uint8Array(
-        await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv: nonce, tagLength: 128 },
-          key,
-          record,
-        ),
-      );
-      const recordSize = new Uint8Array(4);
-      new DataView(recordSize.buffer).setUint32(0, 4_096);
-      const encrypted = concatenate(
-        salt,
-        recordSize,
-        Uint8Array.of(senderPublic.byteLength),
-        senderPublic,
-        ciphertext,
-      );
-      return JSON.stringify({
-        web_push: 8030,
-        mutable: true,
-        notification: {
-          title: "New message",
-          navigate: "/",
-          data: { r: seededRouteId, c: encode(encrypted) },
-        },
-      });
     },
     {
-      plaintext: line,
+      plaintexts: lines,
       route: routeContext,
       seededRouteId: routeId,
       seededDatabaseVersion: databaseVersion,

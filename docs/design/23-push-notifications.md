@@ -520,6 +520,22 @@ device and route creation occur before the engine boundary while activation wait
 `Registered`. It stops there: the local Ergo profile still lacks the documented TEST-NET address,
 test CA and relay target-allowlist seam needed for a real registration probe.
 
+### Lifecycle incident evidence (2026-11-04)
+
+Relay records from the affected iPhone show that its endpoint, P-256 key and auth secret remained
+unchanged after device creation. Apple returned 201 for that target at 15:57 and 18:50 UTC, so a
+browser subscription rotation is unlikely to explain the observed silent delivery. Launch and
+visibility target upserts remain a robustness boundary, but the primary recovery paths are the
+worker's blocked-IndexedDB deadline, its generic fallback when a route key is unavailable, and
+serialized notification cleanup. Chromium coverage exercises all three, including simultaneous
+deliveries to separate conversation tags.
+
+The live relay's route convergence reduced the phone to one route, while the deployed client could
+still delete that relay route without a confirmed IRC UNREGISTER, leaving an Ergo slot until the
+next push received 404. The redesigned page exact-unregisters before ordinary and forbidden route
+retirement. Every relay retirement also queues the exact endpoint in the account-wide drain, so a
+later `EnsurePush` retries cleanup even when the immediate UNREGISTER or sign-out cannot complete.
+
 ### Service-worker client slice 3 implementation (2026-11-03)
 
 The classic worker is generated from typed source as one self-contained script. It imports only

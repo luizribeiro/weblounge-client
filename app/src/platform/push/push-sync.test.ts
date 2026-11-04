@@ -372,6 +372,12 @@ describe("push state synchronization", () => {
     });
     await current.synchronizer.settled();
 
+    expect(current.engine.requests.at(-1)?.request).toEqual({
+      type: "unregister_push_route",
+      network_id: 1,
+      route_id: "route-1",
+      endpoint: `${relayOrigin}/v1/r/route-1`,
+    });
     expect(current.relay.deleteRoute).toHaveBeenCalledOnce();
     expect(current.routes.values.size).toBe(0);
     expect(current.diagnostics).toHaveBeenLastCalledWith(
