@@ -55,7 +55,7 @@ export class HostedEmergencySwitch {
     };
   }
 
-  async evaluate(config: DeploymentConfig): Promise<boolean> {
+  evaluate(config: DeploymentConfig): false | Promise<true> {
     if (
       !this.#options.production ||
       this.#scheduled ||
@@ -92,8 +92,7 @@ export class HostedEmergencySwitch {
       );
       return false;
     }
-    await remediate();
-    return true;
+    return remediate().then(() => true);
   }
 
   #claimReset(resetToken: string | undefined): boolean {

@@ -35,8 +35,20 @@ describe("hosted emergency switch", () => {
       deviceStorage: harness.deviceStorage,
       sessionStorage: harness.sessionStorage,
     });
-    await expect(nextLoad.emergency.evaluate(config)).resolves.toBe(false);
+    expect(nextLoad.emergency.evaluate(config)).toBe(false);
     expect(nextLoad.navigate).not.toHaveBeenCalled();
+  });
+
+  it("returns synchronously without work for absent or satisfied controls", () => {
+    const harness = createHarness();
+
+    expect(harness.emergency.evaluate(hostedConfig())).toBe(false);
+    expect(harness.emergency.evaluate(hostedConfig({ min_build: "100" }))).toBe(
+      false,
+    );
+    expect(harness.prepareUpdate).not.toHaveBeenCalled();
+    expect(harness.clearShell).not.toHaveBeenCalled();
+    expect(harness.navigate).not.toHaveBeenCalled();
   });
 
   it("clears the shell once for each reset token", async () => {
@@ -55,7 +67,7 @@ describe("hosted emergency switch", () => {
       deviceStorage: harness.deviceStorage,
       sessionStorage: harness.sessionStorage,
     });
-    await expect(sameToken.emergency.evaluate(first)).resolves.toBe(false);
+    expect(sameToken.emergency.evaluate(first)).toBe(false);
     expect(sameToken.clearShell).not.toHaveBeenCalled();
 
     const changedToken = hostedConfig({ reset_token: "two" });
@@ -69,9 +81,9 @@ describe("hosted emergency switch", () => {
     const pageDocument = new TestDocument(false);
     const harness = createHarness({ pageDocument });
 
-    await expect(
-      harness.emergency.evaluate(hostedConfig({ min_build: "101" })),
-    ).resolves.toBe(false);
+    expect(harness.emergency.evaluate(hostedConfig({ min_build: "101" }))).toBe(
+      false,
+    );
     expect(harness.navigate).not.toHaveBeenCalled();
 
     pageDocument.visibilityState = "hidden";
@@ -91,11 +103,11 @@ describe("hosted emergency switch", () => {
       sessionStorage: unavailable,
     });
 
-    await expect(
+    expect(
       harness.emergency.evaluate(
         hostedConfig({ min_build: "101", reset_token: "one" }),
       ),
-    ).resolves.toBe(false);
+    ).toBe(false);
     expect(harness.navigate).not.toHaveBeenCalled();
   });
 });
@@ -161,7 +173,7 @@ function memoryStorage(): Storage {
 }
 
 function hostedConfig(
-  client: NonNullable<Extract<DeploymentConfig, { mode: "hosted" }>["client"]>,
+  client?: NonNullable<Extract<DeploymentConfig, { mode: "hosted" }>["client"]>,
 ): DeploymentConfig {
   return {
     mode: "hosted",
@@ -177,6 +189,6 @@ function hostedConfig(
       session_token_endpoint:
         "https://members.weblounge.org/oauth/session-token",
     },
-    client,
+    ...(client === undefined ? {} : { client }),
   };
 }

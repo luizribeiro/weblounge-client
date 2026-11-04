@@ -578,7 +578,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     device-local `client.reset_token` reuses Reset app cleanup once before a network-first reload.
     Fresh startup and live revalidation both apply it under the splash or after the page hides, so
     active typing and drafts survive. It only reaches builds that understand it, and it is
-    hosted-deployment only; native apps and other networks need their own update paths.
+    hosted-deployment only; native apps and other networks need their own update paths. Missing
+    and already-satisfied controls stay synchronous and add neither navigation nor a startup gate;
+    the restored-push journey also proves its cold page is not replaced during reconnect.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.
 

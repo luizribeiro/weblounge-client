@@ -266,6 +266,28 @@ test("a minimum hosted build navigates to the current build once", async ({
   }
 });
 
+for (const scenario of [
+  { name: "without a client block", client: undefined },
+  { name: "with a satisfied minimum build", client: { min_build: "0" } },
+] as const) {
+  test(`hosted startup does not navigate ${scenario.name}`, async ({
+    context,
+  }) => {
+    test.skip(development, "requires the production build");
+    const deployment = await emergencyConfigServer();
+    try {
+      deployment.serveClient(scenario.client);
+      const page = await context.newPage();
+      await page.goto(deployment.origin);
+
+      await expect.poll(() => deployment.sessionRequests()).toBe(1);
+      expect(deployment.navigations()).toBe(1);
+    } finally {
+      await deployment.close();
+    }
+  });
+}
+
 test("a hosted reset token clears the shell only once", async ({ context }) => {
   test.skip(development, "requires the production service worker");
   const deployment = await emergencyConfigServer();
@@ -510,12 +532,13 @@ async function swappableBuildServer(previous: string): Promise<{
 
 async function emergencyConfigServer(): Promise<{
   readonly origin: string;
-  serveClient(client: {
+  serveClient(client?: {
     readonly min_build?: string;
     readonly reset_token?: string;
   }): void;
   navigations(): number;
   configRequests(): number;
+  sessionRequests(): number;
   close(): Promise<void>;
 }> {
   const source =
@@ -524,6 +547,7 @@ async function emergencyConfigServer(): Promise<{
   let config: object = { mode: "app" };
   let navigationCount = 0;
   let configRequestCount = 0;
+  let sessionRequestCount = 0;
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname === "/config.json") {
@@ -533,6 +557,30 @@ async function emergencyConfigServer(): Promise<{
         "Content-Type": "application/json",
       });
       response.end(JSON.stringify(config));
+      return;
+    }
+    if (pathname === "/oauth/session-token") {
+      sessionRequestCount += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          access_token: "emergency-test-token",
+          token_type: "Bearer",
+          expires_in: 300,
+        }),
+      );
+      return;
+    }
+    if (pathname === "/.well-known/oauth-authorization-server") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          issuer: origin,
+          authorization_endpoint: `${origin}/authorize`,
+          token_endpoint: `${origin}/token`,
+          code_challenge_methods_supported: ["S256"],
+        }),
+      );
       return;
     }
     if (pathname === "/") navigationCount += 1;
@@ -582,6 +630,7 @@ async function emergencyConfigServer(): Promise<{
     },
     navigations: () => navigationCount,
     configRequests: () => configRequestCount,
+    sessionRequests: () => sessionRequestCount,
     close: async () => {
       server.closeAllConnections();
       await new Promise<void>((resolveClose, reject) =>

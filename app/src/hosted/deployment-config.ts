@@ -35,17 +35,22 @@ export async function loadDeploymentConfig(
   const cached = readCachedDeploymentConfig(storage);
   if (cached !== undefined) {
     void fetchDeploymentConfig(fetchConfig)
-      .then(async (config) => {
+      .then((config) => {
         writeCachedDeploymentConfig(storage, config);
-        await onFreshConfig(config);
-        onRevalidated(config);
+        const pending = onFreshConfig(config);
+        if (pending === undefined) {
+          onRevalidated(config);
+          return;
+        }
+        return pending.then(() => onRevalidated(config));
       })
       .catch(() => undefined);
     return cached;
   }
   const config = await fetchDeploymentConfig(fetchConfig);
   writeCachedDeploymentConfig(storage, config);
-  await onFreshConfig(config);
+  const pending = onFreshConfig(config);
+  if (pending !== undefined) await pending;
   return config;
 }
 

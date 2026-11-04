@@ -304,6 +304,15 @@ test("keeps a restored pushed direct message verified through history", async ({
     await page.close();
     await context.setOffline(true);
     const coldPage = await context.newPage();
+    let documentRequests = 0;
+    coldPage.on("request", (request) => {
+      if (
+        request.isNavigationRequest() &&
+        request.frame() === coldPage.mainFrame()
+      ) {
+        documentRequests += 1;
+      }
+    });
     await coldPage.goto(
       "/Local%20Ergo/@weblounge-bot?irc-password=weblounge-test",
     );
@@ -320,8 +329,9 @@ test("keeps a restored pushed direct message verified through history", async ({
       1,
     );
     const marker = `direct history settled ${Date.now()}`;
-    bot.privmsg("weblounge", marker);
+    await bot.privmsgConfirmed("weblounge", marker);
     await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
+    expect(documentRequests).toBe(1);
     await expect(coldPage.getByText(text, { exact: true })).toHaveCount(1);
     await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
   } finally {

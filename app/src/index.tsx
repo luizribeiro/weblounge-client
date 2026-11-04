@@ -325,10 +325,10 @@ async function loadDeploymentAttempt(
     fetch,
     localStorage,
     onRevalidated,
-    async (freshConfig) => {
-      if (await emergencySwitch.evaluate(freshConfig)) {
-        await new Promise<never>(() => {});
-      }
+    (freshConfig) => {
+      const remediation = emergencySwitch.evaluate(freshConfig);
+      if (remediation === false) return;
+      return remediation.then(() => new Promise<never>(() => {}));
     },
   );
   if (config.mode === "app") return { type: "app", config };
