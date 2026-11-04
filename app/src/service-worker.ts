@@ -30,16 +30,20 @@ export function onServiceWorkerUpdateReady(
 export function registerProductionServiceWorker(): void {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
   const container = navigator.serviceWorker;
-  reloadAfterControllerChange(container, document, () =>
-    window.location.reload(),
-  );
-  if (container.controller !== null) {
-    void registerAfterLoad(container);
-    return;
-  }
+  if (container.controller !== null) return;
   const register = () => scheduleRegistration(container);
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register, { once: true });
+}
+
+export function checkForProductionServiceWorkerUpdate(): void {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+  const container = navigator.serviceWorker;
+  if (container.controller === null) return;
+  reloadAfterControllerChange(container, document, () =>
+    window.location.reload(),
+  );
+  void registerAfterLoad(container);
 }
 
 export function reloadAfterControllerChange(

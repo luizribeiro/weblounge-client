@@ -37,7 +37,8 @@ Development does not register a service worker. A first production registration 
 page load and the first interactive frame, during browser idle time. A returning controlled launch
 checks for an update immediately while the inline splash still covers startup. Shell requests use
 low fetch priority and bounded concurrency so installation does not compete with first-launch
-interaction. Registration failure is nonfatal because an online launch still works.
+interaction; in particular, a first install does not run alongside hosted authentication.
+Registration failure is nonfatal because an online launch still works.
 
 The HTML startup surface owns the only launch chair. Normal startup exposes screen-reader status
 but no visible “Connecting” copy; the fixed launch-image geometry communicates progress until the

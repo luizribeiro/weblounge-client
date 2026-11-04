@@ -34,7 +34,10 @@ import {
 import "./platform/platform.css";
 import { installPageZoomGuard } from "./page-zoom";
 import { installRequestedDebugOverlays } from "./platform/debug-overlays";
-import { registerProductionServiceWorker } from "./service-worker";
+import {
+  checkForProductionServiceWorkerUpdate,
+  registerProductionServiceWorker,
+} from "./service-worker";
 import "./styles/base.css";
 import { installTheme } from "./theme/theme-controller";
 
@@ -429,7 +432,7 @@ render(
   ),
   application,
 );
-registerProductionServiceWorker();
+checkForProductionServiceWorkerUpdate();
 
 function createStartupGate(splash: HTMLElement): BootstrapProps {
   let active = true;
@@ -472,12 +475,14 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       const animations = splash.getAnimations();
       if (animations.length === 0) {
         splash.remove();
+        registerProductionServiceWorker();
         return;
       }
       void Promise.allSettled(
         animations.map((animation) => animation.finished),
       ).then(() => {
         splash.remove();
+        registerProductionServiceWorker();
       });
     },
     showError: (message, retryLabel, onRetry, retryWhenReachable) => {
