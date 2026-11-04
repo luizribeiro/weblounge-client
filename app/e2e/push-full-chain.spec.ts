@@ -130,6 +130,20 @@ test.describe("full unmocked push lifecycle", () => {
     await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
   });
 
+  test("does not tidy the notification shown by the current push", async () => {
+    await closeNotifications(page);
+    await seedReadConversationState(page, `1/${bot.nickname.toLowerCase()}`);
+    await releaseForegroundLeases([page]);
+
+    const direct = `tidy keeps current push ${randomUUID()}`;
+    await bot.privmsgConfirmed("weblounge", direct);
+    const record = await nextRecord("/device/a");
+    await deliverRecordedEnvelope(context, page, record);
+
+    await expectNotification(page, direct);
+    await expect.poll(() => storedAppBadge(page)).toBe(1);
+  });
+
   test("keeps Apple-style MARKREAD silent when another device reads", async ({
     browser,
   }) => {
@@ -390,6 +404,10 @@ async function expectOneRoutePerDevice(deviceCount: number): Promise<void> {
 
 async function releaseForegroundLeases(pages: readonly Page[]): Promise<void> {
   for (const target of pages) await target.goto("/push-driver.html");
+  const expired = await fetch(`${relayControl}/test/expire-leases`, {
+    method: "POST",
+  });
+  expect(expired.status).toBe(204);
   await expect
     .poll(async () => {
       const states = await relayStates();
@@ -622,6 +640,50 @@ async function closeNotifications(page: Page): Promise<void> {
     }
   });
   await expect.poll(() => notifications(page)).toEqual([]);
+}
+
+async function seedReadConversationState(
+  page: Page,
+  tag: string,
+): Promise<void> {
+  await page.evaluate(async (conversationTag) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("state", "readwrite");
+    const store = transaction.objectStore("state");
+    store.put(
+      { schema: 1, conversations: [[conversationTag, 0]], untagged: 0 },
+      "notification-counts",
+    );
+    store.put(0, "app-badge");
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+  }, tag);
+}
+
+async function storedAppBadge(page: Page): Promise<number | undefined> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("state", "readonly");
+    const request = transaction.objectStore("state").get("app-badge");
+    const value = await new Promise<unknown>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    return typeof value === "number" ? value : undefined;
+  });
 }
 
 async function breakStoredRouteKeys(page: Page): Promise<void> {
