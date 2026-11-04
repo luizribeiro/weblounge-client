@@ -69,7 +69,9 @@ export function reloadAfterControllerChange(
   const controllerChanged = () => {
     if (!controlledAtStartup || handled) return;
     if (
-      pageDocument.querySelector("[data-initial-splash]") !== null ||
+      pageDocument.querySelector(
+        "[data-initial-splash]:not([data-state='leaving'])",
+      ) !== null ||
       pageDocument.visibilityState === "hidden"
     ) {
       reloadOnce();

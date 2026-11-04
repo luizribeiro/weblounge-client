@@ -68,9 +68,10 @@ requests retain normal browser errors; the worker does not synthesize successful
 ## Updates
 
 After a complete precache, the worker calls `skipWaiting()` and claims clients. A page controlled at
-startup reloads once on `controllerchange` while the inline splash is present. If activation lands
-after the shell is interactive, the page waits until it becomes hidden before reloading; an active
-composer and its draft are never interrupted on screen. A first install does not reload.
+startup reloads once on `controllerchange` while the inline splash still blocks interaction. A
+fading splash that has released pointer events counts as interactive. If activation lands after
+that point, the page waits until it becomes hidden before reloading; an active composer and its
+draft are never interrupted on screen. A first install does not reload.
 
 The page still records a typed `update-ready` state while installation finishes. `/version` may
 briefly append “update ready — restart the app” before the safe reload policy takes over.

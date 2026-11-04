@@ -43,6 +43,32 @@ describe("service worker controller activation", () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
+  it("waits for a page behind a leaving splash to hide", () => {
+    const container = new EventTarget();
+    Reflect.set(container, "controller", {});
+    const pageDocument = new EventTarget() as EventTarget & {
+      visibilityState: DocumentVisibilityState;
+      querySelector: typeof document.querySelector;
+    };
+    pageDocument.visibilityState = "visible";
+    pageDocument.querySelector = document.querySelector.bind(document);
+    document.body.innerHTML =
+      '<main data-initial-splash data-state="leaving"></main>';
+    const reload = vi.fn();
+
+    reloadAfterControllerChange(
+      container as unknown as ServiceWorkerContainer,
+      pageDocument as unknown as Document,
+      reload,
+    );
+    container.dispatchEvent(new Event("controllerchange"));
+    expect(reload).not.toHaveBeenCalled();
+
+    pageDocument.visibilityState = "hidden";
+    pageDocument.dispatchEvent(new Event("visibilitychange"));
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
   it("does not reload a first install", () => {
     const container = new EventTarget();
     Reflect.set(container, "controller", null);
