@@ -292,7 +292,7 @@ pub struct PushRoute {                      // what the platform hands the engin
 pub enum PushRegistration {                 // per network, persisted in Space::Durable
     Unavailable(PushUnavailable),
     Registered { route: RouteId, vapid: B64Url, refreshed_at: Timestamp },
-    Failed { reason: PushFailure, at: Timestamp },
+    Failed { route: RouteId, reason: PushFailure, at: Timestamp },
 }
 
 pub enum PushUnavailable { NoWebPushCap, NoAccount, NoVapid, PersistenceOff, DirectConnection }
@@ -484,6 +484,11 @@ unregistration, and only then deletes the relay route and its key material. A fa
 unregistration leaves the relay route and keys intact for a later retry. The selected route is never
 retired as stale; launch therefore converges any `N` active routes to exactly one instead of creating
 another route or deleting the route just registered by a competing reconciliation.
+
+Every failed registration outcome carries the route id that failed. Recovery captures that identity
+when the event arrives and never looks up a later mutable current route to decide what to retire. If
+another tab registers a replacement before the queued recovery acquires the route lock, recovery may
+unregister and delete only the failed old endpoint; it neither retires nor replaces the newer route.
 
 `ensurePushSubscription` is the later UI slice's platform entry point. It never prompts: permission
 must already be `granted`. It subscribes with `relay_vapid`, reuses a matching subscription and
