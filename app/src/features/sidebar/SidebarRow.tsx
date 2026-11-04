@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
+import { t } from "../../strings";
 import { Line } from "../../ui/Line";
 import { unreadBadge } from "../unread/unread-badge";
 import styles from "./SidebarRow.module.css";
@@ -68,5 +69,7 @@ export function SidebarRow(props: SidebarRowProps) {
 }
 
 function rowLabel(title: string, badgeLabel: string | undefined): string {
-  return badgeLabel === undefined ? title : `${title}, ${badgeLabel}`;
+  return badgeLabel === undefined
+    ? title
+    : t("sidebar.row_label", { title, badge: badgeLabel });
 }

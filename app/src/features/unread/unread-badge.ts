@@ -1,4 +1,5 @@
 import type { BufferProjection } from "../../engine/protocol";
+import { t } from "../../strings";
 
 export interface UnreadBadge {
   readonly count: number;
@@ -14,8 +15,8 @@ export function unreadBadge(
   return {
     count: buffer.unread,
     kind: includesMentions ? "mention" : "unread",
-    label: includesMentions
-      ? `${buffer.unread} unread, including mentions`
-      : `${buffer.unread} unread`,
+    label: t(includesMentions ? "sidebar.unread_mentions" : "sidebar.unread", {
+      count: String(buffer.unread),
+    }),
   };
 }

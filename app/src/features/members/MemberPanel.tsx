@@ -6,6 +6,7 @@ import {
   densityPresets,
 } from "../../density/density";
 import type { EngineToUi } from "../../engine/protocol";
+import { t } from "../../strings";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import styles from "./MemberPanel.module.css";
 import { type Member, MemberRow } from "./MemberRow";
@@ -105,7 +106,7 @@ export function MemberPanel(props: MemberPanelProps) {
   });
   return (
     <aside
-      aria-label={`Members of ${props.bufferTitle}`}
+      aria-label={t("members.label_for", { channel: props.bufferTitle })}
       class={styles.panel}
       style={{
         "--wl-member-group-row-height": `${metrics.group}px`,
@@ -113,10 +114,10 @@ export function MemberPanel(props: MemberPanelProps) {
       }}
     >
       <header class={styles.header}>
-        <span class={styles.title}>Members</span>
+        <span class={styles.title}>{t("members.label")}</span>
         <span class={styles.total}>{formatCount(window()?.total ?? 0)}</span>
         <button
-          aria-label={props.closeLabel ?? "Hide members"}
+          aria-label={props.closeLabel ?? t("members.hide")}
           class={styles.close}
           onClick={props.onClose}
           type="button"
@@ -127,21 +128,21 @@ export function MemberPanel(props: MemberPanelProps) {
       <div class={styles.content} data-member-buffer={props.bufferTitle}>
         {props.onFilter !== undefined && (
           <label class={styles.filter}>
-            <span class="visually-hidden">Filter members</span>
+            <span class="visually-hidden">{t("members.filter")}</span>
             <span aria-hidden="true">⌕</span>
             <input
               data-initial-focus={
                 props.autofocusFilter === false ? undefined : "true"
               }
               onInput={(event) => props.onFilter?.(event.currentTarget.value)}
-              placeholder="Filter members"
+              placeholder={t("members.filter")}
               type="search"
               value={props.filter ?? ""}
             />
           </label>
         )}
         <ul
-          aria-label={`Members of ${props.bufferTitle}`}
+          aria-label={t("members.label_for", { channel: props.bufferTitle })}
           class={styles.list}
           ref={list}
         >

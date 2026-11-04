@@ -7,6 +7,7 @@ import type {
 import { connectionPresentation } from "../../engine/connection-state";
 import type { NetworkProjection } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
+import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import {
   connectionSweepAtRest,
@@ -101,7 +102,11 @@ export function Sidebar(props: SidebarProps) {
   });
 
   return (
-    <aside aria-label="Channel list" class={styles.sidebar} data-sidebar="true">
+    <aside
+      aria-label={t("sidebar.channel_list")}
+      class={styles.sidebar}
+      data-sidebar="true"
+    >
       <div
         class={styles.brand}
         data-connection-brand="true"
@@ -131,7 +136,7 @@ export function Sidebar(props: SidebarProps) {
         </div>
         <div class={styles.brandText}>
           <h1 data-connection-title="true">
-            <Line>weblounge</Line>
+            <Line>{t("common.weblounge")}</Line>
           </h1>
           <Line class={styles.summary}>{networkSummary(props.networks)}</Line>
         </div>
@@ -159,14 +164,14 @@ export function Sidebar(props: SidebarProps) {
         title={tooltip(props.registry, "switcher.open")}
         type="button"
       >
-        <Line>Jump to…</Line>
+        <Line>{t("sidebar.jump")}</Line>
         <Line class={styles.binding}>
           {props.registry.bindingLabel("switcher.open")}
         </Line>
       </button>
 
       <nav
-        aria-label="Networks and buffers"
+        aria-label={t("sidebar.navigation")}
         class={styles.navigation}
         data-command-scope="list"
       >
@@ -197,7 +202,7 @@ export function Sidebar(props: SidebarProps) {
           type="button"
         >
           <span aria-hidden="true">+</span>
-          <Line>Add network</Line>
+          <Line>{t("sidebar.add_network")}</Line>
         </button>
       </nav>
 
@@ -233,7 +238,9 @@ function kindOrder(buffer: SidebarBuffer): number {
 
 function networkSummary(networks: readonly NetworkProjection[]): string {
   const count = networks.length;
-  return `${count} ${count === 1 ? "network" : "networks"}`;
+  return t(count === 1 ? "sidebar.network.one" : "sidebar.network.many", {
+    count: String(count),
+  });
 }
 
 function tooltip(registry: ActionRegistry, id: UiActionId): string {

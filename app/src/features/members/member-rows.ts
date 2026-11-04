@@ -1,3 +1,4 @@
+import { t } from "../../strings";
 import type { Member } from "./MemberRow";
 
 export const memberGroups = [
@@ -57,9 +58,9 @@ export function memberRowAt(
 }
 
 export const memberGroupLabels: Readonly<Record<MemberGroup, string>> = {
-  operators: "Operators",
-  voiced: "Voiced",
-  online: "Online",
-  away: "Away",
-  bots: "Bots",
+  operators: t("members.group.operators"),
+  voiced: t("members.group.voiced"),
+  online: t("members.group.online"),
+  away: t("members.group.away"),
+  bots: t("members.group.bots"),
 };

@@ -1,3 +1,4 @@
+import { t } from "../../strings";
 import styles from "./NotificationPrompt.module.css";
 
 export interface NotificationPromptControls {
@@ -14,16 +15,16 @@ interface NotificationPromptProps {
 export function NotificationPrompt(props: NotificationPromptProps) {
   return (
     <section
-      aria-label="Notifications"
+      aria-label={t("notifications.label")}
       class={styles.prompt}
       data-notification-prompt="true"
     >
-      <span>Get notified about DMs and mentions</span>
+      <span>{t("notifications.prompt")}</span>
       <button class={styles.turnOn} onClick={props.onTurnOn} type="button">
-        Turn on
+        {t("notifications.turn_on")}
       </button>
       <button
-        aria-label="Dismiss notification prompt"
+        aria-label={t("notifications.dismiss")}
         class={styles.dismiss}
         onClick={props.onDismiss}
         type="button"

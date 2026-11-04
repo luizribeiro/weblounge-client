@@ -4,6 +4,7 @@ import type {
   BufferProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { t } from "../../strings";
 import { Line } from "../../ui/Line";
 import styles from "./Sidebar.module.css";
 import { SidebarRow } from "./SidebarRow";
@@ -36,7 +37,12 @@ export function NetworkSection(props: NetworkSectionProps) {
           aria-current={
             props.activeBufferId === server()?.id ? "page" : undefined
           }
-          aria-label={`${props.network.label}, ${connectionStateKind(props.network.state)}`}
+          aria-label={t("sidebar.network_label", {
+            network: props.network.label,
+            state: t(
+              `sidebar.network_state.${connectionStateKind(props.network.state)}`,
+            ),
+          })}
           class={styles.networkHeader}
           data-network-state={connectionStateKind(props.network.state)}
           onClick={() => {

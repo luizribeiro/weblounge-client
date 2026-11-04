@@ -1,4 +1,5 @@
 import type { EngineToUi } from "../../engine/protocol";
+import { t } from "../../strings";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import { Line } from "../../ui/Line";
 import styles from "./MemberRow.module.css";
@@ -22,7 +23,7 @@ export function MemberRow(props: MemberRowProps) {
       : `var(--wl-nick-${props.member.nick_color_index % nickPaletteSize})`;
   return (
     <button
-      aria-label={`Open direct message with ${props.member.nick}`}
+      aria-label={t("conversation.open_direct", { nick: props.member.nick })}
       class={styles.row}
       data-account-state={props.member.account.state}
       data-away={props.member.away ? "true" : "false"}
@@ -55,12 +56,12 @@ export function MemberRow(props: MemberRowProps) {
         </Line>
         {props.member.bot === true && (
           <span class={styles.bot} data-member-trailing="true">
-            BOT
+            {t("common.bot")}
           </span>
         )}
         {props.member.is_you && (
           <span class={styles.you} data-member-trailing="true">
-            you
+            {t("members.you")}
           </span>
         )}
       </span>
