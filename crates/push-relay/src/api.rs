@@ -93,7 +93,13 @@ pub fn app_with_lease_ttl(
     tokio::spawn(deliver_held_pushes(state.clone()));
     let client_api = Router::new()
         .route("/v1/devices", post(create_device))
-        .route("/v1/devices/{device}/routes", post(create_route))
+        .route("/v1/devices/{device}", delete(delete_device))
+        .route("/v1/devices/{device}/target", put(update_target))
+        .route("/v1/devices/{device}/routes", post(ensure_route))
+        .route(
+            "/v1/devices/{device}/dead-endpoints",
+            get(take_dead_endpoints),
+        )
         .route("/v1/devices/{device}/lease", post(renew_lease))
         .route("/v1/devices/{device}/lease/release", post(release_lease))
         .route("/v1/routes/{route}/active", put(activate_route))
@@ -122,7 +128,7 @@ fn client_cors(allowed_origins: &[Url]) -> CorsLayer {
     });
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
-        .allow_methods([Method::POST, Method::PUT, Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 
@@ -204,25 +210,7 @@ async fn create_device(
 ) -> Result<Response> {
     let session = bearer(&headers)?;
     let identity = state.concierge.introspect(session).await?;
-    let target = match request.target {
-        PlatformTarget::WebPush {
-            endpoint,
-            p256dh,
-            auth,
-        } => {
-            validate_subscription_keys(&p256dh, &auth)?;
-            state.targets.validate(&endpoint).await?;
-            WebPushTarget {
-                endpoint: endpoint.into(),
-                p256dh,
-                auth,
-            }
-        }
-        PlatformTarget::Apns { token } | PlatformTarget::Fcm { token } => {
-            drop(token);
-            return Err(Error::NotImplemented);
-        }
-    };
+    let target = validated_target(&state, request.target).await?;
     let credentials = state
         .database
         .create_device(identity.account, target)
@@ -238,9 +226,61 @@ async fn create_device(
         .into_response())
 }
 
+async fn validated_target(state: &AppState, target: PlatformTarget) -> Result<WebPushTarget> {
+    match target {
+        PlatformTarget::WebPush {
+            endpoint,
+            p256dh,
+            auth,
+        } => {
+            validate_subscription_keys(&p256dh, &auth)?;
+            state.targets.validate(&endpoint).await?;
+            Ok(WebPushTarget {
+                endpoint: endpoint.into(),
+                p256dh,
+                auth,
+            })
+        }
+        PlatformTarget::Apns { token } | PlatformTarget::Fcm { token } => {
+            drop(token);
+            Err(Error::NotImplemented)
+        }
+    }
+}
+
+async fn update_target(
+    State(state): State<AppState>,
+    Path(device): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<CreateDevice>,
+) -> Result<Response> {
+    let target = validated_target(&state, request.target).await?;
+    state
+        .database
+        .update_target(device.clone(), bearer(&headers)?.to_owned(), target)
+        .await?;
+    tracing::info!(device = %id_prefix(&device), "device target updated");
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+async fn delete_device(
+    State(state): State<AppState>,
+    Path(device): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    state
+        .database
+        .delete_device(device.clone(), bearer(&headers)?.to_owned())
+        .await?;
+    tracing::info!(device = %id_prefix(&device), "device deleted");
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 #[derive(Deserialize)]
 struct CreateRoute {
     home_vapid: String,
+    #[serde(default)]
+    my_route_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -249,7 +289,7 @@ struct CreatedRoute {
     endpoint: String,
 }
 
-async fn create_route(
+async fn ensure_route(
     State(state): State<AppState>,
     Path(device): Path<String>,
     headers: HeaderMap,
@@ -259,22 +299,55 @@ async fn create_route(
     let home_vapid = decode_public_key(&request.home_vapid)?;
     let route = state
         .database
-        .create_route(device.clone(), secret, home_vapid)
+        .ensure_route(device.clone(), secret, home_vapid, request.my_route_id)
         .await?;
-    tracing::info!(
-        route = %id_prefix(&route.id),
-        device = %id_prefix(&device),
-        "route created"
-    );
+    let status = if route.created {
+        tracing::info!(
+            route = %id_prefix(&route.id),
+            device = %id_prefix(&device),
+            "route created"
+        );
+        StatusCode::CREATED
+    } else {
+        tracing::info!(
+            route = %id_prefix(&route.id),
+            device = %id_prefix(&device),
+            "route reused"
+        );
+        StatusCode::OK
+    };
     let endpoint = format!("{}/v1/r/{}", state.origin, route.id);
     Ok((
-        StatusCode::CREATED,
+        status,
         Json(CreatedRoute {
             id: route.id,
             endpoint,
         }),
     )
         .into_response())
+}
+
+#[derive(Serialize)]
+struct DeadEndpoints {
+    endpoints: Vec<String>,
+}
+
+async fn take_dead_endpoints(
+    State(state): State<AppState>,
+    Path(device): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let routes = state
+        .database
+        .take_dead_endpoints(device, bearer(&headers)?.to_owned())
+        .await?;
+    Ok(Json(DeadEndpoints {
+        endpoints: routes
+            .into_iter()
+            .map(|route| format!("{}/v1/r/{route}", state.origin))
+            .collect(),
+    })
+    .into_response())
 }
 
 async fn activate_route(

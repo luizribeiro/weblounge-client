@@ -38,6 +38,9 @@ pub enum Error {
     /// A requested object does not exist or is dead.
     #[error("not found")]
     NotFound,
+    /// A device existed, but its delivery target or ownership has been retired.
+    #[error("device is gone")]
+    Gone,
     /// The request is syntactically or semantically invalid.
     #[error("invalid request: {0}")]
     BadRequest(String),
@@ -69,6 +72,7 @@ impl Error {
         match self {
             Self::Unauthorized | Self::VapidJwt | Self::VapidPin => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Gone => StatusCode::GONE,
             Self::BadRequest(_) | Self::TargetRefused(_) => StatusCode::BAD_REQUEST,
             Self::Capacity => StatusCode::CONFLICT,
             Self::NotImplemented => StatusCode::NOT_IMPLEMENTED,
@@ -88,6 +92,7 @@ impl Error {
             Self::VapidJwt => "jwt",
             Self::VapidPin => "pin",
             Self::NotFound => "route",
+            Self::Gone => "device",
             Self::BadRequest(_) => "request",
             Self::PushServiceUnavailable | Self::DeliveryUnavailable | Self::Http(_) => "upstream",
             Self::Unauthorized => "authorization",
@@ -110,6 +115,7 @@ impl IntoResponse for Error {
         let message = match status {
             StatusCode::UNAUTHORIZED => "unauthorized",
             StatusCode::NOT_FOUND => "not found",
+            StatusCode::GONE => "device gone",
             StatusCode::BAD_REQUEST => "invalid request",
             StatusCode::CONFLICT => "capacity limit reached",
             StatusCode::NOT_IMPLEMENTED => "platform target not implemented",

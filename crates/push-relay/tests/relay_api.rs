@@ -196,6 +196,12 @@ impl Harness {
     }
 
     async fn create_device_at(&self, target_host: &str) -> Value {
+        let target_number = self.concierge_calls.load(Ordering::SeqCst);
+        self.create_device_with_endpoint(target_host, &format!("/send/device-{target_number}"))
+            .await
+    }
+
+    async fn create_device_with_endpoint(&self, target_host: &str, path: &str) -> Value {
         let public = self.subscription_key.public_key().to_encoded_point(false);
         let response = call_json(
             &self.app,
@@ -205,7 +211,7 @@ impl Harness {
             json!({
                 "target": {
                     "platform": "web_push",
-                    "endpoint": format!("https://{target_host}/send/device"),
+                    "endpoint": format!("https://{target_host}{path}"),
                     "p256dh": URL_SAFE_NO_PAD.encode(public.as_bytes()),
                     "auth": URL_SAFE_NO_PAD.encode([7_u8; 16]),
                 }
@@ -218,6 +224,15 @@ impl Harness {
     }
 
     async fn create_route(&self, device: &Value, home_key: &SecretKey) -> Value {
+        self.ensure_route(device, home_key, None).await
+    }
+
+    async fn ensure_route(
+        &self,
+        device: &Value,
+        home_key: &SecretKey,
+        my_route_id: Option<&str>,
+    ) -> Value {
         let response = call_json(
             &self.app,
             Method::POST,
@@ -227,11 +242,12 @@ impl Harness {
                 "home_vapid": URL_SAFE_NO_PAD.encode(
                     home_key.public_key().to_encoded_point(false).as_bytes()
                 ),
+                "my_route_id": my_route_id,
             }),
             &[],
         )
         .await;
-        assert_eq!(response.0, StatusCode::CREATED);
+        assert!(matches!(response.0, StatusCode::CREATED | StatusCode::OK));
         response.1
     }
 
@@ -468,8 +484,14 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
 
     let converged_route = harness.create_route(&device, &home).await;
     harness.activate(&device, &converged_route).await;
+    let reused = harness
+        .ensure_route(&device, &home, converged_route["id"].as_str())
+        .await;
+    assert_eq!(reused["id"], converged_route["id"]);
 
-    let deleted_route = harness.create_route(&device, &home).await;
+    let deleted_route = harness
+        .create_route(&device, &SecretKey::random(&mut OsRng))
+        .await;
     let deleted = call_json(
         &harness.app,
         Method::DELETE,
@@ -519,6 +541,7 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "route created",
         "route activated",
         "route converged",
+        "route reused",
         "route deleted",
         "route dead",
         "device has duplicate active routes",
@@ -857,6 +880,191 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
     .await;
     assert_eq!(counters.0, StatusCode::OK);
     assert_eq!(counters.1["normal_pushes_dropped"], 1);
+}
+
+#[tokio::test]
+async fn subscription_endpoint_takeover_retires_the_old_device_and_drains_its_routes() {
+    let harness = Harness::new().await;
+    let first = harness
+        .create_device_with_endpoint("push.example", "/send/shared")
+        .await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&first, &home).await;
+    harness.activate(&first, &route).await;
+
+    let replacement = harness
+        .create_device_with_endpoint("push.example", "/send/shared")
+        .await;
+    assert_ne!(first["id"], replacement["id"]);
+    assert_eq!(
+        harness.push(&route, &home, b"retired route").await,
+        StatusCode::NOT_FOUND
+    );
+
+    let old_device = call_json(
+        &harness.app,
+        Method::POST,
+        &format!(
+            "/v1/devices/{}/routes",
+            first["id"].as_str().expect("device id")
+        ),
+        first["secret"].as_str(),
+        json!({
+            "home_vapid": URL_SAFE_NO_PAD.encode(
+                home.public_key().to_encoded_point(false).as_bytes()
+            ),
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(old_device.0, StatusCode::GONE);
+
+    let dead = call_json(
+        &harness.app,
+        Method::GET,
+        &format!(
+            "/v1/devices/{}/dead-endpoints",
+            replacement["id"].as_str().expect("device id")
+        ),
+        replacement["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(dead.0, StatusCode::OK);
+    assert_eq!(dead.1["endpoints"], json!([route["endpoint"]]));
+
+    let drained = call_json(
+        &harness.app,
+        Method::GET,
+        &format!(
+            "/v1/devices/{}/dead-endpoints",
+            replacement["id"].as_str().expect("device id")
+        ),
+        replacement["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(drained.1["endpoints"], json!([]));
+}
+
+#[tokio::test]
+async fn ensure_route_reuses_the_owned_route_and_rotates_an_unknown_identity() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let first = harness.create_route(&device, &home).await;
+
+    let reused = harness
+        .ensure_route(&device, &home, first["id"].as_str())
+        .await;
+    assert_eq!(reused["id"], first["id"]);
+    let replacement = harness
+        .ensure_route(&device, &home, Some("unknown-route"))
+        .await;
+    assert_ne!(replacement["id"], first["id"]);
+    assert_eq!(
+        harness.push(&first, &home, b"retired probe").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        harness.push(&replacement, &home, b"current probe").await,
+        StatusCode::CREATED
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_device_retires_its_routes_and_makes_later_calls_gone() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    let deleted = call_json(
+        &harness.app,
+        Method::DELETE,
+        &format!("/v1/devices/{}", device["id"].as_str().expect("device id")),
+        device["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(deleted.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        harness.push(&route, &home, b"retired").await,
+        StatusCode::NOT_FOUND
+    );
+    let repeated = call_json(
+        &harness.app,
+        Method::DELETE,
+        &format!("/v1/devices/{}", device["id"].as_str().expect("device id")),
+        device["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(repeated.0, StatusCode::GONE);
+}
+
+#[tokio::test]
+async fn target_upsert_keeps_routes_live_and_expired_probes_turn_into_dead_endpoints() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    let public = harness
+        .subscription_key
+        .public_key()
+        .to_encoded_point(false);
+    let updated = call_json(
+        &harness.app,
+        Method::PUT,
+        &format!(
+            "/v1/devices/{}/target",
+            device["id"].as_str().expect("device id")
+        ),
+        device["secret"].as_str(),
+        json!({
+            "target": {
+                "platform": "web_push",
+                "endpoint": "https://push.example/send/updated",
+                "p256dh": URL_SAFE_NO_PAD.encode(public.as_bytes()),
+                "auth": URL_SAFE_NO_PAD.encode([8_u8; 16]),
+            }
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(updated.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        harness.push(&route, &home, b"probe after update").await,
+        StatusCode::CREATED
+    );
+
+    rusqlite::Connection::open(harness.temporary.path().join("relay.sqlite3"))
+        .expect("relay database")
+        .execute(
+            "UPDATE routes SET created_at = unixepoch() - 301 WHERE id = ?1",
+            [route["id"].as_str().expect("route id")],
+        )
+        .expect("age probing route");
+    assert_eq!(
+        harness.push(&route, &home, b"expired probe").await,
+        StatusCode::NOT_FOUND
+    );
+    let dead = call_json(
+        &harness.app,
+        Method::GET,
+        &format!(
+            "/v1/devices/{}/dead-endpoints",
+            device["id"].as_str().expect("device id")
+        ),
+        device["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(dead.1["endpoints"], json!([route["endpoint"]]));
 }
 
 #[tokio::test]

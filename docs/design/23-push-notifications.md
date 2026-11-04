@@ -101,16 +101,23 @@ The brief (§3.12) says Web Push skips the relay. The PWA needs it too:
 3. **No silent pushes to iOS.** The relay can drop pushes that would show nothing. Dropping a push
    is not a silent push; delivering one that shows nothing is.
 
-**Device setup.** The device registers once with the relay and gets a `DeviceId` and a device
-secret. Its platform target is a browser `PushSubscription` (later an APNs token, FCM token or
-UnifiedPush endpoint). For each home it creates a **route**
+**Device setup.** On every launch and every return to visible, the page compares
+`PushManager.getSubscription()` with its stored endpoint and upserts that target at the relay. A
+new device for an endpoint atomically takes ownership, retires the old device's routes, and gets a
+new `DeviceId` and device secret. An existing live device updates changed target keys with
+`PUT /v1/devices/:id/target`; a 410 from any device call means its target is dead and the page must
+upsert again. Sign-out calls `DELETE /v1/devices/:id`. Its platform target is a browser
+`PushSubscription` (later an APNs token, FCM token or UnifiedPush endpoint). For each home it owns a **route**
 (`https://push.weblounge.org/v1/r/<128-bit random id>`) with its own **P-256 key pair and auth
 secret**. The private key stays on the device: a non-extractable `CryptoKey` in IndexedDB on the
 web, the Keychain or Android Keystore natively.
 
-**Route lifecycle.** `POST /v1/devices/:id/routes` carries the home's VAPID public key, which the
-client already has from ISUPPORT (papo `Isupport::vapid()`, `isupport.rs:168`, already in
-`ConfigurePushAction`). The relay pins it at creation; there is no trust-on-first-use window.
+**Route lifecycle.** Idempotent `POST /v1/devices/:id/routes` carries the home's VAPID public key
+and the page's optional current route id. The client already has the home key from ISUPPORT (papo
+`Isupport::vapid()`, `isupport.rs:168`, already in `ConfigurePushAction`). If that route is live for
+the device and home, the relay returns it. Otherwise the relay retires every live route for that
+device and home and creates one fresh probing route. It pins the VAPID key at creation; there is no
+trust-on-first-use window and the relay, rather than a tab, owns route convergence.
 
 ```text
 probing ──(client: PUT /v1/routes/:id/active, after papo returns REGISTER success)──► active
@@ -132,6 +139,12 @@ probing ──(client: PUT /v1/routes/:id/active, after papo returns REGISTER su
   prune each superseded subscription on its next push. Routes for other devices or home keys are
   untouched. Repeating activation for the surviving active route is a no-op, while dead routes
   remain 404.
+- Probing routes expire after five minutes. Expiry, replacement, device takeover and upstream target
+  death all turn their public endpoints into 404s and queue those endpoints for explicit home
+  cleanup. `GET /v1/devices/:id/dead-endpoints` drains the authenticated account's not-yet-purged
+  endpoints; the engine sends exact `WEBPUSH UNREGISTER` commands for them before registration.
+  Once a device has no routes left, the relay removes its target and retains only the credential
+  tombstone needed to return 410 instead of letting stale clients recreate routes.
 
 **Delivery.** The home encrypts each push to the route key (RFC 8291) and POSTs it. The relay:
 
@@ -400,7 +413,8 @@ Where rules live is deferred (see Decisions).
   notifications while weblounge is closed". No rule controls in v1.
 - **Relay** (`crates/push-relay`, in this repo per `docs/design/README.md:37,144`; brief §3.10 makes
   it infrastructure run for every user; deployed from `~/weblounge`):
-  - API: `POST /v1/devices`, `PUT /v1/devices/:id/target`, `POST /v1/devices/:id/routes`,
+  - API: `POST /v1/devices`, `PUT /v1/devices/:id/target`, `DELETE /v1/devices/:id`,
+    `POST /v1/devices/:id/routes`, `GET /v1/devices/:id/dead-endpoints`,
     `PUT /v1/routes/:id/active`, `DELETE /v1/routes/:id`, `POST /v1/devices/:id/lease`,
     `POST /v1/devices/:id/lease/release`, and the public `POST /v1/r/:route` for homes.
   - Device calls carry the device secret. Creating a device requires a concierge session token,
