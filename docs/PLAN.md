@@ -498,8 +498,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     relay route state, route prefix, and last relay error; the common debug header carries the same
     per-network summary. Ergo's registration-probe failure is covered as typed
     `Failed(invalid_parameters)` through the wire and browser view.
-  - [x] Drop Web Push deliveries below high urgency with 201 while preserving registration probing;
-    record the parsed urgency and outcome in the relay's privacy-safe tracing (#100).
+  - [x] Apply push-service-specific urgency policy while preserving registration probing: Apple
+    passes only high, while Mozilla, FCM, and Edge also pass normal for silent `MARKREAD`; all lower
+    priorities return 201 without forwarding. Record urgency outcomes in privacy-safe tracing (#100).
   - [ ] Add rate limits, engine/platform stable network identity, and the unmocked local-Ergo →
     relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)

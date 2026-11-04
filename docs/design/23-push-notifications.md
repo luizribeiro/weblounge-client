@@ -154,10 +154,14 @@ APNs and FCM limits. The ciphertext is base64url-encoded exactly once. An encryp
 truncated, so the relay answers **413** to any home body over 2,800 bytes. In front of it, nginx
 caps bodies at about 4 KB (`client_max_body_size`) and rate-limits with `limit_req`.
 
-**Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered visibly.
-Anything lower (maintenance `PING`, `MARKREAD`, soju's probe) is **dropped** for web targets; for
-native targets it becomes an APNs background push or an FCM normal-priority message, which lets the
-app clear notifications read elsewhere. This needs PR #2471 deployed (server ask).
+**Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered visibly. Apple Web
+Push drops everything lower because iOS and Safari require every delivered push to show a
+notification. Mozilla, FCM, and Edge forward `normal` so `MARKREAD` can silently clear notifications,
+but drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
+#2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because their
+ciphertexts are opaque, the relay must forward both to non-Apple services. The worker consumes both
+silently; the maintenance PING therefore spends one of Chromium's tolerated occasional silent-push
+budget entries. A future Ergo urgency split can move maintenance PING to `low` without a relay change.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
 It never sees the sender, the target or the text.
@@ -577,11 +581,11 @@ the route move through probing and active.
 ### Web Push urgency policy implementation (2026-11-04)
 
 Active Web Push routes accept RFC 8030's `very-low`, `low`, `normal`, and `high` urgency values,
-defaulting a missing header to `normal`. Only `high` reaches the lease and upstream delivery path;
-lower urgencies return 201 without forwarding so maintenance `PING` and `MARKREAD` events cannot
-become generic iOS notifications. Probing routes still return 201 before inspecting headers because
-registration probes must succeed independently of a home's urgency choice. Structured inbound logs
-record the parsed urgency and dropped, held, or forwarded outcome without inspecting ciphertext.
+defaulting a missing header to `normal`. Apple endpoints pass only `high`; Mozilla, FCM, and Edge
+also pass `normal`; lower urgencies return 201 without forwarding. Probing routes still return 201
+before inspecting headers because registration probes must succeed independently of a home's
+urgency choice. Structured inbound logs record the parsed urgency and dropped, held, or forwarded
+outcome without inspecting ciphertext.
 
 ## Rollout
 

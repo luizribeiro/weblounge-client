@@ -153,7 +153,16 @@ impl Harness {
         let delivered = Arc::new(Notify::new());
         let outcome = Arc::new(Mutex::new(PushOutcome::Accepted));
         let unavailable = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let targets = EndpointValidator::new(["push.example"], Arc::new(PublicDns));
+        let targets = EndpointValidator::new(
+            [
+                "push.example",
+                "fcm.googleapis.com",
+                "updates.push.services.mozilla.com",
+                "web.push.apple.com",
+                "db5.notify.windows.com",
+            ],
+            Arc::new(PublicDns),
+        );
         let app = app_with_lease_ttl(
             database,
             FakeConcierge {
@@ -183,6 +192,10 @@ impl Harness {
     }
 
     async fn create_device(&self) -> Value {
+        self.create_device_at("push.example").await
+    }
+
+    async fn create_device_at(&self, target_host: &str) -> Value {
         let public = self.subscription_key.public_key().to_encoded_point(false);
         let response = call_json(
             &self.app,
@@ -192,7 +205,7 @@ impl Harness {
             json!({
                 "target": {
                     "platform": "web_push",
-                    "endpoint": "https://push.example/send/device",
+                    "endpoint": format!("https://{target_host}/send/device"),
                     "p256dh": URL_SAFE_NO_PAD.encode(public.as_bytes()),
                     "auth": URL_SAFE_NO_PAD.encode([7_u8; 16]),
                 }
@@ -380,7 +393,7 @@ struct LoggedLifecycle {
 
 async fn run_logged_lifecycle() -> LoggedLifecycle {
     let harness = Harness::new().await;
-    let device = harness.create_device().await;
+    let device = harness.create_device_at("web.push.apple.com").await;
     let home = SecretKey::random(&mut OsRng);
     let route = harness.create_route(&device, &home).await;
     assert_eq!(
@@ -849,31 +862,57 @@ async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
 }
 
 #[tokio::test]
-async fn web_target_only_forwards_high_urgency() {
+async fn urgency_policy_depends_on_the_push_service() {
     let harness = Harness::new().await;
-    let device = harness.create_device().await;
     let home = SecretKey::random(&mut OsRng);
-    let route = harness.create_route(&device, &home).await;
-    harness.activate(&device, &route).await;
-
-    for urgency in [Some("normal"), Some("low"), Some("very-low"), None] {
+    for (host, forwarded, dropped) in [
+        (
+            "web.push.apple.com",
+            vec![Some("high")],
+            vec![Some("normal"), Some("low"), Some("very-low"), None],
+        ),
+        (
+            "updates.push.services.mozilla.com",
+            vec![Some("high"), Some("normal"), None],
+            vec![Some("low"), Some("very-low")],
+        ),
+        (
+            "fcm.googleapis.com",
+            vec![Some("high"), Some("normal"), None],
+            vec![Some("low"), Some("very-low")],
+        ),
+        (
+            "db5.notify.windows.com",
+            vec![Some("high"), Some("normal"), None],
+            vec![Some("low"), Some("very-low")],
+        ),
+    ] {
+        let device = harness.create_device_at(host).await;
+        let route = harness.create_route(&device, &home).await;
+        harness.activate(&device, &route).await;
+        let before = harness.deliveries.lock().expect("deliveries").len();
+        for urgency in dropped {
+            assert_eq!(
+                harness
+                    .push_with_urgency(&route, &home, b"dropped control event", urgency)
+                    .await,
+                StatusCode::CREATED
+            );
+        }
+        assert_eq!(harness.deliveries.lock().expect("deliveries").len(), before);
+        for urgency in forwarded {
+            assert_eq!(
+                harness
+                    .push_with_urgency(&route, &home, b"forwarded event", urgency)
+                    .await,
+                StatusCode::CREATED
+            );
+        }
         assert_eq!(
-            harness
-                .push_with_urgency(&route, &home, b"not a visible message", urgency)
-                .await,
-            StatusCode::CREATED
+            harness.deliveries.lock().expect("deliveries").len(),
+            before + if host == "web.push.apple.com" { 1 } else { 3 }
         );
     }
-    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
-
-    assert_eq!(
-        harness.push(&route, &home, b"visible message").await,
-        StatusCode::CREATED
-    );
-    assert_eq!(
-        harness.deliveries.lock().expect("deliveries")[0].1,
-        b"visible message"
-    );
 }
 
 #[tokio::test]

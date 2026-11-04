@@ -398,7 +398,19 @@ enum PushDisposition {
 
 #[derive(Clone, Copy)]
 enum TargetKind {
-    WebPush,
+    AppleWebPush,
+    OtherWebPush,
+}
+
+impl TargetKind {
+    fn for_web_push(target: &WebPushTarget) -> Result<Self> {
+        let endpoint = Url::parse(&target.endpoint).map_err(|_| Error::DeliveryUnavailable)?;
+        Ok(if endpoint.host_str() == Some("web.push.apple.com") {
+            Self::AppleWebPush
+        } else {
+            Self::OtherWebPush
+        })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -425,7 +437,8 @@ impl Urgency {
 
     fn is_deliverable_to(self, target: TargetKind) -> bool {
         match target {
-            TargetKind::WebPush => matches!(self, Self::High),
+            TargetKind::AppleWebPush => matches!(self, Self::High),
+            TargetKind::OtherWebPush => matches!(self, Self::Normal | Self::High),
         }
     }
 }
@@ -457,7 +470,7 @@ async fn deliver_push(
         } => {
             verify_vapid(headers, &home_vapid, &state.origin)?;
             let urgency = Urgency::from_headers(headers)?;
-            if !urgency.is_deliverable_to(TargetKind::WebPush) {
+            if !urgency.is_deliverable_to(TargetKind::for_web_push(&target)?) {
                 return Ok(PushDisposition::UrgencyDropped { urgency });
             }
             let ttl = headers
