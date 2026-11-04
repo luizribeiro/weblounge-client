@@ -68,6 +68,17 @@ Run the complete project check suite:
 nix flake check --print-build-logs
 ```
 
+The full Web Push lifecycle check runs four NixOS VMs and a real browser. It is
+part of the Linux CI check matrix and can also be run locally with:
+
+```sh
+nice -n 10 nix build --no-link .#push-e2e --max-jobs 2 --cores 4
+```
+
+It drives the pinned previous app through Ergo, the push relay, papo's HTTPS
+receiver, and the production service worker before upgrading to the current
+build.
+
 ## License
 
 WebLounge is available under either the Apache License 2.0 or the MIT license, at your option.
