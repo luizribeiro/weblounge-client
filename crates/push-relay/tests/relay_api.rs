@@ -484,6 +484,20 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
     .await;
     assert_eq!(deleted.0, StatusCode::NO_CONTENT);
 
+    let duplicate_home = SecretKey::random(&mut OsRng);
+    let duplicate_route = harness.create_route(&device, &duplicate_home).await;
+    harness.activate(&device, &duplicate_route).await;
+    let health = call_json(
+        &harness.app,
+        Method::GET,
+        "/healthz",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(health.0, StatusCode::OK);
+
     *harness.outcome.lock().expect("outcome") = PushOutcome::Dead;
     assert_eq!(
         harness
@@ -507,6 +521,7 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "route converged",
         "route deleted",
         "route dead",
+        "device has duplicate active routes",
         "lease acquired",
         "lease released",
         "action=\"probing-discard\"",
@@ -713,6 +728,10 @@ async fn health_checks_sqlite_and_device_creation_introspects_only_once() {
     )
     .await;
     assert_eq!(health.0, StatusCode::OK);
+    assert_eq!(
+        health.1,
+        Value::String("ok\nweblounge_push_relay_duplicate_active_route_devices 0\n".to_owned())
+    );
 
     let device = harness.create_device().await;
     let home = SecretKey::random(&mut OsRng);
@@ -731,6 +750,35 @@ async fn health_checks_sqlite_and_device_creation_introspects_only_once() {
     .await;
     assert_eq!(unauthorized.0, StatusCode::UNAUTHORIZED);
     assert_eq!(harness.concierge_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn health_reports_devices_with_duplicate_active_routes() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let first = harness
+        .create_route(&device, &SecretKey::random(&mut OsRng))
+        .await;
+    let second = harness
+        .create_route(&device, &SecretKey::random(&mut OsRng))
+        .await;
+    harness.seed_active_routes(&[&first, &second]);
+
+    let health = call_json(
+        &harness.app,
+        Method::GET,
+        "/healthz",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+
+    assert_eq!(health.0, StatusCode::OK);
+    assert_eq!(
+        health.1,
+        Value::String("ok\nweblounge_push_relay_duplicate_active_route_devices 1\n".to_owned())
+    );
 }
 
 #[tokio::test]
@@ -1408,6 +1456,8 @@ async fn call_json(
         .expect("response body");
     let value = if body.is_empty() || body.as_ref() == b"ok\n" {
         Value::Null
+    } else if body.starts_with(b"ok\n") {
+        Value::String(String::from_utf8(body.to_vec()).expect("UTF-8 health response"))
     } else {
         serde_json::from_slice(&body).expect("response JSON")
     };

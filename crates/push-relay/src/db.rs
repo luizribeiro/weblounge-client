@@ -65,6 +65,12 @@ pub(crate) struct HeldPush {
     pub ttl: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DuplicateActiveRoutes {
+    pub device_id: String,
+    pub route_count: u32,
+}
+
 /// A small SQLite state store. Connections are short-lived and run off the async executor.
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -165,11 +171,25 @@ impl Database {
         Ok(database)
     }
 
-    pub(crate) async fn health(&self) -> Result<()> {
+    pub(crate) async fn health(&self) -> Result<Vec<DuplicateActiveRoutes>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            connect(&path)?.query_row("SELECT 1", [], |_| Ok(()))?;
-            Ok(())
+        tokio::task::spawn_blocking(move || -> Result<Vec<DuplicateActiveRoutes>> {
+            let connection = connect(&path)?;
+            let mut statement = connection.prepare(
+                "SELECT device_id, COUNT(*) FROM routes
+                 WHERE state = 'active'
+                 GROUP BY device_id HAVING COUNT(*) > 1
+                 ORDER BY device_id",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok(DuplicateActiveRoutes {
+                        device_id: row.get(0)?,
+                        route_count: row.get(1)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(Into::into)
         })
         .await?
     }

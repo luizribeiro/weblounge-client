@@ -110,8 +110,22 @@ fn client_cors(allowed_origins: &[Url]) -> CorsLayer {
 }
 
 async fn health(State(state): State<AppState>) -> Result<Response> {
-    state.database.health().await?;
-    Ok((StatusCode::OK, "ok\n").into_response())
+    let duplicate_devices = state.database.health().await?;
+    for duplicate in &duplicate_devices {
+        tracing::warn!(
+            device = %id_prefix(&duplicate.device_id),
+            active_routes = duplicate.route_count,
+            "device has duplicate active routes"
+        );
+    }
+    Ok((
+        StatusCode::OK,
+        format!(
+            "ok\nweblounge_push_relay_duplicate_active_route_devices {}\n",
+            duplicate_devices.len()
+        ),
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]
