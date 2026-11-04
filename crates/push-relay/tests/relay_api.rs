@@ -800,6 +800,7 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
     .await;
     assert_eq!(states.0, StatusCode::OK);
     assert_eq!(states.1[0]["probing"], 1);
+    assert_eq!(states.1[0]["leases"], 0);
 
     let refusal = call_json(
         &harness.app,

@@ -81,6 +81,7 @@ pub(crate) struct TestDeviceState {
     pub probing: u32,
     pub active: u32,
     pub dead: u32,
+    pub leases: u32,
 }
 
 /// A small SQLite state store. Connections are short-lived and run off the async executor.
@@ -215,7 +216,8 @@ impl Database {
                 "SELECT devices.id,
                         COALESCE(SUM(routes.state = 'probing'), 0),
                         COALESCE(SUM(routes.state = 'active'), 0),
-                        COALESCE(SUM(routes.state = 'dead'), 0)
+                        COALESCE(SUM(routes.state = 'dead'), 0),
+                        (SELECT COUNT(*) FROM leases WHERE leases.device_id = devices.id)
                  FROM devices LEFT JOIN routes ON routes.device_id = devices.id
                  GROUP BY devices.id ORDER BY devices.id",
             )?;
@@ -226,6 +228,7 @@ impl Database {
                         probing: row.get(1)?,
                         active: row.get(2)?,
                         dead: row.get(3)?,
+                        leases: row.get(4)?,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()
