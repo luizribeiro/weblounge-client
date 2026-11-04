@@ -294,14 +294,14 @@ async function preparePushNotification(
     await tidyReadNotifications().catch(() => undefined);
     return;
   }
+  if (state.expired) return;
+  await showOnce(state, parsed.presentation);
   let recordNotification = true;
   if (parsed.event !== undefined && isChatPayload(parsed.event)) {
     recordNotification = await storePushedMessage(route, parsed.event).catch(
       () => true,
     );
   }
-  if (state.expired) return;
-  await showOnce(state, parsed.presentation);
   if (recordNotification && !state.expired) {
     await recordShownNotification(parsed.presentation.options.tag).catch(
       () => undefined,

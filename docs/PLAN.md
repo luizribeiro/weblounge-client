@@ -4,8 +4,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 - [x] Make the relay own push route identity and converge deployed browser state: target-upserted
   devices, one home-keyed route, exact dead-endpoint cleanup, one engine ensure per connection,
-  daily refresh, bounded serialized worker delivery, read-marker-bounded MARKREAD/PING cleanup,
-  and live subscription recovery.
+  daily refresh, presentation-first bounded serialized worker delivery, read-marker-bounded
+  MARKREAD/PING cleanup, and live subscription recovery.
 - [x] Generate the engine's typed localization-key inventory with the protocol bindings, so the
   app strings cross-check no longer reads Rust source outside its Nix derivation.
 - [x] Recover push registration after refusal and upgrade without accumulating subscriptions:
@@ -542,7 +542,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     timestamp, close only notifications from that conversation at or before the marker, and
     recompute per-conversation badge state without showing a control notification. Maintenance
     `PING` repeats the bounded cleanup; visible pushes never run cleanup themselves. Page open/read
-    updates apply the same marker comparison and correct Apple badges from engine counts.
+    updates apply the same marker comparison and correct Apple badges from engine counts. Parsed
+    visible pushes call `showNotification` before message handoff or badge persistence, with route
+    lookup bounded and a generic presentation deadline.
   - [x] Cover the unmocked local-Ergo → relay → push-service → worker delivery journey, including
     the pinned previous build, route/subscription convergence, real encrypted DM and mention
     payloads, Apple MARKREAD filtering, multiple tabs and devices, missing keys, and refusal

@@ -230,14 +230,16 @@ handlers. On `push`, inside one `waitUntil`:
    (about 80 lines of TS). Rust can't reach a non-extractable key, so the Rust `ece` path is for
    native targets only.
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
-4. Store the message (msgid, time, target, sender, text) in the engine's `Space::Cache` IndexedDB
-   store, keyed so the engine reads it as part of the buffer's history.
-5. For a visible payload, call `showNotification` exactly once. Chat notification data includes
+4. For a visible payload, call `showNotification` exactly once, before any further database work.
+   Chat notification data includes
    its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
    re-shows the same conversation tag so tag-capable platforms replace the prior notification. A
    decrypted `MARKREAD` or `PING` never calls `showNotification`; it only performs marker-bounded
    cleanup. A visible push never performs cleanup before or after showing itself.
-6. Serialize push events. If route lookup, decryption, parsing or storage has not produced a visible
+5. After presentation, store the message (msgid, time, target, sender, text) in the engine's
+   `Space::Cache` IndexedDB store, keyed so the engine reads it as part of the buffer's history,
+   then persist and apply the badge count.
+6. Serialize push events. If route lookup, decryption or parsing has not produced a visible
    presentation within 2.8 seconds, show the generic notification once and suppress all later
    presentation or route writes from that delivery. IndexedDB opens, requests and transactions have
    shorter deadlines, reject on `blocked`, close on every path and close on `versionchange`.
@@ -537,14 +539,21 @@ serialized notification cleanup. Chromium coverage exercises all three, includin
 deliveries to separate conversation tags.
 
 At 19:24:33 UTC the affected iPhone incremented the app badge for push test 6 without leaving a
-visible notification, while Firefox showed the same push. The badge update happens only after
-`showNotification` resolves and the worker records the delivery, narrowing the iOS failure to
-notification presentation or later closure rather than relay delivery, decryption or parsing.
-Cleanup now compares notification server time with the stored read marker and cannot close a newer
+visible notification, while Firefox showed the same push. Luiz later reported that the badge
+appeared only after a noticeable delay without opening the app. That makes a pre-presentation
+IndexedDB stall a leading hypothesis alongside immediate cleanup: the deployed ordering could wait
+on message storage before calling `showNotification`, allowing iOS to abandon presentation before
+the delayed handler reached its badge work. Visible delivery now presents immediately after the
+bounded route-key read, decryption and parsing; message handoff and badge persistence happen only
+after `showNotification` resolves. A 2.8-second fallback independently guarantees a generic
+notification if those prerequisite steps stall.
+
+Cleanup also compares notification server time with the stored read marker and cannot close a newer
 notification; the visible-delivery path does not run cleanup. Chromium deterministically delivers
-an encrypted message followed by a cleanup control and asserts that the newer notification remains.
-Playwright WebKit exposes no equivalent synthetic Web Push delivery API, so the final presentation
-check remains on the iPhone device checklist.
+an encrypted message followed by a cleanup control and asserts that the newer notification remains,
+and holds an old push-database connection open while asserting generic presentation within the hard
+deadline. Playwright WebKit exposes no equivalent synthetic Web Push delivery API, so the final
+presentation check remains on the iPhone device checklist.
 
 The live relay's route convergence reduced the phone to one route, while the deployed client could
 still delete that relay route without a confirmed IRC UNREGISTER, leaving an Ergo slot until the
@@ -564,11 +573,13 @@ precache entries.
 Push delivery is serialized. It reads the route's non-extractable P-256 key through the route-id
 index, derives the RFC 8291 content key and nonce with WebCrypto ECDH and HKDF, decrypts AES-GCM,
 and sends only the plaintext IRC line to the parser. Visible chat lines carry the sender, body,
-stable `<networkLabel>/<buffer>` tag and buffer route. Successfully parsed `MARKREAD` and `PING`
-are silent cleanup controls; unknown routes and failures fall back to one generic notification.
-Only a decryption failure marks the current route for replacement, because a parser failure does
-not imply that its key material is stale. The 2.8-second presentation deadline and shorter
-IndexedDB deadlines keep a blocked upgrade from preventing the generic fallback.
+stable `<networkLabel>/<buffer>` tag and buffer route. The worker presents that notification before
+opening the engine database for message handoff or the push database for badge persistence.
+Successfully parsed `MARKREAD` and `PING` are silent cleanup controls; unknown routes and failures
+fall back to one generic notification. Only a decryption failure marks the current route for
+replacement, because a parser failure does not imply that its key material is stale. The
+2.8-second presentation deadline and shorter IndexedDB deadlines keep a blocked route-key upgrade
+from preventing the generic fallback.
 
 Chat pushes are written as versioned `pushed-message\0...` records in the engine's Cache object
 store. The web engine scans at most its 500-row timeline budget before connecting and exposes an

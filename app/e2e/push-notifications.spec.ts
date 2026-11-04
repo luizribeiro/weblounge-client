@@ -333,7 +333,7 @@ test("shows one generic notification when route keys are missing", async ({
     .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
 });
 
-test("shows a generic notification when the push database upgrade is blocked", async ({
+test("shows a generic notification within the deadline when the push database upgrade is blocked", async ({
   context,
   page,
 }) => {
@@ -356,15 +356,21 @@ test("shows a generic notification when the push database upgrade is blocked", a
     );
   });
 
-  await deliverPush(context, page, envelope);
-
-  await expect
-    .poll(() => notifications(page))
-    .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
-  await page.evaluate(() => {
-    const database = Reflect.get(globalThis, "blockedPushDatabase");
-    if (database instanceof IDBDatabase) database.close();
-  });
+  const startedAt = performance.now();
+  let presentationElapsedMs: number;
+  try {
+    await deliverPush(context, page, envelope);
+    await expect
+      .poll(() => notifications(page))
+      .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
+    presentationElapsedMs = performance.now() - startedAt;
+  } finally {
+    await page.evaluate(() => {
+      const database = Reflect.get(globalThis, "blockedPushDatabase");
+      if (database instanceof IDBDatabase) database.close();
+    });
+  }
+  expect(presentationElapsedMs).toBeLessThan(2_800);
 });
 
 test("shows one generic notification without replacing keys when parsing fails", async ({
