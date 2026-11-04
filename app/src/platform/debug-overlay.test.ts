@@ -10,14 +10,29 @@ import {
 } from "./debug-overlay";
 
 it("records the latest engine failure in debug diagnostics", () => {
-  setEngineDebugReading(window, "Couldn't mark this conversation as read.");
+  setEngineDebugReading(
+    window,
+    "engine.mark_read_failed",
+    "Couldn't mark this conversation as read.",
+  );
+  setEngineDebugReading(
+    window,
+    "engine.read_marker_invalid",
+    "That read position is no longer available.",
+  );
+  setEngineDebugReading(
+    window,
+    "engine.mark_read_failed",
+    "Still couldn't mark this conversation as read.",
+  );
   const stop = installDefaultDebug(document.createElement("div"), window);
 
   expect(document.querySelector("[data-debug-overlay]")).toHaveTextContent(
-    "engine: Couldn't mark this conversation as read.",
+    "engine: Still couldn't mark this conversation as read. / That read position is no longer available.",
   );
   stop();
-  setEngineDebugReading(window, undefined);
+  setEngineDebugReading(window, "engine.mark_read_failed", undefined);
+  setEngineDebugReading(window, "engine.read_marker_invalid", undefined);
 });
 
 it("includes ignored deployment fields in debug diagnostics", () => {

@@ -439,7 +439,11 @@ export function App(props: AppProps) {
       }
       if (message.type === "diagnostic") {
         if (isMessageKey(message.message)) {
-          setEngineDebugReading(window, translate(message.message));
+          setEngineDebugReading(
+            window,
+            message.message,
+            translate(message.message),
+          );
         } else {
           setEngineStatus(
             t("debug.engine_ready", { message: message.message }),

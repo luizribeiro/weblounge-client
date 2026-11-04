@@ -23,7 +23,7 @@ interface OverlayManager {
 }
 
 const managers = new WeakMap<Window, OverlayManager>();
-const engineReadings = new WeakMap<Window, string>();
+const engineReadings = new WeakMap<Window, Map<string, string>>();
 const notificationReadings = new WeakMap<Window, string>();
 const pushSnapshots = new WeakMap<Window, PushDebugSnapshot>();
 
@@ -34,10 +34,14 @@ export interface PushDebugSnapshot {
 
 export function setEngineDebugReading(
   browserWindow: Window,
+  key: string,
   reading: string | undefined,
 ): void {
-  if (reading === undefined) engineReadings.delete(browserWindow);
-  else engineReadings.set(browserWindow, reading);
+  const readings = engineReadings.get(browserWindow) ?? new Map();
+  if (reading === undefined) readings.delete(key);
+  else readings.set(key, reading);
+  if (readings.size === 0) engineReadings.delete(browserWindow);
+  else engineReadings.set(browserWindow, readings);
   managers.get(browserWindow)?.render();
 }
 
@@ -122,7 +126,7 @@ function managerFor(browserWindow: Window): OverlayManager {
             `[${section.title}]`,
             buildVersion.text,
             `config unknown: ${deploymentConfigUnknownFields().join(", ") || "none"}`,
-            `engine: ${engineReadings.get(browserWindow) ?? "none"}`,
+            `engine: ${formatEngineReadings(engineReadings.get(browserWindow))}`,
             `notifications: ${notificationReadings.get(browserWindow) ?? "unavailable"}`,
             `push: ${pushSnapshots.get(browserWindow)?.summary ?? "unavailable"}`,
             ...format(section.read()),
@@ -137,4 +141,10 @@ function managerFor(browserWindow: Window): OverlayManager {
 
 function format(readings: readonly DebugReading[]): readonly string[] {
   return readings.map(([label, value]) => `${label}: ${value}`);
+}
+
+function formatEngineReadings(
+  readings: Map<string, string> | undefined,
+): string {
+  return readings === undefined ? "none" : [...readings.values()].join(" / ");
 }
