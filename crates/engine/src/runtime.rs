@@ -50,6 +50,8 @@ const COMPLETION_LIMIT: usize = 100;
 const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const READ_RETRY_INITIAL: Duration = Duration::from_secs(1);
 const READ_RETRY_MAX: Duration = Duration::from_secs(60);
+const READ_RETRY_ATTEMPTS: u8 = 5;
+const MARK_READ_DIAGNOSTIC_ID: &str = "mark-read";
 
 struct CompletionContext {
     trigger: CompletionTrigger,
@@ -144,6 +146,42 @@ enum FlushNext {
     Send(QueuedSend),
     Fail(Vec<EngineToUi>),
     Stop,
+}
+
+#[derive(Default)]
+struct ReadRetryState {
+    failures: u8,
+    last_error: Option<String>,
+}
+
+struct ReadRetryDecision {
+    retry_after: Option<Duration>,
+    diagnostic: bool,
+}
+
+impl ReadRetryState {
+    fn failed(&mut self, error: &papo::Error) -> ReadRetryDecision {
+        self.failures = self.failures.saturating_add(1);
+        let error = error.to_string();
+        let diagnostic = self.last_error.as_deref() != Some(error.as_str());
+        self.last_error = Some(error);
+        ReadRetryDecision {
+            retry_after: (self.failures < READ_RETRY_ATTEMPTS)
+                .then(|| read_retry_delay(self.failures)),
+            diagnostic,
+        }
+    }
+
+    fn succeeded(&mut self) {
+        *self = Self::default();
+    }
+}
+
+fn read_retry_delay(failures: u8) -> Duration {
+    let exponent = u32::from(failures.saturating_sub(1)).min(31);
+    READ_RETRY_INITIAL
+        .saturating_mul(2_u32.saturating_pow(exponent))
+        .min(READ_RETRY_MAX)
 }
 
 struct JoinTarget {
@@ -2043,7 +2081,6 @@ fn spawn_read_flush(
     instance: u64,
 ) {
     spawn_task(async move {
-        let mut retry_in = READ_RETRY_INITIAL;
         loop {
             let advance = {
                 let mut state = lock(&state);
@@ -2064,56 +2101,100 @@ fn spawn_read_flush(
                 };
                 advance
             };
-            let result = match advance.target.clone() {
-                SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
-                SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
-            };
-            match result {
-                Ok(_) => retry_in = READ_RETRY_INITIAL,
-                Err(papo::Error::Disconnected(_)) => {
-                    let restart = {
-                        let mut state = lock(&state);
-                        let Some(running) = state
-                            .network
-                            .as_mut()
-                            .filter(|running| running.instance == instance)
-                        else {
-                            return;
-                        };
-                        queue_read_advance(&mut running.pending_reads, advance);
-                        running.flushing_reads = false;
-                        start_read_flush(running)
-                    };
-                    if let Some((client, instance)) = restart {
-                        spawn_read_flush(Arc::clone(&state), outbound.clone(), client, instance);
+            let mut retry = ReadRetryState::default();
+            loop {
+                let result = match advance.target.clone() {
+                    SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
+                    SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
+                };
+                match result {
+                    Ok(_) => {
+                        retry.succeeded();
+                        break;
                     }
-                    return;
-                }
-                Err(error) => {
-                    engine_log(&format!(
-                        "{}: {error}",
-                        EngineMessageKey::MarkReadFailed.as_str()
-                    ));
-                    let _ = outbound.send(EngineToUi::Diagnostic {
-                        command_id: "mark-read".into(),
-                        message: EngineMessageKey::MarkReadFailed.as_str().into(),
-                    });
-                    {
-                        let mut state = lock(&state);
-                        let Some(running) = state
-                            .network
-                            .as_mut()
-                            .filter(|running| running.instance == instance)
-                        else {
-                            return;
-                        };
-                        queue_read_advance(&mut running.pending_reads, advance);
+                    Err(papo::Error::Disconnected(_)) => {
+                        restart_read_flush_after_disconnect(&state, &outbound, instance, advance);
+                        return;
                     }
-                    delay(retry_in).await;
-                    retry_in = retry_in.saturating_mul(2).min(READ_RETRY_MAX);
+                    Err(error @ papo::Error::StateLimit(_)) => {
+                        _ = state_limit_events(&error, false, None, "mark_read");
+                        break;
+                    }
+                    Err(error) if permanent_mark_read_error(&error) => {
+                        report_mark_read_failure(&outbound, &error);
+                        break;
+                    }
+                    Err(error) => {
+                        let decision = retry.failed(&error);
+                        if decision.diagnostic {
+                            report_mark_read_failure(&outbound, &error);
+                        }
+                        let Some(retry_after) = decision.retry_after else {
+                            break;
+                        };
+                        delay(retry_after).await;
+                    }
                 }
             }
         }
+    });
+}
+
+fn restart_read_flush_after_disconnect(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    instance: u64,
+    advance: ReadAdvance,
+) {
+    let restart = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        queue_read_advance(&mut running.pending_reads, advance);
+        running.flushing_reads = false;
+        start_read_flush(running)
+    };
+    if let Some((client, instance)) = restart {
+        spawn_read_flush(Arc::clone(state), outbound.clone(), client, instance);
+    }
+}
+
+fn permanent_mark_read_error(error: &papo::Error) -> bool {
+    match error {
+        papo::Error::InvalidInput(_) | papo::Error::Unsupported(_) | papo::Error::TargetGone => {
+            true
+        }
+        papo::Error::Server(error) => {
+            matches!(
+                error.refusal(),
+                papo::Refusal::InvalidParameters
+                    | papo::Refusal::InvalidTarget
+                    | papo::Refusal::MissingParameters
+                    | papo::Refusal::NoSuchChannel
+                    | papo::Refusal::NoSuchNick
+                    | papo::Refusal::UnknownCommand
+            ) || matches!(
+                error.code().as_str(),
+                "INVALID_PARAMS" | "INVALID_PARAMETERS" | "INVALID_TARGET" | "UNKNOWN_TARGET"
+            )
+        }
+        _ => false,
+    }
+}
+
+fn report_mark_read_failure(outbound: &mpsc::UnboundedSender<EngineToUi>, error: &papo::Error) {
+    engine_log(&format!(
+        "{}: {error}",
+        EngineMessageKey::MarkReadFailed.as_str()
+    ));
+    let _ = outbound.send(EngineToUi::Diagnostic {
+        command_id: MARK_READ_DIAGNOSTIC_ID.into(),
+        message: EngineMessageKey::MarkReadFailed.as_str().into(),
     });
 }
 
@@ -4644,16 +4725,17 @@ mod tests {
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
-        HostedReconnectConfig, MemberViews, PushRegistration, READ_RETRY_INITIAL, RunningNetwork,
-        Runtime, RuntimeState, completion_context, connection_failure_notice, drain_events,
-        fetch_history, join_request_events, lock, next_connection_state, person_candidates,
-        process_event, process_history, queue_read_advance, schedule_snapshot_write_after,
-        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
+        HostedReconnectConfig, MemberViews, PushRegistration, READ_RETRY_INITIAL, READ_RETRY_MAX,
+        ReadRetryState, RunningNetwork, Runtime, RuntimeState, completion_context,
+        connection_failure_notice, drain_events, fetch_history, join_request_events, lock,
+        next_connection_state, person_candidates, process_event, process_history,
+        queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
+        spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
         EngineMessageKey, EngineRequest, EngineRequestEnvelope, EngineToUi, MessageDelivery,
-        NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials,
+        MessageId, NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials,
         chat_list_snapshot::{
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
         },
@@ -8222,6 +8304,25 @@ async fn delay(duration: Duration) {
             event,
             EngineToUi::ReadMarkerMoved { through: Some(id), .. } if *id == message_id
         )));
+
+        let invalid = runtime.request(EngineRequestEnvelope {
+            id: "mark-invalid".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: MessageId(u64::MAX),
+            },
+        });
+        assert!(invalid.iter().any(|event| matches!(
+            event,
+            EngineToUi::Diagnostic { message, .. }
+                if message == EngineMessageKey::ReadMarkerInvalid.as_str()
+        )));
+        assert!(invalid.iter().all(|event| !matches!(
+            event,
+            EngineToUi::Notice { key, .. }
+                if key == EngineMessageKey::ReadMarkerInvalid.as_str()
+                    || key == EngineMessageKey::MarkReadFailed.as_str()
+        )));
     }
 
     #[tokio::test]
@@ -8589,8 +8690,42 @@ async fn delay(duration: Duration) {
         .await;
     }
 
+    #[test]
+    fn read_retry_backoff_doubles_caps_and_resets_after_success() {
+        assert_eq!(read_retry_delay(1), Duration::from_secs(1));
+        assert_eq!(read_retry_delay(2), Duration::from_secs(2));
+        assert_eq!(read_retry_delay(6), Duration::from_secs(32));
+        assert_eq!(read_retry_delay(7), READ_RETRY_MAX);
+        assert_eq!(read_retry_delay(u8::MAX), READ_RETRY_MAX);
+
+        let error = papo::Error::Server(papo::ServerError::standard(
+            "MARKREAD",
+            "INTERNAL_ERROR",
+            "try again",
+        ));
+        let mut retry = ReadRetryState::default();
+        let first = retry.failed(&error);
+        assert_eq!(first.retry_after, Some(READ_RETRY_INITIAL));
+        assert!(first.diagnostic);
+        let second = retry.failed(&error);
+        assert_eq!(second.retry_after, Some(Duration::from_secs(2)));
+        assert!(!second.diagnostic);
+        let distinct = retry.failed(&papo::Error::Timeout);
+        assert_eq!(distinct.retry_after, Some(Duration::from_secs(4)));
+        assert!(distinct.diagnostic);
+
+        retry.succeeded();
+        let after_success = retry.failed(&error);
+        assert_eq!(after_success.retry_after, Some(READ_RETRY_INITIAL));
+        assert!(after_success.diagnostic);
+        for _ in 1..super::READ_RETRY_ATTEMPTS {
+            _ = retry.failed(&error);
+        }
+        assert!(retry.failed(&error).retry_after.is_none());
+    }
+
     #[tokio::test(start_paused = true)]
-    async fn mark_read_failure_is_diagnostic_and_retries_with_backoff() {
+    async fn permanent_mark_read_failure_is_diagnostic_without_retry_or_notice() {
         let caps = [
             "draft/read-marker",
             "labeled-response",
@@ -8648,19 +8783,19 @@ async fn delay(duration: Duration) {
         ))
         .await;
 
+        let emitted = receiver.recv().await.expect("failure diagnostic");
         assert!(matches!(
-            receiver.recv().await,
-            Some(EngineToUi::Diagnostic { message, .. })
+            &emitted,
+            EngineToUi::Diagnostic { message, .. }
                 if message == EngineMessageKey::MarkReadFailed.as_str()
         ));
-        tokio::time::advance(READ_RETRY_INITIAL).await;
-        let retry = wire.next_sent().await;
-        assert!(retry.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
-        let retry_label = request_label(&retry);
-        wire.server(format!(
-            "@label={retry_label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
-        ))
-        .await;
+        assert!(!matches!(emitted, EngineToUi::Notice { .. }));
+        tokio::time::advance(READ_RETRY_MAX).await;
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
