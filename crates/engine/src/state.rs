@@ -1940,14 +1940,20 @@ impl NetworkModel {
         read_advance(buffer_id, buffer, through, false)
     }
 
+    pub(crate) fn select_read_buffer(&mut self, selected: BufferId) {
+        for (buffer_id, buffer) in &mut self.buffers {
+            if *buffer_id != selected {
+                buffer.deferred_read = None;
+            }
+        }
+    }
+
     pub(crate) fn resolve_deferred_read(&mut self, buffer_id: BufferId) -> Option<ReadAdvance> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        buffer.deferred_read.take()?;
-        buffer
-            .timeline
-            .iter()
-            .rev()
-            .find_map(|record| verified_read_advance(buffer_id, buffer, record.projection.id))
+        let through = buffer.deferred_read?;
+        let advance = verified_read_advance(buffer_id, buffer, through)?;
+        buffer.deferred_read = None;
+        Some(advance)
     }
 
     pub(crate) fn resolve_deferred_read_for(
@@ -3869,7 +3875,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_push_read_uses_the_newest_verified_row_once() {
+    fn deferred_push_read_waits_for_its_exact_verified_row() {
         let (mut model, state) = model(10);
         model.receive_incoming(
             incoming(
@@ -3910,11 +3916,79 @@ mod tests {
             ReadPreparation::LocalOnly(_)
         ));
 
+        assert!(model.resolve_deferred_read(buffer_id).is_none());
+        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(pushed_id));
+        model.receive_incoming(
+            incoming(
+                &state,
+                "verified later",
+                Some("later"),
+                Some(2_000),
+                2_000,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        assert!(model.resolve_deferred_read(buffer_id).is_none());
+        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(pushed_id));
+
+        model.receive_incoming(
+            incoming(
+                &state,
+                "arrived while closed",
+                Some("missing-from-history"),
+                Some(1_500),
+                1_500,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
         let advance = model
             .resolve_deferred_read(buffer_id)
-            .expect("the earlier verified row is used");
-        assert_eq!(time_millis(advance.time), 1_000);
+            .expect("the restored row is now verified");
+        assert_eq!(time_millis(advance.time), 1_500);
         assert!(model.resolve_deferred_read(buffer_id).is_none());
+    }
+
+    #[test]
+    fn selecting_another_read_buffer_clears_a_deferred_read() {
+        let (mut model, state) = model(10);
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        let restored = model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, pushed_id) = restored
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("pushed row is restored");
+        assert!(matches!(
+            model.request_mark_read(buffer_id, pushed_id, true),
+            ReadPreparation::LocalOnly(_)
+        ));
+        let (other_buffer, _) = model.ensure_buffer(
+            NameKey::Channel(channel_name(&state, "#elsewhere")),
+            None,
+            None,
+        );
+
+        model.select_read_buffer(other_buffer);
+
+        assert_eq!(model.buffers[&buffer_id].deferred_read, None);
     }
 
     #[test]

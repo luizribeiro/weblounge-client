@@ -1865,6 +1865,7 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
+        running.model.select_read_buffer(buffer_id);
         let server_backed = running.read_markers_server_backed();
         let preparation = match running
             .model
@@ -7234,6 +7235,50 @@ async fn delay(duration: Duration) {
         }
     }
 
+    async fn process_next_message(
+        events: &mut papo::Events,
+        state: &Arc<Mutex<RuntimeState>>,
+        outbound: &mpsc::UnboundedSender<EngineToUi>,
+        client: &papo::Client,
+    ) {
+        let message = next_matching(events, |event| matches!(event, papo::Event::Message(_))).await;
+        process_event(state, outbound, client, 1, message);
+    }
+
+    fn restore_pushed_direct(
+        state: &Arc<Mutex<RuntimeState>>,
+        client: &papo::Client,
+    ) -> (BufferId, MessageId) {
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "account": "alice",
+            "target": "weblounge",
+            "msgid": "pushed-direct",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        lock(state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .restore_pushed_messages(vec![pushed], &client.state())
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("pushed message is restored")
+    }
+
     fn known_channel(client: &papo::Client, name: &str) -> papo::ChannelName {
         client
             .state()
@@ -8440,35 +8485,7 @@ async fn delay(duration: Duration) {
         })
         .await;
         let (state, outbound, mut receiver) = harness(client.clone());
-        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
-            "schema": 1,
-            "network_label": "Test",
-            "nickname": "weblounge",
-            "sender": "alice",
-            "account": "alice",
-            "target": "weblounge",
-            "msgid": "pushed-direct",
-            "time": "2026-11-03T12:34:56.789Z",
-            "text": "arrived while closed",
-            "kind": "message",
-        }))
-        .expect("pushed message");
-        let restored = lock(&state)
-            .network
-            .as_mut()
-            .expect("network remains active")
-            .model
-            .restore_pushed_messages(vec![pushed], &client.state());
-        let (buffer_id, message_id) = restored
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
-            .expect("pushed message is restored");
+        let (buffer_id, message_id) = restore_pushed_direct(&state, &client);
         let runtime = Runtime {
             state: Arc::clone(&state),
             outbound: outbound.clone(),
@@ -8509,13 +8526,25 @@ async fn delay(duration: Duration) {
                 .pending_reads
                 .is_empty()
         );
+        wire.server("@account=alice;msgid=unrelated;time=2026-11-03T12:35:00.000Z :alice!a@host PRIVMSG weblounge :new and unread")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                buffer_id: current_buffer,
+                unread: 1,
+                mentions: 1,
+            } if *current_buffer == buffer_id
+        )));
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err()
+        );
         wire.server("@account=alice;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :alice!a@host PRIVMSG weblounge :arrived while closed")
             .await;
-        let message = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Message(_))
-        })
-        .await;
-        process_event(&state, &outbound, &client, 1, message);
+        process_next_message(&mut events, &state, &outbound, &client).await;
 
         _ = collect(&mut receiver);
         let request = wire.next_sent().await;
