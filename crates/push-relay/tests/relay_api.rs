@@ -1286,7 +1286,7 @@ async fn activation_converges_same_device_and_home_without_touching_other_routes
 }
 
 #[tokio::test]
-async fn urgency_filter_only_optimizes_non_high_pushes() {
+async fn urgency_policy_filters_silent_controls_by_push_service() {
     let harness = Harness::new().await;
     let home = SecretKey::random(&mut OsRng);
     for (host, forwarded, dropped) in [
