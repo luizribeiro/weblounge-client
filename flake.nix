@@ -13,7 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
-    weblounge-client-previous.url = "github:luizribeiro/weblounge-client/9d5c99f";
+    weblounge-client-previous.url = "github:luizribeiro/weblounge-client/9f094ac0c2b2b6e94976c96c67ca391ece57102b";
   };
 
   outputs =
