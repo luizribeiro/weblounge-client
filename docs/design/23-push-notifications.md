@@ -34,9 +34,10 @@ Five facts shape the design:
    `irc/handlers.go:4384-4390`), a maintenance `PING` when no push has succeeded for over half the
    14-day expiry (checked every 24 h, `irc/server.go:46,346-351`) and `MARKREAD` when a buffer with a
    still-clearable push is read elsewhere (`handlers.go:3265-3274`; never to the endpoint that sent
-   the MARKREAD, `client.go:2101`). Ergo 2.19.1 sends all of them at high urgency
-   (`client.go:2127`); upstream PR #2471 (merged 2026-10-22, unreleased) makes the maintenance PING
-   and MARKREAD `UrgencyNormal`. The registration PING stays high.
+   the MARKREAD, `client.go:2101`). The upstream 2.19.1 release sends all of them at high urgency
+   (`client.go:2127`), but production's `pkgs/ergochat.nix` already backports upstream commit
+   `9975d8d` from PR #2471: maintenance PING and MARKREAD use `UrgencyNormal`, while the registration
+   PING stays high.
 5. **The device can't apply notification rules, so the sender must.** Pushing too much can't be
    undone on iOS (fact 4), and pushing too little can't be fixed while the app is closed. Every
    future rule has to be evaluated by whatever sends the push.
@@ -171,11 +172,13 @@ instead of hardcoding `high`.
 
 The ciphertext is opaque, so this policy treats every normal-urgency push from a home alike. The
 worker must nevertheless decrypt and skip presentation for `MARKREAD` and `PING` on every browser:
-production Ergo 2.19.1 labels them `high`, and a probe or home with incorrect urgency must not create
-a visible control notification. `MARKREAD` closes the matching conversation's notifications and
-updates its stored count; `PING` changes no visible state. Failure to decrypt remains visible because
-the event may be a message. A future Ergo urgency split can move maintenance PING to `low` without a
-relay change.
+another home or a future urgency regression must not create a visible control notification.
+Production's backport and the relay keep these controls away from Apple; relay logs confirm that a
+normal-urgency MARKREAD is instead forwarded to Firefox for cleanup. On Firefox and Chromium,
+`MARKREAD` closes the matching conversation's notifications and updates its stored count without
+presentation; `PING` changes no visible state. Failure to decrypt remains visible because the event
+may be a message. A future Ergo urgency split can move maintenance PING to `low` without a relay
+change.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
 It never sees the sender, the target or the text.
@@ -809,11 +812,11 @@ In deploy order:
    tests, an #ops alert and `tests/e2e/push.py`. Secrets via sops: the relay's VAPID P-256 key pair
    (public key published in `config.json`); later an APNs `.p8` (team id, key id) and FCM
    service-account credentials.
-3. One combined Ergo deploy: bump to a release containing PR #2471 (fix webpush always sending at
-   high urgency) if there is one, else backport it onto the patched 2.19.1 in `pkgs/ergochat.nix`;
-   and raise `webpush.max-subscriptions` from the default 4 (`default.yaml:1205`) to 10, since each
-   browser, phone and later native app uses one slot. #2471 makes the maintenance PING and MARKREAD
-   `UrgencyNormal`; the registration probe stays high, which the relay's probing state handles.
+3. Keep commit `9975d8d` from PR #2471 backported onto production's patched Ergo 2.19.1 until a
+   release containing it is deployed, and raise `webpush.max-subscriptions` from the default 4
+   (`default.yaml:1205`) to 10, since each browser, phone and later native app uses one slot. The
+   backport makes the maintenance PING and MARKREAD `UrgencyNormal`; the registration probe stays
+   high, which the relay's probing state handles.
 4. `beta-client.nix`: add `https://push.weblounge.org` to CSP `connect-src` and serve
    `push: { relay, relay_vapid }` in `/config.json` once `DeploymentConfig` lands.
 
