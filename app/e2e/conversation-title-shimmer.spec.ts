@@ -18,7 +18,7 @@ for (const shell of ["desktop", "mobile"] as const) {
       });
     }
 
-    test("fills while history resolves and stops when current", async ({
+    test("sweeps while history resolves and crossfades when current", async ({
       browserName,
       page,
     }) => {
@@ -40,9 +40,14 @@ for (const shell of ["desktop", "mobile"] as const) {
       await pauseSweep(title, 0);
       const baseline = await renderedPixels(title);
       await pauseSweep(title, 250);
-      expect(
-        maxPixelChange(baseline, await renderedPixels(title)),
-      ).toBeGreaterThan(10);
+      const earlySweep = await renderedPixels(title);
+      await pauseSweep(title, 500);
+      const midSweep = await renderedPixels(title);
+      expect(maxPixelChange(baseline, earlySweep)).toBeGreaterThan(10);
+      expect(maxPixelChange(baseline, midSweep)).toBeGreaterThan(10);
+      expect(rightmostChangedX(baseline, midSweep)).toBeGreaterThan(
+        rightmostChangedX(baseline, earlySweep),
+      );
       if (browserName === "firefox") {
         await title.screenshot({
           animations: "allow",
@@ -58,8 +63,13 @@ for (const shell of ["desktop", "mobile"] as const) {
       }
       await resumeSweep(title);
 
+      await observeAndPauseCompletion(title);
       await releaseSyncedBufferProjection(page);
+      await expect(title).toHaveAttribute("data-connection-phase", "fading");
+      await expect(title).toHaveCSS("animation-duration", "0.2s");
+      await resumeSweep(title);
       await expect(title).not.toHaveAttribute("data-connection-progress");
+      expect(await observedCompletionPhases(title)).toEqual(["fading"]);
       expect(await runningAnimations(title)).toBe(0);
     });
 
@@ -136,7 +146,13 @@ async function resumeSweep(
   await locator.evaluate((element) => element.getAnimations()[0]?.play());
 }
 
-async function renderedPixels(locator: Locator): Promise<readonly number[]> {
+interface RenderedFrame {
+  readonly height: number;
+  readonly pixels: readonly number[];
+  readonly width: number;
+}
+
+async function renderedPixels(locator: Locator): Promise<RenderedFrame> {
   const image = await locator.screenshot({ animations: "allow", scale: "css" });
   return locator.page().evaluate(async (base64) => {
     const bytes = Uint8Array.from(atob(base64), (character) =>
@@ -151,19 +167,66 @@ async function renderedPixels(locator: Locator): Promise<readonly number[]> {
     const context = canvas.getContext("2d");
     if (context === null) throw new Error("canvas context unavailable");
     context.drawImage(source, 0, 0);
-    return [...context.getImageData(0, 0, canvas.width, canvas.height).data];
+    return {
+      height: canvas.height,
+      pixels: [...context.getImageData(0, 0, canvas.width, canvas.height).data],
+      width: canvas.width,
+    };
   }, image.toString("base64"));
 }
 
-function maxPixelChange(
-  baseline: readonly number[],
-  frame: readonly number[],
-): number {
-  return frame.reduce(
+function maxPixelChange(baseline: RenderedFrame, frame: RenderedFrame): number {
+  return frame.pixels.reduce(
     (maximum, value, index) =>
-      Math.max(maximum, Math.abs(value - (baseline[index] ?? 0))),
+      Math.max(maximum, Math.abs(value - (baseline.pixels[index] ?? 0))),
     0,
   );
+}
+
+function rightmostChangedX(
+  baseline: RenderedFrame,
+  frame: RenderedFrame,
+): number {
+  let rightmost = -1;
+  for (let offset = 0; offset < frame.pixels.length; offset += 4) {
+    const changed = [0, 1, 2].some(
+      (channel) =>
+        Math.abs(
+          (frame.pixels[offset + channel] ?? 0) -
+            (baseline.pixels[offset + channel] ?? 0),
+        ) > 10,
+    );
+    if (changed) rightmost = Math.max(rightmost, (offset / 4) % frame.width);
+  }
+  return rightmost;
+}
+
+async function observeAndPauseCompletion(locator: Locator): Promise<void> {
+  await locator.evaluate((element) => {
+    const phases: string[] = [];
+    const observer = new MutationObserver(() => {
+      const phase = element.getAttribute("data-connection-phase");
+      if (phase === null || phases.includes(phase)) return;
+      phases.push(phase);
+      if (phase === "fading") element.getAnimations()[0]?.pause();
+    });
+    observer.observe(element, {
+      attributeFilter: ["data-connection-phase"],
+    });
+    Reflect.set(element, "__completionPhases", phases);
+    Reflect.set(element, "__completionObserver", observer);
+  });
+}
+
+async function observedCompletionPhases(locator: Locator): Promise<string[]> {
+  return locator.evaluate((element) => {
+    const observer = Reflect.get(element, "__completionObserver");
+    if (observer instanceof MutationObserver) observer.disconnect();
+    const phases = Reflect.get(element, "__completionPhases");
+    return Array.isArray(phases)
+      ? phases.filter((phase): phase is string => typeof phase === "string")
+      : [];
+  });
 }
 
 async function setVisibility(page: Page, hidden: boolean): Promise<void> {

@@ -469,15 +469,15 @@ it("reveals and navigates a cached chat list before live synchronization", async
       },
     ],
   });
-  const progressElements = container.querySelectorAll(
-    "[data-connection-progress]",
-  );
-  expect(progressElements).toHaveLength(2);
-  for (const element of progressElements) {
-    fireEvent.animationIteration(element);
-    expect(element).toHaveAttribute("data-connection-phase", "filling");
-    fireEvent.animationEnd(element);
-  }
+  const brand = container.querySelector("[data-connection-brand]");
+  const title = container.querySelector("[data-conversation-title]");
+  expect(brand).toHaveAttribute("data-connection-phase", "finishing");
+  expect(title).toHaveAttribute("data-connection-phase", "fading");
+  if (brand === null || title === null) throw new Error("progress UI missing");
+  fireEvent.animationIteration(brand);
+  expect(brand).toHaveAttribute("data-connection-phase", "filling");
+  fireEvent.animationEnd(brand);
+  fireEvent.animationEnd(title);
   await waitFor(() =>
     expect(container.querySelector("[data-connection-progress]")).toBeNull(),
   );

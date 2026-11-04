@@ -95,6 +95,7 @@ export function MobileChatList(props: MobileChatListProps) {
   const progress = createConnectionProgress(() => connection().progressing, {
     atRest: () => connectionSweepAtRest(header),
     interrupted: () => connection().error !== undefined,
+    mode: "sweep-then-fill",
     prefersReducedMotion: platform.prefersReducedMotion,
   });
   createEffect(() => {

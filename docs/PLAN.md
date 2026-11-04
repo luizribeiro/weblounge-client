@@ -174,6 +174,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Render connection fills in Firefox with standard mask and background positioning instead
     of registered custom-property interpolation; strict Chromium, Firefox, and WebKit frame checks
     cover brand and conversation-title sweeps, final fill, visibility pausing, and reduced motion.
+  - [x] Keep conversation-title progress to the shared moving shimmer band, then crossfade directly
+    to the normal title when sync completes. Only the brand uses the sweep-then-fill mode (#99).
   - [x] Sync read markers through papo on restore, live remote advances, and a 500ms foreground
     live-edge dwell. DMs count every peer message as a mention; unread-only rows keep the subtle
     dot while mentions use the accent count badge on both shells. Cross-context coverage targets

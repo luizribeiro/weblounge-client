@@ -52,6 +52,7 @@ export function Sidebar(props: SidebarProps) {
   const progress = createConnectionProgress(() => connection().progressing, {
     atRest: () => connectionSweepAtRest(brand),
     interrupted: () => connection().error !== undefined,
+    mode: "sweep-then-fill",
     prefersReducedMotion: platform.prefersReducedMotion,
   });
   const run = (id: UiActionId, target?: SidebarBuffer) =>

@@ -1,10 +1,7 @@
 import type { Accessor } from "solid-js";
 import type { BufferSyncPresentation } from "../../engine/buffer-sync";
 import { platformEnvironment } from "../../platform/environment";
-import {
-  connectionSweepAtRest,
-  createConnectionProgress,
-} from "../../ui/connection-progress";
+import { createConnectionProgress } from "../../ui/connection-progress";
 import { Line } from "../../ui/Line";
 
 interface ConversationTitleProps {
@@ -15,10 +12,9 @@ interface ConversationTitleProps {
 
 export function ConversationTitle(props: ConversationTitleProps) {
   const platform = platformEnvironment();
-  let heading: HTMLHeadingElement | undefined;
   const progress = createConnectionProgress(() => props.sync().progressing, {
-    atRest: () => connectionSweepAtRest(heading),
     interrupted: () => props.sync().interrupted,
+    mode: "sweep",
     prefersReducedMotion: platform.prefersReducedMotion,
   });
   return (
@@ -35,7 +31,6 @@ export function ConversationTitle(props: ConversationTitleProps) {
       data-conversation-title="true"
       onAnimationEnd={progress.handleAnimationEnd}
       onAnimationIteration={progress.handleAnimationIteration}
-      ref={heading}
     >
       <Line>{props.title}</Line>
     </h2>

@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import type { BufferSyncPresentation } from "../../engine/buffer-sync";
 import { ConversationTitle } from "./ConversationTitle";
 
-it("finishes the shared fill pass when the buffer becomes current", () => {
+it("crossfades the shared sweep when the buffer becomes current", () => {
   const [sync, setSync] = createSignal<BufferSyncPresentation>({
     interrupted: false,
     progressing: true,
@@ -15,9 +15,9 @@ it("finishes the shared fill pass when the buffer becomes current", () => {
   expect(heading).toHaveAttribute("data-connection-phase", "loading");
   expect(heading).toHaveAttribute("aria-busy", "true");
   setSync({ interrupted: false, progressing: false });
-  expect(heading).toHaveAttribute("data-connection-phase", "finishing");
+  expect(heading).toHaveAttribute("data-connection-phase", "fading");
   fireEvent.animationIteration(heading);
-  expect(heading).toHaveAttribute("data-connection-phase", "filling");
+  expect(heading).toHaveAttribute("data-connection-phase", "fading");
   fireEvent.animationEnd(heading);
   expect(heading).not.toHaveAttribute("data-connection-progress");
   expect(heading).not.toHaveAttribute("aria-busy");

@@ -229,19 +229,21 @@ UI. The last projection, navigation, scroll position, and drafts stay mounted. T
 The weblounge logo and title are the sole transient progress indicator: the pair in the mobile
 Chats header and desktop sidebar fills while connecting, registering, reconnecting, or hydrating
 the first complete live projection. A transient drop that recovers produces only this treatment.
-The active conversation title uses the same shared fill while its network is making progress or
-its buffer has an initial-history, reconnect-catch-up, or older-history request in flight. Buffer
-sync is an engine-owned typed projection; the shell does not infer it with a timer. Mobile and
-desktop stop with the same final filling pass when the buffer becomes current.
-During progress, the logo tile, chair, and title have a theme-derived dim base. One straight,
-soft-edged band reveals a full-colour copy from left to right across the real logo geometry and then
-the title, driven by one shared coordinate so it reads as one continuous pass. On recovery, the
-current cycle finishes before one final pass fills everything behind its leading edge; the pair then
-stays fully filled and has no active animation. Recovery during the cycle's ending rest starts the
-final pass immediately. With reduced motion, progress is a static dim base with a partially visible
-full-colour logo and brighter title, and recovery snaps to full colour. The error tint and shared
-error strip take precedence and never sweep. The implementation uses theme colour mixes and a
-registered custom property; it introduces no raw colours, fade, or colour interpolation.
+The active conversation title uses the sweep portion of that shared effect while its network is
+making progress or its buffer has an initial-history, reconnect-catch-up, or older-history request
+in flight. Buffer sync is an engine-owned typed projection; the shell does not infer it with a
+timer. Mobile and desktop crossfade directly to the normal title when the buffer becomes current.
+During progress, the logo tile, chair, and title have a theme-derived dim base. One straight band
+with a 36px solid centre and 12px soft edges reveals a full-colour copy on a linear one-second
+cycle. For the brand, it travels across the real logo geometry and title on one shared coordinate.
+On recovery, the current brand cycle finishes before one final pass fills everything behind its
+leading edge; the pair then stays fully filled and has no active animation. Recovery during the
+cycle's ending rest starts the final pass immediately. A conversation title continuously sweeps
+the same band across its own width, then crossfades to normal without a fill pass or growing band.
+With reduced motion, progress is a static dim base and recovery snaps to full colour. The error tint
+and shared error strip take precedence and never sweep. The shared controller exposes `sweep` and
+`sweep-then-fill` modes over one effect implementation; both use theme colour mixes and introduce
+no raw colours or colour interpolation.
 
 The shared presentation projection exposes semantic progress, one optional actionable error, and
 whether sends are blocked; it no longer exposes a user-facing connection label. Any network still
@@ -341,8 +343,9 @@ CAP/SASL, implement a socket stack, derive feature actions, fetch history, or st
   logo treatment and never connection copy or an error strip. Reduced-motion coverage asserts a
   static dim with no animation.
 - Playwright desktop and mobile coverage holds a local-Ergo history request and reconnect catch-up
-  open, then asserts the conversation title fills until the engine reports that buffer current.
-  Light and dark captures cover the shared treatment; hidden-page and idle audits stay green.
+  open, then asserts the conversation title's band moves horizontally and never enters the brand's
+  fill phase before it crossfades to normal. Light and dark captures cover the shared treatment;
+  hidden-page and idle audits stay green.
 - Presentation tests keep exactly one actionable strip while navigating between mobile Chats and a
   conversation, place the desktop strip at the sidebar top, exercise Sign in again and Retry, tint
   the logo, and remove the strip and tint on resolution. Per-header status/retry components and the

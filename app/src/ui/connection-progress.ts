@@ -10,13 +10,22 @@ export type ConnectionProgressPhase =
   | "loading"
   | "finishing"
   | "filling"
+  | "fading"
   | "reduced";
 
-interface ConnectionProgressOptions {
-  readonly atRest: () => boolean;
+interface SharedConnectionProgressOptions {
   readonly interrupted: Accessor<boolean>;
   readonly prefersReducedMotion: Accessor<boolean>;
 }
+
+type ConnectionProgressOptions =
+  | (SharedConnectionProgressOptions & {
+      readonly mode: "sweep";
+    })
+  | (SharedConnectionProgressOptions & {
+      readonly atRest: () => boolean;
+      readonly mode: "sweep-then-fill";
+    });
 
 export interface ConnectionProgress {
   readonly active: Accessor<boolean>;
@@ -54,9 +63,12 @@ export function createConnectionProgress(
       else if (phase() !== "loading") setPhase("loading");
       return;
     }
-    if (phase() === "loading") {
-      setPhase(options.atRest() ? "filling" : "finishing");
-    } else if (phase() === "reduced" || options.interrupted()) {
+    if (options.prefersReducedMotion() || options.interrupted()) {
+      setPhase("idle");
+    } else if (phase() === "loading") {
+      if (options.mode === "sweep") setPhase("fading");
+      else setPhase(options.atRest() ? "filling" : "finishing");
+    } else if (phase() === "reduced") {
       setPhase("idle");
     }
   });
@@ -67,7 +79,7 @@ export function createConnectionProgress(
     handleAnimationEnd: (event) => {
       if (
         event.target === event.currentTarget &&
-        phase() === "filling" &&
+        (phase() === "filling" || phase() === "fading") &&
         !progressing()
       ) {
         setPhase("idle");

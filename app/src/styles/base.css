@@ -140,6 +140,12 @@ textarea:focus-visible {
   animation-play-state: paused;
 }
 
+[data-connection-shimmer][data-connection-phase="fading"] {
+  animation: connection-title-crossfade var(--wl-motion-fade)
+    var(--wl-motion-standard-curve) forwards;
+  animation-play-state: paused;
+}
+
 [data-connection-shimmer][data-connection-visible] {
   animation-play-state: running;
 }
@@ -251,6 +257,11 @@ textarea:focus-visible {
   background-position: left top;
 }
 
+[data-connection-shimmer][data-connection-phase="fading"][data-connection-title] {
+  background: none;
+  color: var(--wl-connection-fg);
+}
+
 [data-connection-shimmer][data-connection-progress][data-connection-title],
 [data-connection-shimmer][data-connection-progress]
   :is([data-connection-fill], [data-connection-title]) {
@@ -328,6 +339,15 @@ textarea:focus-visible {
   }
   to {
     background-size: 100% 100%;
+  }
+}
+
+@keyframes connection-title-crossfade {
+  from {
+    opacity: 0.34;
+  }
+  to {
+    opacity: 1;
   }
 }
 

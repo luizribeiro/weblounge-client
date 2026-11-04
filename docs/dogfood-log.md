@@ -104,6 +104,6 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 96 | 2026-11-04 | Startup error screen: the Retry button text is white on the light-green button. | in progress |
 | 97 | 2026-11-04 | Desktop Firefox: the logo/title shimmer is not visible. | in progress |
 | 98 | 2026-11-04 | Firefox: the offline cached-shell launch did not serve the cached shell on reload (found by a stale-shell verification run; Firefox not yet in CI for these specs). | open |
-| 99 | 2026-11-04 | Conversation-title loading indicator uses the logo's fill effect; it should be the sweeping shimmer only. | in progress |
+| 99 | 2026-11-04 | Conversation-title loading indicator uses the logo's fill effect; it should be the sweeping shimmer only. | fixed locally; awaiting review |
 | 100 | 2026-11-04 | Push works on iPhone (full notification + badge). Extra generic "New message from weblounge" notifications arrive too: likely Ergo MARKREAD/PING pushes the relay should drop by urgency for web targets. | investigating |
 | 101 | 2026-11-04 | Desktop: DMs that arrived as pushes (from "push test 2" on) are marked "unverified sender". | in progress |

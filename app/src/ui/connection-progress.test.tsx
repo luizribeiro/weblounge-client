@@ -9,6 +9,7 @@ it("waits for the loading iteration before running the final fill", () => {
     const progress = createConnectionProgress(progressing, {
       atRest: () => false,
       interrupted: () => false,
+      mode: "sweep-then-fill",
       prefersReducedMotion: () => false,
     });
     return (
@@ -36,6 +37,7 @@ it("starts the final fill immediately from the loading rest phase", () => {
     const progress = createConnectionProgress(progressing, {
       atRest: () => true,
       interrupted: () => false,
+      mode: "sweep-then-fill",
       prefersReducedMotion: () => false,
     });
     return <div data-phase={progress.phase()} />;
@@ -53,6 +55,7 @@ it("uses a static loading phase with reduced motion and snaps to idle", () => {
     const progress = createConnectionProgress(progressing, {
       atRest: () => false,
       interrupted: () => false,
+      mode: "sweep-then-fill",
       prefersReducedMotion: () => true,
     });
     return <div data-phase={progress.phase()} />;
@@ -62,5 +65,32 @@ it("uses a static loading phase with reduced motion and snaps to idle", () => {
 
   expect(indicator).toHaveAttribute("data-phase", "reduced");
   setProgressing(false);
+  expect(indicator).toHaveAttribute("data-phase", "idle");
+});
+
+it("crossfades a sweep without entering the fill pass", () => {
+  const [progressing, setProgressing] = createSignal(true);
+  const { container } = render(() => {
+    const progress = createConnectionProgress(progressing, {
+      interrupted: () => false,
+      mode: "sweep",
+      prefersReducedMotion: () => false,
+    });
+    return (
+      <div
+        data-phase={progress.phase()}
+        onAnimationEnd={progress.handleAnimationEnd}
+        onAnimationIteration={progress.handleAnimationIteration}
+      />
+    );
+  });
+  const indicator = container.firstElementChild;
+  if (!(indicator instanceof HTMLElement)) throw new Error("missing indicator");
+
+  setProgressing(false);
+  expect(indicator).toHaveAttribute("data-phase", "fading");
+  fireEvent.animationIteration(indicator);
+  expect(indicator).toHaveAttribute("data-phase", "fading");
+  fireEvent.animationEnd(indicator);
   expect(indicator).toHaveAttribute("data-phase", "idle");
 });
