@@ -9,6 +9,7 @@ import {
 import { IrcClient } from "./irc-client";
 
 const routeId = "route-push-e2e";
+const pushHarnessScope = "/e2e/push-events/";
 
 test("leaves a fresh engine database for the engine to create", async ({
   context,
@@ -251,6 +252,54 @@ test("silently applies MARKREAD and maintenance PING cleanup", async ({
       },
     ]);
   await expect.poll(() => storedAppBadge(page)).toBe(1);
+});
+
+test("MARKREAD silently closes a direct-message notification", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  const notificationScope =
+    browserName === "firefox"
+      ? await preparePushEventHarness(context, page)
+      : await prepareServiceWorker(context, page).then(() => "/");
+  const [message, markread] = await seedRouteAndEncryptMany(page, [
+    "@time=2026-11-04T19:24:32.000Z;msgid=push-direct-read :mel!m@example.test PRIVMSG weblounge :direct message to close",
+    ":irc.example.test MARKREAD mel timestamp=2026-11-04T19:24:32.000Z",
+  ]);
+  if (message === undefined || markread === undefined) {
+    throw new Error("push envelopes were not created");
+  }
+
+  await deliverBrowserPush(
+    browserName,
+    context,
+    page,
+    notificationScope,
+    message,
+  );
+  await expect
+    .poll(() => notifications(page, notificationScope))
+    .toEqual([
+      {
+        title: "mel",
+        body: "direct message to close",
+        tag: "Lounge/mel",
+        route: "/Lounge/@mel",
+      },
+    ]);
+  await expect.poll(() => storedAppBadge(page)).toBe(1);
+
+  await deliverBrowserPush(
+    browserName,
+    context,
+    page,
+    notificationScope,
+    markread,
+  );
+
+  await expect.poll(() => notifications(page, notificationScope)).toEqual([]);
+  await expect.poll(() => storedAppBadge(page)).toBe(0);
 });
 
 test("does not tidy a notification newer than its read marker", async ({
@@ -593,9 +642,32 @@ async function loadNotificationPromptDismissal(page: Page): Promise<void> {
   );
 }
 
-async function notifications(page: Page) {
-  return page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration("/");
+async function notifications(page: Page, scope = "/") {
+  return page.evaluate(async (registrationScope) => {
+    if (registrationScope !== "/") {
+      const snapshots: unknown = Reflect.get(
+        globalThis,
+        "pushHarnessNotifications",
+      );
+      if (!Array.isArray(snapshots)) return [];
+      return snapshots.map((snapshot) => {
+        if (typeof snapshot !== "object" || snapshot === null) {
+          throw new Error("invalid push harness notification");
+        }
+        const data = "data" in snapshot ? snapshot.data : undefined;
+        return {
+          title: "title" in snapshot ? String(snapshot.title) : "",
+          body: "body" in snapshot ? String(snapshot.body) : "",
+          tag: "tag" in snapshot ? String(snapshot.tag) : "",
+          route:
+            typeof data === "object" && data !== null && "route" in data
+              ? String(data.route)
+              : "",
+        };
+      });
+    }
+    const registration =
+      await navigator.serviceWorker.getRegistration(registrationScope);
     return (await registration?.getNotifications())?.map((notification) => ({
       title: notification.title,
       body: notification.body,
@@ -607,7 +679,92 @@ async function notifications(page: Page) {
           ? String(notification.data.route)
           : "",
     }));
+  }, scope);
+}
+
+async function preparePushEventHarness(
+  context: BrowserContext,
+  page: Page,
+): Promise<string> {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_DEV === "1",
+    "the push event harness is emitted only in production test builds",
+  );
+  await page.goto("/");
+  await context.grantPermissions(["notifications"], {
+    origin: new URL(page.url()).origin,
   });
+  await page.evaluate(async (scope) => {
+    await navigator.serviceWorker.register("/e2e/push-event-worker.js", {
+      scope,
+    });
+  }, pushHarnessScope);
+  await expect
+    .poll(() =>
+      page.evaluate(async (scope) => {
+        const registration =
+          await navigator.serviceWorker.getRegistration(scope);
+        return registration?.active?.state ?? null;
+      }, pushHarnessScope),
+    )
+    .toBe("activated");
+  return pushHarnessScope;
+}
+
+async function deliverBrowserPush(
+  browserName: string,
+  context: BrowserContext,
+  page: Page,
+  scope: string,
+  data: string,
+): Promise<void> {
+  if (browserName === "chromium") {
+    await deliverPush(context, page, data);
+    return;
+  }
+  await page.evaluate(
+    async ({ payload, registrationScope }) => {
+      const registration =
+        await navigator.serviceWorker.getRegistration(registrationScope);
+      if (registration?.active === null || registration?.active === undefined) {
+        throw new Error("push event harness is unavailable");
+      }
+      const id = crypto.randomUUID();
+      await new Promise<void>((resolve, reject) => {
+        const onMessage = (event: MessageEvent<unknown>) => {
+          const message = event.data;
+          if (
+            typeof message !== "object" ||
+            message === null ||
+            !("id" in message) ||
+            message.id !== id ||
+            !("type" in message)
+          ) {
+            return;
+          }
+          navigator.serviceWorker.removeEventListener("message", onMessage);
+          if (message.type === "push_dispatched") {
+            if ("notifications" in message) {
+              Reflect.set(
+                globalThis,
+                "pushHarnessNotifications",
+                message.notifications,
+              );
+            }
+            resolve();
+          } else if (
+            message.type === "push_dispatch_failed" &&
+            "error" in message
+          ) {
+            reject(new Error(String(message.error)));
+          }
+        };
+        navigator.serviceWorker.addEventListener("message", onMessage);
+        registration.active.postMessage({ type: "deliver_push", id, payload });
+      });
+    },
+    { payload: data, registrationScope: scope },
+  );
 }
 
 async function routeNeedsReregistration(page: Page): Promise<boolean> {

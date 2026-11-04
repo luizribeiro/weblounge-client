@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -53,6 +54,7 @@ export default defineConfig(({ mode }) => {
   }
   const pushWorkerDefines = {
     __PUSH_NEW_MESSAGE__: JSON.stringify(messages["notifications.new_message"]),
+    __PUSH_EVENT_HARNESS__: "false",
   };
 
   return {
@@ -113,6 +115,7 @@ export default defineConfig(({ mode }) => {
       emitServiceWorker(
         resolve(import.meta.dirname, "src/push-worker.ts"),
         pushWorkerDefines,
+        performanceHarness,
       ),
       ...(development || appConfigHarness
         ? [appModeConfig(appConfigHarness)]
@@ -191,6 +194,7 @@ function injectStartupImageLinks(): Plugin {
 function emitServiceWorker(
   workerEntry: string,
   define: Readonly<Record<string, string>>,
+  pushEventHarness: boolean,
 ): Plugin {
   return {
     name: "weblounge-service-worker",
@@ -227,6 +231,37 @@ function emitServiceWorker(
       const worker = `const SHELL_VERSION = ${JSON.stringify(version)};\nconst PRECACHE_URLS = Object.freeze(${JSON.stringify(urls)});\n${source}`;
       writeFileSync(resolve(directory, "service-worker.js"), worker);
       rmSync(sourcePath);
+      if (pushEventHarness) {
+        await viteBuild({
+          configFile: false,
+          define: { ...define, __PUSH_EVENT_HARNESS__: "true" },
+          publicDir: false,
+          logLevel: "error",
+          build: {
+            emptyOutDir: false,
+            outDir: directory,
+            rollupOptions: {
+              input: workerEntry,
+              output: {
+                entryFileNames: "push-event-worker-source.js",
+                format: "iife",
+              },
+            },
+          },
+        });
+        const harnessSourcePath = resolve(
+          directory,
+          "push-event-worker-source.js",
+        );
+        const harness = `const SHELL_VERSION = ${JSON.stringify(version)};\nconst PRECACHE_URLS = Object.freeze(${JSON.stringify(urls)});\n${readFileSync(harnessSourcePath, "utf8")}`;
+        const harnessDirectory = resolve(directory, "e2e");
+        mkdirSync(harnessDirectory, { recursive: true });
+        writeFileSync(
+          resolve(harnessDirectory, "push-event-worker.js"),
+          harness,
+        );
+        rmSync(harnessSourcePath);
+      }
     },
   };
 }

@@ -40,6 +40,9 @@ if (process.env.WEBLOUNGE_E2E_HARNESS !== "1") {
       `production build contains TypeScript assets: ${typeScriptAssets.join(", ")}`,
     );
   }
+  if (files.some((file) => file.endsWith("/e2e/push-event-worker.js"))) {
+    throw new Error("production build contains the push event test worker");
+  }
   let workerConstructorCount = 0;
   for (const file of files) {
     const content = await readFile(file);
@@ -240,6 +243,11 @@ async function verifyServiceWorker(directory) {
   }
   const sourceStart = worker.indexOf("\n", worker.indexOf("\n") + 1) + 1;
   const source = worker.slice(sourceStart);
+  if (source.includes("deliver_push") || source.includes("push_dispatched")) {
+    throw new Error(
+      "production service worker contains the push event harness",
+    );
+  }
   const hash = createHash("sha256").update(source);
   for (const url of expectedUrls) {
     hash.update(url).update(await readFile(resolve(directory, `.${url}`)));

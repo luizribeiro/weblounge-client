@@ -22,6 +22,7 @@ import {
 
 declare const SHELL_VERSION: string;
 declare const PRECACHE_URLS: readonly string[];
+declare const __PUSH_EVENT_HARNESS__: boolean;
 declare const wasm_bindgen: PushPayloadParser &
   ((input: Response) => Promise<unknown>);
 
@@ -30,6 +31,10 @@ interface WorkerEvent extends Event {
 }
 
 interface WorkerPushEvent extends WorkerEvent {
+  readonly data: { json(): unknown } | null;
+}
+
+interface PushPayloadEvent {
   readonly data: { json(): unknown } | null;
 }
 
@@ -91,6 +96,7 @@ const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
 let pushQueue = Promise.resolve();
+const harnessNotifications: Notification[] = [];
 
 worker.importScripts("/push-payload.js");
 
@@ -105,8 +111,32 @@ worker.addEventListener("activate", (event) => {
 });
 
 worker.addEventListener("message", (event) => {
-  if (!requestsActivation((event as MessageEvent).data)) return;
-  (event as WorkerEvent).waitUntil(worker.skipWaiting());
+  const message = event as WorkerEvent & MessageEvent;
+  const data: unknown = message.data;
+  if (__PUSH_EVENT_HARNESS__ && isHarnessPush(data)) {
+    const handled = queuePush({
+      data: { json: () => JSON.parse(data.payload) },
+    });
+    message.waitUntil(
+      handled.then(
+        () =>
+          message.source?.postMessage({
+            type: "push_dispatched",
+            id: data.id,
+            notifications: harnessNotificationSnapshots(),
+          }),
+        (error: unknown) =>
+          message.source?.postMessage({
+            type: "push_dispatch_failed",
+            id: data.id,
+            error: pushError(error),
+          }),
+      ),
+    );
+    return;
+  }
+  if (!requestsActivation(data)) return;
+  message.waitUntil(worker.skipWaiting());
 });
 
 worker.addEventListener("fetch", (event) => {
@@ -134,9 +164,7 @@ worker.addEventListener("fetch", (event) => {
 
 worker.addEventListener("push", (event) => {
   const pushEvent = event as WorkerPushEvent;
-  const handled = pushQueue.then(() => showPushNotification(pushEvent));
-  pushQueue = handled.catch(() => undefined);
-  pushEvent.waitUntil(handled);
+  pushEvent.waitUntil(queuePush(pushEvent));
 });
 
 worker.addEventListener("pushsubscriptionchange", (event) => {
@@ -184,6 +212,34 @@ function requestsActivation(value: unknown): boolean {
   );
 }
 
+function isHarnessPush(value: unknown): value is {
+  readonly type: "deliver_push";
+  readonly id: string;
+  readonly payload: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "deliver_push" &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "payload" in value &&
+    typeof value.payload === "string"
+  );
+}
+
+function queuePush(pushEvent: PushPayloadEvent): Promise<void> {
+  const handled = pushQueue.then(() => showPushNotification(pushEvent));
+  pushQueue = handled.catch(() => undefined);
+  return handled;
+}
+
+function pushError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return `${error.name}: ${error.message}${error.stack === undefined ? "" : `\n${error.stack}`}`;
+}
+
 async function navigationResponse(request: Request): Promise<Response> {
   const network = fetch(request);
   const fallback = caches.match("/index.html", { cacheName: shellCache });
@@ -225,7 +281,7 @@ interface PushPresentationState {
   generic: ReturnType<typeof genericNotification>;
 }
 
-async function showPushNotification(event: WorkerPushEvent): Promise<void> {
+async function showPushNotification(event: PushPayloadEvent): Promise<void> {
   const state: PushPresentationState = {
     expired: false,
     shown: false,
@@ -256,7 +312,7 @@ async function showPushNotification(event: WorkerPushEvent): Promise<void> {
 }
 
 async function preparePushNotification(
-  event: WorkerPushEvent,
+  event: PushPayloadEvent,
   state: PushPresentationState,
 ): Promise<void> {
   const envelope = pushEnvelope(event.data?.json());
@@ -315,7 +371,7 @@ async function showOnce(
 ): Promise<void> {
   if (state.shown) return;
   if (state.showing !== undefined) return state.showing;
-  const attempt = worker.registration.showNotification(
+  const attempt = showRegistrationNotification(
     presentation.title,
     presentation.options,
   );
@@ -403,11 +459,53 @@ async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
     database.close();
   }
   const readMarkers = new Map(counts.readAtMs);
-  const notifications = await worker.registration.getNotifications();
+  const notifications = await registrationNotifications();
   for (const notification of notifications) {
     if (notificationIsRead(notification, readMarkers)) notification.close();
   }
   if (recomputeBadge) await setWorkerBadge(notificationCountTotal(counts));
+}
+
+function showRegistrationNotification(
+  title: string,
+  options: NotificationOptions,
+): Promise<void> {
+  if (!__PUSH_EVENT_HARNESS__) {
+    return worker.registration.showNotification(title, options);
+  }
+  const tag = options.tag ?? "";
+  if (tag.length > 0) {
+    for (const notification of [...harnessNotifications]) {
+      if (notification.tag === tag) notification.close();
+    }
+  }
+  const notification = {
+    body: options.body ?? "",
+    data: options.data,
+    tag,
+    title,
+    close: () => {
+      const index = harnessNotifications.indexOf(notification as Notification);
+      if (index >= 0) harnessNotifications.splice(index, 1);
+    },
+  } as Notification;
+  harnessNotifications.push(notification);
+  return Promise.resolve();
+}
+
+function registrationNotifications(): Promise<Notification[]> {
+  return __PUSH_EVENT_HARNESS__
+    ? Promise.resolve([...harnessNotifications])
+    : worker.registration.getNotifications();
+}
+
+function harnessNotificationSnapshots(): readonly unknown[] {
+  return harnessNotifications.map(({ body, data, tag, title }) => ({
+    body,
+    data,
+    tag,
+    title,
+  }));
 }
 
 function decodeNotificationCounts(value: unknown): NotificationCounts {

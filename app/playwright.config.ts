@@ -48,6 +48,12 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "firefox-push-controls",
+      grep: /MARKREAD silently closes a direct-message notification/,
+      testMatch: "**/push-notifications.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "firefox-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "firefox" },
