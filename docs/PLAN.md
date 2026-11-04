@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Make the relay own push route identity and converge deployed browser state: target-upserted
+  devices, one home-keyed route, exact dead-endpoint cleanup, one engine ensure per connection,
+  daily refresh, bounded serialized worker delivery, silent MARKREAD/PING cleanup, and live
+  subscription recovery.
 - [x] Generate the engine's typed localization-key inventory with the protocol bindings, so the
   app strings cross-check no longer reads Rust source outside its Nix derivation.
 - [x] Recover push registration after refusal and upgrade without accumulating subscriptions:

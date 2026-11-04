@@ -103,7 +103,7 @@ test("decrypts a real envelope into one routed notification", async ({
       {
         title: "mel in #lounge",
         body: "hello from push",
-        tag: "1/#lounge",
+        tag: "Lounge/#lounge",
         route: "/Lounge/lounge",
       },
     ]);
@@ -135,7 +135,7 @@ test("re-shows a duplicate msgid without incrementing its badge", async ({
       {
         title: "mel in #lounge",
         body: "second delivery",
-        tag: "1/#lounge",
+        tag: "Lounge/#lounge",
         route: "/Lounge/lounge",
       },
     ]);
@@ -151,7 +151,7 @@ test("migrates and decrypts an active route from the previous schema", async ({
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=push-upgrade :mel!m@example.test PRIVMSG #lounge :hello after upgrade",
     { networkLabel: "Lounge", nickname: "weblounge" },
-    2,
+    3,
   );
 
   await deliverPush(context, page, envelope);
@@ -161,12 +161,12 @@ test("migrates and decrypts an active route from the previous schema", async ({
     .toContainEqual({
       title: "mel in #lounge",
       body: "hello after upgrade",
-      tag: "1/#lounge",
+      tag: "Lounge/#lounge",
       route: "/Lounge/lounge",
     });
 });
 
-test("shows MARKREAD and maintenance PING after applying cleanup", async ({
+test("silently applies MARKREAD and maintenance PING cleanup", async ({
   context,
   page,
 }) => {
@@ -190,22 +190,16 @@ test("shows MARKREAD and maintenance PING after applying cleanup", async ({
   );
   await deliverPush(context, page, markread);
 
-  await expect
-    .poll(() => notifications(page))
-    .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
+  await expect.poll(() => notifications(page)).toEqual([]);
   await expect.poll(() => storedAppBadge(page)).toBe(0);
 
-  await closeNotifications(page);
   await seedReadNotification(page);
   await expect.poll(() => notifications(page)).toHaveLength(1);
   const ping = await seedRouteAndEncrypt(page, "PING :maintenance");
   await deliverPush(context, page, ping);
-  await expect
-    .poll(() => notifications(page))
-    .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
+  await expect.poll(() => notifications(page)).toEqual([]);
   await expect.poll(() => storedAppBadge(page)).toBe(0);
 
-  await closeNotifications(page);
   const visible = await seedRouteAndEncrypt(
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=push-after-controls :mel!m@example.test PRIVMSG #lounge :visible after controls",
@@ -217,7 +211,7 @@ test("shows MARKREAD and maintenance PING after applying cleanup", async ({
       {
         title: "mel in #lounge",
         body: "visible after controls",
-        tag: "1/#lounge",
+        tag: "Lounge/#lounge",
         route: "/Lounge/lounge",
       },
     ]);
@@ -267,6 +261,40 @@ test("shows one generic notification when route keys are missing", async ({
     .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
 });
 
+test("shows a generic notification when the push database upgrade is blocked", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const envelope = await seedRouteAndEncrypt(
+    page,
+    "@time=2026-11-03T12:34:56.789Z;msgid=push-blocked :mel!m@example.test PRIVMSG #lounge :still visible",
+    { networkLabel: "Lounge", nickname: "weblounge" },
+    3,
+  );
+  await page.evaluate(async () => {
+    Reflect.set(
+      globalThis,
+      "blockedPushDatabase",
+      await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("weblounge-push", 3);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }),
+    );
+  });
+
+  await deliverPush(context, page, envelope);
+
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
+  await page.evaluate(() => {
+    const database = Reflect.get(globalThis, "blockedPushDatabase");
+    if (database instanceof IDBDatabase) database.close();
+  });
+});
+
 test("shows one generic notification without replacing keys when parsing fails", async ({
   context,
   page,
@@ -312,7 +340,10 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
     });
     await deliverPush(context, page, envelope);
     await expect.poll(() => notifications(page)).toHaveLength(1);
-    await replaceWithConversationNotification(page, "1/#weblounge-test");
+    await replaceWithConversationNotification(
+      page,
+      "Local Ergo/#weblounge-test",
+    );
 
     await page.close();
     await context.setOffline(true);
@@ -379,7 +410,7 @@ test("keeps a restored pushed direct message verified through history", async ({
         {
           title: "weblounge-bot",
           body: text,
-          tag: "1/weblounge-bot",
+          tag: "Local Ergo/weblounge-bot",
           route: "/Local%20Ergo/@weblounge-bot",
         },
       ]);
@@ -501,16 +532,6 @@ async function notifications(page: Page) {
   });
 }
 
-async function closeNotifications(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration("/");
-    for (const notification of (await registration?.getNotifications()) ?? []) {
-      notification.close();
-    }
-  });
-  await expect.poll(() => notifications(page)).toEqual([]);
-}
-
 async function routeNeedsReregistration(page: Page): Promise<boolean> {
   return page.evaluate(async (seededRouteId) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -520,7 +541,10 @@ async function routeNeedsReregistration(page: Page): Promise<boolean> {
     });
     const transaction = database.transaction("routes", "readonly");
     const route = await new Promise<unknown>((resolve, reject) => {
-      const request = transaction.objectStore("routes").get(seededRouteId);
+      const request = transaction
+        .objectStore("routes")
+        .index("route-id")
+        .get(seededRouteId);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -556,7 +580,7 @@ async function seedReadNotification(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     await registration.showNotification("already read", {
-      tag: "1/#stale",
+      tag: "Lounge/#stale",
     });
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("weblounge-push");
@@ -567,7 +591,7 @@ async function seedReadNotification(page: Page): Promise<void> {
     transaction.objectStore("state").put(
       {
         schema: 1,
-        conversations: [["1/#stale", 0]],
+        conversations: [["Lounge/#stale", 0]],
         untagged: 0,
       },
       "notification-counts",
@@ -641,7 +665,7 @@ async function seedRouteAndEncrypt(
     readonly networkLabel: string;
     readonly nickname: string;
   } = { networkLabel: "Lounge", nickname: "weblounge" },
-  databaseVersion: 2 | 3 = 3,
+  databaseVersion: 3 | 4 = 4,
 ): Promise<string> {
   return page.evaluate(
     async ({ plaintext, route, seededRouteId, seededDatabaseVersion }) => {
@@ -695,9 +719,12 @@ async function seedRouteAndEncrypt(
         const request = indexedDB.open("weblounge-push", seededDatabaseVersion);
         request.onupgradeneeded = () => {
           if (!request.result.objectStoreNames.contains("routes")) {
-            request.result.createObjectStore("routes", {
-              keyPath: seededDatabaseVersion === 2 ? "networkId" : "routeId",
+            const store = request.result.createObjectStore("routes", {
+              keyPath: seededDatabaseVersion === 3 ? "routeId" : "vapid",
             });
+            if (seededDatabaseVersion === 4) {
+              store.createIndex("route-id", "routeId", { unique: true });
+            }
           }
           if (!request.result.objectStoreNames.contains("state")) {
             request.result.createObjectStore("state");

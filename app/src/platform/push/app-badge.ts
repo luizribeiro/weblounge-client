@@ -29,21 +29,28 @@ export function appBadgeCount(buffers: readonly BufferProjection[]): number {
 
 export function conversationNotificationCounts(
   buffers: readonly BufferProjection[],
+  networkLabels: ReadonlyMap<number, string>,
 ): readonly ConversationNotificationCount[] {
   return buffers
-    .filter((buffer) => buffer.kind !== "server")
+    .filter(
+      (buffer) =>
+        buffer.kind !== "server" && networkLabels.has(buffer.network_id),
+    )
     .map((buffer) => ({
-      tag: `${buffer.network_id}/${buffer.title.toLowerCase()}`,
+      tag: `${networkLabels.get(buffer.network_id)}/${buffer.title.toLowerCase()}`,
       count: buffer.kind === "direct" ? buffer.unread : buffer.mentions,
     }));
 }
 
 export async function syncAppBadge(
   buffers: readonly BufferProjection[],
+  networkLabels: ReadonlyMap<number, string>,
   badgeNavigator: BadgeNavigator = navigator,
 ): Promise<void> {
   const count = appBadgeCount(buffers);
-  await writeNotificationCounts(conversationNotificationCounts(buffers));
+  await writeNotificationCounts(
+    conversationNotificationCounts(buffers, networkLabels),
+  );
   if (count === 0) {
     await badgeNavigator.clearAppBadge?.();
     return;
@@ -53,20 +60,22 @@ export async function syncAppBadge(
 
 export async function syncAppPushState(
   buffers: readonly BufferProjection[],
+  networkLabels: ReadonlyMap<number, string>,
   badgeNavigator: BadgeNavigator = navigator,
   registrations: RegistrationProvider = navigator.serviceWorker,
 ): Promise<void> {
   await Promise.all([
-    syncAppBadge(buffers, badgeNavigator),
-    closeReadConversationNotifications(buffers, registrations),
+    syncAppBadge(buffers, networkLabels, badgeNavigator),
+    closeReadConversationNotifications(buffers, networkLabels, registrations),
   ]);
 }
 
 export async function closeReadConversationNotifications(
   buffers: readonly BufferProjection[],
+  networkLabels: ReadonlyMap<number, string>,
   registrations: RegistrationProvider = navigator.serviceWorker,
 ): Promise<void> {
-  const readTags = conversationNotificationCounts(buffers)
+  const readTags = conversationNotificationCounts(buffers, networkLabels)
     .filter(({ count }) => count === 0)
     .map(({ tag }) => tag);
   const registration = await registrations.getRegistration("/");

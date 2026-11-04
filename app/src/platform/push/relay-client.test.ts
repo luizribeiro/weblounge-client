@@ -32,7 +32,11 @@ describe("relay client", () => {
       value: { id: "device-1", secret: "device-secret" },
     });
     if (!device.ok) throw new Error("device creation failed");
-    const route = await client.createRoute(device.value, "home-vapid");
+    const route = await client.ensureRoute(
+      device.value,
+      "home-vapid",
+      "known-route",
+    );
     expect(route).toEqual({
       ok: true,
       value: {
@@ -61,7 +65,10 @@ describe("relay client", () => {
           headers: expect.objectContaining({
             Authorization: "Bearer device-secret",
           }),
-          body: JSON.stringify({ home_vapid: "home-vapid" }),
+          body: JSON.stringify({
+            home_vapid: "home-vapid",
+            my_route_id: "known-route",
+          }),
         }),
       ],
       [
@@ -74,6 +81,7 @@ describe("relay client", () => {
   it.each([
     [401, "unauthorized"],
     [404, "dead_route"],
+    [410, "gone"],
     [409, "capacity"],
     [400, "invalid_request"],
     [503, "unavailable"],
@@ -143,6 +151,39 @@ describe("relay client", () => {
     );
     expect(body).toBeInstanceOf(URLSearchParams);
     expect(String(body)).toBe("secret=device-secret&tab_id=tab-1");
+  });
+
+  it("updates and deletes devices and drains exact dead endpoints", async () => {
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          endpoints: ["https://push.example.test/v1/r/dead-route"],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay);
+    const device = { id: "device-1", secret: "device-secret" };
+
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+    await expect(client.takeDeadEndpoints(device)).resolves.toEqual({
+      ok: true,
+      value: ["https://push.example.test/v1/r/dead-route"],
+    });
+    await expect(client.deleteDevice(device)).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+
+    expect(fetchRelay.mock.calls.map(([, init]) => init?.method)).toEqual([
+      "PUT",
+      "GET",
+      "DELETE",
+    ]);
   });
 
   it("falls back to a keepalive release when sendBeacon declines it", async () => {

@@ -130,7 +130,7 @@ credentials: PushDeviceCredentials, } | { "type": "clear_push_device",
 /**
  * Relay origin used as the durable namespace.
  */
-relay: string, } | { "type": "register_push",
+relay: string, } | { "type": "ensure_push",
 /**
  * Network whose home should receive the route.
  */
@@ -138,11 +138,11 @@ network_id: NetworkId,
 /**
  * Relay route and encryption keys created by the platform.
  */
-route: PushRoute, } | { "type": "unregister_push",
+route: PushRoute,
 /**
- * Network whose registration should be removed.
+ * Dead relay endpoints the home must forget before registration.
  */
-network_id: NetworkId, } | { "type": "unregister_push_route",
+unregister: Array<string>, } | { "type": "unregister_push_route",
 /**
  * Network whose home owns the registration.
  */

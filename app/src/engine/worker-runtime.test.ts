@@ -106,7 +106,7 @@ it("routes durable push credentials only to the requesting port", async () => {
   expect(second.sent).toEqual([]);
 });
 
-it("broadcasts asynchronous push state to every shared port", async () => {
+it("routes activation to one tab while broadcasting push state", async () => {
   const first = new FakePort();
   const second = new FakePort();
   let emit: ((encoded: string) => void) | undefined;
@@ -116,6 +116,8 @@ it("broadcasts asynchronous push state to every shared port", async () => {
   });
   runtime.attach(first);
   runtime.attach(second);
+  second.receive({ type: "request", payload: { id: "attach-2" } });
+  await vi.waitFor(() => expect(emit).toBeTypeOf("function"));
   const events = [
     {
       type: "push_route_required",
@@ -132,7 +134,7 @@ it("broadcasts asynchronous push state to every shared port", async () => {
 
   for (const event of events) emit?.(JSON.stringify(event));
 
-  expect(first.sent).toEqual(events);
+  expect(first.sent).toEqual([events[1]]);
   expect(second.sent).toEqual(events);
 });
 

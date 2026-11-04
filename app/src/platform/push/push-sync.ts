@@ -1,5 +1,6 @@
 import type { EngineClient } from "../../engine/EngineClient";
 import type { PushDeviceCredentials } from "../../engine/generated/PushDeviceCredentials";
+import type { PushFailure } from "../../engine/generated/PushFailure";
 import type { EngineClientMessage } from "../../engine/protocol";
 import type { PushDeviceStore } from "./engine-device-store";
 import type {
@@ -7,7 +8,6 @@ import type {
   RelayDevice,
   RelayFailure,
   RelayResult,
-  RelayRoute,
 } from "./relay-client";
 import {
   createRouteKeys,
@@ -19,7 +19,13 @@ import type { WebPushTarget } from "./subscription";
 
 type RelayApi = Pick<
   RelayClient,
-  "createDevice" | "createRoute" | "activateRoute" | "deleteRoute"
+  | "activateRoute"
+  | "createDevice"
+  | "deleteDevice"
+  | "deleteRoute"
+  | "ensureRoute"
+  | "takeDeadEndpoints"
+  | "updateTarget"
 >;
 
 interface PushSynchronizerOptions {
@@ -36,6 +42,7 @@ interface PushSynchronizerOptions {
   readonly onDeviceReady?: (device: RelayDevice) => void;
   readonly generateRouteKeys?: () => Promise<RouteKeys>;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
+  readonly retry?: (work: () => void, delayMs: number) => () => void;
 }
 
 export type PushRelayRouteState = "none" | "probing" | "active" | "dead";
@@ -52,11 +59,15 @@ interface PushRouteContext {
   readonly nickname: string;
 }
 
+interface ConnectRecovery {
+  invalidRotations: number;
+  limitRetries: number;
+}
+
 export class PushSynchronizer {
   readonly #engine: EngineClient;
   readonly #relay: RelayApi;
   readonly #relayOrigin: string;
-  readonly #target: WebPushTarget;
   readonly #devices: PushDeviceStore;
   readonly #routes: PushRouteStore;
   readonly #acquireSessionToken: () => Promise<string>;
@@ -66,12 +77,17 @@ export class PushSynchronizer {
   readonly #onDeviceReady: (device: RelayDevice) => void;
   readonly #generateRouteKeys: () => Promise<RouteKeys>;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
+  readonly #retry: (work: () => void, delayMs: number) => () => void;
   readonly #unsubscribe: () => void;
-  readonly #registrationRecoveries = new Map<number, number>();
-  readonly #unregistering = new Set<number>();
+  readonly #recoveries = new Map<number, ConnectRecovery>();
+  readonly #homes = new Map<number, string>();
   readonly #currentRoutes = new Map<number, string>();
-  readonly #pushStateVersions = new Map<number, number>();
+  readonly #retryAttempts = new Map<number, number>();
+  readonly #cancelRetries = new Map<number, () => void>();
+  readonly #legacyEndpoints = new Set<string>();
+  #target: WebPushTarget;
   #pending: Promise<void> = Promise.resolve();
+  #disposed = false;
 
   constructor(options: PushSynchronizerOptions) {
     this.#engine = options.engine;
@@ -87,17 +103,58 @@ export class PushSynchronizer {
     this.#onDeviceReady = options.onDeviceReady ?? (() => {});
     this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
     this.#exclusive = options.exclusive ?? withExclusiveLock;
+    this.#retry = options.retry ?? browserRetry;
     this.#unsubscribe = this.#engine.subscribe((message) =>
       this.handle(message),
     );
   }
 
   handle(message: EngineClientMessage): void {
-    this.#onEngineMessage(message);
+    if (message.type === "push_route_required") {
+      this.#homes.set(message.network_id, message.vapid);
+      this.#recoveries.set(message.network_id, {
+        invalidRotations: 0,
+        limitRetries: 0,
+      });
+      this.#cancelRetry(message.network_id);
+      this.#enqueue(() =>
+        this.#withHomeLock(message.vapid, () =>
+          this.#ensureHome(message.network_id, false),
+        ),
+      );
+      return;
+    }
+    if (message.type !== "push_state_changed") return;
+    const pushState = message.state;
+    if (pushState.status === "registered") {
+      if (this.#currentRoutes.get(message.network_id) !== pushState.route_id)
+        return;
+      this.#retryAttempts.delete(message.network_id);
+      this.#enqueue(() =>
+        this.#activate(message.network_id, pushState.route_id),
+      );
+      return;
+    }
+    if (pushState.status === "failed") {
+      this.#enqueue(() =>
+        this.#recoverRegistration(
+          message.network_id,
+          pushState.route_id,
+          pushState.reason,
+        ),
+      );
+      return;
+    }
+    if (pushState.status === "unsupported") {
+      this.#enqueue(() => this.unregisterNetwork(message.network_id));
+    }
   }
 
   dispose(): void {
+    this.#disposed = true;
     this.#unsubscribe();
+    for (const cancel of this.#cancelRetries.values()) cancel();
+    this.#cancelRetries.clear();
   }
 
   async settled(): Promise<void> {
@@ -109,101 +166,75 @@ export class PushSynchronizer {
     }
   }
 
+  async refreshTarget(target: WebPushTarget): Promise<void> {
+    this.#target = target;
+    this.#enqueue(async () => {
+      const device = await this.#ensureDevice();
+      if (!device.ok) return;
+      for (const [networkId, home] of this.#homes) {
+        await this.#withHomeLock(home, () =>
+          this.#ensureHome(networkId, false),
+        );
+      }
+    });
+    await this.settled();
+  }
+
   async unregisterNetwork(networkId: number): Promise<void> {
-    await this.#dropRoute(networkId, true);
+    const home = this.#homes.get(networkId);
+    const route = home === undefined ? undefined : await this.#routes.get(home);
+    const device = await this.#devices.load(this.#relayOrigin);
+    if (route !== undefined) {
+      await this.#unregisterExact(networkId, route).catch(() => undefined);
+      if (device !== undefined) {
+        await this.#relay.deleteRoute(asRelayDevice(device), route.routeId);
+      }
+      await this.#routes.delete(route.vapid);
+    }
+    this.#homes.delete(networkId);
+    this.#currentRoutes.delete(networkId);
+    this.#publish(networkId, "none");
   }
 
   async signOut(): Promise<void> {
-    const device = await this.#devices.load(this.#relayOrigin);
-    const routes = await this.#routes.all();
-    if (device !== undefined) {
-      for (const route of routes) {
-        if (!(await this.#unregisterRouteEngine(route.networkId, route))) {
-          continue;
-        }
-        await this.#retire(route, asRelayDevice(device));
-      }
-    } else {
-      await Promise.all(
-        routes.map((route) => this.#routes.put({ ...route, retiring: true })),
+    const [storedDevice, routes] = await Promise.all([
+      this.#devices.load(this.#relayOrigin),
+      this.#routes.all(),
+    ]);
+    for (const route of routes) {
+      await this.#unregisterExact(route.networkId, route).catch(
+        () => undefined,
       );
     }
-    for (const route of routes) this.#publish(route.networkId, "none");
+    if (storedDevice !== undefined) {
+      const deleted = await this.#relay.deleteDevice(
+        asRelayDevice(storedDevice),
+      );
+      if (!deleted.ok && deleted.error.kind === "unauthorized") {
+        this.#onAuthorizationRequired();
+      }
+    }
+    await Promise.all(routes.map((route) => this.#routes.delete(route.vapid)));
     await this.#devices.clear(this.#relayOrigin);
-  }
-
-  #onEngineMessage(message: EngineClientMessage): void {
-    if (message.type === "push_route_required") {
-      this.#registrationRecoveries.delete(message.network_id);
-      if (message.previous_route_id !== null) {
-        this.#currentRoutes.set(message.network_id, message.previous_route_id);
-      }
-      this.#enqueue(() =>
-        this.#withNetworkLock(message.network_id, () =>
-          this.#routeRequired(
-            message.network_id,
-            message.vapid,
-            message.previous_route_id ?? undefined,
-          ),
-        ),
-      );
-      return;
+    for (const networkId of this.#homes.keys()) {
+      this.#publish(networkId, "none");
     }
-    if (message.type !== "push_state_changed") return;
-    const stateVersion =
-      (this.#pushStateVersions.get(message.network_id) ?? 0) + 1;
-    this.#pushStateVersions.set(message.network_id, stateVersion);
-    if (message.state.status === "registered") {
-      this.#registrationRecoveries.delete(message.network_id);
-      const routeId = message.state.route_id;
-      this.#currentRoutes.set(message.network_id, routeId);
-      this.#enqueue(() =>
-        this.#withNetworkLock(message.network_id, () =>
-          this.#activate(message.network_id, routeId),
-        ),
-      );
-    } else if (message.state.status === "failed") {
-      if (this.#unregistering.has(message.network_id)) return;
-      const reason = message.state.reason;
-      const routeId = message.state.route_id;
-      this.#enqueue(() =>
-        this.#withNetworkLock(message.network_id, () =>
-          this.#recoverRegistration(
-            message.network_id,
-            routeId,
-            reason,
-            stateVersion,
-          ),
-        ),
-      );
-    } else if (message.state.status === "unsupported") {
-      this.#enqueue(() =>
-        this.#withNetworkLock(message.network_id, () =>
-          this.#dropRoute(message.network_id, false),
-        ),
-      );
-    }
+    this.#homes.clear();
+    this.#currentRoutes.clear();
   }
 
   #enqueue(work: () => Promise<void>): void {
     this.#pending = this.#pending.then(work).catch(() => undefined);
   }
 
-  #withNetworkLock(
-    networkId: number,
-    work: () => Promise<void>,
-  ): Promise<void> {
-    const network = this.#routeContext(networkId)?.networkLabel ?? networkId;
-    return this.#exclusive(`weblounge-push-route-${network}`, work);
+  #withHomeLock<T>(home: string, work: () => Promise<T>): Promise<T> {
+    return this.#exclusive(`weblounge-push-home-${home}`, work);
   }
 
-  async #routeRequired(
-    networkId: number,
-    vapid: string,
-    previousRouteId?: string,
-  ): Promise<void> {
+  async #ensureHome(networkId: number, rotate: boolean): Promise<void> {
+    const home = this.#homes.get(networkId);
     const context = this.#routeContext(networkId);
-    if (context === undefined) return;
+    if (home === undefined || context === undefined || this.#disposed) return;
     const deviceResult = await this.#ensureDevice();
     if (!deviceResult.ok) {
       this.#publish(
@@ -215,125 +246,76 @@ export class PushSynchronizer {
       return;
     }
     const device = deviceResult.value;
-    const routes = await this.#routes.all();
-    for (const route of routes) {
-      if (
-        route.retiring === true &&
-        route.networkLabel === context.networkLabel
-      ) {
-        if (!(await this.#unregisterRouteEngine(networkId, route))) return;
-        if (!(await this.#retire(route, device))) return;
-      }
-    }
-    const matching = routes.filter(
-      (route) =>
-        route.retiring !== true && route.networkLabel === context.networkLabel,
+    await this.#cleanLegacyRoutes(device);
+    const stored = await this.#routes.get(home);
+    const current =
+      stored !== undefined &&
+      stored.deviceId === device.id &&
+      stored.networkLabel.length > 0
+        ? stored
+        : undefined;
+    const ensured = await this.#relay.ensureRoute(
+      device,
+      home,
+      rotate ? undefined : current?.routeId,
     );
-    const ordered = [...matching].sort((left, right) =>
-      left.routeId.localeCompare(right.routeId),
-    );
-    const selectedRouteId = this.#currentRoutes.get(networkId);
-    const existing =
-      ordered.find((route) => route.routeId === selectedRouteId) ??
-      ordered.find((route) => route.routeId === previousRouteId) ??
-      ordered.find(
-        (route) => route.vapid === vapid && route.needsReregistration !== true,
-      ) ??
-      ordered[0];
-    if (existing !== undefined) {
-      this.#currentRoutes.set(networkId, existing.routeId);
-    }
-    for (const duplicate of matching) {
-      if (duplicate.routeId !== existing?.routeId) {
-        if (!(await this.#retireStale(networkId, duplicate, device))) return;
+    if (!ensured.ok) {
+      if (ensured.error.kind === "gone") {
+        await this.#devices.clear(this.#relayOrigin);
+        await this.#ensureHome(networkId, rotate);
+        return;
       }
-    }
-    if (
-      existing !== undefined &&
-      existing.vapid === vapid &&
-      existing.needsReregistration !== true
-    ) {
-      this.#publish(networkId, "probing", existing.routeId);
-      const current = await this.#refreshContext(
-        existing,
-        networkId,
-        context,
-        device.id,
-      );
-      await this.#register(networkId, current);
-      return;
-    }
-    if (existing !== undefined) {
-      if (!(await this.#unregisterRouteEngine(networkId, existing))) return;
-      if (!(await this.#retire(existing, device))) return;
-    } else if (
-      previousRouteId !== undefined &&
-      !(await this.#unregisterCurrentEngine(networkId))
-    ) {
-      return;
-    }
-    await this.#createAndRegister(networkId, context, vapid, device);
-  }
-
-  async #createAndRegister(
-    networkId: number,
-    context: PushRouteContext,
-    vapid: string,
-    device: RelayDevice,
-    lastError?: string,
-  ): Promise<void> {
-    const keys = await this.#generateRouteKeys();
-    const created = await this.#relay.createRoute(device, vapid);
-    if (!created.ok) {
+      if (ensured.error.kind === "unauthorized") {
+        this.#onAuthorizationRequired();
+      }
       this.#publish(
         networkId,
-        "none",
-        undefined,
-        relayError("create", created.error),
+        current === undefined ? "none" : "probing",
+        current?.routeId,
+        relayError("ensure", ensured.error),
       );
-      if (created.error.kind === "unauthorized")
-        await this.#authorizationFailed();
+      if (temporaryRelayFailure(ensured.error)) this.#scheduleRetry(networkId);
       return;
     }
-    const route = storedRoute(
-      networkId,
-      context,
-      vapid,
-      keys,
-      created.value,
-      device.id,
-    );
+    const route =
+      current?.routeId === ensured.value.id
+        ? { ...current, ...context, networkId }
+        : storedRoute(
+            networkId,
+            context,
+            home,
+            await this.#generateRouteKeys(),
+            ensured.value,
+            device.id,
+          );
     await this.#routes.put(route);
-    this.#publish(networkId, "probing", route.routeId, lastError);
-    await this.#register(networkId, route);
-  }
-
-  async #refreshContext(
-    route: StoredPushRoute,
-    networkId: number,
-    context: PushRouteContext,
-    deviceId: string,
-  ): Promise<StoredPushRoute> {
-    if (
-      route.networkId === networkId &&
-      route.networkLabel === context.networkLabel &&
-      route.nickname === context.nickname &&
-      route.deviceId === deviceId
-    ) {
-      return route;
-    }
-    const current = { ...route, ...context, networkId, deviceId };
-    await this.#routes.put(current);
-    return current;
-  }
-
-  async #register(networkId: number, route: StoredPushRoute): Promise<void> {
     this.#currentRoutes.set(networkId, route.routeId);
+    const dead = await this.#relay.takeDeadEndpoints(device);
+    if (!dead.ok && dead.error.kind === "gone") {
+      await this.#devices.clear(this.#relayOrigin);
+      await this.#ensureHome(networkId, false);
+      return;
+    }
+    if (!dead.ok && dead.error.kind === "unauthorized") {
+      this.#onAuthorizationRequired();
+    }
+    const unregister = new Set(this.#legacyEndpoints);
+    if (dead.ok) for (const endpoint of dead.value) unregister.add(endpoint);
+    await this.#sendEnsure(networkId, route, [...unregister]);
+    this.#legacyEndpoints.clear();
+  }
+
+  async #sendEnsure(
+    networkId: number,
+    route: StoredPushRoute,
+    unregister: readonly string[],
+  ): Promise<void> {
+    this.#publish(networkId, "probing", route.routeId);
     try {
       await this.#engine.send({
         id: crypto.randomUUID(),
         request: {
-          type: "register_push",
+          type: "ensure_push",
           network_id: networkId,
           route: {
             route_id: route.routeId,
@@ -341,32 +323,29 @@ export class PushSynchronizer {
             p256dh: route.p256dh,
             auth: route.auth,
           },
+          unregister: [...unregister],
         },
       });
     } catch {
+      for (const endpoint of unregister) this.#legacyEndpoints.add(endpoint);
       this.#publish(networkId, "probing", route.routeId, "engine: request");
+      this.#scheduleRetry(networkId);
     }
   }
 
   async #activate(networkId: number, routeId: string): Promise<void> {
-    const [device, route] = await Promise.all([
+    const [storedDevice, route] = await Promise.all([
       this.#devices.load(this.#relayOrigin),
-      this.#routes.get(routeId),
+      this.#routes.findRoute(routeId),
     ]);
-    if (
-      device === undefined ||
-      route === undefined ||
-      route.retiring === true
-    ) {
-      this.#publish(networkId, "none", undefined, "activate: route missing");
-      return;
-    }
+    if (storedDevice === undefined || route === undefined) return;
     const activated = await this.#relay.activateRoute(
-      asRelayDevice(device),
+      asRelayDevice(storedDevice),
       routeId,
     );
     if (activated.ok) {
       this.#publish(networkId, "active", routeId);
+      this.#retryAttempts.delete(networkId);
       return;
     }
     this.#publish(
@@ -375,226 +354,89 @@ export class PushSynchronizer {
       routeId,
       relayError("activate", activated.error),
     );
-    if (activated.error.kind === "unauthorized") {
-      await this.#authorizationFailed();
-    } else if (activated.error.kind === "dead_route") {
-      if (!(await this.#unregisterRouteEngine(networkId, route))) return;
-      if (!(await this.#retire(route, asRelayDevice(device)))) return;
-      const context = this.#routeContext(networkId);
-      if (context !== undefined) {
-        await this.#createAndRegister(
-          networkId,
-          context,
-          route.vapid,
-          asRelayDevice(device),
-          relayError("activate", activated.error),
-        );
-      }
+    if (activated.error.kind === "dead_route") {
+      await this.#withHomeLock(route.vapid, () =>
+        this.#ensureHome(networkId, true),
+      );
+    } else if (activated.error.kind === "gone") {
+      await this.#devices.clear(this.#relayOrigin);
+      await this.#withHomeLock(route.vapid, () =>
+        this.#ensureHome(networkId, false),
+      );
+    } else if (activated.error.kind === "unauthorized") {
+      this.#onAuthorizationRequired();
+    } else if (temporaryRelayFailure(activated.error)) {
+      this.#scheduleRetry(networkId, () => this.#activate(networkId, routeId));
     }
   }
 
   async #recoverRegistration(
     networkId: number,
     failedRouteId: string,
-    reason: string,
-    stateVersion: number,
+    reason: PushFailure,
   ): Promise<void> {
-    const lastError = `engine: ${reason}`;
-    const context = this.#routeContext(networkId);
-    const route = await this.#routes.get(failedRouteId);
-    const currentRouteId = this.#currentRoutes.get(networkId);
-    if (this.#pushStateVersions.get(networkId) !== stateVersion) {
-      if (
-        route !== undefined &&
-        currentRouteId !== undefined &&
-        currentRouteId !== failedRouteId
-      ) {
-        await this.#retireSupersededFailure(networkId, route);
-      }
-      return;
-    }
-    this.#publish(
-      networkId,
-      route === undefined ? "none" : "probing",
-      route?.routeId,
-      lastError,
-    );
-    if (route === undefined) {
-      if (!(await this.#unregisterCurrentEngine(networkId))) return;
-    } else if (!(await this.#unregisterRouteEngine(networkId, route))) {
-      return;
-    }
-    if (route === undefined || context === undefined) return;
-
-    const device = await this.#devices.load(this.#relayOrigin);
-    if (device === undefined) {
-      await this.#routes.put({ ...route, retiring: true });
-      this.#publish(networkId, "none", undefined, lastError);
-      return;
-    }
-    if (!(await this.#retire(route, asRelayDevice(device)))) return;
-    if (
-      this.#pushStateVersions.get(networkId) !== stateVersion ||
-      this.#currentRoutes.has(networkId)
-    ) {
-      return;
-    }
-    this.#publish(networkId, "none", undefined, lastError);
-
-    if (reason !== "invalid_parameters") return;
-    const recoveries = this.#registrationRecoveries.get(networkId) ?? 0;
-    if (recoveries >= 1) return;
-    this.#registrationRecoveries.set(networkId, recoveries + 1);
-    await this.#createAndRegister(
-      networkId,
-      context,
-      route.vapid,
-      asRelayDevice(device),
-      lastError,
-    );
-  }
-
-  async #retireSupersededFailure(
-    networkId: number,
-    route: StoredPushRoute,
-  ): Promise<void> {
-    if (!(await this.#unregisterRouteEngine(networkId, route))) return;
-    const device = await this.#devices.load(this.#relayOrigin);
-    if (device === undefined) {
-      await this.#routes.put({ ...route, retiring: true });
-      return;
-    }
-    await this.#retire(route, asRelayDevice(device));
-  }
-
-  async #unregisterCurrentEngine(networkId: number): Promise<boolean> {
-    this.#unregistering.add(networkId);
-    try {
-      await this.#engine.send({
-        id: crypto.randomUUID(),
-        request: { type: "unregister_push", network_id: networkId },
-      });
-      this.#currentRoutes.delete(networkId);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      this.#unregistering.delete(networkId);
-    }
-  }
-
-  async #unregisterRouteEngine(
-    networkId: number,
-    route: StoredPushRoute,
-  ): Promise<boolean> {
-    this.#unregistering.add(networkId);
-    try {
-      await this.#engine.send({
-        id: crypto.randomUUID(),
-        request: {
-          type: "unregister_push_route",
-          network_id: networkId,
-          route_id: route.routeId,
-          endpoint: route.endpoint,
-        },
-      });
-      if (this.#currentRoutes.get(networkId) === route.routeId) {
-        this.#currentRoutes.delete(networkId);
-      }
-      return true;
-    } catch {
-      return false;
-    } finally {
-      this.#unregistering.delete(networkId);
-    }
-  }
-
-  async #retireStale(
-    networkId: number,
-    route: StoredPushRoute,
-    device: RelayDevice,
-  ): Promise<boolean> {
-    if (this.#currentRoutes.get(networkId) === route.routeId) return false;
-    if (!(await this.#unregisterRouteEngine(networkId, route))) return false;
-    return this.#retire(route, device);
-  }
-
-  async #dropRoute(networkId: number, unregister: boolean): Promise<void> {
-    const [device, routes] = await Promise.all([
-      this.#devices.load(this.#relayOrigin),
-      this.#routes.all(),
-    ]);
-    const context = this.#routeContext(networkId);
-    let matched = false;
-    for (const route of routes) {
-      if (
-        route.retiring !== true &&
-        (context === undefined
-          ? route.networkId === networkId
-          : route.networkLabel === context.networkLabel)
-      ) {
-        matched = true;
-        if (
-          unregister &&
-          !(await this.#unregisterRouteEngine(networkId, route))
-        ) {
-          return;
-        }
-        if (device === undefined) {
-          await this.#routes.put({ ...route, retiring: true });
-          this.#publish(networkId, "probing", route.routeId);
-        } else if (!(await this.#retire(route, asRelayDevice(device)))) {
-          return;
-        } else if ((await this.#routes.get(route.routeId)) !== undefined) {
-          return;
-        }
-      }
-    }
-    if (
-      unregister &&
-      !matched &&
-      !(await this.#unregisterCurrentEngine(networkId))
-    ) {
-      return;
-    }
-    if (!matched || device !== undefined) this.#publish(networkId, "none");
-  }
-
-  async #retire(route: StoredPushRoute, device: RelayDevice): Promise<boolean> {
-    const retiring = {
-      ...route,
-      deviceId: route.deviceId ?? device.id,
-      retiring: true,
+    if (this.#currentRoutes.get(networkId) !== failedRouteId) return;
+    const home = this.#homes.get(networkId);
+    const route = await this.#routes.findRoute(failedRouteId);
+    if (home === undefined || route === undefined) return;
+    const recovery = this.#recoveries.get(networkId) ?? {
+      invalidRotations: 0,
+      limitRetries: 0,
     };
-    await this.#routes.put(retiring);
-    if (route.deviceId !== undefined && route.deviceId !== device.id) {
-      return true;
+    if (reason === "invalid_parameters" && recovery.invalidRotations < 1) {
+      recovery.invalidRotations += 1;
+      this.#recoveries.set(networkId, recovery);
+      await this.#withHomeLock(home, () => this.#ensureHome(networkId, true));
+      return;
     }
-    const deleted = await this.#relay.deleteRoute(device, route.routeId);
-    if (deleted.ok || deleted.error.kind === "dead_route") {
-      await this.#routes.delete(route.routeId);
-      return true;
+    if (reason === "registration_limit" && recovery.limitRetries < 1) {
+      recovery.limitRetries += 1;
+      this.#recoveries.set(networkId, recovery);
+      const device = await this.#devices.load(this.#relayOrigin);
+      if (device === undefined) return;
+      const dead = await this.#relay.takeDeadEndpoints(asRelayDevice(device));
+      if (!dead.ok && dead.error.kind === "gone") {
+        await this.#devices.clear(this.#relayOrigin);
+        await this.#withHomeLock(home, () =>
+          this.#ensureHome(networkId, false),
+        );
+        return;
+      }
+      if (!dead.ok && dead.error.kind === "unauthorized") {
+        this.#onAuthorizationRequired();
+      }
+      await this.#sendEnsure(networkId, route, dead.ok ? dead.value : []);
+      return;
     }
-    this.#publish(
-      route.networkId,
-      "probing",
-      route.routeId,
-      relayError("delete", deleted.error),
-    );
-    if (deleted.error.kind === "unauthorized") {
-      await this.#authorizationFailed();
-      return false;
+    if (reason === "web_push_forbidden") {
+      const device = await this.#devices.load(this.#relayOrigin);
+      if (device !== undefined) {
+        await this.#relay.deleteRoute(asRelayDevice(device), route.routeId);
+      }
+      await this.#routes.delete(route.vapid);
+      this.#publish(networkId, "dead", route.routeId, `engine: ${reason}`);
+      return;
     }
-    return true;
+    this.#publish(networkId, "probing", route.routeId, `engine: ${reason}`);
+    this.#scheduleRetry(networkId);
   }
 
-  #ensureDevice(): Promise<RelayResult<RelayDevice>> {
+  async #ensureDevice(): Promise<RelayResult<RelayDevice>> {
     return this.#exclusive("weblounge-push-device", async () => {
       const stored = await this.#devices.load(this.#relayOrigin);
       if (stored !== undefined) {
         const device = asRelayDevice(stored);
-        this.#onDeviceReady(device);
-        return { ok: true, value: device };
+        const updated = await this.#relay.updateTarget(device, this.#target);
+        if (updated.ok) {
+          this.#onDeviceReady(device);
+          return { ok: true, value: device };
+        }
+        if (updated.error.kind === "unauthorized") {
+          this.#onAuthorizationRequired();
+          return updated;
+        }
+        if (updated.error.kind !== "gone") return updated;
+        await this.#devices.clear(this.#relayOrigin);
       }
       const sessionToken = await this.#acquireSessionToken();
       const created = await this.#relay.createDevice(
@@ -602,8 +444,9 @@ export class PushSynchronizer {
         this.#target,
       );
       if (!created.ok) {
-        if (created.error.kind === "unauthorized")
+        if (created.error.kind === "unauthorized") {
           this.#onAuthorizationRequired();
+        }
         return created;
       }
       await this.#devices.store({
@@ -616,24 +459,61 @@ export class PushSynchronizer {
     });
   }
 
-  async #authorizationFailed(): Promise<void> {
-    const [routes, device] = await Promise.all([
-      this.#routes.all(),
-      this.#devices.load(this.#relayOrigin),
-    ]);
-    await Promise.all(
-      routes.map((route) =>
-        this.#routes.put({
-          ...route,
-          ...(route.deviceId === undefined && device !== undefined
-            ? { deviceId: device.device_id }
-            : {}),
-          retiring: true,
-        }),
-      ),
+  async #cleanLegacyRoutes(device: RelayDevice): Promise<void> {
+    for (const route of await this.#routes.all()) {
+      if (
+        route.networkLabel.length === 0 ||
+        route.deviceId === undefined ||
+        route.deviceId !== device.id
+      ) {
+        this.#legacyEndpoints.add(route.endpoint);
+        await this.#routes.delete(route.vapid);
+      }
+    }
+  }
+
+  async #unregisterExact(
+    networkId: number,
+    route: StoredPushRoute,
+  ): Promise<void> {
+    await this.#engine.send({
+      id: crypto.randomUUID(),
+      request: {
+        type: "unregister_push_route",
+        network_id: networkId,
+        route_id: route.routeId,
+        endpoint: route.endpoint,
+      },
+    });
+  }
+
+  #scheduleRetry(networkId: number, work?: () => Promise<void>): void {
+    this.#cancelRetry(networkId);
+    const attempt = this.#retryAttempts.get(networkId) ?? 0;
+    this.#retryAttempts.set(networkId, attempt + 1);
+    const cancel = this.#retry(
+      () => {
+        this.#cancelRetries.delete(networkId);
+        this.#enqueue(
+          work ??
+            (() => {
+              const home = this.#homes.get(networkId);
+              return home === undefined
+                ? Promise.resolve()
+                : this.#withHomeLock(home, () =>
+                    this.#ensureHome(networkId, false),
+                  );
+            }),
+        );
+      },
+      Math.min(5 * 60_000, 1_000 * 2 ** attempt),
     );
-    await this.#devices.clear(this.#relayOrigin);
-    this.#onAuthorizationRequired();
+    this.#cancelRetries.set(networkId, cancel);
+  }
+
+  #cancelRetry(networkId: number): void {
+    this.#cancelRetries.get(networkId)?.();
+    this.#cancelRetries.delete(networkId);
   }
 
   #publish(
@@ -651,16 +531,12 @@ export class PushSynchronizer {
   }
 }
 
-function relayError(operation: string, failure: RelayFailure): string {
-  return `${operation}: ${failure.kind}`;
-}
-
 function storedRoute(
   networkId: number,
   context: PushRouteContext,
   vapid: string,
   keys: RouteKeys,
-  route: RelayRoute,
+  route: { readonly id: string; readonly endpoint: string },
   deviceId: string,
 ): StoredPushRoute {
   return {
@@ -676,8 +552,21 @@ function storedRoute(
   };
 }
 
+function temporaryRelayFailure(failure: RelayFailure): boolean {
+  return failure.kind === "unavailable" || failure.kind === "capacity";
+}
+
+function relayError(operation: string, failure: RelayFailure): string {
+  return `${operation}: ${failure.kind}`;
+}
+
 function asRelayDevice(credentials: PushDeviceCredentials): RelayDevice {
   return { id: credentials.device_id, secret: credentials.secret };
+}
+
+function browserRetry(work: () => void, delayMs: number): () => void {
+  const timer = window.setTimeout(work, delayMs);
+  return () => window.clearTimeout(timer);
 }
 
 const localLocks = new Map<string, Promise<void>>();

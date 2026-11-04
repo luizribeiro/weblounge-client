@@ -12,6 +12,7 @@ export interface RelayRoute {
 
 export type RelayFailure =
   | { readonly kind: "unauthorized" }
+  | { readonly kind: "gone" }
   | { readonly kind: "dead_route" }
   | { readonly kind: "capacity" }
   | { readonly kind: "invalid_request" }
@@ -42,16 +43,57 @@ export class RelayClient {
     );
   }
 
-  createRoute(
+  updateTarget(
+    device: RelayDevice,
+    target: WebPushTarget,
+  ): Promise<RelayResult<null>> {
+    return this.request(
+      `/v1/devices/${encodeURIComponent(device.id)}/target`,
+      device.secret,
+      "PUT",
+      { target: { platform: "web_push", ...target } },
+      isNull,
+    );
+  }
+
+  deleteDevice(device: RelayDevice): Promise<RelayResult<null>> {
+    return this.request(
+      `/v1/devices/${encodeURIComponent(device.id)}`,
+      device.secret,
+      "DELETE",
+      undefined,
+      isNull,
+    );
+  }
+
+  ensureRoute(
     device: RelayDevice,
     homeVapid: string,
+    myRouteId?: string,
   ): Promise<RelayResult<RelayRoute>> {
     return this.request(
       `/v1/devices/${encodeURIComponent(device.id)}/routes`,
       device.secret,
       "POST",
-      { home_vapid: homeVapid },
+      {
+        home_vapid: homeVapid,
+        ...(myRouteId === undefined ? {} : { my_route_id: myRouteId }),
+      },
       isRoute,
+    );
+  }
+
+  takeDeadEndpoints(
+    device: RelayDevice,
+  ): Promise<RelayResult<readonly string[]>> {
+    return this.request(
+      `/v1/devices/${encodeURIComponent(device.id)}/dead-endpoints`,
+      device.secret,
+      "GET",
+      undefined,
+      isDeadEndpoints,
+    ).then((result) =>
+      result.ok ? { ok: true, value: result.value.endpoints } : result,
     );
   }
 
@@ -121,7 +163,7 @@ export class RelayClient {
   private async request<T>(
     path: string,
     bearer: string,
-    method: "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     body: Readonly<Record<string, unknown>> | undefined,
     decode: (value: unknown) => value is T,
     keepalive = false,
@@ -161,6 +203,7 @@ export class RelayClient {
 
 function failure(status: number): RelayFailure {
   if (status === 401) return { kind: "unauthorized" };
+  if (status === 410) return { kind: "gone" };
   if (status === 404) return { kind: "dead_route" };
   if (status === 409) return { kind: "capacity" };
   if (status === 400) return { kind: "invalid_request" };
@@ -184,6 +227,16 @@ function isRoute(value: unknown): value is RelayRoute {
     isRecord(value) &&
     typeof value.id === "string" &&
     typeof value.endpoint === "string"
+  );
+}
+
+function isDeadEndpoints(
+  value: unknown,
+): value is { readonly endpoints: readonly string[] } {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.endpoints) &&
+    value.endpoints.every((endpoint) => typeof endpoint === "string")
   );
 }
 

@@ -1,6 +1,6 @@
 # 23 — Push notifications
 
-Status: approved (decisions 2026-11-02); relay slice 1 implemented. This is the brief's subsystem
+Status: approved (decisions 2026-11-02 and 2026-11-04); lifecycle redesign implemented. This is the brief's subsystem
 7; it overrides the earlier statements listed under "Conflicts with signed-off text".
 
 ## Problem
@@ -179,9 +179,8 @@ notification. Mozilla, FCM, and Edge forward `normal` so `MARKREAD` can clear st
 but drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
 #2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because their
 ciphertexts are opaque, the relay must forward both to non-Apple services. The worker consumes both
-as generic visible notifications after applying their cleanup. A delivered web push never completes
-silently: WebKit can revoke a subscription after silent delivery, and route duplication can otherwise
-turn a valid message into several silent duplicate events. A future Ergo urgency split can move
+silently: `MARKREAD` clears its conversation tag and lowers the badge, while `PING` only performs
+cleanup. Apple targets never receive either control message. A future Ergo urgency split can move
 maintenance PING to `low` without a relay change.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
@@ -232,15 +231,16 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. Store the message (msgid, time, target, sender, text) in the engine's `Space::Cache` IndexedDB
    store, keyed so the engine reads it as part of the buffer's history.
-5. Call `showNotification` **exactly once for every delivered push event**. Chrome and Firefox only check
-   that a notification exists when `waitUntil` settles; Safari falls back to the declarative
-   notification if the handler fails. A placeholder-then-replace would duplicate where `tag`
-   replacement isn't supported. A duplicate chat `msgid` re-shows the same conversation tag so
-   tag-capable platforms replace the prior notification; it is never dropped silently. A successfully
-   decrypted `MARKREAD` or `PING` forwarded by a non-Apple service applies its cleanup and then shows
-   the generic notification.
-6. Only if decryption fails: show the generic "New message" for that network and mark the route for
-   re-registration.
+5. For a visible payload, call `showNotification` exactly once. A duplicate chat `msgid` re-shows
+   the same conversation tag so tag-capable platforms replace the prior notification. A decrypted
+   `MARKREAD` or `PING` never calls `showNotification`; it only performs its cleanup.
+6. Serialize push events. If route lookup, decryption, parsing or storage has not produced a visible
+   presentation within 2.8 seconds, show the generic notification once and suppress all later
+   presentation or route writes from that delivery. IndexedDB opens, requests and transactions have
+   shorter deadlines, reject on `blocked`, close on every path and close on `versionchange`.
+7. A decryption failure shows the generic "New message" for that network and marks the route for
+   re-registration by re-reading the current route id inside its write transaction. Parser failures
+   show generic without changing keys.
 
 The service worker is a classic, non-module worker with a precache list. The parser wasm joins the
 precache, is instantiated from the Cache API, and has a `size-limit` budget; shipping a new parser
@@ -269,7 +269,7 @@ connection is up; on a warm tap, `open-route` makes the running engine read them
 engine deduplicates it, so it never shows twice. The stored messages are also the push source for
 Activity (brief §3.8).
 
-The tag is `<networkKey>/<bufferKey>`. BCD says Safari doesn't support tags: **[verify on
+The tag is `<networkLabel>/<bufferKey>`. The stable label avoids per-run `NetworkId` churn. BCD says Safari doesn't support tags: **[verify on
 device]**.
 
 ### Badging (separate from push)
@@ -282,8 +282,7 @@ device]**.
   page open, the service worker increments a counter in `weblounge-push`; on launch the page
   overwrites it with the engine's value.
 - The worker stores a notified count per conversation tag. A non-Apple `MARKREAD` zeros that tag,
-  closes its notifications, recomputes the badge, and then shows the generic notification required
-  for that delivered push event. Re-delivery of an existing chat `msgid` replaces its notification
+  closes its notifications and recomputes the badge without showing a notification. Re-delivery of an existing chat `msgid` replaces its notification
   without incrementing the count again. Every push also re-closes tags already known to be read
   before recomputing the badge. It undercounts when Ergo's 16-item push queue overflows
   (`client.go:53`).
@@ -320,14 +319,13 @@ pub enum PushFailure { RegistrationLimit, Forbidden, InvalidParams, Internal, Re
 /// Capability projection (17-capability-model.md:35,79); Some only when registration can work now.
 pub struct ConfigurePushAction { pub network: NetworkKey, pub epoch: ConnectionEpoch, pub vapid: B64Url }
 
-EngineRequest::RegisterPush { network: NetworkKey, route: PushRoute }
-EngineRequest::UnregisterPush { network: NetworkKey }
+EngineRequest::EnsurePush { network: NetworkKey, route: PushRoute, unregister: Vec<HttpsUrl> }
 EngineRequest::UnregisterPushRoute { network: NetworkKey, route_id: RouteId, endpoint: HttpsUrl }
 EngineEvent::PushRegistrationChanged { network: NetworkKey, state: PushRegistration }
 ```
 
 The platform seam: on the web the engine runs in a worker and can't call page code, so the seam is
-the three requests above plus a TS `PushRegistrar` interface in `app/src/platform/push/`
+the two requests above plus a TS `PushRegistrar` interface in `app/src/platform/push/`
 (`ensureDevice`, `routeFor(home, vapid)`, `activateRoute`, `dropRoute`, `setForeground`). A Rust
 `PushRegistrar` trait exists only for the native Tauri plugin. `Notifier` (`show`, `clear`,
 `setBadge`) follows the same split.
@@ -482,40 +480,39 @@ creates one relay device. Route creation, replacement, activation and deletion a
 per network so tabs sharing the engine cannot create competing relay routes. Cache storage may
 still fall back to memory, but Durable fails closed when IndexedDB is unavailable.
 
-The page owns `weblounge-push`, whose route records contain the current `NetworkId`, pinned home
-VAPID key, relay endpoint, public key, auth secret and a non-extractable ECDH private `CryptoKey`.
-Each route receives independently generated P-256 and 16-byte auth material. `NetworkId` is the
-approved temporary identity from engine slice 1; migration to stable `NetworkKey` remains a v1
-prerequisite before multiple networks or service-worker delivery ships.
+The page owns `weblounge-push`, with one route record keyed by pinned home VAPID key. Each record
+contains its relay device id, current `NetworkId` and label, relay endpoint, public key, auth secret
+and a non-extractable ECDH private `CryptoKey`. Each route receives independently generated P-256
+and 16-byte auth material. Schema v4 migrates older route-id-keyed records by deterministically
+keeping one complete record per home; records without a device id or label are exact-unregistered
+and removed on first convergence.
 
-On the first eligible connection the engine now emits `PushRouteRequired` with no previous route;
-the same event carries the previous id after VAPID rotation. The page buffers these events while
-the service worker becomes ready, creates or reuses a probing relay route, and sends
-`RegisterPush`. Only `PushState::Registered` activates it; `RegisteredButNoDelivery` remains
-probing. Reconnect registration reuses the route. A changed VAPID key replaces it, activation 404
-creates and registers a fresh route, and relay 401 clears local relay identity and enters the
-hosted reauthorization path. Failed or unsupported registrations delete their route. Hosted
-sign-out deletes every route and the durable device credential; worker recovery retains them.
+On each eligible connection the engine emits one `PushRouteRequired` to the active shell. The page
+buffers it until setup is ready, upserts the browser target, calls the relay's idempotent
+`ensureRoute(home_vapid, my_route_id?)`, drains dead endpoints, and sends one
+`EnsurePush { route, unregister }`. Only `PushState::Registered` activates the probing route.
+Reconnect reuses the relay-owned route, while a changed home or relay VAPID key starts convergence
+for the new key. Activation failure is retried; a dead route rotates. `invalid_parameters` rotates
+once per connection, `registration_limit` drains dead endpoints and retries once, temporary errors
+keep the current route and back off, and `web_push_forbidden` deletes the route and remains visibly
+off. Relay 410 clears the dead device and re-upserts; 401 enters hosted reauthorization.
 
-Route reconciliation first selects and records the one route that will remain current, before any
-destructive request. For every other local route for the same device and network it sends
-`UnregisterPushRoute` with that route's exact relay endpoint, waits for Ergo to confirm the
-unregistration, and only then deletes the relay route and its key material. A failed Ergo
-unregistration leaves the relay route and keys intact for a later retry. The selected route is never
-retired as stale; launch therefore converges any `N` active routes to exactly one instead of creating
-another route or deleting the route just registered by a competing reconciliation.
+The relay owns reconciliation and retires every duplicate live route for the same device and home.
+Its dead-endpoint drain lets the next `EnsurePush` exact-unregister those retired endpoints before
+REGISTER, so deployed records converge without consuming an Ergo slot. Hosted sign-out attempts
+every exact IRC unregister but always deletes the relay device and local records even when IRC is
+unavailable.
 
-Every failed registration outcome carries the route id that failed. Recovery captures that identity
-when the event arrives and never looks up a later mutable current route to decide what to retire. If
-another tab registers a replacement before the queued recovery acquires the route lock, recovery may
-unregister and delete only the failed old endpoint; it neither retires nor replaces the newer route.
-A later registration outcome supersedes an already queued failure locally, including when two tabs
-refresh the same route id, so delayed recovery cannot undo the newer successful outcome.
+Every registration outcome carries the route id that produced it. The engine emits even an older
+generation's command result instead of silently dropping it, while only the current generation
+changes engine state. `attach_shell` replays status but never replays route activation work to every
+tab. A successful REGISTER schedules a route-scoped refresh after 24 hours.
 
-`ensurePushSubscription` is the later UI slice's platform entry point. It never prompts: permission
-must already be `granted`. It subscribes with `relay_vapid`, reuses a matching subscription and
-replaces one pinned to an older relay key. Missing config and ungranted permission perform no push
-work.
+`ensurePushSubscription` never prompts: permission must already be `granted`. On every launch,
+return to visible and `pushsubscriptionchange`, the page calls `getSubscription()`, replaces a
+subscription pinned to an older relay key, and upserts the resulting target. Live `relay_vapid`
+changes dispose the old synchronizer and rebuild it. Failed setup promises are cleared so a later
+visibility or worker event can retry.
 
 Unit coverage uses a fetch-backed fake relay and deterministic engine/route stores. Chromium
 Playwright stubs `PushManager.subscribe`, drives hosted startup through a fake relay, and proves
@@ -532,13 +529,14 @@ and keeps the existing same-origin GET-only fetch boundary. `crates/push-payload
 Wasm is 46,764 bytes under a build-enforced 128 KiB ceiling; both bootstrap and Wasm are explicit
 precache entries.
 
-Push delivery reads the route's non-extractable P-256 key, derives the RFC 8291 content key and
-nonce with WebCrypto ECDH and HKDF, decrypts AES-GCM, and sends only the plaintext IRC line to the
-parser. One `waitUntil` reaches exactly one `showNotification`, including control messages, unknown
-routes and duplicate chat `msgid`s. Valid chat lines carry the sender, body, current
-`<NetworkId>/<buffer>` tag and buffer route; every failure falls back to one generic notification.
-Only a decryption failure marks the route for replacement, because a parser failure does not imply
-that its key material is stale.
+Push delivery is serialized. It reads the route's non-extractable P-256 key through the route-id
+index, derives the RFC 8291 content key and nonce with WebCrypto ECDH and HKDF, decrypts AES-GCM,
+and sends only the plaintext IRC line to the parser. Visible chat lines carry the sender, body,
+stable `<networkLabel>/<buffer>` tag and buffer route. Successfully parsed `MARKREAD` and `PING`
+are silent cleanup controls; unknown routes and failures fall back to one generic notification.
+Only a decryption failure marks the current route for replacement, because a parser failure does
+not imply that its key material is stale. The 2.8-second presentation deadline and shorter
+IndexedDB deadlines keep a blocked upgrade from preventing the generic fallback.
 
 Chat pushes are written as versioned `pushed-message\0...` records in the engine's Cache object
 store. The web engine scans at most its 500-row timeline budget before connecting and exposes an
@@ -694,7 +692,7 @@ migration remain a v1 prerequisite above.
 |---|---|
 | permission denied or dismissed | No push; the page notifies while open; status says "off in system settings". Never re-prompt automatically. |
 | iOS subscription revoked | Detected at launch (`getSubscription()` null or changed). Re-subscribe silently if still permitted and re-register every home with new routes; else show the status. |
-| home refuses (`MAX_REGISTRATIONS`, `FORBIDDEN`, no account, Tor) | `PushRegistration::Failed` in network status. The endpoint is unregistered before its relay route is deleted. |
+| home refuses (`MAX_REGISTRATIONS`, `FORBIDDEN`, no account, Tor) | `PushRegistration::Failed` in network status. Limit drains relay-known dead endpoints once; invalid parameters rotate once; forbidden retires the route; temporary failures keep it for backoff. |
 | soju's 25-subscription cap | soju sends it as `INTERNAL_ERROR`, indistinguishable from other errors, so the engine counts its own registrations and reports `RegistrationLimit` at 25. |
 | `RegisterOutcome { persistence_required: true }` | `Unavailable(PersistenceOff)` plus a hint to turn always-on back on. |
 | Ergo's VAPID key lost | It lives in Ergo's datastore; losing it breaks every pinned route. Ergo backups are a v1 prerequisite. |
@@ -734,7 +732,8 @@ migration remain a v1 prerequisite above.
   upstreams.
 - **Local Ergo end to end** (`nix run .#ergo-weblounge`): the fixture gains `webpush.enabled` and
   the relay; two papo clients drive a DM and a mention; the relay's sink records envelopes; the
-  read-elsewhere case asserts the MARKREAD push is normal urgency and dropped for web targets. Ergo
+  read-elsewhere case asserts the MARKREAD push is normal urgency, dropped for Apple targets and
+  silently applied by the worker on non-Apple targets. Ergo
   requires `https` (`webpush/security.go:26-35`) and its dialer refuses loopback, private,
   link-local and CGNAT addresses (`security.go:67-76`), but Ergo 2.19.1's `isInternalIP` does not
   block TEST-NET-3. So no Ergo patch: the relay, as Ergo's push target, listens on a 203.0.113.0/24 address with a test CA
@@ -788,6 +787,11 @@ migration remain a v1 prerequisite above.
    while any of them holds one.
 5. **Tauri desktop:** local notifications while running, tray/menu-bar and start-at-login option,
    no push when quit.
+6. **The account-wide lease is acceptable for v1.** Renewing activity on one device may discard
+   held pushes for the account; an activity-based lease is a later optimization.
+7. **Control pushes are silent on non-Apple targets.** A successfully decrypted `MARKREAD` or
+   `PING` never creates a notification; it only clears notification state or lowers the badge.
+   Apple targets continue to drop normal-urgency controls at the relay.
 
 **Deferred (not v1): where notification rules live.** Proposal: per account on each home (our
 Ergo, a self-hosted soju each hold their own), replicated by the client as the merge

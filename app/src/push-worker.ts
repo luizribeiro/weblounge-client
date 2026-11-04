@@ -62,6 +62,7 @@ interface StoredRoute {
   readonly networkId: number;
   readonly networkLabel: string;
   readonly nickname: string;
+  readonly vapid: string;
   readonly routeId: string;
   readonly deviceId?: string;
   readonly p256dh: string;
@@ -77,15 +78,19 @@ const shellCache = `weblounge-shell-${SHELL_VERSION}`;
 const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
+const pushNotificationDeadlineMs = 2_800;
+const databaseDeadlineMs = 500;
 const pushDatabaseName = "weblounge-push";
-const pushDatabaseVersion = 3;
+const pushDatabaseVersion = 4;
 const pushRoutesStore = "routes";
+const pushRouteIdIndex = "route-id";
 const pushStateStore = "state";
 const appBadgeKey = "app-badge";
 const notificationCountsKey = "notification-counts";
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
+let pushQueue = Promise.resolve();
 
 worker.importScripts("/push-payload.js");
 
@@ -129,7 +134,13 @@ worker.addEventListener("fetch", (event) => {
 
 worker.addEventListener("push", (event) => {
   const pushEvent = event as WorkerPushEvent;
-  pushEvent.waitUntil(showPushNotification(pushEvent));
+  const handled = pushQueue.then(() => showPushNotification(pushEvent));
+  pushQueue = handled.catch(() => undefined);
+  pushEvent.waitUntil(handled);
+});
+
+worker.addEventListener("pushsubscriptionchange", (event) => {
+  (event as WorkerEvent).waitUntil(notifyWindowsOfSubscriptionChange());
 });
 
 worker.addEventListener("notificationclick", (event) => {
@@ -207,55 +218,123 @@ async function previousShellAssetResponse(request: Request): Promise<Response> {
   return cached ?? fetch(request);
 }
 
+interface PushPresentationState {
+  expired: boolean;
+  shown: boolean;
+  showing: Promise<void> | undefined;
+  generic: ReturnType<typeof genericNotification>;
+}
+
 async function showPushNotification(event: WorkerPushEvent): Promise<void> {
-  let route: StoredRoute | undefined;
-  let presentation = genericNotification();
-  let recordNotification = true;
+  const state: PushPresentationState = {
+    expired: false,
+    shown: false,
+    showing: undefined,
+    generic: genericNotification(),
+  };
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const fallback = new Promise<void>((resolve) => {
+    deadline = setTimeout(() => {
+      state.expired = true;
+      void showOnce(state, state.generic).finally(resolve);
+    }, pushNotificationDeadlineMs);
+  });
+  const detailed = preparePushNotification(event, state).catch(() =>
+    showOnce(state, state.generic),
+  );
+  await Promise.race([detailed, fallback]);
+  if (deadline !== undefined) clearTimeout(deadline);
+  if (state.expired) {
+    // wait-ok: bounded drain keeps timed-out storage work serialized.
+    await Promise.race([
+      detailed,
+      new Promise<void>((resolve) =>
+        setTimeout(resolve, databaseDeadlineMs + 50),
+      ),
+    ]);
+  }
+}
+
+async function preparePushNotification(
+  event: WorkerPushEvent,
+  state: PushPresentationState,
+): Promise<void> {
+  const envelope = pushEnvelope(event.data?.json());
+  const route = await findRoute(envelope.routeId);
+  if (route === undefined) throw new Error("push route is unavailable");
+  state.generic = genericNotification(route.networkLabel);
+  let plaintext: Uint8Array<ArrayBuffer>;
   try {
-    const envelope = pushEnvelope(event.data?.json());
-    route = await findRoute(envelope.routeId);
-    if (route === undefined) throw new Error("push route is unavailable");
-    presentation = genericNotification(route.networkLabel);
-    let plaintext: Uint8Array<ArrayBuffer>;
-    try {
-      plaintext = await decryptPushPayload(
-        decodePushBase64Url(envelope.ciphertext),
-        route.privateKey,
-        route.p256dh,
-        route.auth,
-      );
-    } catch (error: unknown) {
-      await markForReregistration(route).catch(() => undefined);
-      throw error;
-    }
-    const parsed = await notificationForLine(
-      route,
-      new TextDecoder().decode(plaintext),
-      parser,
+    plaintext = await decryptPushPayload(
+      decodePushBase64Url(envelope.ciphertext),
+      route.privateKey,
+      route.p256dh,
+      route.auth,
     );
-    presentation = parsed.presentation;
-    if (parsed.event?.type === "markread") {
-      await markConversationRead(
-        conversationTag(route, parsed.event.target),
-      ).catch(() => undefined);
-      recordNotification = false;
-    } else if (parsed.event?.type === "ping") {
-      recordNotification = false;
-    } else if (parsed.event !== undefined && isChatPayload(parsed.event)) {
-      recordNotification = await storePushedMessage(route, parsed.event).catch(
-        () => true,
-      );
-    }
-  } catch {}
+  } catch (error: unknown) {
+    if (!state.expired)
+      await markForReregistration(route.routeId).catch(() => undefined);
+    throw error;
+  }
+  const parsed = await notificationForLine(
+    route,
+    new TextDecoder().decode(plaintext),
+    parser,
+  );
+  if (state.expired) return;
+  if (parsed.event?.type === "markread") {
+    await markConversationRead(
+      conversationTag(route, parsed.event.target),
+    ).catch(() => undefined);
+    await tidyReadNotifications(false).catch(() => undefined);
+    return;
+  }
+  if (parsed.event?.type === "ping") {
+    await tidyReadNotifications().catch(() => undefined);
+    return;
+  }
+  let recordNotification = true;
+  if (parsed.event !== undefined && isChatPayload(parsed.event)) {
+    recordNotification = await storePushedMessage(route, parsed.event).catch(
+      () => true,
+    );
+  }
+  if (state.expired) return;
   await tidyReadNotifications(false).catch(() => undefined);
-  await worker.registration.showNotification(
+  await showOnce(state, parsed.presentation);
+  if (recordNotification && !state.expired) {
+    await recordShownNotification(parsed.presentation.options.tag).catch(
+      () => undefined,
+    );
+  }
+}
+
+async function showOnce(
+  state: PushPresentationState,
+  presentation: ReturnType<typeof genericNotification>,
+): Promise<void> {
+  if (state.shown) return;
+  if (state.showing !== undefined) return state.showing;
+  const attempt = worker.registration.showNotification(
     presentation.title,
     presentation.options,
   );
-  if (recordNotification) {
-    await recordShownNotification(presentation.options.tag).catch(
-      () => undefined,
-    );
+  state.showing = attempt;
+  try {
+    await attempt;
+    state.shown = true;
+  } finally {
+    state.showing = undefined;
+  }
+}
+
+async function notifyWindowsOfSubscriptionChange(): Promise<void> {
+  const clients = await worker.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of clients) {
+    client.postMessage({ type: "push_subscription_change" });
   }
 }
 
@@ -284,32 +363,40 @@ async function updateNotificationCounts(
   update: (counts: NotificationCounts) => void,
 ): Promise<void> {
   const database = await openPushDatabase();
-  const transaction = database.transaction(pushStateStore, "readwrite");
-  const completed = transactionDone(transaction);
-  const store = transaction.objectStore(pushStateStore);
-  const counts = decodeNotificationCounts(
-    await requestResult(store.get(notificationCountsKey)),
-  );
-  update(counts);
-  const total = notificationCountTotal(counts);
-  store.put(encodeNotificationCounts(counts), notificationCountsKey);
-  store.put(total, appBadgeKey);
-  await completed;
-  database.close();
+  let total = 0;
+  try {
+    const transaction = database.transaction(pushStateStore, "readwrite");
+    const completed = transactionDone(transaction);
+    const store = transaction.objectStore(pushStateStore);
+    const counts = decodeNotificationCounts(
+      await requestResult(store.get(notificationCountsKey)),
+    );
+    update(counts);
+    total = notificationCountTotal(counts);
+    store.put(encodeNotificationCounts(counts), notificationCountsKey);
+    store.put(total, appBadgeKey);
+    await completed;
+  } finally {
+    database.close();
+  }
   await setWorkerBadge(total);
 }
 
 async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
   const database = await openPushDatabase();
-  const transaction = database.transaction(pushStateStore, "readonly");
-  const completed = transactionDone(transaction);
-  const counts = decodeNotificationCounts(
-    await requestResult(
-      transaction.objectStore(pushStateStore).get(notificationCountsKey),
-    ),
-  );
-  await completed;
-  database.close();
+  let counts: NotificationCounts;
+  try {
+    const transaction = database.transaction(pushStateStore, "readonly");
+    const completed = transactionDone(transaction);
+    counts = decodeNotificationCounts(
+      await requestResult(
+        transaction.objectStore(pushStateStore).get(notificationCountsKey),
+      ),
+    );
+    await completed;
+  } finally {
+    database.close();
+  }
   const readTags = [...counts.conversations]
     .filter(([, count]) => count === 0)
     .map(([tag]) => tag);
@@ -380,7 +467,7 @@ async function setWorkerBadge(count: number): Promise<void> {
 }
 
 function conversationTag(route: StoredRoute, target: string): string {
-  return `${route.networkId}/${target.toLowerCase()}`;
+  return `${route.networkLabel}/${target.toLowerCase()}`;
 }
 async function loadPushParser(): Promise<PushPayloadParser> {
   const response = await caches.match("/push-payload_bg.wasm", {
@@ -419,22 +506,36 @@ function pushEnvelope(value: unknown): {
 
 async function findRoute(routeId: string): Promise<StoredRoute | undefined> {
   const database = await openPushDatabase();
-  const transaction = database.transaction(pushRoutesStore, "readonly");
-  const route = await requestResult(
-    transaction.objectStore(pushRoutesStore).get(routeId),
-  );
-  await transactionDone(transaction);
-  return route === undefined ? undefined : decodeStoredRoute(route);
+  try {
+    const transaction = database.transaction(pushRoutesStore, "readonly");
+    const route = await requestResult(
+      transaction
+        .objectStore(pushRoutesStore)
+        .index(pushRouteIdIndex)
+        .get(routeId),
+    );
+    await transactionDone(transaction);
+    return route === undefined ? undefined : decodeStoredRoute(route);
+  } finally {
+    database.close();
+  }
 }
 
-async function markForReregistration(route: StoredRoute): Promise<void> {
+async function markForReregistration(routeId: string): Promise<void> {
   const database = await openPushDatabase();
-  const transaction = database.transaction(pushRoutesStore, "readwrite");
-  transaction.objectStore(pushRoutesStore).put({
-    ...route,
-    needsReregistration: true,
-  });
-  await transactionDone(transaction);
+  try {
+    const transaction = database.transaction(pushRoutesStore, "readwrite");
+    const store = transaction.objectStore(pushRoutesStore);
+    const current = await requestResult(
+      store.index(pushRouteIdIndex).get(routeId),
+    );
+    if (current !== undefined) {
+      store.put({ ...decodeStoredRoute(current), needsReregistration: true });
+    }
+    await transactionDone(transaction);
+  } finally {
+    database.close();
+  }
 }
 
 async function storePushedMessage(
@@ -488,6 +589,8 @@ function decodeStoredRoute(value: unknown): StoredRoute {
     typeof value.networkLabel !== "string" ||
     !("nickname" in value) ||
     typeof value.nickname !== "string" ||
+    !("vapid" in value) ||
+    typeof value.vapid !== "string" ||
     !("routeId" in value) ||
     typeof value.routeId !== "string" ||
     !("p256dh" in value) ||
@@ -504,88 +607,196 @@ function decodeStoredRoute(value: unknown): StoredRoute {
 
 function openCurrentEngineDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    let blocked = false;
+    let settled = false;
     const request = indexedDB.open(
       ENGINE_DATABASE_NAME,
       ENGINE_DATABASE_VERSION,
     );
+    const deadline = setTimeout(() => {
+      settled = true;
+      reject(new Error("engine database open timed out"));
+    }, databaseDeadlineMs);
     request.onupgradeneeded = () => request.transaction?.abort();
     request.onsuccess = () => {
       const database = request.result;
-      if (blocked) {
+      clearTimeout(deadline);
+      if (settled) {
         database.close();
         return;
       }
+      settled = true;
       database.onversionchange = () => database.close();
       resolve(database);
     };
     request.onblocked = () => {
-      blocked = true;
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       reject(new Error("engine database open was blocked"));
     };
-    request.onerror = () =>
+    request.onerror = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       reject(request.error ?? new Error("engine database failed to open"));
+    };
   });
 }
 
 function openPushDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const request = indexedDB.open(pushDatabaseName, pushDatabaseVersion);
+    const deadline = setTimeout(() => {
+      settled = true;
+      reject(new Error("push database open timed out"));
+    }, databaseDeadlineMs);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(pushRoutesStore)) {
-        request.result.createObjectStore(pushRoutesStore, {
-          keyPath: "routeId",
-        });
+        createRoutesStore(request.result);
       } else if (
-        request.transaction?.objectStore(pushRoutesStore).keyPath !== "routeId"
+        request.transaction?.objectStore(pushRoutesStore).keyPath !== "vapid"
       ) {
         const transaction = request.transaction;
         if (transaction === null)
           throw new Error("missing upgrade transaction");
-        migrateRoutesToRouteIds(request.result, transaction);
+        migrateRoutesToHomes(request.result, transaction);
+      } else {
+        const routes = request.transaction?.objectStore(pushRoutesStore);
+        if (
+          routes !== undefined &&
+          !routes.indexNames.contains(pushRouteIdIndex)
+        ) {
+          routes.createIndex(pushRouteIdIndex, "routeId", { unique: true });
+        }
       }
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
         request.result.createObjectStore(pushStateStore);
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
+    request.onsuccess = () => {
+      clearTimeout(deadline);
+      if (settled) {
+        request.result.close();
+        return;
+      }
+      settled = true;
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+    request.onblocked = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
+      reject(new Error("push database open was blocked"));
+    };
+    request.onerror = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       reject(request.error ?? new Error("push database failed to open"));
+    };
   });
 }
 
-function migrateRoutesToRouteIds(
+function migrateRoutesToHomes(
   database: IDBDatabase,
   transaction: IDBTransaction,
 ): void {
   const routes = transaction.objectStore(pushRoutesStore).getAll();
   routes.onsuccess = () => {
     database.deleteObjectStore(pushRoutesStore);
-    const store = database.createObjectStore(pushRoutesStore, {
-      keyPath: "routeId",
-    });
-    for (const route of routes.result) store.put(route);
+    const store = createRoutesStore(database);
+    const selected = new Map<string, unknown>();
+    for (const route of routes.result) {
+      if (!isStoredHomeRoute(route)) continue;
+      const current = selected.get(route.vapid);
+      if (current === undefined || preferRoute(route, current)) {
+        selected.set(route.vapid, route);
+      }
+    }
+    for (const route of selected.values()) store.put(route);
   };
+}
+
+function createRoutesStore(database: IDBDatabase): IDBObjectStore {
+  const store = database.createObjectStore(pushRoutesStore, {
+    keyPath: "vapid",
+  });
+  store.createIndex(pushRouteIdIndex, "routeId", { unique: true });
+  return store;
+}
+
+function isStoredHomeRoute(value: unknown): value is Record<string, unknown> & {
+  vapid: string;
+  routeId: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "vapid" in value &&
+    typeof value.vapid === "string" &&
+    "routeId" in value &&
+    typeof value.routeId === "string"
+  );
+}
+
+function preferRoute(candidate: unknown, current: unknown): boolean {
+  if (!isStoredHomeRoute(candidate) || !isStoredHomeRoute(current))
+    return false;
+  const candidateComplete =
+    typeof candidate.deviceId === "string" &&
+    typeof candidate.networkLabel === "string" &&
+    candidate.networkLabel.length > 0;
+  const currentComplete =
+    typeof current.deviceId === "string" &&
+    typeof current.networkLabel === "string" &&
+    current.networkLabel.length > 0;
+  return candidateComplete === currentComplete
+    ? candidate.routeId.localeCompare(current.routeId) < 0
+    : candidateComplete;
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
+    const deadline = setTimeout(
+      () => reject(new Error("push database request timed out")),
+      databaseDeadlineMs,
+    );
+    request.onsuccess = () => {
+      clearTimeout(deadline);
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      clearTimeout(deadline);
       reject(request.error ?? new Error("push database request failed"));
+    };
   });
 }
 
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () =>
+    const deadline = setTimeout(() => {
+      try {
+        transaction.abort();
+      } catch {}
+      reject(new Error("push database transaction timed out"));
+    }, databaseDeadlineMs);
+    transaction.oncomplete = () => {
+      clearTimeout(deadline);
+      resolve();
+    };
+    transaction.onabort = () => {
+      clearTimeout(deadline);
       reject(
         transaction.error ?? new Error("push database transaction aborted"),
       );
-    transaction.onerror = () =>
+    };
+    transaction.onerror = () => {
+      clearTimeout(deadline);
       reject(
         transaction.error ?? new Error("push database transaction failed"),
       );
+    };
   });
 }

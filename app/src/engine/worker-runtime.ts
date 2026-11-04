@@ -90,6 +90,10 @@ export class EngineWorkerRuntime {
         });
       return;
     }
+    if (isPushRouteRequired(event)) {
+      (callingPort ?? this.#activePort)?.postMessage(event);
+      return;
+    }
     if (
       isRecord(event) &&
       (event.type === "command_result" ||
@@ -177,6 +181,10 @@ function hostedTokenNetwork(event: unknown): number | undefined {
   return undefined;
 }
 
+function isPushRouteRequired(event: unknown): boolean {
+  return isRecord(event) && event.type === "push_route_required";
+}
+
 function isHostDetach(message: unknown): boolean {
   return isRecord(message) && message.type === "host_detach";
 }
@@ -186,7 +194,6 @@ function isSharedStateEvent(event: unknown): boolean {
   return (
     event.type === "network_state_changed" ||
     event.type === "push_state_changed" ||
-    event.type === "push_route_required" ||
     event.type === "buffers_changed" ||
     event.type === "chat_list_snapshot_loaded" ||
     event.type === "chat_list_live" ||

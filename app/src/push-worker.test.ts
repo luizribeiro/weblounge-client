@@ -43,7 +43,7 @@ describe("push worker notification presentation", () => {
       event: chat("message", "mel", "#lounge", "priv", "hello there", "mel"),
       title: "mel in #lounge",
       body: "hello there",
-      tag: "1/#lounge",
+      tag: "Lounge/#lounge",
       destination: "/Lounge/lounge",
     },
     {
@@ -58,7 +58,7 @@ describe("push worker notification presentation", () => {
       ),
       title: "NickServ",
       body: "identify first",
-      tag: "1/nickserv",
+      tag: "Lounge/nickserv",
       destination: "/Lounge/@NickServ",
     },
     {
@@ -67,7 +67,7 @@ describe("push worker notification presentation", () => {
       event: chat("action", "mel", "#lounge", "action", "waves"),
       title: "mel in #lounge",
       body: "* mel waves",
-      tag: "1/#lounge",
+      tag: "Lounge/#lounge",
       destination: "/Lounge/lounge",
     },
     {
@@ -76,7 +76,7 @@ describe("push worker notification presentation", () => {
       event: chat("message", "mel", "#lounge", "emoji", "ship it 🚀", "mel"),
       title: "mel in #lounge",
       body: "ship it 🚀",
-      tag: "1/#lounge",
+      tag: "Lounge/#lounge",
       destination: "/Lounge/lounge",
     },
   ])("shows a real notification for $name", async (fixture) => {

@@ -849,17 +849,14 @@ pub enum EngineRequest {
         /// Relay origin used as the durable namespace.
         relay: String,
     },
-    /// Register a page-owned relay route with one IRC home.
-    RegisterPush {
+    /// Converge one IRC home's relay registration after a connection succeeds.
+    EnsurePush {
         /// Network whose home should receive the route.
         network_id: NetworkId,
         /// Relay route and encryption keys created by the platform.
         route: PushRoute,
-    },
-    /// Remove this device's relay route from one IRC home.
-    UnregisterPush {
-        /// Network whose registration should be removed.
-        network_id: NetworkId,
+        /// Dead relay endpoints the home must forget before registration.
+        unregister: Vec<String>,
     },
     /// Remove one exact relay route from an IRC home.
     UnregisterPushRoute {
@@ -1407,7 +1404,7 @@ mod tests {
             })
         );
 
-        let push = EngineRequest::RegisterPush {
+        let push = EngineRequest::EnsurePush {
             network_id: crate::NetworkId(7),
             route: crate::PushRoute {
                 route_id: "route-1".into(),
@@ -1415,12 +1412,13 @@ mod tests {
                 p256dh: "public-key".into(),
                 auth: "unique-push-auth".into(),
             },
+            unregister: vec!["https://push.example.test/route-old".into()],
         };
         assert!(!format!("{push:?}").contains("unique-push-auth"));
         assert_eq!(
             serde_json::to_value(push).expect("push request serializes"),
             serde_json::json!({
-                "type": "register_push",
+                "type": "ensure_push",
                 "network_id": 7,
                 "route": {
                     "route_id": "route-1",
@@ -1428,6 +1426,7 @@ mod tests {
                     "p256dh": "public-key",
                     "auth": "unique-push-auth",
                 },
+                "unregister": ["https://push.example.test/route-old"],
             })
         );
 

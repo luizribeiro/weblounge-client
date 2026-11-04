@@ -100,6 +100,19 @@ import { Toast } from "./ui/Toast";
 const reloadMarker = "weblounge-build-reload";
 const notificationPromptReadDeadlineMs = 2_000;
 
+function pushConfigKey(config: PushDeploymentConfig): string {
+  return `${config.relay}\0${config.relay_vapid}`;
+}
+
+function isPushSubscriptionChange(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "push_subscription_change"
+  );
+}
+
 interface AppProps {
   beforeReveal?: () => Promise<void>;
   engineClient?: EngineClient;
@@ -173,12 +186,16 @@ export function App(props: AppProps) {
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushStartup: Promise<void> | undefined;
+  let pushStartupKey: string | undefined;
+  let pushRefresh: Promise<void> | undefined;
+  let pushSetupGeneration = 0;
   let notificationPromptLoadId: string | undefined;
   let notificationPromptReadDeadline: number | undefined;
   let loadedPromptConfig: string | undefined;
   let foregroundLease: ForegroundLease | undefined;
   let appIsForeground = false;
   const pendingPushEvents: EngineClientMessage[] = [];
+  const knownPushRequirements = new Map<number, EngineClientMessage>();
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
   let restartingHostedAuthorization = false;
@@ -241,7 +258,10 @@ export function App(props: AppProps) {
   createEffect(() => {
     const current = buffers();
     if (current.length === 0) return;
-    void syncAppPushState(current).catch(() => undefined);
+    const networkLabels = new Map(
+      networks().map((network) => [network.id, network.label]),
+    );
+    void syncAppPushState(current, networkLabels).catch(() => undefined);
   });
   createEffect(() => {
     const config = props.pushConfig;
@@ -390,6 +410,9 @@ export function App(props: AppProps) {
     const handleServiceWorkerMessage = (event: MessageEvent<unknown>) => {
       const message = decodeOpenRouteMessage(event.data);
       if (message !== undefined) setPendingOpenRoute(message);
+      if (isPushSubscriptionChange(event.data)) {
+        void refreshConfiguredPush(mountedClient);
+      }
     };
     navigator.serviceWorker?.addEventListener(
       "message",
@@ -402,10 +425,16 @@ export function App(props: AppProps) {
             window.history.replaceState(window.history.state, "", path),
           );
     const unsubscribe = mountedClient.subscribe((message) => {
+      if (message.type === "push_route_required") {
+        knownPushRequirements.set(message.network_id, message);
+      }
       if (message.type === "push_state_changed") {
         setEnginePushStates((current) =>
           new Map(current).set(message.network_id, message.state),
         );
+        if (message.state.status === "unsupported") {
+          knownPushRequirements.delete(message.network_id);
+        }
       }
       if (
         pushSynchronizer === undefined &&
@@ -671,7 +700,10 @@ export function App(props: AppProps) {
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
-      if (foreground) reconnectNetworks();
+      if (foreground) {
+        reconnectNetworks();
+        void refreshConfiguredPush(mountedClient);
+      }
     };
     const updateVisibility = () => {
       if ("Notification" in window)
@@ -740,6 +772,7 @@ export function App(props: AppProps) {
     });
     onCleanup(() => {
       disposed = true;
+      pushSetupGeneration += 1;
       if (hostedFallbackTimer !== undefined)
         window.clearTimeout(hostedFallbackTimer);
       if (notificationPromptReadDeadline !== undefined)
@@ -771,16 +804,46 @@ export function App(props: AppProps) {
   async function startConfiguredPush(
     mountedClient: EngineClient,
   ): Promise<void> {
-    pushStartup ??= runConfiguredPush(mountedClient);
-    return pushStartup;
-  }
-
-  async function runConfiguredPush(mountedClient: EngineClient): Promise<void> {
     const config = props.pushConfig;
     const session = props.hostedSession;
+    if (config === undefined || session === undefined) return;
+    const key = pushConfigKey(config);
+    if (pushStartupKey !== key) {
+      pushSetupGeneration += 1;
+      pushSynchronizer?.dispose();
+      foregroundLease?.dispose();
+      pushSynchronizer = undefined;
+      foregroundLease = undefined;
+      pushStartup = undefined;
+      pushStartupKey = key;
+    }
+    if (pushStartup !== undefined) return pushStartup;
+    const generation = pushSetupGeneration;
+    const attempt = runConfiguredPush(
+      mountedClient,
+      config,
+      session,
+      generation,
+    );
+    pushStartup = attempt;
+    try {
+      await attempt;
+      if (pushSynchronizer === undefined && pushStartup === attempt) {
+        pushStartup = undefined;
+      }
+    } catch (error: unknown) {
+      if (pushStartup === attempt) pushStartup = undefined;
+      throw error;
+    }
+  }
+
+  async function runConfiguredPush(
+    mountedClient: EngineClient,
+    config: PushDeploymentConfig,
+    session: HostedSession,
+    generation: number,
+  ): Promise<void> {
     if (
-      config === undefined ||
-      session === undefined ||
       !("Notification" in window) ||
       Notification.permission !== "granted" ||
       !("serviceWorker" in navigator)
@@ -788,12 +851,17 @@ export function App(props: AppProps) {
       return;
     }
     const registration = await navigator.serviceWorker.ready;
-    if (disposed) return;
+    if (disposed || generation !== pushSetupGeneration) return;
     const subscription = await ensurePushSubscription(
       registration,
       config.relay_vapid,
     );
-    if (subscription.status !== "ready" || disposed) return;
+    if (
+      subscription.status !== "ready" ||
+      disposed ||
+      generation !== pushSetupGeneration
+    )
+      return;
     const relay = new RelayClient(config.relay);
     const devices = new EnginePushDeviceStore(mountedClient);
     const lease = new ForegroundLease({
@@ -801,12 +869,11 @@ export function App(props: AppProps) {
       release: (device, tabId) => relay.releaseLease(device, tabId),
       tabId: foregroundLeaseTabId(),
     });
-    foregroundLease = lease;
     lease.setForeground(appIsForeground);
     const storedDevice = await devices
       .load(config.relay)
       .catch(() => undefined);
-    if (disposed) {
+    if (disposed || generation !== pushSetupGeneration) {
       lease.dispose();
       return;
     }
@@ -851,8 +918,56 @@ export function App(props: AppProps) {
           new Map(current).set(diagnostic.networkId, diagnostic),
         ),
     });
+    foregroundLease = lease;
     pushSynchronizer = synchronizer;
-    for (const event of pendingPushEvents.splice(0)) synchronizer.handle(event);
+    const queuedEvents = pendingPushEvents.splice(0);
+    const queuedRequirements = new Set(
+      queuedEvents
+        .filter((event) => event.type === "push_route_required")
+        .map((event) => event.network_id),
+    );
+    for (const [networkId, event] of knownPushRequirements) {
+      if (queuedRequirements.has(networkId)) continue;
+      synchronizer.handle(event);
+    }
+    for (const event of queuedEvents) synchronizer.handle(event);
+    await synchronizer.refreshTarget(subscription.target);
+    if (disposed || generation !== pushSetupGeneration) {
+      synchronizer.dispose();
+      lease.dispose();
+      return;
+    }
+  }
+
+  function refreshConfiguredPush(mountedClient: EngineClient): Promise<void> {
+    pushRefresh ??= runPushRefresh(mountedClient).finally(() => {
+      pushRefresh = undefined;
+    });
+    return pushRefresh;
+  }
+
+  async function runPushRefresh(mountedClient: EngineClient): Promise<void> {
+    const config = props.pushConfig;
+    if (config === undefined || !engineStarted()) return;
+    const key = pushConfigKey(config);
+    if (pushSynchronizer === undefined || pushStartupKey !== key) {
+      await startConfiguredPush(mountedClient);
+      return;
+    }
+    if (
+      !("Notification" in window) ||
+      Notification.permission !== "granted" ||
+      !("serviceWorker" in navigator)
+    )
+      return;
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await ensurePushSubscription(
+      registration,
+      config.relay_vapid,
+    );
+    if (subscription.status === "ready" && pushStartupKey === key) {
+      await pushSynchronizer?.refreshTarget(subscription.target);
+    }
   }
 
   function dismissNotificationPrompt(): void {

@@ -18,26 +18,29 @@ it("counts unread direct messages once plus channel mentions", () => {
 
 it("maps engine counters to the notification tags shared with the worker", () => {
   expect(
-    conversationNotificationCounts([
-      buffer({
-        kind: "direct",
-        network_id: 4,
-        title: "Alice",
-        unread: 3,
-        mentions: 3,
-      }),
-      buffer({
-        kind: "channel",
-        network_id: 4,
-        title: "#Lounge",
-        unread: 9,
-        mentions: 2,
-      }),
-      buffer({ kind: "server", unread: 0, mentions: 0 }),
-    ]),
+    conversationNotificationCounts(
+      [
+        buffer({
+          kind: "direct",
+          network_id: 4,
+          title: "Alice",
+          unread: 3,
+          mentions: 3,
+        }),
+        buffer({
+          kind: "channel",
+          network_id: 4,
+          title: "#Lounge",
+          unread: 9,
+          mentions: 2,
+        }),
+        buffer({ kind: "server", unread: 0, mentions: 0 }),
+      ],
+      new Map([[4, "Lounge"]]),
+    ),
   ).toEqual([
-    { tag: "4/alice", count: 3 },
-    { tag: "4/#lounge", count: 2 },
+    { tag: "Lounge/alice", count: 3 },
+    { tag: "Lounge/#lounge", count: 2 },
   ]);
 });
 
@@ -45,7 +48,7 @@ it("closes notifications only for conversations the engine says are read", async
   const readNotification = { close: vi.fn() };
   const unreadNotification = { close: vi.fn() };
   const getNotifications = vi.fn(async ({ tag }: GetNotificationOptions) =>
-    tag === "1/#read" ? [readNotification] : [unreadNotification],
+    tag === "Lounge/#read" ? [readNotification] : [unreadNotification],
   );
 
   await closeReadConversationNotifications(
@@ -53,6 +56,7 @@ it("closes notifications only for conversations the engine says are read", async
       buffer({ title: "#read", unread: 4, mentions: 0 }),
       buffer({ title: "#unread", unread: 4, mentions: 1 }),
     ],
+    new Map([[1, "Lounge"]]),
     {
       getRegistration: async () => ({
         getNotifications: getNotifications as unknown as (
@@ -63,7 +67,7 @@ it("closes notifications only for conversations the engine says are read", async
   );
 
   expect(getNotifications).toHaveBeenCalledOnce();
-  expect(getNotifications).toHaveBeenCalledWith({ tag: "1/#read" });
+  expect(getNotifications).toHaveBeenCalledWith({ tag: "Lounge/#read" });
   expect(readNotification.close).toHaveBeenCalledOnce();
   expect(unreadNotification.close).not.toHaveBeenCalled();
 });

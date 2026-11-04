@@ -52,6 +52,7 @@ const READ_RETRY_INITIAL: Duration = Duration::from_secs(1);
 const READ_RETRY_MAX: Duration = Duration::from_secs(60);
 const READ_RETRY_ATTEMPTS: u8 = 5;
 const MARK_READ_DIAGNOSTIC_ID: &str = "mark-read";
+const PUSH_REFRESH_INTERVAL: Duration = Duration::from_hours(24);
 
 struct CompletionContext {
     trigger: CompletionTrigger,
@@ -99,7 +100,6 @@ struct RegisteredPushRoute {
     endpoint: String,
     p256dh: String,
     auth: papo::Secret,
-    vapid: String,
 }
 
 #[derive(Clone)]
@@ -108,7 +108,7 @@ struct PushRegisterTask {
     generation: u64,
     network_id: NetworkId,
     route: RegisteredPushRoute,
-    previous_endpoint: Option<String>,
+    unregister: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -389,12 +389,11 @@ impl Runtime {
                 self.store_push_device(envelope.id, credentials)
             }
             EngineRequest::ClearPushDevice { relay } => self.clear_push_device(envelope.id, relay),
-            EngineRequest::RegisterPush { network_id, route } => {
-                self.register_push(envelope.id, network_id, route)
-            }
-            EngineRequest::UnregisterPush { network_id } => {
-                self.unregister_push(envelope.id, network_id)
-            }
+            EngineRequest::EnsurePush {
+                network_id,
+                route,
+                unregister,
+            } => self.ensure_push(envelope.id, network_id, route, unregister),
             EngineRequest::UnregisterPushRoute {
                 network_id,
                 route_id,
@@ -578,11 +577,12 @@ impl Runtime {
         Vec::new()
     }
 
-    fn register_push(
+    fn ensure_push(
         &self,
         command_id: String,
         network_id: NetworkId,
         route: crate::PushRoute,
+        unregister: Vec<String>,
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state
@@ -605,11 +605,6 @@ impl Runtime {
                 EngineToUi::CommandResult { id: command_id },
             ];
         }
-        let vapid = snapshot
-            .isupport()
-            .vapid()
-            .map(str::to_owned)
-            .unwrap_or_default();
         running.push.generation = running.push.generation.saturating_add(1);
         let generation = running.push.generation;
         let registered = RegisteredPushRoute {
@@ -617,21 +612,14 @@ impl Runtime {
             endpoint: route.endpoint,
             p256dh: route.p256dh,
             auth: papo::Secret::new(route.auth.into_inner()),
-            vapid,
         };
-        let previous_endpoint = running
-            .push
-            .route
-            .as_ref()
-            .filter(|previous| previous.endpoint != registered.endpoint)
-            .map(|previous| previous.endpoint.clone());
         running.push.route = Some(registered.clone());
         let task = PushRegisterTask {
             instance: running.instance,
             generation,
             network_id,
             route: registered,
-            previous_endpoint,
+            unregister,
         };
         let client = running.client.clone();
         drop(state);
@@ -641,40 +629,6 @@ impl Runtime {
             client,
             task,
             Some(command_id),
-        );
-        Vec::new()
-    }
-
-    fn unregister_push(&self, command_id: String, network_id: NetworkId) -> Vec<EngineToUi> {
-        let mut state = lock(&self.state);
-        let Some(running) = state
-            .network
-            .as_mut()
-            .filter(|running| running.model.id() == network_id)
-        else {
-            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
-        };
-        let Some(route) = running.push.route.clone() else {
-            return vec![EngineToUi::CommandResult { id: command_id }];
-        };
-        running.push.generation = running.push.generation.saturating_add(1);
-        let generation = running.push.generation;
-        let task = PushUnregisterTask {
-            instance: running.instance,
-            generation,
-            network_id,
-            route_id: route.route_id,
-            endpoint: route.endpoint,
-            clear_current: true,
-        };
-        let client = running.client.clone();
-        drop(state);
-        spawn_push_unregister(
-            Arc::clone(&self.state),
-            self.outbound.clone(),
-            client,
-            task,
-            command_id,
         );
         Vec::new()
     }
@@ -1985,17 +1939,6 @@ fn attach_shell(running: &RunningNetwork, command_id: String) -> Vec<EngineToUi>
             network_id: model.id(),
             state,
         });
-    } else if running.push.route.is_none() {
-        let snapshot = running.client.state();
-        if push_unsupported_reason(&snapshot).is_none()
-            && let Some(vapid) = snapshot.isupport().vapid()
-        {
-            output.push(EngineToUi::PushRouteRequired {
-                network_id: model.id(),
-                vapid: vapid.to_owned(),
-                previous_route_id: None,
-            });
-        }
     }
     output.push(EngineToUi::CommandResult { id: command_id });
     output
@@ -3360,15 +3303,6 @@ fn process_event_with_direct(
         effects.flush_sends,
         effects.read_flush,
     );
-    if let Some(task) = effects.push_register {
-        spawn_push_register(
-            Arc::clone(&shared_state),
-            outbound.clone(),
-            client.clone(),
-            task,
-            None,
-        );
-    }
     effects.history_fetches
 }
 
@@ -3379,7 +3313,6 @@ struct EventEffects {
     clear_hosted_authentication: bool,
     flush_sends: bool,
     read_flush: Option<(papo::Client, u64)>,
-    push_register: Option<PushRegisterTask>,
 }
 
 fn process_papo_event(
@@ -3396,9 +3329,7 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::Connected(connected) => {
-            let (history_fetches, push_register) =
-                process_connected(running, snapshot, &connected, output);
-            effects.push_register = push_register;
+            let history_fetches = process_connected(running, snapshot, &connected, output);
             if !running.pending_sends.is_empty() && !running.flushing_sends {
                 running.flushing_sends = true;
                 effects.flush_sends = true;
@@ -3566,7 +3497,7 @@ fn process_connected(
     snapshot: &papo::State,
     connected: &papo::event::Connected,
     output: &mut Vec<EngineToUi>,
-) -> (Vec<HistoryFetch>, Option<PushRegisterTask>) {
+) -> Vec<HistoryFetch> {
     running.model.rebuild_name_keys(snapshot);
     let next = next_connection_state(
         running.model.connection(),
@@ -3583,15 +3514,15 @@ fn process_connected(
     if !history_fetches.is_empty() {
         output.push(running.model.buffers_event());
     }
-    let push_register = connected_push_action(running, snapshot, output);
-    (history_fetches, push_register)
+    connected_push_action(running, snapshot, output);
+    history_fetches
 }
 
 fn connected_push_action(
     running: &mut RunningNetwork,
     snapshot: &papo::State,
     output: &mut Vec<EngineToUi>,
-) -> Option<PushRegisterTask> {
+) {
     if let Some(reason) = push_unsupported_reason(snapshot) {
         let state = PushState::Unsupported { reason };
         running.push.state = Some(state.clone());
@@ -3599,36 +3530,21 @@ fn connected_push_action(
             network_id: running.model.id(),
             state,
         });
-        return None;
+        return;
     }
-    let vapid = snapshot.isupport().vapid()?;
-    let Some(route) = running.push.route.clone() else {
-        running.push.state = None;
-        output.push(EngineToUi::PushRouteRequired {
-            network_id: running.model.id(),
-            vapid: vapid.to_owned(),
-            previous_route_id: None,
-        });
-        return None;
+    let Some(vapid) = snapshot.isupport().vapid() else {
+        return;
     };
-    if vapid != route.vapid {
-        running.push.generation = running.push.generation.saturating_add(1);
-        running.push.state = None;
-        output.push(EngineToUi::PushRouteRequired {
-            network_id: running.model.id(),
-            vapid: vapid.to_owned(),
-            previous_route_id: Some(route.route_id.clone()),
-        });
-        return None;
-    }
-    running.push.generation = running.push.generation.saturating_add(1);
-    Some(PushRegisterTask {
-        instance: running.instance,
-        generation: running.push.generation,
+    running.push.state = None;
+    output.push(EngineToUi::PushRouteRequired {
         network_id: running.model.id(),
-        route,
-        previous_endpoint: None,
-    })
+        vapid: vapid.to_owned(),
+        previous_route_id: running
+            .push
+            .route
+            .as_ref()
+            .map(|route| route.route_id.clone()),
+    });
 }
 
 fn process_disconnect(
@@ -4541,7 +4457,7 @@ fn spawn_push_register(
     command_id: Option<String>,
 ) {
     spawn_task(async move {
-        if let Some(endpoint) = task.previous_endpoint.as_ref() {
+        for endpoint in &task.unregister {
             let _ = client.webpush().unregister(endpoint).await;
         }
         let result = client
@@ -4582,14 +4498,44 @@ fn spawn_push_register(
                 })
                 .is_some()
         };
-        if current {
-            let _ = outbound.send(EngineToUi::PushStateChanged {
-                network_id: task.network_id,
-                state: push_state,
-            });
+        let _ = outbound.send(EngineToUi::PushStateChanged {
+            network_id: task.network_id,
+            state: push_state.clone(),
+        });
+        if current
+            && matches!(
+                push_state,
+                PushState::Registered { .. } | PushState::RegisteredButNoDelivery { .. }
+            )
+        {
+            spawn_push_refresh(state, outbound.clone(), client, task);
         }
         if let Some(id) = command_id {
             let _ = outbound.send(EngineToUi::CommandResult { id });
+        }
+    });
+}
+
+fn spawn_push_refresh(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    mut task: PushRegisterTask,
+) {
+    spawn_task(async move {
+        delay(PUSH_REFRESH_INTERVAL).await;
+        let current = lock(&state).network.as_ref().is_some_and(|running| {
+            running.instance == task.instance
+                && running.push.generation == task.generation
+                && running
+                    .push
+                    .route
+                    .as_ref()
+                    .is_some_and(|route| route.route_id == task.route.route_id)
+        });
+        if current && client.state().is_connected() {
+            task.unregister.clear();
+            spawn_push_register(state, outbound, client, task, None);
         }
     });
 }
@@ -4730,7 +4676,8 @@ mod tests {
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, PushRegistration, READ_RETRY_INITIAL, READ_RETRY_MAX,
-        ReadRetryState, RunningNetwork, Runtime, RuntimeState, completion_context,
+        PUSH_REFRESH_INTERVAL, ReadRetryState, RunningNetwork, Runtime, RuntimeState, attach_shell,
+        completion_context,
         connection_failure_notice, drain_events, fetch_history, join_request_events, lock,
         next_connection_state, permanent_mark_read_error, person_candidates, process_event,
         process_history, queue_read_advance, read_retry_delay, schedule_snapshot_write_after,
@@ -4739,7 +4686,8 @@ mod tests {
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
         EngineMessageKey, EngineRequest, EngineRequestEnvelope, EngineToUi, MessageDelivery,
-        MessageId, NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials,
+        MessageId, NetworkConnectionState, NetworkId, NetworkProjection, PushState,
+        SaslCredentials,
         chat_list_snapshot::{
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
         },
@@ -7660,7 +7608,7 @@ async fn delay(duration: Duration) {
     fn push_request(command_id: &str, route_id: &str) -> EngineRequestEnvelope {
         EngineRequestEnvelope {
             id: command_id.into(),
-            request: EngineRequest::RegisterPush {
+            request: EngineRequest::EnsurePush {
                 network_id: NetworkId(1),
                 route: crate::PushRoute {
                     route_id: route_id.into(),
@@ -7668,6 +7616,7 @@ async fn delay(duration: Duration) {
                     p256dh: "AQIDBAUGBwgJCgsMDQ4P_w".into(),
                     auth: "-vv8_f7_".into(),
                 },
+                unregister: Vec::new(),
             },
         }
     }
@@ -9059,6 +9008,15 @@ async fn delay(duration: Duration) {
                 ..
             } if vapid == "home-vapid"
         )));
+        let attached = {
+            let state = lock(&runtime.state);
+            attach_shell(state.network.as_ref().expect("network"), "attach".into())
+        };
+        assert!(
+            !attached
+                .iter()
+                .any(|event| matches!(event, EngineToUi::PushRouteRequired { .. }))
+        );
 
         assert_no_output(&runtime.request(push_request("register", "route-1")));
         let request = wire.next_sent().await;
@@ -9080,7 +9038,12 @@ async fn delay(duration: Duration) {
                 ))
         );
 
-        assert_no_output(&runtime.request(push_request("persistence", "route-2")));
+        let mut persistence = push_request("persistence", "route-2");
+        let EngineRequest::EnsurePush { unregister, .. } = &mut persistence.request else {
+            unreachable!("push helper creates ensure request");
+        };
+        unregister.push("https://push.example.test/v1/r/route-1".into());
+        assert_no_output(&runtime.request(persistence));
         let unregister = wire.next_sent().await;
         assert_eq!(
             request_without_label(&unregister),
@@ -9105,32 +9068,12 @@ async fn delay(duration: Duration) {
                     } if route_id == "route-2"
                 ))
         );
-
-        assert_no_output(&runtime.request(EngineRequestEnvelope {
-            id: "unregister".into(),
-            request: EngineRequest::UnregisterPush {
-                network_id: NetworkId(1),
-            },
-        }));
-        let unregister = wire.next_sent().await;
-        assert_eq!(
-            request_without_label(&unregister),
-            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
-        );
-        let label = request_label(&unregister);
-        wire.server(format!(
-            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
-        ))
-        .await;
-        assert!(matches!(
-            command_output(&mut receiver).await.as_slice(),
-            [EngineToUi::CommandResult { id }] if id == "unregister"
-        ));
         assert!(
             lock(&runtime.state)
                 .network
                 .as_ref()
-                .is_some_and(|running| running.push.route.is_none())
+                .and_then(|running| running.push.route.as_ref())
+                .is_some_and(|route| route.route_id == "route-2")
         );
     }
 
@@ -9184,6 +9127,11 @@ async fn delay(duration: Duration) {
         );
     }
 
+    #[test]
+    fn active_push_registration_refresh_interval_is_daily() {
+        assert_eq!(PUSH_REFRESH_INTERVAL, Duration::from_hours(24));
+    }
+
     #[tokio::test]
     async fn push_registration_maps_ergo_refusals_to_typed_failures() {
         let (client, mut events, mut wire) = push_wire();
@@ -9219,16 +9167,6 @@ async fn delay(duration: Duration) {
         );
 
         assert_no_output(&runtime.request(push_request("forbidden", "route-2")));
-        let unregister = wire.next_sent().await;
-        assert_eq!(
-            request_without_label(&unregister),
-            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
-        );
-        let label = request_label(&unregister);
-        wire.server(format!(
-            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
-        ))
-        .await;
         let request = wire.next_sent().await;
         let label = request_label(&request);
         wire.server(format!(
@@ -9252,16 +9190,6 @@ async fn delay(duration: Duration) {
         );
 
         assert_no_output(&runtime.request(push_request("probe-failed", "route-3")));
-        let unregister = wire.next_sent().await;
-        assert_eq!(
-            request_without_label(&unregister),
-            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
-        );
-        let label = request_label(&unregister);
-        wire.server(format!(
-            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
-        ))
-        .await;
         let request = wire.next_sent().await;
         let label = request_label(&request);
         wire.server(format!(
@@ -9282,6 +9210,61 @@ async fn delay(duration: Duration) {
                         ..
                     } if route_id == "route-3"
                 ))
+        );
+    }
+
+    #[tokio::test]
+    async fn superseded_push_registration_still_reports_its_route_scoped_result() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+
+        assert_no_output(&runtime.request(push_request("first", "route-1")));
+        let first = wire.next_sent().await;
+        assert_no_output(&runtime.request(push_request("second", "route-2")));
+        let second = wire.next_sent().await;
+        send_push_success(&mut wire, &second, false).await;
+        assert!(
+            command_output(&mut receiver)
+                .await
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    EngineToUi::PushStateChanged {
+                        state: PushState::Registered { route_id },
+                        ..
+                    } if route_id == "route-2"
+                ))
+        );
+
+        let label = request_label(&first);
+        wire.server(format!(
+            "@label={label} :offline.test FAIL WEBPUSH INVALID_PARAMS REGISTER https://push.example.test/v1/r/route-1 :Test push message failed to send"
+        ))
+        .await;
+        assert!(
+            command_output(&mut receiver)
+                .await
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    EngineToUi::PushStateChanged {
+                        state: PushState::Failed { route_id, .. },
+                        ..
+                    } if route_id == "route-1"
+                ))
+        );
+        assert!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .and_then(|running| running.push.route.as_ref())
+                .is_some_and(|route| route.route_id == "route-2")
         );
     }
 
@@ -9339,7 +9322,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn reconnect_refreshes_push_until_a_vapid_change_requires_a_new_route() {
+    async fn every_connect_requests_one_page_owned_push_ensure() {
         let (client, mut events, mut wire) = push_wire();
         register_push_connection(&mut wire, Some("home-vapid"), true).await;
         let connected = next_matching(&mut events, |event| {
@@ -9368,11 +9351,16 @@ async fn delay(duration: Duration) {
         )
         .await;
         process_runtime_event(&runtime, reconnected);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::PushRouteRequired {
+                vapid,
+                previous_route_id,
+                ..
+            } if vapid == "home-vapid" && previous_route_id.as_deref() == Some("route-1")
+        )));
+        assert_no_output(&runtime.request(push_request("refresh", "route-1")));
         let refresh = wire.next_sent().await;
-        assert_eq!(
-            request_without_label(&refresh),
-            request_without_label(&request)
-        );
         send_push_success(&mut wire, &refresh, false).await;
         loop {
             let event = receiver.recv().await.expect("push refresh completes");

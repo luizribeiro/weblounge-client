@@ -90,7 +90,7 @@ function notificationFor(
           event.type === "action"
             ? `* ${event.sender} ${event.text}`
             : event.text,
-        tag: `${route.networkId}/${buffer.toLowerCase()}`,
+        tag: `${route.networkLabel}/${buffer.toLowerCase()}`,
         data: { route: bufferRoute },
       },
     };
@@ -101,7 +101,7 @@ function notificationFor(
       title: event.sender,
       options: {
         body: `Invited you to ${event.target}`,
-        tag: `${route.networkId}/${event.target.toLowerCase()}`,
+        tag: `${route.networkLabel}/${event.target.toLowerCase()}`,
         data: { route: bufferRoute },
       },
     };

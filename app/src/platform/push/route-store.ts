@@ -1,6 +1,7 @@
 import { encodeBase64Url } from "./base64url";
 import {
   openPushDatabase,
+  pushRouteIdIndex,
   pushRoutesStore,
   requestResult,
   transactionDone,
@@ -22,9 +23,10 @@ export interface StoredPushRoute {
 }
 
 export interface PushRouteStore {
-  get(routeId: string): Promise<StoredPushRoute | undefined>;
+  get(homeVapid: string): Promise<StoredPushRoute | undefined>;
+  findRoute(routeId: string): Promise<StoredPushRoute | undefined>;
   put(route: StoredPushRoute): Promise<void>;
-  delete(routeId: string): Promise<void>;
+  delete(homeVapid: string): Promise<void>;
   all(): Promise<readonly StoredPushRoute[]>;
 }
 
@@ -56,44 +58,77 @@ export async function createRouteKeys(
 }
 
 export class IndexedDbPushRouteStore implements PushRouteStore {
-  readonly #database: Promise<IDBDatabase>;
+  readonly #factory: IDBFactory;
 
   constructor(factory: IDBFactory = indexedDB) {
-    this.#database = openDatabase(factory);
+    this.#factory = factory;
   }
 
-  async get(routeId: string): Promise<StoredPushRoute | undefined> {
-    const database = await this.#database;
-    const transaction = database.transaction(pushRoutesStore, "readonly");
-    const value = await requestResult(
-      transaction.objectStore(pushRoutesStore).get(routeId),
-    );
-    await transactionDone(transaction);
-    return value === undefined ? undefined : decodeRoute(value);
+  async get(homeVapid: string): Promise<StoredPushRoute | undefined> {
+    const database = await openDatabase(this.#factory);
+    try {
+      const transaction = database.transaction(pushRoutesStore, "readonly");
+      const value = await requestResult(
+        transaction.objectStore(pushRoutesStore).get(homeVapid),
+      );
+      await transactionDone(transaction);
+      return value === undefined ? undefined : decodeRoute(value);
+    } finally {
+      database.close();
+    }
+  }
+
+  async findRoute(routeId: string): Promise<StoredPushRoute | undefined> {
+    const database = await openDatabase(this.#factory);
+    try {
+      const transaction = database.transaction(pushRoutesStore, "readonly");
+      const value = await requestResult(
+        transaction
+          .objectStore(pushRoutesStore)
+          .index(pushRouteIdIndex)
+          .get(routeId),
+      );
+      await transactionDone(transaction);
+      return value === undefined ? undefined : decodeRoute(value);
+    } finally {
+      database.close();
+    }
   }
 
   async put(route: StoredPushRoute): Promise<void> {
-    const database = await this.#database;
-    const transaction = database.transaction(pushRoutesStore, "readwrite");
-    transaction.objectStore(pushRoutesStore).put(route);
-    await transactionDone(transaction);
+    const database = await openDatabase(this.#factory);
+    try {
+      const transaction = database.transaction(pushRoutesStore, "readwrite");
+      transaction.objectStore(pushRoutesStore).put(route);
+      await transactionDone(transaction);
+    } finally {
+      database.close();
+    }
   }
 
-  async delete(routeId: string): Promise<void> {
-    const database = await this.#database;
-    const transaction = database.transaction(pushRoutesStore, "readwrite");
-    transaction.objectStore(pushRoutesStore).delete(routeId);
-    await transactionDone(transaction);
+  async delete(homeVapid: string): Promise<void> {
+    const database = await openDatabase(this.#factory);
+    try {
+      const transaction = database.transaction(pushRoutesStore, "readwrite");
+      transaction.objectStore(pushRoutesStore).delete(homeVapid);
+      await transactionDone(transaction);
+    } finally {
+      database.close();
+    }
   }
 
   async all(): Promise<readonly StoredPushRoute[]> {
-    const database = await this.#database;
-    const transaction = database.transaction(pushRoutesStore, "readonly");
-    const values = await requestResult(
-      transaction.objectStore(pushRoutesStore).getAll(),
-    );
-    await transactionDone(transaction);
-    return values.map(decodeRoute);
+    const database = await openDatabase(this.#factory);
+    try {
+      const transaction = database.transaction(pushRoutesStore, "readonly");
+      const values = await requestResult(
+        transaction.objectStore(pushRoutesStore).getAll(),
+      );
+      await transactionDone(transaction);
+      return values.map(decodeRoute);
+    } finally {
+      database.close();
+    }
   }
 }
 
