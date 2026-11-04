@@ -415,6 +415,10 @@ it("reveals and navigates a cached chat list before live synchronization", async
   });
 
   await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+  expect(container.querySelector("[data-app-root]")).toHaveAttribute(
+    "data-chat-list-hydrating",
+    "true",
+  );
   client.emit({
     type: "network_state_changed",
     network: {
@@ -470,6 +474,9 @@ it("reveals and navigates a cached chat list before live synchronization", async
       },
     ],
   });
+  expect(container.querySelector("[data-app-root]")).not.toHaveAttribute(
+    "data-chat-list-hydrating",
+  );
   const brand = container.querySelector("[data-connection-brand]");
   const title = container.querySelector("[data-conversation-title]");
   expect(brand).toHaveAttribute("data-connection-phase", "finishing");

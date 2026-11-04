@@ -106,6 +106,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     mobile consume the same engine order; shuffled joins remain stable across three reloads.
   - [x] Wait for the reloaded engine connection before buffer-order coverage conditionally rejoins
     channels, so partial startup hydration cannot send JOIN while the network is still registering.
+  - [x] Wait for the cached chat list's atomic live replacement before buffer-order coverage
+    replays shuffled JOINs, so a vanishing cached row cannot consume the click at reload.
   - [x] Generate home-screen, favicon, and maskable icons from the canonical chair artwork during
     the build. The self-hosted install manifest and Apple metadata ship in the hosted artifact;
     production validation covers image dimensions and Apple opacity, and the browser fetches every

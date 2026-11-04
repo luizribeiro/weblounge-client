@@ -1034,6 +1034,7 @@ export function App(props: AppProps) {
   return (
     <div
       data-app-root="true"
+      data-chat-list-hydrating={cachedChatListActive() || undefined}
       ref={(element) => {
         appRoot = element;
       }}
