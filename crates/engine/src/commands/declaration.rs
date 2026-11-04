@@ -199,7 +199,7 @@ mod tests {
             || path.contains("/tests/")
             || path.contains("/generated/")
             || path.contains(".test.")
-            || path.ends_with("features/composer/strings.ts")
+            || path.ends_with("app/src/strings.ts")
     }
 
     fn allowed_incidental(path: &Path, name: &str) -> bool {
