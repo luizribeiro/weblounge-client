@@ -910,7 +910,7 @@ async function exerciseNotificationPromptRegistration(
     .toEqual([
       "create:route-123456789",
       "register:route-123456789",
-      "unregister",
+      "unregister:route-123456789:https://push.weblounge.org/v1/r/route-123456789",
       "delete:route-123456789",
       "create:route-recovered-2",
       "register:route-recovered-2",
@@ -1450,9 +1450,13 @@ async function installFakeEngine(
             });
           });
         }
-        if (request?.type === "unregister_push") {
+        if (request?.type === "unregister_push_route") {
           const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
-          if (Array.isArray(sequence)) sequence.push("unregister");
+          if (Array.isArray(sequence)) {
+            sequence.push(
+              `unregister:${String(request.route_id)}:${String(request.endpoint)}`,
+            );
+          }
         }
         if (request?.type === "reconnect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
