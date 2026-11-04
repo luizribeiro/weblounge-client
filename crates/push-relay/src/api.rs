@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 #[cfg(feature = "push-e2e")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use axum::{
     Json, Router,
@@ -40,6 +40,8 @@ struct AppState {
     delivery_wakeup: Arc<Notify>,
     #[cfg(feature = "push-e2e")]
     refuse_next_push: Arc<AtomicBool>,
+    #[cfg(feature = "push-e2e")]
+    normal_pushes_dropped: Arc<AtomicUsize>,
 }
 
 /// The relay's configured HTTP application.
@@ -85,6 +87,8 @@ pub fn app_with_lease_ttl(
         delivery_wakeup: Arc::new(Notify::new()),
         #[cfg(feature = "push-e2e")]
         refuse_next_push: Arc::new(AtomicBool::new(false)),
+        #[cfg(feature = "push-e2e")]
+        normal_pushes_dropped: Arc::new(AtomicUsize::new(0)),
     };
     tokio::spawn(deliver_held_pushes(state.clone()));
     let client_api = Router::new()
@@ -105,6 +109,7 @@ pub fn app_with_lease_ttl(
     #[cfg(feature = "push-e2e")]
     let router = router
         .route("/test/device-states", get(test_device_states))
+        .route("/test/counters", get(test_counters))
         .route("/test/refuse-next-push", post(refuse_next_push));
     router.with_state(state)
 }
@@ -148,6 +153,13 @@ async fn test_device_states(State(state): State<AppState>) -> Result<Response> {
 async fn refuse_next_push(State(state): State<AppState>) -> StatusCode {
     state.refuse_next_push.store(true, Ordering::SeqCst);
     StatusCode::NO_CONTENT
+}
+
+#[cfg(feature = "push-e2e")]
+async fn test_counters(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "normal_pushes_dropped": state.normal_pushes_dropped.load(Ordering::SeqCst),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -378,6 +390,10 @@ async fn receive_push(
             StatusCode::CREATED.into_response()
         }
         Ok(PushDisposition::UrgencyDropped { urgency }) => {
+            #[cfg(feature = "push-e2e")]
+            if matches!(urgency, Urgency::Normal) {
+                state.normal_pushes_dropped.fetch_add(1, Ordering::SeqCst);
+            }
             tracing::info!(
                 route = %route_prefix,
                 urgency = %urgency,

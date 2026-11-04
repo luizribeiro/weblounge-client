@@ -410,7 +410,7 @@ struct LoggedLifecycle {
 
 async fn run_logged_lifecycle() -> LoggedLifecycle {
     let harness = Harness::new().await;
-    let device = harness.create_device_at("web.push.apple.com").await;
+    let device = harness.create_device().await;
     let home = SecretKey::random(&mut OsRng);
     let route = harness.create_route(&device, &home).await;
     assert_eq!(
@@ -733,7 +733,7 @@ async fn health_checks_sqlite_and_device_creation_introspects_only_once() {
         Value::String("ok\nweblounge_push_relay_duplicate_active_route_devices 0\n".to_owned())
     );
 
-    let device = harness.create_device().await;
+    let device = harness.create_device_at("web.push.apple.com").await;
     let home = SecretKey::random(&mut OsRng);
     let route = harness.create_route(&device, &home).await;
     harness.activate(&device, &route).await;
@@ -785,7 +785,7 @@ async fn health_reports_devices_with_duplicate_active_routes() {
 #[tokio::test]
 async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
     let harness = Harness::new().await;
-    let device = harness.create_device().await;
+    let device = harness.create_device_at("web.push.apple.com").await;
     let home = SecretKey::random(&mut OsRng);
     let route = harness.create_route(&device, &home).await;
 
@@ -819,6 +819,25 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
         harness.push(&route, &home, b"accepted probe").await,
         StatusCode::CREATED
     );
+
+    harness.activate(&device, &route).await;
+    assert_eq!(
+        harness
+            .push_with_urgency(&route, &home, b"read elsewhere", Some("normal"))
+            .await,
+        StatusCode::CREATED
+    );
+    let counters = call_json(
+        &harness.app,
+        Method::GET,
+        "/test/counters",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(counters.0, StatusCode::OK);
+    assert_eq!(counters.1["normal_pushes_dropped"], 1);
 }
 
 #[tokio::test]
