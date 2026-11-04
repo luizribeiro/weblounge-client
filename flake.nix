@@ -12,6 +12,10 @@
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    papo-test-infra = {
+      url = "github:luizribeiro/papo/5cf80f3591e8eef1487dee558b32d3e0f6539a19";
+      flake = false;
+    };
     crane.url = "github:ipetkov/crane";
     weblounge-client-previous.url = "github:luizribeiro/weblounge-client/9f094ac0c2b2b6e94976c96c67ca391ece57102b";
   };
@@ -22,6 +26,7 @@
       flake-utils,
       git-hooks,
       nixpkgs,
+      papo-test-infra,
       rust-overlay,
       self,
       weblounge-client-previous,
@@ -98,6 +103,15 @@
             pname = "weblounge-push-relay-test";
             cargoArtifacts = checkCargoArtifacts;
             cargoTestExtraArgs = "--package weblounge-push-relay";
+          }
+        );
+        pushRelayE2e = craneLib.buildPackage (
+          cargoArgs
+          // {
+            pname = "weblounge-push-relay-e2e";
+            inherit cargoArtifacts;
+            cargoExtraArgs = "--package weblounge-push-relay --features push-e2e";
+            doCheck = false;
           }
         );
         protocolSource = pkgs.lib.fileset.toSource {
@@ -459,6 +473,32 @@
           '';
           installPhase = "touch $out";
         };
+        pushE2eHarness = pkgs.stdenvNoCC.mkDerivation {
+          pname = "weblounge-push-e2e-harness";
+          version = "0.1.0";
+          src = appSource;
+          inherit pnpmDeps;
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.pnpmConfigHook
+          ];
+          buildPhase = "true";
+          installPhase = ''
+            mkdir -p $out
+            cp -r app node_modules package.json pnpm-lock.yaml pnpm-workspace.yaml $out/
+          '';
+        };
+        pushE2e = import ./nix/push-e2e.nix {
+          inherit
+            checkApp
+            papo-test-infra
+            pkgs
+            previousApp
+            pushE2eHarness
+            pushRelayE2e
+            ;
+        };
         cargoHook = name: command: {
           enable = true;
           entry = "${
@@ -659,6 +699,7 @@
           pnpm-deps = pnpmDeps;
           pnpm-deps-probe = pnpmDeps.overrideAttrs { outputHash = pkgs.lib.fakeHash; };
           push-relay = pushRelay;
+          push-e2e = pushE2e;
         };
         apps.ergo = {
           type = "app";

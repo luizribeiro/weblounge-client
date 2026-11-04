@@ -261,12 +261,30 @@
         "type": "github"
       }
     },
+    "papo-test-infra": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793682240,
+        "narHash": "sha256-sOPq60CPE334+geg8ZXA/P3I21ah7LjuFjVoKioo6Gs=",
+        "owner": "luizribeiro",
+        "repo": "papo",
+        "rev": "5cf80f3591e8eef1487dee558b32d3e0f6539a19",
+        "type": "github"
+      },
+      "original": {
+        "owner": "luizribeiro",
+        "repo": "papo",
+        "rev": "5cf80f3591e8eef1487dee558b32d3e0f6539a19",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "crane": "crane",
         "flake-utils": "flake-utils",
         "git-hooks": "git-hooks",
         "nixpkgs": "nixpkgs",
+        "papo-test-infra": "papo-test-infra",
         "rust-overlay": "rust-overlay",
         "weblounge-client-previous": "weblounge-client-previous"
       }
