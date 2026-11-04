@@ -7,15 +7,15 @@ import {
   decodePushBase64Url,
   decryptPushPayload,
 } from "./platform/push/push-decryption";
+import {
+  PushParserLoader,
+  type PushPayloadParser,
+} from "./platform/push/push-parser-loader";
 
 declare const SHELL_VERSION: string;
 declare const PRECACHE_URLS: readonly string[];
 declare const wasm_bindgen: PushPayloadParser &
   ((input: Response) => Promise<unknown>);
-
-interface PushPayloadParser {
-  parse_push_payload_json(input: string): string;
-}
 
 interface WorkerEvent extends Event {
   waitUntil(promise: Promise<unknown>): void;
@@ -102,7 +102,7 @@ const pushStateStore = "state";
 const appBadgeKey = "app-badge";
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
-let parserReady: Promise<PushPayloadParser> | undefined;
+const parser = new PushParserLoader(loadPushParser);
 
 worker.importScripts("/push-payload.js");
 
@@ -319,9 +319,7 @@ function sameIrcName(first: string, second: string): boolean {
 }
 
 async function parsePushPayload(line: string): Promise<ParsedPushEvent> {
-  parserReady ??= loadPushParser();
-  const parser = await parserReady;
-  return decodeParsedEvent(JSON.parse(parser.parse_push_payload_json(line)));
+  return decodeParsedEvent(JSON.parse(await parser.parse(line)));
 }
 
 async function loadPushParser(): Promise<PushPayloadParser> {
