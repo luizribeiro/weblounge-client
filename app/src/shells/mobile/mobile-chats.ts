@@ -2,14 +2,15 @@ import type {
   BufferProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { t } from "../../strings";
 
 export type ChatFilter = "all" | "channels" | "direct" | "unread";
 
 export const chatFilters: readonly { id: ChatFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "unread", label: "Unread" },
-  { id: "channels", label: "Channels" },
-  { id: "direct", label: "Direct" },
+  { id: "all", label: t("mobile.filter.all") },
+  { id: "unread", label: t("mobile.filter.unread") },
+  { id: "channels", label: t("mobile.filter.channels") },
+  { id: "direct", label: t("mobile.filter.direct") },
 ];
 
 export function filterChats(

@@ -5,6 +5,7 @@ import type {
   MessageProjection,
   NetworkProjection,
 } from "../../engine/protocol";
+import { t } from "../../strings";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { Line } from "../../ui/Line";
@@ -30,28 +31,37 @@ export function DebugView(props: DebugViewProps) {
   };
 
   return (
-    <section aria-label="Temporary engine debug view">
-      <h2>Networks</h2>
+    <section aria-label={t("debug.view")}>
+      <h2>{t("debug.networks")}</h2>
       <ul>
         <For each={props.networks}>
           {(network) => (
             <li>
               <Line>
-                {network.label}: {network.nickname} (
-                {connectionStateKind(network.state)})
+                {t("debug.network", {
+                  label: network.label,
+                  nickname: network.nickname,
+                  state: t(
+                    `sidebar.network_state.${connectionStateKind(network.state)}`,
+                  ),
+                })}
               </Line>
             </li>
           )}
         </For>
       </ul>
-      <h2>Buffers</h2>
+      <h2>{t("debug.buffers")}</h2>
       <For each={props.buffers}>
         {(buffer) => (
           <section data-buffer-title={buffer.title}>
             <h3>
               <Line>
-                {buffer.title} ({buffer.kind}, {buffer.unread} unread,{" "}
-                {buffer.mentions} mentions)
+                {t("debug.buffer_summary", {
+                  title: buffer.title,
+                  kind: buffer.kind,
+                  unread: String(buffer.unread),
+                  mentions: String(buffer.mentions),
+                })}
               </Line>
             </h3>
             <ol
@@ -85,7 +95,7 @@ export function DebugView(props: DebugViewProps) {
       </For>
       <form onSubmit={send}>
         <label>
-          Buffer
+          {t("debug.buffer")}
           <select name="buffer">
             <For
               each={props.buffers.filter((buffer) => buffer.kind !== "server")}
@@ -95,10 +105,10 @@ export function DebugView(props: DebugViewProps) {
           </select>
         </label>
         <label>
-          Message
+          {t("debug.message")}
           <input name="message" />
         </label>
-        <button type="submit">Send</button>
+        <button type="submit">{t("common.send")}</button>
       </form>
     </section>
   );

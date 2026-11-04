@@ -1,3 +1,4 @@
+import { t } from "../strings";
 import styles from "./HostedStatus.module.css";
 
 interface HostedStatusProps {
@@ -13,7 +14,7 @@ export function HostedStatus(props: HostedStatusProps) {
       <p role={props.error === true ? "alert" : "status"}>{props.message}</p>
       {props.onRetry !== undefined && (
         <button class={styles.retry} onClick={props.onRetry} type="button">
-          {props.retryLabel ?? "Retry"}
+          {props.retryLabel ?? t("common.retry")}
         </button>
       )}
     </main>

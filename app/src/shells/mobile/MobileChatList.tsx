@@ -21,6 +21,7 @@ import {
   type NotificationPromptControls,
 } from "../../features/notifications/NotificationPrompt";
 import { platformEnvironment } from "../../platform/environment";
+import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import {
   connectionSweepAtRest,
@@ -125,7 +126,11 @@ export function MobileChatList(props: MobileChatListProps) {
     list?.removeEventListener("wheel", markWheelScrollIntent);
   });
   return (
-    <section aria-label="Chats" class={styles.root} data-mobile-chats="true">
+    <section
+      aria-label={t("mobile.chats")}
+      class={styles.root}
+      data-mobile-chats="true"
+    >
       <header
         class={styles.header}
         data-connection-brand="true"
@@ -156,7 +161,7 @@ export function MobileChatList(props: MobileChatListProps) {
         </span>
         <span class={styles.identity}>
           <h1 data-connection-title="true">
-            <Line>weblounge</Line>
+            <Line>{t("common.weblounge")}</Line>
           </h1>
         </span>
       </header>
@@ -178,16 +183,16 @@ export function MobileChatList(props: MobileChatListProps) {
         />
       </Show>
       <label class={styles.search}>
-        <span class="visually-hidden">Search chats</span>
+        <span class="visually-hidden">{t("mobile.search")}</span>
         <input
           onInput={(event) => props.onQuery(event.currentTarget.value)}
-          placeholder="Search channels and people"
+          placeholder={t("mobile.search_placeholder")}
           type="search"
           value={props.query}
         />
       </label>
       <nav
-        aria-label="Chat filters"
+        aria-label={t("mobile.filter.label")}
         class={styles.filters}
         data-horizontal-scroll="true"
       >
@@ -258,7 +263,7 @@ export function MobileChatList(props: MobileChatListProps) {
           }}
         </For>
         <Show when={chats().length === 0}>
-          <p class={styles.empty}>No chats match this view.</p>
+          <p class={styles.empty}>{t("mobile.empty")}</p>
         </Show>
       </div>
     </section>

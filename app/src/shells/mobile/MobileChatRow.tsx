@@ -33,7 +33,10 @@ export function MobileChatRow(props: MobileChatRowProps) {
       aria-label={
         badge() === undefined
           ? props.buffer.title
-          : `${props.buffer.title}, ${badge()?.label}`
+          : t("sidebar.row_label", {
+              title: props.buffer.title,
+              badge: badge()?.label ?? "",
+            })
       }
       class={styles.row}
       data-buffer-id={props.buffer.id}
@@ -99,11 +102,13 @@ function preview(buffer: BufferProjection): string {
     return t("mobile.preview.own", { text });
   }
   if (buffer.kind === "direct" && message.author === buffer.title) {
-    return message.kind === "action" ? `* ${text}` : text;
+    return message.kind === "action"
+      ? t("mobile.preview.direct_action", { text })
+      : text;
   }
   return message.kind === "action"
-    ? `* ${message.author} ${text}`
-    : `${message.author}: ${text}`;
+    ? t("mobile.preview.action", { author: message.author, text })
+    : t("mobile.preview.message", { author: message.author, text });
 }
 
 function excerpt(text: string): string {

@@ -1,4 +1,5 @@
 import type { ActionableConnectionError } from "../engine/connection-state";
+import { t } from "../strings";
 import styles from "./ConnectionErrorStrip.module.css";
 
 interface ConnectionErrorStripProps {
@@ -14,7 +15,11 @@ export function ConnectionErrorStrip(props: ConnectionErrorStripProps) {
         onClick={() => props.onAction(props.error.networkId)}
         type="button"
       >
-        {props.error.action === "sign_in" ? "Sign in again" : "Retry"}
+        {t(
+          props.error.action === "sign_in"
+            ? "common.sign_in_again"
+            : "common.retry",
+        )}
       </button>
     </div>
   );

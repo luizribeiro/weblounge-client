@@ -136,7 +136,7 @@ export function MobileConversation(props: MobileConversationProps) {
     >
       <header class={styles.chatHeader}>
         <button
-          aria-label="Back to chats"
+          aria-label={t("mobile.back_to_chats")}
           class={styles.back}
           onClick={() => props.onBack()}
           type="button"
@@ -147,17 +147,17 @@ export function MobileConversation(props: MobileConversationProps) {
           <ConversationTitle sync={sync} title={props.buffer.title} />
           <Line class={styles.subtitle}>
             {props.buffer.kind === "direct" ? (
-              "Direct message"
+              t("mobile.conversation.direct")
             ) : (
               <Selectable surfaceId="mobile-conversation-topic">
-                {props.buffer.topic || "Channel"}
+                {props.buffer.topic || t("mobile.conversation.channel")}
               </Selectable>
             )}
           </Line>
         </span>
         {props.buffer.kind === "channel" ? (
           <button
-            aria-label="Show members"
+            aria-label={t("mobile.show_members")}
             class={styles.members}
             onClick={props.onOpenMembers}
             type="button"
@@ -198,12 +198,12 @@ export function MobileConversation(props: MobileConversationProps) {
           when={props.buffer.available !== false}
           fallback={
             <div role="status">
-              <p>This conversation is not available.</p>
+              <p>{t("shell.conversation_unavailable")}</p>
               {props.composerNotice !== undefined && (
                 <p class={styles.notice}>{props.composerNotice}</p>
               )}
               <button onClick={props.onBack} type="button">
-                Back to Chats
+                {t("mobile.back_to_chats_action")}
               </button>
             </div>
           }

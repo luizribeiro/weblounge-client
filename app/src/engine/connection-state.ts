@@ -1,3 +1,4 @@
+import { t } from "../strings";
 import type { NetworkProjection } from "./protocol";
 
 export type ConnectionStateKind =
@@ -50,8 +51,8 @@ export function connectionPresentation(
             action: failure.reason === "authentication" ? "sign_in" : "retry",
             message:
               failure.reason === "authentication"
-                ? "Session expired"
-                : "Couldn't connect",
+                ? t("shell.session_expired")
+                : t("shell.connection_failed"),
             networkId: failed.id,
           },
     progressing:

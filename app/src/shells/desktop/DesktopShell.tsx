@@ -385,7 +385,7 @@ export function DesktopShell(props: DesktopShellProps) {
             />
             <div class={styles.conversationBody}>
               {activeBuffer()?.available === false && (
-                <p role="status">This conversation is not available.</p>
+                <p role="status">{t("shell.conversation_unavailable")}</p>
               )}
               {activeBuffer() !== undefined && (
                 <DirectIdentityBanner
@@ -483,7 +483,7 @@ export function DesktopShell(props: DesktopShellProps) {
           </section>
         ) : (
           <section class={styles.empty}>
-            <p>Connect to a network to begin.</p>
+            <p>{t("shell.connect_to_begin")}</p>
           </section>
         )}
       </main>
