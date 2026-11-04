@@ -1,7 +1,65 @@
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import {
+  closeEngineDatabase,
+  ENGINE_DATABASE_NAME,
+  ENGINE_DATABASE_STORES,
+  ENGINE_DATABASE_VERSION,
+  openEngineDatabase,
+} from "./engine-database";
 import { IrcClient } from "./irc-client";
 
 const routeId = "route-push-e2e";
+
+test("leaves a fresh engine database for the engine to create", async ({
+  context,
+  page,
+}) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_DEV === "1",
+    "the service worker is intentionally disabled in development",
+  );
+  await page.route("**/push-fresh", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
+  );
+  await page.goto("/push-fresh");
+  await context.grantPermissions(["notifications"], {
+    origin: new URL(page.url()).origin,
+  });
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/service-worker.js", {
+      scope: "/",
+    });
+    await navigator.serviceWorker.ready;
+  });
+  const envelope = await seedRouteAndEncrypt(
+    page,
+    "@time=2026-11-03T12:34:56.789Z;msgid=fresh-push :mel!m@example.test PRIVMSG #lounge :hello before engine storage",
+  );
+
+  await deliverPush(context, page, envelope);
+  await expect.poll(() => notifications(page)).toHaveLength(1);
+  await trackDedicatedEngine(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
+
+  await expect(loadNotificationPromptDismissal(page)).resolves.toBeUndefined();
+  const database = await openEngineDatabase(page);
+  try {
+    await expect(
+      database.evaluate((value) => ({
+        name: value.name,
+        stores: Array.from(value.objectStoreNames),
+        version: value.version,
+      })),
+    ).resolves.toEqual({
+      name: ENGINE_DATABASE_NAME,
+      stores: [...ENGINE_DATABASE_STORES],
+      version: ENGINE_DATABASE_VERSION,
+    });
+  } finally {
+    await closeEngineDatabase(database);
+  }
+});
 
 async function prepareServiceWorker(
   context: BrowserContext,
@@ -135,6 +193,62 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
     bot.close();
   }
 });
+
+async function trackDedicatedEngine(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+    const NativeWorker = Worker;
+    class TrackedWorker extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        Reflect.set(globalThis, "pushTestEngineWorker", this);
+      }
+    }
+    Object.defineProperty(globalThis, "Worker", {
+      configurable: true,
+      value: TrackedWorker,
+    });
+  });
+}
+
+async function loadNotificationPromptDismissal(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const worker = Reflect.get(globalThis, "pushTestEngineWorker");
+        if (!(worker instanceof Worker)) {
+          reject(new Error("dedicated engine worker is unavailable"));
+          return;
+        }
+        const id = crypto.randomUUID();
+        const onMessage = (event: MessageEvent<unknown>) => {
+          const message = event.data;
+          if (
+            typeof message !== "object" ||
+            message === null ||
+            !("id" in message) ||
+            message.id !== id
+          ) {
+            return;
+          }
+          worker.removeEventListener("message", onMessage);
+          if ("type" in message && message.type === "command_result") resolve();
+          else reject(new Error("notification prompt dismissal read failed"));
+        };
+        worker.addEventListener("message", onMessage);
+        worker.postMessage({
+          type: "request",
+          payload: {
+            id,
+            request: { type: "load_notification_prompt_dismissal" },
+          },
+        });
+      }),
+  );
+}
 
 async function activeWorkerState(page: Page): Promise<string | null> {
   return page.evaluate(async () => {

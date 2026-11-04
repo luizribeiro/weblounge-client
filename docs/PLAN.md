@@ -76,6 +76,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     server time outside papo's client. Normal and fresh hosted reconnects page channel and DM gaps
     through `CHATHISTORY AFTER`; a silently stranded browser socket recovers both opened
     conversations without a reload (#93).
+  - [x] Keep foreground worker liveness probes behind the initial handshake. A slow cold Wasm and
+    IndexedDB start now remains governed by the startup deadline, while a real worker failure
+    repeats `hello` on its replacement without rejecting the page's pending start (#95).
   - [x] Scope local Ergo always-on state to connection-resilience scenarios, preserving both
     reconnect catch-up and isolated multi-nick engine coverage.
   - [x] Start the production E2E socket forwarder from the shared workspace source root.
@@ -448,6 +451,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     fallback, Cache-space message handoff, and warm/cold notification routing. Full Chromium drives
     real encrypted CDP delivery; local Ergo proves an offline cold row appears before IRC and its
     later history copy is removed by engine `msgid` deduplication.
+  - [x] Open the engine database from the push worker only at the generated current schema, abort
+    instead of creating or upgrading it, and close each Cache write promptly and on version change.
+    A push delivered on a fresh origin no longer blocks engine Settings or Durable storage (#95).
   - [x] Make the decrypt-failure browser journey corrupt significant payload bits deterministically,
     so random base64url tail padding cannot leave the encrypted envelope unchanged.
   - [x] Keep hosted startup coverage deterministic: cached-chat readiness is independent of pushed

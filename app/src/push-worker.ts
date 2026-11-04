@@ -1,3 +1,7 @@
+import {
+  ENGINE_DATABASE_NAME,
+  ENGINE_DATABASE_VERSION,
+} from "./engine/generated/EngineDatabaseSchema";
 import { routeNotificationClick } from "./platform/push/notification-routing";
 import {
   decodePushBase64Url,
@@ -92,7 +96,6 @@ const pushDatabaseVersion = 2;
 const pushRoutesStore = "routes";
 const pushStateStore = "state";
 const appBadgeKey = "app-badge";
-const engineDatabase = "weblounge";
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 let parserReady: Promise<PushPayloadParser> | undefined;
@@ -404,15 +407,19 @@ async function storePushedMessage(
     text: message.text,
     kind: message.type,
   };
-  const database = await openDatabase(engineDatabase);
-  if (!database.objectStoreNames.contains(engineCacheStore)) return;
-  const transaction = database.transaction(engineCacheStore, "readwrite");
-  const key = textEncoder.encode(
-    `pushed-message\0${route.networkLabel}\0${message.msgid}`,
-  );
-  const value = textEncoder.encode(JSON.stringify(record));
-  transaction.objectStore(engineCacheStore).put(value, key);
-  await transactionDone(transaction);
+  const database = await openCurrentEngineDatabase();
+  try {
+    if (!database.objectStoreNames.contains(engineCacheStore)) return;
+    const transaction = database.transaction(engineCacheStore, "readwrite");
+    const key = textEncoder.encode(
+      `pushed-message\0${route.networkLabel}\0${message.msgid}`,
+    );
+    const value = textEncoder.encode(JSON.stringify(record));
+    transaction.objectStore(engineCacheStore).put(value, key);
+    await transactionDone(transaction);
+  } finally {
+    database.close();
+  }
 }
 
 function decodeStoredRoute(value: unknown): StoredRoute {
@@ -439,12 +446,29 @@ function decodeStoredRoute(value: unknown): StoredRoute {
   return value as unknown as StoredRoute;
 }
 
-function openDatabase(name: string): Promise<IDBDatabase> {
+function openCurrentEngineDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name);
-    request.onsuccess = () => resolve(request.result);
+    let blocked = false;
+    const request = indexedDB.open(
+      ENGINE_DATABASE_NAME,
+      ENGINE_DATABASE_VERSION,
+    );
+    request.onupgradeneeded = () => request.transaction?.abort();
+    request.onsuccess = () => {
+      const database = request.result;
+      if (blocked) {
+        database.close();
+        return;
+      }
+      database.onversionchange = () => database.close();
+      resolve(database);
+    };
+    request.onblocked = () => {
+      blocked = true;
+      reject(new Error("engine database open was blocked"));
+    };
     request.onerror = () =>
-      reject(request.error ?? new Error("push database failed to open"));
+      reject(request.error ?? new Error("engine database failed to open"));
   });
 }
 
