@@ -177,26 +177,22 @@ async function expectFullBleedHighlight(
   page: Page,
   text: string,
 ): Promise<void> {
-  const geometry = await page
-    .getByText(text, { exact: true })
-    .evaluate((node) => {
-      const row = node.closest<HTMLElement>("[data-message-row]");
-      const list = node.closest<HTMLElement>("[data-message-list]");
-      if (row === null || list === null)
-        throw new Error("highlight geometry is missing");
-      const rowRect = row.getBoundingClientRect();
-      const listRect = list.getBoundingClientRect();
-      return {
-        background: getComputedStyle(row).backgroundColor,
-        listLeft: listRect.left,
-        listRight: listRect.left + list.clientWidth,
-        rowLeft: rowRect.left,
-        rowRight: rowRect.right,
-      };
-    });
-  expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
-  expect(geometry.rowLeft).toBeCloseTo(geometry.listLeft, 0);
-  expect(geometry.rowRight).toBeCloseTo(geometry.listRight, 0);
+  const list = page.getByRole("list", { name: "Messages" });
+  const row = list.locator("[data-message-row]").filter({ hasText: text });
+  const listWidth = await list.evaluate((element) => element.clientWidth);
+  const highlightBackground = await page.locator("html").evaluate((element) => {
+    const sample = document.createElement("div");
+    sample.style.background = getComputedStyle(element).getPropertyValue(
+      "--wl-color-mention-bg",
+    );
+    document.body.append(sample);
+    const background = getComputedStyle(sample).backgroundColor;
+    sample.remove();
+    return background;
+  });
+  await expect(row).toHaveAttribute("data-message-text", text);
+  await expect(row).toHaveCSS("background-color", highlightBackground);
+  await expect(row).toHaveCSS("width", `${listWidth}px`);
 }
 
 async function sampleScrimPixel(
