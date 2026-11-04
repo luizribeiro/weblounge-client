@@ -5,7 +5,7 @@ import {
 } from "./connection-state";
 import type { NetworkProjection } from "./protocol";
 
-it("projects transient state without user-facing connection copy", () => {
+it("projects transient and offline states without user-facing connection copy", () => {
   const connecting = network("connecting");
   expect(connectionStateKind(connecting.state)).toBe("connecting");
   expect(connectionPresentation([connecting])).toEqual({
@@ -17,6 +17,22 @@ it("projects transient state without user-facing connection copy", () => {
     error: undefined,
     progressing: false,
     sendsBlocked: false,
+  });
+  expect(
+    connectionPresentation([
+      network({ offline: { reason: "device_offline" } }),
+    ]),
+  ).toEqual({
+    error: undefined,
+    progressing: true,
+    sendsBlocked: true,
+  });
+  expect(
+    connectionPresentation([network({ offline: { reason: "requested" } })]),
+  ).toEqual({
+    error: undefined,
+    progressing: false,
+    sendsBlocked: true,
   });
 });
 

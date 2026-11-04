@@ -227,7 +227,8 @@ UI. The last projection, navigation, scroll position, and drafts stay mounted. T
 “Connecting…”, “Reconnecting…”, or “Offline” status copy in normal chrome.
 
 The weblounge logo and title are the sole transient progress indicator: the pair in the mobile
-Chats header and desktop sidebar fills while connecting, registering, reconnecting, or hydrating
+Chats header and desktop sidebar fills while connecting, registering, reconnecting, device-offline,
+or hydrating
 the first complete live projection. A transient drop that recovers produces only this treatment.
 The active conversation title uses the sweep portion of that shared effect while its network is
 making progress or its buffer has an initial-history, reconnect-catch-up, or older-history request
@@ -252,7 +253,7 @@ owns the logo tint.
 
 | Situation | Logo | Shared error strip | Composer |
 |---|---|---|---|
-| Connecting, reconnecting, or hydrating | Shimmer; static dim with reduced motion | None | None |
+| Connecting, reconnecting, device-offline, or hydrating | Shimmer; static dim with reduced motion | None | None |
 | Online and hydrated | Still, normal colour | None | No connection hint |
 | User action required | Still, error-token tint | A few words and one action | None |
 

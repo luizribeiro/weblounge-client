@@ -176,6 +176,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     cover brand and conversation-title sweeps, final fill, visibility pausing, and reduced motion.
   - [x] Keep conversation-title progress to the shared moving shimmer band, then crossfade directly
     to the normal title when sync completes. Only the brand uses the sweep-then-fill mode (#99).
+  - [x] Keep brand and conversation-title progress active while the browser is offline, then let
+    the brand finish its fill and the title crossfade after reconnect.
   - [x] Sync read markers through papo on restore, live remote advances, and a 500ms foreground
     live-edge dwell. DMs count every peer message as a mention; unread-only rows keep the subtle
     dot while mentions use the accent count badge on both shells. Cross-context coverage targets
