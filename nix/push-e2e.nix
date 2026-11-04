@@ -14,7 +14,8 @@ let
     receiver = "203.0.113.3";
     app = "203.0.113.4";
   };
-  ergoE2e = pkgs.ergochat.overrideAttrs (previous: {
+  ergoProduction = pkgs.callPackage "${papo-test-infra}/nix/ergochat.nix" { };
+  ergoE2e = ergoProduction.overrideAttrs (previous: {
     patches = previous.patches ++ [
       (pkgs.fetchpatch {
         url = "https://github.com/ergochat/ergo/commit/9975d8dc0bff2f51e79b7307b9955da375a945fe.patch";
@@ -145,19 +146,23 @@ let
     };
     importScripts("/service-worker.js");
     nativeAddEventListener("message", (event) => {
-      if (event.data?.type !== "deliver-push") return;
       let completion;
-      try {
-        if (typeof pushHandler !== "function") {
-          throw new Error("production push handler is missing");
+      if (event.data?.type === "clear-notifications") {
+        visibleNotifications.splice(0);
+        completion = persistNotifications();
+      } else if (event.data?.type === "deliver-push") {
+        try {
+          if (typeof pushHandler !== "function") {
+            throw new Error("production push handler is missing");
+          }
+          pushHandler({
+            data: { json: () => JSON.parse(event.data.payload) },
+            waitUntil: (promise) => { completion = promise; },
+          });
+        } catch (error) {
+          completion = Promise.reject(error);
         }
-        pushHandler({
-          data: { json: () => JSON.parse(event.data.payload) },
-          waitUntil: (promise) => { completion = promise; },
-        });
-      } catch (error) {
-        completion = Promise.reject(error);
-      }
+      } else return;
       const result = Promise.resolve(completion).then(
         () => ({ ok: true }),
         (error) => ({
@@ -487,6 +492,42 @@ pkgs.testers.runNixOSTest {
         --project=chromium-push-full \
         --project=firefox-push-controls-full \
         --project=webkit-push-badge-full \
+        --workers=1
+    """)
+
+    ergo.succeed("${pkgs.lib.getExe ergoProduction} --version | grep '2.19.1'")
+    ergo.succeed("systemctl stop ergochat.service")
+    ergo.succeed("mkdir -p /run/systemd/system/ergochat.service.d")
+    ergo.succeed("cp ${pkgs.writeText "stock-ergo.conf" ''
+      [Service]
+      ExecStart=
+      ExecStart=${pkgs.lib.getExe ergoProduction} run --conf /etc/ergo.yaml
+    ''} /run/systemd/system/ergochat.service.d/stock.conf")
+    ergo.succeed("systemctl daemon-reload && systemctl start ergochat.service")
+    ergo.wait_until_succeeds("systemctl is-active ergochat.service && nc -z 127.0.0.1 6667")
+
+    app.succeed("""
+      cd /tmp/weblounge-push-e2e &&
+      export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers} \
+        PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu-24.04 \
+        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
+        __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json \
+        FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }} \
+        WEBLOUNGE_PUSH_FULL_E2E=1 \
+        WEBLOUNGE_PUSH_UNPATCHED_ERGO=1 \
+        WEBLOUNGE_E2E_EXTERNAL_SERVER=1 \
+        WEBLOUNGE_E2E_BASE_URL=https://app.test \
+        WEBLOUNGE_E2E_SECURE_ERGO=1 \
+        WEBLOUNGE_APP_DIR=${checkApp} \
+        WEBLOUNGE_PUSH_APP_LINK=/var/lib/weblounge-push-app/current \
+        WEBLOUNGE_PUSH_RELAY_CONTROL=http://${addresses.relay}:8098 \
+        WEBLOUNGE_PUSH_RECEIVER_RECORDS=http://${addresses.receiver}:8080/requests.jsonl \
+        WEBLOUNGE_E2E_IRC_HOST=${addresses.ergo} \
+        WEBLOUNGE_E2E_IRC_PORT=6667 \
+        WEBLOUNGE_E2E_IRC_API=http://${addresses.ergo}:8089/v1/saregister \
+        WEBLOUNGE_E2E_IRC_API_TOKEN=weblounge-push-e2e-api &&
+      cd app && node node_modules/@playwright/test/cli.js test \
+        --project=chromium-push-unpatched-full \
         --workers=1
     """)
   '';
