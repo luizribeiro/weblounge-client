@@ -53,7 +53,8 @@ test("shows one generic notification when decryption fails", async ({
   const parsed = JSON.parse(envelope) as {
     notification: { data: { c: string } };
   };
-  parsed.notification.data.c = `${parsed.notification.data.c.slice(0, -1)}A`;
+  const ciphertext = parsed.notification.data.c;
+  parsed.notification.data.c = `${ciphertext.startsWith("A") ? "B" : "A"}${ciphertext.slice(1)}`;
 
   await deliverPush(context, page, JSON.stringify(parsed));
 

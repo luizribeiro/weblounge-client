@@ -444,6 +444,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     fallback, Cache-space message handoff, and warm/cold notification routing. Full Chromium drives
     real encrypted CDP delivery; local Ergo proves an offline cold row appears before IRC and its
     later history copy is removed by engine `msgid` deduplication.
+  - [x] Make the decrypt-failure browser journey corrupt significant payload bits deterministically,
+    so random base64url tail padding cannot leave the encrypted envelope unchanged.
   - [x] Keep hosted startup coverage deterministic: cached-chat readiness is independent of pushed
     rows, while a seeded pushed row is restored and signals readiness in the same `PrepareHosted`
     output before credentials or a connection exist.
