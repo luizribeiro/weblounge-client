@@ -200,7 +200,7 @@ test("migrates and decrypts an active route from the previous schema", async ({
     });
 });
 
-test("silently applies MARKREAD and maintenance PING cleanup", async ({
+test("silently applies every delivered MARKREAD and maintenance PING", async ({
   context,
   page,
 }) => {
@@ -920,18 +920,16 @@ async function deliverPushes(
   data: readonly string[],
 ): Promise<void> {
   const session = await context.newCDPSession(page);
+  const { targetInfo } = await session.send("Target.getTargetInfo");
   const registration = new Promise<string>((resolve) => {
-    session.on(
-      "ServiceWorker.workerRegistrationUpdated",
-      ({ registrations }) => {
-        const current = registrations.find(
-          (candidate) =>
-            !candidate.isDeleted &&
-            candidate.scopeURL === new URL("/", page.url()).href,
-        );
-        if (current !== undefined) resolve(current.registrationId);
-      },
-    );
+    session.on("ServiceWorker.workerVersionUpdated", ({ versions }) => {
+      const current = versions.find(
+        (candidate) =>
+          candidate.status === "activated" &&
+          candidate.controlledClients.includes(targetInfo.targetId),
+      );
+      if (current !== undefined) resolve(current.registrationId);
+    });
   });
   await session.send("ServiceWorker.enable");
   const registrationId = await registration;
