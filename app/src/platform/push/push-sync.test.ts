@@ -34,7 +34,11 @@ class FakeEngine implements EngineClient {
   send(request: EngineRequestEnvelope) {
     this.requests.push(request);
     this.operations.push(request.request.type);
-    if (request.request.type === "unregister_push" && this.failUnregister) {
+    if (
+      (request.request.type === "unregister_push" ||
+        request.request.type === "unregister_push_route") &&
+      this.failUnregister
+    ) {
       this.emit({
         type: "push_state_changed",
         network_id: request.request.network_id,
@@ -327,7 +331,7 @@ describe("push state synchronization", () => {
     );
     expect(current.routes.values.get("route-1")?.vapid).toBe("new-vapid");
     expect(current.engine.operations).toEqual([
-      "unregister_push",
+      "unregister_push_route",
       "delete_route",
       "register_push",
     ]);
@@ -373,6 +377,62 @@ describe("push state synchronization", () => {
     });
   });
 
+  it("unregisters every stale home endpoint and converges six routes to one", async () => {
+    const routeIds = Array.from(
+      { length: 6 },
+      (_, index) => `route-${index + 1}`,
+    );
+    const relayApi = statefulRelay(routeIds, []);
+    const current = fixture(relayApi);
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    for (const routeId of routeIds) {
+      current.routes.values.set(routeId, {
+        networkId: 1,
+        networkLabel: "Lounge",
+        nickname: "weblounge",
+        vapid: "home-vapid",
+        routeId,
+        deviceId: "device-1",
+        endpoint: `${relayOrigin}/v1/r/${routeId}`,
+        p256dh: `${routeId}-key`,
+        auth: `${routeId}-auth`,
+        privateKey: {} as CryptoKey,
+      });
+    }
+
+    current.engine.emit({
+      type: "push_route_required",
+      network_id: 1,
+      vapid: "home-vapid",
+      previous_route_id: "route-6",
+    });
+    await current.synchronizer.settled();
+
+    expect(current.engine.requests.map(({ request }) => request)).toEqual([
+      ...routeIds.slice(0, 5).map((routeId) => ({
+        type: "unregister_push_route",
+        network_id: 1,
+        route_id: routeId,
+        endpoint: `${relayOrigin}/v1/r/${routeId}`,
+      })),
+      expect.objectContaining({
+        type: "register_push",
+        network_id: 1,
+        route: expect.objectContaining({ route_id: "route-6" }),
+      }),
+    ]);
+    expect(
+      relayApi.deleteRoute.mock.calls.map(([, routeId]) => routeId),
+    ).toEqual(routeIds.slice(0, 5));
+    expect(relayApi.routes).toEqual(new Map([["route-6", "active"]]));
+    expect([...current.routes.values.keys()]).toEqual(["route-6"]);
+    expect(current.relay.createRoute).not.toHaveBeenCalled();
+  });
+
   it("replaces a refused dead route once and retries again on reconnect", async () => {
     const current = fixture();
     current.engine.emit({
@@ -396,7 +456,7 @@ describe("push state synchronization", () => {
     );
     expect(
       current.engine.requests.slice(-2).map(({ request }) => request.type),
-    ).toEqual(["unregister_push", "register_push"]);
+    ).toEqual(["unregister_push_route", "register_push"]);
     expect(current.engine.requests.at(-1)?.request).toMatchObject({
       type: "register_push",
       route: { route_id: "route-2" },
@@ -456,7 +516,7 @@ describe("push state synchronization", () => {
     expect(current.routes.values.has("route-1")).toBe(true);
     expect(
       current.engine.requests.filter(
-        ({ request }) => request.type === "unregister_push",
+        ({ request }) => request.type === "unregister_push_route",
       ),
     ).toHaveLength(1);
   });

@@ -69,6 +69,7 @@ export class PushSynchronizer {
   readonly #unsubscribe: () => void;
   readonly #registrationRecoveries = new Map<number, number>();
   readonly #unregistering = new Set<number>();
+  readonly #currentRoutes = new Map<number, string>();
   #pending: Promise<void> = Promise.resolve();
 
   constructor(options: PushSynchronizerOptions) {
@@ -109,11 +110,7 @@ export class PushSynchronizer {
   }
 
   async unregisterNetwork(networkId: number): Promise<void> {
-    await this.#engine.send({
-      id: crypto.randomUUID(),
-      request: { type: "unregister_push", network_id: networkId },
-    });
-    await this.#dropRoute(networkId);
+    await this.#dropRoute(networkId, true);
   }
 
   async signOut(): Promise<void> {
@@ -121,7 +118,9 @@ export class PushSynchronizer {
     const routes = await this.#routes.all();
     if (device !== undefined) {
       for (const route of routes) {
-        await this.#unregisterEngine(route.networkId);
+        if (!(await this.#unregisterRouteEngine(route.networkId, route))) {
+          continue;
+        }
         await this.#retire(route, asRelayDevice(device));
       }
     } else {
@@ -136,6 +135,9 @@ export class PushSynchronizer {
   #onEngineMessage(message: EngineClientMessage): void {
     if (message.type === "push_route_required") {
       this.#registrationRecoveries.delete(message.network_id);
+      if (message.previous_route_id !== null) {
+        this.#currentRoutes.set(message.network_id, message.previous_route_id);
+      }
       this.#enqueue(() =>
         this.#withNetworkLock(message.network_id, () =>
           this.#routeRequired(
@@ -151,6 +153,7 @@ export class PushSynchronizer {
     if (message.state.status === "registered") {
       this.#registrationRecoveries.delete(message.network_id);
       const routeId = message.state.route_id;
+      this.#currentRoutes.set(message.network_id, routeId);
       this.#enqueue(() =>
         this.#withNetworkLock(message.network_id, () =>
           this.#activate(message.network_id, routeId),
@@ -167,7 +170,7 @@ export class PushSynchronizer {
     } else if (message.state.status === "unsupported") {
       this.#enqueue(() =>
         this.#withNetworkLock(message.network_id, () =>
-          this.#dropRoute(message.network_id),
+          this.#dropRoute(message.network_id, false),
         ),
       );
     }
@@ -208,12 +211,23 @@ export class PushSynchronizer {
       (route) =>
         route.retiring !== true && route.networkLabel === context.networkLabel,
     );
+    const ordered = [...matching].sort((left, right) =>
+      left.routeId.localeCompare(right.routeId),
+    );
+    const selectedRouteId = this.#currentRoutes.get(networkId);
     const existing =
-      matching.find((route) => route.routeId === previousRouteId) ??
-      matching[0];
+      ordered.find((route) => route.routeId === selectedRouteId) ??
+      ordered.find((route) => route.routeId === previousRouteId) ??
+      ordered.find(
+        (route) => route.vapid === vapid && route.needsReregistration !== true,
+      ) ??
+      ordered[0];
+    if (existing !== undefined) {
+      this.#currentRoutes.set(networkId, existing.routeId);
+    }
     for (const duplicate of matching) {
       if (duplicate.routeId !== existing?.routeId) {
-        if (!(await this.#retire(duplicate, device))) return;
+        if (!(await this.#retireStale(networkId, duplicate, device))) return;
       }
     }
     if (
@@ -231,21 +245,14 @@ export class PushSynchronizer {
       await this.#register(networkId, current);
       return;
     }
-    if (
+    if (existing !== undefined) {
+      if (!(await this.#unregisterRouteEngine(networkId, existing))) return;
+      if (!(await this.#retire(existing, device))) return;
+    } else if (
       previousRouteId !== undefined &&
-      !(await this.#unregisterEngine(networkId))
+      !(await this.#unregisterCurrentEngine(networkId))
     ) {
       return;
-    }
-    if (existing !== undefined || previousRouteId !== undefined) {
-      const previous =
-        existing ??
-        (previousRouteId === undefined
-          ? undefined
-          : await this.#routes.get(previousRouteId));
-      if (previous !== undefined && !(await this.#retire(previous, device))) {
-        return;
-      }
     }
     await this.#createAndRegister(networkId, context, vapid, device);
   }
@@ -303,6 +310,7 @@ export class PushSynchronizer {
   }
 
   async #register(networkId: number, route: StoredPushRoute): Promise<void> {
+    this.#currentRoutes.set(networkId, route.routeId);
     try {
       await this.#engine.send({
         id: crypto.randomUUID(),
@@ -352,7 +360,7 @@ export class PushSynchronizer {
     if (activated.error.kind === "unauthorized") {
       await this.#authorizationFailed();
     } else if (activated.error.kind === "dead_route") {
-      if (!(await this.#unregisterEngine(networkId))) return;
+      if (!(await this.#unregisterRouteEngine(networkId, route))) return;
       if (!(await this.#retire(route, asRelayDevice(device)))) return;
       const context = this.#routeContext(networkId);
       if (context !== undefined) {
@@ -370,20 +378,20 @@ export class PushSynchronizer {
   async #recoverRegistration(networkId: number, reason: string): Promise<void> {
     const lastError = `engine: ${reason}`;
     const context = this.#routeContext(networkId);
-    const routes = await this.#routes.all();
-    const route = routes.find(
-      (candidate) =>
-        candidate.retiring !== true &&
-        context !== undefined &&
-        candidate.networkLabel === context.networkLabel,
-    );
+    const routeId = this.#currentRoutes.get(networkId);
+    const route =
+      routeId === undefined ? undefined : await this.#routes.get(routeId);
     this.#publish(
       networkId,
       route === undefined ? "none" : "probing",
       route?.routeId,
       lastError,
     );
-    if (!(await this.#unregisterEngine(networkId))) return;
+    if (route === undefined) {
+      if (!(await this.#unregisterCurrentEngine(networkId))) return;
+    } else if (!(await this.#unregisterRouteEngine(networkId, route))) {
+      return;
+    }
     if (route === undefined || context === undefined) return;
 
     const device = await this.#devices.load(this.#relayOrigin);
@@ -408,13 +416,14 @@ export class PushSynchronizer {
     );
   }
 
-  async #unregisterEngine(networkId: number): Promise<boolean> {
+  async #unregisterCurrentEngine(networkId: number): Promise<boolean> {
     this.#unregistering.add(networkId);
     try {
       await this.#engine.send({
         id: crypto.randomUUID(),
         request: { type: "unregister_push", network_id: networkId },
       });
+      this.#currentRoutes.delete(networkId);
       return true;
     } catch {
       return false;
@@ -423,23 +432,63 @@ export class PushSynchronizer {
     }
   }
 
-  async #dropRoute(networkId: number): Promise<void> {
+  async #unregisterRouteEngine(
+    networkId: number,
+    route: StoredPushRoute,
+  ): Promise<boolean> {
+    this.#unregistering.add(networkId);
+    try {
+      await this.#engine.send({
+        id: crypto.randomUUID(),
+        request: {
+          type: "unregister_push_route",
+          network_id: networkId,
+          route_id: route.routeId,
+          endpoint: route.endpoint,
+        },
+      });
+      if (this.#currentRoutes.get(networkId) === route.routeId) {
+        this.#currentRoutes.delete(networkId);
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      this.#unregistering.delete(networkId);
+    }
+  }
+
+  async #retireStale(
+    networkId: number,
+    route: StoredPushRoute,
+    device: RelayDevice,
+  ): Promise<boolean> {
+    if (this.#currentRoutes.get(networkId) === route.routeId) return false;
+    if (!(await this.#unregisterRouteEngine(networkId, route))) return false;
+    return this.#retire(route, device);
+  }
+
+  async #dropRoute(networkId: number, unregister: boolean): Promise<void> {
     const [device, routes] = await Promise.all([
       this.#devices.load(this.#relayOrigin),
       this.#routes.all(),
     ]);
     const context = this.#routeContext(networkId);
-    if (context === undefined) {
-      this.#publish(networkId, "none");
-      return;
-    }
     let matched = false;
     for (const route of routes) {
       if (
         route.retiring !== true &&
-        route.networkLabel === context.networkLabel
+        (context === undefined
+          ? route.networkId === networkId
+          : route.networkLabel === context.networkLabel)
       ) {
         matched = true;
+        if (
+          unregister &&
+          !(await this.#unregisterRouteEngine(networkId, route))
+        ) {
+          return;
+        }
         if (device === undefined) {
           await this.#routes.put({ ...route, retiring: true });
           this.#publish(networkId, "probing", route.routeId);
@@ -449,6 +498,13 @@ export class PushSynchronizer {
           return;
         }
       }
+    }
+    if (
+      unregister &&
+      !matched &&
+      !(await this.#unregisterCurrentEngine(networkId))
+    ) {
+      return;
     }
     if (!matched || device !== undefined) this.#publish(networkId, "none");
   }
