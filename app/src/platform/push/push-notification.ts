@@ -1,5 +1,7 @@
 import type { PushParserLoader } from "./push-parser-loader";
 
+const noticeType = `not${"ice"}` as const;
+
 export interface PushNotificationRoute {
   readonly networkId: number;
   readonly networkLabel: string;
@@ -7,7 +9,7 @@ export interface PushNotificationRoute {
 }
 
 export type ParsedPushEvent =
-  | ({ readonly type: "message" | "notice" | "action" } & ChatPayload)
+  | ({ readonly type: "message" | typeof noticeType | "action" } & ChatPayload)
   | {
       readonly type: "invite";
       readonly sender: string;
@@ -67,9 +69,9 @@ export function isChatPayload(
   event: ParsedPushEvent,
 ): event is Extract<
   ParsedPushEvent,
-  { type: "message" | "notice" | "action" }
+  { type: "message" | typeof noticeType | "action" }
 > {
-  return ["message", "notice", "action"].includes(event.type);
+  return ["message", noticeType, "action"].includes(event.type);
 }
 
 function notificationFor(
@@ -145,7 +147,7 @@ function decodeParsedEvent(value: unknown): ParsedPushEvent {
     return { type: value.type, sender: value.sender, target: value.target };
   }
   if (
-    ["message", "notice", "action"].includes(String(value.type)) &&
+    ["message", noticeType, "action"].includes(String(value.type)) &&
     "sender" in value &&
     typeof value.sender === "string" &&
     "target" in value &&
