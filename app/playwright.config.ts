@@ -36,6 +36,12 @@ export default defineConfig({
       use: { browserName: "chromium", channel: "chromium" },
     },
     {
+      name: "firefox-push-controls-full",
+      grep: /keeps portable control messages silent/,
+      testMatch: "**/push-full-chain.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "firefox-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "firefox" },

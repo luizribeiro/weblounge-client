@@ -258,6 +258,69 @@ test.describe("full unmocked push lifecycle", () => {
       .toEqual({ count: 2, retained: 1 });
     await expectOneRoutePerDevice(2);
   });
+
+  test("keeps portable control messages silent", async ({
+    browser,
+    browserName,
+  }) => {
+    const deviceId = `controls-${browserName}`;
+    const controlContext = await pushContext(
+      browser,
+      deviceId,
+      "updates.push.services.mozilla.com",
+    );
+    const control = await controlContext.newPage();
+    const controlBot = await IrcClient.connectIsolated(
+      `control-bot-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    try {
+      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+      await control.goto("/");
+      await expect(connectionHeading(control)).toBeVisible();
+      await control.getByRole("button", { name: "Turn on" }).click();
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          return created === undefined
+            ? undefined
+            : { active: created.active, probing: created.probing };
+        })
+        .toEqual({ active: 1, probing: 0 });
+      await preparePortablePushDriver(control);
+      await releaseForegroundLeases([control]);
+      const badgeBefore = (await storedAppBadge(control)) ?? 0;
+
+      const direct = `portable control ${browserName} ${randomUUID()}`;
+      const echoed = await controlBot.privmsgConfirmed("weblounge", direct);
+      const message = await nextRecord(`/device/${deviceId}`);
+      await deliverPortableEnvelope(control, message);
+      await expectNotification(control, direct);
+      await expect.poll(() => storedAppBadge(control)).toBe(badgeBefore + 1);
+
+      await audit.markRead(controlBot.nickname, serverTime(echoed));
+      const markread = await nextRecord(`/device/${deviceId}`);
+      await deliverPortableEnvelope(control, markread);
+      await expect.poll(() => storedAppBadge(control)).toBe(badgeBefore);
+
+      let controlStayedSilent = true;
+      try {
+        await expect.poll(() => notifications(control)).toEqual([]);
+      } catch {
+        controlStayedSilent = false;
+      }
+      test.fail(
+        true,
+        "the worker replaces the DM with a generic notification for MARKREAD",
+      );
+      expect(controlStayedSilent).toBe(true);
+    } finally {
+      controlBot.close();
+      await controlContext.close();
+    }
+  });
 });
 
 function connectionHeading(page: Page) {
@@ -266,19 +329,36 @@ function connectionHeading(page: Page) {
     .getByRole("heading", { name: "weblounge" });
 }
 
+function serverTime(line: string): string {
+  const timestamp = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
+  if (timestamp === undefined)
+    throw new Error(`IRC line has no server time: ${line}`);
+  return timestamp;
+}
+
 async function pushContext(
   browser: Browser,
   deviceId: string,
+  endpointHost = "web.push.apple.com",
 ): Promise<BrowserContext> {
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const origin = process.env.WEBLOUNGE_E2E_BASE_URL;
   if (origin === undefined) throw new Error("push E2E base URL is missing");
   await context.grantPermissions(["notifications"], { origin });
-  await context.addInitScript(installPushSubscription, deviceId);
+  await context.addInitScript(installPushSubscription, {
+    deviceId,
+    endpointHost,
+  });
   return context;
 }
 
-async function installPushSubscription(deviceId: string): Promise<void> {
+async function installPushSubscription({
+  deviceId,
+  endpointHost,
+}: {
+  deviceId: string;
+  endpointHost: string;
+}): Promise<void> {
   Object.defineProperty(navigator, "sendBeacon", {
     configurable: true,
     value: () => false,
@@ -336,7 +416,7 @@ async function installPushSubscription(deviceId: string): Promise<void> {
     const value = await load();
     if (value === undefined) return null;
     return {
-      endpoint: `https://web.push.apple.com/device/${deviceId}`,
+      endpoint: `https://${endpointHost}/device/${deviceId}`,
       expirationTime: null,
       options: {
         applicationServerKey: value.applicationServerKey,
@@ -620,6 +700,61 @@ async function deliverRecordedEnvelope(
   await deliverPush(context, page, await decryptRecordedEnvelope(page, record));
 }
 
+async function preparePortablePushDriver(page: Page): Promise<void> {
+  await page.goto("/push-driver.html");
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.register(
+      "/push-driver-sw.js",
+      { scope: "/push-driver/" },
+    );
+    const worker =
+      registration.active ?? registration.waiting ?? registration.installing;
+    if (worker === null) throw new Error("push driver worker is missing");
+    if (worker.state === "activated") return;
+    await new Promise<void>((resolve, reject) => {
+      worker.addEventListener("statechange", () => {
+        if (worker.state === "activated") resolve();
+        if (worker.state === "redundant")
+          reject(new Error("push driver worker became redundant"));
+      });
+    });
+  });
+}
+
+async function deliverPortableEnvelope(
+  page: Page,
+  record: ReceiverRecord,
+): Promise<void> {
+  const envelope = await decryptRecordedEnvelope(page, record);
+  const deliveryId = randomUUID();
+  await page.evaluate(
+    async ({ deliveryId, payload }) => {
+      const registration =
+        await navigator.serviceWorker.getRegistration("/push-driver/");
+      if (registration?.active === undefined)
+        throw new Error("push driver worker is not active");
+      registration.active.postMessage({
+        type: "deliver-push",
+        deliveryId,
+        payload,
+      });
+    },
+    { deliveryId, payload: envelope },
+  );
+  let result: { ok: boolean; error?: string } | undefined;
+  await expect
+    .poll(async () => {
+      result = await page.evaluate(async (id) => {
+        const response = await caches.match(`/push-driver-result/${id}`);
+        return response === undefined ? undefined : response.json();
+      }, deliveryId);
+      return result === undefined ? "pending" : "complete";
+    })
+    .toBe("complete");
+  if (result?.ok !== true)
+    throw new Error(result?.error ?? "push delivery failed");
+}
+
 async function deliverPush(
   context: BrowserContext,
   page: Page,
@@ -650,12 +785,19 @@ async function deliverPush(
 
 async function notifications(page: Page) {
   return page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration("/");
-    return (await registration?.getNotifications())?.map((notification) => ({
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    const visible = await Promise.all(
+      registrations.map((registration) => registration.getNotifications()),
+    );
+    const actual = visible.flat().map((notification) => ({
       title: notification.title,
       body: notification.body,
       tag: notification.tag,
     }));
+    const recorded = await caches.match("/push-driver-notifications");
+    const portable =
+      recorded === undefined ? [] : ((await recorded.json()) as typeof actual);
+    return [...actual, ...portable];
   });
 }
 
@@ -667,9 +809,11 @@ async function expectNotification(page: Page, body: string): Promise<void> {
 
 async function closeNotifications(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration("/");
-    for (const notification of (await registration?.getNotifications()) ?? []) {
-      notification.close();
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for (const registration of registrations) {
+      for (const notification of await registration.getNotifications()) {
+        notification.close();
+      }
     }
   });
   await expect.poll(() => notifications(page)).toEqual([]);

@@ -87,11 +87,15 @@ export class IrcClient {
     await client.waitFor("capability list", (line) =>
       line.includes(" CAP * LS "),
     );
-    client.send("CAP REQ :sasl");
+    client.send("CAP REQ :draft/read-marker message-tags sasl server-time");
     await client.waitFor(
-      "SASL capability acknowledgement",
+      "OAuth client capability acknowledgement",
       (line) =>
-        line.includes(" CAP * ACK ") && line.split(" ").includes("sasl"),
+        line.includes(" CAP * ACK ") &&
+        line.includes("draft/read-marker") &&
+        line.includes("message-tags") &&
+        line.includes("sasl") &&
+        line.includes("server-time"),
     );
     client.send("AUTHENTICATE OAUTHBEARER");
     await client.waitFor("SASL OAUTHBEARER authentication prompt", (line) =>
@@ -154,6 +158,13 @@ export class IrcClient {
     this.privmsg(channel, text);
     return this.waitFor(`echoed PRIVMSG to ${channel}`, (line) =>
       line.includes(` PRIVMSG ${channel} :${text}`),
+    );
+  }
+
+  async markRead(target: string, timestamp: string): Promise<void> {
+    this.send(`MARKREAD ${target} timestamp=${timestamp}`);
+    await this.waitFor(`MARKREAD confirmation for ${target}`, (line) =>
+      line.includes(` MARKREAD ${target} timestamp=${timestamp}`),
     );
   }
 

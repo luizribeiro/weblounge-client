@@ -93,10 +93,85 @@ let
     ssl_protocols TLSv1.2 TLSv1.3;
   '';
   pushDriverWorker = pkgs.writeText "weblounge-push-driver-worker.js" ''
+    const nativeAddEventListener = globalThis.addEventListener.bind(globalThis);
+    const visibleNotifications = [];
+    const persistNotifications = async () => {
+      const cache = await caches.open("push-e2e-driver");
+      await cache.put(
+        "/push-driver-notifications",
+        new Response(JSON.stringify(visibleNotifications.map((notification) => ({
+          title: notification.title,
+          body: notification.body,
+          tag: notification.tag,
+        })))),
+      );
+    };
+    Object.defineProperties(globalThis.registration, {
+      getNotifications: {
+        value: async ({ tag } = {}) => visibleNotifications.filter(
+          (notification) => tag === undefined || notification.tag === tag,
+        ),
+      },
+      showNotification: {
+        value: async (title, options = {}) => {
+          if (options.tag) {
+            const previous = visibleNotifications.findIndex(
+              (notification) => notification.tag === options.tag,
+            );
+            if (previous !== -1) visibleNotifications.splice(previous, 1);
+          }
+          const notification = {
+            title,
+            body: options.body ?? "",
+            tag: options.tag ?? "",
+            close: () => {
+              const index = visibleNotifications.indexOf(notification);
+              if (index !== -1) visibleNotifications.splice(index, 1);
+              void persistNotifications();
+            },
+          };
+          visibleNotifications.push(notification);
+          await persistNotifications();
+        },
+      },
+    });
+    let pushHandler;
+    globalThis.addEventListener = (type, listener, options) => {
+      if (type === "push") {
+        pushHandler = listener;
+        return;
+      }
+      nativeAddEventListener(type, listener, options);
+    };
     importScripts("/service-worker.js");
-    globalThis.addEventListener("message", (event) => {
+    nativeAddEventListener("message", (event) => {
       if (event.data?.type !== "deliver-push") return;
-      globalThis.dispatchEvent(new PushEvent("push", { data: event.data.payload }));
+      let completion;
+      try {
+        if (typeof pushHandler !== "function") {
+          throw new Error("production push handler is missing");
+        }
+        pushHandler({
+          data: { json: () => JSON.parse(event.data.payload) },
+          waitUntil: (promise) => { completion = promise; },
+        });
+      } catch (error) {
+        completion = Promise.reject(error);
+      }
+      const result = Promise.resolve(completion).then(
+        () => ({ ok: true }),
+        (error) => ({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ).then(async (status) => {
+        const cache = await caches.open("push-e2e-driver");
+        await cache.put(
+          `/push-driver-result/''${event.data.deliveryId}`,
+          new Response(JSON.stringify(status)),
+        );
+      });
+      event.waitUntil(result);
     });
   '';
 in
@@ -407,7 +482,9 @@ pkgs.testers.runNixOSTest {
         WEBLOUNGE_E2E_IRC_API=http://${addresses.ergo}:8089/v1/saregister \
         WEBLOUNGE_E2E_IRC_API_TOKEN=weblounge-push-e2e-api &&
       cd app && node node_modules/@playwright/test/cli.js test \
-        --project=chromium-push-full --workers=1
+        --project=chromium-push-full \
+        --project=firefox-push-controls-full \
+        --workers=1
     """)
   '';
 }
