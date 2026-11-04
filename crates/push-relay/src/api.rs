@@ -321,18 +321,46 @@ async fn receive_push(
     };
     match deliver_push(&state, route_id, &headers, &body).await {
         Ok(PushDisposition::ProbingDiscard) => {
-            tracing::info!(route = %route_prefix, action = "probing-discard", "inbound push");
+            tracing::info!(
+                route = %route_prefix,
+                action = "probing-discard",
+                outcome = "discarded",
+                "inbound push"
+            );
             StatusCode::CREATED.into_response()
         }
-        Ok(PushDisposition::Held) => {
-            tracing::info!(route = %route_prefix, action = "held", "inbound push");
+        Ok(PushDisposition::UrgencyDropped { urgency }) => {
+            tracing::info!(
+                route = %route_prefix,
+                urgency = %urgency,
+                action = "dropped",
+                outcome = "dropped",
+                reason = "urgency",
+                "inbound push"
+            );
             StatusCode::CREATED.into_response()
         }
-        Ok(PushDisposition::Forwarded) => {
-            tracing::info!(route = %route_prefix, action = "forwarded", "inbound push");
+        Ok(PushDisposition::Held { urgency }) => {
+            tracing::info!(
+                route = %route_prefix,
+                urgency = %urgency,
+                action = "held",
+                outcome = "held",
+                "inbound push"
+            );
             StatusCode::CREATED.into_response()
         }
-        Ok(PushDisposition::TargetDead { device_id }) => {
+        Ok(PushDisposition::Forwarded { urgency }) => {
+            tracing::info!(
+                route = %route_prefix,
+                urgency = %urgency,
+                action = "forwarded",
+                outcome = "forwarded",
+                "inbound push"
+            );
+            StatusCode::CREATED.into_response()
+        }
+        Ok(PushDisposition::TargetDead { device_id, urgency }) => {
             tracing::info!(
                 route = %route_prefix,
                 device = %id_prefix(&device_id),
@@ -340,7 +368,9 @@ async fn receive_push(
             );
             tracing::info!(
                 route = %route_prefix,
+                urgency = %urgency,
                 action = "rejected",
+                outcome = "target-dead",
                 reason = "target-dead",
                 "inbound push"
             );
@@ -360,9 +390,55 @@ async fn receive_push(
 
 enum PushDisposition {
     ProbingDiscard,
-    Held,
-    Forwarded,
-    TargetDead { device_id: String },
+    UrgencyDropped { urgency: Urgency },
+    Held { urgency: Urgency },
+    Forwarded { urgency: Urgency },
+    TargetDead { device_id: String, urgency: Urgency },
+}
+
+#[derive(Clone, Copy)]
+enum TargetKind {
+    WebPush,
+}
+
+#[derive(Clone, Copy)]
+enum Urgency {
+    VeryLow,
+    Low,
+    Normal,
+    High,
+}
+
+impl Urgency {
+    fn from_headers(headers: &HeaderMap) -> Result<Self> {
+        let Some(value) = headers.get("Urgency") else {
+            return Ok(Self::Normal);
+        };
+        match value.to_str().ok() {
+            Some("very-low") => Ok(Self::VeryLow),
+            Some("low") => Ok(Self::Low),
+            Some("normal") => Ok(Self::Normal),
+            Some("high") => Ok(Self::High),
+            _ => Err(Error::BadRequest("invalid Urgency header".to_owned())),
+        }
+    }
+
+    fn is_deliverable_to(self, target: TargetKind) -> bool {
+        match target {
+            TargetKind::WebPush => matches!(self, Self::High),
+        }
+    }
+}
+
+impl std::fmt::Display for Urgency {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::VeryLow => "very-low",
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+        })
+    }
 }
 
 async fn deliver_push(
@@ -380,6 +456,10 @@ async fn deliver_push(
             target,
         } => {
             verify_vapid(headers, &home_vapid, &state.origin)?;
+            let urgency = Urgency::from_headers(headers)?;
+            if !urgency.is_deliverable_to(TargetKind::WebPush) {
+                return Ok(PushDisposition::UrgencyDropped { urgency });
+            }
             let ttl = headers
                 .get("TTL")
                 .and_then(|value| value.to_str().ok())
@@ -400,7 +480,7 @@ async fn deliver_push(
                 .await?
             {
                 state.delivery_wakeup.notify_one();
-                return Ok(PushDisposition::Held);
+                return Ok(PushDisposition::Held { urgency });
             }
             let outcome = state
                 .sender
@@ -412,10 +492,10 @@ async fn deliver_push(
                 })
                 .await?;
             match outcome {
-                PushOutcome::Accepted => Ok(PushDisposition::Forwarded),
+                PushOutcome::Accepted => Ok(PushDisposition::Forwarded { urgency }),
                 PushOutcome::Dead => {
                     state.database.mark_device_dead(device_id.clone()).await?;
-                    Ok(PushDisposition::TargetDead { device_id })
+                    Ok(PushDisposition::TargetDead { device_id, urgency })
                 }
             }
         }

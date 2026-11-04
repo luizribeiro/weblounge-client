@@ -267,7 +267,19 @@ impl Harness {
     }
 
     async fn push(&self, route: &Value, home: &SecretKey, body: &[u8]) -> StatusCode {
-        self.push_with_ttl(route, home, body, 60).await
+        self.push_with_urgency(route, home, body, Some("high"))
+            .await
+    }
+
+    async fn push_with_urgency(
+        &self,
+        route: &Value,
+        home: &SecretKey,
+        body: &[u8],
+        urgency: Option<&str>,
+    ) -> StatusCode {
+        self.push_with_ttl_and_urgency(route, home, body, 60, urgency)
+            .await
     }
 
     async fn push_with_ttl(
@@ -277,15 +289,31 @@ impl Harness {
         body: &[u8],
         ttl: u32,
     ) -> StatusCode {
+        self.push_with_ttl_and_urgency(route, home, body, ttl, Some("high"))
+            .await
+    }
+
+    async fn push_with_ttl_and_urgency(
+        &self,
+        route: &Value,
+        home: &SecretKey,
+        body: &[u8],
+        ttl: u32,
+        urgency: Option<&str>,
+    ) -> StatusCode {
         let authorization = vapid(home, ORIGIN, expiry_after(3_600));
         let ttl = ttl.to_string();
+        let mut headers = vec![("Authorization", authorization.as_str()), ("TTL", &ttl)];
+        if let Some(urgency) = urgency {
+            headers.push(("Urgency", urgency));
+        }
         call_bytes(
             &self.app,
             Method::POST,
             &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
             None,
             body.to_vec(),
-            &[("Authorization", &authorization), ("TTL", &ttl)],
+            &headers,
         )
         .await
     }
@@ -359,6 +387,12 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
         StatusCode::CREATED
     );
     harness.activate(&device, &route).await;
+    assert_eq!(
+        harness
+            .push_with_urgency(&route, &home, b"secret-normal-payload", Some("normal"),)
+            .await,
+        StatusCode::CREATED
+    );
     harness.renew_lease(&device, "secret-tab-id").await;
     assert_eq!(
         harness.push(&route, &home, b"secret-held-payload").await,
@@ -440,6 +474,9 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "action=\"probing-discard\"",
         "action=\"held\"",
         "action=\"forwarded\"",
+        "action=\"dropped\"",
+        "urgency=normal",
+        "outcome=\"dropped\"",
         "reason=\"pin\"",
         "reason=\"jwt\"",
         "reason=\"size\"",
@@ -458,6 +495,7 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "secret-probe-payload",
         "secret-held-payload",
         "secret-forwarded-payload",
+        "secret-normal-payload",
         "secret-pin-payload",
         "secret-jwt-payload",
         "secret-dead-payload",
@@ -789,7 +827,11 @@ async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
         &format!("/v1/r/{route_id}"),
         None,
         b"opaque encrypted body".to_vec(),
-        &[("Authorization", &authorization), ("TTL", "604800")],
+        &[
+            ("Authorization", &authorization),
+            ("TTL", "604800"),
+            ("Urgency", "high"),
+        ],
     )
     .await;
     assert_eq!(delivered, StatusCode::CREATED);
@@ -800,6 +842,34 @@ async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
             b"opaque encrypted body".to_vec(),
             604_800,
         )]
+    );
+}
+
+#[tokio::test]
+async fn web_target_only_forwards_high_urgency() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &route).await;
+
+    for urgency in [Some("normal"), Some("low"), Some("very-low"), None] {
+        assert_eq!(
+            harness
+                .push_with_urgency(&route, &home, b"not a visible message", urgency)
+                .await,
+            StatusCode::CREATED
+        );
+    }
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+
+    assert_eq!(
+        harness.push(&route, &home, b"visible message").await,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        harness.deliveries.lock().expect("deliveries")[0].1,
+        b"visible message"
     );
 }
 
@@ -1059,7 +1129,11 @@ async fn active_route_rejects_ttl_over_28_days() {
         &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
         None,
         b"ciphertext".to_vec(),
-        &[("Authorization", &authorization), ("TTL", "2419201")],
+        &[
+            ("Authorization", &authorization),
+            ("TTL", "2419201"),
+            ("Urgency", "high"),
+        ],
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1077,7 +1151,10 @@ async fn active_route_requires_a_non_negative_numeric_ttl() {
     let authorization = vapid(&home, ORIGIN, expiry_after(3_600));
 
     for ttl in [None, Some("not-a-number"), Some("-1")] {
-        let mut headers = vec![("Authorization", authorization.as_str())];
+        let mut headers = vec![
+            ("Authorization", authorization.as_str()),
+            ("Urgency", "high"),
+        ];
         if let Some(ttl) = ttl {
             headers.push(("TTL", ttl));
         }
@@ -1114,7 +1191,11 @@ async fn dead_upstream_kills_every_device_route_and_always_maps_to_404() {
             &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
             None,
             b"ciphertext".to_vec(),
-            &[("Authorization", &authorization), ("TTL", "60")],
+            &[
+                ("Authorization", &authorization),
+                ("TTL", "60"),
+                ("Urgency", "high"),
+            ],
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1138,7 +1219,11 @@ async fn delivery_target_failures_map_to_503() {
         &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
         None,
         b"ciphertext".to_vec(),
-        &[("Authorization", &authorization), ("TTL", "60")],
+        &[
+            ("Authorization", &authorization),
+            ("TTL", "60"),
+            ("Urgency", "high"),
+        ],
     )
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);

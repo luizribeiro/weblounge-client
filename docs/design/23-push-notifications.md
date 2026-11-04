@@ -424,7 +424,8 @@ the existing 15-second delivery deadline. Concierge calls and DNS resolution eac
 five-second deadline. An account may
 hold at most 20 devices and each device at most 25 live routes; dead routes do not consume the
 route limit. Slice 1 stores only Web Push targets; APNs and FCM target variants return 501. Leases,
-held pushes, the urgency policy and application rate limits remain later slices.
+held pushes, and the Web Push urgency policy are implemented; application rate limits remain a
+later slice.
 Delivery logs contain only an eight-character route-id prefix and the resulting HTTP status; they
 never include authorization, device secrets, endpoints or bodies.
 
@@ -571,6 +572,15 @@ section includes the same secret-free per-network summary. A real papo wire test
 `FAIL WEBPUSH INVALID_PARAMS ... :Test push message failed to send` as
 `Failed(InvalidParameters)`, and the hosted browser journey renders that failure after observing
 the route move through probing and active.
+
+### Web Push urgency policy implementation (2026-11-04)
+
+Active Web Push routes accept RFC 8030's `very-low`, `low`, `normal`, and `high` urgency values,
+defaulting a missing header to `normal`. Only `high` reaches the lease and upstream delivery path;
+lower urgencies return 201 without forwarding so maintenance `PING` and `MARKREAD` events cannot
+become generic iOS notifications. Probing routes still return 201 before inspecting headers because
+registration probes must succeed independently of a home's urgency choice. Structured inbound logs
+record the parsed urgency and dropped, held, or forwarded outcome without inspecting ciphertext.
 
 ## Rollout
 

@@ -497,8 +497,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     relay route state, route prefix, and last relay error; the common debug header carries the same
     per-network summary. Ergo's registration-probe failure is covered as typed
     `Failed(invalid_parameters)` through the wire and browser view.
-  - [ ] Add urgency policy, rate limits, engine/platform stable network identity, and the unmocked
-    local-Ergo → relay → push-service delivery journey.
+  - [x] Drop Web Push deliveries below high urgency with 201 while preserving registration probing;
+    record the parsed urgency and outcome in the relay's privacy-safe tracing (#100).
+  - [ ] Add rate limits, engine/platform stable network identity, and the unmocked local-Ergo →
+    relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
