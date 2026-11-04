@@ -14,6 +14,8 @@ pub struct PushedMessage {
     pub(crate) network_label: String,
     pub(crate) nickname: String,
     pub(crate) sender: String,
+    #[serde(default)]
+    pub(crate) account: Option<String>,
     pub(crate) target: String,
     pub(crate) msgid: String,
     pub(crate) time: String,
@@ -64,7 +66,7 @@ mod tests {
                 vec![
                     Operation::Put {
                         key: b"pushed-message\0Lounge\0one".to_vec(),
-                        value: br##"{"schema":1,"network_label":"Lounge","nickname":"weblounge","sender":"mel","target":"#lounge","msgid":"one","time":"2026-11-03T12:34:56.789Z","text":"hello","kind":"message"}"##.to_vec(),
+                        value: br##"{"schema":1,"network_label":"Lounge","nickname":"weblounge","sender":"mel","account":"mel-account","target":"#lounge","msgid":"one","time":"2026-11-03T12:34:56.789Z","text":"hello","kind":"message"}"##.to_vec(),
                     },
                     Operation::Put {
                         key: b"pushed-message\0Lounge\0old".to_vec(),
@@ -83,6 +85,7 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].msgid, "one");
+        assert_eq!(messages[0].account.as_deref(), Some("mel-account"));
         assert_eq!(messages[0].kind, PushedMessageKind::Message);
     }
 }

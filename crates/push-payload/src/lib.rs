@@ -37,6 +37,8 @@ pub enum PushEvent {
 pub struct ChatPayload {
     /// Sender nickname.
     pub sender: String,
+    /// Sender account supplied by the IRC home, when present.
+    pub account: Option<String>,
     /// Wire target, which is the current nick for a direct message.
     pub target: String,
     /// Server message identifier.
@@ -101,6 +103,7 @@ fn parse_privmsg(line: &LineRef<'_>) -> Result<PushEvent, ParsePushError> {
 fn chat(line: &LineRef<'_>) -> Result<ChatPayload, ParsePushError> {
     Ok(ChatPayload {
         sender: sender(line)?,
+        account: line.tag("account").map(std::borrow::Cow::into_owned),
         target: required_param(line, 0)?.to_owned(),
         msgid: line
             .tag("msgid")
@@ -151,6 +154,7 @@ mod tests {
                 format!("@time={TIME};msgid=priv :mel!m@example.test PRIVMSG #lounge :hello there"),
                 PushEvent::Message(ChatPayload {
                     sender: "mel".into(),
+                    account: None,
                     target: "#lounge".into(),
                     msgid: "priv".into(),
                     time: TIME.into(),
@@ -163,6 +167,7 @@ mod tests {
                 ),
                 PushEvent::Notice(ChatPayload {
                     sender: "NickServ".into(),
+                    account: None,
                     target: "weblounge".into(),
                     msgid: "notice".into(),
                     time: TIME.into(),
@@ -175,6 +180,7 @@ mod tests {
                 ),
                 PushEvent::Action(ChatPayload {
                     sender: "mel".into(),
+                    account: None,
                     target: "#lounge".into(),
                     msgid: "action".into(),
                     time: TIME.into(),
@@ -186,6 +192,19 @@ mod tests {
         for (line, expected) in cases {
             assert_eq!(parse_push_payload(&line), Ok(expected));
         }
+    }
+
+    #[test]
+    fn parses_sender_account() {
+        let line = format!(
+            "@time={TIME};msgid=account;account=louro :louro-pi!l@example.test PRIVMSG weblounge :hello"
+        );
+
+        assert!(matches!(
+            parse_push_payload(&line),
+            Ok(PushEvent::Message(ChatPayload { account: Some(account), .. }))
+                if account == "louro"
+        ));
     }
 
     #[test]

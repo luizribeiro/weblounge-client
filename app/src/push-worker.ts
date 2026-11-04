@@ -309,6 +309,7 @@ async function storePushedMessage(
       direct,
     ),
     sender: message.sender,
+    account: message.account,
     target: message.target,
     msgid: message.msgid,
     time: message.time,

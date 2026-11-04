@@ -37,13 +37,16 @@ export class IrcClient {
     await client.waitFor("capability list", (line) =>
       line.includes(" CAP * LS "),
     );
-    client.send("CAP REQ :batch draft/multiline echo-message sasl server-time");
+    client.send(
+      "CAP REQ :batch draft/multiline echo-message message-tags sasl server-time",
+    );
     await client.waitFor(
       "requested capability acknowledgement",
       (line) =>
         line.includes(" CAP * ACK ") &&
         line.includes("batch") &&
         line.includes("draft/multiline") &&
+        line.includes("message-tags") &&
         line.includes("sasl") &&
         line.includes("echo-message") &&
         line.includes("server-time"),

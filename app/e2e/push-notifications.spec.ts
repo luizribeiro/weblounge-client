@@ -204,6 +204,78 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
   }
 });
 
+test("keeps a restored pushed direct message verified through history", async ({
+  context,
+  page,
+}) => {
+  test.skip(
+    process.env.WEBLOUNGE_E2E_ERGO !== "1",
+    "requires the flake's local Ergo fixture",
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await prepareServiceWorker(context, page);
+  await page.goto("/?irc-password=weblounge-test");
+  const bot = await IrcClient.connect(
+    "weblounge-bot",
+    "weblounge-bot",
+    "weblounge-bot-test",
+    "#weblounge-test",
+  );
+  const text = `pushed direct before history ${Date.now()}`;
+  try {
+    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    const echoed = await bot.privmsgConfirmed("weblounge", text);
+    const line = echoed.replace(/^@/u, "@account=weblounge-bot;");
+    const envelope = await seedRouteAndEncrypt(page, line, {
+      networkLabel: "Local Ergo",
+      nickname: "weblounge",
+    });
+    await deliverPush(context, page, envelope);
+    await expect
+      .poll(() => notifications(page))
+      .toEqual([
+        {
+          title: "weblounge-bot",
+          body: text,
+          tag: "1/weblounge-bot",
+          route: "/Local%20Ergo/@weblounge-bot",
+        },
+      ]);
+
+    await page.close();
+    await context.setOffline(true);
+    const coldPage = await context.newPage();
+    await coldPage.goto(
+      "/Local%20Ergo/@weblounge-bot?irc-password=weblounge-test",
+    );
+
+    const row = coldPage.locator("[data-message-row]", { hasText: text });
+    await expect(row).toBeVisible();
+    await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
+    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+      0,
+    );
+
+    await context.setOffline(false);
+    await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
+      1,
+    );
+    const marker = `direct history settled ${Date.now()}`;
+    bot.privmsg("weblounge", marker);
+    await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
+    await expect(coldPage.getByText(text, { exact: true })).toHaveCount(1);
+    await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
+  } finally {
+    await context.setOffline(false);
+    bot.close();
+  }
+});
+
 async function trackDedicatedEngine(page: Page): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(globalThis, "SharedWorker", {

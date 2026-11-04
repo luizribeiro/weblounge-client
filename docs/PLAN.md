@@ -454,7 +454,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     `papo-proto` parsing through a 46 KiB precached Wasm helper, one routed notification or generic
     fallback, Cache-space message handoff, and warm/cold notification routing. Full Chromium drives
     real encrypted CDP delivery; local Ergo proves an offline cold row appears before IRC and its
-    later history copy is removed by engine `msgid` deduplication.
+    later history copy reconciles the provisional row in place.
+  - [x] Preserve sender accounts from decrypted push lines through Cache storage and engine restore.
+    Restored DMs stay visibly normal but provisional until live or history delivers the same
+    `msgid`; that authoritative copy replaces sender identity and verification metadata without a
+    duplicate row, while real identity disagreements remain visible (#101).
   - [x] Open the engine database from the push worker only at the generated current schema, abort
     instead of creating or upgrading it, and close each Cache write promptly and on version change.
     A push delivered on a fresh origin no longer blocks engine Settings or Durable storage (#95).

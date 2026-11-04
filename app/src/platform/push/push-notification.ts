@@ -24,6 +24,7 @@ export type ParsedPushEvent =
 
 export interface ChatPayload {
   readonly sender: string;
+  readonly account: string | null;
   readonly target: string;
   readonly msgid: string;
   readonly time: string;
@@ -150,6 +151,8 @@ function decodeParsedEvent(value: unknown): ParsedPushEvent {
     ["message", noticeType, "action"].includes(String(value.type)) &&
     "sender" in value &&
     typeof value.sender === "string" &&
+    "account" in value &&
+    (value.account === null || typeof value.account === "string") &&
     "target" in value &&
     typeof value.target === "string" &&
     "msgid" in value &&

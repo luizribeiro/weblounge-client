@@ -60,6 +60,13 @@ struct TimelineRecord {
     send_text: Option<String>,
     sequence: u64,
     dedup: DedupReferences,
+    provisional_identity: Option<ProvisionalIdentity>,
+}
+
+#[derive(Clone, Debug)]
+struct ProvisionalIdentity {
+    author_key: String,
+    account_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -720,6 +727,7 @@ impl NetworkModel {
                 .account()
                 .name()
                 .map(|account| account.key().to_owned()),
+            provisional_identity: None,
             conversation,
             author: message.actor.nick().to_string(),
             text: message.text.clone(),
@@ -768,28 +776,39 @@ impl NetworkModel {
                     None,
                 )
             };
-            events.extend(self.receive_incoming(
-                Incoming {
-                    conversation,
-                    direct: availability,
-                    direct_key,
-                    peer_key: None,
-                    legacy_account_key: None,
-                    author: message.sender,
-                    text: message.text,
-                    kind: match message.kind {
-                        PushedMessageKind::Message | PushedMessageKind::Notice => MessageKind::Text,
-                        PushedMessageKind::Action => MessageKind::Action,
+            events.extend(
+                self.receive_incoming(
+                    Incoming {
+                        conversation,
+                        direct: availability,
+                        direct_key,
+                        peer_key: None,
+                        legacy_account_key: None,
+                        provisional_identity: Some(ProvisionalIdentity {
+                            author_key: self.casemapping.fold(&message.sender).into_owned(),
+                            account_key: message
+                                .account
+                                .as_deref()
+                                .map(|account| self.casemapping.fold(account).into_owned()),
+                        }),
+                        author: message.sender,
+                        text: message.text,
+                        kind: match message.kind {
+                            PushedMessageKind::Message | PushedMessageKind::Notice => {
+                                MessageKind::Text
+                            }
+                            PushedMessageKind::Action => MessageKind::Action,
+                        },
+                        bot: None,
+                        authorship: MessageAuthorship::Other,
+                        msgid: Some(message.msgid),
+                        server_time_ms: Some(server_time_ms),
+                        received_at_ms: server_time_ms,
+                        origin: TimelineOrigin::Push,
                     },
-                    bot: None,
-                    authorship: MessageAuthorship::Other,
-                    msgid: Some(message.msgid),
-                    server_time_ms: Some(server_time_ms),
-                    received_at_ms: server_time_ms,
-                    origin: TimelineOrigin::Push,
-                },
-                state,
-            ));
+                    state,
+                ),
+            );
         }
         events
     }
@@ -1971,6 +1990,9 @@ impl NetworkModel {
     }
 
     fn receive_incoming(&mut self, incoming: Incoming, state: &papo::State) -> Vec<EngineToUi> {
+        if let Some(events) = self.reconcile_pushed_message(&incoming, state) {
+            return events;
+        }
         let Some(dedup) = self.deduplicate_incoming(&incoming) else {
             return Vec::new();
         };
@@ -1982,7 +2004,8 @@ impl NetworkModel {
         );
         let verified_sender = incoming
             .peer_key
-            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current));
+            .as_ref()
+            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
         let added = initially_added
             .map(|_| self.buffers[&buffer_id].projection.clone())
             .or_else(|| {
@@ -1994,31 +2017,26 @@ impl NetworkModel {
             .server_time_ms
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
         let origin = incoming.origin;
-        let highlighted = incoming.authorship != MessageAuthorship::Own
-            && matches_highlight_rules(&incoming.text, state);
-        let nick_color_index = nick_color_index(state.casemapping(), &incoming.author);
-        let message = MessageProjection {
-            id: self.allocate_message_id(),
-            author: incoming.author,
-            text: collapse_blank_lines(incoming.text),
-            kind: incoming.kind,
-            bot: incoming.bot,
-            authorship: incoming.authorship,
-            nick_color_index,
-            highlighted,
-            unverified_sender: (incoming.direct_key.is_some()
-                && incoming.authorship != MessageAuthorship::Own
-                && !verified_sender)
-                .then_some(true),
-            delivery: MessageDelivery::Received,
-            local_send_id: None,
-            server_ids: incoming.msgid.into_iter().collect(),
-            server_time_ms: incoming.server_time_ms,
-            received_at_ms: incoming.received_at_ms,
-        };
+        let message = Self::project_incoming(
+            self.allocate_message_id(),
+            &incoming,
+            state,
+            verified_sender,
+            false,
+        );
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
             return inconsistent_state_notice();
         };
+        if let Some(provisional_identity) = incoming.provisional_identity.clone()
+            && let Some(record) = self.buffers.get_mut(&buffer_id).and_then(|buffer| {
+                buffer
+                    .timeline
+                    .iter_mut()
+                    .find(|record| record.projection.id == message.id)
+            })
+        {
+            record.provisional_identity = Some(provisional_identity);
+        }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id)
             && !(origin == TimelineOrigin::History
                 && matches!(buffer.history, HistoryState::LoadingOlder { .. }))
@@ -2067,6 +2085,115 @@ impl NetworkModel {
             events.push(self.legacy_draft_migration(buffer_id, &account));
         }
         events
+    }
+
+    fn reconcile_pushed_message(
+        &mut self,
+        incoming: &Incoming,
+        state: &papo::State,
+    ) -> Option<Vec<EngineToUi>> {
+        if incoming.origin == TimelineOrigin::Push {
+            return None;
+        }
+        let msgid = incoming.msgid.as_deref()?;
+        let (buffer_id, message_id, provisional) =
+            self.buffers.iter().find_map(|(id, buffer)| {
+                buffer.timeline.iter().find_map(|record| {
+                    (record
+                        .projection
+                        .server_ids
+                        .iter()
+                        .any(|current| current == msgid))
+                    .then(|| {
+                        Some((
+                            *id,
+                            record.projection.id,
+                            record.provisional_identity.clone()?,
+                        ))
+                    })
+                    .flatten()
+                })
+            })?;
+        let verified_sender = incoming
+            .peer_key
+            .as_ref()
+            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
+        let identity_disagrees = provisional.author_key != self.casemapping.fold(&incoming.author)
+            || provisional
+                .account_key
+                .as_ref()
+                .zip(incoming.legacy_account_key.as_ref())
+                .is_some_and(|(pushed, authoritative)| pushed != authoritative);
+        let mut message = Self::project_incoming(
+            message_id,
+            incoming,
+            state,
+            verified_sender,
+            identity_disagrees,
+        );
+        message.server_ids = vec![msgid.to_owned()];
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let record = buffer
+            .timeline
+            .iter_mut()
+            .find(|record| record.projection.id == message_id)?;
+        record.projection = message.clone();
+        record.counts_as_mention = message.authorship != MessageAuthorship::Own
+            && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
+        record.provisional_identity = None;
+        buffer.timeline.sort_by_key(order_key);
+        buffer.projection.last_activity_ms = buffer
+            .timeline
+            .iter()
+            .map(|record| message_time(&record.projection))
+            .max();
+        derive_read_projection(buffer);
+        let buffer = buffer.projection.clone();
+        let mut events = vec![
+            EngineToUi::MessageUpdated { buffer_id, message },
+            EngineToUi::BufferUpdated {
+                buffer: buffer.clone(),
+            },
+            EngineToUi::UnreadChanged {
+                buffer_id,
+                unread: buffer.unread,
+                mentions: buffer.mentions,
+            },
+        ];
+        if let Some(account) = &incoming.legacy_account_key {
+            events.push(self.legacy_draft_migration(buffer_id, account));
+        }
+        Some(events)
+    }
+
+    fn project_incoming(
+        id: MessageId,
+        incoming: &Incoming,
+        state: &papo::State,
+        verified_sender: bool,
+        identity_disagrees: bool,
+    ) -> MessageProjection {
+        MessageProjection {
+            id,
+            author: incoming.author.clone(),
+            text: collapse_blank_lines(incoming.text.clone()),
+            kind: incoming.kind.clone(),
+            bot: incoming.bot,
+            authorship: incoming.authorship,
+            nick_color_index: nick_color_index(state.casemapping(), &incoming.author),
+            highlighted: incoming.authorship != MessageAuthorship::Own
+                && matches_highlight_rules(&incoming.text, state),
+            unverified_sender: (incoming.direct_key.is_some()
+                && incoming.authorship != MessageAuthorship::Own
+                && incoming.provisional_identity.is_none()
+                && (!verified_sender || identity_disagrees))
+                .then_some(true),
+            delivery: MessageDelivery::Received,
+            local_send_id: None,
+            server_ids: incoming.msgid.clone().into_iter().collect(),
+            server_time_ms: incoming.server_time_ms,
+            received_at_ms: incoming.received_at_ms,
+        }
     }
 
     fn deduplicate_incoming(&mut self, incoming: &Incoming) -> Option<DedupReferences> {
@@ -2292,6 +2419,7 @@ impl NetworkModel {
             send_text,
             sequence: self.next_sequence,
             dedup,
+            provisional_identity: None,
         };
         self.next_sequence += 1;
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
@@ -2569,6 +2697,7 @@ struct Incoming {
     direct_key: Option<DirectKey>,
     peer_key: Option<papo::PeerKey>,
     legacy_account_key: Option<String>,
+    provisional_identity: Option<ProvisionalIdentity>,
     author: String,
     text: String,
     kind: MessageKind,
@@ -2841,6 +2970,7 @@ mod tests {
             direct_key: None,
             peer_key: None,
             legacy_account_key: None,
+            provisional_identity: None,
             author: "alice".into(),
             text: text.into(),
             kind: crate::MessageKind::Text,
@@ -2885,7 +3015,7 @@ mod tests {
     }
 
     #[test]
-    fn pushed_message_is_visible_then_deduplicates_history_and_live() {
+    fn pushed_message_is_visible_then_reconciles_history_and_deduplicates_live() {
         let (mut model, state) = model(10);
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
@@ -2907,21 +3037,22 @@ mod tests {
             EngineToUi::MessagesAppended { messages, .. }
                 if messages[0].text == "arrived while closed"
         )));
-        assert!(
-            model
-                .receive_incoming(
-                    incoming(
-                        &state,
-                        "arrived while closed",
-                        Some("pushed-one"),
-                        Some(1_793_708_096_789),
-                        1_793_708_096_789,
-                        TimelineOrigin::History,
-                    ),
-                    &state,
-                )
-                .is_empty()
+        let history = model.receive_incoming(
+            incoming(
+                &state,
+                "arrived while closed",
+                Some("pushed-one"),
+                Some(1_793_708_096_789),
+                1_793_708_096_789,
+                TimelineOrigin::History,
+            ),
+            &state,
         );
+        assert!(history.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageUpdated { message, .. }
+                if message.text == "arrived while closed"
+        )));
         assert!(
             model
                 .receive_incoming(
@@ -2938,6 +3069,64 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(timeline(&model), ["arrived while closed"]);
+    }
+
+    #[tokio::test]
+    async fn pushed_direct_message_becomes_verified_when_history_arrives() {
+        let (client, mut events, mut wire) = wire(papo::Client::builder(
+            "ircs://verified.example",
+            "weblounge",
+        ));
+        wire.register(&["account-tag", "message-tags", "server-time"])
+            .await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "louro-pi",
+            "account": "louro",
+            "target": "weblounge",
+            "msgid": "pushed-direct",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "push test from louro-pi",
+            "kind": "message",
+        }))
+        .expect("pushed direct message");
+
+        let restored = model.restore_pushed_messages(vec![pushed], &client.state());
+        let restored_message = restored.iter().find_map(|event| match event {
+            EngineToUi::MessagesAppended { messages, .. } => messages.first(),
+            _ => None,
+        });
+        assert!(restored_message.is_some_and(|message| message.unverified_sender.is_none()));
+
+        wire.server("@account=louro;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :louro-pi!l@example.test PRIVMSG weblounge :push test from louro-pi")
+            .await;
+        let history = loop {
+            if let Some(papo::Event::Message(message)) = events.next().await {
+                break message;
+            }
+        };
+        let reconciled = model.receive(&history, true, &client.state(), None);
+        let updated = reconciled.iter().find_map(|event| match event {
+            EngineToUi::MessageUpdated { message, .. } => Some(message),
+            _ => None,
+        });
+        assert!(updated.is_some_and(|message| {
+            message.author == "louro-pi" && message.unverified_sender.is_none()
+        }));
+        let direct = model
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.title == "louro-pi")
+            .expect("direct buffer exists");
+        assert_eq!(
+            direct.projection.direct_identity,
+            Some(crate::DirectIdentityState::Verified)
+        );
+        assert_eq!(direct.timeline.len(), 1);
     }
 
     fn timeline(model: &NetworkModel) -> Vec<&str> {
@@ -3024,6 +3213,7 @@ mod tests {
             direct_key: Some(DirectKey(state.casemapping().fold(nick).into_owned())),
             peer_key: None,
             legacy_account_key: None,
+            provisional_identity: None,
             author: nick.into(),
             text: text.into(),
             kind: crate::MessageKind::Text,
