@@ -79,8 +79,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     reconnect catch-up and isolated multi-nick engine coverage.
   - [x] Start the production E2E socket forwarder from the shared workspace source root.
   - [x] Run both browser derivations in a nested test network with loopback services and a
-    non-routable online interface, preserving real browser online/offline events inside Nix's
-    isolated build network.
+    non-routable online interface when the sandbox permits it, preserving real browser
+    online/offline events locally while falling back cleanly on restricted CI runners.
   - [x] Omit channel mode prefixes from every transcript row. IRC history cannot preserve the
     sender's status at message time, so the message protocol carries no mode symbol and live and
     optimistic rows do not guess one. The Mode symbols setting remains scoped to the member list;

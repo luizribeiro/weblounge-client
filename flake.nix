@@ -232,6 +232,14 @@
             exit "$playwright_status"
           fi
         '';
+        e2eNetworkRunner = pkgs.writeShellScript "weblounge-e2e-network-run" ''
+          ip link set lo up
+          ip link add e2e-online type dummy
+          ip address add 192.0.2.1/24 dev e2e-online
+          ip link set e2e-online up
+          ip route add default via 192.0.2.2 dev e2e-online
+          exec "$@"
+        '';
         e2eNetwork = pkgs.writeShellApplication {
           name = "weblounge-e2e-network";
           runtimeInputs = [
@@ -239,19 +247,17 @@
             pkgs.util-linux
           ];
           text = ''
-            exec unshare --user --map-root-user --net \
-              ${pkgs.writeShellScript "weblounge-e2e-network-run" ''
-                ip link set lo up
-                ip link add e2e-online type dummy
-                ip address add 192.0.2.1/24 dev e2e-online
-                ip link set e2e-online up
-                ip route add default via 192.0.2.2 dev e2e-online
-                exec "$@"
-              ''} "$@"
+            ${builtins.readFile ./app/e2e/e2e-network.sh}
           '';
         };
+        e2eNetworkFallbackTest = pkgs.runCommand "weblounge-e2e-network-fallback-test" { } ''
+          ${pkgs.bash}/bin/bash ${./app/e2e/e2e-network.test.sh} \
+            ${./app/e2e/e2e-network.sh}
+          touch $out
+        '';
         runE2e = command: ''
-          ${pkgs.lib.getExe e2eNetwork} ${pkgs.runtimeShell} -c ${pkgs.lib.escapeShellArg command}
+          ${pkgs.lib.getExe e2eNetwork} ${e2eNetworkRunner} \
+            ${pkgs.runtimeShell} -c ${pkgs.lib.escapeShellArg command}
         '';
         appCheck =
           name: command:
@@ -574,6 +580,7 @@
           wasm = engineWasm;
           push-payload-wasm = pushPayloadWasm;
           app-build = app;
+          e2e-network-fallback = e2eNetworkFallbackTest;
           inherit e2e;
           e2e-dev = e2eDev;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
