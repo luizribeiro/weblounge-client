@@ -675,6 +675,7 @@
           );
           ergo-integration = ergoIntegration;
           protocol-types = protocolTypes;
+          push-e2e = pushE2e;
           push-relay-build = pushRelay;
           push-relay-test = pushRelayCheck;
           wasm = engineWasm;
