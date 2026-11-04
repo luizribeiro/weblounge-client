@@ -81,6 +81,26 @@ describe("service worker controller activation", () => {
     expect(settled).toBe(true);
   });
 
+  it("settles when activation finishes while the listener is attached", async () => {
+    const removeEventListener = vi.fn();
+    const worker = {
+      state: "installing" as ServiceWorkerState,
+      addEventListener: vi.fn(() => {
+        worker.state = "activated";
+      }),
+      removeEventListener,
+    };
+    const registration = {
+      active: null,
+      installing: worker as unknown as ServiceWorker,
+      waiting: null,
+    } as unknown as ServiceWorkerRegistration;
+
+    await waitForServiceWorkerActivation(registration);
+
+    expect(removeEventListener).toHaveBeenCalledOnce();
+  });
+
   it("runs one update job and waits for its replacement worker", async () => {
     const previous = { state: "activated" } as ServiceWorker;
     const replacement = new EventTarget() as EventTarget & {

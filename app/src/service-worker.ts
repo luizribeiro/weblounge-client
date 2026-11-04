@@ -165,6 +165,7 @@ export function waitForServiceWorkerActivation(
       resolve();
     };
     worker.addEventListener("statechange", stateChanged);
+    stateChanged();
   });
 }
 
