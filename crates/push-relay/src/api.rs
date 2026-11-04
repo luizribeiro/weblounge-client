@@ -543,18 +543,20 @@ enum PushDisposition {
 
 #[derive(Clone, Copy)]
 enum TargetKind {
-    AppleWebPush,
-    OtherWebPush,
+    MozillaWebPush,
+    VisiblePushRequired,
 }
 
 impl TargetKind {
     fn for_web_push(target: &WebPushTarget) -> Result<Self> {
         let endpoint = Url::parse(&target.endpoint).map_err(|_| Error::DeliveryUnavailable)?;
-        Ok(if endpoint.host_str() == Some("web.push.apple.com") {
-            Self::AppleWebPush
-        } else {
-            Self::OtherWebPush
-        })
+        Ok(
+            if endpoint.host_str() == Some("updates.push.services.mozilla.com") {
+                Self::MozillaWebPush
+            } else {
+                Self::VisiblePushRequired
+            },
+        )
     }
 }
 
@@ -582,8 +584,8 @@ impl Urgency {
 
     fn is_deliverable_to(self, target: TargetKind) -> bool {
         match target {
-            TargetKind::AppleWebPush => matches!(self, Self::High),
-            TargetKind::OtherWebPush => matches!(self, Self::Normal | Self::High),
+            TargetKind::MozillaWebPush => matches!(self, Self::Normal | Self::High),
+            TargetKind::VisiblePushRequired => matches!(self, Self::High),
         }
     }
 }

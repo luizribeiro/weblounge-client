@@ -536,15 +536,17 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     per-network summary. Ergo's registration-probe failure is covered as typed
     `Failed(invalid_parameters)` through the wire and browser view.
   - [x] Apply push-service-specific urgency policy while preserving registration probing: Apple
-    passes only high, while Mozilla, FCM, and Edge also pass normal for silent `MARKREAD`; all lower
-    priorities return 201 without forwarding. Record urgency outcomes in privacy-safe tracing (#100).
-  - [x] Reconcile notifications read elsewhere: non-Apple workers consume `MARKREAD`, persist its
+    and Chromium services pass only high, while Mozilla also passes normal for silent `MARKREAD`;
+    all lower priorities return 201 without forwarding. Record urgency outcomes in privacy-safe
+    tracing (#100).
+  - [x] Reconcile notifications read elsewhere: workers that receive `MARKREAD` persist its
     timestamp, close only notifications from that conversation at or before the marker, and
     recompute per-conversation badge state without showing a control notification. Maintenance
     `PING` repeats the bounded cleanup; visible pushes never run cleanup themselves. Page open/read
     updates apply the same marker comparison and correct Apple badges from engine counts. Parsed
     visible pushes call `showNotification` before message handoff or badge persistence, with route
-    lookup bounded and a generic presentation deadline.
+    lookup bounded and a generic presentation deadline. Firefox and Chromium browser journeys prove
+    `MARKREAD` itself stays silent while closing the covered DM notification and lowering its badge.
   - [x] Cover the unmocked local-Ergo → relay → push-service → worker delivery journey, including
     the pinned previous build, route/subscription convergence, real encrypted DM and mention
     payloads, Apple MARKREAD filtering, multiple tabs and devices, missing keys, and refusal

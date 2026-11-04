@@ -175,13 +175,15 @@ caps bodies at about 4 KB (`client_max_body_size`) and rate-limits with `limit_r
 
 **Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered visibly. Apple Web
 Push drops everything lower because iOS and Safari require every delivered push to show a
-notification. Mozilla, FCM, and Edge forward `normal` so `MARKREAD` can clear stale notifications,
-but drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
-#2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because their
-ciphertexts are opaque, the relay must forward both to non-Apple services. The worker consumes both
-silently: `MARKREAD` records its timestamp, closes only notifications at or before that marker and
-lowers the badge, while `PING` repeats the same bounded cleanup. Apple targets never receive either
-control message. A future Ergo urgency split can move
+notification. FCM and Windows Push also pass only `high`, because Chromium may replace a silent Web
+Push with its own "site updated in the background" notification. Mozilla alone also forwards
+`normal`, allowing Firefox to apply `MARKREAD` cleanup without a visible notification. All services
+drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
+#2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because the
+ciphertext is opaque, the relay drops all normal-urgency traffic for visible-push-only services and
+forwards it only to Mozilla. The worker still consumes either control silently as defense in depth:
+`MARKREAD` records its timestamp, closes only notifications at or before that marker and lowers the
+badge, while `PING` repeats the same bounded cleanup. A future Ergo urgency split can move
 maintenance PING to `low` without a relay change.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
@@ -287,7 +289,7 @@ device]**.
   the sum of `mentions` (the engine counts every DM as a mention, `state.rs:1834-1835`). With no
   page open, the service worker increments a counter in `weblounge-push`; on launch the page
   overwrites it with the engine's value.
-- The worker stores a notified count and latest read timestamp per conversation tag. A non-Apple
+- The worker stores a notified count and latest read timestamp per conversation tag. A Mozilla
   `MARKREAD` zeros that tag, closes only notifications whose server time is at or before the marker,
   and recomputes the badge without showing a notification. Re-delivery of an existing chat `msgid`
   replaces its notification without incrementing the count again. Maintenance `PING` repeats that
@@ -555,6 +557,17 @@ and holds an old push-database connection open while asserting generic presentat
 deadline. Playwright WebKit exposes no equivalent synthetic Web Push delivery API, so the final
 presentation check remains on the iPhone device checklist.
 
+Firefox desktop also reproduced the deployed control bug: reading a DM in Halloy immediately
+created a generic "New message" notification. The deployed worker treated the successfully parsed
+`MARKREAD` presentation like an unknown payload. The redesigned worker returns from its control
+branch before `showNotification`, advances the marker, closes the covered DM notification and
+recomputes the badge. Chromium exercises that path through CDP delivery. Playwright Firefox's
+headless notification backend returns `NS_ERROR_FAILURE`, so its scoped E2E worker is compiled from
+the exact production worker source with only the unavailable OS-notification boundary replaced by
+an in-worker ledger. It still decrypts and parses the encrypted envelopes, persists the marker,
+closes the covered notification and recomputes the badge in Firefox. The production build check
+proves that the message injection and ledger are absent from the shipped worker.
+
 The live relay's route convergence reduced the phone to one route, while the deployed client could
 still delete that relay route without a confirmed IRC UNREGISTER, leaving an Ergo slot until the
 next push received 404. The redesigned page exact-unregisters before ordinary and forbidden route
@@ -670,18 +683,18 @@ the route move through probing and active.
 ### Web Push urgency policy implementation (2026-11-04)
 
 Active Web Push routes accept RFC 8030's `very-low`, `low`, `normal`, and `high` urgency values,
-defaulting a missing header to `normal`. Apple endpoints pass only `high`; Mozilla, FCM, and Edge
-also pass `normal`; lower urgencies return 201 without forwarding. Probing routes still return 201
-before inspecting headers because registration probes must succeed independently of a home's
-urgency choice. Structured inbound logs record the parsed urgency and dropped, held, or forwarded
-outcome without inspecting ciphertext.
+defaulting a missing header to `normal`. Mozilla endpoints pass `normal` and `high`; Apple, FCM and
+Windows Push endpoints pass only `high`; lower urgencies return 201 without forwarding. Probing
+routes still return 201 before inspecting headers because registration probes must succeed
+independently of a home's urgency choice. Structured inbound logs record the parsed urgency and
+dropped, held, or forwarded outcome without inspecting ciphertext.
 
 ### Read-elsewhere cleanup implementation (2026-11-04)
 
 The worker persists versioned per-conversation notification counts and read timestamps beside the
 aggregate badge. Visible message and invite pushes increment their notification tag. Chat
-notifications also carry their tag, `msgid` and server time in notification data. On Mozilla, FCM,
-and Edge, a decrypted `MARKREAD` stores the `timestamp=` reference, zeros the matching count and
+notifications also carry their tag, `msgid` and server time in notification data. On Mozilla, a
+decrypted `MARKREAD` stores the `timestamp=` reference, zeros the matching count and
 closes only notifications from that conversation at or before the marker. A maintenance `PING`
 repeats marker-bounded cleanup without calling `showNotification`; both controls are silent even if
 count persistence fails. Visible and generic pushes do not perform cleanup. This intentionally uses
@@ -777,8 +790,8 @@ migration remain a v1 prerequisite above.
   upstreams.
 - **Local Ergo end to end** (`nix run .#ergo-weblounge`): the fixture gains `webpush.enabled` and
   the relay; two papo clients drive a DM and a mention; the relay's sink records envelopes; the
-  read-elsewhere case asserts the MARKREAD push is normal urgency, dropped for Apple targets and
-  silently applied by the worker on non-Apple targets. Ergo
+  read-elsewhere case asserts the MARKREAD push is normal urgency, forwarded only to Mozilla, and
+  silently applied by the Firefox worker. Ergo
   requires `https` (`webpush/security.go:26-35`) and its dialer refuses loopback, private,
   link-local and CGNAT addresses (`security.go:67-76`), but Ergo 2.19.1's `isInternalIP` does not
   block TEST-NET-3. So no Ergo patch: the relay, as Ergo's push target, listens on a 203.0.113.0/24 address with a test CA
@@ -834,9 +847,10 @@ migration remain a v1 prerequisite above.
    no push when quit.
 6. **The account-wide lease is acceptable for v1.** Renewing activity on one device may discard
    held pushes for the account; an activity-based lease is a later optimization.
-7. **Control pushes are silent on non-Apple targets.** A successfully decrypted `MARKREAD` or
-   `PING` never creates a notification; it only clears notification state or lowers the badge.
-   Apple targets continue to drop normal-urgency controls at the relay.
+7. **Control pushes are silent wherever delivered.** A successfully decrypted `MARKREAD` or `PING`
+   never creates a notification; it only clears notification state or lowers the badge. The relay
+   forwards normal urgency only to Mozilla. Apple drops it because WebKit requires visible push;
+   FCM and Windows Push drop it because Chromium may synthesize a background-update notification.
 
 **Deferred (not v1): where notification rules live.** Proposal: per account on each home (our
 Ergo, a self-hosted soju each hold their own), replicated by the client as the merge

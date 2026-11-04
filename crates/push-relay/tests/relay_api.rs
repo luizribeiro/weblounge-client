@@ -1302,13 +1302,13 @@ async fn urgency_policy_depends_on_the_push_service() {
         ),
         (
             "fcm.googleapis.com",
-            vec![Some("high"), Some("normal"), None],
-            vec![Some("low"), Some("very-low")],
+            vec![Some("high")],
+            vec![Some("normal"), Some("low"), Some("very-low"), None],
         ),
         (
             "db5.notify.windows.com",
-            vec![Some("high"), Some("normal"), None],
-            vec![Some("low"), Some("very-low")],
+            vec![Some("high")],
+            vec![Some("normal"), Some("low"), Some("very-low"), None],
         ),
     ] {
         let device = harness.create_device_at(host).await;
@@ -1324,6 +1324,7 @@ async fn urgency_policy_depends_on_the_push_service() {
             );
         }
         assert_eq!(harness.deliveries.lock().expect("deliveries").len(), before);
+        let forwarded_count = forwarded.len();
         for urgency in forwarded {
             assert_eq!(
                 harness
@@ -1334,7 +1335,7 @@ async fn urgency_policy_depends_on_the_push_service() {
         }
         assert_eq!(
             harness.deliveries.lock().expect("deliveries").len(),
-            before + if host == "web.push.apple.com" { 1 } else { 3 }
+            before + forwarded_count
         );
     }
 }
