@@ -213,13 +213,15 @@ mod tests {
     }
 
     #[test]
-    fn accepts_ergo_truncated_action_but_rejects_incomplete_lines() {
-        let truncated = format!(
-            "@time={TIME};msgid=truncated :mel!m@example.test PRIVMSG #lounge :\u{1}ACTION a long multiline message…"
-        );
+    fn parses_ergo_length_limited_text_but_rejects_incomplete_lines() {
+        let prefix = format!("@time={TIME};msgid=truncated :mel!m@example.test PRIVMSG #lounge :");
+        let complete = format!("{prefix}{}", "x".repeat(600));
+        let truncated = &complete[..510];
+        assert_eq!(truncated.len(), 510);
         assert!(matches!(
-            parse_push_payload(&truncated),
-            Ok(PushEvent::Action(ChatPayload { text, .. })) if text == "a long multiline message…"
+            parse_push_payload(truncated),
+            Ok(PushEvent::Message(ChatPayload { text, .. }))
+                if text == complete[prefix.len()..510]
         ));
         assert_eq!(
             parse_push_payload(":mel!m@example.test PRIVMSG #lounge"),

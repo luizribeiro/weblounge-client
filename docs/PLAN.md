@@ -481,6 +481,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     active controller before exercising delivery or the first shell interaction. Keyboard
     diagnostics stay click-through until their first trace frame so the expanded overlay cannot
     cover the mobile chat that starts one.
+  - [x] Retire stale push routes without discarding their decryption keys, retry relay cleanup on
+    launch, unregister replaced endpoints at the home, and keep route identity independent of the
+    engine's per-run network handles. Push parser loads recover after cache failures; worker tests
+    cover Ergo message, control and unknown-route shapes, and the payload fixture matches Ergo's
+    510-byte length-limited line.
   - [ ] Add urgency policy, rate limits, engine/platform stable network identity, and the unmocked
     local-Ergo → relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
