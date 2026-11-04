@@ -1206,7 +1206,12 @@ async function sampleKeyboardTransition(
         ).then(sample);
         if (
           frame >= 25 &&
-          composer.getAnimations({ subtree: true }).length === 0
+          composer.getAnimations({ subtree: true }).length === 0 &&
+          (document
+            .querySelector<HTMLElement>(
+              "[data-keyboard-transcript-snapshot-layer]",
+            )
+            ?.getAnimations().length ?? 0) === 0
         )
           break;
       }

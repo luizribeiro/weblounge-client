@@ -12,6 +12,11 @@ afterEach(() => {
 
 describe("keyboard motion", () => {
   it("animates opening from a full-height transcript snapshot", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     vi.spyOn(window.performance, "now").mockReturnValue(125);
     const fixture = motionFixture();
     const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
@@ -44,6 +49,14 @@ describe("keyboard motion", () => {
     fixture.animations[1]?.finish();
     await Promise.resolve();
     expect(fixture.root.dataset.keyboardMotion).toBe("open");
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).not.toBeNull();
+    frames.shift()?.(0);
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).not.toBeNull();
+    frames.shift()?.(16);
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).toBeNull();

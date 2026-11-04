@@ -159,7 +159,7 @@ export function observeKeyboardMotion(
       options,
     );
     track(composerAnimation, running);
-    track(transcriptAnimation, running);
+    running.add(transcriptAnimation);
     browserWindow.queueMicrotask(() => {
       if (!running.has(composerAnimation) || !running.has(transcriptAnimation))
         return;
@@ -173,9 +173,16 @@ export function observeKeyboardMotion(
         () => {
           if (openingLayout !== layout) return;
           root.dataset.keyboardMotion = "open";
-          layout.snapshot.remove();
+          browserWindow.requestAnimationFrame(() => {
+            browserWindow.requestAnimationFrame(() => {
+              if (openingLayout !== layout) return;
+              running.delete(transcriptAnimation);
+              transcriptAnimation.cancel();
+              layout.snapshot.remove();
+            });
+          });
         },
-        () => undefined,
+        () => running.delete(transcriptAnimation),
       );
   };
   const startClosing = (snapshot: ClosingSnapshot) => {
