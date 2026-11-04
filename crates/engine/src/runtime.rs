@@ -100,6 +100,16 @@ struct PushRegisterTask {
 }
 
 #[derive(Clone)]
+struct PushUnregisterTask {
+    instance: u64,
+    generation: u64,
+    network_id: NetworkId,
+    route_id: String,
+    endpoint: String,
+    clear_current: bool,
+}
+
+#[derive(Clone)]
 struct HostedReconnectConfig {
     endpoint: String,
     nickname: String,
@@ -337,6 +347,11 @@ impl Runtime {
             EngineRequest::UnregisterPush { network_id } => {
                 self.unregister_push(envelope.id, network_id)
             }
+            EngineRequest::UnregisterPushRoute {
+                network_id,
+                route_id,
+                endpoint,
+            } => self.unregister_push_route(envelope.id, network_id, route_id, endpoint),
             EngineRequest::SendMessage { buffer_id, text } => {
                 self.send_input(envelope.id, buffer_id, text, &crate::MessageKind::Text)
             }
@@ -593,17 +608,64 @@ impl Runtime {
         };
         running.push.generation = running.push.generation.saturating_add(1);
         let generation = running.push.generation;
-        let instance = running.instance;
+        let task = PushUnregisterTask {
+            instance: running.instance,
+            generation,
+            network_id,
+            route_id: route.route_id,
+            endpoint: route.endpoint,
+            clear_current: true,
+        };
         let client = running.client.clone();
         drop(state);
         spawn_push_unregister(
             Arc::clone(&self.state),
             self.outbound.clone(),
             client,
-            instance,
-            generation,
+            task,
+            command_id,
+        );
+        Vec::new()
+    }
+
+    fn unregister_push_route(
+        &self,
+        command_id: String,
+        network_id: NetworkId,
+        route_id: String,
+        endpoint: String,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.model.id() == network_id)
+        else {
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
+        };
+        let clear_current = running
+            .push
+            .route
+            .as_ref()
+            .is_some_and(|current| current.route_id == route_id);
+        if clear_current {
+            running.push.generation = running.push.generation.saturating_add(1);
+        }
+        let task = PushUnregisterTask {
+            instance: running.instance,
+            generation: running.push.generation,
             network_id,
-            route,
+            route_id,
+            endpoint,
+            clear_current,
+        };
+        let client = running.client.clone();
+        drop(state);
+        spawn_push_unregister(
+            Arc::clone(&self.state),
+            self.outbound.clone(),
+            client,
+            task,
             command_id,
         );
         Vec::new()
@@ -4353,48 +4415,49 @@ fn spawn_push_register(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_push_unregister(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
     client: papo::Client,
-    instance: u64,
-    generation: u64,
-    network_id: NetworkId,
-    route: RegisteredPushRoute,
+    task: PushUnregisterTask,
     command_id: String,
 ) {
     spawn_task(async move {
-        let result = client.webpush().unregister(route.endpoint.clone()).await;
-        let (event, rejection) = {
+        let result = client.webpush().unregister(task.endpoint).await;
+        let rejection = result
+            .as_ref()
+            .err()
+            .map(|_| EngineMessageKey::CommandRefused);
+        let event = {
             let mut state = lock(&state);
             state
                 .network
                 .as_mut()
                 .filter(|running| {
-                    running.instance == instance
-                        && running.push.generation == generation
+                    task.clear_current
+                        && running.instance == task.instance
+                        && running.push.generation == task.generation
                         && running
                             .push
                             .route
                             .as_ref()
-                            .is_some_and(|current| current.route_id == route.route_id)
+                            .is_some_and(|current| current.route_id == task.route_id)
                 })
-                .map_or((None, None), |running| match &result {
+                .and_then(|running| match &result {
                     Ok(()) => {
                         running.push.route = None;
                         running.push.state = None;
-                        (None, None)
+                        None
                     }
                     Err(error) => {
-                        let state = PushState::Failed {
+                        let push_state = PushState::Failed {
                             reason: push_failure(error),
                         };
-                        running.push.state = Some(state.clone());
-                        (
-                            Some(EngineToUi::PushStateChanged { network_id, state }),
-                            Some(EngineMessageKey::CommandRefused),
-                        )
+                        running.push.state = Some(push_state.clone());
+                        Some(EngineToUi::PushStateChanged {
+                            network_id: task.network_id,
+                            state: push_state,
+                        })
                     }
                 })
         };
@@ -8527,6 +8590,56 @@ async fn delay(duration: Duration) {
                 .network
                 .as_ref()
                 .is_some_and(|running| running.push.route.is_none())
+        );
+    }
+
+    #[tokio::test]
+    async fn exact_push_unregistration_preserves_the_current_route() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), true).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client);
+        let runtime = Runtime { state, outbound };
+        process_runtime_event(&runtime, connected);
+        _ = collect(&mut receiver);
+
+        assert_no_output(&runtime.request(push_request("register", "route-current")));
+        let register = wire.next_sent().await;
+        send_push_success(&mut wire, &register, false).await;
+        _ = command_output(&mut receiver).await;
+
+        assert_no_output(&runtime.request(EngineRequestEnvelope {
+            id: "unregister-stale".into(),
+            request: EngineRequest::UnregisterPushRoute {
+                network_id: NetworkId(1),
+                route_id: "route-stale".into(),
+                endpoint: "https://push.example.test/v1/r/route-stale".into(),
+            },
+        }));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-stale"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-stale"
+        ))
+        .await;
+
+        assert!(matches!(
+            command_output(&mut receiver).await.as_slice(),
+            [EngineToUi::CommandResult { id }] if id == "unregister-stale"
+        ));
+        assert!(
+            lock(&runtime.state)
+                .network
+                .as_ref()
+                .and_then(|running| running.push.route.as_ref())
+                .is_some_and(|route| route.route_id == "route-current")
         );
     }
 

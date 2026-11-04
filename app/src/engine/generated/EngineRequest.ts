@@ -142,7 +142,19 @@ route: PushRoute, } | { "type": "unregister_push",
 /**
  * Network whose registration should be removed.
  */
-network_id: NetworkId, } | { "type": "send_message",
+network_id: NetworkId, } | { "type": "unregister_push_route",
+/**
+ * Network whose home owns the registration.
+ */
+network_id: NetworkId,
+/**
+ * Relay route identity used to protect the current registration.
+ */
+route_id: string,
+/**
+ * Exact endpoint previously registered with the home.
+ */
+endpoint: string, } | { "type": "send_message",
 /**
  * Destination buffer.
  */

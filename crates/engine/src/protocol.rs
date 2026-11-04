@@ -859,6 +859,15 @@ pub enum EngineRequest {
         /// Network whose registration should be removed.
         network_id: NetworkId,
     },
+    /// Remove one exact relay route from an IRC home.
+    UnregisterPushRoute {
+        /// Network whose home owns the registration.
+        network_id: NetworkId,
+        /// Relay route identity used to protect the current registration.
+        route_id: String,
+        /// Exact endpoint previously registered with the home.
+        endpoint: String,
+    },
     /// Send plain chat text to a channel or direct buffer.
     SendMessage {
         /// Destination buffer.
@@ -1412,6 +1421,21 @@ mod tests {
                     "p256dh": "public-key",
                     "auth": "unique-push-auth",
                 },
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(EngineRequest::UnregisterPushRoute {
+                network_id: crate::NetworkId(7),
+                route_id: "route-old".into(),
+                endpoint: "https://push.example.test/route-old".into(),
+            })
+            .expect("exact push unregistration serializes"),
+            serde_json::json!({
+                "type": "unregister_push_route",
+                "network_id": 7,
+                "route_id": "route-old",
+                "endpoint": "https://push.example.test/route-old",
             })
         );
 
