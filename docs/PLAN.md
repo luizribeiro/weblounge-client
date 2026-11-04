@@ -552,6 +552,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     development and production.
   - B1j. [x] Keep signed-out redirect timing report-only on shared CI runners. The functional gate
     still holds the real worker asset through the redirect and proves that Wasm never starts.
+  - B1k. [x] Drive the three-second transient member-session fallback with Playwright's clock,
+    proving PKCE authorization starts on the product timer and not before. Other hosted startup
+    durations remain report-only diagnostics instead of shared-runner functional gates.
   - B2. [ ] NixOS deployment changes prepared in `~/weblounge` as a branch for Luiz to review: the static site at beta.weblounge.org and `https://beta.weblounge.org` in Ergo's `allowed-origins`. Never pushed or deployed by agents.
 - **Update safety (2026-11-04).** A deploy left clients stuck on old builds: the service worker
   served a cached shell, new workers never activated, and the old strict config decoder rejected

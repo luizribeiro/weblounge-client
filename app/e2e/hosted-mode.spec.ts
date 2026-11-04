@@ -46,7 +46,7 @@ for (const failure of [
 ] as const) {
   test(`shows a deployment config error for a ${failure.name}`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await installFakeEngine(page);
     const startupErrors: string[] = [];
     page.on("console", (message) => {
@@ -88,7 +88,10 @@ for (const failure of [
 
     const error = page.getByRole("alert");
     await expect(error).toContainText(failure.expected);
-    expect(performance.now() - startedAt).toBeLessThan(4_000);
+    testInfo.annotations.push({
+      type: "deployment-error-ms",
+      description: (performance.now() - startedAt).toFixed(0),
+    });
     await expect(page.locator("[data-initial-splash]")).toBeVisible();
     await expect.poll(() => startupErrors).toHaveLength(1);
     expect(startupErrors[0]).toContain(failure.expected);
@@ -420,13 +423,15 @@ for (const failure of ["rate limit", "network failure"] as const) {
     });
 
     expect(attempts).toBe(2);
-    expect(elapsed).toBeLessThan(2_000);
   });
 }
 
 test("falls back to PKCE after a fresh session request is aborted", async ({
   page,
 }, testInfo) => {
+  const clockStart = Date.now();
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart);
   await installFakeEngine(page);
   const redirectUri = await installHostedConfig(page);
   await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
@@ -436,23 +441,28 @@ test("falls back to PKCE after a fresh session request is aborted", async ({
     }
     await route.abort("failed");
   });
-  await page.route(`${oauthIssuer}/authorize**`, (route) =>
-    route.fulfill({ contentType: "text/html", body: "Member sign in" }),
-  );
+  let authorizationRequests = 0;
+  await page.route(`${oauthIssuer}/authorize**`, async (route) => {
+    authorizationRequests += 1;
+    await route.fulfill({ contentType: "text/html", body: "Member sign in" });
+  });
 
   const startedAt = performance.now();
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
-  await expect(page).toHaveURL(
-    new RegExp(`^${oauthIssuer}/authorize\\?`, "u"),
-    { timeout: 4_000 },
-  );
+  await expect(page).toHaveURL(redirectUri());
+  await page.clock.runFor(2_999);
+  expect(authorizationRequests).toBe(0);
+  await expect(page).toHaveURL(redirectUri());
+
+  await page.clock.runFor(1);
+  await expect(page).toHaveURL(new RegExp(`^${oauthIssuer}/authorize\\?`, "u"));
+  expect(authorizationRequests).toBe(1);
   const elapsed = performance.now() - startedAt;
   testInfo.annotations.push({
     type: "network-failure-fallback-ms",
     description: elapsed.toFixed(0),
   });
-  expect(elapsed).toBeLessThan(4_000);
 });
 
 for (const worker of ["shared", "dedicated"] as const) {
