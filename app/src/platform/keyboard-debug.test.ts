@@ -60,8 +60,12 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
   vi.spyOn(window.performance, "now").mockReturnValue(0);
   const cancel = vi.spyOn(window, "cancelAnimationFrame");
   const stop = installKeyboardDebug(root, window);
+  const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
+
+  expect(overlay).not.toHaveAttribute("data-debug-copy");
 
   window.dispatchEvent(new PointerEvent("pointerup", { isPrimary: true }));
+  expect(overlay).not.toHaveAttribute("data-debug-copy");
   reportKeyboardInteraction("touchstart");
   reportKeyboardInteraction("touchend:tap");
   reportKeyboardInteraction("touchend:rejected(moved 14px)");
@@ -85,8 +89,8 @@ it("traces taps and composer focusout but ignores unrelated focusout", () => {
     }),
   );
   callback?.(500);
+  expect(overlay).toHaveAttribute("data-debug-copy", "keyboard");
   callback?.(1001);
-  const overlay = document.querySelector<HTMLElement>("[data-debug-overlay]");
   expect(overlay?.textContent).toContain("trigger: pointerup");
   expect(overlay?.textContent).toContain(
     "commits: rollback:closed(focus-left-keyboard-field)",

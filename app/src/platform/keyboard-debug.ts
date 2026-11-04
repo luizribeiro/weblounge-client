@@ -125,7 +125,6 @@ export function installKeyboardDebug(
       const overlay = browserWindow.document.querySelector<HTMLElement>(
         "[data-debug-overlay]",
       );
-      if (overlay !== null) overlay.dataset.debugCopy = "keyboard";
       const stopTraceTap = (event: Event) => event.stopPropagation();
       const copyTrace = (event: Event) => {
         event.stopPropagation();
@@ -152,6 +151,9 @@ export function installKeyboardDebug(
         ];
         render();
         const sample = (now: number) => {
+          // Keep the overlay click-through until the input that starts a trace
+          // has finished, or it can cover and consume that input on mobile.
+          if (overlay !== null) overlay.dataset.debugCopy = "keyboard";
           frames = [
             ...frames,
             readKeyboardTraceFrame(browserWindow, root, startedAt, now),
