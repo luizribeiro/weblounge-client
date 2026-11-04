@@ -968,6 +968,44 @@ test.describe("live notification configuration", () => {
   });
 });
 
+test("fresh Firefox and Chromium profiles show notification setup when the preference read stalls", async ({
+  baseURL,
+  browserName,
+  page,
+}) => {
+  test.skip(browserName !== "chromium" && browserName !== "firefox");
+  if (baseURL === undefined) throw new Error("app base URL is missing");
+  if (browserName === "chromium")
+    await installPushManagerStub(page, "default", "granted");
+  await page.addInitScript(() =>
+    Reflect.set(globalThis, "hangNotificationPromptRead", true),
+  );
+  await installFakeEngine(page);
+  await installFakeOAuth(page);
+  await page.route("**/config.json", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(pushHostedConfig(route.request().url())),
+    });
+  });
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(baseURL).origin);
+      return;
+    }
+    await fulfillSessionToken(route, baseURL, "push-session-token");
+  });
+
+  await page.goto("/?debug=viewport");
+
+  await expect(
+    page.getByRole("region", { name: "Notifications" }),
+  ).toBeVisible();
+  await expect(page.locator("[data-debug-overlay]")).toContainText(
+    "notifications: configured=true / supported=true / permission=default / dismissed=false / ios=false / display=browser",
+  );
+});
+
 for (const surface of [
   { browser: "chromium", use: pixel7 },
   { browser: "webkit", use: iphone16Pro },
@@ -1274,6 +1312,8 @@ async function installFakeEngine(
           });
         }
         if (request?.type === "load_notification_prompt_dismissal") {
+          if (Reflect.get(globalThis, "hangNotificationPromptRead") === true)
+            return;
           if (Reflect.get(globalThis, "failNotificationPromptRead") === true) {
             this.emit({
               type: "command_rejected",

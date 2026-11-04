@@ -38,7 +38,9 @@ import {
 } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
+  formatNotificationPromptVisibility,
   isIos,
+  type NotificationPromptVisibility,
   shouldShowNotificationPrompt,
   supportsWebPush,
 } from "./features/notifications/notification-prompt-visibility";
@@ -56,6 +58,7 @@ import {
   readLastViewedPath,
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
+import { setNotificationDebugReading } from "./platform/debug-overlay";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { syncAppBadge } from "./platform/push/app-badge";
@@ -82,6 +85,7 @@ import { createNotifier } from "./ui/notices";
 import { Toast } from "./ui/Toast";
 
 const reloadMarker = "weblounge-build-reload";
+const notificationPromptReadDeadlineMs = 2_000;
 
 interface AppProps {
   beforeReveal?: () => Promise<void>;
@@ -151,6 +155,7 @@ export function App(props: AppProps) {
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushStartup: Promise<void> | undefined;
   let notificationPromptLoadId: string | undefined;
+  let notificationPromptReadDeadline: number | undefined;
   let loadedPromptConfig: string | undefined;
   let foregroundLease: ForegroundLease | undefined;
   let appIsForeground = false;
@@ -183,15 +188,23 @@ export function App(props: AppProps) {
   const startupHistoryPending = new Set<number>();
   const startupHistoryComplete = new Set<number>();
   const storedNavigationPath = readLastViewedPath();
+  const notificationPromptConditions = (): NotificationPromptVisibility => ({
+    configured: props.pushConfig !== undefined,
+    supported: supportsWebPush(window, navigator),
+    permission: notificationPermission(),
+    dismissed: notificationPromptDismissed(),
+    ios: isIos(navigator),
+    display: platformEnvironment().environment().display,
+  });
   const notificationPromptVisible = () =>
-    shouldShowNotificationPrompt({
-      configured: props.pushConfig !== undefined,
-      supported: supportsWebPush(window, navigator),
-      permission: notificationPermission(),
-      dismissed: notificationPromptDismissed() ?? true,
-      ios: isIos(navigator),
-      display: platformEnvironment().environment().display,
-    });
+    shouldShowNotificationPrompt(notificationPromptConditions());
+
+  createEffect(() => {
+    setNotificationDebugReading(
+      window,
+      formatNotificationPromptVisibility(notificationPromptConditions()),
+    );
+  });
 
   createEffect(() => {
     const current = buffers();
@@ -207,13 +220,28 @@ export function App(props: AppProps) {
     if (loadedPromptConfig === configKey) return;
     loadedPromptConfig = configKey;
     setNotificationPromptDismissed(undefined);
-    notificationPromptLoadId = crypto.randomUUID();
+    const loadId = crypto.randomUUID();
+    notificationPromptLoadId = loadId;
+    if (notificationPromptReadDeadline !== undefined)
+      window.clearTimeout(notificationPromptReadDeadline);
+    // A worker-backed Settings read can remain pending when IndexedDB stalls.
+    // Optional preference storage must not permanently suppress setup.
+    notificationPromptReadDeadline = window.setTimeout(() => {
+      if (notificationPromptLoadId === loadId)
+        setNotificationPromptDismissed(false);
+    }, notificationPromptReadDeadlineMs);
     void mountedClient
       .send({
-        id: notificationPromptLoadId,
+        id: loadId,
         request: { type: "load_notification_prompt_dismissal" },
       })
-      .catch(() => setNotificationPromptDismissed(false));
+      .catch(() => {
+        if (notificationPromptLoadId !== loadId) return;
+        if (notificationPromptReadDeadline !== undefined)
+          window.clearTimeout(notificationPromptReadDeadline);
+        notificationPromptReadDeadline = undefined;
+        setNotificationPromptDismissed(false);
+      });
     if ("Notification" in window && Notification.permission === "granted") {
       void startConfiguredPush(mountedClient);
     }
@@ -356,6 +384,9 @@ export function App(props: AppProps) {
         message.type === "notification_prompt_dismissal_loaded" &&
         message.command_id === notificationPromptLoadId
       ) {
+        if (notificationPromptReadDeadline !== undefined)
+          window.clearTimeout(notificationPromptReadDeadline);
+        notificationPromptReadDeadline = undefined;
         setNotificationPromptDismissed(message.dismissed);
       }
       if (message.type === "ready") {
@@ -659,6 +690,9 @@ export function App(props: AppProps) {
       disposed = true;
       if (hostedFallbackTimer !== undefined)
         window.clearTimeout(hostedFallbackTimer);
+      if (notificationPromptReadDeadline !== undefined)
+        window.clearTimeout(notificationPromptReadDeadline);
+      setNotificationDebugReading(window, undefined);
       clearStartupWaits();
       unregisterContextSurface();
       removeContextMenuHandler();

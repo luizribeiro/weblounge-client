@@ -1,10 +1,10 @@
 import type { DisplayMode } from "../../platform/environment";
 
-interface NotificationPromptVisibility {
+export interface NotificationPromptVisibility {
   readonly configured: boolean;
   readonly supported: boolean;
   readonly permission: NotificationPermission;
-  readonly dismissed: boolean;
+  readonly dismissed: boolean | undefined;
   readonly ios: boolean;
   readonly display: DisplayMode;
 }
@@ -16,9 +16,22 @@ export function shouldShowNotificationPrompt(
     conditions.configured &&
     conditions.supported &&
     conditions.permission === "default" &&
-    !conditions.dismissed &&
+    conditions.dismissed === false &&
     (!conditions.ios || conditions.display === "standalone")
   );
+}
+
+export function formatNotificationPromptVisibility(
+  conditions: NotificationPromptVisibility,
+): string {
+  return [
+    `configured=${conditions.configured}`,
+    `supported=${conditions.supported}`,
+    `permission=${conditions.permission}`,
+    `dismissed=${conditions.dismissed ?? "pending"}`,
+    `ios=${conditions.ios}`,
+    `display=${conditions.display}`,
+  ].join(" / ");
 }
 
 export function supportsWebPush(

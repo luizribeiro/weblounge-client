@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatNotificationPromptVisibility,
   isIos,
   shouldShowNotificationPrompt,
 } from "./notification-prompt-visibility";
@@ -24,10 +25,19 @@ describe("notification prompt visibility", () => {
     ["permission was granted", { permission: "granted" as const }],
     ["permission was denied", { permission: "denied" as const }],
     ["the device dismissed it", { dismissed: true }],
+    ["the dismissal read is pending", { dismissed: undefined }],
     ["iOS is running in a browser", { ios: true }],
   ])("hides when %s", (_name, changed) => {
     expect(shouldShowNotificationPrompt({ ...visible, ...changed })).toBe(
       false,
+    );
+  });
+
+  it("formats every visibility condition for diagnostics", () => {
+    expect(
+      formatNotificationPromptVisibility({ ...visible, dismissed: undefined }),
+    ).toBe(
+      "configured=true / supported=true / permission=default / dismissed=pending / ios=false / display=browser",
     );
   });
 

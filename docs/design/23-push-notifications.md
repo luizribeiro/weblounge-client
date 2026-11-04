@@ -533,8 +533,10 @@ dismissed it. iOS additionally requires the installed `display-mode: standalone`
 desktop browsers do not. The UI waits for the engine-owned preference read before painting, so a
 remembered dismissal never flashes during startup.
 
-If the Settings-space read fails, the page treats the prompt as not dismissed. Losing access to
-optional preference storage must not permanently hide notification setup.
+If the Settings-space read fails or remains pending past a bounded deadline, the page treats the
+prompt as not dismissed. Losing access to optional preference storage must not permanently hide
+notification setup. The debug overlay reports the configured, supported, permission, dismissed,
+iOS, and display conditions so a suppressed prompt can be diagnosed from the affected browser.
 
 Background deployment-config revalidation publishes a compatible `push` block into the running
 page. The prompt preference load and granted-permission startup react to that live value, so adding
@@ -546,8 +548,9 @@ hides the prompt without starting push. Explicit dismissal writes a versioned re
 engine's Settings space. The web database now implements that approved space as its own IndexedDB
 store rather than letting the page own settings persistence.
 
-Chromium desktop, Android-profile Chromium, and installed-iPhone-profile WebKit drive the built
-app through permission, relay registration, dismissal across reload, and denial. The visible
+Fresh-profile Firefox and Chromium drive the built app with push configured and a stalled
+preference read, while Chromium desktop, Android-profile Chromium, and installed-iPhone-profile
+WebKit cover permission, relay registration, dismissal across reload, and denial. The visible
 prompt also passes the native-feel and idle-work audit; light and dark references cover both shell
 placements.
 

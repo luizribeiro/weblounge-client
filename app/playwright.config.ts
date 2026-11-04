@@ -59,6 +59,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-notification-prompt",
+      grep: /fresh Firefox and Chromium profiles show notification setup/,
+      testMatch: "**/hosted-mode.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "webkit" },

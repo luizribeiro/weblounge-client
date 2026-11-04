@@ -23,6 +23,16 @@ interface OverlayManager {
 }
 
 const managers = new WeakMap<Window, OverlayManager>();
+const notificationReadings = new WeakMap<Window, string>();
+
+export function setNotificationDebugReading(
+  browserWindow: Window,
+  reading: string | undefined,
+): void {
+  if (reading === undefined) notificationReadings.delete(browserWindow);
+  else notificationReadings.set(browserWindow, reading);
+  managers.get(browserWindow)?.render();
+}
 
 export function installDebugSection(
   browserWindow: Window,
@@ -64,6 +74,7 @@ function managerFor(browserWindow: Window): OverlayManager {
             `[${section.title}]`,
             buildVersion.text,
             `config unknown: ${deploymentConfigUnknownFields().join(", ") || "none"}`,
+            `notifications: ${notificationReadings.get(browserWindow) ?? "unavailable"}`,
             ...format(section.read()),
           ].join("\n"),
         )
