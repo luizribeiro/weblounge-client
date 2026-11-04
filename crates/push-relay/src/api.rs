@@ -226,10 +226,17 @@ async fn activate_route(
     Path(route): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    state
+    let superseded = state
         .database
         .activate_route(route.clone(), bearer(&headers)?.to_owned())
         .await?;
+    for superseded_route in superseded {
+        tracing::info!(
+            route = %id_prefix(&route),
+            superseded_route = %id_prefix(&superseded_route),
+            "route converged"
+        );
+    }
     tracing::info!(route = %id_prefix(&route), "route activated");
     Ok(StatusCode::NO_CONTENT.into_response())
 }

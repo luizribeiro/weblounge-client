@@ -251,6 +251,22 @@ impl Harness {
         assert_eq!(response.0, StatusCode::NO_CONTENT);
     }
 
+    fn seed_active_routes(&self, routes: &[&Value]) {
+        let mut connection =
+            rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+                .expect("relay database");
+        let transaction = connection.transaction().expect("seed transaction");
+        for route in routes {
+            transaction
+                .execute(
+                    "UPDATE routes SET state = 'active' WHERE id = ?1",
+                    [route["id"].as_str().expect("route id")],
+                )
+                .expect("seed active route");
+        }
+        transaction.commit().expect("seed commit");
+    }
+
     async fn renew_lease(&self, device: &Value, tab_id: &str) {
         let response = call_json(
             &self.app,
@@ -388,6 +404,7 @@ async fn operational_logs_cover_the_relay_lifecycle_without_secrets_or_payloads(
 struct LoggedLifecycle {
     device: Value,
     route: Value,
+    converged_route: Value,
     deleted_route: Value,
 }
 
@@ -449,6 +466,9 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
     .await;
     assert_eq!(oversized, StatusCode::PAYLOAD_TOO_LARGE);
 
+    let converged_route = harness.create_route(&device, &home).await;
+    harness.activate(&device, &converged_route).await;
+
     let deleted_route = harness.create_route(&device, &home).await;
     let deleted = call_json(
         &harness.app,
@@ -466,12 +486,15 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
 
     *harness.outcome.lock().expect("outcome") = PushOutcome::Dead;
     assert_eq!(
-        harness.push(&route, &home, b"secret-dead-payload").await,
+        harness
+            .push(&converged_route, &home, b"secret-dead-payload")
+            .await,
         StatusCode::NOT_FOUND
     );
     LoggedLifecycle {
         device,
         route,
+        converged_route,
         deleted_route,
     }
 }
@@ -481,6 +504,7 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "device created",
         "route created",
         "route activated",
+        "route converged",
         "route deleted",
         "route dead",
         "lease acquired",
@@ -501,6 +525,9 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         lifecycle.device["secret"].as_str().expect("device secret"),
         lifecycle.device["id"].as_str().expect("device id"),
         lifecycle.route["id"].as_str().expect("route id"),
+        lifecycle.converged_route["id"]
+            .as_str()
+            .expect("converged route id"),
         lifecycle.deleted_route["id"]
             .as_str()
             .expect("deleted route id"),
@@ -521,6 +548,7 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
     }
     assert!(output.contains(&lifecycle.device["id"].as_str().expect("device id")[..8]));
     assert!(output.contains(&lifecycle.route["id"].as_str().expect("route id")[..8]));
+    assert!(output.contains("superseded_route="));
 }
 
 #[tokio::test]
@@ -858,6 +886,51 @@ async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
             b"opaque encrypted body".to_vec(),
             604_800,
         )]
+    );
+}
+
+#[tokio::test]
+async fn activation_converges_same_device_and_home_without_touching_other_routes() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let other_device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let other_home = SecretKey::random(&mut OsRng);
+    let mut stale_routes = Vec::new();
+    for _ in 0..3 {
+        stale_routes.push(harness.create_route(&device, &home).await);
+    }
+    let different_home = harness.create_route(&device, &other_home).await;
+    let different_device = harness.create_route(&other_device, &home).await;
+    let replacement = harness.create_route(&device, &home).await;
+    let mut legacy_active = stale_routes.iter().collect::<Vec<_>>();
+    legacy_active.extend([&different_home, &different_device]);
+    harness.seed_active_routes(&legacy_active);
+
+    harness.activate(&device, &replacement).await;
+    harness.activate(&device, &replacement).await;
+
+    for stale in &stale_routes {
+        assert_eq!(
+            harness.push(stale, &home, b"stale route").await,
+            StatusCode::NOT_FOUND
+        );
+    }
+    assert_eq!(
+        harness.push(&replacement, &home, b"replacement").await,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        harness
+            .push(&different_home, &other_home, b"other home")
+            .await,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        harness
+            .push(&different_device, &home, b"other device")
+            .await,
+        StatusCode::CREATED
     );
 }
 
@@ -1218,15 +1291,16 @@ async fn active_route_requires_a_non_negative_numeric_ttl() {
 async fn dead_upstream_kills_every_device_route_and_always_maps_to_404() {
     let harness = Harness::new().await;
     let device = harness.create_device().await;
-    let home = SecretKey::random(&mut OsRng);
-    let first = harness.create_route(&device, &home).await;
-    let second = harness.create_route(&device, &home).await;
+    let first_home = SecretKey::random(&mut OsRng);
+    let second_home = SecretKey::random(&mut OsRng);
+    let first = harness.create_route(&device, &first_home).await;
+    let second = harness.create_route(&device, &second_home).await;
     harness.activate(&device, &first).await;
     harness.activate(&device, &second).await;
     *harness.outcome.lock().expect("outcome") = PushOutcome::Dead;
-    let authorization = vapid(&home, ORIGIN, expiry_after(3_600));
 
-    for route in [&first, &second] {
+    for (route, home) in [(&first, &first_home), (&second, &second_home)] {
+        let authorization = vapid(home, ORIGIN, expiry_after(3_600));
         let status = call_bytes(
             &harness.app,
             Method::POST,

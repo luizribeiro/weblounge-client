@@ -252,21 +252,60 @@ impl Database {
         Ok(route)
     }
 
-    pub(crate) async fn activate_route(&self, route_id: String, secret: String) -> Result<()> {
+    pub(crate) async fn activate_route(
+        &self,
+        route_id: String,
+        secret: String,
+    ) -> Result<Vec<String>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let connection = connect(&path)?;
-            let device_id = route_device(&connection, &route_id)?;
-            authenticate_device(&connection, &device_id, &secret)?;
-            let changed = connection.execute(
+        tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let (device_id, state, home_vapid) = transaction
+                .query_row(
+                    "SELECT device_id, state, home_vapid
+                     FROM routes WHERE id = ?1 AND state != 'dead'",
+                    [&route_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Vec<u8>>(2)?,
+                        ))
+                    },
+                )
+                .optional()?
+                .ok_or(Error::NotFound)?;
+            authenticate_device(&transaction, &device_id, &secret)?;
+            if state == "active" {
+                transaction.commit()?;
+                return Ok(Vec::new());
+            }
+            if state != "probing" {
+                return Err(Error::NotFound);
+            }
+            let superseded = {
+                let mut statement = transaction.prepare(
+                    "SELECT id FROM routes
+                     WHERE device_id = ?1 AND home_vapid = ?2 AND id != ?3 AND state != 'dead'
+                     ORDER BY id",
+                )?;
+                statement
+                    .query_map(params![device_id, home_vapid, route_id], |row| row.get(0))?
+                    .collect::<rusqlite::Result<Vec<String>>>()?
+            };
+            transaction.execute(
+                "UPDATE routes SET state = 'dead'
+                 WHERE device_id = ?1 AND home_vapid = ?2 AND id != ?3 AND state != 'dead'",
+                params![device_id, home_vapid, route_id],
+            )?;
+            transaction.execute(
                 "UPDATE routes SET state = 'active' WHERE id = ?1 AND state = 'probing'",
                 [&route_id],
             )?;
-            if changed == 1 {
-                Ok(())
-            } else {
-                Err(Error::NotFound)
-            }
+            transaction.commit()?;
+            Ok(superseded)
         })
         .await?
     }

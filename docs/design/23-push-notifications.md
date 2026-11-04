@@ -126,6 +126,12 @@ probing ──(client: PUT /v1/routes/:id/active, after papo returns REGISTER su
   or content, so urgency alone can't filter it.
 - Re-registering an existing endpoint sends no probe (`refreshPushSubscription`), so refreshes keep
   the route active.
+- Activating a probing route atomically marks every other route for the same device and pinned home
+  VAPID key dead. The relay enforces this convergence because a page can lose old route keys and
+  therefore cannot unregister every stale home endpoint itself; the resulting 404 lets the home
+  prune each superseded subscription on its next push. Routes for other devices or home keys are
+  untouched. Repeating activation for the surviving active route is a no-op, while dead routes
+  remain 404.
 
 **Delivery.** The home encrypts each push to the route key (RFC 8291) and POSTs it. The relay:
 
