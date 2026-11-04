@@ -2170,20 +2170,13 @@ fn permanent_mark_read_error(error: &papo::Error) -> bool {
         papo::Error::InvalidInput(_) | papo::Error::Unsupported(_) | papo::Error::TargetGone => {
             true
         }
-        papo::Error::Server(error) => {
-            matches!(
-                error.refusal(),
-                papo::Refusal::InvalidParameters
-                    | papo::Refusal::InvalidTarget
-                    | papo::Refusal::MissingParameters
-                    | papo::Refusal::NoSuchChannel
-                    | papo::Refusal::NoSuchNick
-                    | papo::Refusal::UnknownCommand
-            ) || matches!(
-                error.code().as_str(),
-                "INVALID_PARAMS" | "INVALID_PARAMETERS" | "INVALID_TARGET" | "UNKNOWN_TARGET"
-            )
-        }
+        papo::Error::Server(error) => !matches!(
+            error.refusal(),
+            papo::Refusal::InternalError
+                | papo::Refusal::RateLimited
+                | papo::Refusal::TemporarilyUnavailable
+                | papo::Refusal::TryAgain
+        ),
         _ => false,
     }
 }
@@ -4729,9 +4722,9 @@ mod tests {
         HostedReconnectConfig, MemberViews, PushRegistration, READ_RETRY_INITIAL, READ_RETRY_MAX,
         ReadRetryState, RunningNetwork, Runtime, RuntimeState, completion_context,
         connection_failure_notice, drain_events, fetch_history, join_request_events, lock,
-        next_connection_state, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
-        spawn_read_marker_fetch, state_limit_events, utf16_len,
+        next_connection_state, permanent_mark_read_error, person_candidates, process_event,
+        process_history, queue_read_advance, read_retry_delay, schedule_snapshot_write_after,
+        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -7279,6 +7272,83 @@ async fn delay(duration: Duration) {
             .expect("pushed message is restored")
     }
 
+    struct MarkReadWireHarness {
+        _client: papo::Client,
+        _events: papo::Events,
+        _state: Arc<Mutex<RuntimeState>>,
+        _outbound: mpsc::UnboundedSender<EngineToUi>,
+        receiver: mpsc::UnboundedReceiver<EngineToUi>,
+        wire: Wire,
+    }
+
+    async fn mark_read_wire_harness() -> MarkReadWireHarness {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        let appended = collect(&mut receiver);
+        let (buffer_id, message_id) = appended
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("live message is projected");
+        let output = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        }
+        .request(EngineRequestEnvelope {
+            id: "mark-retry".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
+        assert!(
+            output
+                .iter()
+                .all(|event| !matches!(event, EngineToUi::Notice { .. }))
+        );
+        MarkReadWireHarness {
+            _client: client,
+            _events: events,
+            _state: state,
+            _outbound: outbound,
+            receiver,
+            wire,
+        }
+    }
+
+    async fn fail_mark_read(wire: &mut Wire, request: &str, code: &str) {
+        let label = request_label(request);
+        wire.server(format!(
+            "@label={label} :offline.test FAIL MARKREAD {code} #room :Mark read failed"
+        ))
+        .await;
+    }
+
     fn known_channel(client: &papo::Client, name: &str) -> papo::ChannelName {
         client
             .state()
@@ -8753,66 +8823,57 @@ async fn delay(duration: Duration) {
         assert!(retry.failed(&error).retry_after.is_none());
     }
 
+    #[test]
+    fn permanent_mark_read_errors_are_classified() {
+        let cases = [
+            (
+                "invalid parameters",
+                papo::Error::Server(papo::ServerError::standard(
+                    "MARKREAD",
+                    "INVALID_PARAMS",
+                    "bad marker",
+                )),
+                true,
+            ),
+            (
+                "other refusal",
+                papo::Error::Server(papo::ServerError::standard(
+                    "MARKREAD",
+                    "FORBIDDEN",
+                    "not allowed",
+                )),
+                true,
+            ),
+            ("target gone", papo::Error::TargetGone, true),
+            (
+                "invalid input",
+                papo::Error::InvalidInput(papo::InvalidInput::InvalidRequest("bad marker".into())),
+                true,
+            ),
+            (
+                "server internal error",
+                papo::Error::Server(papo::ServerError::standard(
+                    "MARKREAD",
+                    "INTERNAL_ERROR",
+                    "try again",
+                )),
+                false,
+            ),
+            ("timeout", papo::Error::Timeout, false),
+        ];
+
+        for (name, error, expected) in cases {
+            assert_eq!(permanent_mark_read_error(&error), expected, "{name}");
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn permanent_mark_read_failure_is_diagnostic_without_retry_or_notice() {
-        let caps = [
-            "draft/read-marker",
-            "labeled-response",
-            "message-tags",
-            "server-time",
-        ];
-        let (client, mut events, mut wire) =
-            wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        wire.register(&caps).await;
-        _ = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Connected(_))
-        })
-        .await;
-        wire.server(":weblounge!u@host JOIN #room").await;
-        let joined =
-            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
-        let (state, outbound, mut receiver) = harness(client.clone());
-        process_event(&state, &outbound, &client, 1, joined);
-        _ = collect(&mut receiver);
-        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
-            .await;
-        let message = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Message(_))
-        })
-        .await;
-        process_event(&state, &outbound, &client, 1, message);
-        let appended = collect(&mut receiver);
-        let (buffer_id, message_id) = appended
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
-            .expect("live message is projected");
-        let runtime = Runtime { state, outbound };
-        let output = runtime.request(EngineRequestEnvelope {
-            id: "mark-retry".into(),
-            request: EngineRequest::MarkRead {
-                buffer_id,
-                through: message_id,
-            },
-        });
-        assert!(
-            output
-                .iter()
-                .all(|event| !matches!(event, EngineToUi::Notice { .. }))
-        );
-        let request = wire.next_sent().await;
-        let label = request_label(&request);
-        wire.server(format!(
-            "@label={label} :offline.test FAIL MARKREAD INVALID_PARAMS #room :Invalid parameters"
-        ))
-        .await;
+        let mut harness = mark_read_wire_harness().await;
+        let request = harness.wire.next_sent().await;
+        fail_mark_read(&mut harness.wire, &request, "INVALID_PARAMS").await;
 
-        let emitted = receiver.recv().await.expect("failure diagnostic");
+        let emitted = harness.receiver.recv().await.expect("failure diagnostic");
         assert!(matches!(
             &emitted,
             EngineToUi::Diagnostic { message, .. }
@@ -8821,7 +8882,40 @@ async fn delay(duration: Duration) {
         assert!(!matches!(emitted, EngineToUi::Notice { .. }));
         tokio::time::advance(READ_RETRY_MAX).await;
         assert!(
-            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+            tokio::time::timeout(Duration::ZERO, harness.wire.next_sent())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transient_mark_read_failure_retries_five_times_with_one_diagnostic() {
+        let mut harness = mark_read_wire_harness().await;
+        let request = harness.wire.next_sent().await;
+        fail_mark_read(&mut harness.wire, &request, "INTERNAL_ERROR").await;
+        let first = harness.receiver.recv().await.expect("failure diagnostic");
+        assert!(matches!(
+            first,
+            EngineToUi::Diagnostic { message, .. }
+                if message == EngineMessageKey::MarkReadFailed.as_str()
+        ));
+
+        for delay_seconds in [1, 2, 4, 8] {
+            tokio::time::advance(Duration::from_secs(delay_seconds)).await;
+            let retry = harness.wire.next_sent().await;
+            assert!(retry.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+            fail_mark_read(&mut harness.wire, &retry, "INTERNAL_ERROR").await;
+            tokio::task::yield_now().await;
+        }
+
+        assert!(collect(&mut harness.receiver).iter().all(|event| !matches!(
+            event,
+            EngineToUi::Diagnostic { message, .. }
+                if message == EngineMessageKey::MarkReadFailed.as_str()
+        )));
+        tokio::time::advance(READ_RETRY_MAX).await;
+        assert!(
+            tokio::time::timeout(Duration::ZERO, harness.wire.next_sent())
                 .await
                 .is_err()
         );
