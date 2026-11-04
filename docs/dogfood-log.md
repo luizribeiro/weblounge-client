@@ -103,3 +103,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 95 | 2026-11-04 | Firefox desktop (8ae24d1, fresh site data): "Couldn't start weblounge." — engine worker crashes during startup ("engine worker restarted" from setVisibility). | cause found: startup liveness probe times out a slow cold start and is treated as fatal (all browsers); fix in progress |
 | 96 | 2026-11-04 | Startup error screen: the Retry button text is white on the light-green button. | in progress |
 | 97 | 2026-11-04 | Desktop Firefox: the logo/title shimmer is not visible. | in progress |
+| 98 | 2026-11-04 | Firefox: the offline cached-shell launch did not serve the cached shell on reload (found by a stale-shell verification run; Firefox not yet in CI for these specs). | open |
