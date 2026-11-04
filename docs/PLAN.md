@@ -96,6 +96,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Keep engine buffer order deterministic: server first, channels by casemapped name without
     `#`/`&`, and direct messages by latest activity with a casemapped nick tiebreaker. Desktop and
     mobile consume the same engine order; shuffled joins remain stable across three reloads.
+  - [x] Wait for the reloaded engine connection before buffer-order coverage conditionally rejoins
+    channels, so partial startup hydration cannot send JOIN while the network is still registering.
   - [x] Generate home-screen, favicon, and maskable icons from the canonical chair artwork during
     the build. The self-hosted install manifest and Apple metadata ship in the hosted artifact;
     production validation covers image dimensions and Apple opacity, and the browser fetches every

@@ -44,6 +44,9 @@ test.describe("buffer order against local Ergo", () => {
         await expect(
           page.getByRole("heading", { name: /#weblounge-test/ }),
         ).toBeVisible();
+        await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+          1,
+        );
         const composer = page.getByRole("textbox", { name: "Message" });
         for (const channel of arrival) {
           if (channel === undefined) continue;
@@ -58,25 +61,33 @@ test.describe("buffer order against local Ergo", () => {
             page.getByRole("heading", { name: channel }),
           ).toBeVisible();
         }
-        await expect
-          .poll(async () =>
-            page
-              .locator("[data-buffer-id]")
-              .evaluateAll(
-                (rows, marker) =>
-                  rows
-                    .map((row) => row.getAttribute("aria-label") ?? "")
-                    .filter((name) => name.includes(String(marker))),
-                suffix,
-              ),
-          )
-          .toEqual(expected);
+        await expectStableChannelOrder(page, suffix, expected);
       }
     } finally {
       await partStableChannels(page);
     }
   });
 });
+
+async function expectStableChannelOrder(
+  page: Page,
+  suffix: string,
+  expected: readonly string[],
+): Promise<void> {
+  await expect
+    .poll(async () =>
+      page
+        .locator("[data-buffer-id]")
+        .evaluateAll(
+          (rows, marker) =>
+            rows
+              .map((row) => row.getAttribute("aria-label") ?? "")
+              .filter((name) => name.includes(String(marker))),
+          suffix,
+        ),
+    )
+    .toEqual(expected);
+}
 
 async function partStableChannels(page: Page): Promise<void> {
   const names = await page
