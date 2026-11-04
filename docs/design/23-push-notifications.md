@@ -483,9 +483,9 @@ still fall back to memory, but Durable fails closed when IndexedDB is unavailabl
 The page owns `weblounge-push`, with one route record keyed by pinned home VAPID key. Each record
 contains its relay device id, current `NetworkId` and label, relay endpoint, public key, auth secret
 and a non-extractable ECDH private `CryptoKey`. Each route receives independently generated P-256
-and 16-byte auth material. Schema v4 migrates older route-id-keyed records by deterministically
-keeping one complete record per home; records without a device id or label are exact-unregistered
-and removed on first convergence.
+and 16-byte auth material. Schema v4 migrates the route-id-keyed records deployed in build
+`b052c6f9fca3cdc5769b989ff1c5bb4c18ab937e` by deterministically keeping one complete record per
+home; records without a device id or label are exact-unregistered and removed on first convergence.
 
 On each eligible connection the engine emits one `PushRouteRequired` to the active shell. The page
 buffers it until setup is ready, upserts the browser target, calls the relay's idempotent
