@@ -14,6 +14,7 @@ import solid from "vite-plugin-solid";
 import { defineConfig } from "vitest/config";
 import { BETA_CONTENT_SECURITY_POLICY } from "./csp.ts";
 import { buildDebugIrcConfig } from "./src/debug-irc-config.ts";
+import { messages } from "./src/strings.ts";
 
 export default defineConfig(({ mode }) => {
   const performanceHarness = process.env.WEBLOUNGE_E2E_HARNESS === "1";
@@ -57,6 +58,9 @@ export default defineConfig(({ mode }) => {
       __BUILD_SHA__: JSON.stringify(buildSha),
       __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
       __KEYBOARD_MOTION_TEST_ENABLED__: JSON.stringify(performanceHarness),
+      __PUSH_NEW_MESSAGE__: JSON.stringify(
+        messages["notifications.new_message"],
+      ),
       __DEBUG_IRC_CONFIG__: JSON.stringify(
         buildDebugIrcConfig(mode, process.env, performanceHarness),
       ),
