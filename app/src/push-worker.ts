@@ -210,6 +210,7 @@ async function previousShellAssetResponse(request: Request): Promise<Response> {
 async function showPushNotification(event: WorkerPushEvent): Promise<void> {
   let route: StoredRoute | undefined;
   let presentation = genericNotification();
+  let recordNotification = true;
   try {
     const envelope = pushEnvelope(event.data?.json());
     route = await findRoute(envelope.routeId);
@@ -232,20 +233,18 @@ async function showPushNotification(event: WorkerPushEvent): Promise<void> {
       new TextDecoder().decode(plaintext),
       parser,
     );
+    presentation = parsed.presentation;
     if (parsed.event?.type === "markread") {
       await markConversationRead(
         conversationTag(route, parsed.event.target),
       ).catch(() => undefined);
-      await tidyReadNotifications().catch(() => undefined);
-      return;
-    }
-    if (parsed.event?.type === "ping") {
-      await tidyReadNotifications().catch(() => undefined);
-      return;
-    }
-    presentation = parsed.presentation;
-    if (parsed.event !== undefined && isChatPayload(parsed.event)) {
-      await storePushedMessage(route, parsed.event).catch(() => undefined);
+      recordNotification = false;
+    } else if (parsed.event?.type === "ping") {
+      recordNotification = false;
+    } else if (parsed.event !== undefined && isChatPayload(parsed.event)) {
+      recordNotification = await storePushedMessage(route, parsed.event).catch(
+        () => true,
+      );
     }
   } catch {}
   await tidyReadNotifications(false).catch(() => undefined);
@@ -253,9 +252,11 @@ async function showPushNotification(event: WorkerPushEvent): Promise<void> {
     presentation.title,
     presentation.options,
   );
-  await recordShownNotification(presentation.options.tag).catch(
-    () => undefined,
-  );
+  if (recordNotification) {
+    await recordShownNotification(presentation.options.tag).catch(
+      () => undefined,
+    );
+  }
 }
 
 interface NotificationCounts {
@@ -439,7 +440,7 @@ async function markForReregistration(route: StoredRoute): Promise<void> {
 async function storePushedMessage(
   route: StoredRoute,
   message: Extract<ParsedPushEvent, { type: "message" | "notice" | "action" }>,
-): Promise<void> {
+): Promise<boolean> {
   const direct = sameIrcName(message.target, route.nickname);
   const record = {
     schema: 1,
@@ -460,14 +461,18 @@ async function storePushedMessage(
   };
   const database = await openCurrentEngineDatabase();
   try {
-    if (!database.objectStoreNames.contains(engineCacheStore)) return;
+    if (!database.objectStoreNames.contains(engineCacheStore)) return true;
     const transaction = database.transaction(engineCacheStore, "readwrite");
+    const completed = transactionDone(transaction);
+    const store = transaction.objectStore(engineCacheStore);
     const key = textEncoder.encode(
       `pushed-message\0${route.networkLabel}\0${message.msgid}`,
     );
     const value = textEncoder.encode(JSON.stringify(record));
-    transaction.objectStore(engineCacheStore).put(value, key);
-    await transactionDone(transaction);
+    const existing = await requestResult(store.get(key));
+    store.put(value, key);
+    await completed;
+    return existing === undefined;
   } finally {
     database.close();
   }

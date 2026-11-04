@@ -109,6 +109,39 @@ test("decrypts a real envelope into one routed notification", async ({
     ]);
 });
 
+test("re-shows a duplicate msgid without incrementing its badge", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const prefix =
+    "@time=2026-11-03T12:34:56.789Z;msgid=push-duplicate :mel!m@example.test PRIVMSG #lounge :";
+  await deliverPush(
+    context,
+    page,
+    await seedRouteAndEncrypt(page, `${prefix}first delivery`),
+  );
+  await expect.poll(() => notifications(page)).toHaveLength(1);
+
+  await deliverPush(
+    context,
+    page,
+    await seedRouteAndEncrypt(page, `${prefix}second delivery`),
+  );
+
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([
+      {
+        title: "mel in #lounge",
+        body: "second delivery",
+        tag: "1/#lounge",
+        route: "/Lounge/lounge",
+      },
+    ]);
+  await expect.poll(() => storedAppBadge(page)).toBe(1);
+});
+
 test("migrates and decrypts an active route from the previous schema", async ({
   context,
   page,
@@ -133,7 +166,7 @@ test("migrates and decrypts an active route from the previous schema", async ({
     });
 });
 
-test("handles MARKREAD and maintenance PING silently", async ({
+test("shows MARKREAD and maintenance PING after applying cleanup", async ({
   context,
   page,
 }) => {
@@ -157,16 +190,22 @@ test("handles MARKREAD and maintenance PING silently", async ({
   );
   await deliverPush(context, page, markread);
 
-  await expect.poll(() => notifications(page)).toEqual([]);
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
   await expect.poll(() => storedAppBadge(page)).toBe(0);
 
+  await closeNotifications(page);
   await seedReadNotification(page);
   await expect.poll(() => notifications(page)).toHaveLength(1);
   const ping = await seedRouteAndEncrypt(page, "PING :maintenance");
   await deliverPush(context, page, ping);
-  await expect.poll(() => notifications(page)).toEqual([]);
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
   await expect.poll(() => storedAppBadge(page)).toBe(0);
 
+  await closeNotifications(page);
   const visible = await seedRouteAndEncrypt(
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=push-after-controls :mel!m@example.test PRIVMSG #lounge :visible after controls",
@@ -206,6 +245,26 @@ test("shows one generic notification when decryption fails", async ({
     .poll(() => notifications(page))
     .toEqual([{ title: "New message", body: "Lounge", tag: "", route: "/" }]);
   await expect.poll(() => routeNeedsReregistration(page)).toBe(true);
+});
+
+test("shows one generic notification when route keys are missing", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const envelope = JSON.parse(
+    await seedRouteAndEncrypt(
+      page,
+      "@time=2026-11-03T12:34:56.789Z;msgid=push-missing-route :mel!m@example.test PRIVMSG #lounge :still visible",
+    ),
+  ) as { notification: { data: { r: string } } };
+  envelope.notification.data.r = "missing-route";
+
+  await deliverPush(context, page, JSON.stringify(envelope));
+
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
 });
 
 test("shows one generic notification without replacing keys when parsing fails", async ({
@@ -435,6 +494,16 @@ async function notifications(page: Page) {
           : "",
     }));
   });
+}
+
+async function closeNotifications(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    for (const notification of (await registration?.getNotifications()) ?? []) {
+      notification.close();
+    }
+  });
+  await expect.poll(() => notifications(page)).toEqual([]);
 }
 
 async function routeNeedsReregistration(page: Page): Promise<boolean> {
