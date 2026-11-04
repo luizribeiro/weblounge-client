@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
 
-const host = "127.0.0.1";
+const host = process.env.WEBLOUNGE_E2E_IRC_HOST ?? "127.0.0.1";
 const port = Number(process.env.WEBLOUNGE_E2E_IRC_PORT ?? 6667);
 const ircTimeoutMilliseconds = 5_000;
 
@@ -73,6 +73,42 @@ export class IrcClient {
       `JOIN confirmation for ${channel}`,
       (line) => line.includes(`!`) && line.includes(` JOIN ${channel}`),
     );
+    return client;
+  }
+
+  static async connectOAuth(
+    nickname: string,
+    token: string,
+  ): Promise<IrcClient> {
+    const socket = await connectedSocket();
+    const client = new IrcClient(socket, nickname);
+    client.send("CAP LS 302");
+    client.send(`NICK ${nickname}`);
+    client.send(`USER ${nickname} 0 * :${nickname}`);
+    await client.waitFor("capability list", (line) =>
+      line.includes(" CAP * LS "),
+    );
+    client.send("CAP REQ :sasl");
+    await client.waitFor("SASL capability acknowledgement", (line) =>
+      line.includes(" CAP * ACK :sasl"),
+    );
+    client.send("AUTHENTICATE OAUTHBEARER");
+    await client.waitFor(
+      "SASL OAUTHBEARER authentication prompt",
+      (line) => line === "AUTHENTICATE +",
+    );
+    const credentials = Buffer.from(
+      `n,,\u0001auth=Bearer ${token}\u0001\u0001`,
+    ).toString("base64");
+    client.send(`AUTHENTICATE ${credentials}`);
+    await client.waitFor("SASL success numeric", (line) =>
+      line.includes(" 903 "),
+    );
+    client.send("CAP END");
+    const welcome = await client.waitFor("welcome numeric", (line) =>
+      line.includes(" 001 "),
+    );
+    client.#nickname = welcome.match(/ 001 (\S+) /u)?.[1] ?? nickname;
     return client;
   }
 
@@ -198,6 +234,18 @@ export class IrcClient {
     await this.waitFor("always-on setting confirmation", (line) =>
       line.includes("Successfully changed your account settings"),
     );
+  }
+
+  async pushSubscriptionCount(): Promise<number> {
+    this.privmsg("NickServ", "PUSH LIST");
+    const response = await this.waitFor("push subscription count", (line) =>
+      line.includes(" push subscription(s)"),
+    );
+    const count = / has ([0-9]+) push subscription\(s\)/u.exec(response)?.[1];
+    if (count === undefined) {
+      throw new Error(`Could not parse push subscription count: ${response}`);
+    }
+    return Number.parseInt(count, 10);
   }
 
   close(): void {
