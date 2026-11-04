@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js";
+import { t } from "../../strings";
 import styles from "./SimpleComposer.module.css";
 
 interface SimpleComposerProps {
@@ -21,15 +22,15 @@ export function SimpleComposer(props: SimpleComposerProps) {
   return (
     <form class={styles.form} onSubmit={submit}>
       <input
-        aria-label={`Message ${props.bufferTitle}`}
+        aria-label={t("composer.input", { target: props.bufferTitle })}
         autocomplete="off"
         class={styles.input}
         disabled={props.disabled}
         name="message"
-        placeholder={`Message ${props.bufferTitle}`}
+        placeholder={t("composer.input", { target: props.bufferTitle })}
       />
       <button class={styles.send} disabled={props.disabled} type="submit">
-        Send
+        {t("common.send")}
       </button>
     </form>
   );

@@ -23,6 +23,7 @@ import {
   type AppGeometryChange,
   appGeometryChangeEvent,
 } from "../../platform/viewport-geometry";
+import { t } from "../../strings";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
@@ -391,7 +392,7 @@ export function MessageList(props: MessageListProps) {
     <div class={styles.surface}>
       {/* biome-ignore lint/a11y/useSemanticElements: the scroll owner wraps the semantic row layer */}
       <div
-        aria-label="Messages"
+        aria-label={t("messages.label")}
         class={styles.list}
         data-message-list="true"
         data-presentation={props.presentation ?? "desktop"}
@@ -511,7 +512,9 @@ export function MessageList(props: MessageListProps) {
       </div>
       {unseen() > 0 && (
         <button class={styles.jump} onClick={jumpToBottom} type="button">
-          {unseen()} new {unseen() === 1 ? "message" : "messages"} ↓
+          {t(unseen() === 1 ? "messages.jump.one" : "messages.jump.many", {
+            count: String(unseen()),
+          })}
         </button>
       )}
     </div>
@@ -548,7 +551,7 @@ function TimelineRowView(props: {
           </Match>
           <Match when={row.kind === "new"}>
             <div class={styles.newLine} data-new-line="true">
-              <span>New</span>
+              <span>{t("messages.new")}</span>
             </div>
           </Match>
           <Match when={row.kind === "message"}>
@@ -571,7 +574,7 @@ function TimelineRowView(props: {
                   <>
                     ← {kickText(row.membership)} ·{" "}
                     <button onClick={() => props.onRejoin?.()} type="button">
-                      Rejoin
+                      {t("messages.rejoin")}
                     </button>
                   </>
                 ) : (
@@ -663,7 +666,9 @@ function MessageRow(props: {
                 value={message.author}
               />
             </span>
-            {message.bot === true && <span class={styles.bot}>BOT</span>}
+            {message.bot === true && (
+              <span class={styles.bot}>{t("common.bot")}</span>
+            )}
             <UnverifiedSenderMark message={message} />
           </Line>
           <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
@@ -685,10 +690,10 @@ function MessageRow(props: {
 function UnverifiedSenderMark(props: { readonly message: MessageProjection }) {
   return props.message.unverified_sender === true ? (
     <span
-      aria-label="Unverified sender"
+      aria-label={t("messages.unverified_sender")}
       class={styles.unverifiedMark}
       role="img"
-      title="Unverified sender"
+      title={t("messages.unverified_sender")}
     >
       ?
     </span>
@@ -737,13 +742,13 @@ function NoticeRow(props: {
           data-notice-kind="topic"
           data-notice-row="true"
         >
-          <span>Topic: </span>
+          <span>{t("messages.topic_prefix")}</span>
           <Selectable
             class={styles.noticeTopic}
             surfaceId={`message-${message.id}`}
           >
             {message.text === "" ? (
-              "No topic is set."
+              t("messages.topic.empty")
             ) : (
               <MessageText
                 authors={props.nickLookup}
@@ -755,7 +760,7 @@ function NoticeRow(props: {
             )}
           </Selectable>
           {notice.setter !== null && notice.setter !== "" && (
-            <span> — set by {notice.setter}</span>
+            <span>{t("messages.topic.setter", { setter: notice.setter })}</span>
           )}
           {notice.set_at !== null && (
             <time dateTime={new Date(notice.set_at).toISOString()}>
@@ -775,18 +780,18 @@ function Delivery(props: {
   readonly onRetry?: ((localSendId: number) => void) | undefined;
 }) {
   if (props.message.delivery === "optimistic")
-    return <Line class={styles.pending}>Sending…</Line>;
+    return <Line class={styles.pending}>{t("messages.delivery.sending")}</Line>;
   if (props.message.delivery === "failed") {
     const localSendId = props.message.local_send_id;
     return localSendId === null || props.onRetry === undefined ? (
-      <Line class={styles.failed}>Failed</Line>
+      <Line class={styles.failed}>{t("messages.delivery.failed")}</Line>
     ) : (
       <button
         class={`${styles.failed} ${styles.retry}`}
         onClick={() => props.onRetry?.(localSendId)}
         type="button"
       >
-        Failed · Retry
+        {t("messages.delivery.failed_retry")}
       </button>
     );
   }
@@ -889,10 +894,12 @@ function latestMessageTime(
 
 function formatDay(time: Date): string {
   const today = new Date();
-  if (time.toDateString() === today.toDateString()) return "Today";
+  if (time.toDateString() === today.toDateString())
+    return t("messages.date.today");
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (time.toDateString() === yesterday.toDateString()) return "Yesterday";
+  if (time.toDateString() === yesterday.toDateString())
+    return t("messages.date.yesterday");
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
     time,
   );
@@ -922,22 +929,32 @@ function membershipArrow(
 function membershipVerb(
   kind: Extract<MembershipProjection, { type: "change" }>["kind"],
 ): string {
-  if (kind === "joined") return "joined";
-  if (kind === "parted") return "left";
-  return "quit";
+  if (kind === "joined") return t("messages.membership.joined");
+  if (kind === "parted") return t("messages.membership.left");
+  return t("messages.membership.quit");
 }
 
 function kickText(
   membership: Extract<MembershipProjection, { type: "kicked" }>,
 ): string {
   const reason = membership.reason === null ? "" : `: ${membership.reason}`;
-  return `${membership.actor} kicked you${reason}`;
+  return t("messages.membership.kicked", {
+    actor: membership.actor,
+    reason,
+  });
 }
 
 function formatNicks(nicks: readonly string[]): string {
   if (nicks.length < 2) return nicks[0] ?? "";
-  if (nicks.length === 2) return `${nicks[0]} and ${nicks[1]}`;
-  return `${nicks.slice(0, -1).join(", ")} and ${nicks.at(-1)}`;
+  if (nicks.length === 2)
+    return t("messages.membership.two", {
+      first: nicks[0] ?? "",
+      last: nicks[1] ?? "",
+    });
+  return t("messages.membership.many", {
+    members: nicks.slice(0, -1).join(", "),
+    last: nicks.at(-1) ?? "",
+  });
 }
 
 function toCopyRows(rows: readonly TimelineRow[]): CopyRow[] {
@@ -978,14 +995,14 @@ function noticeText(message: NoticeMessage): string {
     case "info":
       return message.text;
     case "topic": {
-      const topic = message.text || "No topic is set.";
+      const topic = message.text || t("messages.topic.empty");
       const setter =
         notice.setter === null || notice.setter === ""
           ? ""
-          : ` — set by ${notice.setter}`;
+          : t("messages.topic.setter", { setter: notice.setter });
       const time =
         notice.set_at === null ? "" : ` · ${formatNoticeTime(notice.set_at)}`;
-      return `Topic: ${topic}${setter}${time}`;
+      return t("messages.topic", { topic, setter, time });
     }
     default:
       return assertNever(notice);

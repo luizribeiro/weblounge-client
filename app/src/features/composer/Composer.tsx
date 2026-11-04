@@ -16,7 +16,7 @@ import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import { composerGeometryChangeEvent } from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
-import { translate } from "./strings";
+import { t, translate } from "./strings";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -334,7 +334,9 @@ export function Composer(props: ComposerProps) {
       )}
       {pendingConfirmation() !== undefined && (
         <div
-          aria-label={`Confirm /${pendingConfirmation()?.name}`}
+          aria-label={t("composer.confirm", {
+            command: pendingConfirmation()?.name ?? "",
+          })}
           class={styles.confirmation}
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
@@ -362,7 +364,7 @@ export function Composer(props: ComposerProps) {
             onPointerDown={(event) => event.preventDefault()}
             type="button"
           >
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
       )}
@@ -375,13 +377,13 @@ export function Composer(props: ComposerProps) {
         aria-controls={suggestions() !== undefined ? listId() : undefined}
         aria-expanded={suggestions() !== undefined}
         aria-haspopup="listbox"
-        aria-label={`Suggestions for ${props.bufferTitle}`}
+        aria-label={t("composer.suggestions", { target: props.bufferTitle })}
         class={styles.form}
         role="combobox"
         tabIndex={-1}
       >
         <textarea
-          aria-label={`Message ${props.bufferTitle}`}
+          aria-label={t("composer.input", { target: props.bufferTitle })}
           autocomplete="off"
           class={styles.input}
           disabled={props.disabled}
@@ -403,7 +405,7 @@ export function Composer(props: ComposerProps) {
               request(value, event.currentTarget.selectionStart, false);
           }}
           onKeyDown={keydown}
-          placeholder={`Message ${props.bufferTitle}`}
+          placeholder={t("composer.input", { target: props.bufferTitle })}
           ref={(element) => {
             textarea = element;
             if (props.focusOnMount === true)
@@ -425,13 +427,15 @@ export function Composer(props: ComposerProps) {
           onPointerDown={(event) => event.preventDefault()}
           type="button"
         >
-          Send
+          {t("common.send")}
         </button>
       </div>
       <p aria-live="polite" class="visually-hidden">
         {suggestions() === undefined
           ? ""
-          : `${suggestions()?.candidates.length ?? 0} suggestions available`}
+          : t("composer.suggestions_available", {
+              count: String(suggestions()?.candidates.length ?? 0),
+            })}
       </p>
     </div>
   );

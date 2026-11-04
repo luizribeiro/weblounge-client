@@ -1,4 +1,5 @@
 import { createMemo, For, Match, Switch } from "solid-js";
+import { t } from "../../strings";
 import styles from "./MessageList.module.css";
 import { tokenizeMessage } from "./message-tokenizer";
 import { nickColor } from "./nick-color";
@@ -93,7 +94,7 @@ export function Nickname(props: {
   if (clickable())
     return (
       <button
-        aria-label={`Open direct message with ${props.value}`}
+        aria-label={t("conversation.open_direct", { nick: props.value })}
         class={className()}
         data-nick-action="true"
         onClick={() => props.onOpenDirect?.(props.value)}

@@ -3,7 +3,13 @@ import { type MessageKey, messages, t } from "./strings";
 
 const messageKeys = Object.keys(messages).filter(
   (key): key is MessageKey =>
-    key.startsWith("composer.") || key.startsWith("engine."),
+    key.startsWith("engine.") ||
+    [
+      "composer.empty_input",
+      "composer.missing_argument",
+      "composer.unexpected_argument",
+      "composer.unknown_command",
+    ].includes(key),
 );
 
 describe("composer strings", () => {

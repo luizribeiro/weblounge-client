@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import type { BufferProjection } from "../../engine/protocol";
+import { t } from "../../strings";
 import styles from "./DirectIdentityBanner.module.css";
 
 interface DirectIdentityBannerProps {
@@ -20,10 +21,10 @@ export function DirectIdentityBanner(props: DirectIdentityBannerProps) {
         >
           <span>{text}</span>
           <button onClick={() => props.onTrust(props.buffer.id)} type="button">
-            Trust new identity
+            {t("direct_identity.trust")}
           </button>
           <button onClick={() => props.onDefer(props.buffer.id)} type="button">
-            Not now
+            {t("direct_identity.defer")}
           </button>
         </div>
       )}
@@ -42,8 +43,8 @@ export function directIdentityBlocked(buffer: BufferProjection): boolean {
 
 function mismatchMessage(buffer: BufferProjection): string | undefined {
   if (buffer.direct_identity === "different_account")
-    return `This isn't the same ${buffer.title} — different account`;
+    return t("direct_identity.changed", { nick: buffer.title });
   if (buffer.direct_identity === "cannot_verify")
-    return `Can't verify this is the same ${buffer.title}`;
+    return t("direct_identity.cannot_verify", { nick: buffer.title });
   return undefined;
 }

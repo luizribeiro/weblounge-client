@@ -4,7 +4,7 @@ import { TouchTapGesture } from "../../platform/focus-without-pan";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import { Line } from "../../ui/Line";
 import styles from "../conversation/SimpleComposer.module.css";
-import { translate } from "./strings";
+import { t, translate } from "./strings";
 
 interface SuggestionListProps {
   readonly candidates: readonly CompletionCandidate[];
@@ -86,7 +86,7 @@ export function SuggestionList(props: SuggestionListProps) {
                     {candidateLabel(candidate())}
                   </span>
                   {candidateIsBot(candidate()) && (
-                    <span class={styles.bot}>BOT</span>
+                    <span class={styles.bot}>{t("common.bot")}</span>
                   )}
                 </Line>
                 {candidateDetail(candidate()) !== null && (
@@ -162,9 +162,9 @@ function candidateDetail(
         : `${argumentsOnly} · ${translate(candidate.description)}`;
     }
     case "person":
-      return candidate.away ? "Away" : null;
+      return candidate.away ? t("common.away") : null;
     case "channel":
-      return "Channel";
+      return t("common.channel");
   }
 }
 

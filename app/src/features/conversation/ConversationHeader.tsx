@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import type { BufferSyncPresentation } from "../../engine/buffer-sync";
+import { t } from "../../strings";
 import { Line } from "../../ui/Line";
 import { Selectable } from "../../ui/Selectable";
 import styles from "./ConversationHeader.module.css";
@@ -21,7 +22,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
   return (
     <header class={styles.header} data-main-header="true">
       <button
-        aria-label="Toggle channel list"
+        aria-label={t("conversation.toggle_sidebar")}
         class={styles.iconButton}
         onClick={props.onToggleSidebar}
         title={props.sidebarTooltip}
@@ -45,7 +46,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
       </div>
       {props.memberCount !== undefined && (
         <button
-          aria-label="Toggle member list"
+          aria-label={t("conversation.toggle_members")}
           aria-pressed={props.membersPressed ?? false}
           class={`${styles.iconButton} ${styles.memberButton}`}
           onClick={props.onToggleMembers}
