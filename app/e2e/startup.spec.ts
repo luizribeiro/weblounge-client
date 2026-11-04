@@ -124,6 +124,62 @@ test("turns a stalled startup into a human error", async ({ page }) => {
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 });
 
+test("survives focus while the engine handshake is pending", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let releaseEngine: (() => void) | undefined;
+  let markEngineRequested: (() => void) | undefined;
+  const engineRequested = new Promise<void>((resolve) => {
+    markEngineRequested = resolve;
+  });
+  await page.route("**/*.wasm", async (route) => {
+    if (!route.request().url().includes("engine")) {
+      await route.continue();
+      return;
+    }
+    await new Promise<void>((release) => {
+      releaseEngine = release;
+      markEngineRequested?.();
+    });
+    await route.continue();
+  });
+  await page.addInitScript(() => {
+    let focused = false;
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(document, "hasFocus", {
+      configurable: true,
+      value: () => focused,
+    });
+    Reflect.set(globalThis, "focusStartupPage", () => {
+      focused = true;
+      window.dispatchEvent(new Event("focus"));
+    });
+  });
+
+  await page.goto("/");
+  await engineRequested;
+  await page.evaluate(() => {
+    const focus = Reflect.get(globalThis, "focusStartupPage");
+    if (typeof focus !== "function")
+      throw new Error("focus control is missing");
+    focus();
+  });
+  // wait-ok: crosses the worker heartbeat timeout while the handshake is held.
+  await page.clock.runFor(6_000);
+  if (releaseEngine === undefined)
+    throw new Error("engine request was not held");
+  releaseEngine();
+  await page.clock.resume();
+
+  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+});
+
 test("uses cached config and chats while config revalidation is blocked", async ({
   page,
 }) => {

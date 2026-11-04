@@ -107,6 +107,42 @@ describe("WorkerEngineClient", () => {
     await client.close();
   });
 
+  it("does not probe a worker whose handshake is still pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = new FakePort();
+      const second = new FakePort();
+      const closeFirst = vi.fn();
+      const client = new WorkerEngineClient(
+        { port: first, close: closeFirst },
+        undefined,
+        [],
+        () => ({ port: second, close: vi.fn() }),
+      );
+      const hello = {
+        build_id: "build-1",
+        client_id: "tab-1",
+        last_revision: null,
+        shell: "web" as const,
+      };
+      const started = client.start(hello);
+
+      client.setVisibility("hidden");
+      client.setVisibility("visible");
+      vi.advanceTimersByTime(6_000);
+
+      expect(first.sent).toEqual([{ type: "hello", payload: hello }]);
+      expect(closeFirst).not.toHaveBeenCalled();
+      first.fail();
+      expect(second.sent).toEqual([{ type: "hello", payload: hello }]);
+      second.emit({ type: "ready", engine_instance: "engine-2", revision: 0 });
+      await started;
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("respawns a failed worker and repeats the handshake", async () => {
     const first = new FakePort();
     const second = new FakePort();

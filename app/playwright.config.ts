@@ -53,6 +53,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-startup",
+      grep: /survives focus while the engine handshake is pending/,
+      testMatch: "**/startup.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "webkit" },

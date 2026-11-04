@@ -260,8 +260,6 @@ export class WorkerEngineClient implements EngineClient {
     this.#detach(failed);
     failed.close();
     const error = new Error("engine worker restarted");
-    this.#startWaiter?.reject(error);
-    this.#startWaiter = undefined;
     for (const waiter of this.#requests.values()) waiter.reject(error);
     this.#requests.clear();
     try {
@@ -279,6 +277,7 @@ export class WorkerEngineClient implements EngineClient {
     if (
       this.#closed ||
       this.#hello === undefined ||
+      this.#startWaiter !== undefined ||
       this.#heartbeatId !== undefined
     )
       return;
