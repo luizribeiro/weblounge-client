@@ -9,6 +9,8 @@ The single place a fresh session reads to know where the project stands. Update 
   deletion, bind queued failures to the route that failed so a later successful replacement cannot
   be retired, converge duplicate active routes to one, and make every delivered worker push visible
   while duplicate `msgid`s retain one badge count.
+- [x] Keep production push handling live in the isolated classic service-worker bundle by sharing
+  worker defines across both Vite passes and verifying its required listeners and import-free output.
 
 ## Status
 

@@ -51,6 +51,9 @@ export default defineConfig(({ mode }) => {
   if (mode !== "test" && !existsSync(wasmPath)) {
     throw new Error("engine wasm is missing; run `nix build .#engine-wasm`");
   }
+  const pushWorkerDefines = {
+    __PUSH_NEW_MESSAGE__: JSON.stringify(messages["notifications.new_message"]),
+  };
 
   return {
     define: {
@@ -58,9 +61,7 @@ export default defineConfig(({ mode }) => {
       __BUILD_SHA__: JSON.stringify(buildSha),
       __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
       __KEYBOARD_MOTION_TEST_ENABLED__: JSON.stringify(performanceHarness),
-      __PUSH_NEW_MESSAGE__: JSON.stringify(
-        messages["notifications.new_message"],
-      ),
+      ...pushWorkerDefines,
       __DEBUG_IRC_CONFIG__: JSON.stringify(
         buildDebugIrcConfig(mode, process.env, performanceHarness),
       ),
@@ -109,7 +110,10 @@ export default defineConfig(({ mode }) => {
       injectStartupImageLinks(),
       prioritizeSplashStylesheet(),
       emitPushPayloadParser(pushPayloadJs, pushPayloadWasm),
-      emitServiceWorker(resolve(import.meta.dirname, "src/push-worker.ts")),
+      emitServiceWorker(
+        resolve(import.meta.dirname, "src/push-worker.ts"),
+        pushWorkerDefines,
+      ),
       ...(development || appConfigHarness
         ? [appModeConfig(appConfigHarness)]
         : []),
@@ -184,7 +188,10 @@ function injectStartupImageLinks(): Plugin {
   };
 }
 
-function emitServiceWorker(workerEntry: string): Plugin {
+function emitServiceWorker(
+  workerEntry: string,
+  define: Readonly<Record<string, string>>,
+): Plugin {
   return {
     name: "weblounge-service-worker",
     apply: "build",
@@ -194,6 +201,7 @@ function emitServiceWorker(workerEntry: string): Plugin {
       );
       await viteBuild({
         configFile: false,
+        define,
         publicDir: false,
         logLevel: "error",
         build: {

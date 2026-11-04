@@ -239,7 +239,8 @@ async function verifyServiceWorker(directory) {
     );
   }
   const sourceStart = worker.indexOf("\n", worker.indexOf("\n") + 1) + 1;
-  const hash = createHash("sha256").update(worker.slice(sourceStart));
+  const source = worker.slice(sourceStart);
+  const hash = createHash("sha256").update(source);
   for (const url of expectedUrls) {
     hash.update(url).update(await readFile(resolve(directory, `.${url}`)));
   }
@@ -248,13 +249,27 @@ async function verifyServiceWorker(directory) {
       "service worker cache version does not match the build hash",
     );
   }
+  const requiredListeners = new Map([
+    ["push", /\baddEventListener\(\s*["'`]push["'`]\s*,/u],
+    [
+      "notificationclick",
+      /\baddEventListener\(\s*["'`]notificationclick["'`]\s*,/u,
+    ],
+  ]);
+  for (const [event, listener] of requiredListeners) {
+    if (!listener.test(source)) {
+      throw new Error(`service worker is missing its ${event} listener`);
+    }
+  }
+  if (/\bimport\b/u.test(source)) {
+    throw new Error("classic service worker contains an import");
+  }
   if (
     urls.includes("/config.json") ||
     urls.some((url) => url.startsWith("/startup/")) ||
     !worker.includes("skipWaiting") ||
     !/priority:\s*["'`]low["'`]/u.test(worker) ||
-    !worker.includes("weblounge-shell-") ||
-    /^import\b/mu.test(worker.slice(sourceStart))
+    !worker.includes("weblounge-shell-")
   ) {
     throw new Error("service worker cache or update policy is unsafe");
   }
