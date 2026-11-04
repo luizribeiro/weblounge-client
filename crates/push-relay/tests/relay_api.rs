@@ -822,6 +822,24 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
     );
 
     harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "previous-build-tab").await;
+    assert_eq!(
+        harness.push(&route, &home, b"held before expiry").await,
+        StatusCode::CREATED
+    );
+    assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+    let expired = call_json(
+        &harness.app,
+        Method::POST,
+        "/test/expire-leases",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(expired.0, StatusCode::NO_CONTENT);
+    harness.wait_for_deliveries(1).await;
+    assert_eq!(harness.deliveries.lock().expect("deliveries").len(), 1);
     assert_eq!(
         harness
             .push_with_urgency(&route, &home, b"read elsewhere", Some("normal"))

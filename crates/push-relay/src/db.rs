@@ -237,6 +237,16 @@ impl Database {
         .await?
     }
 
+    #[cfg(feature = "push-e2e")]
+    pub(crate) async fn test_expire_leases(&self) -> Result<()> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            connect(&path)?.execute("UPDATE leases SET expires_at = 0", [])?;
+            Ok(())
+        })
+        .await?
+    }
+
     pub(crate) async fn create_device(
         &self,
         account: String,

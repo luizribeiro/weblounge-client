@@ -110,6 +110,7 @@ pub fn app_with_lease_ttl(
     let router = router
         .route("/test/device-states", get(test_device_states))
         .route("/test/counters", get(test_counters))
+        .route("/test/expire-leases", post(test_expire_leases))
         .route("/test/refuse-next-push", post(refuse_next_push));
     router.with_state(state)
 }
@@ -147,6 +148,13 @@ async fn health(State(state): State<AppState>) -> Result<Response> {
 #[cfg(feature = "push-e2e")]
 async fn test_device_states(State(state): State<AppState>) -> Result<Response> {
     Ok(Json(state.database.test_device_states().await?).into_response())
+}
+
+#[cfg(feature = "push-e2e")]
+async fn test_expire_leases(State(state): State<AppState>) -> Result<StatusCode> {
+    state.database.test_expire_leases().await?;
+    state.delivery_wakeup.notify_one();
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(feature = "push-e2e")]
