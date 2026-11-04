@@ -290,6 +290,7 @@ impl Database {
                     |row| row.get::<_, bool>(0),
                 )?;
                 if owned {
+                    retire_home_routes_except(&transaction, &device_id, &home_vapid, &route_id)?;
                     transaction.commit()?;
                     return Ok(RouteCredentials {
                         id: route_id,
@@ -866,6 +867,29 @@ fn retire_home_routes(
         )?;
         statement
             .query_map(params![device_id, home_vapid], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?
+    };
+    for route in routes {
+        retire_route(transaction, &route)?;
+    }
+    Ok(())
+}
+
+fn retire_home_routes_except(
+    transaction: &rusqlite::Transaction<'_>,
+    device_id: &str,
+    home_vapid: &[u8],
+    retained_route: &str,
+) -> Result<()> {
+    let routes = {
+        let mut statement = transaction.prepare(
+            "SELECT id FROM routes
+             WHERE device_id = ?1 AND home_vapid = ?2 AND id != ?3 ORDER BY id",
+        )?;
+        statement
+            .query_map(params![device_id, home_vapid, retained_route], |row| {
+                row.get(0)
+            })?
             .collect::<rusqlite::Result<Vec<String>>>()?
     };
     for route in routes {

@@ -955,11 +955,28 @@ async fn ensure_route_reuses_the_owned_route_and_rotates_an_unknown_identity() {
     let device = harness.create_device().await;
     let home = SecretKey::random(&mut OsRng);
     let first = harness.create_route(&device, &home).await;
+    rusqlite::Connection::open(harness.temporary.path().join("relay.sqlite3"))
+        .expect("relay database")
+        .execute(
+            "INSERT INTO routes (id, device_id, state, home_vapid)
+             SELECT 'legacy-duplicate', device_id, 'active', home_vapid
+             FROM routes WHERE id = ?1",
+            [first["id"].as_str().expect("route id")],
+        )
+        .expect("legacy duplicate");
 
     let reused = harness
         .ensure_route(&device, &home, first["id"].as_str())
         .await;
     assert_eq!(reused["id"], first["id"]);
+    let duplicate = json!({
+        "id": "legacy-duplicate",
+        "endpoint": format!("{ORIGIN}/v1/r/legacy-duplicate"),
+    });
+    assert_eq!(
+        harness.push(&duplicate, &home, b"duplicate").await,
+        StatusCode::NOT_FOUND
+    );
     let replacement = harness
         .ensure_route(&device, &home, Some("unknown-route"))
         .await;
