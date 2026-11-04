@@ -81,6 +81,7 @@ const pushDatabaseVersion = 3;
 const pushRoutesStore = "routes";
 const pushStateStore = "state";
 const appBadgeKey = "app-badge";
+const notificationCountsKey = "notification-counts";
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
@@ -212,33 +213,155 @@ async function showPushNotification(event: WorkerPushEvent): Promise<void> {
       new TextDecoder().decode(plaintext),
       parser,
     );
+    if (parsed.event?.type === "markread") {
+      await markConversationRead(
+        conversationTag(route, parsed.event.target),
+      ).catch(() => undefined);
+      await tidyReadNotifications().catch(() => undefined);
+      return;
+    }
+    if (parsed.event?.type === "ping") {
+      await tidyReadNotifications().catch(() => undefined);
+      return;
+    }
     presentation = parsed.presentation;
     if (parsed.event !== undefined && isChatPayload(parsed.event)) {
       await storePushedMessage(route, parsed.event).catch(() => undefined);
     }
   } catch {}
+  await tidyReadNotifications(false).catch(() => undefined);
   await worker.registration.showNotification(
     presentation.title,
     presentation.options,
   );
-  await incrementWorkerBadge().catch(() => undefined);
+  await recordShownNotification(presentation.options.tag).catch(
+    () => undefined,
+  );
 }
 
-async function incrementWorkerBadge(): Promise<void> {
-  const badgeNavigator = globalThis.navigator as Navigator & {
-    setAppBadge?: (contents?: number) => Promise<void>;
-  };
-  if (badgeNavigator.setAppBadge === undefined) return;
+interface NotificationCounts {
+  readonly conversations: Map<string, number>;
+  untagged: number;
+}
+
+async function recordShownNotification(tag: string | undefined): Promise<void> {
+  await updateNotificationCounts((counts) => {
+    if (tag === undefined || tag.length === 0) {
+      counts.untagged += 1;
+      return;
+    }
+    counts.conversations.set(tag, (counts.conversations.get(tag) ?? 0) + 1);
+  });
+}
+
+async function markConversationRead(tag: string): Promise<void> {
+  await updateNotificationCounts((counts) => {
+    counts.conversations.set(tag, 0);
+  });
+}
+
+async function updateNotificationCounts(
+  update: (counts: NotificationCounts) => void,
+): Promise<void> {
   const database = await openPushDatabase();
   const transaction = database.transaction(pushStateStore, "readwrite");
+  const completed = transactionDone(transaction);
   const store = transaction.objectStore(pushStateStore);
-  const current = await requestResult(store.get(appBadgeKey));
-  const count = (typeof current === "number" ? current : 0) + 1;
-  store.put(count, appBadgeKey);
-  await transactionDone(transaction);
-  await badgeNavigator.setAppBadge(count);
+  const counts = decodeNotificationCounts(
+    await requestResult(store.get(notificationCountsKey)),
+  );
+  update(counts);
+  const total = notificationCountTotal(counts);
+  store.put(encodeNotificationCounts(counts), notificationCountsKey);
+  store.put(total, appBadgeKey);
+  await completed;
+  database.close();
+  await setWorkerBadge(total);
 }
 
+async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
+  const database = await openPushDatabase();
+  const transaction = database.transaction(pushStateStore, "readonly");
+  const completed = transactionDone(transaction);
+  const counts = decodeNotificationCounts(
+    await requestResult(
+      transaction.objectStore(pushStateStore).get(notificationCountsKey),
+    ),
+  );
+  await completed;
+  database.close();
+  const readTags = [...counts.conversations]
+    .filter(([, count]) => count === 0)
+    .map(([tag]) => tag);
+  const notifications = await Promise.all(
+    readTags.map((tag) => worker.registration.getNotifications({ tag })),
+  );
+  for (const notification of notifications.flat()) notification.close();
+  if (recomputeBadge) await setWorkerBadge(notificationCountTotal(counts));
+}
+
+function decodeNotificationCounts(value: unknown): NotificationCounts {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("schema" in value) ||
+    value.schema !== 1 ||
+    !("conversations" in value) ||
+    !Array.isArray(value.conversations) ||
+    !("untagged" in value) ||
+    !validCount(value.untagged)
+  ) {
+    return { conversations: new Map(), untagged: 0 };
+  }
+  const conversations = new Map<string, number>();
+  for (const entry of value.conversations) {
+    if (
+      !Array.isArray(entry) ||
+      entry.length !== 2 ||
+      typeof entry[0] !== "string" ||
+      !validCount(entry[1])
+    ) {
+      return { conversations: new Map(), untagged: 0 };
+    }
+    conversations.set(entry[0], entry[1]);
+  }
+  return { conversations, untagged: value.untagged };
+}
+
+function encodeNotificationCounts(counts: NotificationCounts): unknown {
+  return {
+    schema: 1,
+    conversations: [...counts.conversations],
+    untagged: counts.untagged,
+  };
+}
+
+function notificationCountTotal(counts: NotificationCounts): number {
+  return (
+    counts.untagged +
+    [...counts.conversations.values()].reduce(
+      (total, count) => total + count,
+      0,
+    )
+  );
+}
+
+function validCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+async function setWorkerBadge(count: number): Promise<void> {
+  const badgeNavigator = globalThis.navigator as Navigator & {
+    setAppBadge?: (contents?: number) => Promise<void>;
+    clearAppBadge?: () => Promise<void>;
+  };
+  if (count === 0) await badgeNavigator.clearAppBadge?.();
+  else await badgeNavigator.setAppBadge?.(count);
+}
+
+function conversationTag(route: StoredRoute, target: string): string {
+  return `${route.networkId}/${target.toLowerCase()}`;
+}
 async function loadPushParser(): Promise<PushPayloadParser> {
   const response = await caches.match("/push-payload_bg.wasm", {
     cacheName: shellCache,

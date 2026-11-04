@@ -1391,6 +1391,71 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell, tole
   vi.useRealTimers();
 });
 
+it("closes a conversation notification on open and whenever it becomes read", async () => {
+  const close = vi.fn();
+  const getNotifications = vi.fn(async () => [
+    { close } as unknown as Notification,
+  ]);
+  const previousServiceWorker = Object.getOwnPropertyDescriptor(
+    navigator,
+    "serviceWorker",
+  );
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: {
+      addEventListener: vi.fn(),
+      getRegistration: async () => ({ getNotifications }),
+      removeEventListener: vi.fn(),
+    },
+  });
+  try {
+    const client = new FakeEngineClient();
+    render(() => <App engineClient={client} />);
+    await screen.findByRole("heading", { name: "weblounge" });
+    client.emit({
+      type: "buffer_added",
+      buffer: {
+        id: 2,
+        network_id: 1,
+        sync_state: "synced",
+        kind: "channel",
+        title: "#room",
+        draft_key: "test:#room",
+        topic: null,
+        unread: 4,
+        mentions: 0,
+        read_through: 4,
+      },
+    });
+
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(getNotifications).toHaveBeenLastCalledWith({ tag: "1/#room" });
+
+    client.emit({
+      type: "unread_changed",
+      buffer_id: 2,
+      unread: 5,
+      mentions: 1,
+    });
+    await Promise.resolve();
+    expect(close).toHaveBeenCalledOnce();
+
+    client.emit({
+      type: "unread_changed",
+      buffer_id: 2,
+      unread: 0,
+      mentions: 0,
+    });
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(2));
+  } finally {
+    if (previousServiceWorker === undefined) {
+      Reflect.deleteProperty(navigator, "serviceWorker");
+    } else {
+      Object.defineProperty(navigator, "serviceWorker", previousServiceWorker);
+    }
+  }
+});
+
 it("reloads only once for the same stale build", () => {
   const setStatus = vi.fn();
   const reload = vi.fn();

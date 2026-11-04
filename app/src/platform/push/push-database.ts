@@ -3,6 +3,12 @@ export const pushDatabaseVersion = 3;
 export const pushRoutesStore = "routes";
 export const pushStateStore = "state";
 export const appBadgeKey = "app-badge";
+export const notificationCountsKey = "notification-counts";
+
+export interface ConversationNotificationCount {
+  readonly tag: string;
+  readonly count: number;
+}
 
 export function openPushDatabase(
   factory: IDBFactory = indexedDB,
@@ -62,6 +68,26 @@ export async function incrementAppBadgeCount(): Promise<number> {
   store.put(count, appBadgeKey);
   await transactionDone(transaction);
   return count;
+}
+
+export async function writeNotificationCounts(
+  counts: readonly ConversationNotificationCount[],
+): Promise<void> {
+  const database = await openPushDatabase();
+  const transaction = database.transaction(pushStateStore, "readwrite");
+  const store = transaction.objectStore(pushStateStore);
+  const total = counts.reduce((sum, entry) => sum + entry.count, 0);
+  store.put(
+    {
+      schema: 1,
+      conversations: counts.map(({ tag, count }) => [tag, count]),
+      untagged: 0,
+    },
+    notificationCountsKey,
+  );
+  store.put(total, appBadgeKey);
+  await transactionDone(transaction);
+  database.close();
 }
 
 export function requestResult<T>(request: IDBRequest<T>): Promise<T> {

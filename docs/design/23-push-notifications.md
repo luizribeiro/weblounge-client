@@ -211,9 +211,12 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. Store the message (msgid, time, target, sender, text) in the engine's `Space::Cache` IndexedDB
    store, keyed so the engine reads it as part of the buffer's history.
-5. Call `showNotification` **exactly once**. Chrome and Firefox only check that a notification exists
-   when `waitUntil` settles; Safari falls back to the declarative notification if the handler fails.
-   A placeholder-then-replace would duplicate where `tag` replacement isn't supported.
+5. For a message or invite, call `showNotification` **exactly once**. Chrome and Firefox only check
+   that a notification exists when `waitUntil` settles; Safari falls back to the declarative
+   notification if the handler fails. A placeholder-then-replace would duplicate where `tag`
+   replacement isn't supported. A successfully decrypted `MARKREAD` or `PING` forwarded by a
+   non-Apple service is deliberately silent: `MARKREAD` closes its conversation tag and `PING`
+   only runs the ordinary read-notification cleanup.
 6. Only if decryption fails: show the generic "New message" for that network and mark the route for
    re-registration.
 
@@ -256,12 +259,15 @@ device]**.
   the sum of `mentions` (the engine counts every DM as a mention, `state.rs:1834-1835`). With no
   page open, the service worker increments a counter in `weblounge-push`; on launch the page
   overwrites it with the engine's value.
-- **On the web the closed-app badge can only go up.** MARKREAD pushes are dropped for web targets,
-  so reading elsewhere lowers it only when this device next opens. It undercounts when Ergo's
-  16-item push queue overflows (`client.go:53`). It matches the engine for DMs, and for channel
-  mentions once the mention rules agree (below).
-- When a buffer's read marker advances, the page closes its delivered notifications
-  (`registration.getNotifications()` by tag). Linux, Firefox and Chrome Android have no badging API.
+- The worker stores a notified count per conversation tag. A non-Apple `MARKREAD` zeros that tag,
+  closes its notifications, and recomputes the badge without showing a notification. Every push
+  also re-closes tags already known to be read before recomputing the badge. It undercounts when
+  Ergo's 16-item push queue overflows (`client.go:53`).
+- Apple never receives `MARKREAD`, so opening the page corrects its badge from the engine and closes
+  notifications for every read buffer. The same cleanup runs whenever a buffer's read counters
+  change (`registration.getNotifications({tag})`). The page seeds the worker's per-tag counts from
+  engine DM unread and channel mention counts so later closed-page recomputation has the same base.
+  Linux, Firefox and Chrome Android have no badging API, but notification cleanup still runs.
 
 ## Types
 
@@ -586,6 +592,22 @@ also pass `normal`; lower urgencies return 201 without forwarding. Probing route
 before inspecting headers because registration probes must succeed independently of a home's
 urgency choice. Structured inbound logs record the parsed urgency and dropped, held, or forwarded
 outcome without inspecting ciphertext.
+
+### Read-elsewhere cleanup implementation (2026-11-04)
+
+The worker persists versioned per-conversation notification counts beside the aggregate badge.
+Visible message and invite pushes increment their notification tag. On Mozilla, FCM, and Edge, a
+decrypted `MARKREAD` zeros and closes the matching tag and a maintenance `PING` performs cleanup
+without calling `showNotification`; both are silent even if count persistence fails. Before any
+visible or generic notification, the worker closes all zero-count tags, then derives the badge from
+the per-tag counts plus unattributed generic notifications. This intentionally uses Chromium's
+allowance for occasional silent pushes; Ergo currently emits at most a daily maintenance PING for
+an idle subscription, plus user-driven `MARKREAD` events.
+
+While the page is open, engine counters replace the worker's per-tag baseline and the aggregate
+badge. Read conversations are closed by tag both during initial buffer hydration and on subsequent
+counter changes. This is also the correction path for iOS, where the Apple urgency gate prevents
+`MARKREAD` from reaching the worker.
 
 ## Rollout
 

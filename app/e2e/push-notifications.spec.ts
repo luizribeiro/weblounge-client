@@ -109,6 +109,58 @@ test("decrypts a real envelope into one routed notification", async ({
     ]);
 });
 
+test("handles MARKREAD and maintenance PING silently", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  for (const [msgid, text] of [
+    ["push-read-one", "first unread push"],
+    ["push-read-two", "second unread push"],
+  ]) {
+    const envelope = await seedRouteAndEncrypt(
+      page,
+      `@time=2026-11-03T12:34:56.789Z;msgid=${msgid} :mel!m@example.test PRIVMSG #lounge :${text}`,
+    );
+    await deliverPush(context, page, envelope);
+  }
+  await expect.poll(() => notifications(page)).toHaveLength(1);
+  await expect.poll(() => storedAppBadge(page)).toBe(2);
+
+  const markread = await seedRouteAndEncrypt(
+    page,
+    ":irc.example.test MARKREAD #lounge timestamp=2026-11-03T12:34:56.789Z",
+  );
+  await deliverPush(context, page, markread);
+
+  await expect.poll(() => notifications(page)).toEqual([]);
+  await expect.poll(() => storedAppBadge(page)).toBe(0);
+
+  await seedReadNotification(page);
+  await expect.poll(() => notifications(page)).toHaveLength(1);
+  const ping = await seedRouteAndEncrypt(page, "PING :maintenance");
+  await deliverPush(context, page, ping);
+  await expect.poll(() => notifications(page)).toEqual([]);
+  await expect.poll(() => storedAppBadge(page)).toBe(0);
+
+  const visible = await seedRouteAndEncrypt(
+    page,
+    "@time=2026-11-03T12:34:56.789Z;msgid=push-after-controls :mel!m@example.test PRIVMSG #lounge :visible after controls",
+  );
+  await deliverPush(context, page, visible);
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([
+      {
+        title: "mel in #lounge",
+        body: "visible after controls",
+        tag: "1/#lounge",
+        route: "/Lounge/lounge",
+      },
+    ]);
+  await expect.poll(() => storedAppBadge(page)).toBe(1);
+});
+
 test("shows one generic notification when decryption fails", async ({
   context,
   page,
@@ -177,6 +229,7 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
     });
     await deliverPush(context, page, envelope);
     await expect.poll(() => notifications(page)).toHaveLength(1);
+    await replaceWithConversationNotification(page, "1/#weblounge-test");
 
     await page.close();
     await context.setOffline(true);
@@ -186,6 +239,7 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
     );
 
     await expect(coldPage.getByText(text, { exact: true })).toBeVisible();
+    await expect.poll(() => notifications(coldPage)).toEqual([]);
     await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
       0,
     );
@@ -370,6 +424,78 @@ async function routeNeedsReregistration(page: Page): Promise<boolean> {
       route.needsReregistration === true
     );
   }, routeId);
+}
+
+async function storedAppBadge(page: Page): Promise<number | undefined> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("state", "readonly");
+    const count = await new Promise<unknown>((resolve, reject) => {
+      const request = transaction.objectStore("state").get("app-badge");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    return typeof count === "number" ? count : undefined;
+  });
+}
+
+async function seedReadNotification(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification("already read", {
+      tag: "1/#stale",
+    });
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("state", "readwrite");
+    transaction.objectStore("state").put(
+      {
+        schema: 1,
+        conversations: [["1/#stale", 0]],
+        untagged: 0,
+      },
+      "notification-counts",
+    );
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+  });
+}
+
+async function replaceWithConversationNotification(
+  page: Page,
+  tag: string,
+): Promise<void> {
+  await page.evaluate(async (conversationTag) => {
+    const registration = await navigator.serviceWorker.ready;
+    for (const notification of await registration.getNotifications()) {
+      notification.close();
+    }
+    await registration.showNotification("conversation notification", {
+      tag: conversationTag,
+    });
+  }, tag);
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([
+      {
+        title: "conversation notification",
+        body: "",
+        tag,
+        route: "",
+      },
+    ]);
 }
 
 async function deliverPush(

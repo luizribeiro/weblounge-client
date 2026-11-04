@@ -65,7 +65,7 @@ import {
 } from "./platform/debug-overlay";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
-import { syncAppBadge } from "./platform/push/app-badge";
+import { syncAppPushState } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
 import {
@@ -234,8 +234,8 @@ export function App(props: AppProps) {
 
   createEffect(() => {
     const current = buffers();
-    if (props.pushConfig === undefined) return;
-    void syncAppBadge(current).catch(() => undefined);
+    if (current.length === 0) return;
+    void syncAppPushState(current).catch(() => undefined);
   });
   createEffect(() => {
     const config = props.pushConfig;
