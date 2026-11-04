@@ -4,6 +4,7 @@ import {
   type Browser,
   type BrowserContext,
   expect,
+  type JSHandle,
   type Page,
   test,
 } from "@playwright/test";
@@ -142,6 +143,38 @@ test.describe("full unmocked push lifecycle", () => {
 
     await expectNotification(page, direct);
     await expect.poll(() => storedAppBadge(page)).toBe(1);
+  });
+
+  test("shows a notification before a blocked IndexedDB deadline", async () => {
+    await closeNotifications(page);
+    await releaseForegroundLeases([page]);
+    await page.goto("/push-driver.html");
+    const blocker = await blockPushRouteReads(page);
+    const direct = `blocked database ${randomUUID()}`;
+    await bot.privmsgConfirmed("weblounge", direct);
+    const record = await nextRecord("/device/a");
+    await deliverRecordedEnvelope(context, page, record);
+
+    let presentedWithinDeadline = true;
+    try {
+      await expect
+        .poll(() => notifications(page), { timeout: 2_500 })
+        .toEqual([expect.objectContaining({ body: direct })]);
+    } catch {
+      presentedWithinDeadline = false;
+    } finally {
+      await blocker.evaluate((transaction) => {
+        transaction.abort();
+        transaction.db.close();
+      });
+      await blocker.dispose();
+    }
+    await expectNotification(page, direct);
+    test.fail(
+      true,
+      "the worker waits indefinitely for its route database before showing a fallback",
+    );
+    expect(presentedWithinDeadline).toBe(true);
   });
 
   test("keeps Apple-style MARKREAD silent when another device reads", async ({
@@ -683,6 +716,39 @@ async function storedAppBadge(page: Page): Promise<number | undefined> {
     });
     database.close();
     return typeof value === "number" ? value : undefined;
+  });
+}
+
+async function blockPushRouteReads(
+  page: Page,
+): Promise<JSHandle<IDBTransaction>> {
+  return page.evaluateHandle(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readwrite");
+    const store = transaction.objectStore("routes");
+    await new Promise<void>((resolve, reject) => {
+      let acquired = false;
+      const holdLock = () => {
+        const request = store.get("__push-e2e-lock__");
+        request.onsuccess = () => {
+          holdLock();
+          if (!acquired) {
+            acquired = true;
+            resolve();
+          }
+        };
+        request.onerror = (event) => {
+          event.preventDefault();
+          if (!acquired) reject(request.error);
+        };
+      };
+      holdLock();
+    });
+    return transaction;
   });
 }
 
