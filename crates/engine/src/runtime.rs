@@ -8571,6 +8571,16 @@ async fn delay(duration: Duration) {
         );
 
         assert_no_output(&runtime.request(push_request("probe-failed", "route-3")));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-2"
+        ))
+        .await;
         let request = wire.next_sent().await;
         let label = request_label(&request);
         wire.server(format!(
