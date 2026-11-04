@@ -1,8 +1,10 @@
 //! Product outcomes for bounded papo request state.
 
+use crate::EngineMessageKey;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StateLimitOutcome {
-    SharedNotice(&'static str),
+    SharedNotice(EngineMessageKey),
     ChannelNotice(&'static str),
     Log,
 }
@@ -16,17 +18,17 @@ pub(crate) fn state_limit_outcome(
 ) -> StateLimitOutcome {
     match limit {
         papo::StateLimit::Channels => {
-            StateLimitOutcome::SharedNotice("engine.channel_limit_reached")
+            StateLimitOutcome::SharedNotice(EngineMessageKey::ChannelLimitReached)
         }
         papo::StateLimit::ReadMarkers => StateLimitOutcome::Log,
         papo::StateLimit::ListEntries => StateLimitOutcome::ChannelNotice(
             "No entry was added because this channel's list is full.",
         ),
         papo::StateLimit::MetadataTargets | papo::StateLimit::MetadataKeys if user_initiated => {
-            StateLimitOutcome::SharedNotice("engine.metadata_limit_reached")
+            StateLimitOutcome::SharedNotice(EngineMessageKey::MetadataLimitReached)
         }
         papo::StateLimit::BouncerNetworks if user_initiated => {
-            StateLimitOutcome::SharedNotice("engine.bouncer_network_limit_reached")
+            StateLimitOutcome::SharedNotice(EngineMessageKey::BouncerNetworkLimitReached)
         }
         _ => StateLimitOutcome::Log,
     }
@@ -35,12 +37,13 @@ pub(crate) fn state_limit_outcome(
 #[cfg(test)]
 mod tests {
     use super::{StateLimitOutcome, state_limit_outcome};
+    use crate::EngineMessageKey;
 
     #[test]
     fn channels_use_the_shared_human_notice() {
         assert_eq!(
             state_limit_outcome(papo::StateLimit::Channels, true),
-            StateLimitOutcome::SharedNotice("engine.channel_limit_reached")
+            StateLimitOutcome::SharedNotice(EngineMessageKey::ChannelLimitReached)
         );
     }
 
@@ -69,7 +72,7 @@ mod tests {
             assert_eq!(state_limit_outcome(limit, false), StateLimitOutcome::Log);
             assert_eq!(
                 state_limit_outcome(limit, true),
-                StateLimitOutcome::SharedNotice("engine.metadata_limit_reached")
+                StateLimitOutcome::SharedNotice(EngineMessageKey::MetadataLimitReached)
             );
         }
     }
@@ -82,7 +85,7 @@ mod tests {
         );
         assert_eq!(
             state_limit_outcome(papo::StateLimit::BouncerNetworks, true),
-            StateLimitOutcome::SharedNotice("engine.bouncer_network_limit_reached")
+            StateLimitOutcome::SharedNotice(EngineMessageKey::BouncerNetworkLimitReached)
         );
     }
 }

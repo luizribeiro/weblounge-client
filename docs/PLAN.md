@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Generate the engine's typed localization-key inventory with the protocol bindings, so the
+  app strings cross-check no longer reads Rust source outside its Nix derivation.
+
 ## Status
 
 - **Milestone 1 (design):** done. Docs in `docs/design/`, signed off by Luiz on 2026-10-27. Engine edge cases from papo's maintainer: `docs/design/edge-cases.md`.

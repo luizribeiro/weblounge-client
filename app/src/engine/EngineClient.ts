@@ -1,4 +1,5 @@
 import { decodeCommandSpecs } from "./decodeCommandSpec";
+import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
 import type {
   BufferProjection,
   CommandRejected,
@@ -498,7 +499,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         value.values === undefined ? {} : decodeStringRecord(value.values);
       if (
         typeof value.id === "string" &&
-        typeof value.message_key === "string" &&
+        isOneOf(value.message_key, ENGINE_MESSAGE_KEYS) &&
         rejectionValues !== undefined
       ) {
         return {
@@ -713,7 +714,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         typeof value.buffer_id === "number" &&
         typeof value.target === "string" &&
         typeof value.local_send_id === "number" &&
-        typeof value.message_key === "string"
+        isOneOf(value.message_key, ENGINE_MESSAGE_KEYS)
       ) {
         return {
           type: messageType,
@@ -1066,7 +1067,7 @@ function decodeNetworkConnectionState(
   if (
     isRecord(value.failed) &&
     isOneOf(value.failed.reason, ["authentication", "transport", "protocol"]) &&
-    typeof value.failed.message_key === "string"
+    isOneOf(value.failed.message_key, ENGINE_MESSAGE_KEYS)
   ) {
     return {
       failed: {

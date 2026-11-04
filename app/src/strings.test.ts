@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { ENGINE_MESSAGE_KEYS } from "./engine/generated/EngineMessageKeys";
 import { isMessageKey, messages, t, translate } from "./strings";
 
 const appSource = resolve(process.cwd(), "src");
-const engineSource = resolve(process.cwd(), "../crates/engine/src");
 
 describe("app strings", () => {
   it("interpolates named values", () => {
@@ -48,15 +48,7 @@ describe("app strings", () => {
   });
 
   it("contains every message key emitted by the Rust engine", () => {
-    const engineKeys = sourceFiles(engineSource, [".rs"]).flatMap((file) =>
-      [
-        ...readFileSync(file, "utf8").matchAll(
-          /["']((?:composer|engine)\.[a-z0-9_.-]+)["']/gu,
-        ),
-      ].map((match) => match[1] ?? ""),
-    );
-
-    expect(engineKeys.filter((key) => !isMessageKey(key))).toEqual([]);
+    expect(ENGINE_MESSAGE_KEYS.filter((key) => !isMessageKey(key))).toEqual([]);
   });
 
   it("has no empty messages", () => {

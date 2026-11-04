@@ -16,8 +16,8 @@ use wasm_bindgen::{JsCast, JsValue};
 use tokio::sync::mpsc;
 
 use crate::{
-    BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineRequest,
-    EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
+    BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineMessageKey,
+    EngineRequest, EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId, NoticeKind, OfflineReason, PushFailure, PushState,
     PushUnsupportedReason,
     chat_list_snapshot::{self, ChatListSnapshot},
@@ -409,7 +409,7 @@ impl Runtime {
                     },
                     EngineToUi::CommandResult { id: command_id },
                 ],
-                Err(_) => rejected_command(command_id, "engine.storage_unavailable"),
+                Err(_) => rejected_command(command_id, EngineMessageKey::StorageUnavailable),
             };
             send_events(&outbound, events);
         });
@@ -422,7 +422,7 @@ impl Runtime {
         spawn_task(async move {
             let event = match notification_settings::dismiss_prompt(storage.as_ref()).await {
                 Ok(()) => EngineToUi::CommandResult { id: command_id },
-                Err(_) => command_rejection(command_id, "engine.storage_unavailable"),
+                Err(_) => command_rejection(command_id, EngineMessageKey::StorageUnavailable),
             };
             let _ = outbound.send(event);
         });
@@ -441,7 +441,7 @@ impl Runtime {
                     },
                     EngineToUi::CommandResult { id: command_id },
                 ],
-                Err(_) => rejected_command(command_id, "engine.storage_unavailable"),
+                Err(_) => rejected_command(command_id, EngineMessageKey::StorageUnavailable),
             };
             send_events(&outbound, events);
         });
@@ -454,7 +454,10 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let Ok(messages) = pushed_messages::read(storage.as_ref()).await else {
-                let _ = outbound.send(command_rejection(command_id, "engine.storage_unavailable"));
+                let _ = outbound.send(command_rejection(
+                    command_id,
+                    EngineMessageKey::StorageUnavailable,
+                ));
                 return;
             };
             let mut state = lock(&shared_state);
@@ -464,7 +467,10 @@ impl Runtime {
                 .filter(|running| running.model.id() == network_id)
             else {
                 drop(state);
-                let _ = outbound.send(command_rejection(command_id, "engine.network_not_found"));
+                let _ = outbound.send(command_rejection(
+                    command_id,
+                    EngineMessageKey::NetworkNotFound,
+                ));
                 return;
             };
             let snapshot = running.client.state();
@@ -486,7 +492,7 @@ impl Runtime {
         spawn_task(async move {
             let event = match push_device::write(storage.as_ref(), &credentials).await {
                 Ok(()) => EngineToUi::CommandResult { id: command_id },
-                Err(_) => command_rejection(command_id, "engine.storage_unavailable"),
+                Err(_) => command_rejection(command_id, EngineMessageKey::StorageUnavailable),
             };
             let _ = outbound.send(event);
         });
@@ -499,7 +505,7 @@ impl Runtime {
         spawn_task(async move {
             let event = match push_device::clear(storage.as_ref(), &relay).await {
                 Ok(()) => EngineToUi::CommandResult { id: command_id },
-                Err(_) => command_rejection(command_id, "engine.storage_unavailable"),
+                Err(_) => command_rejection(command_id, EngineMessageKey::StorageUnavailable),
             };
             let _ = outbound.send(event);
         });
@@ -518,7 +524,7 @@ impl Runtime {
             .as_mut()
             .filter(|running| running.model.id() == network_id)
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let snapshot = running.client.state();
         if let Some(reason) = push_unsupported_reason(&snapshot) {
@@ -580,7 +586,7 @@ impl Runtime {
             .as_mut()
             .filter(|running| running.model.id() == network_id)
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(route) = running.push.route.clone() else {
             return vec![EngineToUi::CommandResult { id: command_id }];
@@ -615,7 +621,7 @@ impl Runtime {
                 .as_ref()
                 .is_some_and(|running| running.model.is_online())
         {
-            return rejected_command(id, "engine.offline");
+            return rejected_command(id, EngineMessageKey::Offline);
         }
         if parsed.is_ok()
             && let Some(name) = commands::explicit_command_name(input)
@@ -670,7 +676,7 @@ impl Runtime {
                 if let Some(network_id) = network_id {
                     self.disconnect(id, network_id, reason.map(|reason| reason.0))
                 } else {
-                    rejected_command(id, "engine.network_not_found")
+                    rejected_command(id, EngineMessageKey::NetworkNotFound)
                 }
             }
             Ok(Command::Help { command }) => vec![
@@ -693,13 +699,13 @@ impl Runtime {
             state.build_version.clone()
         };
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(event) = running
             .model
             .append_notice(buffer_id, text, NoticeKind::Info)
         else {
-            return rejected_command(command_id, "engine.buffer_not_sendable");
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         vec![event, EngineToUi::CommandResult { id: command_id }]
     }
@@ -707,7 +713,7 @@ impl Runtime {
     fn identify(&self, command_id: String, password: &str) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let client = running.client.clone();
         drop(state);
@@ -731,7 +737,7 @@ impl Runtime {
             .as_ref()
             .filter(|running| running.model.id() == network_id)
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let client = running.client.clone();
         let instance = running.instance;
@@ -743,10 +749,10 @@ impl Runtime {
     fn defer_direct_identity(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(event) = running.model.defer_direct_identity(buffer_id) else {
-            return rejected_command(command_id, "engine.buffer_not_sendable");
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         vec![event, EngineToUi::CommandResult { id: command_id }]
     }
@@ -754,10 +760,10 @@ impl Runtime {
     fn trust_direct_identity(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(nick) = running.model.direct_trust_target(buffer_id) else {
-            return rejected_command(command_id, "engine.buffer_not_sendable");
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         let client = running.client.clone();
         let instance = running.instance;
@@ -766,7 +772,10 @@ impl Runtime {
         let outbound = self.outbound.clone();
         spawn_task(async move {
             let Ok(direct) = client.direct(&nick).await else {
-                let _ = outbound.send(command_rejection(command_id, "engine.direct_unavailable"));
+                let _ = outbound.send(command_rejection(
+                    command_id,
+                    EngineMessageKey::DirectUnavailable,
+                ));
                 return;
             };
             let event = {
@@ -796,10 +805,10 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(channel) = running.model.channel_for_buffer(buffer_id) else {
-            return rejected_command(command_id, "engine.channel_required");
+            return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
         let snapshot = running.client.state();
         let version = state.member_views.remember(
@@ -813,7 +822,7 @@ impl Runtime {
         let Some(window) = crate::members::project(
             &snapshot, &channel, buffer_id, view_id, version, offset, filter,
         ) else {
-            return rejected_command(command_id, "engine.channel_not_found");
+            return rejected_command(command_id, EngineMessageKey::ChannelNotFound);
         };
         vec![window, EngineToUi::CommandResult { id: command_id }]
     }
@@ -828,7 +837,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let snapshot = running.client.state();
         let Some(context) = completion_context(
@@ -870,7 +879,7 @@ impl Runtime {
 
     fn connect(&self, command_id: String, config: ConnectConfig) -> Vec<EngineToUi> {
         if !valid_endpoint(&config.endpoint, config.allow_insecure) {
-            return rejected_command(command_id, "engine.invalid_endpoint");
+            return rejected_command(command_id, EngineMessageKey::InvalidEndpoint);
         }
 
         let authentication_kind = config.authentication.kind();
@@ -878,7 +887,7 @@ impl Runtime {
         let mut state = lock(&self.state);
         if let Some(running) = state.network.as_ref() {
             if authentication_kind != running.authentication_kind {
-                return rejected_command(command_id, "engine.network_already_connected");
+                return rejected_command(command_id, EngineMessageKey::NetworkAlreadyConnected);
             }
             return attach_shell(running, command_id);
         }
@@ -969,14 +978,14 @@ impl Runtime {
         autojoin: Vec<String>,
     ) -> Vec<EngineToUi> {
         if !valid_endpoint(&endpoint, false) {
-            return rejected_command(command_id, "engine.invalid_endpoint");
+            return rejected_command(command_id, EngineMessageKey::InvalidEndpoint);
         }
 
         let snapshot_fingerprint = chat_list_snapshot::fingerprint(&label, &endpoint);
         let mut state = lock(&self.state);
         if let Some(running) = state.network.as_ref() {
             if running.authentication_kind != AuthenticationKind::HostedOAuth {
-                return rejected_command(command_id, "engine.network_already_connected");
+                return rejected_command(command_id, EngineMessageKey::NetworkAlreadyConnected);
             }
             return attach_shell(running, command_id);
         }
@@ -1048,15 +1057,15 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(mut running) = state.network.take() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(config) = running.hosted_reconnect.clone() else {
             state.network = Some(running);
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if running.model.id() != network_id {
             state.network = Some(running);
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         }
         let instance = state.next_instance;
         state.next_instance += 1;
@@ -1101,11 +1110,11 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(mut running) = state.network.take() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if running.model.id() != network_id {
             state.network = Some(running);
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         }
         let event = running.model.set_connection(
             NetworkConnectionState::Offline {
@@ -1132,7 +1141,7 @@ impl Runtime {
             .as_mut()
             .filter(|running| running.model.id() == network_id)
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let client = running.client.clone();
         let hosted = running.authentication_kind == AuthenticationKind::HostedOAuth;
@@ -1167,7 +1176,7 @@ impl Runtime {
             let event = if result.is_ok() {
                 EngineToUi::CommandResult { id: command_id }
             } else {
-                command_rejection(command_id, "engine.connection_failed")
+                command_rejection(command_id, EngineMessageKey::ConnectionFailed)
             };
             let _ = outbound.send(event);
         });
@@ -1186,7 +1195,7 @@ impl Runtime {
             .as_mut()
             .filter(|running| running.model.id() == network_id)
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         running.device_online = online;
         if online {
@@ -1203,7 +1212,7 @@ impl Runtime {
                 let event = if client.reconnect().await.is_ok() {
                     EngineToUi::CommandResult { id: command_id }
                 } else {
-                    command_rejection(command_id, "engine.connection_failed")
+                    command_rejection(command_id, EngineMessageKey::ConnectionFailed)
                 };
                 let _ = outbound.send(event);
             });
@@ -1228,13 +1237,13 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(mut running) = state.network.take() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if running.model.id() != network_id
             || running.authentication_kind != AuthenticationKind::HostedOAuth
         {
             state.network = Some(running);
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         }
         let next = next_connection_state(
             running.model.connection(),
@@ -1256,7 +1265,7 @@ impl Runtime {
         });
         vec![
             event,
-            EngineToUi::notice("engine.hosted_auth_failed"),
+            EngineToUi::notice(EngineMessageKey::HostedAuthFailed),
             EngineToUi::CommandResult { id: command_id },
         ]
     }
@@ -1271,12 +1280,12 @@ impl Runtime {
             running.model.id() == network_id
                 && running.authentication_kind == AuthenticationKind::HostedOAuth
         }) else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let event = running.model.set_connection(
             NetworkConnectionState::Failed {
                 reason: ConnectionFailureReason::Transport,
-                message_key: "engine.connection_failed".into(),
+                message_key: EngineMessageKey::ConnectionFailed,
             },
             None,
         );
@@ -1292,7 +1301,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let await_live_target = running.model.is_cached_buffer(buffer_id);
         let pending = match kind {
@@ -1347,10 +1356,10 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some((pending, event)) = running.model.retry_send(buffer_id, local_send_id) else {
-            return rejected_command(command_id, "engine.buffer_not_sendable");
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         let client = running.client.clone();
         let instance = running.instance;
@@ -1370,13 +1379,13 @@ impl Runtime {
             .as_ref()
             .map(|running| (running.client.clone(), running.instance))
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if targets
             .iter()
             .any(|target| !valid_channel_input(&client.state(), &target.channel))
         {
-            return rejected_command(command_id, "engine.command_refused");
+            return rejected_command(command_id, EngineMessageKey::CommandRefused);
         }
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
@@ -1437,7 +1446,7 @@ impl Runtime {
         if let Some(network_id) = network_id {
             self.open_direct(command_id, network_id, nick)
         } else {
-            rejected_command(command_id, "engine.network_not_found")
+            rejected_command(command_id, EngineMessageKey::NetworkNotFound)
         }
     }
 
@@ -1447,7 +1456,7 @@ impl Runtime {
             .as_ref()
             .map(|running| running.client.clone())
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let snapshot = client.state();
         if snapshot.isupport().is_channel(&target) {
@@ -1472,7 +1481,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let client = running.client.clone();
         let instance = running.instance;
@@ -1510,8 +1519,10 @@ impl Runtime {
                 }
                 Some(DirectAvailability::MonitorFull) => {
                     let Some(nick) = known_nick else {
-                        let _ = outbound
-                            .send(command_rejection(command_id, "engine.direct_unavailable"));
+                        let _ = outbound.send(command_rejection(
+                            command_id,
+                            EngineMessageKey::DirectUnavailable,
+                        ));
                         return;
                     };
                     (nick, DirectAvailability::MonitorFull, false)
@@ -1525,15 +1536,19 @@ impl Runtime {
                     Ok(direct) => (direct.nick(), DirectAvailability::Guarded(direct), false),
                     Err(papo::Error::MonitorFull { .. }) => {
                         let Some(nick) = known_nick else {
-                            let _ = outbound
-                                .send(command_rejection(command_id, "engine.direct_unavailable"));
+                            let _ = outbound.send(command_rejection(
+                                command_id,
+                                EngineMessageKey::DirectUnavailable,
+                            ));
                             return;
                         };
                         (nick, DirectAvailability::MonitorFull, true)
                     }
                     Err(_) => {
-                        let _ = outbound
-                            .send(command_rejection(command_id, "engine.direct_unavailable"));
+                        let _ = outbound.send(command_rejection(
+                            command_id,
+                            EngineMessageKey::DirectUnavailable,
+                        ));
                         return;
                     }
                 },
@@ -1550,7 +1565,9 @@ impl Runtime {
                 let snapshot = running.client.state();
                 let (buffer_id, mut output) = running.model.open_direct(nick, direct, &snapshot);
                 if degraded {
-                    output.push(EngineToUi::notice("engine.direct_presence_unavailable"));
+                    output.push(EngineToUi::notice(
+                        EngineMessageKey::DirectPresenceUnavailable,
+                    ));
                 }
                 if focus {
                     output.push(EngineToUi::FocusBufferRequested {
@@ -1592,7 +1609,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let channel = match channel_target(running, buffer_id, requested) {
             Ok(channel) => channel,
@@ -1610,14 +1627,14 @@ impl Runtime {
     fn close(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if running.model.channel_for_buffer(buffer_id).is_some() {
             drop(state);
             return self.part(command_id, buffer_id, None, None);
         }
         let Some(event) = running.model.close_direct(buffer_id) else {
-            return rejected_command(command_id, "engine.buffer_not_sendable");
+            return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
         vec![event, EngineToUi::CommandResult { id: command_id }]
     }
@@ -1631,7 +1648,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let channel = match channel_target(running, buffer_id, requested) {
             Ok(channel) => channel,
@@ -1652,10 +1669,10 @@ impl Runtime {
             .as_ref()
             .map(|running| running.client.clone())
         else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if !valid_nick_input(&client.state(), &nick) {
-            return rejected_command(command_id, "engine.command_refused");
+            return rejected_command(command_id, EngineMessageKey::CommandRefused);
         }
         spawn_request(self.outbound.clone(), command_id, async move {
             client.set_nick(nick).await
@@ -1672,7 +1689,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let state = lock(&self.state);
         let Some(running) = state.network.as_ref() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let channel = match channel_target(running, buffer_id, requested) {
             Ok(channel) => channel,
@@ -1695,7 +1712,7 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let snapshot = running.client.state();
         let channel = requested
@@ -1707,10 +1724,10 @@ impl Runtime {
                     .and_then(|name| snapshot.channel(name))
             });
         let Some(channel) = channel else {
-            return rejected_command(command_id, "engine.channel_required");
+            return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
         let Some(buffer_id) = running.model.buffer_id_for_channel(channel.name()) else {
-            return rejected_command(command_id, "engine.channel_required");
+            return rejected_command(command_id, EngineMessageKey::ChannelRequired);
         };
         let mut output = running
             .model
@@ -1736,10 +1753,10 @@ impl Runtime {
     ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let Some(advance) = running.model.prepare_mark_read(buffer_id, through) else {
-            return rejected_command(command_id, "engine.read_marker_invalid");
+            return rejected_command(command_id, EngineMessageKey::ReadMarkerInvalid);
         };
         let mut output = record_read_advances(running, [advance]);
         let flush = start_read_flush(running);
@@ -1759,7 +1776,7 @@ impl Runtime {
     fn mark_all_read(&self, command_id: String) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let advances = running.model.prepare_mark_all_read();
         let mut output = record_read_advances(running, advances);
@@ -1780,7 +1797,7 @@ impl Runtime {
     fn load_history(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return rejected_command(command_id, "engine.network_not_found");
+            return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if !running.model.is_online() {
             running.model.queue_latest_history(buffer_id);
@@ -1962,7 +1979,7 @@ fn spawn_read_flush(
                 }
                 Err(error) if state_limit_events(&error, false, None, "mark_read").is_some() => {}
                 Err(_) => {
-                    let _ = outbound.send(EngineToUi::notice("engine.mark_read_failed"));
+                    let _ = outbound.send(EngineToUi::notice(EngineMessageKey::MarkReadFailed));
                 }
             }
         }
@@ -2073,11 +2090,11 @@ enum SendError {
 }
 
 impl SendError {
-    const fn message_key(&self) -> &'static str {
+    const fn message_key(&self) -> EngineMessageKey {
         match self {
-            Self::Protocol | Self::Offline => "engine.send_failed",
-            Self::DirectTargetGone => "engine.direct_target_gone",
-            Self::PeerPinMismatch(_) => "engine.direct_identity_mismatch",
+            Self::Protocol | Self::Offline => EngineMessageKey::SendFailed,
+            Self::DirectTargetGone => EngineMessageKey::DirectTargetGone,
+            Self::PeerPinMismatch(_) => EngineMessageKey::DirectIdentityMismatch,
         }
     }
 }
@@ -2227,8 +2244,8 @@ fn take_next_send(running: &mut RunningNetwork) -> FlushNext {
             Some(queued) => {
                 let mut events = running
                     .model
-                    .fail_send(&queued.pending, "engine.cached_target_gone");
-                events.push(EngineToUi::notice("engine.cached_target_gone"));
+                    .fail_send(&queued.pending, EngineMessageKey::CachedTargetGone);
+                events.push(EngineToUi::notice(EngineMessageKey::CachedTargetGone));
                 FlushNext::Fail(events)
             }
             None => stop_send_flush(running),
@@ -2276,7 +2293,7 @@ async fn finish_send(
                 events.extend(
                     running
                         .model
-                        .fail_send(pending, "engine.direct_identity_mismatch"),
+                        .fail_send(pending, EngineMessageKey::DirectIdentityMismatch),
                 );
                 (Some(events), None)
             }
@@ -2679,7 +2696,9 @@ fn spawn_direct_resolution(
         running.model.resolve_direct(buffer_id, availability);
         drop(state);
         if degraded {
-            let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
+            let _ = outbound.send(EngineToUi::notice(
+                EngineMessageKey::DirectPresenceUnavailable,
+            ));
         }
     });
 }
@@ -3051,7 +3070,9 @@ fn apply_direct_resolution(
         spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
     }
     if degraded {
-        let _ = outbound.send(EngineToUi::notice("engine.direct_presence_unavailable"));
+        let _ = outbound.send(EngineToUi::notice(
+            EngineMessageKey::DirectPresenceUnavailable,
+        ));
     }
 }
 
@@ -3272,7 +3293,7 @@ fn process_disconnected_event(
 fn process_warning(warning: &papo::event::Warning, output: &mut Vec<EngineToUi>) {
     match warning {
         papo::event::Warning::ChannelRecreated { .. } => {
-            output.push(EngineToUi::notice("engine.channel_recreated"));
+            output.push(EngineToUi::notice(EngineMessageKey::ChannelRecreated));
         }
         papo::event::Warning::StateLimitReached { kind, .. } => {
             output.extend(
@@ -3394,7 +3415,7 @@ fn process_disconnect(
             output.extend(
                 running
                     .model
-                    .fail_send(&queued.pending, "engine.send_failed"),
+                    .fail_send(&queued.pending, EngineMessageKey::SendFailed),
             );
         }
     }
@@ -3512,7 +3533,7 @@ fn next_connection_state(
         },
         ConnectionTransition::AuthenticationExpired => NetworkConnectionState::Failed {
             reason: ConnectionFailureReason::Authentication,
-            message_key: "engine.hosted_auth_failed".into(),
+            message_key: EngineMessageKey::HostedAuthFailed,
         },
         ConnectionTransition::ManualRetry => match current {
             NetworkConnectionState::Failed { .. }
@@ -3565,11 +3586,10 @@ fn disconnected_state(
     NetworkConnectionState::Failed {
         reason,
         message_key: if hosted_authentication_failed {
-            "engine.hosted_auth_failed"
+            EngineMessageKey::HostedAuthFailed
         } else {
-            "engine.connection_failed"
-        }
-        .into(),
+            EngineMessageKey::ConnectionFailed
+        },
     }
 }
 
@@ -3581,9 +3601,9 @@ fn connection_failure_notice(
         && !matches!(disconnected.cause, papo::DisconnectCause::Requested { .. }))
     .then(|| {
         EngineToUi::notice(if hosted_authentication_failed {
-            "engine.hosted_auth_failed"
+            EngineMessageKey::HostedAuthFailed
         } else {
-            "engine.connection_failed"
+            EngineMessageKey::ConnectionFailed
         })
     })
 }
@@ -4055,14 +4075,14 @@ fn channel_target(
     running: &RunningNetwork,
     buffer_id: BufferId,
     requested: Option<String>,
-) -> Result<ChannelTarget, &'static str> {
+) -> Result<ChannelTarget, EngineMessageKey> {
     requested.map(ChannelTarget::Text).map_or_else(
         || {
             running
                 .model
                 .channel_for_buffer(buffer_id)
                 .map(ChannelTarget::Known)
-                .ok_or("engine.channel_required")
+                .ok_or(EngineMessageKey::ChannelRequired)
         },
         Ok,
     )
@@ -4118,35 +4138,35 @@ fn push_failure(error: &papo::Error) -> PushFailure {
     }
 }
 
-fn rejected_command(command_id: String, message_key: &str) -> Vec<EngineToUi> {
+fn rejected_command(command_id: String, message_key: EngineMessageKey) -> Vec<EngineToUi> {
     vec![command_rejection(command_id, message_key)]
 }
 
-fn command_rejection(command_id: String, message_key: &str) -> EngineToUi {
+fn command_rejection(command_id: String, message_key: EngineMessageKey) -> EngineToUi {
     EngineToUi::CommandRejected {
         id: command_id,
-        message_key: message_key.into(),
+        message_key,
         values: None,
     }
 }
 
-fn terminal_command(command_id: String, rejection: Option<&'static str>) -> EngineToUi {
+fn terminal_command(command_id: String, rejection: Option<EngineMessageKey>) -> EngineToUi {
     match rejection {
         Some(message_key) => command_rejection(command_id, message_key),
         None => EngineToUi::CommandResult { id: command_id },
     }
 }
 
-fn join_error_key(error: &papo::Error) -> &'static str {
+fn join_error_key(error: &papo::Error) -> EngineMessageKey {
     if matches!(
         error,
         papo::Error::Server(error) if error.refusal() == papo::Refusal::BannedFromChannel
     ) {
-        "engine.join_banned"
+        EngineMessageKey::JoinBanned
     } else if matches!(error, papo::Error::Server(_)) {
-        "engine.join_refused"
+        EngineMessageKey::JoinRefused
     } else {
-        "engine.command_refused"
+        EngineMessageKey::CommandRefused
     }
 }
 
@@ -4155,7 +4175,9 @@ fn join_request_events(command_id: String, error: &papo::Error) -> Vec<EngineToU
         error,
         papo::Error::Server(error) if error.refusal() == papo::Refusal::TooManyChannels
     ) {
-        vec![EngineToUi::error_notice("engine.channel_limit_reached")]
+        vec![EngineToUi::error_notice(
+            EngineMessageKey::ChannelLimitReached,
+        )]
     } else if let Some(output) = state_limit_events(error, true, None, "join") {
         output
     } else {
@@ -4265,7 +4287,7 @@ fn spawn_request<T: Send + 'static>(
     spawn_task(async move {
         let event = match request.await {
             Ok(_) => EngineToUi::CommandResult { id: command_id },
-            Err(_) => command_rejection(command_id, "engine.command_refused"),
+            Err(_) => command_rejection(command_id, EngineMessageKey::CommandRefused),
         };
         let _ = outbound.send(event);
     });
@@ -4410,11 +4432,11 @@ fn channel_request_rejection(
     ) {
         EngineToUi::CommandRejected {
             id: command_id,
-            message_key: "engine.not_in_channel".into(),
+            message_key: EngineMessageKey::NotInChannel,
             values: Some(BTreeMap::from([("target".into(), target)])),
         }
     } else {
-        command_rejection(command_id, "engine.command_refused")
+        command_rejection(command_id, EngineMessageKey::CommandRefused)
     }
 }
 
@@ -4469,8 +4491,8 @@ mod tests {
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
-        EngineRequest, EngineRequestEnvelope, EngineToUi, MessageDelivery, NetworkConnectionState,
-        NetworkId, NetworkProjection, SaslCredentials,
+        EngineMessageKey, EngineRequest, EngineRequestEnvelope, EngineToUi, MessageDelivery,
+        NetworkConnectionState, NetworkId, NetworkProjection, SaslCredentials,
         chat_list_snapshot::{
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
         },
@@ -4581,7 +4603,7 @@ async fn delay(duration: Duration) {
         let now = std::time::UNIX_EPOCH + Duration::from_secs(100);
         let failed_auth = crate::NetworkConnectionState::Failed {
             reason: crate::ConnectionFailureReason::Authentication,
-            message_key: "engine.hosted_auth_failed".into(),
+            message_key: EngineMessageKey::HostedAuthFailed,
         };
         let cases = [
             (
@@ -4666,7 +4688,7 @@ async fn delay(duration: Duration) {
         assert!(matches!(
             connection_failure_notice(&disconnected, false),
             Some(EngineToUi::Notice { key, .. })
-                if key == "engine.connection_failed"
+                if key == EngineMessageKey::ConnectionFailed.as_str()
         ));
     }
 
@@ -4702,7 +4724,7 @@ async fn delay(duration: Duration) {
             }),
             [EngineToUi::CommandRejected {
                 id: "unsupported-scheme".into(),
-                message_key: "engine.invalid_endpoint".into(),
+                message_key: EngineMessageKey::InvalidEndpoint,
                 values: None,
             }]
         );
@@ -5561,7 +5583,7 @@ async fn delay(duration: Duration) {
         assert!(output.iter().any(|event| matches!(
             event,
             EngineToUi::Notice { key, .. }
-                if key == "engine.direct_presence_unavailable"
+                if key == EngineMessageKey::DirectPresenceUnavailable.as_str()
         )));
         assert!(
             output
@@ -5572,7 +5594,7 @@ async fn delay(duration: Duration) {
         assert!(output.iter().any(|event| matches!(
             event,
             EngineToUi::CommandRejected { message_key, .. }
-                if message_key == "engine.direct_monitor_full"
+                if *message_key == EngineMessageKey::DirectMonitorFull
         )));
     }
 
@@ -5656,7 +5678,7 @@ async fn delay(duration: Duration) {
             [EngineToUi::CommandRejected {
                 id, message_key, ..
             }]
-                if id == "hosted" && message_key == "engine.network_already_connected"
+                if id == "hosted" && *message_key == EngineMessageKey::NetworkAlreadyConnected
         ));
         assert_eq!(
             lock(&runtime.state)
@@ -5765,7 +5787,7 @@ async fn delay(duration: Duration) {
                 EngineToUi::NetworkStateChanged { .. },
                 EngineToUi::Notice { key, .. },
                 EngineToUi::CommandResult { id },
-            ] if key == "engine.hosted_auth_failed" && id == "expired"
+            ] if key == EngineMessageKey::HostedAuthFailed.as_str() && id == "expired"
         ));
         assert!(lock(&runtime.state).network.is_none());
     }
@@ -6172,7 +6194,7 @@ async fn delay(duration: Duration) {
                 result,
                 EngineToUi::CommandRejected {
                     id: id.into(),
-                    message_key: "engine.not_in_channel".into(),
+                    message_key: EngineMessageKey::NotInChannel,
                     values: Some(std::collections::BTreeMap::from([(
                         "target".into(),
                         "#room".into(),
@@ -6245,7 +6267,7 @@ async fn delay(duration: Duration) {
         });
         assert!(
             matches!(blocked.as_slice(), [EngineToUi::CommandRejected { message_key, .. }]
-            if message_key == "engine.channel_rejoin_required")
+            if *message_key == EngineMessageKey::ChannelRejoinRequired)
         );
 
         runtime.request(EngineRequestEnvelope {
@@ -6505,7 +6527,7 @@ async fn delay(duration: Duration) {
                 .begin_send(buffer_id, "still blocked".into(), &client.state())
                 .is_none()
         );
-        let failures = model.fail_send(&pending, "engine.direct_identity_mismatch");
+        let failures = model.fail_send(&pending, EngineMessageKey::DirectIdentityMismatch);
         assert!(matches!(
             failures.as_slice(),
             [
@@ -6762,7 +6784,7 @@ async fn delay(duration: Duration) {
             [
                 EngineToUi::Notice { key, tone: crate::NoticeTone::Error, .. },
                 EngineToUi::CommandResult { id }
-            ] if key == "engine.channel_limit_reached" && id == "join-limit"
+            ] if key == EngineMessageKey::ChannelLimitReached.as_str() && id == "join-limit"
         ));
     }
 
@@ -6862,7 +6884,7 @@ async fn delay(duration: Duration) {
             result,
             EngineToUi::CommandRejected {
                 id: "banned-join".into(),
-                message_key: "engine.join_banned".into(),
+                message_key: EngineMessageKey::JoinBanned,
                 values: None,
             }
         );
@@ -6933,7 +6955,7 @@ async fn delay(duration: Duration) {
                 result,
                 EngineToUi::CommandRejected {
                     id,
-                    message_key: "engine.join_refused".into(),
+                    message_key: EngineMessageKey::JoinRefused,
                     values: None,
                 }
             );
@@ -8930,7 +8952,7 @@ async fn delay(duration: Duration) {
             output,
             [EngineToUi::CommandRejected {
                 id: "reconnecting-direct".into(),
-                message_key: "engine.buffer_not_sendable".into(),
+                message_key: EngineMessageKey::BufferNotSendable,
                 values: None,
             }]
         );
@@ -8955,7 +8977,7 @@ async fn delay(duration: Duration) {
             }),
             [EngineToUi::CommandRejected {
                 id: "join".into(),
-                message_key: "engine.offline".into(),
+                message_key: EngineMessageKey::Offline,
                 values: None,
             }]
         );
@@ -9159,7 +9181,8 @@ async fn delay(duration: Duration) {
         process_event(&state, &outbound, &client, 1, warning);
         assert!(matches!(
             collect(&mut receiver).as_slice(),
-            [EngineToUi::Notice { key, .. }] if key == "engine.channel_recreated"
+            [EngineToUi::Notice { key, .. }]
+                if key == EngineMessageKey::ChannelRecreated.as_str()
         ));
     }
 

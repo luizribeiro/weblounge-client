@@ -2,6 +2,7 @@ import type { BufferProjection } from "./generated/BufferProjection";
 import type { CommandSpec } from "./generated/CommandSpec";
 import type { CompletionCandidate } from "./generated/CompletionCandidate";
 import type { CompletionTrigger } from "./generated/CompletionTrigger";
+import type { EngineMessageKey } from "./generated/EngineMessageKey";
 import type { EngineRequestEnvelope } from "./generated/EngineRequestEnvelope";
 import type { EngineToUi } from "./generated/EngineToUi";
 import type { Hello } from "./generated/Hello";
@@ -17,6 +18,7 @@ export type {
   CommandSpec,
   CompletionCandidate,
   CompletionTrigger,
+  EngineMessageKey,
   EngineRequestEnvelope,
   EngineToUi,
   Hello,

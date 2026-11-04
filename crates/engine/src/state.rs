@@ -6,9 +6,9 @@ use std::{
 
 use crate::{
     BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus, DirectIdentityState,
-    EngineToUi, LocalSendId, MembershipKind, MembershipProjection, MessageAuthorship,
-    MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
-    NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
+    EngineMessageKey, EngineToUi, LocalSendId, MembershipKind, MembershipProjection,
+    MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection,
+    NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
     chat_list_snapshot::{
         ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, truncate_preview,
     },
@@ -705,7 +705,9 @@ impl NetworkModel {
         direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
         let Some(conversation) = NameKey::from_conversation(message.conversation()) else {
-            return vec![EngineToUi::notice("engine.unsupported_conversation")];
+            return vec![EngineToUi::notice(
+                EngineMessageKey::UnsupportedConversation,
+            )];
         };
         let origin = if history {
             TimelineOrigin::History
@@ -1194,7 +1196,7 @@ impl NetworkModel {
     pub(crate) fn fail_send(
         &mut self,
         pending: &PendingSend,
-        message_key: &str,
+        message_key: EngineMessageKey,
     ) -> Vec<EngineToUi> {
         if let Some(record) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
             buffer
@@ -1210,7 +1212,7 @@ impl NetworkModel {
             buffer_id: pending.buffer_id,
             target: target.clone(),
             local_send_id: pending.local_send_id,
-            message_key: message_key.into(),
+            message_key,
         }];
         let hidden_direct = !self.buffer_order.contains(&pending.buffer_id)
             && self
@@ -1743,19 +1745,19 @@ impl NetworkModel {
         self.buffers.get(buffer_id)?.direct.clone()
     }
 
-    pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> &'static str {
+    pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> EngineMessageKey {
         let buffer = self.buffers.get(&buffer_id);
         if buffer
             .is_some_and(|buffer| buffer.projection.channel_status == Some(ChannelStatus::Kicked))
         {
-            "engine.channel_rejoin_required"
+            EngineMessageKey::ChannelRejoinRequired
         } else if buffer
             .and_then(|buffer| buffer.direct.as_ref())
             .is_some_and(|direct| matches!(direct, DirectAvailability::MonitorFull))
         {
-            "engine.direct_monitor_full"
+            EngineMessageKey::DirectMonitorFull
         } else {
-            "engine.buffer_not_sendable"
+            EngineMessageKey::BufferNotSendable
         }
     }
 
@@ -2633,7 +2635,7 @@ fn system_time_from_millis(milliseconds: i64) -> SystemTime {
 }
 
 fn inconsistent_state_notice() -> Vec<EngineToUi> {
-    vec![EngineToUi::notice("engine.state_inconsistent")]
+    vec![EngineToUi::notice(EngineMessageKey::StateInconsistent)]
 }
 
 fn draft_key(network: &str, buffer: &str, casemapping: papo::Casemapping) -> String {
@@ -2822,8 +2824,8 @@ mod tests {
         derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
-        BufferId, BufferKind, BufferSyncState, EngineToUi, MembershipKind, MembershipProjection,
-        MessageAuthorship, NetworkId,
+        BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
+        MembershipProjection, MessageAuthorship, NetworkId,
         chat_list_snapshot::{ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow},
         pushed_messages::PushedMessage,
     };
@@ -3864,7 +3866,7 @@ mod tests {
             .begin_send(buffer.id, "will fail".into(), &state)
             .expect("channel is sendable");
 
-        let events = model.fail_send(&pending, "engine.send_failed");
+        let events = model.fail_send(&pending, EngineMessageKey::SendFailed);
 
         let record = &model.buffers[&buffer.id].timeline[0];
         assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
@@ -3909,7 +3911,7 @@ mod tests {
             .expect("channel is sendable");
         assert_eq!(pending.text, "try\n\n\nagain");
         assert_eq!(timeline(&model), ["try\n\nagain"]);
-        model.fail_send(&pending, "engine.send_failed");
+        model.fail_send(&pending, EngineMessageKey::SendFailed);
 
         let (retried, event) = model
             .retry_send(buffer.id, pending.local_send_id)
@@ -4530,7 +4532,7 @@ mod tests {
         assert!(matches!(
             events.as_slice(),
             [crate::EngineToUi::Notice { key, .. }]
-                if key == "engine.state_inconsistent"
+                if key == EngineMessageKey::StateInconsistent.as_str()
         ));
     }
 }

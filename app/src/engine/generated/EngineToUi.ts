@@ -4,6 +4,7 @@ import type { BufferProjection } from "./BufferProjection";
 import type { CommandSpec } from "./CommandSpec";
 import type { CompletionCandidate } from "./CompletionCandidate";
 import type { CompletionTrigger } from "./CompletionTrigger";
+import type { EngineMessageKey } from "./EngineMessageKey";
 import type { LocalSendId } from "./LocalSendId";
 import type { MemberProjection } from "./MemberProjection";
 import type { MembershipProjection } from "./MembershipProjection";
@@ -123,7 +124,7 @@ id: string,
 /**
  * Stable localization key describing the rejection.
  */
-message_key: string,
+message_key: EngineMessageKey,
 /**
  * Typed interpolation values for the localized rejection.
  */
@@ -303,7 +304,7 @@ local_send_id: LocalSendId,
 /**
  * Stable localization key, never a secret-bearing error string.
  */
-message_key: string, } | { "type": "message_retrying",
+message_key: EngineMessageKey, } | { "type": "message_retrying",
 /**
  * Destination buffer.
  */

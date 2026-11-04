@@ -4,7 +4,7 @@ use std::{env, error::Error, fs, path::Path};
 
 use ts_rs::TS;
 use weblounge_engine::{
-    DeploymentConfig, EngineToUi, UiToEngine,
+    DeploymentConfig, EngineMessageKey, EngineToUi, UiToEngine,
     storage::{WEB_DATABASE_NAME, WEB_DATABASE_STORES, WEB_DATABASE_VERSION},
 };
 
@@ -16,8 +16,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     EngineToUi::export_all_to(&output)?;
     UiToEngine::export_all_to(&output)?;
     DeploymentConfig::export_all_to(&output)?;
+    export_engine_message_keys(Path::new(&output))?;
     export_database_schema(Path::new(&output))?;
     trim_trailing_whitespace(Path::new(&output))?;
+    Ok(())
+}
+
+fn export_engine_message_keys(directory: &Path) -> Result<(), Box<dyn Error>> {
+    let keys = EngineMessageKey::ALL
+        .iter()
+        .map(|key| format!("{:?}", key.as_str()))
+        .collect::<Vec<_>>()
+        .join(",\n  ");
+    fs::write(
+        directory.join("EngineMessageKeys.ts"),
+        format!(
+            "// Generated from the engine's localization key enum. Do not edit manually.\n\
+             export const ENGINE_MESSAGE_KEYS = [\n  {keys},\n] as const;\n"
+        ),
+    )?;
     Ok(())
 }
 

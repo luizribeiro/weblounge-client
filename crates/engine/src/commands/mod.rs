@@ -7,6 +7,8 @@ mod values;
 
 use std::sync::OnceLock;
 
+use crate::EngineMessageKey;
+
 pub(crate) use declaration::Command;
 pub(crate) use spec::CompletionPriority;
 pub use spec::{
@@ -27,12 +29,12 @@ pub(crate) enum InputError {
 }
 
 impl InputError {
-    pub(crate) const fn message_key(&self) -> &'static str {
+    pub(crate) const fn message_key(&self) -> EngineMessageKey {
         match self {
-            Self::Empty => "composer.empty_input",
-            Self::MissingArgument => "composer.missing_argument",
-            Self::UnexpectedArgument => "composer.unexpected_argument",
-            Self::UnknownCommand(_) => "composer.unknown_command",
+            Self::Empty => EngineMessageKey::ComposerEmptyInput,
+            Self::MissingArgument => EngineMessageKey::ComposerMissingArgument,
+            Self::UnexpectedArgument => EngineMessageKey::ComposerUnexpectedArgument,
+            Self::UnknownCommand(_) => EngineMessageKey::ComposerUnknownCommand,
         }
     }
 }

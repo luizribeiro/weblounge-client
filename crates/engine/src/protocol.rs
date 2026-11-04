@@ -4,6 +4,71 @@ use ts_rs::TS;
 
 use crate::commands::CommandSpec;
 
+macro_rules! engine_message_keys {
+    ($($variant:ident => $key:literal),+ $(,)?) => {
+        /// Localization keys that the engine may emit to the UI.
+        #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+        #[allow(missing_docs)]
+        pub enum EngineMessageKey {
+            $(
+                #[serde(rename = $key)]
+                #[ts(rename = $key)]
+                $variant,
+            )+
+        }
+
+        impl EngineMessageKey {
+            /// Every engine-owned localization key, in stable generated order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            /// Returns the serialized localization key.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $key),+
+                }
+            }
+        }
+    };
+}
+
+engine_message_keys! {
+    ComposerEmptyInput => "composer.empty_input",
+    ComposerMissingArgument => "composer.missing_argument",
+    ComposerUnexpectedArgument => "composer.unexpected_argument",
+    ComposerUnknownCommand => "composer.unknown_command",
+    BouncerNetworkLimitReached => "engine.bouncer_network_limit_reached",
+    BufferNotSendable => "engine.buffer_not_sendable",
+    CachedTargetGone => "engine.cached_target_gone",
+    ChannelLimitReached => "engine.channel_limit_reached",
+    ChannelNotFound => "engine.channel_not_found",
+    ChannelRecreated => "engine.channel_recreated",
+    ChannelRejoinRequired => "engine.channel_rejoin_required",
+    ChannelRequired => "engine.channel_required",
+    CommandRefused => "engine.command_refused",
+    ConnectionFailed => "engine.connection_failed",
+    DirectIdentityMismatch => "engine.direct_identity_mismatch",
+    DirectMonitorFull => "engine.direct_monitor_full",
+    DirectPresenceUnavailable => "engine.direct_presence_unavailable",
+    DirectTargetGone => "engine.direct_target_gone",
+    DirectUnavailable => "engine.direct_unavailable",
+    HostedAuthFailed => "engine.hosted_auth_failed",
+    InvalidEndpoint => "engine.invalid_endpoint",
+    JoinBanned => "engine.join_banned",
+    JoinRefused => "engine.join_refused",
+    MarkReadFailed => "engine.mark_read_failed",
+    MetadataLimitReached => "engine.metadata_limit_reached",
+    NetworkAlreadyConnected => "engine.network_already_connected",
+    NetworkNotFound => "engine.network_not_found",
+    NotInChannel => "engine.not_in_channel",
+    Offline => "engine.offline",
+    ReadMarkerInvalid => "engine.read_marker_invalid",
+    SendFailed => "engine.send_failed",
+    StateInconsistent => "engine.state_inconsistent",
+    StorageUnavailable => "engine.storage_unavailable",
+    UnsupportedConversation => "engine.unsupported_conversation",
+}
+
 macro_rules! numeric_id {
     ($name:ident, $documentation:literal) => {
         #[doc = $documentation]
@@ -261,7 +326,7 @@ pub enum NetworkConnectionState {
         /// Stable failure classification.
         reason: ConnectionFailureReason,
         /// Localization key for the human explanation.
-        message_key: String,
+        message_key: EngineMessageKey,
     },
 }
 
@@ -978,7 +1043,7 @@ pub enum EngineToUi {
         /// Rejected command identifier.
         id: String,
         /// Stable localization key describing the rejection.
-        message_key: String,
+        message_key: EngineMessageKey,
         /// Typed interpolation values for the localized rejection.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -1157,7 +1222,7 @@ pub enum EngineToUi {
         /// Optimistic send identity.
         local_send_id: LocalSendId,
         /// Stable localization key, never a secret-bearing error string.
-        message_key: String,
+        message_key: EngineMessageKey,
     },
     /// Return one failed row to its optimistic state before retrying it.
     MessageRetrying {
@@ -1187,18 +1252,18 @@ pub enum EngineToUi {
 }
 
 impl EngineToUi {
-    pub(crate) fn notice(key: impl Into<String>) -> Self {
+    pub(crate) fn notice(key: EngineMessageKey) -> Self {
         Self::Notice {
-            key: key.into(),
+            key: key.as_str().into(),
             values: BTreeMap::new(),
             tone: NoticeTone::Neutral,
             action: None,
         }
     }
 
-    pub(crate) fn error_notice(key: impl Into<String>) -> Self {
+    pub(crate) fn error_notice(key: EngineMessageKey) -> Self {
         Self::Notice {
-            key: key.into(),
+            key: key.as_str().into(),
             values: BTreeMap::new(),
             tone: NoticeTone::Error,
             action: None,

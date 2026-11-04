@@ -5,6 +5,7 @@ import { App, recoverFromBuildMismatch } from "./App";
 import { type EngineClient, EngineCommandError } from "./engine/EngineClient";
 import type {
   EngineClientMessage,
+  EngineMessageKey,
   EngineRequestEnvelope,
 } from "./engine/protocol";
 import { OneShotAccessToken } from "./hosted/HostedSession";
@@ -1482,7 +1483,7 @@ class FakeEngineClient implements EngineClient {
   #listener: ((message: EngineClientMessage) => void) | undefined;
 
   constructor(
-    private readonly rejection?: string,
+    private readonly rejection?: EngineMessageKey,
     private readonly startResult: Promise<void> = Promise.resolve(),
     private readonly rejectedType: EngineRequestEnvelope["request"]["type"] = "submit_input",
   ) {}

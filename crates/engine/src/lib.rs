@@ -22,11 +22,11 @@ use std::rc::Rc;
 pub use protocol::{
     AccountProjection, BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus,
     ClientDeploymentConfig, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
-    DeploymentConfig, DirectIdentityState, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
-    HostedNetworkConfig, HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection,
-    MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
-    MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,
-    NoticeAction, NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig,
+    DeploymentConfig, DirectIdentityState, EngineMessageKey, EngineRequest, EngineRequestEnvelope,
+    EngineToUi, Hello, HostedNetworkConfig, HostedOAuthConfig, LocalSendId, MemberGroup,
+    MemberProjection, MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery,
+    MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
+    NetworkProjection, NoticeAction, NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig,
     PushDeviceCredentials, PushFailure, PushRoute, PushState, PushUnsupportedReason,
     RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
 };
@@ -141,7 +141,8 @@ mod tests {
     use papo_testing::wire;
 
     use crate::{
-        Engine, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello, ShellKind, UiToEngine,
+        Engine, EngineMessageKey, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
+        ShellKind, UiToEngine,
     };
 
     #[tokio::test]
@@ -234,7 +235,7 @@ mod tests {
             })),
             [EngineToUi::CommandRejected {
                 id: "bad-command".into(),
-                message_key: "composer.unknown_command".into(),
+                message_key: EngineMessageKey::ComposerUnknownCommand,
                 values: None,
             }]
         );
