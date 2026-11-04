@@ -143,23 +143,27 @@ test("offers Reset app after two failed retries and recovers cleanly", async ({
     development,
     "the service worker is intentionally disabled in development",
   );
-  let failConfig = false;
-  let failedRequests = 0;
-  await page.route("**/config.json", async (route) => {
-    if (failConfig) {
-      failedRequests += 1;
-      await route.fulfill({ contentType: "application/json", body: "{}" });
-      return;
+  const startupErrors: string[] = [];
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      message.text().startsWith("[weblounge startup]")
+    ) {
+      startupErrors.push(message.text());
     }
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ mode: "app" }),
-    });
   });
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
   await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  await page.context().addCookies([
+    {
+      name: "weblounge-e2e-config",
+      value: "invalid",
+      url: new URL(page.url()).origin,
+      sameSite: "Strict",
+    },
+  ]);
   await page.evaluate(async () => {
     localStorage.setItem("reset-survival-setting", "preserved");
     const cache = await caches.open("weblounge-reset-sentinel");
@@ -193,22 +197,22 @@ test("offers Reset app after two failed retries and recovers cleanly", async ({
     )
     .toBe(true);
 
-  failConfig = true;
   await page.reload();
   const retry = page.getByRole("button", { name: "Retry" });
   const reset = page.getByRole("button", { name: "Reset app" });
   await expect(page.getByRole("alert")).toContainText("misconfigured");
+  await expect.poll(() => startupErrors).toHaveLength(1);
   await expect(reset).toHaveCount(0);
 
   await retry.click();
-  await expect.poll(() => failedRequests).toBe(2);
+  await expect.poll(() => startupErrors).toHaveLength(2);
   await expect(reset).toHaveCount(0);
 
   await retry.click();
-  await expect.poll(() => failedRequests).toBe(3);
+  await expect.poll(() => startupErrors).toHaveLength(3);
   await expect(reset).toBeVisible();
 
-  failConfig = false;
+  await page.context().clearCookies({ name: "weblounge-e2e-config" });
   await reset.click();
   await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);

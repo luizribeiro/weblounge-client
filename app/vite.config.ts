@@ -7,7 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 import solid from "vite-plugin-solid";
@@ -106,7 +106,9 @@ export default defineConfig(({ mode }) => {
       prioritizeSplashStylesheet(),
       emitPushPayloadParser(pushPayloadJs, pushPayloadWasm),
       emitServiceWorker(resolve(import.meta.dirname, "src/push-worker.ts")),
-      ...(development || appConfigHarness ? [appModeConfig()] : []),
+      ...(development || appConfigHarness
+        ? [appModeConfig(appConfigHarness)]
+        : []),
     ],
     ...(!cspEnabled
       ? {}
@@ -352,10 +354,17 @@ function prioritizeSplashStylesheet(): Plugin {
   };
 }
 
-function appModeConfig(): Plugin {
-  const serve = (_request: unknown, response: ServerResponse) => {
+function appModeConfig(invalidConfigHarness: boolean): Plugin {
+  const serve = (request: IncomingMessage, response: ServerResponse) => {
     response.setHeader("Content-Type", "application/json");
-    response.end('{"mode":"app"}');
+    response.end(
+      invalidConfigHarness &&
+        request.headers.cookie
+          ?.split(";")
+          .some((cookie) => cookie.trim() === "weblounge-e2e-config=invalid")
+        ? "{}"
+        : '{"mode":"app"}',
+    );
   };
   return {
     name: "weblounge-app-config",

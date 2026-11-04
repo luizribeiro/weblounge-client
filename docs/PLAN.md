@@ -566,7 +566,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the current config.json.
   - U2. [x] A "Reset app" action on the startup error screen, shown only after repeated startup
     failures (two consecutive Retries). It clears the cached shell and service worker and reloads,
-    keeping sign-in where possible.
+    keeping sign-in where possible. Its production test drives invalid configuration through the
+    real server path in service-worker-controlled Chromium and WebKit profiles.
   - U3. [ ] A post-deploy upgrade check in weblounge's deploy smoke tests (owned by
     weblounge-server). Load beta with the previous build installed and assert the new build takes
     over and reaches the sign-in step. No account and no user data are needed.
