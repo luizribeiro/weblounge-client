@@ -52,9 +52,8 @@ export class IrcClient {
         line.includes("server-time"),
     );
     client.send("AUTHENTICATE PLAIN");
-    await client.waitFor(
-      "SASL PLAIN authentication prompt",
-      (line) => line === "AUTHENTICATE +",
+    await client.waitFor("SASL PLAIN authentication prompt", (line) =>
+      line.endsWith("AUTHENTICATE +"),
     );
     const credentials = Buffer.from(`\0${account}\0${password}`).toString(
       "base64",
@@ -89,13 +88,14 @@ export class IrcClient {
       line.includes(" CAP * LS "),
     );
     client.send("CAP REQ :sasl");
-    await client.waitFor("SASL capability acknowledgement", (line) =>
-      line.includes(" CAP * ACK :sasl"),
+    await client.waitFor(
+      "SASL capability acknowledgement",
+      (line) =>
+        line.includes(" CAP * ACK ") && line.split(" ").includes("sasl"),
     );
     client.send("AUTHENTICATE OAUTHBEARER");
-    await client.waitFor(
-      "SASL OAUTHBEARER authentication prompt",
-      (line) => line === "AUTHENTICATE +",
+    await client.waitFor("SASL OAUTHBEARER authentication prompt", (line) =>
+      line.endsWith("AUTHENTICATE +"),
     );
     const credentials = Buffer.from(
       `n,,\u0001auth=Bearer ${token}\u0001\u0001`,
@@ -236,7 +236,12 @@ export class IrcClient {
     );
   }
 
-  async pushSubscriptionCount(): Promise<number> {
+  async pushSubscriptionEndpoints(): Promise<readonly string[]> {
+    this.#discardLines((line) =>
+      /(?:push subscription\(s\)|Subscription [0-9]+:|Endpoint:|Last renewal:|Last push:)/u.test(
+        line,
+      ),
+    );
     this.privmsg("NickServ", "PUSH LIST");
     const response = await this.waitFor("push subscription count", (line) =>
       line.includes(" push subscription(s)"),
@@ -245,7 +250,21 @@ export class IrcClient {
     if (count === undefined) {
       throw new Error(`Could not parse push subscription count: ${response}`);
     }
-    return Number.parseInt(count, 10);
+    const endpoints: string[] = [];
+    for (let index = 0; index < Number.parseInt(count, 10); index += 1) {
+      const endpoint = await this.waitFor(
+        "push subscription endpoint",
+        (line) => line.includes("Endpoint:"),
+      );
+      const value = /Endpoint:\s+(\S+)/u.exec(endpoint)?.[1];
+      if (value === undefined) {
+        throw new Error(
+          `Could not parse push subscription endpoint: ${endpoint}`,
+        );
+      }
+      endpoints.push(value);
+    }
+    return endpoints;
   }
 
   close(): void {
@@ -259,6 +278,12 @@ export class IrcClient {
 
   private send(line: string): void {
     this.#socket.write(`${line}\r\n`);
+  }
+
+  #discardLines(predicate: (line: string) => boolean): void {
+    for (let index = this.#lines.length - 1; index >= 0; index -= 1) {
+      if (predicate(this.#lines[index] ?? "")) this.#lines.splice(index, 1);
+    }
   }
 
   private async waitFor(

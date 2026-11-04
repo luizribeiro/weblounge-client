@@ -15,6 +15,7 @@ const receiverRecords = process.env.WEBLOUNGE_PUSH_RECEIVER_RECORDS ?? "";
 const currentApp = process.env.WEBLOUNGE_APP_DIR ?? "";
 const appLink = process.env.WEBLOUNGE_PUSH_APP_LINK ?? "";
 const oauthToken = "push-e2e-token";
+let receiverCursor = 0;
 
 interface RelayDeviceState {
   readonly id: string;
@@ -36,15 +37,12 @@ test.describe("full unmocked push lifecycle", () => {
 
   let context: BrowserContext;
   let page: Page;
-  let neutral: Page;
   let audit: IrcClient;
   let bot: IrcClient;
-  const receiverCursor = 0;
 
   test.beforeAll(async ({ browser }) => {
     context = await pushContext(browser, "a");
     page = await context.newPage();
-    neutral = await context.newPage();
     audit = await IrcClient.connectOAuth("push-audit", oauthToken);
   });
 
@@ -56,24 +54,24 @@ test.describe("full unmocked push lifecycle", () => {
 
   test("enables once in the deployed build and upgrades in place", async () => {
     await page.goto("/");
-    await expect(
-      page.getByRole("heading", { name: "weblounge" }),
-    ).toBeVisible();
+    await expect(connectionHeading(page)).toBeVisible();
     await page.getByRole("button", { name: "Turn on" }).click();
 
     await expectOneRoutePerDevice(1);
-    await expect.poll(() => audit.pushSubscriptionCount()).toBe(1);
+    await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
 
     await switchToCurrentBuild();
     await page.reload();
-    await expect(
-      page.getByRole("heading", { name: "weblounge" }),
-    ).toBeVisible();
+    await expect(connectionHeading(page)).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => window.weblounge.version))
       .toContain("weblounge ci");
     await expectOneRoutePerDevice(1);
-    await expect.poll(() => audit.pushSubscriptionCount()).toBe(1);
+    await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
+    const expired = await fetch(`${relayControl}/test/expire-leases`, {
+      method: "POST",
+    });
+    expect(expired.status).toBe(204);
   });
 
   test("keeps one route through reconnect and two tabs", async () => {
@@ -88,7 +86,7 @@ test.describe("full unmocked push lifecycle", () => {
       1,
     );
     await expectOneRoutePerDevice(1);
-    await expect.poll(() => audit.pushSubscriptionCount()).toBe(1);
+    await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
     await second.close();
   });
 
@@ -97,12 +95,14 @@ test.describe("full unmocked push lifecycle", () => {
       `push-bot-${randomUUID().slice(0, 8)}`,
       "#push-e2e",
     );
-    await releaseForegroundLeases([page], [neutral]);
+    await releaseForegroundLeases([page]);
 
     const direct = `full-chain direct ${randomUUID()}`;
     await bot.privmsgConfirmed("weblounge", direct);
     const directRecord = await nextRecord("/device/a");
-    expect(directRecord.headers.urgency).toBe("high");
+    expect(directRecord.headers["content-encoding"]).toBe("aes128gcm");
+    expect(directRecord.headers.authorization).toMatch(/^vapid /);
+    expect(Number(directRecord.headers.ttl)).toBeGreaterThan(0);
     await deliverRecordedEnvelope(context, page, directRecord);
     await expectNotification(page, direct);
     await closeNotifications(page);
@@ -117,16 +117,17 @@ test.describe("full unmocked push lifecycle", () => {
     const missingKeys = `missing route keys ${randomUUID()}`;
     await bot.privmsgConfirmed("weblounge", missingKeys);
     const missingRecord = await nextRecord("/device/a");
-    await deleteStoredRoutes(page);
+    await breakStoredRouteKeys(page);
     await deliverRecordedEnvelope(context, page, missingRecord);
     await expect
       .poll(() => notifications(page))
       .toEqual([{ title: "New message", body: "", tag: "" }]);
+    await restoreStoredRouteKeys(page);
 
-    await page.reload();
+    await page.goto("/");
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
     await expectOneRoutePerDevice(1);
-    await expect.poll(() => audit.pushSubscriptionCount()).toBe(1);
+    await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
   });
 
   test("keeps Apple-style MARKREAD silent when another device reads", async ({
@@ -134,18 +135,17 @@ test.describe("full unmocked push lifecycle", () => {
   }) => {
     const otherContext = await pushContext(browser, "b");
     const other = await otherContext.newPage();
-    const otherNeutral = await otherContext.newPage();
     try {
       await other.goto("/");
-      await expect(
-        other.getByRole("heading", { name: "weblounge" }),
-      ).toBeVisible();
+      await expect(connectionHeading(other)).toBeVisible();
       await other.getByRole("button", { name: "Turn on" }).click();
       await expectOneRoutePerDevice(2);
-      await expect.poll(() => audit.pushSubscriptionCount()).toBe(2);
+      await expect
+        .poll(() => audit.pushSubscriptionEndpoints())
+        .toHaveLength(2);
 
       await closeNotifications(page);
-      await releaseForegroundLeases([page, other], [neutral, otherNeutral]);
+      await releaseForegroundLeases([page, other]);
       const direct = `read elsewhere ${randomUUID()}`;
       await bot.privmsgConfirmed("weblounge", direct);
       const [first, second] = await nextRecords(["/device/a", "/device/b"]);
@@ -155,9 +155,13 @@ test.describe("full unmocked push lifecycle", () => {
       await expectNotification(other, direct);
 
       const droppedBefore = await normalPushesDropped();
-      await other.bringToFront();
+      await other.goto("/");
+      await expect(connectionHeading(other)).toBeVisible();
       await other
-        .getByRole("button", { name: new RegExp(bot.nickname, "u") })
+        .getByRole("complementary", { name: "Channel list" })
+        .getByRole("button", {
+          name: new RegExp(`^${bot.nickname},`, "u"),
+        })
         .click();
       await expect.poll(() => normalPushesDropped()).toBe(droppedBefore + 1);
       expect((await records()).length).toBe(receiverCursor);
@@ -168,10 +172,12 @@ test.describe("full unmocked push lifecycle", () => {
     }
   });
 
-  test("recovers from one real REGISTER probe refusal", async () => {
+  test("re-grants permission, rotates keys, and recovers a refused REGISTER", async () => {
     await page.bringToFront();
     await closeNotifications(page);
-    await releaseForegroundLeases([page], [neutral]);
+    await releaseForegroundLeases([page]);
+    const previousEndpoints = await audit.pushSubscriptionEndpoints();
+    expect(previousEndpoints).toHaveLength(2);
     const direct = `registration refusal ${randomUUID()}`;
     await bot.privmsgConfirmed("weblounge", direct);
     const record = await nextRecord("/device/a");
@@ -187,12 +193,31 @@ test.describe("full unmocked push lifecycle", () => {
       method: "POST",
     });
     expect(refusal.status).toBe(204);
-    await page.reload();
+    await page.evaluate(() => localStorage.removeItem("push-e2e-permission"));
+    await page.goto("/");
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    await page.getByRole("button", { name: "Turn on" }).click();
+    let currentEndpoints: readonly string[] = [];
+    await expect
+      .poll(async () => {
+        currentEndpoints = await audit.pushSubscriptionEndpoints();
+        return {
+          count: currentEndpoints.length,
+          retained: currentEndpoints.filter((endpoint) =>
+            previousEndpoints.includes(endpoint),
+          ).length,
+        };
+      })
+      .toEqual({ count: 2, retained: 1 });
     await expectOneRoutePerDevice(2);
-    await expect.poll(() => audit.pushSubscriptionCount()).toBe(2);
   });
 });
+
+function connectionHeading(page: Page) {
+  return page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("heading", { name: "weblounge" });
+}
 
 async function pushContext(
   browser: Browser,
@@ -207,6 +232,10 @@ async function pushContext(
 }
 
 async function installPushSubscription(deviceId: string): Promise<void> {
+  Object.defineProperty(navigator, "sendBeacon", {
+    configurable: true,
+    value: () => false,
+  });
   const databaseName = "weblounge-push-e2e-subscription";
   const storeName = "target";
   const open = () =>
@@ -359,11 +388,8 @@ async function expectOneRoutePerDevice(deviceCount: number): Promise<void> {
   );
 }
 
-async function releaseForegroundLeases(
-  pages: readonly Page[],
-  neutralPages: readonly Page[],
-): Promise<void> {
-  for (const target of neutralPages) await target.bringToFront();
+async function releaseForegroundLeases(pages: readonly Page[]): Promise<void> {
+  for (const target of pages) await target.goto("/push-driver.html");
   await expect
     .poll(async () => {
       const states = await relayStates();
@@ -598,7 +624,7 @@ async function closeNotifications(page: Page): Promise<void> {
   await expect.poll(() => notifications(page)).toEqual([]);
 }
 
-async function deleteStoredRoutes(page: Page): Promise<void> {
+async function breakStoredRouteKeys(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("weblounge-push");
@@ -606,12 +632,45 @@ async function deleteStoredRoutes(page: Page): Promise<void> {
       request.onerror = () => reject(request.error);
     });
     const transaction = database.transaction("routes", "readwrite");
-    transaction.objectStore("routes").clear();
+    const store = transaction.objectStore("routes");
+    const routes = await new Promise<readonly Record<string, unknown>[]>(
+      (resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () =>
+          resolve(request.result as readonly Record<string, unknown>[]);
+        request.onerror = () => reject(request.error);
+      },
+    );
+    Reflect.set(window, "pushE2eSavedRoutes", routes);
+    for (const route of routes) store.put({ ...route, privateKey: "missing" });
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
     database.close();
+  });
+}
+
+async function restoreStoredRouteKeys(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const routes = Reflect.get(window, "pushE2eSavedRoutes") as
+      | readonly Record<string, unknown>[]
+      | undefined;
+    if (routes === undefined) throw new Error("push route keys were not saved");
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readwrite");
+    const store = transaction.objectStore("routes");
+    for (const route of routes) store.put(route);
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+    Reflect.deleteProperty(window, "pushE2eSavedRoutes");
   });
 }
 
