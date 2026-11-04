@@ -179,8 +179,9 @@ notification. Mozilla, FCM, and Edge forward `normal` so `MARKREAD` can clear st
 but drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
 #2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because their
 ciphertexts are opaque, the relay must forward both to non-Apple services. The worker consumes both
-silently: `MARKREAD` clears its conversation tag and lowers the badge, while `PING` only performs
-cleanup. Apple targets never receive either control message. A future Ergo urgency split can move
+silently: `MARKREAD` records its timestamp, closes only notifications at or before that marker and
+lowers the badge, while `PING` repeats the same bounded cleanup. Apple targets never receive either
+control message. A future Ergo urgency split can move
 maintenance PING to `low` without a relay change.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
@@ -231,9 +232,11 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. Store the message (msgid, time, target, sender, text) in the engine's `Space::Cache` IndexedDB
    store, keyed so the engine reads it as part of the buffer's history.
-5. For a visible payload, call `showNotification` exactly once. A duplicate chat `msgid` re-shows
-   the same conversation tag so tag-capable platforms replace the prior notification. A decrypted
-   `MARKREAD` or `PING` never calls `showNotification`; it only performs its cleanup.
+5. For a visible payload, call `showNotification` exactly once. Chat notification data includes
+   its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
+   re-shows the same conversation tag so tag-capable platforms replace the prior notification. A
+   decrypted `MARKREAD` or `PING` never calls `showNotification`; it only performs marker-bounded
+   cleanup. A visible push never performs cleanup before or after showing itself.
 6. Serialize push events. If route lookup, decryption, parsing or storage has not produced a visible
    presentation within 2.8 seconds, show the generic notification once and suppress all later
    presentation or route writes from that delivery. IndexedDB opens, requests and transactions have
@@ -256,7 +259,8 @@ grow into a second engine.
 
 ### Tapping a notification
 
-`notification.data` carries the buffer route, e.g. `/weblounge/@mel` (`10-navigation.md:201-222`,
+`notification.data` carries the buffer route, e.g. `/weblounge/@mel`, plus the conversation tag,
+message id and server time needed for read-marker cleanup (`10-navigation.md:201-222`,
 `app/src/navigation/buffer-route.ts`). On `notificationclick`, `clients.matchAll({type:'window',
 includeUncontrolled:true})`; if a window exists, `focus()` it and post `{kind:"open-route", route}`
 (a new channel: the desktop shell has no `popstate` handling today, only `MobileShell.tsx:503`
@@ -281,16 +285,18 @@ device]**.
   the sum of `mentions` (the engine counts every DM as a mention, `state.rs:1834-1835`). With no
   page open, the service worker increments a counter in `weblounge-push`; on launch the page
   overwrites it with the engine's value.
-- The worker stores a notified count per conversation tag. A non-Apple `MARKREAD` zeros that tag,
-  closes its notifications and recomputes the badge without showing a notification. Re-delivery of an existing chat `msgid` replaces its notification
-  without incrementing the count again. Every push also re-closes tags already known to be read
-  before recomputing the badge. It undercounts when Ergo's 16-item push queue overflows
+- The worker stores a notified count and latest read timestamp per conversation tag. A non-Apple
+  `MARKREAD` zeros that tag, closes only notifications whose server time is at or before the marker,
+  and recomputes the badge without showing a notification. Re-delivery of an existing chat `msgid`
+  replaces its notification without incrementing the count again. Maintenance `PING` repeats that
+  bounded cleanup. It undercounts when Ergo's 16-item push queue overflows
   (`client.go:53`).
 - Apple never receives `MARKREAD`, so opening the page corrects its badge from the engine and closes
-  notifications for every read buffer. The same cleanup runs whenever a buffer's read counters
-  change (`registration.getNotifications({tag})`). The page seeds the worker's per-tag counts from
-  engine DM unread and channel mention counts so later closed-page recomputation has the same base.
-  Linux, Firefox and Chrome Android have no badging API, but notification cleanup still runs.
+  each notification at or before that buffer's engine-owned read marker. The same cleanup runs
+  whenever a buffer's read counters change. It scans notification data rather than relying on tag
+  filtering, which Safari does not support. The page seeds the worker's per-tag counts and markers
+  from engine DM unread, channel mention and read state so later closed-page recomputation has the
+  same base. Linux, Firefox and Chrome Android have no badging API, but cleanup still runs.
 
 ## Types
 
@@ -530,6 +536,16 @@ worker's blocked-IndexedDB deadline, its generic fallback when a route key is un
 serialized notification cleanup. Chromium coverage exercises all three, including simultaneous
 deliveries to separate conversation tags.
 
+At 19:24:33 UTC the affected iPhone incremented the app badge for push test 6 without leaving a
+visible notification, while Firefox showed the same push. The badge update happens only after
+`showNotification` resolves and the worker records the delivery, narrowing the iOS failure to
+notification presentation or later closure rather than relay delivery, decryption or parsing.
+Cleanup now compares notification server time with the stored read marker and cannot close a newer
+notification; the visible-delivery path does not run cleanup. Chromium deterministically delivers
+an encrypted message followed by a cleanup control and asserts that the newer notification remains.
+Playwright WebKit exposes no equivalent synthetic Web Push delivery API, so the final presentation
+check remains on the iPhone device checklist.
+
 The live relay's route convergence reduced the phone to one route, while the deployed client could
 still delete that relay route without a confirmed IRC UNREGISTER, leaving an Ergo slot until the
 next push received 404. The redesigned page exact-unregisters before ordinary and forbidden route
@@ -651,18 +667,20 @@ outcome without inspecting ciphertext.
 
 ### Read-elsewhere cleanup implementation (2026-11-04)
 
-The worker persists versioned per-conversation notification counts beside the aggregate badge.
-Visible message and invite pushes increment their notification tag. On Mozilla, FCM, and Edge, a
-decrypted `MARKREAD` zeros and closes the matching tag and a maintenance `PING` performs cleanup
-without calling `showNotification`; both are silent even if count persistence fails. Before any
-visible or generic notification, the worker closes all zero-count tags, then derives the badge from
-the per-tag counts plus unattributed generic notifications. This intentionally uses Chromium's
-allowance for occasional silent pushes; Ergo currently emits at most a daily maintenance PING for
-an idle subscription, plus user-driven `MARKREAD` events.
+The worker persists versioned per-conversation notification counts and read timestamps beside the
+aggregate badge. Visible message and invite pushes increment their notification tag. Chat
+notifications also carry their tag, `msgid` and server time in notification data. On Mozilla, FCM,
+and Edge, a decrypted `MARKREAD` stores the `timestamp=` reference, zeros the matching count and
+closes only notifications from that conversation at or before the marker. A maintenance `PING`
+repeats marker-bounded cleanup without calling `showNotification`; both controls are silent even if
+count persistence fails. Visible and generic pushes do not perform cleanup. This intentionally uses
+Chromium's allowance for occasional silent pushes; Ergo currently emits at most a daily maintenance
+PING for an idle subscription, plus user-driven `MARKREAD` events.
 
-While the page is open, engine counters replace the worker's per-tag baseline and the aggregate
-badge. Read conversations are closed by tag both during initial buffer hydration and on subsequent
-counter changes. This is also the correction path for iOS, where the Apple urgency gate prevents
+While the page is open, engine counters and read markers replace the worker's per-tag baseline and
+the aggregate badge. Initial buffer hydration and subsequent counter changes scan notification data
+and close only messages at or before each engine marker, even when the same conversation has newer
+unread messages. This is also the correction path for iOS, where the Apple urgency gate prevents
 `MARKREAD` from reaching the worker.
 
 ## Rollout

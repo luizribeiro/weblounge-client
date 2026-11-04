@@ -44,16 +44,45 @@ it("maps engine counters to the notification tags shared with the worker", () =>
   ]);
 });
 
-it("closes notifications only for conversations the engine says are read", async () => {
+it("closes only notifications at or before the engine read marker", async () => {
   const readNotification = { close: vi.fn() };
+  const newerNotification = { close: vi.fn() };
   const unreadNotification = { close: vi.fn() };
-  const getNotifications = vi.fn(async ({ tag }: GetNotificationOptions) =>
-    tag === "Lounge/#read" ? [readNotification] : [unreadNotification],
+  const getNotifications = vi.fn(
+    async () =>
+      [
+        {
+          ...readNotification,
+          data: {
+            conversationTag: "Lounge/#read",
+            messageTime: "2026-11-04T19:24:32.000Z",
+          },
+        },
+        {
+          ...newerNotification,
+          data: {
+            conversationTag: "Lounge/#read",
+            messageTime: "2026-11-04T19:24:34.000Z",
+          },
+        },
+        {
+          ...unreadNotification,
+          data: {
+            conversationTag: "Lounge/#unread",
+            messageTime: "2026-11-04T19:24:32.000Z",
+          },
+        },
+      ] as unknown as Notification[],
   );
 
   await closeReadConversationNotifications(
     [
-      buffer({ title: "#read", unread: 4, mentions: 0 }),
+      buffer({
+        title: "#read",
+        unread: 4,
+        mentions: 1,
+        read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
+      }),
       buffer({ title: "#unread", unread: 4, mentions: 1 }),
     ],
     new Map([[1, "Lounge"]]),
@@ -67,14 +96,17 @@ it("closes notifications only for conversations the engine says are read", async
   );
 
   expect(getNotifications).toHaveBeenCalledOnce();
-  expect(getNotifications).toHaveBeenCalledWith({ tag: "Lounge/#read" });
+  expect(getNotifications).toHaveBeenCalledWith();
   expect(readNotification.close).toHaveBeenCalledOnce();
+  expect(newerNotification.close).not.toHaveBeenCalled();
   expect(unreadNotification.close).not.toHaveBeenCalled();
 });
 
 function buffer(
   projection: Pick<BufferProjection, "unread" | "mentions"> &
-    Partial<Pick<BufferProjection, "kind" | "network_id" | "title">>,
+    Partial<
+      Pick<BufferProjection, "kind" | "network_id" | "title" | "read_at_ms">
+    >,
 ): BufferProjection {
   return {
     id: 1,

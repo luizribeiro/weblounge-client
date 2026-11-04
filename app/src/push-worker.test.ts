@@ -91,7 +91,12 @@ describe("push worker notification presentation", () => {
       options: {
         body: fixture.body,
         tag: fixture.tag,
-        data: { route: fixture.destination },
+        data: {
+          route: fixture.destination,
+          conversationTag: fixture.tag,
+          messageId: fixture.event.msgid,
+          messageTime: fixture.event.time,
+        },
       },
     });
     expect(result.event).toEqual(fixture.event);
@@ -142,7 +147,7 @@ function chat(
   msgid: string,
   text: string,
   account: string | null = null,
-): ParsedPushEvent {
+): Extract<ParsedPushEvent, { type: "message" | "notice" | "action" }> {
   return { type, sender, account, target, msgid, time, text };
 }
 

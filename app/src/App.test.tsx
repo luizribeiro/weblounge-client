@@ -1450,10 +1450,31 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell, tole
 });
 
 it("closes a conversation notification on open and whenever it becomes read", async () => {
-  const close = vi.fn();
-  const getNotifications = vi.fn(async () => [
-    { close } as unknown as Notification,
-  ]);
+  let notifications: Notification[] = [];
+  const oldNotification = {
+    close: vi.fn(() => {
+      notifications = notifications.filter(
+        (notification) => notification !== oldNotification,
+      );
+    }),
+    data: {
+      conversationTag: "Lounge/#room",
+      messageTime: "2026-11-04T19:24:32.000Z",
+    },
+  } as unknown as Notification;
+  const newerNotification = {
+    close: vi.fn(() => {
+      notifications = notifications.filter(
+        (notification) => notification !== newerNotification,
+      );
+    }),
+    data: {
+      conversationTag: "Lounge/#room",
+      messageTime: "2026-11-04T19:24:34.000Z",
+    },
+  } as unknown as Notification;
+  notifications = [oldNotification, newerNotification];
+  const getNotifications = vi.fn(async () => notifications);
   const previousServiceWorker = Object.getOwnPropertyDescriptor(
     navigator,
     "serviceWorker",
@@ -1479,26 +1500,24 @@ it("closes a conversation notification on open and whenever it becomes read", as
         state: "online",
       },
     });
-    client.emit({
-      type: "buffer_added",
-      buffer: {
-        id: 2,
-        network_id: 1,
-        sync_state: "synced",
-        kind: "channel",
-        title: "#room",
-        draft_key: "test:#room",
-        topic: null,
-        unread: 4,
-        mentions: 0,
-        read_through: 4,
-      },
-    });
+    const buffer = {
+      id: 2,
+      network_id: 1,
+      sync_state: "synced" as const,
+      kind: "channel" as const,
+      title: "#room",
+      draft_key: "test:#room",
+      topic: null,
+      unread: 4,
+      mentions: 0,
+      read_through: 4,
+      read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
+    };
+    client.emit({ type: "buffer_added", buffer });
 
-    await waitFor(() => expect(close).toHaveBeenCalledOnce());
-    expect(getNotifications).toHaveBeenLastCalledWith({
-      tag: "Lounge/#room",
-    });
+    await waitFor(() => expect(oldNotification.close).toHaveBeenCalledOnce());
+    expect(newerNotification.close).not.toHaveBeenCalled();
+    expect(getNotifications).toHaveBeenLastCalledWith();
 
     client.emit({
       type: "unread_changed",
@@ -1507,15 +1526,17 @@ it("closes a conversation notification on open and whenever it becomes read", as
       mentions: 1,
     });
     await Promise.resolve();
-    expect(close).toHaveBeenCalledOnce();
+    expect(newerNotification.close).not.toHaveBeenCalled();
 
     client.emit({
-      type: "unread_changed",
-      buffer_id: 2,
-      unread: 0,
-      mentions: 0,
+      type: "buffer_updated",
+      buffer: {
+        ...buffer,
+        unread: 0,
+        read_at_ms: Date.parse("2026-11-04T19:24:35.000Z"),
+      },
     });
-    await waitFor(() => expect(close).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(newerNotification.close).toHaveBeenCalledOnce());
   } finally {
     if (previousServiceWorker === undefined) {
       Reflect.deleteProperty(navigator, "serviceWorker");

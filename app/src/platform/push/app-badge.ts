@@ -39,6 +39,9 @@ export function conversationNotificationCounts(
     .map((buffer) => ({
       tag: `${networkLabels.get(buffer.network_id)}/${buffer.title.toLowerCase()}`,
       count: buffer.kind === "direct" ? buffer.unread : buffer.mentions,
+      ...(buffer.read_at_ms === undefined
+        ? {}
+        : { readAtMs: buffer.read_at_ms }),
     }));
 }
 
@@ -75,15 +78,40 @@ export async function closeReadConversationNotifications(
   networkLabels: ReadonlyMap<number, string>,
   registrations: RegistrationProvider = navigator.serviceWorker,
 ): Promise<void> {
-  const readTags = conversationNotificationCounts(buffers, networkLabels)
-    .filter(({ count }) => count === 0)
-    .map(({ tag }) => tag);
+  const readMarkers = new Map(
+    conversationNotificationCounts(buffers, networkLabels)
+      .filter(
+        (
+          entry,
+        ): entry is ConversationNotificationCount & {
+          readonly readAtMs: number;
+        } => entry.readAtMs !== undefined,
+      )
+      .map(({ tag, readAtMs }) => [tag, readAtMs]),
+  );
   const registration = await registrations.getRegistration("/");
-  const notificationGroups =
-    registration === undefined
-      ? []
-      : await Promise.all(
-          readTags.map((tag) => registration.getNotifications({ tag })),
-        );
-  for (const notification of notificationGroups.flat()) notification.close();
+  const notifications = await registration?.getNotifications();
+  for (const notification of notifications ?? []) {
+    if (notificationIsRead(notification, readMarkers)) notification.close();
+  }
+}
+
+function notificationIsRead(
+  notification: Notification,
+  readMarkers: ReadonlyMap<string, number>,
+): boolean {
+  const data: unknown = notification.data;
+  if (typeof data !== "object" || data === null) return false;
+  if (
+    !("conversationTag" in data) ||
+    typeof data.conversationTag !== "string" ||
+    !("messageTime" in data) ||
+    typeof data.messageTime !== "string"
+  )
+    return false;
+  const marker = readMarkers.get(data.conversationTag);
+  const messageTime = Date.parse(data.messageTime);
+  return (
+    marker !== undefined && !Number.isNaN(messageTime) && messageTime <= marker
+  );
 }

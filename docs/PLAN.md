@@ -4,8 +4,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 - [x] Make the relay own push route identity and converge deployed browser state: target-upserted
   devices, one home-keyed route, exact dead-endpoint cleanup, one engine ensure per connection,
-  daily refresh, bounded serialized worker delivery, silent MARKREAD/PING cleanup, and live
-  subscription recovery.
+  daily refresh, bounded serialized worker delivery, read-marker-bounded MARKREAD/PING cleanup,
+  and live subscription recovery.
 - [x] Generate the engine's typed localization-key inventory with the protocol bindings, so the
   app strings cross-check no longer reads Rust source outside its Nix derivation.
 - [x] Recover push registration after refusal and upgrade without accumulating subscriptions:
@@ -538,13 +538,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Apply push-service-specific urgency policy while preserving registration probing: Apple
     passes only high, while Mozilla, FCM, and Edge also pass normal for silent `MARKREAD`; all lower
     priorities return 201 without forwarding. Record urgency outcomes in privacy-safe tracing (#100).
-  - [ ] Keep control pushes invisible: non-Apple workers already consume `MARKREAD`, close its
-    conversation tag, and recompute per-conversation badge state, while page open/read updates
-    correct Apple badges from engine counts. The production Ergo package already backports
-    `9975d8d`; relay logs confirm its normal-urgency controls are dropped for Apple and MARKREAD is
-    forwarded to Firefox. Firefox still shows a generic notification after the worker receives
-    `MARKREAD`; the full-chain test preserves that worker bug as an expected failure. Firefox and
-    Chromium workers must tidy `MARKREAD` and `PING` without presenting either control.
+  - [x] Reconcile notifications read elsewhere: non-Apple workers consume `MARKREAD`, persist its
+    timestamp, close only notifications from that conversation at or before the marker, and
+    recompute per-conversation badge state without showing a control notification. Maintenance
+    `PING` repeats the bounded cleanup; visible pushes never run cleanup themselves. Page open/read
+    updates apply the same marker comparison and correct Apple badges from engine counts.
   - [x] Cover the unmocked local-Ergo → relay → push-service → worker delivery journey, including
     the pinned previous build, route/subscription convergence, real encrypted DM and mention
     payloads, Apple MARKREAD filtering, multiple tabs and devices, missing keys, and refusal

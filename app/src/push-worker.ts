@@ -285,6 +285,7 @@ async function preparePushNotification(
   if (parsed.event?.type === "markread") {
     await markConversationRead(
       conversationTag(route, parsed.event.target),
+      parsed.event.until,
     ).catch(() => undefined);
     await tidyReadNotifications(false).catch(() => undefined);
     return;
@@ -300,7 +301,6 @@ async function preparePushNotification(
     );
   }
   if (state.expired) return;
-  await tidyReadNotifications(false).catch(() => undefined);
   await showOnce(state, parsed.presentation);
   if (recordNotification && !state.expired) {
     await recordShownNotification(parsed.presentation.options.tag).catch(
@@ -340,6 +340,7 @@ async function notifyWindowsOfSubscriptionChange(): Promise<void> {
 
 interface NotificationCounts {
   readonly conversations: Map<string, number>;
+  readonly readAtMs: Map<string, number>;
   untagged: number;
 }
 
@@ -353,9 +354,13 @@ async function recordShownNotification(tag: string | undefined): Promise<void> {
   });
 }
 
-async function markConversationRead(tag: string): Promise<void> {
+async function markConversationRead(tag: string, until: string): Promise<void> {
   await updateNotificationCounts((counts) => {
     counts.conversations.set(tag, 0);
+    const marker = readMarkerMillis(until);
+    if (marker !== undefined) {
+      counts.readAtMs.set(tag, Math.max(counts.readAtMs.get(tag) ?? 0, marker));
+    }
   });
 }
 
@@ -397,13 +402,11 @@ async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
   } finally {
     database.close();
   }
-  const readTags = [...counts.conversations]
-    .filter(([, count]) => count === 0)
-    .map(([tag]) => tag);
-  const notifications = await Promise.all(
-    readTags.map((tag) => worker.registration.getNotifications({ tag })),
-  );
-  for (const notification of notifications.flat()) notification.close();
+  const readMarkers = new Map(counts.readAtMs);
+  const notifications = await worker.registration.getNotifications();
+  for (const notification of notifications) {
+    if (notificationIsRead(notification, readMarkers)) notification.close();
+  }
   if (recomputeBadge) await setWorkerBadge(notificationCountTotal(counts));
 }
 
@@ -412,35 +415,89 @@ function decodeNotificationCounts(value: unknown): NotificationCounts {
     typeof value !== "object" ||
     value === null ||
     !("schema" in value) ||
-    value.schema !== 1 ||
+    (value.schema !== 1 && value.schema !== 2) ||
     !("conversations" in value) ||
     !Array.isArray(value.conversations) ||
     !("untagged" in value) ||
     !validCount(value.untagged)
   ) {
-    return { conversations: new Map(), untagged: 0 };
+    return emptyNotificationCounts();
   }
   const conversations = new Map<string, number>();
+  const readAtMs = new Map<string, number>();
   for (const entry of value.conversations) {
-    if (
-      !Array.isArray(entry) ||
-      entry.length !== 2 ||
-      typeof entry[0] !== "string" ||
-      !validCount(entry[1])
-    ) {
-      return { conversations: new Map(), untagged: 0 };
+    if (value.schema === 1) {
+      if (
+        !Array.isArray(entry) ||
+        entry.length !== 2 ||
+        typeof entry[0] !== "string" ||
+        !validCount(entry[1])
+      ) {
+        return emptyNotificationCounts();
+      }
+      conversations.set(entry[0], entry[1]);
+      continue;
     }
-    conversations.set(entry[0], entry[1]);
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      !("tag" in entry) ||
+      typeof entry.tag !== "string" ||
+      !("count" in entry) ||
+      !validCount(entry.count) ||
+      !("read_at_ms" in entry) ||
+      (entry.read_at_ms !== null && !validReadMarker(entry.read_at_ms))
+    ) {
+      return emptyNotificationCounts();
+    }
+    conversations.set(entry.tag, entry.count);
+    if (entry.read_at_ms !== null) readAtMs.set(entry.tag, entry.read_at_ms);
   }
-  return { conversations, untagged: value.untagged };
+  return { conversations, readAtMs, untagged: value.untagged };
 }
 
 function encodeNotificationCounts(counts: NotificationCounts): unknown {
   return {
-    schema: 1,
-    conversations: [...counts.conversations],
+    schema: 2,
+    conversations: [...counts.conversations].map(([tag, count]) => ({
+      tag,
+      count,
+      read_at_ms: counts.readAtMs.get(tag) ?? null,
+    })),
     untagged: counts.untagged,
   };
+}
+
+function emptyNotificationCounts(): NotificationCounts {
+  return { conversations: new Map(), readAtMs: new Map(), untagged: 0 };
+}
+
+function notificationIsRead(
+  notification: Notification,
+  readMarkers: ReadonlyMap<string, number>,
+): boolean {
+  const data: unknown = notification.data;
+  if (typeof data !== "object" || data === null) return false;
+  if (
+    !("conversationTag" in data) ||
+    typeof data.conversationTag !== "string" ||
+    !("messageTime" in data) ||
+    typeof data.messageTime !== "string"
+  )
+    return false;
+  const marker = readMarkers.get(data.conversationTag);
+  const messageTime = Date.parse(data.messageTime);
+  return (
+    marker !== undefined && !Number.isNaN(messageTime) && messageTime <= marker
+  );
+}
+
+function readMarkerMillis(reference: string): number | undefined {
+  const timestamp = reference.startsWith("timestamp=")
+    ? reference.slice("timestamp=".length)
+    : reference;
+  const marker = Date.parse(timestamp);
+  return Number.isNaN(marker) ? undefined : marker;
 }
 
 function notificationCountTotal(counts: NotificationCounts): number {
@@ -455,6 +512,10 @@ function notificationCountTotal(counts: NotificationCounts): number {
 
 function validCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function validReadMarker(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 async function setWorkerBadge(count: number): Promise<void> {

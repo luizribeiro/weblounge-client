@@ -83,6 +83,7 @@ function notificationFor(
     const direct = sameIrcName(event.target, route.nickname);
     const buffer = direct ? event.sender : event.target;
     const bufferRoute = bufferPath(route.networkLabel, buffer, direct);
+    const tag = `${route.networkLabel}/${buffer.toLowerCase()}`;
     return {
       title: direct ? event.sender : `${event.sender} in ${event.target}`,
       options: {
@@ -90,8 +91,13 @@ function notificationFor(
           event.type === "action"
             ? `* ${event.sender} ${event.text}`
             : event.text,
-        tag: `${route.networkLabel}/${buffer.toLowerCase()}`,
-        data: { route: bufferRoute },
+        tag,
+        data: {
+          route: bufferRoute,
+          conversationTag: tag,
+          messageId: event.msgid,
+          messageTime: event.time,
+        },
       },
     };
   }

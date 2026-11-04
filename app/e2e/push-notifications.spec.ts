@@ -253,6 +253,43 @@ test("silently applies MARKREAD and maintenance PING cleanup", async ({
   await expect.poll(() => storedAppBadge(page)).toBe(1);
 });
 
+test("does not tidy a notification newer than its read marker", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const [message, ping] = await seedRouteAndEncryptMany(page, [
+    "@time=2026-11-04T19:24:34.000Z;msgid=push-after-read-marker :mel!m@example.test PRIVMSG #lounge :newer than the read marker",
+    "PING :cleanup-after-new-message",
+  ]);
+  if (message === undefined || ping === undefined) {
+    throw new Error("push envelopes were not created");
+  }
+  await seedReadMarker(
+    page,
+    "Lounge/#lounge",
+    Date.parse("2026-11-04T19:24:33.000Z"),
+  );
+
+  await deliverPush(context, page, message);
+  await expect.poll(() => notifications(page)).toHaveLength(1);
+  await expect.poll(() => storedAppBadge(page)).toBe(1);
+
+  await deliverPush(context, page, ping);
+
+  await expect
+    .poll(() => notifications(page))
+    .toEqual([
+      {
+        title: "mel in #lounge",
+        body: "newer than the read marker",
+        tag: "Lounge/#lounge",
+        route: "/Lounge/lounge",
+      },
+    ]);
+  await expect.poll(() => storedAppBadge(page)).toBe(1);
+});
+
 test("shows one generic notification when decryption fails", async ({
   context,
   page,
@@ -616,6 +653,11 @@ async function seedReadNotification(page: Page): Promise<void> {
     const registration = await navigator.serviceWorker.ready;
     await registration.showNotification("already read", {
       tag: "Lounge/#stale",
+      data: {
+        conversationTag: "Lounge/#stale",
+        messageId: "already-read",
+        messageTime: "2026-11-03T12:34:56.789Z",
+      },
     });
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("weblounge-push");
@@ -625,8 +667,14 @@ async function seedReadNotification(page: Page): Promise<void> {
     const transaction = database.transaction("state", "readwrite");
     transaction.objectStore("state").put(
       {
-        schema: 1,
-        conversations: [["Lounge/#stale", 0]],
+        schema: 2,
+        conversations: [
+          {
+            tag: "Lounge/#stale",
+            count: 0,
+            read_at_ms: Date.parse("2026-11-03T12:34:56.789Z"),
+          },
+        ],
         untagged: 0,
       },
       "notification-counts",
@@ -638,6 +686,40 @@ async function seedReadNotification(page: Page): Promise<void> {
     });
     database.close();
   });
+}
+
+async function seedReadMarker(
+  page: Page,
+  tag: string,
+  readAtMs: number,
+): Promise<void> {
+  await page.evaluate(
+    async ({ conversationTag, marker }) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("weblounge-push");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const transaction = database.transaction("state", "readwrite");
+      transaction.objectStore("state").put(
+        {
+          schema: 2,
+          conversations: [
+            { tag: conversationTag, count: 0, read_at_ms: marker },
+          ],
+          untagged: 0,
+        },
+        "notification-counts",
+      );
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+      database.close();
+    },
+    { conversationTag: tag, marker: readAtMs },
+  );
 }
 
 async function replaceWithConversationNotification(

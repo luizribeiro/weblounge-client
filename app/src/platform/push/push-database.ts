@@ -9,6 +9,7 @@ export const notificationCountsKey = "notification-counts";
 export interface ConversationNotificationCount {
   readonly tag: string;
   readonly count: number;
+  readonly readAtMs?: number;
 }
 
 export function openPushDatabase(
@@ -155,8 +156,12 @@ export async function writeNotificationCounts(
     const total = counts.reduce((sum, entry) => sum + entry.count, 0);
     store.put(
       {
-        schema: 1,
-        conversations: counts.map(({ tag, count }) => [tag, count]),
+        schema: 2,
+        conversations: counts.map(({ tag, count, readAtMs }) => ({
+          tag,
+          count,
+          read_at_ms: readAtMs ?? null,
+        })),
         untagged: 0,
       },
       notificationCountsKey,
