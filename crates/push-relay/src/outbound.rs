@@ -432,6 +432,10 @@ impl PushSender for WebPushSender {
     async fn send(&self, delivery: Delivery) -> Result<PushOutcome> {
         let endpoint = Url::parse(&delivery.target.endpoint)
             .map_err(|_| Error::TargetRefused("endpoint is not a URL".to_owned()))?;
+        let target_host = endpoint
+            .host_str()
+            .ok_or_else(|| Error::TargetRefused("endpoint has no host".to_owned()))?
+            .to_owned();
         let addresses = self
             .targets
             .validate(&endpoint)
@@ -482,6 +486,19 @@ impl PushSender for WebPushSender {
         })
         .await
         .map_err(|_| Error::DeliveryUnavailable)??;
+        let outcome = if status.is_success() {
+            "accepted"
+        } else if matches!(status, StatusCode::NOT_FOUND | StatusCode::GONE) {
+            "dead"
+        } else {
+            "rejected"
+        };
+        tracing::info!(
+            target_host,
+            status = status.as_u16(),
+            outcome,
+            "upstream delivery"
+        );
         match status {
             status if status.is_success() => Ok(PushOutcome::Accepted),
             StatusCode::NOT_FOUND | StatusCode::GONE => Ok(PushOutcome::Dead),

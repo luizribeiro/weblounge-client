@@ -140,59 +140,59 @@ pub(crate) fn verify_vapid(
     let authorization = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .ok_or(Error::Unauthorized)?;
+        .ok_or(Error::VapidJwt)?;
     let (token, supplied_key) = parse_vapid_authorization(authorization)?;
     let supplied_key = URL_SAFE_NO_PAD
         .decode(supplied_key)
-        .map_err(|_| Error::Unauthorized)?;
+        .map_err(|_| Error::VapidJwt)?;
     if supplied_key != pinned_key {
-        return Err(Error::Unauthorized);
+        return Err(Error::VapidPin);
     }
 
     let mut parts = token.split('.');
-    let encoded_header = parts.next().ok_or(Error::Unauthorized)?;
-    let encoded_claims = parts.next().ok_or(Error::Unauthorized)?;
-    let encoded_signature = parts.next().ok_or(Error::Unauthorized)?;
+    let encoded_header = parts.next().ok_or(Error::VapidJwt)?;
+    let encoded_claims = parts.next().ok_or(Error::VapidJwt)?;
+    let encoded_signature = parts.next().ok_or(Error::VapidJwt)?;
     if parts.next().is_some() {
-        return Err(Error::Unauthorized);
+        return Err(Error::VapidJwt);
     }
     let jwt_header: JwtHeader = decode_json(encoded_header)?;
     if jwt_header.alg != "ES256" {
-        return Err(Error::Unauthorized);
+        return Err(Error::VapidJwt);
     }
     let claims: JwtClaims = decode_json(encoded_claims)?;
     let now = u64::try_from(time::OffsetDateTime::now_utc().unix_timestamp())
-        .map_err(|_| Error::Unauthorized)?;
+        .map_err(|_| Error::VapidJwt)?;
     if claims.aud != expected_audience
         || claims.exp <= now
         || claims.exp > now.saturating_add(MAX_VAPID_LIFETIME_SECONDS)
     {
-        return Err(Error::Unauthorized);
+        return Err(Error::VapidJwt);
     }
 
     let signature_bytes = URL_SAFE_NO_PAD
         .decode(encoded_signature)
-        .map_err(|_| Error::Unauthorized)?;
-    let signature = Signature::from_slice(&signature_bytes).map_err(|_| Error::Unauthorized)?;
-    let key = VerifyingKey::from_sec1_bytes(pinned_key).map_err(|_| Error::Unauthorized)?;
+        .map_err(|_| Error::VapidJwt)?;
+    let signature = Signature::from_slice(&signature_bytes).map_err(|_| Error::VapidJwt)?;
+    let key = VerifyingKey::from_sec1_bytes(pinned_key).map_err(|_| Error::VapidJwt)?;
     key.verify(
         format!("{encoded_header}.{encoded_claims}").as_bytes(),
         &signature,
     )
-    .map_err(|_| Error::Unauthorized)
+    .map_err(|_| Error::VapidJwt)
 }
 
 fn decode_json<T: for<'de> Deserialize<'de>>(encoded: &str) -> Result<T> {
     let bytes = URL_SAFE_NO_PAD
         .decode(encoded)
-        .map_err(|_| Error::Unauthorized)?;
-    serde_json::from_slice(&bytes).map_err(|_| Error::Unauthorized)
+        .map_err(|_| Error::VapidJwt)?;
+    serde_json::from_slice(&bytes).map_err(|_| Error::VapidJwt)
 }
 
 fn parse_vapid_authorization(value: &str) -> Result<(&str, &str)> {
-    let (scheme, parameters) = value.split_once(' ').ok_or(Error::Unauthorized)?;
+    let (scheme, parameters) = value.split_once(' ').ok_or(Error::VapidJwt)?;
     if !scheme.eq_ignore_ascii_case("vapid") {
-        return Err(Error::Unauthorized);
+        return Err(Error::VapidJwt);
     }
     let mut token = None;
     let mut key = None;
@@ -205,7 +205,7 @@ fn parse_vapid_authorization(value: &str) -> Result<(&str, &str)> {
     }
     match (token, key) {
         (Some(token), Some(key)) if !token.is_empty() && !key.is_empty() => Ok((token, key)),
-        _ => Err(Error::Unauthorized),
+        _ => Err(Error::VapidJwt),
     }
 }
 

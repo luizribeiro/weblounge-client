@@ -29,6 +29,12 @@ pub enum Error {
     /// A request was not authenticated.
     #[error("authentication failed")]
     Unauthorized,
+    /// An inbound VAPID JWT was absent, malformed, expired, or invalid.
+    #[error("VAPID JWT verification failed")]
+    VapidJwt,
+    /// An inbound VAPID key did not match the route's pinned key.
+    #[error("VAPID key does not match the route pin")]
+    VapidPin,
     /// A requested object does not exist or is dead.
     #[error("not found")]
     NotFound,
@@ -61,7 +67,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl Error {
     pub(crate) fn status(&self) -> StatusCode {
         match self {
-            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Unauthorized | Self::VapidJwt | Self::VapidPin => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::BadRequest(_) | Self::TargetRefused(_) => StatusCode::BAD_REQUEST,
             Self::Capacity => StatusCode::CONFLICT,
@@ -74,6 +80,26 @@ impl Error {
             Self::Config(_) | Self::Io(_) | Self::Database(_) | Self::DatabaseTask(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+        }
+    }
+
+    pub(crate) fn inbound_reason(&self) -> &'static str {
+        match self {
+            Self::VapidJwt => "jwt",
+            Self::VapidPin => "pin",
+            Self::NotFound => "route",
+            Self::BadRequest(_) => "request",
+            Self::PushServiceUnavailable | Self::DeliveryUnavailable | Self::Http(_) => "upstream",
+            Self::Unauthorized => "authorization",
+            Self::Config(_)
+            | Self::Io(_)
+            | Self::Database(_)
+            | Self::DatabaseTask(_)
+            | Self::Crypto(_) => "internal",
+            Self::Capacity => "capacity",
+            Self::NotImplemented => "platform",
+            Self::ConciergeUnavailable => "concierge",
+            Self::TargetRefused(_) => "target",
         }
     }
 }

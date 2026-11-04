@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, State, rejection::BytesRejection},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -171,6 +171,7 @@ async fn create_device(
         .database
         .create_device(identity.account, target)
         .await?;
+    tracing::info!(device = %id_prefix(&credentials.id), "device created");
     Ok((
         StatusCode::CREATED,
         Json(CreatedDevice {
@@ -202,8 +203,13 @@ async fn create_route(
     let home_vapid = decode_public_key(&request.home_vapid)?;
     let route = state
         .database
-        .create_route(device, secret, home_vapid)
+        .create_route(device.clone(), secret, home_vapid)
         .await?;
+    tracing::info!(
+        route = %id_prefix(&route.id),
+        device = %id_prefix(&device),
+        "route created"
+    );
     let endpoint = format!("{}/v1/r/{}", state.origin, route.id);
     Ok((
         StatusCode::CREATED,
@@ -222,8 +228,9 @@ async fn activate_route(
 ) -> Result<Response> {
     state
         .database
-        .activate_route(route, bearer(&headers)?.to_owned())
+        .activate_route(route.clone(), bearer(&headers)?.to_owned())
         .await?;
+    tracing::info!(route = %id_prefix(&route), "route activated");
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -234,8 +241,9 @@ async fn delete_route(
 ) -> Result<Response> {
     state
         .database
-        .delete_route(route, bearer(&headers)?.to_owned())
+        .delete_route(route.clone(), bearer(&headers)?.to_owned())
         .await?;
+    tracing::info!(route = %id_prefix(&route), "route deleted");
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -257,13 +265,14 @@ async fn renew_lease(
     state
         .database
         .renew_lease(
-            device,
+            device.clone(),
             bearer(&headers)?.to_owned(),
             request.tab_id,
             now,
             now.saturating_add(lease_milliseconds),
         )
         .await?;
+    tracing::info!(device = %id_prefix(&device), "lease acquired");
     state.delivery_wakeup.notify_one();
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -282,7 +291,11 @@ async fn release_lease(
         beacon_release(&body)?
     };
     validate_tab_id(&tab_id)?;
-    state.database.release_lease(device, secret, tab_id).await?;
+    state
+        .database
+        .release_lease(device.clone(), secret, tab_id)
+        .await?;
+    tracing::info!(device = %id_prefix(&device), "lease released");
     state.delivery_wakeup.notify_one();
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -291,16 +304,65 @@ async fn receive_push(
     State(state): State<AppState>,
     Path(route_id): Path<String>,
     headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response> {
-    let route_prefix: String = route_id.chars().take(8).collect();
-    let result = deliver_push(&state, route_id, &headers, &body).await;
-    let status = match &result {
-        Ok(response) => response.status(),
-        Err(error) => error.status(),
+    body: std::result::Result<Bytes, BytesRejection>,
+) -> Response {
+    let route_prefix = id_prefix(&route_id);
+    let body = match body {
+        Ok(body) => body,
+        Err(rejection) => {
+            let reason = if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                "size"
+            } else {
+                "body"
+            };
+            tracing::info!(route = %route_prefix, action = "rejected", reason, "inbound push");
+            return rejection.into_response();
+        }
     };
-    tracing::info!(route = %route_prefix, status = status.as_u16(), "push delivery");
-    result
+    match deliver_push(&state, route_id, &headers, &body).await {
+        Ok(PushDisposition::ProbingDiscard) => {
+            tracing::info!(route = %route_prefix, action = "probing-discard", "inbound push");
+            StatusCode::CREATED.into_response()
+        }
+        Ok(PushDisposition::Held) => {
+            tracing::info!(route = %route_prefix, action = "held", "inbound push");
+            StatusCode::CREATED.into_response()
+        }
+        Ok(PushDisposition::Forwarded) => {
+            tracing::info!(route = %route_prefix, action = "forwarded", "inbound push");
+            StatusCode::CREATED.into_response()
+        }
+        Ok(PushDisposition::TargetDead { device_id }) => {
+            tracing::info!(
+                route = %route_prefix,
+                device = %id_prefix(&device_id),
+                "route dead"
+            );
+            tracing::info!(
+                route = %route_prefix,
+                action = "rejected",
+                reason = "target-dead",
+                "inbound push"
+            );
+            Error::NotFound.into_response()
+        }
+        Err(error) => {
+            tracing::info!(
+                route = %route_prefix,
+                action = "rejected",
+                reason = error.inbound_reason(),
+                "inbound push"
+            );
+            error.into_response()
+        }
+    }
+}
+
+enum PushDisposition {
+    ProbingDiscard,
+    Held,
+    Forwarded,
+    TargetDead { device_id: String },
 }
 
 async fn deliver_push(
@@ -308,9 +370,9 @@ async fn deliver_push(
     route_id: String,
     headers: &HeaderMap,
     body: &Bytes,
-) -> Result<Response> {
+) -> Result<PushDisposition> {
     match state.database.route(route_id.clone()).await? {
-        Route::Probing => Ok(StatusCode::CREATED.into_response()),
+        Route::Probing => Ok(PushDisposition::ProbingDiscard),
         Route::Active {
             device_id,
             account,
@@ -338,7 +400,7 @@ async fn deliver_push(
                 .await?
             {
                 state.delivery_wakeup.notify_one();
-                return Ok(StatusCode::CREATED.into_response());
+                return Ok(PushDisposition::Held);
             }
             let outcome = state
                 .sender
@@ -350,10 +412,10 @@ async fn deliver_push(
                 })
                 .await?;
             match outcome {
-                PushOutcome::Accepted => Ok(StatusCode::CREATED.into_response()),
+                PushOutcome::Accepted => Ok(PushDisposition::Forwarded),
                 PushOutcome::Dead => {
-                    state.database.mark_device_dead(device_id).await?;
-                    Err(Error::NotFound)
+                    state.database.mark_device_dead(device_id.clone()).await?;
+                    Ok(PushDisposition::TargetDead { device_id })
                 }
             }
         }
@@ -366,6 +428,8 @@ async fn deliver_held_pushes(state: AppState) {
         let now = unix_milliseconds();
         match state.database.next_held(now).await {
             Ok(Some(held)) => {
+                let route_prefix = id_prefix(&held.route_id);
+                let device_prefix = id_prefix(&held.device_id);
                 let outcome = state
                     .sender
                     .send(Delivery {
@@ -380,6 +444,11 @@ async fn deliver_held_pushes(state: AppState) {
                         let _ = state.database.delete_held(held.id).await;
                     }
                     Ok(PushOutcome::Dead) => {
+                        tracing::info!(
+                            route = %route_prefix,
+                            device = %device_prefix,
+                            "route dead"
+                        );
                         let _ = state.database.mark_device_dead(held.device_id).await;
                         let _ = state.database.delete_held(held.id).await;
                     }
@@ -444,6 +513,10 @@ fn unix_milliseconds() -> i64 {
     now.unix_timestamp()
         .saturating_mul(1_000)
         .saturating_add(i64::from(now.millisecond()))
+}
+
+fn id_prefix(id: &str) -> String {
+    id.chars().take(8).collect()
 }
 
 fn bearer(headers: &HeaderMap) -> Result<&str> {

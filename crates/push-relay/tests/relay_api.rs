@@ -1,6 +1,7 @@
 //! End-to-end HTTP behavior for device and route lifecycle.
 
 use std::{
+    io,
     net::{IpAddr, Ipv4Addr},
     sync::{
         Arc, Mutex,
@@ -26,6 +27,7 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::sync::Notify;
 use tower::ServiceExt as _;
+use tracing_subscriber::fmt::MakeWriter;
 use url::Url;
 use weblounge_push_relay::{
     Concierge, Database, Delivery, DnsResolver, EndpointValidator, Error, Introspection,
@@ -35,6 +37,39 @@ use weblounge_push_relay::{
 const ORIGIN: &str = "https://push.weblounge.test";
 const CLIENT_ORIGIN: &str = "https://beta.weblounge.test";
 type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32)>>>;
+
+#[derive(Clone, Default)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for LogWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .expect("log capture")
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for LogCapture {
+    type Writer = LogWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        LogWriter(Arc::clone(&self.0))
+    }
+}
+
+impl LogCapture {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().expect("log capture").clone()).expect("UTF-8 logs")
+    }
+}
 
 #[derive(Clone)]
 struct FakeConcierge {
@@ -291,6 +326,147 @@ impl Harness {
         .await
         .expect("held push count");
     }
+}
+
+#[tokio::test]
+async fn operational_logs_cover_the_relay_lifecycle_without_secrets_or_payloads() {
+    let logs = LogCapture::default();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(logs.clone())
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("test log subscriber");
+
+    let lifecycle = run_logged_lifecycle().await;
+    assert_safe_lifecycle_logs(&logs.text(), &lifecycle);
+}
+
+struct LoggedLifecycle {
+    device: Value,
+    route: Value,
+    deleted_route: Value,
+}
+
+async fn run_logged_lifecycle() -> LoggedLifecycle {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+    assert_eq!(
+        harness.push(&route, &home, b"secret-probe-payload").await,
+        StatusCode::CREATED
+    );
+    harness.activate(&device, &route).await;
+    harness.renew_lease(&device, "secret-tab-id").await;
+    assert_eq!(
+        harness.push(&route, &home, b"secret-held-payload").await,
+        StatusCode::CREATED
+    );
+    harness.release_lease(&device, "secret-tab-id").await;
+    harness.wait_for_deliveries(1).await;
+    assert_eq!(
+        harness
+            .push(&route, &home, b"secret-forwarded-payload")
+            .await,
+        StatusCode::CREATED
+    );
+
+    let wrong_home = SecretKey::random(&mut OsRng);
+    assert_eq!(
+        harness
+            .push(&route, &wrong_home, b"secret-pin-payload")
+            .await,
+        StatusCode::UNAUTHORIZED
+    );
+    let no_jwt = call_bytes(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
+        None,
+        b"secret-jwt-payload".to_vec(),
+        &[("TTL", "60")],
+    )
+    .await;
+    assert_eq!(no_jwt, StatusCode::UNAUTHORIZED);
+    let oversized = call_bytes(
+        &harness.app,
+        Method::POST,
+        &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
+        None,
+        vec![b'x'; 2_801],
+        &[],
+    )
+    .await;
+    assert_eq!(oversized, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let deleted_route = harness.create_route(&device, &home).await;
+    let deleted = call_json(
+        &harness.app,
+        Method::DELETE,
+        &format!(
+            "/v1/routes/{}",
+            deleted_route["id"].as_str().expect("route id")
+        ),
+        device["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(deleted.0, StatusCode::NO_CONTENT);
+
+    *harness.outcome.lock().expect("outcome") = PushOutcome::Dead;
+    assert_eq!(
+        harness.push(&route, &home, b"secret-dead-payload").await,
+        StatusCode::NOT_FOUND
+    );
+    LoggedLifecycle {
+        device,
+        route,
+        deleted_route,
+    }
+}
+
+fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
+    for event in [
+        "device created",
+        "route created",
+        "route activated",
+        "route deleted",
+        "route dead",
+        "lease acquired",
+        "lease released",
+        "action=\"probing-discard\"",
+        "action=\"held\"",
+        "action=\"forwarded\"",
+        "reason=\"pin\"",
+        "reason=\"jwt\"",
+        "reason=\"size\"",
+    ] {
+        assert!(output.contains(event), "missing {event:?} in {output}");
+    }
+    for value in [
+        lifecycle.device["secret"].as_str().expect("device secret"),
+        lifecycle.device["id"].as_str().expect("device id"),
+        lifecycle.route["id"].as_str().expect("route id"),
+        lifecycle.deleted_route["id"]
+            .as_str()
+            .expect("deleted route id"),
+        "member-session",
+        "secret-tab-id",
+        "secret-probe-payload",
+        "secret-held-payload",
+        "secret-forwarded-payload",
+        "secret-pin-payload",
+        "secret-jwt-payload",
+        "secret-dead-payload",
+        "/send/device",
+    ] {
+        assert!(!output.contains(value), "log leaked {value:?}: {output}");
+    }
+    assert!(output.contains(&lifecycle.device["id"].as_str().expect("device id")[..8]));
+    assert!(output.contains(&lifecycle.route["id"].as_str().expect("route id")[..8]));
 }
 
 #[tokio::test]

@@ -2,6 +2,7 @@
 
 use std::{
     collections::VecDeque,
+    io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, Mutex},
 };
@@ -24,11 +25,45 @@ use rand_core::OsRng;
 use reqwest::StatusCode;
 use serde_json::json;
 use sha2::Sha256;
+use tracing_subscriber::fmt::MakeWriter;
 use url::Url;
 use weblounge_push_relay::{
     Delivery, DnsResolver, EndpointValidator, Error, HttpTransport, OutboundRequest, PushOutcome,
     PushSender, Result, WebPushSender,
 };
+
+#[derive(Clone, Default)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for LogWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .expect("log capture")
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for LogCapture {
+    type Writer = LogWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        LogWriter(Arc::clone(&self.0))
+    }
+}
+
+impl LogCapture {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().expect("log capture").clone()).expect("UTF-8 logs")
+    }
+}
 
 #[derive(Debug)]
 struct FixedDns(Vec<IpAddr>);
@@ -84,6 +119,74 @@ impl HttpTransport for FakePushService {
     async fn send(&self, request: OutboundRequest) -> Result<StatusCode> {
         self.requests.lock().expect("request lock").push(request);
         Ok(self.status)
+    }
+}
+
+#[tokio::test]
+async fn upstream_logs_report_only_the_target_host_status_and_outcome() {
+    let logs = LogCapture::default();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(logs.clone())
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("test log subscriber");
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    for status in [StatusCode::CREATED, StatusCode::NOT_FOUND, StatusCode::GONE] {
+        let relay_key = SecretKey::random(&mut OsRng)
+            .to_pkcs8_pem(LineEnding::LF)
+            .expect("relay PEM");
+        let receiver = SecretKey::random(&mut OsRng);
+        let validator = EndpointValidator::new(
+            ["push.example"],
+            Arc::new(FixedDns(vec![IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])),
+        );
+        let sender = WebPushSender::with_transport(
+            relay_key.as_bytes(),
+            validator,
+            Arc::new(FakePushService {
+                requests: Arc::clone(&requests),
+                status,
+            }),
+        )
+        .expect("sender");
+        let result = sender
+            .send(Delivery::web_push(
+                "route-secret",
+                "https://push.example/private/device-token",
+                URL_SAFE_NO_PAD.encode(receiver.public_key().to_encoded_point(false).as_bytes()),
+                URL_SAFE_NO_PAD.encode([19_u8; 16]),
+                b"secret-inner-payload".to_vec(),
+                60,
+            ))
+            .await
+            .expect("classified upstream response");
+        assert_eq!(
+            result,
+            if status == StatusCode::CREATED {
+                PushOutcome::Accepted
+            } else {
+                PushOutcome::Dead
+            }
+        );
+    }
+
+    let output = logs.text();
+    assert!(
+        output.contains("target_host=\"push.example\""),
+        "unexpected logs: {output}"
+    );
+    assert!(output.contains("status=201"));
+    assert!(output.contains("status=404"));
+    assert!(output.contains("status=410"));
+    assert!(output.contains("outcome=\"accepted\""));
+    assert!(output.matches("outcome=\"dead\"").count() >= 2);
+    assert!(!output.contains("/private/device-token"));
+    assert!(!output.contains("route-secret"));
+    assert!(!output.contains("secret-inner-payload"));
+    for request in requests.lock().expect("requests").iter() {
+        assert!(!output.contains(&request.authorization));
     }
 }
 
