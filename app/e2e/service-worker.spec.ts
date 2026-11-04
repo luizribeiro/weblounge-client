@@ -133,12 +133,44 @@ test("launches the shell and engine from cache with the origin offline", async (
   ).toBe(false);
 });
 
+test("uses network HTML online and the cached shell offline", async ({
+  context,
+  page,
+}) => {
+  test.skip(
+    development,
+    "the service worker is intentionally disabled in development",
+  );
+  await page.goto("/");
+  await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  await expect
+    .poll(() =>
+      page.evaluate(() => navigator.serviceWorker.controller !== null),
+    )
+    .toBe(true);
+
+  await poisonCachedIndex(page);
+  await page.reload();
+  await expect(page.locator('meta[name="cached-shell-sentinel"]')).toHaveCount(
+    0,
+  );
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('meta[name="cached-shell-sentinel"]')).toHaveCount(
+    1,
+  );
+});
+
 test("activation removes obsolete app-shell caches", async ({ page }) => {
   test.skip(
     development,
     "the service worker is intentionally disabled in development",
   );
-  await page.addInitScript(() => caches.open("weblounge-shell-obsolete"));
+  await page.addInitScript(async () => {
+    await caches.open("weblounge-shell-obsolete-oldest");
+    await caches.open("weblounge-shell-obsolete-previous");
+  });
 
   await page.goto("/");
 
@@ -146,10 +178,15 @@ test("activation removes obsolete app-shell caches", async ({ page }) => {
   await expect
     .poll(() =>
       page.evaluate(async () =>
-        (await caches.keys()).includes("weblounge-shell-obsolete"),
+        (await caches.keys()).includes("weblounge-shell-obsolete-oldest"),
       ),
     )
     .toBe(false);
+  expect(
+    await page.evaluate(async () =>
+      (await caches.keys()).includes("weblounge-shell-obsolete-previous"),
+    ),
+  ).toBe(true);
 });
 
 test("does not intercept or cache API, OAuth, session, or WebSocket traffic", async ({
@@ -221,5 +258,29 @@ async function activeWorkerState(page: import("@playwright/test").Page) {
   return page.evaluate(async () => {
     const registration = await navigator.serviceWorker.getRegistration("/");
     return registration?.active?.state ?? null;
+  });
+}
+
+async function poisonCachedIndex(page: import("@playwright/test").Page) {
+  await page.evaluate(async () => {
+    const cacheName = (await caches.keys()).find((name) =>
+      name.startsWith("weblounge-shell-"),
+    );
+    if (cacheName === undefined) throw new Error("shell cache is missing");
+    const cache = await caches.open(cacheName);
+    const cached = await cache.match("/index.html");
+    if (cached === undefined) throw new Error("cached index is missing");
+    const html = (await cached.text()).replace(
+      "</head>",
+      '<meta name="cached-shell-sentinel"></head>',
+    );
+    await cache.put(
+      "/index.html",
+      new Response(html, {
+        headers: cached.headers,
+        status: cached.status,
+        statusText: cached.statusText,
+      }),
+    );
   });
 }

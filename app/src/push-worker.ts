@@ -91,6 +91,7 @@ const worker = globalThis as unknown as WorkerScope;
 const shellCache = `weblounge-shell-${SHELL_VERSION}`;
 const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
+const navigationDeadlineMs = 2_500;
 const pushDatabaseName = "weblounge-push";
 const pushDatabaseVersion = 2;
 const pushRoutesStore = "routes";
@@ -121,9 +122,11 @@ worker.addEventListener("fetch", (event) => {
   if (url.origin !== worker.location.origin || url.pathname === "/config.json")
     return;
   if (request.mode === "navigate") {
-    fetchEvent.respondWith(shellResponse("/index.html", request));
+    fetchEvent.respondWith(navigationResponse(request));
   } else if (precachePaths.has(url.pathname)) {
     fetchEvent.respondWith(shellResponse(url.pathname, request));
+  } else if (url.pathname.startsWith("/assets/")) {
+    fetchEvent.respondWith(previousShellAssetResponse(request));
   }
 });
 
@@ -152,14 +155,37 @@ async function precacheShell(): Promise<void> {
 
 async function activateWorker(): Promise<void> {
   const names = await caches.keys();
+  const olderShells = names.filter(
+    (name) => name.startsWith("weblounge-shell-") && name !== shellCache,
+  );
+  const previousShell = olderShells.at(-1);
   await Promise.all(
-    names
-      .filter(
-        (name) => name.startsWith("weblounge-shell-") && name !== shellCache,
-      )
+    olderShells
+      .filter((name) => name !== previousShell)
       .map((name) => caches.delete(name)),
   );
   await worker.clients.claim();
+}
+
+async function navigationResponse(request: Request): Promise<Response> {
+  const network = fetch(request);
+  const fallback = caches.match("/index.html", { cacheName: shellCache });
+  const deadline = new Promise<Response>((resolve, reject) => {
+    setTimeout(() => {
+      void fallback.then((cached) => {
+        if (cached === undefined) void network.then(resolve, reject);
+        else resolve(cached);
+      });
+    }, navigationDeadlineMs);
+  });
+  return Promise.race([
+    network.catch(async (error: unknown) => {
+      const cached = await fallback;
+      if (cached !== undefined) return cached;
+      throw error;
+    }),
+    deadline,
+  ]);
 }
 
 async function shellResponse(
@@ -167,6 +193,11 @@ async function shellResponse(
   request: Request,
 ): Promise<Response> {
   const cached = await caches.match(cacheKey, { cacheName: shellCache });
+  return cached ?? fetch(request);
+}
+
+async function previousShellAssetResponse(request: Request): Promise<Response> {
+  const cached = await caches.match(request);
   return cached ?? fetch(request);
 }
 

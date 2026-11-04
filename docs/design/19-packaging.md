@@ -22,9 +22,9 @@ assets: only the real app document declares them, and the browser fetches the on
 device without the worker downloading every device variant. Installation fails if any required
 shell entry cannot be fetched, so an incomplete worker never becomes the offline authority.
 
-The cache is named `weblounge-shell-<build version>`. Activation deletes every older
-`weblounge-shell-` cache. Cache entries use same-origin root-relative URLs so the build remains
-auditable and compatible with beta's `default-src 'none'`, `script-src 'self'`, and
+The cache is named `weblounge-shell-<build version>`. Activation retains the immediately previous
+shell cache and deletes anything older. Cache entries use same-origin root-relative URLs so the
+build remains auditable and compatible with beta's `default-src 'none'`, `script-src 'self'`, and
 `worker-src 'self'` policy.
 
 The Nix build also passes Vite a support-facing identity: the flake's short revision (or `dirty`)
@@ -45,8 +45,10 @@ below the same chair. Application code never replaces it with a second branded s
 
 ## Request policy
 
-Navigation requests use the versioned shell's `index.html` cache entry first, including app deep
-links. Exact precache URLs use cache-first. The worker bypasses `config.json`. The window validates
+Navigation requests use the network first, including app deep links, with the versioned shell's
+`index.html` as a fallback when the network fails or takes more than 2.5 seconds. Exact precache
+URLs use cache-first. Hashed assets from the immediately previous shell remain available to a
+running old page during an update. The worker bypasses `config.json`. The window validates
 and versions the last good public deployment configuration in local storage, starts from it
 without a network round trip, and revalidates in the background. A valid changed response is
 persisted for the next launch; a failed or invalid response leaves the last good value intact. A
@@ -84,10 +86,10 @@ only after the new worker has installed successfully and reached activation.
 ## Testing
 
 The production verifier checks the worker's version, exact manifest, and presence of every listed
-file. Playwright proves that a second launch renders the splash and starts engine Wasm while all
-app-origin network requests are blocked; activation removes an injected old cache; configuration,
-session-token, OAuth, API, and WebSocket-shaped traffic is neither cached nor intercepted by the
-worker. Development coverage asserts that no registration occurs.
+file. Playwright proves that online navigations use fresh HTML, a second offline launch renders the
+splash and starts engine Wasm from cache, and activation retains only one injected old cache;
+configuration, session-token, OAuth, API, and WebSocket-shaped traffic is neither cached nor
+intercepted by the worker. Development coverage asserts that no registration occurs.
 
 The existing startup, hosted-mode, console-clean, brand, CSP mirror, and native-feel checks remain
 green in development and production.
