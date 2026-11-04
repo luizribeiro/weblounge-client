@@ -55,9 +55,10 @@ Visible conversation instances remain the source of read intent. A foreground in
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that
 row to a server time and records that local read position immediately. This local advance always
 clears unread state, including when the row was restored from push. Such a row remains provisional
-for server sync: `Client::mark_read` waits until live delivery or the next history result verifies
-its server msgid and time, then uses the newest verified row in that buffer. A missing verified row
-or a disconnect drops that deferred server intent without restoring local unread state. When read
+for server sync: `Client::mark_read` waits until live delivery or a history result verifies that
+exact row's server msgid and time, then marks only that row. Unrelated traffic cannot consume or
+advance the deferred intent; selecting another read buffer or disconnecting drops it without
+restoring local unread state. When read
 markers are supported, the engine coalesces pending advances per conversation; an unavailable
 connection leaves a validated advance queued until `Connected` instead of rejecting or losing it.
 A server refusal is retried with bounded backoff and recorded in diagnostics rather than shown as a

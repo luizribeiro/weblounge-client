@@ -478,10 +478,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     `msgid`; that authoritative copy replaces sender identity and verification metadata without a
     duplicate row, while real identity disagreements remain visible (#101).
   - [x] Clear local unread state when a restored push is read, but keep it out of MARKREAD until
-    live delivery or history verifies a server msgid or time. Reconciliation advances to the newest
-    verified row; permanent server refusals stop immediately, while transient failures retry five
-    times with capped backoff. Distinct failures remain in `/debug` and the console without a
-    user-facing toast (#105).
+    live delivery or history verifies that exact row's server msgid and time. Unrelated traffic
+    stays unread and cannot consume or advance the deferred marker; permanent server refusals stop
+    immediately, while transient failures retry five times with capped backoff. Distinct failures
+    remain in `/debug` and the console without a user-facing toast (#105).
   - [x] Open the engine database from the push worker only at the generated current schema, abort
     instead of creating or upgrading it, and close each Cache write promptly and on version change.
     A push delivered on a fresh origin no longer blocks engine Settings or Durable storage (#95).
