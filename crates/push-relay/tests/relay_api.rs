@@ -781,6 +781,46 @@ async fn health_reports_devices_with_duplicate_active_routes() {
     );
 }
 
+#[cfg(feature = "push-e2e")]
+#[tokio::test]
+async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
+    let harness = Harness::new().await;
+    let device = harness.create_device().await;
+    let home = SecretKey::random(&mut OsRng);
+    let route = harness.create_route(&device, &home).await;
+
+    let states = call_json(
+        &harness.app,
+        Method::GET,
+        "/test/device-states",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(states.0, StatusCode::OK);
+    assert_eq!(states.1[0]["probing"], 1);
+
+    let refusal = call_json(
+        &harness.app,
+        Method::POST,
+        "/test/refuse-next-push",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(refusal.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        harness.push(&route, &home, b"refused probe").await,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        harness.push(&route, &home, b"accepted probe").await,
+        StatusCode::CREATED
+    );
+}
+
 #[tokio::test]
 async fn concierge_failure_is_502_without_created_credentials_or_request_secrets() {
     let harness = Harness::new().await;

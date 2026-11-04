@@ -1,5 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
+#[cfg(feature = "push-e2e")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use axum::{
     Json, Router,
     body::Bytes,
@@ -35,6 +38,8 @@ struct AppState {
     origin: String,
     lease_ttl: Duration,
     delivery_wakeup: Arc<Notify>,
+    #[cfg(feature = "push-e2e")]
+    refuse_next_push: Arc<AtomicBool>,
 }
 
 /// The relay's configured HTTP application.
@@ -78,6 +83,8 @@ pub fn app_with_lease_ttl(
         origin: origin.origin().ascii_serialization(),
         lease_ttl,
         delivery_wakeup: Arc::new(Notify::new()),
+        #[cfg(feature = "push-e2e")]
+        refuse_next_push: Arc::new(AtomicBool::new(false)),
     };
     tokio::spawn(deliver_held_pushes(state.clone()));
     let client_api = Router::new()
@@ -88,14 +95,18 @@ pub fn app_with_lease_ttl(
         .route("/v1/routes/{route}/active", put(activate_route))
         .route("/v1/routes/{route}", delete(delete_route))
         .layer(client_cors(allowed_origins));
-    Router::new()
+    let router = Router::new()
         .route("/healthz", get(health))
         .merge(client_api)
         .route(
             "/v1/r/{route}",
             post(receive_push).layer(DefaultBodyLimit::max(MAX_HOME_BODY)),
-        )
-        .with_state(state)
+        );
+    #[cfg(feature = "push-e2e")]
+    let router = router
+        .route("/test/device-states", get(test_device_states))
+        .route("/test/refuse-next-push", post(refuse_next_push));
+    router.with_state(state)
 }
 
 fn client_cors(allowed_origins: &[Url]) -> CorsLayer {
@@ -126,6 +137,17 @@ async fn health(State(state): State<AppState>) -> Result<Response> {
         ),
     )
         .into_response())
+}
+
+#[cfg(feature = "push-e2e")]
+async fn test_device_states(State(state): State<AppState>) -> Result<Response> {
+    Ok(Json(state.database.test_device_states().await?).into_response())
+}
+
+#[cfg(feature = "push-e2e")]
+async fn refuse_next_push(State(state): State<AppState>) -> StatusCode {
+    state.refuse_next_push.store(true, Ordering::SeqCst);
+    StatusCode::NO_CONTENT
 }
 
 #[derive(Deserialize)]
@@ -328,6 +350,11 @@ async fn receive_push(
     body: std::result::Result<Bytes, BytesRejection>,
 ) -> Response {
     let route_prefix = id_prefix(&route_id);
+    #[cfg(feature = "push-e2e")]
+    if state.refuse_next_push.swap(false, Ordering::SeqCst) {
+        tracing::info!(route = %route_prefix, reason = "test-refusal", "inbound push");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     let body = match body {
         Ok(body) => body,
         Err(rejection) => {

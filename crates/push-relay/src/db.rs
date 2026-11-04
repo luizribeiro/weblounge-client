@@ -11,6 +11,9 @@ use subtle::ConstantTimeEq;
 
 use crate::{Error, Result};
 
+#[cfg(feature = "push-e2e")]
+use serde::Serialize;
+
 const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
 const MAX_HELD_PUSHES_PER_ACCOUNT: u32 = 100;
@@ -69,6 +72,15 @@ pub(crate) struct HeldPush {
 pub(crate) struct DuplicateActiveRoutes {
     pub device_id: String,
     pub route_count: u32,
+}
+
+#[cfg(feature = "push-e2e")]
+#[derive(Debug, Serialize)]
+pub(crate) struct TestDeviceState {
+    pub id: String,
+    pub probing: u32,
+    pub active: u32,
+    pub dead: u32,
 }
 
 /// A small SQLite state store. Connections are short-lived and run off the async executor.
@@ -186,6 +198,34 @@ impl Database {
                     Ok(DuplicateActiveRoutes {
                         device_id: row.get(0)?,
                         route_count: row.get(1)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(Into::into)
+        })
+        .await?
+    }
+
+    #[cfg(feature = "push-e2e")]
+    pub(crate) async fn test_device_states(&self) -> Result<Vec<TestDeviceState>> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<Vec<TestDeviceState>> {
+            let connection = connect(&path)?;
+            let mut statement = connection.prepare(
+                "SELECT devices.id,
+                        COALESCE(SUM(routes.state = 'probing'), 0),
+                        COALESCE(SUM(routes.state = 'active'), 0),
+                        COALESCE(SUM(routes.state = 'dead'), 0)
+                 FROM devices LEFT JOIN routes ON routes.device_id = devices.id
+                 GROUP BY devices.id ORDER BY devices.id",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok(TestDeviceState {
+                        id: row.get(0)?,
+                        probing: row.get(1)?,
+                        active: row.get(2)?,
+                        dead: row.get(3)?,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()
