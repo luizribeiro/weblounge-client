@@ -562,7 +562,8 @@ lifecycle changes; every inbound push disposition; and each push-service HTTP re
 route fields are eight-character prefixes, upstream targets are hostnames only, and tests capture
 the output to prove that credentials, endpoint paths, tab ids, and opaque bodies are absent.
 Inbound refusals distinguish the pinned VAPID key, JWT, and body-size boundaries without logging
-their inputs.
+their inputs. These logs are operational only: they contain no account names, nicks, IP addresses,
+or other personal identifiers.
 
 The page retains the latest typed `PushState` per network and receives a narrow diagnostic
 projection from `PushSynchronizer`: `none`, `probing`, `active`, or `dead`, an optional eight-character

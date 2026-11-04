@@ -492,7 +492,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     510-byte length-limited line.
   - [x] Make a stalled push path diagnosable from both ends. The relay records redacted info-level
     device, route, lease, inbound disposition, and upstream-status events for journald, with only
-    eight-character identifiers and no endpoints, credentials, or ciphertext. `/debug push`
+    eight-character identifiers and no accounts, nicks, IPs, endpoints, credentials, or ciphertext.
+    `/debug push`
     combines every prompt-visibility input with each network's typed engine outcome, page-known
     relay route state, route prefix, and last relay error; the common debug header carries the same
     per-network summary. Ergo's registration-probe failure is covered as typed

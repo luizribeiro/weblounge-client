@@ -36,6 +36,7 @@ use weblounge_push_relay::{
 
 const ORIGIN: &str = "https://push.weblounge.test";
 const CLIENT_ORIGIN: &str = "https://beta.weblounge.test";
+const FIXTURE_ACCOUNT: &str = "private-account@example.test";
 type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32)>>>;
 
 #[derive(Clone, Default)]
@@ -82,7 +83,7 @@ impl Concierge for FakeConcierge {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if session_token == "member-session" {
             Ok(Introspection {
-                account: "mel".to_owned(),
+                account: FIXTURE_ACCOUNT.to_owned(),
             })
         } else if session_token == "concierge-down" {
             Err(Error::ConciergeUnavailable)
@@ -500,6 +501,8 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "secret-jwt-payload",
         "secret-dead-payload",
         "/send/device",
+        FIXTURE_ACCOUNT,
+        "8.8.8.8",
     ] {
         assert!(!output.contains(value), "log leaked {value:?}: {output}");
     }

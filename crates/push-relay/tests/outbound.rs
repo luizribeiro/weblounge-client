@@ -183,6 +183,7 @@ async fn upstream_logs_report_only_the_target_host_status_and_outcome() {
     assert!(output.contains("outcome=\"accepted\""));
     assert!(output.matches("outcome=\"dead\"").count() >= 2);
     assert!(!output.contains("/private/device-token"));
+    assert!(!output.contains("8.8.8.8"));
     assert!(!output.contains("route-secret"));
     assert!(!output.contains("secret-inner-payload"));
     for request in requests.lock().expect("requests").iter() {
