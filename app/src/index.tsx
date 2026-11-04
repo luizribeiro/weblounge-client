@@ -21,12 +21,18 @@ import {
   HostedAuthorizationError,
   type OAuthMetadata,
 } from "./hosted/oauth";
+import { resetWebApp } from "./hosted/reset-app";
 import {
   requiresAuthorization,
   type SessionAccessToken,
   SessionTokenProvider,
 } from "./hosted/session-token";
 import { withStartupDeadline } from "./hosted/startup-deadline";
+import {
+  failedStartupRetryCount,
+  shouldOfferAppReset,
+} from "./hosted/startup-recovery";
+import { startupStrings } from "./hosted/strings";
 import {
   installPlatformEnvironment,
   platformEnvironment,
@@ -436,6 +442,8 @@ checkForProductionServiceWorkerUpdate();
 
 function createStartupGate(splash: HTMLElement): BootstrapProps {
   let active = true;
+  let failedRetries = 0;
+  let retryPending = false;
   let retryOnRecovery: (() => void) | undefined;
   const fontReady = withStartupDeadline(
     () => document.fonts.load("400 13px Inter", "Starting weblounge…"),
@@ -445,6 +453,10 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
   const retryButton = splash.querySelector<HTMLButtonElement>(
     "[data-splash-retry]",
   );
+  const resetButton = splash.querySelector<HTMLButtonElement>(
+    "[data-splash-reset]",
+  );
+  if (resetButton !== null) resetButton.textContent = startupStrings.resetApp;
   const status = splash.querySelector<HTMLElement>("[data-splash-status]");
   const retry = () => {
     const action = retryOnRecovery;
@@ -486,7 +498,13 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       });
     },
     showError: (message, retryLabel, onRetry, retryWhenReachable) => {
-      if (!active || status === null || retryButton === null) return;
+      if (
+        !active ||
+        status === null ||
+        retryButton === null ||
+        resetButton === null
+      )
+        return;
       if (
         status.textContent === message &&
         retryButton.textContent === "Sign in again"
@@ -496,10 +514,14 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       status.dataset.error = "true";
       status.setAttribute("role", "alert");
       status.textContent = message;
+      failedRetries = failedStartupRetryCount(failedRetries, retryPending);
+      retryPending = false;
       retryButton.textContent = retryLabel;
       retryButton.hidden = false;
-      const beginRetry = () => {
+      resetButton.hidden = !shouldOfferAppReset(failedRetries);
+      const beginRetry = (countFailure: boolean) => {
         retryButton.hidden = true;
+        resetButton.hidden = true;
         status.removeAttribute("data-error");
         status.setAttribute("role", "status");
         status.textContent = "";
@@ -510,10 +532,19 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
         visible.dataset.splashMessage = "true";
         visible.setAttribute("aria-hidden", "true");
         status.append(a11y, visible);
+        retryPending = countFailure;
         onRetry();
       };
-      retryButton.onclick = beginRetry;
-      retryOnRecovery = retryWhenReachable ? beginRetry : undefined;
+      retryButton.onclick = () => beginRetry(retryLabel === "Retry");
+      resetButton.onclick = () => {
+        retryButton.hidden = true;
+        resetButton.hidden = true;
+        status.textContent = startupStrings.resetting;
+        void resetWebApp();
+      };
+      retryOnRecovery = retryWhenReachable
+        ? () => beginRetry(false)
+        : undefined;
     },
   };
 }

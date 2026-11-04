@@ -87,6 +87,12 @@ page usable. A failed update leaves the prior active worker and cache intact. Al
 previous cache are removed only after the new worker has installed successfully and reached
 activation.
 
+The startup error keeps Retry as its first recovery. Only after two user-initiated Retries also
+fail does it offer Reset app. Reset unregisters this app's service-worker registrations, deletes
+`weblounge-*` Cache Storage, and reloads; it does not clear IndexedDB, local storage, or unrelated
+origin caches, so credentials and settings survive where the platform permits. Automatic recovery
+after an online or foreground event does not count as a failed user Retry.
+
 ## Testing
 
 The production verifier checks the worker's version, exact manifest, and presence of every listed
@@ -94,6 +100,10 @@ file. Playwright proves that online navigations use fresh HTML, a second offline
 splash and starts engine Wasm from cache, and activation retains only one injected old cache;
 configuration, session-token, OAuth, API, and WebSocket-shaped traffic is neither cached nor
 intercepted by the worker. Development coverage asserts that no registration occurs.
+
+The failed-Retry threshold has unit coverage. Production Playwright installs worker and cache
+sentinels, forces two failed Retries, invokes Reset app, and proves the stale app registrations and
+caches are gone while IndexedDB and local storage survive the reload into a working shell.
 
 The existing startup, hosted-mode, console-clean, brand, CSP mirror, and native-feel checks remain
 green in development and production.

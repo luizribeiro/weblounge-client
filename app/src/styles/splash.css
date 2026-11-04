@@ -1,5 +1,6 @@
 :root {
   --wl-splash-bg: #f3f1e9;
+  --wl-splash-action-gap: 8px;
   --wl-splash-gap: 16px;
   --wl-splash-mark: #4e6244;
   --wl-splash-mark-size: 112px;
@@ -104,7 +105,12 @@ body,
   visibility: hidden;
 }
 
-[data-splash-retry] {
+[data-splash-actions] {
+  display: flex;
+  gap: var(--wl-splash-action-gap);
+}
+
+[data-splash-action] {
   background: var(--wl-color-accent);
   border: 0;
   border-radius: 6px;

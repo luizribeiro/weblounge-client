@@ -564,7 +564,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     (a flake input pinned to the last deployed SHA, served from Cachix), then serve the current
     build. The client must move to it without closing tabs, and the previous build must start with
     the current config.json.
-  - U2. [ ] A "Reset app" action on the startup error screen, shown only after repeated startup
+  - U2. [x] A "Reset app" action on the startup error screen, shown only after repeated startup
     failures (two consecutive Retries). It clears the cached shell and service worker and reloads,
     keeping sign-in where possible.
   - U3. [ ] A post-deploy upgrade check in weblounge's deploy smoke tests (owned by

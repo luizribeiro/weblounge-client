@@ -3,6 +3,8 @@ import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 
+const development = process.env.WEBLOUNGE_E2E_DEV === "1";
+
 test.use({
   hasTouch: true,
   isMobile: true,
@@ -134,6 +136,122 @@ test("turns a stalled startup into a human error", async ({ page }) => {
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 });
 
+test("offers Reset app after two failed retries and recovers cleanly", async ({
+  page,
+}) => {
+  test.skip(
+    development,
+    "the service worker is intentionally disabled in development",
+  );
+  let failConfig = false;
+  let failedRequests = 0;
+  await page.route("**/config.json", async (route) => {
+    if (failConfig) {
+      failedRequests += 1;
+      await route.fulfill({ contentType: "application/json", body: "{}" });
+      return;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ mode: "app" }),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
+  await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  await page.evaluate(async () => {
+    localStorage.setItem("reset-survival-setting", "preserved");
+    const cache = await caches.open("weblounge-reset-sentinel");
+    await cache.put("/reset-sentinel", new Response("cached"));
+    await navigator.serviceWorker.register("/service-worker.js", {
+      scope: "/reset-sentinel/",
+    });
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("reset-survival", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("state");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const transaction = request.result.transaction("state", "readwrite");
+        transaction.objectStore("state").put("preserved", "marker");
+        transaction.oncomplete = () => {
+          request.result.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+    localStorage.removeItem("weblounge.deployment-config.v1");
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () =>
+        (await navigator.serviceWorker.getRegistrations()).some(
+          (registration) => registration.scope.endsWith("/reset-sentinel/"),
+        ),
+      ),
+    )
+    .toBe(true);
+
+  failConfig = true;
+  await page.reload();
+  const retry = page.getByRole("button", { name: "Retry" });
+  const reset = page.getByRole("button", { name: "Reset app" });
+  await expect(page.getByRole("alert")).toContainText("misconfigured");
+  await expect(reset).toHaveCount(0);
+
+  await retry.click();
+  await expect.poll(() => failedRequests).toBe(2);
+  await expect(reset).toHaveCount(0);
+
+  await retry.click();
+  await expect.poll(() => failedRequests).toBe(3);
+  await expect(reset).toBeVisible();
+
+  failConfig = false;
+  await reset.click();
+  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
+  await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+  expect(
+    await page.evaluate(async () => {
+      const databaseValue = await new Promise<string | undefined>(
+        (resolve, reject) => {
+          const request = indexedDB.open("reset-survival");
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const transaction = request.result.transaction("state");
+            const value = transaction.objectStore("state").get("marker");
+            value.onerror = () => reject(value.error);
+            value.onsuccess = () => {
+              request.result.close();
+              resolve(
+                typeof value.result === "string" ? value.result : undefined,
+              );
+            };
+          };
+        },
+      );
+      return {
+        appCacheExists: (await caches.keys()).includes(
+          "weblounge-reset-sentinel",
+        ),
+        databaseValue,
+        preservedSetting: localStorage.getItem("reset-survival-setting"),
+        sentinelWorkerExists: (
+          await navigator.serviceWorker.getRegistrations()
+        ).some((registration) =>
+          registration.scope.endsWith("/reset-sentinel/"),
+        ),
+      };
+    }),
+  ).toEqual({
+    appCacheExists: false,
+    databaseValue: "preserved",
+    preservedSetting: "preserved",
+    sentinelWorkerExists: false,
+  });
+});
+
 test("survives focus while the engine handshake is pending", async ({
   page,
 }) => {
@@ -206,6 +324,13 @@ async function expectAccentButtonContrast(button: Locator): Promise<void> {
   expect(
     contrastRatio(colors.background, colors.foreground),
   ).toBeGreaterThanOrEqual(4.5);
+}
+
+async function activeWorkerState(page: Page): Promise<string | null> {
+  return page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    return registration?.active?.state ?? null;
+  });
 }
 
 function rgb(hex: string): string {
