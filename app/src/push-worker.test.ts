@@ -40,7 +40,7 @@ describe("push worker notification presentation", () => {
     {
       name: "account-tagged PRIVMSG",
       line: `@account=mel;time=${time};msgid=priv :mel!m@example.test PRIVMSG #lounge :hello there`,
-      event: chat("message", "mel", "#lounge", "priv", "hello there"),
+      event: chat("message", "mel", "#lounge", "priv", "hello there", "mel"),
       title: "mel in #lounge",
       body: "hello there",
       tag: "1/#lounge",
@@ -73,7 +73,7 @@ describe("push worker notification presentation", () => {
     {
       name: "emoji PRIVMSG",
       line: `@account=mel;time=${time};msgid=emoji :mel!m@example.test PRIVMSG #lounge :ship it 🚀`,
-      event: chat("message", "mel", "#lounge", "emoji", "ship it 🚀"),
+      event: chat("message", "mel", "#lounge", "emoji", "ship it 🚀", "mel"),
       title: "mel in #lounge",
       body: "ship it 🚀",
       tag: "1/#lounge",
@@ -141,8 +141,9 @@ function chat(
   target: string,
   msgid: string,
   text: string,
+  account: string | null = null,
 ): ParsedPushEvent {
-  return { type, sender, target, msgid, time, text };
+  return { type, sender, account, target, msgid, time, text };
 }
 
 function parserReturning(
