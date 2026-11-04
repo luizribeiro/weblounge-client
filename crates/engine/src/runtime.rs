@@ -4366,7 +4366,7 @@ fn spawn_push_unregister(
 ) {
     spawn_task(async move {
         let result = client.webpush().unregister(route.endpoint.clone()).await;
-        let event = {
+        let (event, rejection) = {
             let mut state = lock(&state);
             state
                 .network
@@ -4380,25 +4380,28 @@ fn spawn_push_unregister(
                             .as_ref()
                             .is_some_and(|current| current.route_id == route.route_id)
                 })
-                .and_then(|running| match &result {
+                .map_or((None, None), |running| match &result {
                     Ok(()) => {
                         running.push.route = None;
                         running.push.state = None;
-                        None
+                        (None, None)
                     }
                     Err(error) => {
                         let state = PushState::Failed {
                             reason: push_failure(error),
                         };
                         running.push.state = Some(state.clone());
-                        Some(EngineToUi::PushStateChanged { network_id, state })
+                        (
+                            Some(EngineToUi::PushStateChanged { network_id, state }),
+                            Some(EngineMessageKey::CommandRefused),
+                        )
                     }
                 })
         };
         if let Some(event) = event {
             let _ = outbound.send(event);
         }
-        let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
+        let _ = outbound.send(terminal_command(command_id, rejection));
     });
 }
 

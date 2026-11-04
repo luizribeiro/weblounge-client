@@ -744,6 +744,7 @@ async function exerciseNotificationPromptRegistration(
     await fulfillSessionToken(route, baseURL, "push-session-token");
   });
   const relayRequests: string[] = [];
+  let relayRouteSequence = 0;
   await page.route("https://push.weblounge.org/**", async (route) => {
     const request = route.request();
     const cors = {
@@ -780,16 +781,31 @@ async function exerciseNotificationPromptRegistration(
         "Bearer device-secret",
       );
       expect(request.postDataJSON()).toEqual({ home_vapid: "home-vapid" });
+      relayRouteSequence += 1;
+      const routeId =
+        relayRouteSequence === 1
+          ? "route-123456789"
+          : `route-recovered-${relayRouteSequence}`;
+      await page.evaluate((id) => {
+        const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
+        if (Array.isArray(sequence)) sequence.push(`create:${id}`);
+      }, routeId);
       await route.fulfill({
         status: 201,
         headers: cors,
         contentType: "application/json",
         body: JSON.stringify({
-          id: "route-123456789",
-          endpoint: "https://push.weblounge.org/v1/r/route-123456789",
+          id: routeId,
+          endpoint: `https://push.weblounge.org/v1/r/${routeId}`,
         }),
       });
       return;
+    }
+    if (request.method() === "DELETE" && path.startsWith("/v1/routes/")) {
+      await page.evaluate((id) => {
+        const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
+        if (Array.isArray(sequence)) sequence.push(`delete:${id}`);
+      }, path.slice("/v1/routes/".length));
     }
     await route.fulfill({ status: 204, headers: cors });
   });
@@ -883,14 +899,36 @@ async function exerciseNotificationPromptRegistration(
       throw new Error("push registration failure control is missing");
     fail();
   });
+  await expect(debug).toContainText("engine=Failed(invalid_parameters)");
   await expect(debug).toContainText(
-    "engine=Failed(invalid_parameters) / relay=none / last error=none",
+    "relay=probing (route-re) / last error=engine: invalid_parameters",
   );
+  await expect
+    .poll(() =>
+      page.evaluate(() => Reflect.get(globalThis, "pushRegistrationSequence")),
+    )
+    .toEqual([
+      "create:route-123456789",
+      "register:route-123456789",
+      "unregister",
+      "delete:route-123456789",
+      "create:route-recovered-2",
+      "register:route-recovered-2",
+    ]);
   await composer.fill("/debug");
   await composer.press("Enter");
   await expect(debug).toContainText("[debug]");
   await expect(debug).toContainText(
-    "push: network weblounge: engine=Failed(invalid_parameters) / relay=none / last error=none",
+    "push: network weblounge: engine=Failed(invalid_parameters) / relay=probing (route-re) / last error=engine: invalid_parameters",
+  );
+  await page.evaluate(() => {
+    const complete = Reflect.get(globalThis, "completePushRegistration");
+    if (typeof complete !== "function")
+      throw new Error("replacement push registration release is missing");
+    complete();
+  });
+  await expect(debug).toContainText(
+    "engine=Registered (route-re) / relay=active (route-re) / last error=none",
   );
   await page.evaluate(() => {
     const setUnread = Reflect.get(globalThis, "setHostedUnread");
@@ -1266,6 +1304,7 @@ async function installFakeEngine(
     const workerKind = Reflect.get(globalThis, "hostedWorkerKind");
     Reflect.set(globalThis, "hostedEngineRequests", []);
     Reflect.set(globalThis, "hostedStartupSequence", []);
+    Reflect.set(globalThis, "pushRegistrationSequence", []);
     let pushDevice: {
       relay: string;
       device_id: string;
@@ -1394,6 +1433,8 @@ async function installFakeEngine(
             typeof request.route.route_id === "string"
               ? request.route.route_id
               : "unknown-route";
+          const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
+          if (Array.isArray(sequence)) sequence.push(`register:${routeId}`);
           Reflect.set(globalThis, "completePushRegistration", () => {
             this.emit({
               type: "push_state_changed",
@@ -1408,6 +1449,10 @@ async function installFakeEngine(
               state: { status: "failed", reason: "invalid_parameters" },
             });
           });
+        }
+        if (request?.type === "unregister_push") {
+          const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
+          if (Array.isArray(sequence)) sequence.push("unregister");
         }
         if (request?.type === "reconnect_hosted") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
