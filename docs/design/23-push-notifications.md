@@ -160,16 +160,22 @@ APNs and FCM limits. The ciphertext is base64url-encoded exactly once. An encryp
 truncated, so the relay answers **413** to any home body over 2,800 bytes. In front of it, nginx
 caps bodies at about 4 KB (`client_max_body_size`) and rate-limits with `limit_req`.
 
-**Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered visibly. Apple Web
-Push drops everything lower because iOS and Safari require every delivered push to show a
-notification. Mozilla, FCM, and Edge forward `normal` so `MARKREAD` can clear stale notifications,
-but drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
-#2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because their
-ciphertexts are opaque, the relay must forward both to non-Apple services. The worker consumes both
-as generic visible notifications after applying their cleanup. A delivered web push never completes
-silently: WebKit can revoke a subscription after silent delivery, and route duplication can otherwise
-turn a valid message into several silent duplicate events. A future Ergo urgency split can move
-maintenance PING to `low` without a relay change.
+**Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered. Apple Web Push
+drops everything lower because iOS and Safari require every delivered push to show a notification.
+FCM and Edge also drop `normal`, because Chromium can replace a push that deliberately shows
+nothing with its own generic background-update notification. Mozilla forwards `normal` so
+`MARKREAD` can close stale notifications and correct the badge; Firefox permits that handler to
+finish without presentation. Every target drops `low` and `very-low`. Ergo assigns both `MARKREAD`
+and its maintenance `PING` to `normal`; #2471 only fixes `sendPush` to pass that existing value
+instead of hardcoding `high`.
+
+The ciphertext is opaque, so this policy treats every normal-urgency push from a home alike. The
+worker must nevertheless decrypt and skip presentation for `MARKREAD` and `PING` on every browser:
+production Ergo 2.19.1 labels them `high`, and a probe or home with incorrect urgency must not create
+a visible control notification. `MARKREAD` closes the matching conversation's notifications and
+updates its stored count; `PING` changes no visible state. Failure to decrypt remains visible because
+the event may be a message. A future Ergo urgency split can move maintenance PING to `low` without a
+relay change.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
 It never sees the sender, the target or the text.
@@ -219,13 +225,12 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. Store the message (msgid, time, target, sender, text) in the engine's `Space::Cache` IndexedDB
    store, keyed so the engine reads it as part of the buffer's history.
-5. Call `showNotification` **exactly once for every delivered push event**. Chrome and Firefox only check
-   that a notification exists when `waitUntil` settles; Safari falls back to the declarative
-   notification if the handler fails. A placeholder-then-replace would duplicate where `tag`
-   replacement isn't supported. A duplicate chat `msgid` re-shows the same conversation tag so
-   tag-capable platforms replace the prior notification; it is never dropped silently. A successfully
-   decrypted `MARKREAD` or `PING` forwarded by a non-Apple service applies its cleanup and then shows
-   the generic notification.
+5. Call `showNotification` exactly once for a message-like event. Chrome and Firefox only check that
+   a notification exists when `waitUntil` settles; Safari falls back to the declarative notification
+   if the handler fails. A placeholder-then-replace would duplicate where `tag` replacement isn't
+   supported. A duplicate chat `msgid` re-shows the same conversation tag so tag-capable platforms
+   replace the prior notification. A successfully decrypted `MARKREAD` or `PING` applies its cleanup
+   and returns without calling `showNotification`.
 6. Only if decryption fails: show the generic "New message" for that network and mark the route for
    re-registration.
 
@@ -268,17 +273,19 @@ device]**.
   the sum of `mentions` (the engine counts every DM as a mention, `state.rs:1834-1835`). With no
   page open, the service worker increments a counter in `weblounge-push`; on launch the page
   overwrites it with the engine's value.
-- The worker stores a notified count per conversation tag. A non-Apple `MARKREAD` zeros that tag,
-  closes its notifications, recomputes the badge, and then shows the generic notification required
-  for that delivered push event. Re-delivery of an existing chat `msgid` replaces its notification
+- The worker stores a notified count per conversation tag. A Mozilla `MARKREAD` zeros that tag,
+  closes its notifications and recomputes the badge without showing a new notification. Re-delivery
+  of an existing chat `msgid` replaces its notification
   without incrementing the count again. Every push also re-closes tags already known to be read
   before recomputing the badge. It undercounts when Ergo's 16-item push queue overflows
   (`client.go:53`).
-- Apple never receives `MARKREAD`, so opening the page corrects its badge from the engine and closes
-  notifications for every read buffer. The same cleanup runs whenever a buffer's read counters
-  change (`registration.getNotifications({tag})`). The page seeds the worker's per-tag counts from
-  engine DM unread and channel mention counts so later closed-page recomputation has the same base.
-  Linux, Firefox and Chrome Android have no badging API, but notification cleanup still runs.
+- Apple and Chromium-family routes normally do not receive `MARKREAD`, so opening the page corrects
+  their badges from the engine and closes notifications for every read buffer. This foreground
+  convergence is essential on iOS, where the Apple-only delivery gap otherwise leaves the home-screen
+  badge stale. The same cleanup runs whenever a buffer's read counters change
+  (`registration.getNotifications({tag})`). The page seeds the worker's per-tag counts from engine DM
+  unread and channel mention counts so later closed-page recomputation has the same base. Linux,
+  Firefox and Chrome Android have no badging API, but notification cleanup still runs.
 
 ## Types
 
