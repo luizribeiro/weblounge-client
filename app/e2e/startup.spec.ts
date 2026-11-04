@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
@@ -83,6 +83,7 @@ test("shimmers through cached-list hydration and finishes its sweep", async ({
 });
 
 test("turns a stalled startup into a human error", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
   await page.clock.install();
   let recover = false;
   await page.route("**/config.json", async (route) => {
@@ -111,6 +112,14 @@ test("turns a stalled startup into a human error", async ({ page }) => {
   );
   await expect(page.locator("[data-initial-splash]")).toBeVisible();
   await expect(page.locator("[data-splash-mark]")).toHaveCount(1);
+  const retry = page.getByRole("button", { name: "Retry" });
+  await expectAccentButtonContrast(retry);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme",
+    "lounge-night",
+  );
+  await expectAccentButtonContrast(retry);
   expect(await page.locator("[data-splash-mark]").boundingBox()).toEqual(
     initialChair,
   );
@@ -118,8 +127,9 @@ test("turns a stalled startup into a human error", async ({ page }) => {
   expect(startupErrors[0]).toContain("Can't reach weblounge");
 
   recover = true;
+  await page.emulateMedia({ colorScheme: "light" });
   await page.clock.resume();
-  await page.getByRole("button", { name: "Retry" }).click();
+  await retry.click();
   await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 });
@@ -179,6 +189,54 @@ test("survives focus while the engine handshake is pending", async ({
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 });
+
+async function expectAccentButtonContrast(button: Locator): Promise<void> {
+  const colors = await button.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const root = getComputedStyle(document.documentElement);
+    return {
+      background: style.backgroundColor,
+      foreground: style.color,
+      accent: root.getPropertyValue("--wl-color-accent").trim(),
+      accentForeground: root.getPropertyValue("--wl-color-accent-fg").trim(),
+    };
+  });
+  expect(colors.background).toBe(rgb(colors.accent));
+  expect(colors.foreground).toBe(rgb(colors.accentForeground));
+  expect(
+    contrastRatio(colors.background, colors.foreground),
+  ).toBeGreaterThanOrEqual(4.5);
+}
+
+function rgb(hex: string): string {
+  const channels = hex
+    .slice(1)
+    .match(/.{2}/gu)
+    ?.map((channel) => Number.parseInt(channel, 16));
+  if (channels === undefined || channels.length !== 3)
+    throw new Error(`couldn't parse ${hex}`);
+  return `rgb(${channels.join(", ")})`;
+}
+
+function contrastRatio(first: string, second: string): number {
+  const firstLuminance = luminance(first);
+  const secondLuminance = luminance(second);
+  return (
+    (Math.max(firstLuminance, secondLuminance) + 0.05) /
+    (Math.min(firstLuminance, secondLuminance) + 0.05)
+  );
+}
+
+function luminance(color: string): number {
+  const channels = color.match(/\d+/gu)?.slice(0, 3).map(Number);
+  if (channels === undefined || channels.length !== 3)
+    throw new Error(`couldn't parse ${color}`);
+  const [red = 0, green = 0, blue = 0] = channels.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
 
 test("uses cached config and chats while config revalidation is blocked", async ({
   page,

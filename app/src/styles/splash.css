@@ -1,6 +1,5 @@
 :root {
   --wl-splash-bg: #f3f1e9;
-  --wl-splash-button-fg: #f3f1e9;
   --wl-splash-gap: 16px;
   --wl-splash-mark: #4e6244;
   --wl-splash-mark-size: 112px;
@@ -106,10 +105,10 @@ body,
 }
 
 [data-splash-retry] {
-  background: var(--wl-splash-mark);
+  background: var(--wl-color-accent);
   border: 0;
   border-radius: 6px;
-  color: var(--wl-splash-button-fg);
+  color: var(--wl-color-accent-fg);
   cursor: pointer;
   font-family: Inter, "Inter Fallback", system-ui, sans-serif;
   font-size: 13px;
