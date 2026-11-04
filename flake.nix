@@ -299,7 +299,12 @@
             cp -r app/dist $out
           '';
         };
-        e2eApp = app.overrideAttrs {
+        checkApp = app.overrideAttrs {
+          # Revision metadata does not change the behavior exercised by CI.
+          WEBLOUNGE_BUILD_SHA = "ci";
+          WEBLOUNGE_BUILD_TIMESTAMP = "0";
+        };
+        e2eApp = checkApp.overrideAttrs {
           WEBLOUNGE_E2E_HARNESS = "1";
           WEBLOUNGE_IRC_ENDPOINT = "ws://127.0.0.1:4173/socket";
           WEBLOUNGE_IRC_NICKNAME = "weblounge";
@@ -329,7 +334,7 @@
           WEBLOUNGE_E2E_ERGO = "1";
           WEBLOUNGE_E2E_IRC_TARGET = "ws://127.0.0.1:8066";
           WEBLOUNGE_E2E_FORWARDER_URL = "http://127.0.0.1:8091";
-          WEBLOUNGE_EXPECTED_BUILD_SHA = buildSha;
+          WEBLOUNGE_EXPECTED_BUILD_SHA = "ci";
           buildPhase = ''
             runHook preBuild
             ${runE2e ''
@@ -576,10 +581,11 @@
           );
           ergo-integration = ergoIntegration;
           protocol-types = protocolTypes;
-          push-relay = pushRelayCheck;
+          push-relay-build = pushRelay;
+          push-relay-test = pushRelayCheck;
           wasm = engineWasm;
           push-payload-wasm = pushPayloadWasm;
-          app-build = app;
+          app-build = checkApp;
           e2e-network-fallback = e2eNetworkFallbackTest;
           inherit e2e;
           e2e-dev = e2eDev;
