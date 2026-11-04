@@ -31,8 +31,9 @@ let
     issue_certificate() {
       name="$1"
       host="$2"
+      subject_alt_name="''${3:-DNS:$host}"
       openssl req -newkey rsa:2048 -nodes -subj "/CN=$host" \
-        -addext "subjectAltName=DNS:$host" \
+        -addext "subjectAltName=$subject_alt_name" \
         -keyout "$out/$name.key" -out "$out/$name.csr"
       openssl x509 -req -days 2 -in "$out/$name.csr" \
         -CA $out/ca.crt -CAkey $out/ca.key -CAcreateserial \
@@ -40,7 +41,8 @@ let
     }
     issue_certificate app app.test
     issue_certificate relay push.test
-    issue_certificate receiver web.push.apple.com
+    issue_certificate receiver web.push.apple.com \
+      DNS:web.push.apple.com,DNS:updates.push.services.mozilla.com
 
     openssl ecparam -name prime256v1 -genkey -noout -out $out/relay-vapid.pem
     openssl ec -in $out/relay-vapid.pem -pubout -outform DER 2>/dev/null \
@@ -82,12 +84,20 @@ let
     ${addresses.ergo} ergo.test
     ${addresses.relay} push.test
     ${addresses.receiver} web.push.apple.com receiver.test
+    ${addresses.receiver} updates.push.services.mozilla.com
     ${addresses.app} app.test
   '';
   nginxTls = certificate: key: ''
     ssl_certificate ${certificate};
     ssl_certificate_key ${key};
     ssl_protocols TLSv1.2 TLSv1.3;
+  '';
+  pushDriverWorker = pkgs.writeText "weblounge-push-driver-worker.js" ''
+    importScripts("/service-worker.js");
+    globalThis.addEventListener("message", (event) => {
+      if (event.data?.type !== "deliver-push") return;
+      globalThis.dispatchEvent(new PushEvent("push", { data: event.data.payload }));
+    });
   '';
 in
 pkgs.testers.runNixOSTest {
@@ -201,6 +211,8 @@ pkgs.testers.runNixOSTest {
                 "${pkgs.writeText "push-e2e-concierge-secret" "test-secret"}"
                 "--test-target-host"
                 "web.push.apple.com"
+                "--test-target-host"
+                "updates.push.services.mozilla.com"
                 "--test-ca-file"
                 "${pki}/ca.crt"
               ];
@@ -330,6 +342,10 @@ pkgs.testers.runNixOSTest {
                     default_type text/html;
                     return 200 '<!doctype html><title>Push driver</title>';
                   '';
+                  "= /push-driver-sw.js" = {
+                    alias = pushDriverWorker;
+                    extraConfig = "default_type application/javascript;";
+                  };
                   "/".extraConfig = "try_files $uri $uri/ /index.html;";
                 };
               };
