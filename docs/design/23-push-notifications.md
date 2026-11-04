@@ -568,6 +568,17 @@ an in-worker ledger. It still decrypts and parses the encrypted envelopes, persi
 closes the covered notification and recomputes the badge in Firefox. The production build check
 proves that the message injection and ledger are absent from the shipped worker.
 
+The same Halloy read left the affected iPhone PWA's icon badge stale. This is the expected Apple
+side of the relay policy rather than another delivery failure: Ergo sends `MARKREAD` at normal
+urgency, and Apple routes accept only high urgency, so the relay acknowledges but does not forward
+that control. A suspended page can therefore retain the worker's last count even when its engine
+buffers already hold the authoritative read state. Launch hydration, every engine counter change
+and every return to the foreground now enqueue a serialized replacement of the worker's aggregate
+and per-conversation counts. Serialization ensures an older foreground snapshot cannot finish
+after a newer read-marker update. WebKit E2E seeds the stale count on an Apple endpoint while the
+page is backgrounded, omits the dropped `MARKREAD`, foregrounds the app and asserts that both the
+icon badge spy and worker state converge to the engine's zero count.
+
 The live relay's route convergence reduced the phone to one route, while the deployed client could
 still delete that relay route without a confirmed IRC UNREGISTER, leaving an Ergo slot until the
 next push received 404. The redesigned page exact-unregisters before ordinary and forbidden route
@@ -697,15 +708,18 @@ notifications also carry their tag, `msgid` and server time in notification data
 decrypted `MARKREAD` stores the `timestamp=` reference, zeros the matching count and
 closes only notifications from that conversation at or before the marker. A maintenance `PING`
 repeats marker-bounded cleanup without calling `showNotification`; both controls are silent even if
-count persistence fails. Visible and generic pushes do not perform cleanup. This intentionally uses
-Chromium's allowance for occasional silent pushes; Ergo currently emits at most a daily maintenance
-PING for an idle subscription, plus user-driven `MARKREAD` events.
+count persistence fails. Visible and generic pushes do not perform cleanup. The relay forwards these
+normal-urgency controls only to Mozilla; Apple, FCM and Windows Push acknowledge and drop them so
+WebKit's visibility requirement and Chromium's synthesized background-update notification cannot
+surface a control. Ergo currently emits at most a daily maintenance PING for an idle subscription,
+plus user-driven `MARKREAD` events.
 
 While the page is open, engine counters and read markers replace the worker's per-tag baseline and
 the aggregate badge. Initial buffer hydration and subsequent counter changes scan notification data
 and close only messages at or before each engine marker, even when the same conversation has newer
-unread messages. This is also the correction path for iOS, where the Apple urgency gate prevents
-`MARKREAD` from reaching the worker.
+unread messages. Opening or foregrounding the app explicitly repeats that serialized replacement.
+This is the correction path for iOS, where the Apple urgency gate prevents `MARKREAD` from reaching
+the worker.
 
 ## Rollout
 

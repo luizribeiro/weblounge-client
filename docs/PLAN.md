@@ -499,9 +499,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     rows, while a seeded pushed row is restored and signals readiness in the same `PrepareHosted`
     output before credentials or a connection exist.
   - [x] Keep app-icon badges synchronized with engine-owned unread DMs and mentions while a page is
-    open, then increment the same persisted counter for each worker-shown notification. Hold
-    account-wide delivery behind per-tab visible-and-focused leases; renewals discard ciphertext
-    already read, while last-tab beacon release or expiry delivers it without hidden-page timers.
+    open, on launch and whenever it returns to the foreground, then increment the same persisted
+    counter for each worker-shown notification. Serialize engine snapshots so the latest read-marker
+    state wins. Hold account-wide delivery behind per-tab visible-and-focused leases; renewals
+    discard ciphertext already read, while last-tab beacon release or expiry delivers it without
+    hidden-page timers.
   - [x] Offer the one-time notification permission prompt above desktop and mobile chat lists only
     on supported, configured platforms (installed home-screen mode on iOS). Request permission
     directly from the tap, enter the existing relay route flow on grant, hide on denial, and keep
