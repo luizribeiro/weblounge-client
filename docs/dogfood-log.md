@@ -108,3 +108,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 100 | 2026-11-04 | Push works on iPhone (full notification + badge). Extra generic "New message from weblounge" notifications arrive too: likely Ergo MARKREAD/PING pushes the relay should drop by urgency for web targets. | investigating |
 | 101 | 2026-11-04 | Desktop: DMs that arrived as pushes (from "push test 2" on) are marked "unverified sender". | in progress |
 | 102 | 2026-11-04 | Beta 9f094ac: iPhone push registration fails (engine=Failed(invalid_parameters), relay=none) after the stale-route retirement; Firefox still works; no self-recovery. | in progress |
+| 103 | 2026-11-04 | On startup, cached chat-list rows are replaced by live ones after the app is online; a tap on a cached row during the swap can be lost. Keep row identity (keyed by buffer) across the cached→live swap. | open |
