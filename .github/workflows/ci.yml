@@ -15,7 +15,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
+    steps:
+      # v6
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      # v35
+      # yamllint disable-line rule:line-length
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+        with:
+          nix_conf: max-jobs = auto
+      - uses: cachix/cachix-action@v17
+        with:
+          name: weblounge
+      - id: list
+        run: |
+          nix run --inputs-from . nixpkgs#nix-eval-jobs -- \
+            --flake .#checks.x86_64-linux --check-cache-status \
+            --workers 2 --max-memory-size 3072 > jobs.jsonl
+          test -s jobs.jsonl
+          jq -cs 'map(select(.isCached | not) | .attr)' jobs.jsonl \
+            | sed 's/^/checks=/' >> "$GITHUB_OUTPUT"
+
+  outputs:
+    needs: list
+    if: ${{ !cancelled() && needs.list.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       # v6
@@ -30,5 +57,58 @@ jobs:
         with:
           name: weblounge
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Check flake
-        run: nix flake check --print-build-logs
+      - name: Evaluate packages and formatter
+        run: |
+          nix eval --json .#packages.x86_64-linux \
+            --apply 'builtins.mapAttrs (_: package: package.drvPath)'
+          nix eval .#formatter.x86_64-linux.drvPath
+      - name: Build the development shell
+        run: nix build --print-build-logs --no-link
+          .#devShells.x86_64-linux.default
+
+  build:
+    needs: list
+    if: >-
+      ${{ !cancelled() && needs.list.result == 'success'
+      && needs.list.outputs.checks != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJSON(needs.list.outputs.checks) }}
+    name: ${{ matrix.check }}
+    steps:
+      # v6
+      # yamllint disable-line rule:line-length
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      # v35
+      # yamllint disable-line rule:line-length
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
+        with:
+          nix_conf: max-jobs = auto
+      - uses: cachix/cachix-action@v17
+        with:
+          name: weblounge
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - env:
+          CHECK: ${{ matrix.check }}
+        run: nix build --print-build-logs --no-link
+          ".#checks.x86_64-linux.$CHECK"
+
+  ci:
+    needs: [list, outputs, build]
+    if: always()
+    runs-on: ubuntu-latest
+    name: CI
+    steps:
+      - env:
+          RESULTS: >-
+            ${{ needs.list.result }}
+            ${{ needs.outputs.result }}
+            ${{ needs.list.outputs.checks == '[]' && 'success'
+            || needs.build.result }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            test "$result" = success || exit 1
+          done
