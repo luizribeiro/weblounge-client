@@ -1,5 +1,5 @@
 export const pushDatabaseName = "weblounge-push";
-export const pushDatabaseVersion = 2;
+export const pushDatabaseVersion = 3;
 export const pushRoutesStore = "routes";
 export const pushStateStore = "state";
 export const appBadgeKey = "app-badge";
@@ -12,8 +12,15 @@ export function openPushDatabase(
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(pushRoutesStore)) {
         request.result.createObjectStore(pushRoutesStore, {
-          keyPath: "networkId",
+          keyPath: "routeId",
         });
+      } else if (
+        request.transaction?.objectStore(pushRoutesStore).keyPath !== "routeId"
+      ) {
+        const transaction = request.transaction;
+        if (transaction === null)
+          throw new Error("missing upgrade transaction");
+        migrateRoutesToRouteIds(request.result, transaction);
       }
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
         request.result.createObjectStore(pushStateStore);
@@ -23,6 +30,20 @@ export function openPushDatabase(
     request.onerror = () =>
       reject(request.error ?? new Error("push database failed to open"));
   });
+}
+
+function migrateRoutesToRouteIds(
+  database: IDBDatabase,
+  transaction: IDBTransaction,
+): void {
+  const routes = transaction.objectStore(pushRoutesStore).getAll();
+  routes.onsuccess = () => {
+    database.deleteObjectStore(pushRoutesStore);
+    const store = database.createObjectStore(pushRoutesStore, {
+      keyPath: "routeId",
+    });
+    for (const route of routes.result) store.put(route);
+  };
 }
 
 export async function writeAppBadgeCount(count: number): Promise<void> {

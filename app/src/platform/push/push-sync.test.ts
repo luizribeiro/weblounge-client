@@ -73,19 +73,19 @@ class MemoryDevices implements PushDeviceStore {
 }
 
 class MemoryRoutes implements PushRouteStore {
-  readonly values = new Map<number, StoredPushRoute>();
+  readonly values = new Map<string, StoredPushRoute>();
 
-  get(networkId: number): Promise<StoredPushRoute | undefined> {
-    return Promise.resolve(this.values.get(networkId));
+  get(routeId: string): Promise<StoredPushRoute | undefined> {
+    return Promise.resolve(this.values.get(routeId));
   }
 
   put(route: StoredPushRoute): Promise<void> {
-    this.values.set(route.networkId, route);
+    this.values.set(route.routeId, route);
     return Promise.resolve();
   }
 
-  delete(networkId: number): Promise<void> {
-    this.values.delete(networkId);
+  delete(routeId: string): Promise<void> {
+    this.values.delete(routeId);
     return Promise.resolve();
   }
 
@@ -119,6 +119,47 @@ function relay() {
     RelayClient,
     "createDevice" | "createRoute" | "activateRoute" | "deleteRoute"
   >;
+}
+
+function statefulRelay(
+  initialRoutes: readonly string[],
+  deleteFailures: readonly ("unavailable" | "unauthorized")[],
+) {
+  const routes = new Map<string, "probing" | "active">(
+    initialRoutes.map((routeId) => [routeId, "active" as const]),
+  );
+  let routeSequence = 0;
+  const failures = [...deleteFailures];
+  return {
+    routes,
+    createDevice: vi.fn<RelayClient["createDevice"]>(async () => ({
+      ok: true as const,
+      value: { id: "new-device", secret: "new-secret" },
+    })),
+    createRoute: vi.fn<RelayClient["createRoute"]>(async () => {
+      routeSequence += 1;
+      const id = `new-route-${routeSequence}`;
+      routes.set(id, "probing");
+      return {
+        ok: true as const,
+        value: { id, endpoint: `${relayOrigin}/v1/r/${id}` },
+      };
+    }),
+    activateRoute: vi.fn<RelayClient["activateRoute"]>(
+      async (_device, routeId) => {
+        routes.set(routeId, "active");
+        return { ok: true as const, value: null };
+      },
+    ),
+    deleteRoute: vi.fn<RelayClient["deleteRoute"]>(async (_device, routeId) => {
+      const failure = failures.shift();
+      if (failure !== undefined) {
+        return { ok: false as const, error: { kind: failure } };
+      }
+      routes.delete(routeId);
+      return { ok: true as const, value: null };
+    }),
+  };
 }
 
 function fixture(relayApi = relay()) {
@@ -226,7 +267,7 @@ describe("push state synchronization", () => {
       device_id: "device-1",
       secret: "device-secret",
     };
-    current.routes.values.set(1, {
+    current.routes.values.set("old-route", {
       networkId: 1,
       networkLabel: "Lounge",
       nickname: "weblounge",
@@ -254,7 +295,113 @@ describe("push state synchronization", () => {
       { id: "device-1", secret: "device-secret" },
       "new-vapid",
     );
-    expect(current.routes.values.get(1)?.vapid).toBe("new-vapid");
+    expect(current.routes.values.get("route-1")?.vapid).toBe("new-vapid");
+  });
+
+  it("keeps a failed retirement decryptable and retries it on launch", async () => {
+    const relayApi = statefulRelay(["old-route"], ["unavailable"]);
+    const current = fixture(relayApi);
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("old-route", {
+      networkId: 7,
+      networkLabel: "Lounge",
+      nickname: "weblounge",
+      vapid: "old-vapid",
+      routeId: "old-route",
+      deviceId: "device-1",
+      endpoint: `${relayOrigin}/v1/r/old-route`,
+      p256dh: "old-key",
+      auth: "old-auth",
+      privateKey: {} as CryptoKey,
+    });
+
+    current.engine.emit({
+      type: "push_route_required",
+      network_id: 1,
+      vapid: "new-vapid",
+      previous_route_id: "old-route",
+    });
+    await current.synchronizer.settled();
+    expect(current.routes.values.get("old-route")?.retiring).toBe(true);
+    expect(current.routes.values.get("new-route-1")?.networkId).toBe(1);
+
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "registered", route_id: "new-route-1" },
+    });
+    await current.synchronizer.settled();
+    expect(
+      [...relayApi.routes.values()].filter((state) => state === "active"),
+    ).toHaveLength(2);
+    current.synchronizer.dispose();
+
+    const relaunched = new PushSynchronizer({
+      engine: current.engine,
+      relay: relayApi,
+      relayOrigin,
+      target,
+      routeContext: () => ({ networkLabel: "Lounge", nickname: "weblounge" }),
+      devices: current.devices,
+      routes: current.routes,
+      acquireSessionToken: current.acquireSessionToken,
+      onAuthorizationRequired: current.authorizationRequired,
+      generateRouteKeys: async () => ({
+        p256dh: "unused",
+        auth: "unused",
+        privateKey: {} as CryptoKey,
+      }),
+      exclusive: async (_name, work) => work(),
+    });
+    await relaunched.settled();
+
+    expect(relayApi.routes).toEqual(new Map([["new-route-1", "active"]]));
+    expect(current.routes.values.has("old-route")).toBe(false);
+  });
+
+  it("keeps old route keys after a 401 while registering a new device", async () => {
+    const relayApi = statefulRelay(["old-route"], ["unauthorized"]);
+    const current = fixture(relayApi);
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "old-device",
+      secret: "expired-secret",
+    };
+    current.routes.values.set("old-route", {
+      networkId: 1,
+      networkLabel: "Lounge",
+      nickname: "weblounge",
+      vapid: "old-vapid",
+      routeId: "old-route",
+      deviceId: "old-device",
+      endpoint: `${relayOrigin}/v1/r/old-route`,
+      p256dh: "old-key",
+      auth: "old-auth",
+      privateKey: {} as CryptoKey,
+    });
+
+    const replacement = {
+      type: "push_route_required" as const,
+      network_id: 1,
+      vapid: "new-vapid",
+      previous_route_id: "old-route",
+    };
+    current.engine.emit(replacement);
+    await current.synchronizer.settled();
+    expect(current.devices.credentials).toBeUndefined();
+    expect(current.routes.values.get("old-route")?.retiring).toBe(true);
+
+    current.engine.emit(replacement);
+    await current.synchronizer.settled();
+
+    expect(current.routes.values.has("new-route-1")).toBe(true);
+    for (const routeId of relayApi.routes.keys()) {
+      expect(current.routes.values.has(routeId)).toBe(true);
+    }
   });
 
   it("recreates a route that died before activation", async () => {
@@ -287,7 +434,7 @@ describe("push state synchronization", () => {
     });
     await current.synchronizer.settled();
 
-    expect(current.routes.values.get(1)?.routeId).toBe("route-2");
+    expect(current.routes.values.get("route-2")?.routeId).toBe("route-2");
     expect(current.engine.requests.at(-1)?.request).toMatchObject({
       type: "register_push",
       route: { route_id: "route-2" },
@@ -326,7 +473,7 @@ describe("push state synchronization", () => {
       device_id: "device-1",
       secret: "device-secret",
     };
-    current.routes.values.set(1, {
+    current.routes.values.set("route-1", {
       networkId: 1,
       networkLabel: "Lounge",
       nickname: "weblounge",

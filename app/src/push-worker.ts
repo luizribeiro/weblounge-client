@@ -55,10 +55,12 @@ interface StoredRoute {
   readonly networkLabel: string;
   readonly nickname: string;
   readonly routeId: string;
+  readonly deviceId?: string;
   readonly p256dh: string;
   readonly auth: string;
   readonly privateKey: CryptoKey;
   readonly needsReregistration?: boolean;
+  readonly retiring?: boolean;
 }
 
 type ParsedPushEvent =
@@ -94,7 +96,7 @@ const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushDatabaseName = "weblounge-push";
-const pushDatabaseVersion = 2;
+const pushDatabaseVersion = 3;
 const pushRoutesStore = "routes";
 const pushStateStore = "state";
 const appBadgeKey = "app-badge";
@@ -401,13 +403,11 @@ function decodeParsedEvent(value: unknown): ParsedPushEvent {
 async function findRoute(routeId: string): Promise<StoredRoute | undefined> {
   const database = await openPushDatabase();
   const transaction = database.transaction(pushRoutesStore, "readonly");
-  const routes = await requestResult(
-    transaction.objectStore(pushRoutesStore).getAll(),
+  const route = await requestResult(
+    transaction.objectStore(pushRoutesStore).get(routeId),
   );
   await transactionDone(transaction);
-  return routes
-    .map(decodeStoredRoute)
-    .find((route) => route.routeId === routeId);
+  return route === undefined ? undefined : decodeStoredRoute(route);
 }
 
 async function markForReregistration(route: StoredRoute): Promise<void> {
@@ -512,8 +512,15 @@ function openPushDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(pushRoutesStore)) {
         request.result.createObjectStore(pushRoutesStore, {
-          keyPath: "networkId",
+          keyPath: "routeId",
         });
+      } else if (
+        request.transaction?.objectStore(pushRoutesStore).keyPath !== "routeId"
+      ) {
+        const transaction = request.transaction;
+        if (transaction === null)
+          throw new Error("missing upgrade transaction");
+        migrateRoutesToRouteIds(request.result, transaction);
       }
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
         request.result.createObjectStore(pushStateStore);
@@ -523,6 +530,20 @@ function openPushDatabase(): Promise<IDBDatabase> {
     request.onerror = () =>
       reject(request.error ?? new Error("push database failed to open"));
   });
+}
+
+function migrateRoutesToRouteIds(
+  database: IDBDatabase,
+  transaction: IDBTransaction,
+): void {
+  const routes = transaction.objectStore(pushRoutesStore).getAll();
+  routes.onsuccess = () => {
+    database.deleteObjectStore(pushRoutesStore);
+    const store = database.createObjectStore(pushRoutesStore, {
+      keyPath: "routeId",
+    });
+    for (const route of routes.result) store.put(route);
+  };
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {

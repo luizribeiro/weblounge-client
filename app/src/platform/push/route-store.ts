@@ -12,17 +12,19 @@ export interface StoredPushRoute {
   readonly nickname: string;
   readonly vapid: string;
   readonly routeId: string;
+  readonly deviceId?: string;
   readonly endpoint: string;
   readonly p256dh: string;
   readonly auth: string;
   readonly privateKey: CryptoKey;
   readonly needsReregistration?: boolean;
+  readonly retiring?: boolean;
 }
 
 export interface PushRouteStore {
-  get(networkId: number): Promise<StoredPushRoute | undefined>;
+  get(routeId: string): Promise<StoredPushRoute | undefined>;
   put(route: StoredPushRoute): Promise<void>;
-  delete(networkId: number): Promise<void>;
+  delete(routeId: string): Promise<void>;
   all(): Promise<readonly StoredPushRoute[]>;
 }
 
@@ -60,11 +62,11 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     this.#database = openDatabase(factory);
   }
 
-  async get(networkId: number): Promise<StoredPushRoute | undefined> {
+  async get(routeId: string): Promise<StoredPushRoute | undefined> {
     const database = await this.#database;
     const transaction = database.transaction(pushRoutesStore, "readonly");
     const value = await requestResult(
-      transaction.objectStore(pushRoutesStore).get(networkId),
+      transaction.objectStore(pushRoutesStore).get(routeId),
     );
     await transactionDone(transaction);
     return value === undefined ? undefined : decodeRoute(value);
@@ -77,10 +79,10 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     await transactionDone(transaction);
   }
 
-  async delete(networkId: number): Promise<void> {
+  async delete(routeId: string): Promise<void> {
     const database = await this.#database;
     const transaction = database.transaction(pushRoutesStore, "readwrite");
-    transaction.objectStore(pushRoutesStore).delete(networkId);
+    transaction.objectStore(pushRoutesStore).delete(routeId);
     await transactionDone(transaction);
   }
 
@@ -136,6 +138,12 @@ function decodeRoute(value: unknown): StoredPushRoute {
     nickname,
     ...("needsReregistration" in value && value.needsReregistration === true
       ? { needsReregistration: true }
+      : {}),
+    ...("deviceId" in value && typeof value.deviceId === "string"
+      ? { deviceId: value.deviceId }
+      : {}),
+    ...("retiring" in value && value.retiring === true
+      ? { retiring: true }
       : {}),
   };
 }

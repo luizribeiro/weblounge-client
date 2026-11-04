@@ -278,7 +278,7 @@ async function notifications(page: Page) {
 }
 
 async function routeNeedsReregistration(page: Page): Promise<boolean> {
-  return page.evaluate(async () => {
+  return page.evaluate(async (seededRouteId) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("weblounge-push");
       request.onsuccess = () => resolve(request.result);
@@ -286,7 +286,7 @@ async function routeNeedsReregistration(page: Page): Promise<boolean> {
     });
     const transaction = database.transaction("routes", "readonly");
     const route = await new Promise<unknown>((resolve, reject) => {
-      const request = transaction.objectStore("routes").get(1);
+      const request = transaction.objectStore("routes").get(seededRouteId);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -297,7 +297,7 @@ async function routeNeedsReregistration(page: Page): Promise<boolean> {
       "needsReregistration" in route &&
       route.needsReregistration === true
     );
-  });
+  }, routeId);
 }
 
 async function deliverPush(
@@ -385,11 +385,11 @@ async function seedRouteAndEncrypt(
       );
       const authentication = crypto.getRandomValues(new Uint8Array(16));
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push", 2);
+        const request = indexedDB.open("weblounge-push", 3);
         request.onupgradeneeded = () => {
           if (!request.result.objectStoreNames.contains("routes")) {
             request.result.createObjectStore("routes", {
-              keyPath: "networkId",
+              keyPath: "routeId",
             });
           }
           if (!request.result.objectStoreNames.contains("state")) {

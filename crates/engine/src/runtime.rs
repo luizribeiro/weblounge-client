@@ -96,6 +96,7 @@ struct PushRegisterTask {
     generation: u64,
     network_id: NetworkId,
     route: RegisteredPushRoute,
+    previous_endpoint: Option<String>,
 }
 
 #[derive(Clone)]
@@ -546,12 +547,19 @@ impl Runtime {
             auth: papo::Secret::new(route.auth.into_inner()),
             vapid,
         };
+        let previous_endpoint = running
+            .push
+            .route
+            .as_ref()
+            .filter(|previous| previous.endpoint != registered.endpoint)
+            .map(|previous| previous.endpoint.clone());
         running.push.route = Some(registered.clone());
         let task = PushRegisterTask {
             instance: running.instance,
             generation,
             network_id,
             route: registered,
+            previous_endpoint,
         };
         let client = running.client.clone();
         drop(state);
@@ -3353,12 +3361,11 @@ fn connected_push_action(
     };
     if vapid != route.vapid {
         running.push.generation = running.push.generation.saturating_add(1);
-        running.push.route = None;
         running.push.state = None;
         output.push(EngineToUi::PushRouteRequired {
             network_id: running.model.id(),
             vapid: vapid.to_owned(),
-            previous_route_id: Some(route.route_id),
+            previous_route_id: Some(route.route_id.clone()),
         });
         return None;
     }
@@ -3368,6 +3375,7 @@ fn connected_push_action(
         generation: running.push.generation,
         network_id: running.model.id(),
         route,
+        previous_endpoint: None,
     })
 }
 
@@ -4271,6 +4279,9 @@ fn spawn_push_register(
     command_id: Option<String>,
 ) {
     spawn_task(async move {
+        if let Some(endpoint) = task.previous_endpoint.as_ref() {
+            let _ = client.webpush().unregister(endpoint).await;
+        }
         let result = client
             .webpush()
             .register(
@@ -8441,6 +8452,16 @@ async fn delay(duration: Duration) {
         );
 
         assert_no_output(&runtime.request(push_request("persistence", "route-2")));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        ))
+        .await;
         let request = wire.next_sent().await;
         send_push_success(&mut wire, &request, true).await;
         assert!(
@@ -8518,6 +8539,16 @@ async fn delay(duration: Duration) {
         );
 
         assert_no_output(&runtime.request(push_request("forbidden", "route-2")));
+        let unregister = wire.next_sent().await;
+        assert_eq!(
+            request_without_label(&unregister),
+            "WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        );
+        let label = request_label(&unregister);
+        wire.server(format!(
+            "@label={label} :offline.test WEBPUSH UNREGISTER https://push.example.test/v1/r/route-1"
+        ))
+        .await;
         let request = wire.next_sent().await;
         let label = request_label(&request);
         wire.server(format!(
@@ -8668,7 +8699,13 @@ async fn delay(duration: Duration) {
             lock(&runtime.state)
                 .network
                 .as_ref()
-                .is_some_and(|running| running.push.route.is_none())
+                .is_some_and(|running| {
+                    running
+                        .push
+                        .route
+                        .as_ref()
+                        .is_some_and(|route| route.route_id == "route-1")
+                })
         );
     }
 
