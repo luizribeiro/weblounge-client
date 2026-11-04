@@ -30,12 +30,14 @@ export async function loadDeploymentConfig(
   fetchConfig: typeof fetch = fetch,
   storage: ConfigStorage = localStorage,
   onRevalidated: (config: DeploymentConfig) => void = () => {},
+  onFreshConfig: (config: DeploymentConfig) => void | Promise<void> = () => {},
 ): Promise<DeploymentConfig> {
   const cached = readCachedDeploymentConfig(storage);
   if (cached !== undefined) {
     void fetchDeploymentConfig(fetchConfig)
-      .then((config) => {
+      .then(async (config) => {
         writeCachedDeploymentConfig(storage, config);
+        await onFreshConfig(config);
         onRevalidated(config);
       })
       .catch(() => undefined);
@@ -43,6 +45,7 @@ export async function loadDeploymentConfig(
   }
   const config = await fetchDeploymentConfig(fetchConfig);
   writeCachedDeploymentConfig(storage, config);
+  await onFreshConfig(config);
   return config;
 }
 
@@ -140,7 +143,11 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
   if (root.mode !== "hosted") {
     throw new DeploymentConfigError('"mode" must be "app" or "hosted"');
   }
-  recordUnknownFields(root, ["mode", "network", "oauth", "push"], "hosted");
+  recordUnknownFields(
+    root,
+    ["mode", "network", "oauth", "push", "client"],
+    "hosted",
+  );
   const network = record(root.network, '"network"');
   recordUnknownFields(network, ["name", "endpoint", "autojoin"], "network");
   const oauth = record(root.oauth, '"oauth"');
@@ -164,6 +171,8 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
     issuer,
   );
   const push = root.push === undefined ? undefined : pushConfig(root.push);
+  const client =
+    root.client === undefined ? undefined : clientConfig(root.client);
 
   return {
     mode: "hosted",
@@ -175,6 +184,32 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
       session_token_endpoint: sessionTokenEndpoint,
     },
     ...(push === undefined ? {} : { push }),
+    ...(client === undefined ? {} : { client }),
+  };
+}
+
+function clientConfig(value: unknown): {
+  min_build?: string;
+  reset_token?: string;
+} {
+  const client = record(value, '"client"');
+  recordUnknownFields(client, ["min_build", "reset_token"], "client");
+  const minBuild = optionalNonemptyString(
+    client.min_build,
+    '"client.min_build"',
+  );
+  if (minBuild !== undefined && !/^(?:0|[1-9][0-9]*)$/u.test(minBuild)) {
+    throw new DeploymentConfigError(
+      '"client.min_build" must be decimal Unix seconds',
+    );
+  }
+  const resetToken = optionalNonemptyString(
+    client.reset_token,
+    '"client.reset_token"',
+  );
+  return {
+    ...(minBuild === undefined ? {} : { min_build: minBuild }),
+    ...(resetToken === undefined ? {} : { reset_token: resetToken }),
   };
 }
 
@@ -212,6 +247,13 @@ function nonemptyString(value: unknown, field: string): string {
     throw new DeploymentConfigError(`${field} must be a nonempty string`);
   }
   return value;
+}
+
+function optionalNonemptyString(
+  value: unknown,
+  field: string,
+): string | undefined {
+  return value === undefined ? undefined : nonemptyString(value, field);
 }
 
 function stringArray(value: unknown, field: string): string[] {

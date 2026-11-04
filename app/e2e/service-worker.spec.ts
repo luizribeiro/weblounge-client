@@ -213,6 +213,111 @@ test("upgrades the last deployed build to the current build", async ({
   }
 });
 
+test("a minimum hosted build navigates to the current build once", async ({
+  context,
+}) => {
+  test.skip(development, "requires the production service worker");
+  const deployment = await emergencyConfigServer();
+  try {
+    const page = await context.newPage();
+    await page.goto(deployment.origin);
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    await expect.poll(() => activeWorkerState(page)).toBe("activated");
+    await expect
+      .poll(() =>
+        page.evaluate(() => navigator.serviceWorker.controller !== null),
+      )
+      .toBe(true);
+    const currentVersion = await page.evaluate(() => window.weblounge.version);
+    await poisonCachedIndex(page);
+
+    deployment.serveClient({ min_build: "99999999999999999999" });
+    await page.reload();
+    await expect.poll(() => deployment.navigations()).toBe(3);
+    await expect
+      .poll(() => deployment.configRequests())
+      .toBeGreaterThanOrEqual(3);
+    await expect(
+      page.locator('meta[name="cached-shell-sentinel"]'),
+    ).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => window.weblounge.version))
+      .toBe(currentVersion);
+    expect(
+      await page.evaluate(() =>
+        sessionStorage.getItem("weblounge.client-min-build-reload.v1"),
+      ),
+    ).toBe("attempted");
+    expect(new URL(page.url()).searchParams.has("_weblounge_reload")).toBe(
+      false,
+    );
+
+    const navigations = deployment.navigations();
+    const configRequests = deployment.configRequests();
+    await page.reload();
+    await expect
+      .poll(() => deployment.configRequests())
+      .toBeGreaterThan(configRequests);
+    expect(deployment.navigations()).toBe(navigations + 1);
+  } finally {
+    await deployment.close();
+  }
+});
+
+test("a hosted reset token clears the shell only once", async ({ context }) => {
+  test.skip(development, "requires the production service worker");
+  const deployment = await emergencyConfigServer();
+  try {
+    const page = await context.newPage();
+    await page.goto(deployment.origin);
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    await expect.poll(() => activeWorkerState(page)).toBe("activated");
+    await page.evaluate(async () => {
+      await caches.open("weblounge-emergency-reset-sentinel");
+    });
+
+    deployment.serveClient({ reset_token: "incident-1" });
+    await page.reload();
+    await expect.poll(() => deployment.navigations()).toBe(3);
+    await expect
+      .poll(() =>
+        page.evaluate(async () =>
+          (await caches.keys()).includes("weblounge-emergency-reset-sentinel"),
+        ),
+      )
+      .toBe(false);
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("weblounge.client-reset-token.v1"),
+      ),
+    ).toBe("incident-1");
+
+    await page.evaluate(async () => {
+      await caches.open("weblounge-emergency-reset-second-sentinel");
+    });
+    const navigations = deployment.navigations();
+    const configRequests = deployment.configRequests();
+    await page.reload();
+    await expect
+      .poll(() => deployment.configRequests())
+      .toBeGreaterThan(configRequests);
+    expect(deployment.navigations()).toBe(navigations + 1);
+    expect(
+      await page.evaluate(async () =>
+        (await caches.keys()).includes(
+          "weblounge-emergency-reset-second-sentinel",
+        ),
+      ),
+    ).toBe(true);
+  } finally {
+    await deployment.close();
+  }
+});
+
 test("activation removes obsolete app-shell caches", async ({ page }) => {
   test.skip(
     development,
@@ -399,6 +504,92 @@ async function swappableBuildServer(previous: string): Promise<{
       );
       await makeWritable(temporary);
       await rm(temporary, { recursive: true });
+    },
+  };
+}
+
+async function emergencyConfigServer(): Promise<{
+  readonly origin: string;
+  serveClient(client: {
+    readonly min_build?: string;
+    readonly reset_token?: string;
+  }): void;
+  navigations(): number;
+  configRequests(): number;
+  close(): Promise<void>;
+}> {
+  const source =
+    process.env.WEBLOUNGE_APP_DIR ??
+    resolve(dirname(fileURLToPath(import.meta.url)), "../dist");
+  let config: object = { mode: "app" };
+  let navigationCount = 0;
+  let configRequestCount = 0;
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/config.json") {
+      configRequestCount += 1;
+      response.writeHead(200, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+      });
+      response.end(JSON.stringify(config));
+      return;
+    }
+    if (pathname === "/") navigationCount += 1;
+    const relative = pathname === "/" ? "index.html" : pathname.slice(1);
+    const path = resolve(source, relative);
+    if (!path.startsWith(`${source}/`)) {
+      response.writeHead(404).end();
+      return;
+    }
+    void readFile(path).then(
+      (body) => {
+        response.writeHead(200, {
+          "Cache-Control": "no-store",
+          "Content-Type": contentType(path),
+        });
+        response.end(body);
+      },
+      () => response.writeHead(404).end(),
+    );
+  });
+  await new Promise<void>((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("emergency config server has no TCP address");
+  }
+  const origin = `http://127.0.0.1:${address.port}`;
+  return {
+    origin,
+    serveClient: (client) => {
+      config = {
+        mode: "hosted",
+        network: {
+          name: "weblounge",
+          endpoint: `ws://127.0.0.1:${address.port}/socket`,
+          autojoin: ["#lounge"],
+        },
+        oauth: {
+          issuer: origin,
+          client_id: "weblounge-client",
+          redirect_uri: `${origin}/`,
+          session_token_endpoint: `${origin}/oauth/session-token`,
+        },
+        client,
+      };
+    },
+    navigations: () => navigationCount,
+    configRequests: () => configRequestCount,
+    close: async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolveClose, reject) =>
+        server.close((error) => {
+          if (error === undefined) resolveClose();
+          else reject(error);
+        }),
+      );
     },
   };
 }

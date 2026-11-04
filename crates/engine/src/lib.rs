@@ -21,8 +21,8 @@ use std::rc::Rc;
 
 pub use protocol::{
     AccountProjection, BufferId, BufferKind, BufferProjection, BufferSyncState, ChannelStatus,
-    CompletionCandidate, CompletionTrigger, ConnectionFailureReason, DeploymentConfig,
-    DirectIdentityState, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
+    ClientDeploymentConfig, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
+    DeploymentConfig, DirectIdentityState, EngineRequest, EngineRequestEnvelope, EngineToUi, Hello,
     HostedNetworkConfig, HostedOAuthConfig, LocalSendId, MemberGroup, MemberProjection,
     MembershipKind, MembershipProjection, MessageAuthorship, MessageDelivery, MessageId,
     MessageKind, MessageProjection, NetworkConnectionState, NetworkId, NetworkProjection,

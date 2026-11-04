@@ -157,7 +157,24 @@ pub enum DeploymentConfig {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         push: Option<Box<PushDeploymentConfig>>,
+        /// Optional hosted client remediation controls.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        client: Option<Box<ClientDeploymentConfig>>,
     },
+}
+
+/// Hosted client remediation controls supplied by the deployment.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct ClientDeploymentConfig {
+    /// Oldest allowed build timestamp, encoded as decimal Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub min_build: Option<String>,
+    /// Opaque generation that clears the cached web shell when changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reset_token: Option<String>,
 }
 
 /// Public Web Push relay configuration supplied by the deployment.

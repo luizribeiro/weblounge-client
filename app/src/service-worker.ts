@@ -46,6 +46,19 @@ export function checkForProductionServiceWorkerUpdate(): void {
   void registerAfterLoad(container);
 }
 
+export async function prepareProductionServiceWorkerUpdate(): Promise<void> {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    if (registration === undefined) return;
+    requestWaitingWorkerActivation(registration);
+    await registration.update();
+    requestWaitingWorkerActivation(registration);
+  } catch {
+    // A cache-busting navigation still reaches the network without worker support.
+  }
+}
+
 export function reloadAfterControllerChange(
   container: ControllerContainer,
   pageDocument: ReloadDocument,
@@ -117,4 +130,10 @@ function announceUpdate(): void {
   if (updateReady) return;
   updateReady = true;
   for (const listener of updateListeners) listener();
+}
+
+function requestWaitingWorkerActivation(
+  registration: ServiceWorkerRegistration,
+): void {
+  registration.waiting?.postMessage({ type: "skip_waiting" });
 }

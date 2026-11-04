@@ -14,8 +14,9 @@ There is no separate hosted build and no hostname-based mode selection.
 ## Runtime configuration
 
 `/config.json` is fetched from the app origin with revalidation before the engine starts. Its type
-is generated from the Rust `DeploymentConfig`; the browser rejects missing fields, extra fields,
-insecure non-loopback URLs, fragments, empty values, and wrong JSON types with a visible error.
+is generated from the Rust `DeploymentConfig`; the browser rejects missing fields, insecure
+non-loopback URLs, fragments, empty values, and wrong JSON types with a visible error. Unknown
+fields are ignored so an older client can continue under a newer deployment contract.
 
 Required fields are:
 
@@ -53,6 +54,38 @@ origins must include `https://beta.weblounge.org`.
 The client requests the IRC wildcard nickname `*` during registration so Ergo can attach the
 authenticated member's existing always-on session instead of making every hosted client contend
 for a preset nickname.
+
+## Emergency client remediation
+
+weblounge-server may add either optional field under a hosted-only `client` block:
+
+```json
+{
+  "client": {
+    "min_build": "1793768400",
+    "reset_token": "incident-2026-11-04-a"
+  }
+}
+```
+
+`min_build` is the oldest allowed client source timestamp, encoded as decimal Unix seconds. The
+client compares it to the timestamp compiled into the app by the flake (`self.lastModified`); Git
+SHAs are identities, not an ordering. For a candidate revision, obtain the matching value with
+`git show -s --format=%ct <revision>`. A running older client asks a waiting service worker to
+activate and performs one cache-busting, network-first navigation per tab launch. Leave the field
+set while the minimum is required; a client that still cannot obtain a sufficient deployment will
+not loop.
+
+`reset_token` is an opaque, nonempty generation. Change it when clients must unregister this app's
+service workers and delete `weblounge-*` shell caches. Each browser profile applies a token once,
+records it before cleanup, and leaves IndexedDB, sign-in state, and settings intact. Keep the same
+token in subsequent responses; changing it again intentionally requests another reset.
+
+Both controls apply to fresh config revalidation during startup and a running session. An
+interactive page waits until it is hidden, preserving active typing and unsent drafts. A changed
+reset token takes precedence when both controls request recovery. These fields can only remediate
+client versions that already understand the block; the weblounge-server deploy smoke test remains
+responsible for proving deployed-to-candidate takeover.
 
 ## Session-token contract
 

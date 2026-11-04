@@ -1,7 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
-import { reloadAfterControllerChange } from "./service-worker";
+import {
+  prepareProductionServiceWorkerUpdate,
+  reloadAfterControllerChange,
+} from "./service-worker";
 
 describe("service worker controller activation", () => {
+  it("updates the registration and activates its waiting worker", async () => {
+    const postMessage = vi.fn();
+    const update = vi.fn(async () => registration);
+    const registration = {
+      waiting: { postMessage },
+      update,
+    } as unknown as ServiceWorkerRegistration;
+    const previous = navigator.serviceWorker;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { getRegistration: vi.fn(async () => registration) },
+    });
+    try {
+      await prepareProductionServiceWorkerUpdate();
+      expect(update).toHaveBeenCalledOnce();
+      expect(postMessage).toHaveBeenCalledTimes(2);
+      expect(postMessage).toHaveBeenLastCalledWith({ type: "skip_waiting" });
+    } finally {
+      Object.defineProperty(navigator, "serviceWorker", {
+        configurable: true,
+        value: previous,
+      });
+    }
+  });
+
   it("reloads an existing client once while startup is covered", () => {
     const container = new EventTarget();
     Reflect.set(container, "controller", {});

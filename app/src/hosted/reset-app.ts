@@ -2,8 +2,12 @@ const appCachePrefix = "weblounge-";
 const serviceWorkerPath = "/service-worker.js";
 
 export async function resetWebApp(): Promise<void> {
-  await Promise.allSettled([unregisterAppWorkers(), deleteAppCaches()]);
+  await clearWebAppShell();
   window.location.reload();
+}
+
+export async function clearWebAppShell(): Promise<void> {
+  await Promise.allSettled([unregisterAppWorkers(), deleteAppCaches()]);
 }
 
 async function unregisterAppWorkers(): Promise<void> {

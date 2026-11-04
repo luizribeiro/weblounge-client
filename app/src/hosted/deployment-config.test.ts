@@ -51,6 +51,22 @@ describe("deployment config", () => {
     expect(decodeDeploymentConfig(hosted)).not.toHaveProperty("push");
   });
 
+  it("strictly decodes optional client remediation", () => {
+    const configured = {
+      ...hosted,
+      client: {
+        min_build: "1793768400",
+        reset_token: "incident-2026-11-04",
+      },
+    };
+    expect(decodeDeploymentConfig(configured)).toEqual(configured);
+    expect(decodeDeploymentConfig({ ...hosted, client: {} })).toEqual({
+      ...hosted,
+      client: {},
+    });
+    expect(decodeDeploymentConfig(hosted)).not.toHaveProperty("client");
+  });
+
   it("ignores and records unknown fields at every object level", () => {
     expect(
       decodeDeploymentConfig({
@@ -63,6 +79,7 @@ describe("deployment config", () => {
           relay_vapid: relayVapid,
           urgency: "normal",
         },
+        client: { reset_token: "incident", future_action: "reload" },
       }),
     ).toEqual({
       ...hosted,
@@ -70,6 +87,7 @@ describe("deployment config", () => {
         relay: "https://push.weblounge.org",
         relay_vapid: relayVapid,
       },
+      client: { reset_token: "incident" },
     });
     expect(decodeDeploymentConfig({ mode: "app", future: true })).toEqual({
       mode: "app",
@@ -81,6 +99,7 @@ describe("deployment config", () => {
         "network.transport_hint",
         "oauth.audience",
         "push.urgency",
+        "client.future_action",
       ]),
     );
   });
@@ -149,6 +168,22 @@ describe("deployment config", () => {
         push: { relay: "https://push.example.test", relay_vapid: "not-a-key" },
       },
       'This deployment is misconfigured. Invalid /config.json: "push.relay_vapid" must be a base64url P-256 public key',
+    ],
+    [
+      { ...hosted, client: [] },
+      'This deployment is misconfigured. Invalid /config.json: "client" must be an object',
+    ],
+    [
+      { ...hosted, client: { min_build: "68ea9a3" } },
+      'This deployment is misconfigured. Invalid /config.json: "client.min_build" must be decimal Unix seconds',
+    ],
+    [
+      { ...hosted, client: { min_build: "01" } },
+      'This deployment is misconfigured. Invalid /config.json: "client.min_build" must be decimal Unix seconds',
+    ],
+    [
+      { ...hosted, client: { reset_token: "" } },
+      'This deployment is misconfigured. Invalid /config.json: "client.reset_token" must be a nonempty string',
     ],
   ])("rejects malformed input", (value, message) => {
     expect(() => decodeDeploymentConfig(value)).toThrow(message);
@@ -229,8 +264,14 @@ describe("deployment config", () => {
     });
     const backgroundFetch = vi.fn(() => revalidation);
     const onRevalidated = vi.fn();
+    const onFreshConfig = vi.fn();
     await expect(
-      loadDeploymentConfig(backgroundFetch, cache, onRevalidated),
+      loadDeploymentConfig(
+        backgroundFetch,
+        cache,
+        onRevalidated,
+        onFreshConfig,
+      ),
     ).resolves.toEqual(hosted);
     expect(backgroundFetch).toHaveBeenCalledOnce();
 
@@ -241,6 +282,8 @@ describe("deployment config", () => {
       ).toEqual({ config: { mode: "app" }, schema: 1 }),
     );
     expect(onRevalidated).toHaveBeenCalledWith({ mode: "app" });
+    expect(onFreshConfig).toHaveBeenCalledWith({ mode: "app" });
+    expect(onFreshConfig).not.toHaveBeenCalledWith(hosted);
   });
 
   it("restores validated push configuration from the cache", async () => {

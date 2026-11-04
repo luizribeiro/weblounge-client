@@ -573,9 +573,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - U3. [ ] A post-deploy upgrade check in weblounge's deploy smoke tests (owned by
     weblounge-server). Load beta with the previous build installed and assert the new build takes
     over and reaches the sign-in step. No account and no user data are needed.
-  - U4. [ ] A server-side emergency switch in hosted config.json: a minimum client build (older
-    clients reload onto the current build) and a reset token (changing it makes clients clear their
-    cached shell and service worker once). It only reaches builds that understand it, and it is
+  - U4. [x] A server-side emergency switch in hosted config.json: `client.min_build` orders builds
+    by their compiled source timestamp and safely navigates an older tab once, while a changed
+    device-local `client.reset_token` reuses Reset app cleanup once before a network-first reload.
+    Fresh startup and live revalidation both apply it under the splash or after the page hides, so
+    active typing and drafts survive. It only reaches builds that understand it, and it is
     hosted-deployment only; native apps and other networks need their own update paths.
 - **Milestone 2.5 (after dogfooding):** split view with per-pane member lists, and the core keyboard shortcuts.
 - **Milestone 4b:** replace gamja at irc.weblounge.org once the beta has proven itself.

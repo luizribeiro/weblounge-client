@@ -72,6 +72,7 @@ interface StoredRoute {
 }
 
 const worker = globalThis as unknown as WorkerScope;
+const emergencyReloadParameter = "_weblounge_reload";
 const shellCache = `weblounge-shell-${SHELL_VERSION}`;
 const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
@@ -98,6 +99,11 @@ worker.addEventListener("activate", (event) => {
   (event as WorkerEvent).waitUntil(activateWorker());
 });
 
+worker.addEventListener("message", (event) => {
+  if (!requestsActivation((event as MessageEvent).data)) return;
+  (event as WorkerEvent).waitUntil(worker.skipWaiting());
+});
+
 worker.addEventListener("fetch", (event) => {
   const fetchEvent = event as Event & {
     readonly request: Request;
@@ -109,7 +115,11 @@ worker.addEventListener("fetch", (event) => {
   if (url.origin !== worker.location.origin || url.pathname === "/config.json")
     return;
   if (request.mode === "navigate") {
-    fetchEvent.respondWith(navigationResponse(request));
+    fetchEvent.respondWith(
+      url.searchParams.has(emergencyReloadParameter)
+        ? fetch(request, { cache: "reload" })
+        : navigationResponse(request),
+    );
   } else if (precachePaths.has(url.pathname)) {
     fetchEvent.respondWith(shellResponse(url.pathname, request));
   } else if (url.pathname.startsWith("/assets/")) {
@@ -152,6 +162,15 @@ async function activateWorker(): Promise<void> {
       .map((name) => caches.delete(name)),
   );
   await worker.clients.claim();
+}
+
+function requestsActivation(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "skip_waiting"
+  );
 }
 
 async function navigationResponse(request: Request): Promise<Response> {

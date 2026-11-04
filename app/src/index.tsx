@@ -11,6 +11,10 @@ import {
   DeploymentConfigUnavailableError,
   loadDeploymentConfig,
 } from "./hosted/deployment-config";
+import {
+  HostedEmergencySwitch,
+  stripEmergencyReloadParameter,
+} from "./hosted/emergency-switch";
 import { type HostedSession, OneShotAccessToken } from "./hosted/HostedSession";
 import {
   authorizationReturnPath,
@@ -65,6 +69,9 @@ type DeploymentAttempt =
       readonly config: HostedConfig;
       readonly metadata: Promise<InitialMetadataResult>;
     };
+
+stripEmergencyReloadParameter(window);
+const emergencySwitch = new HostedEmergencySwitch();
 
 let prewarmedEngine:
   | { readonly type: "client"; readonly client: EngineClient }
@@ -314,7 +321,16 @@ function takePrewarmedEngineClient(): EngineClient {
 async function loadDeploymentAttempt(
   onRevalidated: (config: DeploymentConfig) => void,
 ): Promise<DeploymentAttempt> {
-  const config = await loadDeploymentConfig(fetch, localStorage, onRevalidated);
+  const config = await loadDeploymentConfig(
+    fetch,
+    localStorage,
+    onRevalidated,
+    async (freshConfig) => {
+      if (await emergencySwitch.evaluate(freshConfig)) {
+        await new Promise<never>(() => {});
+      }
+    },
+  );
   if (config.mode === "app") return { type: "app", config };
   requireCurrentRedirect(config);
   const metadata = acquireInitialMetadata(config);
