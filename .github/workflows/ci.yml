@@ -24,13 +24,11 @@ jobs:
       # v35
       # yamllint disable-line rule:line-length
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c
-      # v7
-      # yamllint disable-line rule:line-length
-      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569
         with:
-          primary-key: >-
-            nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'Cargo.lock',
-            'pnpm-lock.yaml', '**/*.nix') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
+          nix_conf: max-jobs = auto
+      - uses: cachix/cachix-action@v17
+        with:
+          name: weblounge
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Check flake
         run: nix flake check --print-build-logs
