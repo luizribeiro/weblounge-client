@@ -120,6 +120,33 @@ within its advertised lifetime. Connection construction maps that attempt's `Hos
 OAUTHBEARER and introspects the token against concierge over its private loopback endpoint; the
 returned `username` is the IRC account.
 
+### Hosted emergency remediation
+
+Hosted configuration may include `client: { min_build?: string, reset_token?: string }`. Both
+members are optional nonempty strings and unknown members remain forward-compatible. `min_build`
+is a base-10 Unix timestamp in seconds. Production builds compare it as an unsigned integer with
+the flake source timestamp already compiled into the client; the Git SHA remains a display
+identity and is not ordered. Development builds do not apply hosted remediation.
+
+The window evaluates the block before hosted authentication when a fresh configuration is
+available, and again when a cached configuration's background revalidation succeeds. An older
+build requests the current service worker, asks a waiting worker to activate, and performs a
+cache-busting network-first navigation. It records the attempt in session storage before
+navigating, so one tab launch cannot loop when the host keeps requiring an unavailable build. If
+the startup splash no longer covers interaction, navigation waits until the document is hidden;
+this preserves active typing and drafts.
+
+`reset_token` is opaque. A value different from the device-local value is recorded before the
+client unregisters this app's workers and deletes its shell caches through the Reset app
+mechanism. IndexedDB, sign-in state, settings, and unrelated caches are untouched. The reset then
+uses the same safe network-first navigation. Recording first makes each token effective at most
+once even if cleanup is partial or the server continues returning it. A changed reset token takes
+precedence over `min_build`, because its cleanup and navigation also fetch the current build.
+
+The block is a hosted deployment control only: app mode ignores it, and native application update
+policy remains outside this subsystem. The weblounge-server deployment owns choosing and serving
+the values.
+
 Credential outcomes remain distinct:
 
 | Outcome | Connection behavior |

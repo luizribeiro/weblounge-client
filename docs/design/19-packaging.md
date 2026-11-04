@@ -76,6 +76,14 @@ draft are never interrupted on screen. A first install does not reload.
 The page still records a typed `update-ready` state while installation finishes. `/version` may
 briefly append “update ready — restart the app” before the safe reload policy takes over.
 
+Hosted deployments have a remote recovery path for failures that ordinary worker activation
+cannot repair. The optional deployment `client` block carries an ordered minimum build timestamp
+and an opaque reset token. The page owns both decisions because `config.json` bypasses the service
+worker. A stale client activates any waiting worker and navigates through a cache-busting URL; a
+new reset token first reuses Reset app's worker and `weblounge-*` cache cleanup. Session- and
+device-local markers bound those actions to one minimum-build navigation per tab launch and one
+reset per token. Both paths navigate only under the startup splash or while hidden.
+
 ## Boundaries and failure modes
 
 The build owns the manifest and version; the worker owns shell fetch routing and cache cleanup; the
@@ -104,6 +112,10 @@ intercepted by the worker. Development coverage asserts that no registration occ
 The failed-Retry threshold has unit coverage. Production Playwright installs worker and cache
 sentinels, forces two failed Retries, invokes Reset app, and proves the stale app registrations and
 caches are gone while IndexedDB and local storage survive the reload into a working shell.
+
+Unit coverage validates the optional client block and build ordering. Production Playwright serves
+a newer minimum and proves one takeover without a reload loop, then changes a reset token and
+proves shell caches are cleared exactly once while the token remains served.
 
 The existing startup, hosted-mode, console-clean, brand, CSP mirror, and native-feel checks remain
 green in development and production.
