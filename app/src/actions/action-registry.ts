@@ -28,7 +28,13 @@ export type Platform = "macos" | "other";
 export interface ActionContext {
   readonly bufferCount: number;
   readonly connected?: boolean;
-  readonly debugOverlay?: "gestures" | "keyboard" | "off" | "viewport";
+  readonly debugOverlay?:
+    | "gestures"
+    | "keyboard"
+    | "off"
+    | "push"
+    | "summary"
+    | "viewport";
   readonly features?: readonly string[];
   readonly listActive: boolean;
   readonly permission?: CommandPermission;
@@ -251,12 +257,15 @@ export class ActionRegistry {
     const mode = match[1]?.toLocaleLowerCase();
     return this.run("debug.overlay", {
       ...context,
-      ...(mode === "viewport" ||
-      mode === "gestures" ||
-      mode === "keyboard" ||
-      mode === "off"
-        ? { debugOverlay: mode }
-        : {}),
+      ...(mode === undefined
+        ? { debugOverlay: "summary" }
+        : mode === "viewport" ||
+            mode === "gestures" ||
+            mode === "keyboard" ||
+            mode === "push" ||
+            mode === "off"
+          ? { debugOverlay: mode }
+          : {}),
     });
   }
 

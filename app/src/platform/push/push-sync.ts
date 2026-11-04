@@ -2,7 +2,13 @@ import type { EngineClient } from "../../engine/EngineClient";
 import type { PushDeviceCredentials } from "../../engine/generated/PushDeviceCredentials";
 import type { EngineClientMessage } from "../../engine/protocol";
 import type { PushDeviceStore } from "./engine-device-store";
-import type { RelayClient, RelayDevice, RelayRoute } from "./relay-client";
+import type {
+  RelayClient,
+  RelayDevice,
+  RelayFailure,
+  RelayResult,
+  RelayRoute,
+} from "./relay-client";
 import {
   createRouteKeys,
   type PushRouteStore,
@@ -26,9 +32,19 @@ interface PushSynchronizerOptions {
   readonly acquireSessionToken: () => Promise<string>;
   readonly onAuthorizationRequired: () => void;
   readonly routeContext: (networkId: number) => PushRouteContext | undefined;
+  readonly onRouteDiagnostic?: (diagnostic: PushRouteDiagnostic) => void;
   readonly onDeviceReady?: (device: RelayDevice) => void;
   readonly generateRouteKeys?: () => Promise<RouteKeys>;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
+}
+
+export type PushRelayRouteState = "none" | "probing" | "active" | "dead";
+
+export interface PushRouteDiagnostic {
+  readonly networkId: number;
+  readonly state: PushRelayRouteState;
+  readonly routeIdPrefix?: string;
+  readonly lastError?: string;
 }
 
 interface PushRouteContext {
@@ -46,6 +62,7 @@ export class PushSynchronizer {
   readonly #acquireSessionToken: () => Promise<string>;
   readonly #onAuthorizationRequired: () => void;
   readonly #routeContext: (networkId: number) => PushRouteContext | undefined;
+  readonly #onRouteDiagnostic: (diagnostic: PushRouteDiagnostic) => void;
   readonly #onDeviceReady: (device: RelayDevice) => void;
   readonly #generateRouteKeys: () => Promise<RouteKeys>;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
@@ -62,6 +79,7 @@ export class PushSynchronizer {
     this.#acquireSessionToken = options.acquireSessionToken;
     this.#onAuthorizationRequired = options.onAuthorizationRequired;
     this.#routeContext = options.routeContext;
+    this.#onRouteDiagnostic = options.onRouteDiagnostic ?? (() => {});
     this.#onDeviceReady = options.onDeviceReady ?? (() => {});
     this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
     this.#exclusive = options.exclusive ?? withExclusiveLock;
@@ -108,6 +126,7 @@ export class PushSynchronizer {
         routes.map((route) => this.#routes.put({ ...route, retiring: true })),
       );
     }
+    for (const route of routes) this.#publish(route.networkId, "none");
     await this.#devices.clear(this.#relayOrigin);
   }
 
@@ -163,8 +182,17 @@ export class PushSynchronizer {
   ): Promise<void> {
     const context = this.#routeContext(networkId);
     if (context === undefined) return;
-    const device = await this.#ensureDevice();
-    if (device === undefined) return;
+    const deviceResult = await this.#ensureDevice();
+    if (!deviceResult.ok) {
+      this.#publish(
+        networkId,
+        "none",
+        undefined,
+        relayError("device", deviceResult.error),
+      );
+      return;
+    }
+    const device = deviceResult.value;
     const routes = await this.#routes.all();
     const matching = routes.filter(
       (route) =>
@@ -183,6 +211,7 @@ export class PushSynchronizer {
       existing.vapid === vapid &&
       existing.needsReregistration !== true
     ) {
+      this.#publish(networkId, "probing", existing.routeId);
       const current = await this.#refreshContext(
         existing,
         networkId,
@@ -210,10 +239,17 @@ export class PushSynchronizer {
     context: PushRouteContext,
     vapid: string,
     device: RelayDevice,
+    lastError?: string,
   ): Promise<void> {
     const keys = await this.#generateRouteKeys();
     const created = await this.#relay.createRoute(device, vapid);
     if (!created.ok) {
+      this.#publish(
+        networkId,
+        "none",
+        undefined,
+        relayError("create", created.error),
+      );
       if (created.error.kind === "unauthorized")
         await this.#authorizationFailed();
       return;
@@ -227,6 +263,7 @@ export class PushSynchronizer {
       device.id,
     );
     await this.#routes.put(route);
+    this.#publish(networkId, "probing", route.routeId, lastError);
     await this.#register(networkId, route);
   }
 
@@ -250,19 +287,23 @@ export class PushSynchronizer {
   }
 
   async #register(networkId: number, route: StoredPushRoute): Promise<void> {
-    await this.#engine.send({
-      id: crypto.randomUUID(),
-      request: {
-        type: "register_push",
-        network_id: networkId,
-        route: {
-          route_id: route.routeId,
-          endpoint: route.endpoint,
-          p256dh: route.p256dh,
-          auth: route.auth,
+    try {
+      await this.#engine.send({
+        id: crypto.randomUUID(),
+        request: {
+          type: "register_push",
+          network_id: networkId,
+          route: {
+            route_id: route.routeId,
+            endpoint: route.endpoint,
+            p256dh: route.p256dh,
+            auth: route.auth,
+          },
         },
-      },
-    });
+      });
+    } catch {
+      this.#publish(networkId, "probing", route.routeId, "engine: request");
+    }
   }
 
   async #activate(networkId: number, routeId: string): Promise<void> {
@@ -275,13 +316,23 @@ export class PushSynchronizer {
       route === undefined ||
       route.retiring === true
     ) {
+      this.#publish(networkId, "none", undefined, "activate: route missing");
       return;
     }
     const activated = await this.#relay.activateRoute(
       asRelayDevice(device),
       routeId,
     );
-    if (activated.ok) return;
+    if (activated.ok) {
+      this.#publish(networkId, "active", routeId);
+      return;
+    }
+    this.#publish(
+      networkId,
+      activated.error.kind === "dead_route" ? "dead" : "probing",
+      routeId,
+      relayError("activate", activated.error),
+    );
     if (activated.error.kind === "unauthorized") {
       await this.#authorizationFailed();
     } else if (activated.error.kind === "dead_route") {
@@ -293,6 +344,7 @@ export class PushSynchronizer {
           context,
           route.vapid,
           asRelayDevice(device),
+          relayError("activate", activated.error),
         );
       }
     }
@@ -304,19 +356,28 @@ export class PushSynchronizer {
       this.#routes.all(),
     ]);
     const context = this.#routeContext(networkId);
-    if (context === undefined) return;
+    if (context === undefined) {
+      this.#publish(networkId, "none");
+      return;
+    }
+    let matched = false;
     for (const route of routes) {
       if (
         route.retiring !== true &&
         route.networkLabel === context.networkLabel
       ) {
+        matched = true;
         if (device === undefined) {
           await this.#routes.put({ ...route, retiring: true });
+          this.#publish(networkId, "probing", route.routeId);
         } else if (!(await this.#retire(route, asRelayDevice(device)))) {
+          return;
+        } else if ((await this.#routes.get(route.routeId)) !== undefined) {
           return;
         }
       }
     }
+    if (!matched || device !== undefined) this.#publish(networkId, "none");
   }
 
   async #retire(route: StoredPushRoute, device: RelayDevice): Promise<boolean> {
@@ -334,6 +395,12 @@ export class PushSynchronizer {
       await this.#routes.delete(route.routeId);
       return true;
     }
+    this.#publish(
+      route.networkId,
+      "probing",
+      route.routeId,
+      relayError("delete", deleted.error),
+    );
     if (deleted.error.kind === "unauthorized") {
       await this.#authorizationFailed();
       return false;
@@ -354,13 +421,13 @@ export class PushSynchronizer {
     }
   }
 
-  #ensureDevice(): Promise<RelayDevice | undefined> {
+  #ensureDevice(): Promise<RelayResult<RelayDevice>> {
     return this.#exclusive("weblounge-push-device", async () => {
       const stored = await this.#devices.load(this.#relayOrigin);
       if (stored !== undefined) {
         const device = asRelayDevice(stored);
         this.#onDeviceReady(device);
-        return device;
+        return { ok: true, value: device };
       }
       const sessionToken = await this.#acquireSessionToken();
       const created = await this.#relay.createDevice(
@@ -370,7 +437,7 @@ export class PushSynchronizer {
       if (!created.ok) {
         if (created.error.kind === "unauthorized")
           this.#onAuthorizationRequired();
-        return undefined;
+        return created;
       }
       await this.#devices.store({
         relay: this.#relayOrigin,
@@ -378,7 +445,7 @@ export class PushSynchronizer {
         secret: created.value.secret,
       });
       this.#onDeviceReady(created.value);
-      return created.value;
+      return created;
     });
   }
 
@@ -401,6 +468,24 @@ export class PushSynchronizer {
     await this.#devices.clear(this.#relayOrigin);
     this.#onAuthorizationRequired();
   }
+
+  #publish(
+    networkId: number,
+    state: PushRelayRouteState,
+    routeId?: string,
+    lastError?: string,
+  ): void {
+    this.#onRouteDiagnostic({
+      networkId,
+      state,
+      ...(routeId === undefined ? {} : { routeIdPrefix: routeId.slice(0, 8) }),
+      ...(lastError === undefined ? {} : { lastError }),
+    });
+  }
+}
+
+function relayError(operation: string, failure: RelayFailure): string {
+  return `${operation}: ${failure.kind}`;
 }
 
 function storedRoute(

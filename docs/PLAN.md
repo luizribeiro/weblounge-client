@@ -490,6 +490,13 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     engine's per-run network handles. Push parser loads recover after cache failures; worker tests
     cover Ergo message, control and unknown-route shapes, and the payload fixture matches Ergo's
     510-byte length-limited line.
+  - [x] Make a stalled push path diagnosable from both ends. The relay records redacted info-level
+    device, route, lease, inbound disposition, and upstream-status events for journald, with only
+    eight-character identifiers and no endpoints, credentials, or ciphertext. `/debug push`
+    combines every prompt-visibility input with each network's typed engine outcome, page-known
+    relay route state, route prefix, and last relay error; the common debug header carries the same
+    per-network summary. Ergo's registration-probe failure is covered as typed
+    `Failed(invalid_parameters)` through the wire and browser view.
   - [ ] Add urgency policy, rate limits, engine/platform stable network identity, and the unmocked
     local-Ergo → relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)

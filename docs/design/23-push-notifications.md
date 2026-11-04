@@ -554,6 +554,24 @@ WebKit cover permission, relay registration, dismissal across reload, and denial
 prompt also passes the native-feel and idle-work audit; light and dark references cover both shell
 placements.
 
+### Push observability implementation (2026-11-04)
+
+The relay emits info-level structured events to stderr for successful device, route, and lease
+lifecycle changes; every inbound push disposition; and each push-service HTTP response. Device and
+route fields are eight-character prefixes, upstream targets are hostnames only, and tests capture
+the output to prove that credentials, endpoint paths, tab ids, and opaque bodies are absent.
+Inbound refusals distinguish the pinned VAPID key, JWT, and body-size boundaries without logging
+their inputs.
+
+The page retains the latest typed `PushState` per network and receives a narrow diagnostic
+projection from `PushSynchronizer`: `none`, `probing`, `active`, or `dead`, an optional eight-character
+route prefix, and a classified last operation error. `/debug push` combines those values with the
+configured, supported, permission, dismissed, iOS, and display prompt inputs. Every other debug
+section includes the same secret-free per-network summary. A real papo wire test covers Ergo's
+`FAIL WEBPUSH INVALID_PARAMS ... :Test push message failed to send` as
+`Failed(InvalidParameters)`, and the hosted browser journey renders that failure after observing
+the route move through probing and active.
+
 ## Rollout
 
 - **v1: first-party Ergo, web/iOS/Android PWA through the relay.** Prerequisites: Ergo backups

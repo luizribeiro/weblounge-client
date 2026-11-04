@@ -174,6 +174,11 @@ describe("ActionRegistry", () => {
     expect(registry.completeInput("two", 7, "/debug", 6)?.candidates).toEqual([
       expect.objectContaining({ type: "command", name: "debug" }),
     ]);
+    expect(registry.runInput("/debug", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith({
+      ...context,
+      debugOverlay: "summary",
+    });
     expect(registry.runInput("/debug viewport", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith({
       ...context,
@@ -188,6 +193,11 @@ describe("ActionRegistry", () => {
     expect(debug).toHaveBeenLastCalledWith({
       ...context,
       debugOverlay: "keyboard",
+    });
+    expect(registry.runInput("/debug push", context)).toBe("ran");
+    expect(debug).toHaveBeenLastCalledWith({
+      ...context,
+      debugOverlay: "push",
     });
     expect(registry.runInput("/debug off", context)).toBe("ran");
     expect(debug).toHaveBeenLastCalledWith({

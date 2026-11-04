@@ -20,6 +20,7 @@ import {
   IncompatibleBuildError,
 } from "./engine/EngineClient";
 import type { PushDeploymentConfig } from "./engine/generated/PushDeploymentConfig";
+import type { PushState } from "./engine/generated/PushState";
 import type {
   BufferProjection,
   CommandSpec,
@@ -58,7 +59,10 @@ import {
   readLastViewedPath,
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
-import { setNotificationDebugReading } from "./platform/debug-overlay";
+import {
+  setNotificationDebugReading,
+  setPushDebugSnapshot,
+} from "./platform/debug-overlay";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { syncAppBadge } from "./platform/push/app-badge";
@@ -68,7 +72,11 @@ import {
   decodeOpenRouteMessage,
   type OpenRouteMessage,
 } from "./platform/push/open-route-message";
-import { PushSynchronizer } from "./platform/push/push-sync";
+import { buildPushDebugSnapshot } from "./platform/push/push-debug";
+import {
+  type PushRouteDiagnostic,
+  PushSynchronizer,
+} from "./platform/push/push-sync";
 import { RelayClient } from "./platform/push/relay-client";
 import { IndexedDbPushRouteStore } from "./platform/push/route-store";
 import { ensurePushSubscription } from "./platform/push/subscription";
@@ -150,6 +158,12 @@ export function App(props: AppProps) {
     createSignal<NotificationPermission>(
       "Notification" in window ? Notification.permission : "default",
     );
+  const [enginePushStates, setEnginePushStates] = createSignal<
+    ReadonlyMap<number, PushState>
+  >(new Map());
+  const [relayPushStates, setRelayPushStates] = createSignal<
+    ReadonlyMap<number, PushRouteDiagnostic>
+  >(new Map());
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
@@ -203,6 +217,18 @@ export function App(props: AppProps) {
     setNotificationDebugReading(
       window,
       formatNotificationPromptVisibility(notificationPromptConditions()),
+    );
+  });
+
+  createEffect(() => {
+    setPushDebugSnapshot(
+      window,
+      buildPushDebugSnapshot(
+        notificationPromptConditions(),
+        networks(),
+        enginePushStates(),
+        relayPushStates(),
+      ),
     );
   });
 
@@ -267,7 +293,9 @@ export function App(props: AppProps) {
       },
       "debug.overlay": (context) => {
         if (context.debugOverlay === undefined) {
-          setComposerNotice("Usage: /debug <viewport|gestures|keyboard|off>");
+          setComposerNotice(
+            "Usage: /debug <viewport|gestures|keyboard|push|off>",
+          );
           return;
         }
         const root = document.getElementById("root");
@@ -368,6 +396,11 @@ export function App(props: AppProps) {
             window.history.replaceState(window.history.state, "", path),
           );
     const unsubscribe = mountedClient.subscribe((message) => {
+      if (message.type === "push_state_changed") {
+        setEnginePushStates((current) =>
+          new Map(current).set(message.network_id, message.state),
+        );
+      }
       if (
         pushSynchronizer === undefined &&
         props.pushConfig !== undefined &&
@@ -693,6 +726,7 @@ export function App(props: AppProps) {
       if (notificationPromptReadDeadline !== undefined)
         window.clearTimeout(notificationPromptReadDeadline);
       setNotificationDebugReading(window, undefined);
+      setPushDebugSnapshot(window, undefined);
       clearStartupWaits();
       unregisterContextSurface();
       removeContextMenuHandler();
@@ -792,6 +826,10 @@ export function App(props: AppProps) {
       },
       onAuthorizationRequired: () => void restartHostedAuthorization("revoked"),
       onDeviceReady: (device) => lease.setDevice(device),
+      onRouteDiagnostic: (diagnostic) =>
+        setRelayPushStates((current) =>
+          new Map(current).set(diagnostic.networkId, diagnostic),
+        ),
     });
     pushSynchronizer = synchronizer;
     for (const event of pendingPushEvents.splice(0)) synchronizer.handle(event);

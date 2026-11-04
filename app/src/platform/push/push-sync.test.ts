@@ -167,6 +167,7 @@ function fixture(relayApi = relay()) {
   const devices = new MemoryDevices();
   const routes = new MemoryRoutes();
   const authorizationRequired = vi.fn();
+  const routeDiagnostic = vi.fn();
   const acquireSessionToken = vi.fn(async () => "member-session");
   const synchronizer = new PushSynchronizer({
     engine,
@@ -178,6 +179,7 @@ function fixture(relayApi = relay()) {
     routes,
     acquireSessionToken,
     onAuthorizationRequired: authorizationRequired,
+    onRouteDiagnostic: routeDiagnostic,
     generateRouteKeys: async () => ({
       p256dh: "route-public-key",
       auth: "route-auth",
@@ -191,6 +193,7 @@ function fixture(relayApi = relay()) {
     devices,
     engine,
     relay: relayApi,
+    routeDiagnostic,
     routes,
     synchronizer,
   };
@@ -224,6 +227,11 @@ describe("push state synchronization", () => {
       },
     });
     expect(current.relay.activateRoute).not.toHaveBeenCalled();
+    expect(current.routeDiagnostic).toHaveBeenLastCalledWith({
+      networkId: 1,
+      state: "probing",
+      routeIdPrefix: "route-1",
+    });
 
     current.engine.emit({
       type: "push_state_changed",
@@ -243,6 +251,11 @@ describe("push state synchronization", () => {
       { id: "device-1", secret: "device-secret" },
       "route-1",
     );
+    expect(current.routeDiagnostic).toHaveBeenLastCalledWith({
+      networkId: 1,
+      state: "active",
+      routeIdPrefix: "route-1",
+    });
 
     current.engine.emit({
       type: "push_route_required",
@@ -438,6 +451,20 @@ describe("push state synchronization", () => {
     expect(current.engine.requests.at(-1)?.request).toMatchObject({
       type: "register_push",
       route: { route_id: "route-2" },
+    });
+    expect(current.routeDiagnostic.mock.calls).toContainEqual([
+      {
+        networkId: 1,
+        state: "dead",
+        routeIdPrefix: "route-1",
+        lastError: "activate: dead_route",
+      },
+    ]);
+    expect(current.routeDiagnostic).toHaveBeenLastCalledWith({
+      networkId: 1,
+      state: "probing",
+      routeIdPrefix: "route-2",
+      lastError: "activate: dead_route",
     });
   });
 

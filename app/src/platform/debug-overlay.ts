@@ -24,6 +24,12 @@ interface OverlayManager {
 
 const managers = new WeakMap<Window, OverlayManager>();
 const notificationReadings = new WeakMap<Window, string>();
+const pushSnapshots = new WeakMap<Window, PushDebugSnapshot>();
+
+export interface PushDebugSnapshot {
+  readonly summary: string;
+  readonly readings: readonly DebugReading[];
+}
 
 export function setNotificationDebugReading(
   browserWindow: Window,
@@ -32,6 +38,38 @@ export function setNotificationDebugReading(
   if (reading === undefined) notificationReadings.delete(browserWindow);
   else notificationReadings.set(browserWindow, reading);
   managers.get(browserWindow)?.render();
+}
+
+export function setPushDebugSnapshot(
+  browserWindow: Window,
+  snapshot: PushDebugSnapshot | undefined,
+): void {
+  if (snapshot === undefined) pushSnapshots.delete(browserWindow);
+  else pushSnapshots.set(browserWindow, snapshot);
+  managers.get(browserWindow)?.render();
+}
+
+export function installPushDebug(
+  _root: HTMLElement,
+  browserWindow: Window,
+): () => void {
+  return installDebugSection(browserWindow, {
+    id: "push",
+    title: "push",
+    read: () =>
+      pushSnapshots.get(browserWindow)?.readings ?? [["status", "unavailable"]],
+  });
+}
+
+export function installDefaultDebug(
+  _root: HTMLElement,
+  browserWindow: Window,
+): () => void {
+  return installDebugSection(browserWindow, {
+    id: "default",
+    title: "debug",
+    read: () => [],
+  });
 }
 
 export function installDebugSection(
@@ -75,6 +113,7 @@ function managerFor(browserWindow: Window): OverlayManager {
             buildVersion.text,
             `config unknown: ${deploymentConfigUnknownFields().join(", ") || "none"}`,
             `notifications: ${notificationReadings.get(browserWindow) ?? "unavailable"}`,
+            `push: ${pushSnapshots.get(browserWindow)?.summary ?? "unavailable"}`,
             ...format(section.read()),
           ].join("\n"),
         )

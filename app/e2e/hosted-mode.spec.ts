@@ -775,8 +775,8 @@ async function exerciseNotificationPromptRegistration(
         headers: cors,
         contentType: "application/json",
         body: JSON.stringify({
-          id: "route-1",
-          endpoint: "https://push.weblounge.org/v1/r/route-1",
+          id: "route-123456789",
+          endpoint: "https://push.weblounge.org/v1/r/route-123456789",
         }),
       });
       return;
@@ -831,10 +831,29 @@ async function exerciseNotificationPromptRegistration(
       expect.objectContaining({
         type: "register_push",
         network_id: 1,
-        route: expect.objectContaining({ route_id: "route-1" }),
+        route: expect.objectContaining({ route_id: "route-123456789" }),
       }),
     );
-  expect(relayRequests).not.toContain("PUT /v1/routes/route-1/active");
+  expect(relayRequests).not.toContain("PUT /v1/routes/route-123456789/active");
+
+  const composer = page.getByRole("textbox", { name: /^Message /u });
+  if ((await composer.count()) === 0) {
+    await page.getByRole("button", { name: "#lounge" }).click();
+  }
+  await composer.fill("/debug push");
+  await composer.press("Enter");
+  const debug = page.locator("[data-debug-overlay]");
+  await expect(debug).toContainText("[push]");
+  await expect(debug).toContainText(
+    "prompt: configured=true / supported=true / permission=granted / dismissed=false",
+  );
+  await expect(debug).toContainText(
+    /ios=(?:true|false) \/ display=(?:browser|standalone)/u,
+  );
+  await expect(debug).toContainText(
+    "network weblounge: engine=none / relay=probing (route-12) / last error=none",
+  );
+  await expect(debug).not.toContainText("route-123456789");
 
   await page.evaluate(() => {
     const complete = Reflect.get(globalThis, "completePushRegistration");
@@ -844,7 +863,25 @@ async function exerciseNotificationPromptRegistration(
   });
   await expect
     .poll(() => relayRequests)
-    .toContain("PUT /v1/routes/route-1/active");
+    .toContain("PUT /v1/routes/route-123456789/active");
+  await expect(debug).toContainText(
+    "engine=Registered (route-12) / relay=active (route-12) / last error=none",
+  );
+  await page.evaluate(() => {
+    const fail = Reflect.get(globalThis, "failPushRegistration");
+    if (typeof fail !== "function")
+      throw new Error("push registration failure control is missing");
+    fail();
+  });
+  await expect(debug).toContainText(
+    "engine=Failed(invalid_parameters) / relay=none / last error=none",
+  );
+  await composer.fill("/debug");
+  await composer.press("Enter");
+  await expect(debug).toContainText("[debug]");
+  await expect(debug).toContainText(
+    "push: network weblounge: engine=Failed(invalid_parameters) / relay=none / last error=none",
+  );
   await page.evaluate(() => {
     const setUnread = Reflect.get(globalThis, "setHostedUnread");
     if (typeof setUnread !== "function")
@@ -1340,11 +1377,25 @@ async function installFakeEngine(
         if (request?.type === "register_push") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);
+          const routeId =
+            typeof request.route === "object" &&
+            request.route !== null &&
+            "route_id" in request.route &&
+            typeof request.route.route_id === "string"
+              ? request.route.route_id
+              : "unknown-route";
           Reflect.set(globalThis, "completePushRegistration", () => {
             this.emit({
               type: "push_state_changed",
               network_id: 1,
-              state: { status: "registered", route_id: "route-1" },
+              state: { status: "registered", route_id: routeId },
+            });
+          });
+          Reflect.set(globalThis, "failPushRegistration", () => {
+            this.emit({
+              type: "push_state_changed",
+              network_id: 1,
+              state: { status: "failed", reason: "invalid_parameters" },
             });
           });
         }
