@@ -73,7 +73,17 @@ async function prepareServiceWorker(
   await context.grantPermissions(["notifications"], {
     origin: new URL(page.url()).origin,
   });
-  await expect.poll(() => activeWorkerState(page)).toBe("activated");
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        return {
+          active: registration.active?.state ?? null,
+          controller: navigator.serviceWorker.controller?.state ?? null,
+        };
+      }),
+    )
+    .toEqual({ active: "activated", controller: "activated" });
 }
 
 test("decrypts a real envelope into one routed notification", async ({
@@ -248,13 +258,6 @@ async function loadNotificationPromptDismissal(page: Page): Promise<void> {
         });
       }),
   );
-}
-
-async function activeWorkerState(page: Page): Promise<string | null> {
-  return page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.getRegistration("/");
-    return registration?.active?.state ?? null;
-  });
 }
 
 async function notifications(page: Page) {
