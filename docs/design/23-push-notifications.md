@@ -495,11 +495,13 @@ creates one relay device. Route creation, replacement, activation and deletion a
 per network so tabs sharing the engine cannot create competing relay routes. Cache storage may
 still fall back to memory, but Durable fails closed when IndexedDB is unavailable.
 
-The page owns `weblounge-push`, with one route record keyed by pinned home VAPID key. Each record
+The page owns `weblounge-push`, with one route record keyed by pinned home VAPID key. The page opens
+or migrates it only after a pending production service-worker update activates, so the previous
+worker never observes a primary-key schema it cannot read during an in-place upgrade. Each record
 contains its relay device id, current `NetworkId` and label, relay endpoint, public key, auth secret
 and a non-extractable ECDH private `CryptoKey`. Each route receives independently generated P-256
 and 16-byte auth material. Schema v4 migrates the route-id-keyed records deployed in build
-`b052c6f9fca3cdc5769b989ff1c5bb4c18ab937e` by deterministically keeping one complete record per
+`3252cde0a0221c58dc7f54e78efeb49cf226efd5` by deterministically keeping one complete record per
 home; records without a device id or label are exact-unregistered and removed on first convergence.
 
 On each eligible connection the engine emits one `PushRouteRequired` to the active shell. The page
@@ -552,7 +554,7 @@ IndexedDB stall a leading hypothesis alongside immediate cleanup: the deployed o
 on message storage before calling `showNotification`, allowing iOS to abandon presentation before
 the delayed handler reached its badge work. Visible delivery now presents immediately after the
 bounded route-key read, decryption and parsing; message handoff and badge persistence happen only
-after `showNotification` resolves. A 2.8-second fallback independently guarantees a generic
+after `showNotification` resolves. A two-second fallback independently guarantees a generic
 notification if those prerequisite steps stall.
 
 Cleanup also compares notification server time with the stored read marker and cannot close a newer
@@ -607,7 +609,7 @@ opening the engine database for message handoff or the push database for badge p
 Successfully parsed `MARKREAD` and `PING` are silent cleanup controls; unknown routes and failures
 fall back to one generic notification. Only a decryption failure marks the current route for
 replacement, because a parser failure does not imply that its key material is stale. The
-2.8-second presentation deadline and shorter IndexedDB deadlines keep a blocked route-key upgrade
+two-second presentation and shorter IndexedDB deadlines keep a blocked route-key upgrade
 from preventing the generic fallback.
 
 Chat pushes are written as versioned `pushed-message\0...` records in the engine's Cache object
