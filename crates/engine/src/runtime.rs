@@ -27,7 +27,8 @@ use crate::{
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
         DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget, NetworkModel,
-        PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
+        PendingSend, PendingTargetState, ReadAdvance, ReadPreparation, SendTarget, is_own_nick,
+        time_millis,
     },
 };
 
@@ -47,6 +48,8 @@ const RECENT_DIRECT_LIMIT: usize = 100;
 const RECENT_DIRECT_WINDOW: Duration = Duration::from_hours(30 * 24);
 const COMPLETION_LIMIT: usize = 100;
 const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+const READ_RETRY_INITIAL: Duration = Duration::from_secs(1);
+const READ_RETRY_MAX: Duration = Duration::from_secs(60);
 
 struct CompletionContext {
     trigger: CompletionTrigger,
@@ -1817,10 +1820,26 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let Some(advance) = running.model.prepare_mark_read(buffer_id, through) else {
-            return rejected_command(command_id, EngineMessageKey::ReadMarkerInvalid);
+        let server_backed = !running.client.state().is_connected()
+            || running.client.state().supports(papo::Feature::ReadMarkers);
+        let advance = match running
+            .model
+            .request_mark_read(buffer_id, through, server_backed)
+        {
+            ReadPreparation::Ready(advance) => Some(advance),
+            ReadPreparation::Deferred => None,
+            ReadPreparation::Invalid => {
+                engine_log(EngineMessageKey::ReadMarkerInvalid.as_str());
+                return vec![
+                    EngineToUi::Diagnostic {
+                        command_id: command_id.clone(),
+                        message: EngineMessageKey::ReadMarkerInvalid.as_str().into(),
+                    },
+                    EngineToUi::CommandResult { id: command_id },
+                ];
+            }
         };
-        let mut output = record_read_advances(running, [advance]);
+        let mut output = record_read_advances(running, advance);
         let flush = start_read_flush(running);
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
@@ -1840,7 +1859,9 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let advances = running.model.prepare_mark_all_read();
+        let server_backed = !running.client.state().is_connected()
+            || running.client.state().supports(papo::Feature::ReadMarkers);
+        let advances = running.model.prepare_mark_all_read(server_backed);
         let mut output = record_read_advances(running, advances);
         let flush = start_read_flush(running);
         output.push(EngineToUi::CommandResult { id: command_id });
@@ -1994,6 +2015,7 @@ fn spawn_read_flush(
     instance: u64,
 ) {
     spawn_task(async move {
+        let mut retry_in = READ_RETRY_INITIAL;
         loop {
             let advance = {
                 let mut state = lock(&state);
@@ -2019,7 +2041,7 @@ fn spawn_read_flush(
                 SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
             };
             match result {
-                Ok(_) => {}
+                Ok(_) => retry_in = READ_RETRY_INITIAL,
                 Err(papo::Error::Disconnected(_)) => {
                     let restart = {
                         let mut state = lock(&state);
@@ -2039,9 +2061,28 @@ fn spawn_read_flush(
                     }
                     return;
                 }
-                Err(error) if state_limit_events(&error, false, None, "mark_read").is_some() => {}
-                Err(_) => {
-                    let _ = outbound.send(EngineToUi::notice(EngineMessageKey::MarkReadFailed));
+                Err(error) => {
+                    engine_log(&format!(
+                        "{}: {error}",
+                        EngineMessageKey::MarkReadFailed.as_str()
+                    ));
+                    let _ = outbound.send(EngineToUi::Diagnostic {
+                        command_id: "mark-read".into(),
+                        message: EngineMessageKey::MarkReadFailed.as_str().into(),
+                    });
+                    {
+                        let mut state = lock(&state);
+                        let Some(running) = state
+                            .network
+                            .as_mut()
+                            .filter(|running| running.instance == instance)
+                        else {
+                            return;
+                        };
+                        queue_read_advance(&mut running.pending_reads, advance);
+                    }
+                    delay(retry_in).await;
+                    retry_in = retry_in.saturating_mul(2).min(READ_RETRY_MAX);
                 }
             }
         }
@@ -2407,12 +2448,14 @@ fn receive_message(
     history: bool,
     state: &papo::State,
     direct: Option<papo::DirectRef>,
-) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
+) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
     let events = model.receive(message, history, state, direct);
-    let advance = (message.authorship == papo::Authorship::Own)
+    let own_advance = (message.authorship == papo::Authorship::Own)
         .then(|| appended_read_advance(model, &events))
         .flatten();
-    (events, advance)
+    let mut advances = own_advance.into_iter().collect::<Vec<_>>();
+    advances.extend(model.take_deferred_read_advances());
+    (events, advances)
 }
 
 fn completion_context(
@@ -3791,13 +3834,13 @@ fn process_history(
     let mut output = Vec::new();
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
     let mut unread = None;
-    let mut own_read_advance = None;
+    let mut read_advances = Vec::new();
     for item in page.items {
         match item {
             papo::Event::Message(message) => {
                 let (received, advance) =
                     receive_message(&mut running.model, &message, true, &snapshot, None);
-                own_read_advance = advance.or(own_read_advance);
+                read_advances.extend(advance);
                 for event in received {
                     match event {
                         EngineToUi::MessagesAppended {
@@ -3866,7 +3909,6 @@ fn process_history(
         end,
     );
     output.extend(finished);
-    let read_advances = own_read_advance.into_iter().collect::<Vec<_>>();
     drop(state);
     send_events(outbound, output);
     flush_history_read_advances(&shared_state, outbound, instance, read_advances);
@@ -4551,11 +4593,11 @@ mod tests {
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
-        HostedReconnectConfig, MemberViews, PushRegistration, RunningNetwork, Runtime,
-        RuntimeState, completion_context, connection_failure_notice, drain_events, fetch_history,
-        join_request_events, lock, next_connection_state, person_candidates, process_event,
-        process_history, queue_read_advance, schedule_snapshot_write_after, spawn_history_fetch,
-        spawn_read_marker_fetch, state_limit_events, utf16_len,
+        HostedReconnectConfig, MemberViews, PushRegistration, READ_RETRY_INITIAL, RunningNetwork,
+        Runtime, RuntimeState, completion_context, connection_failure_notice, drain_events,
+        fetch_history, join_request_events, lock, next_connection_state, person_candidates,
+        process_event, process_history, queue_read_advance, schedule_snapshot_write_after,
+        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -8229,6 +8271,103 @@ async fn delay(duration: Duration) {
         .await;
     }
 
+    #[tokio::test]
+    async fn restored_push_defers_mark_read_until_history_reconciles_it() {
+        let caps = [
+            "account-tag",
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "account": "alice",
+            "target": "weblounge",
+            "msgid": "pushed-direct",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        let restored = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .restore_pushed_messages(vec![pushed], &client.state());
+        let (buffer_id, message_id) = restored
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("pushed message is restored");
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        };
+
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "mark-pushed".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
+
+        assert_eq!(
+            output,
+            [EngineToUi::CommandResult {
+                id: "mark-pushed".into()
+            }]
+        );
+        assert!(
+            lock(&state)
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .pending_reads
+                .is_empty()
+        );
+        wire.server("@account=alice;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :alice!a@host PRIVMSG weblounge :arrived while closed")
+            .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::ReadMarkerMoved {
+                buffer_id: current_buffer,
+                through: Some(current_message),
+            } if *current_buffer == buffer_id && *current_message == message_id
+        )));
+        let request = wire.next_sent().await;
+        assert!(request.ends_with("MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"));
+        let label = request_label(&request);
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"
+        ))
+        .await;
+    }
+
     #[test]
     fn queued_read_advances_keep_only_the_latest_position() {
         let mut pending = VecDeque::new();
@@ -8388,6 +8527,80 @@ async fn delay(duration: Duration) {
         let label = request_label(&request).to_owned();
         wire.server(format!(
             "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
+        ))
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn mark_read_failure_is_diagnostic_and_retries_with_backoff() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+            .await;
+        let message = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, message);
+        let appended = collect(&mut receiver);
+        let (buffer_id, message_id) = appended
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("live message is projected");
+        let runtime = Runtime { state, outbound };
+        let output = runtime.request(EngineRequestEnvelope {
+            id: "mark-retry".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
+        assert!(
+            output
+                .iter()
+                .all(|event| !matches!(event, EngineToUi::Notice { .. }))
+        );
+        let request = wire.next_sent().await;
+        let label = request_label(&request);
+        wire.server(format!(
+            "@label={label} :offline.test FAIL MARKREAD INVALID_PARAMS #room :Invalid parameters"
+        ))
+        .await;
+
+        assert!(matches!(
+            receiver.recv().await,
+            Some(EngineToUi::Diagnostic { message, .. })
+                if message == EngineMessageKey::MarkReadFailed.as_str()
+        ));
+        tokio::time::advance(READ_RETRY_INITIAL).await;
+        let retry = wire.next_sent().await;
+        assert!(retry.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        let retry_label = request_label(&retry);
+        wire.server(format!(
+            "@label={retry_label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
         ))
         .await;
     }

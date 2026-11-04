@@ -86,6 +86,7 @@ struct BufferState {
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
     timeline: Vec<TimelineRecord>,
+    deferred_read: Option<MessageId>,
     memberships: Vec<MembershipProjection>,
     last_membership: Option<MessageId>,
     direct: Option<DirectAvailability>,
@@ -309,6 +310,12 @@ pub(crate) struct ReadAdvance {
     pub(crate) time: SystemTime,
 }
 
+pub(crate) enum ReadPreparation {
+    Ready(ReadAdvance),
+    Deferred,
+    Invalid,
+}
+
 /// Mutable application identity and timeline state for one papo client.
 pub(crate) struct NetworkModel {
     network: NetworkProjection,
@@ -360,6 +367,7 @@ impl NetworkModel {
             key: None,
             direct_key: None,
             timeline: Vec::new(),
+            deferred_read: None,
             memberships: Vec::new(),
             last_membership: None,
             direct: None,
@@ -1893,44 +1901,59 @@ impl NetworkModel {
         })
     }
 
+    pub(crate) fn request_mark_read(
+        &mut self,
+        buffer_id: BufferId,
+        through: MessageId,
+        require_server_metadata: bool,
+    ) -> ReadPreparation {
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return ReadPreparation::Invalid;
+        };
+        let Some(record) = buffer
+            .timeline
+            .iter()
+            .find(|record| record.projection.id == through && is_committed(&record.projection))
+        else {
+            return ReadPreparation::Invalid;
+        };
+        if record.provisional_identity.is_some() {
+            buffer.deferred_read = Some(through);
+            return ReadPreparation::Deferred;
+        }
+        read_advance(buffer_id, buffer, through, require_server_metadata)
+            .map_or(ReadPreparation::Invalid, ReadPreparation::Ready)
+    }
+
     pub(crate) fn prepare_mark_read(
         &self,
         buffer_id: BufferId,
         through: MessageId,
     ) -> Option<ReadAdvance> {
         let buffer = self.buffers.get(&buffer_id)?;
-        let record = buffer
-            .timeline
-            .iter()
-            .find(|record| record.projection.id == through && is_committed(&record.projection))?;
-        Some(ReadAdvance {
-            buffer_id,
-            target: match buffer.key.clone()? {
-                NameKey::Channel(channel) => SendTarget::Channel(channel),
-                NameKey::Direct(nick) => SendTarget::Direct {
-                    nick,
-                    recipient: None,
-                    pin: None,
-                },
-            },
-            time: system_time_from_millis(message_time(&record.projection)),
-        })
+        read_advance(buffer_id, buffer, through, false)
     }
 
-    pub(crate) fn prepare_mark_all_read(&self) -> Vec<ReadAdvance> {
+    pub(crate) fn take_deferred_read_advances(&mut self) -> Vec<ReadAdvance> {
+        self.buffers
+            .iter_mut()
+            .filter_map(|(buffer_id, buffer)| {
+                let through = buffer.deferred_read?;
+                let advance = read_advance(*buffer_id, buffer, through, true)?;
+                buffer.deferred_read = None;
+                Some(advance)
+            })
+            .collect()
+    }
+
+    pub(crate) fn prepare_mark_all_read(&self, require_server_metadata: bool) -> Vec<ReadAdvance> {
         self.buffer_order
             .iter()
             .filter_map(|id| {
-                let through = self
-                    .buffers
-                    .get(id)?
-                    .timeline
-                    .iter()
-                    .rev()
-                    .find(|record| is_committed(&record.projection))?
-                    .projection
-                    .id;
-                self.prepare_mark_read(*id, through)
+                let buffer = self.buffers.get(id)?;
+                buffer.timeline.iter().rev().find_map(|record| {
+                    read_advance(*id, buffer, record.projection.id, require_server_metadata)
+                })
             })
             .collect()
     }
@@ -2326,6 +2349,7 @@ impl NetworkModel {
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
                 timeline: Vec::new(),
+                deferred_read: None,
                 memberships: Vec::new(),
                 last_membership: None,
                 direct: (kind == BufferKind::Direct)
@@ -2620,6 +2644,34 @@ fn is_committed(message: &MessageProjection) -> bool {
         message.delivery,
         MessageDelivery::Received | MessageDelivery::Confirmed
     )
+}
+
+fn read_advance(
+    buffer_id: BufferId,
+    buffer: &BufferState,
+    through: MessageId,
+    require_server_metadata: bool,
+) -> Option<ReadAdvance> {
+    let record = buffer.timeline.iter().find(|record| {
+        record.projection.id == through
+            && is_committed(&record.projection)
+            && record.provisional_identity.is_none()
+            && (!require_server_metadata
+                || (!record.projection.server_ids.is_empty()
+                    && record.projection.server_time_ms.is_some()))
+    })?;
+    Some(ReadAdvance {
+        buffer_id,
+        target: match buffer.key.clone()? {
+            NameKey::Channel(channel) => SendTarget::Channel(channel),
+            NameKey::Direct(nick) => SendTarget::Direct {
+                nick,
+                recipient: None,
+                pin: None,
+            },
+        },
+        time: system_time_from_millis(message_time(&record.projection)),
+    })
 }
 
 fn message_time(message: &MessageProjection) -> i64 {
@@ -3715,7 +3767,7 @@ mod tests {
             );
         }
 
-        let advances = model.prepare_mark_all_read();
+        let advances = model.prepare_mark_all_read(false);
         assert_eq!(advances.len(), 1);
         let events = model.apply_read_time(advances[0].buffer_id, advances[0].time);
         assert!(events.iter().any(|event| matches!(

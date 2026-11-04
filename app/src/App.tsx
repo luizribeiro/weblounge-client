@@ -54,6 +54,7 @@ import {
   writeLastViewedPath,
 } from "./navigation/initial-buffer";
 import {
+  setEngineDebugReading,
   setNotificationDebugReading,
   setPushDebugSnapshot,
 } from "./platform/debug-overlay";
@@ -437,7 +438,13 @@ export function App(props: AppProps) {
         }
       }
       if (message.type === "diagnostic") {
-        setEngineStatus(t("debug.engine_ready", { message: message.message }));
+        if (isMessageKey(message.message)) {
+          setEngineDebugReading(window, translate(message.message));
+        } else {
+          setEngineStatus(
+            t("debug.engine_ready", { message: message.message }),
+          );
+        }
       }
       if (message.type === "notice") {
         if (isMessageKey(message.key)) {

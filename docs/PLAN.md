@@ -477,6 +477,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     Restored DMs stay visibly normal but provisional until live or history delivers the same
     `msgid`; that authoritative copy replaces sender identity and verification metadata without a
     duplicate row, while real identity disagreements remain visible (#101).
+  - [x] Keep restored push rows out of MARKREAD until live delivery or history verifies their
+    server msgid and time. Retain the read dwell across reconciliation, retry server failures with
+    capped backoff, and record failures in `/debug` and the console without a user-facing toast
+    (#105).
   - [x] Open the engine database from the push worker only at the generated current schema, abort
     instead of creating or upgrading it, and close each Cache write promptly and on version change.
     A push delivered on a fresh origin no longer blocks engine Settings or Durable storage (#95).

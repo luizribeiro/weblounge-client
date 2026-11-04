@@ -27,7 +27,7 @@ weblounge-command-derive = { path = "../command-derive" }
 
 [dev-dependencies]
 papo-testing.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

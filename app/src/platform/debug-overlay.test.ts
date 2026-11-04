@@ -4,9 +4,21 @@ import {
   installDebugSection,
   installDefaultDebug,
   installPushDebug,
+  setEngineDebugReading,
   setNotificationDebugReading,
   setPushDebugSnapshot,
 } from "./debug-overlay";
+
+it("records the latest engine failure in debug diagnostics", () => {
+  setEngineDebugReading(window, "Couldn't mark this conversation as read.");
+  const stop = installDefaultDebug(document.createElement("div"), window);
+
+  expect(document.querySelector("[data-debug-overlay]")).toHaveTextContent(
+    "engine: Couldn't mark this conversation as read.",
+  );
+  stop();
+  setEngineDebugReading(window, undefined);
+});
 
 it("includes ignored deployment fields in debug diagnostics", () => {
   decodeDeploymentConfig({ mode: "app", future_overlay_field: true });

@@ -50,6 +50,23 @@ it("keeps one app status region while a polite toast is shown", async () => {
   );
 });
 
+it("records a mark-read failure without showing a toast", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  await screen.findByRole("status");
+
+  client.emit({
+    type: "diagnostic",
+    command_id: "mark-read",
+    message: "engine.mark_read_failed",
+  });
+
+  expect(screen.queryByRole("note")).toBeNull();
+  expect(
+    screen.queryByText("Couldn't mark this conversation as read."),
+  ).toBeNull();
+});
+
 it("renders the empty shell after the engine handshake before revealing it", async () => {
   let releaseEngine = () => {};
   let releaseVisuals = () => {};
