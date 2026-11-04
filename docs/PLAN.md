@@ -497,6 +497,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     engine's per-run network handles. Push parser loads recover after cache failures; worker tests
     cover Ergo message, control and unknown-route shapes, and the payload fixture matches Ergo's
     510-byte length-limited line.
+  - [x] Recover a dead relay route after Ergo refuses its registration: unregister the endpoint at
+    the home before relay deletion, create and register one fresh probing route, and bound repeated
+    replacement until reconnect or relaunch. `/debug` retains the typed refusal and page-side
+    reason during recovery; the pinned previous-build upgrade keeps its active route and keys.
+    The generic worker notification title is injected from the shared strings table at build time,
+    keeping the production service worker a standalone classic script.
   - [x] Make a stalled push path diagnosable from both ends. The relay records redacted info-level
     device, route, lease, inbound disposition, and upstream-status events for journald, with only
     eight-character identifiers and no accounts, nicks, IPs, endpoints, credentials, or ciphertext.

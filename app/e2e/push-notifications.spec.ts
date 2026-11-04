@@ -109,6 +109,30 @@ test("decrypts a real envelope into one routed notification", async ({
     ]);
 });
 
+test("migrates and decrypts an active route from the previous schema", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const envelope = await seedRouteAndEncrypt(
+    page,
+    "@time=2026-11-03T12:34:56.789Z;msgid=push-upgrade :mel!m@example.test PRIVMSG #lounge :hello after upgrade",
+    { networkLabel: "Lounge", nickname: "weblounge" },
+    2,
+  );
+
+  await deliverPush(context, page, envelope);
+
+  await expect
+    .poll(() => notifications(page))
+    .toContainEqual({
+      title: "mel in #lounge",
+      body: "hello after upgrade",
+      tag: "1/#lounge",
+      route: "/Lounge/lounge",
+    });
+});
+
 test("handles MARKREAD and maintenance PING silently", async ({
   context,
   page,
@@ -543,9 +567,10 @@ async function seedRouteAndEncrypt(
     readonly networkLabel: string;
     readonly nickname: string;
   } = { networkLabel: "Lounge", nickname: "weblounge" },
+  databaseVersion: 2 | 3 = 3,
 ): Promise<string> {
   return page.evaluate(
-    async ({ plaintext, route, seededRouteId }) => {
+    async ({ plaintext, route, seededRouteId, seededDatabaseVersion }) => {
       const encode = (bytes: ArrayBuffer | ArrayBufferView): string => {
         const view = ArrayBuffer.isView(bytes)
           ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -593,11 +618,11 @@ async function seedRouteAndEncrypt(
       );
       const authentication = crypto.getRandomValues(new Uint8Array(16));
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push", 3);
+        const request = indexedDB.open("weblounge-push", seededDatabaseVersion);
         request.onupgradeneeded = () => {
           if (!request.result.objectStoreNames.contains("routes")) {
             request.result.createObjectStore("routes", {
-              keyPath: "routeId",
+              keyPath: seededDatabaseVersion === 2 ? "networkId" : "routeId",
             });
           }
           if (!request.result.objectStoreNames.contains("state")) {
@@ -704,6 +729,11 @@ async function seedRouteAndEncrypt(
         },
       });
     },
-    { plaintext: line, route: routeContext, seededRouteId: routeId },
+    {
+      plaintext: line,
+      route: routeContext,
+      seededRouteId: routeId,
+      seededDatabaseVersion: databaseVersion,
+    },
   );
 }

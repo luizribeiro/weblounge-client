@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 const development = process.env.WEBLOUNGE_E2E_DEV === "1";
 
@@ -167,7 +167,7 @@ test("uses network HTML online and the cached shell offline", async ({
   );
 });
 
-test("upgrades the last deployed build to the current build", async ({
+test("upgrades the last deployed build and preserves its active push route", async ({
   context,
 }) => {
   test.skip(
@@ -194,6 +194,7 @@ test("upgrades the last deployed build to the current build", async ({
     expect(await page.evaluate(() => window.weblounge.version)).toContain(
       process.env.WEBLOUNGE_PREVIOUS_BUILD_SHA,
     );
+    await seedPreviousPushRoute(page);
 
     await page.evaluate(() =>
       localStorage.removeItem("weblounge.deployment-config.v1"),
@@ -208,6 +209,35 @@ test("upgrades the last deployed build to the current build", async ({
       page.getByRole("heading", { name: "weblounge" }),
     ).toBeVisible();
     expect(page.isClosed()).toBe(false);
+    const currentShell = await page.evaluate(async () => {
+      const worker = await (await fetch("/service-worker.js")).text();
+      const match = /SHELL_VERSION = "([^"]+)"/u.exec(worker);
+      if (match?.[1] === undefined)
+        throw new Error("current shell version is missing");
+      return `weblounge-shell-${match[1]}`;
+    });
+    await expect
+      .poll(() => page.evaluate(() => caches.keys()))
+      .toContain(currentShell);
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const registration =
+            await navigator.serviceWorker.getRegistration("/");
+          return {
+            active: registration?.active?.state ?? null,
+            installing: registration?.installing?.state ?? null,
+            waiting: registration?.waiting?.state ?? null,
+          };
+        }),
+      )
+      .toEqual({ active: "activated", installing: null, waiting: null });
+
+    await expect(page.evaluate(readPreviousPushRoute)).resolves.toEqual({
+      keyPath: "networkId",
+      routeId: "previous-active-route",
+      version: 2,
+    });
   } finally {
     await builds.close();
   }
@@ -286,6 +316,72 @@ for (const scenario of [
       await deployment.close();
     }
   });
+}
+
+async function seedPreviousPushRoute(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const pair = (await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      ["deriveBits"],
+    )) as CryptoKeyPair;
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push", 2);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("routes", { keyPath: "networkId" });
+        request.result.createObjectStore("state");
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("routes", "readwrite");
+      transaction.objectStore("routes").put({
+        networkId: 41,
+        networkLabel: "Lounge",
+        nickname: "weblounge",
+        vapid: "home-vapid",
+        routeId: "previous-active-route",
+        endpoint: "https://push.weblounge.org/v1/r/previous-active-route",
+        p256dh: "AQID",
+        auth: "BAUG",
+        privateKey: pair.privateKey,
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+  });
+}
+
+async function readPreviousPushRoute(): Promise<{
+  keyPath: string | string[] | null;
+  routeId: string;
+  version: number;
+}> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("weblounge-push");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const transaction = database.transaction("routes", "readonly");
+  const store = transaction.objectStore("routes");
+  const route = await new Promise<Record<string, unknown>>(
+    (resolve, reject) => {
+      const request = store.get(41);
+      request.onsuccess = () =>
+        resolve(request.result as Record<string, unknown>);
+      request.onerror = () => reject(request.error);
+    },
+  );
+  const result = {
+    keyPath: store.keyPath,
+    routeId: String(route.routeId),
+    version: database.version,
+  };
+  database.close();
+  return result;
 }
 
 test("a hosted reset token clears the shell only once", async ({ context }) => {
