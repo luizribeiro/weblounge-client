@@ -4,6 +4,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 - [x] Generate the engine's typed localization-key inventory with the protocol bindings, so the
   app strings cross-check no longer reads Rust source outside its Nix derivation.
+- [x] Recover push registration after refusal and upgrade without accumulating subscriptions:
+  select the current route before cleanup, unregister every exact stale Ergo endpoint before relay
+  deletion, converge duplicate active routes to one, and make every delivered worker push visible
+  while duplicate `msgid`s retain one badge count.
 
 ## Status
 
