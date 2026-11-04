@@ -70,10 +70,8 @@ async function prepareServiceWorker(
     process.env.WEBLOUNGE_E2E_DEV === "1",
     "the service worker is intentionally disabled in development",
   );
+  await context.grantPermissions(["notifications"]);
   await page.goto("/");
-  await context.grantPermissions(["notifications"], {
-    origin: new URL(page.url()).origin,
-  });
   await expect
     .poll(() =>
       page.evaluate(async () => {
@@ -690,10 +688,8 @@ async function preparePushEventHarness(
     process.env.WEBLOUNGE_E2E_DEV === "1",
     "the push event harness is emitted only in production test builds",
   );
+  await context.grantPermissions(["notifications"]);
   await page.goto("/");
-  await context.grantPermissions(["notifications"], {
-    origin: new URL(page.url()).origin,
-  });
   await page.evaluate(async (scope) => {
     await navigator.serviceWorker.register("/e2e/push-event-worker.js", {
       scope,
