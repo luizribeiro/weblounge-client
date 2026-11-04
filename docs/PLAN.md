@@ -6,7 +6,8 @@ The single place a fresh session reads to know where the project stands. Update 
   app strings cross-check no longer reads Rust source outside its Nix derivation.
 - [x] Recover push registration after refusal and upgrade without accumulating subscriptions:
   select the current route before cleanup, unregister every exact stale Ergo endpoint before relay
-  deletion, converge duplicate active routes to one, and make every delivered worker push visible
+  deletion, bind queued failures to the route that failed so a later successful replacement cannot
+  be retired, converge duplicate active routes to one, and make every delivered worker push visible
   while duplicate `msgid`s retain one badge count.
 
 ## Status
@@ -518,9 +519,10 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Apply push-service-specific urgency policy while preserving registration probing: Apple
     passes only high, while Mozilla, FCM, and Edge also pass normal for silent `MARKREAD`; all lower
     priorities return 201 without forwarding. Record urgency outcomes in privacy-safe tracing (#100).
-  - [x] Reconcile notifications read elsewhere: non-Apple workers consume `MARKREAD` silently,
-    close its conversation tag, and recompute per-conversation badge state; every push tidies known
-    read tags, while page open/read updates close them and correct Apple badges from engine counts.
+  - [x] Reconcile notifications read elsewhere: non-Apple workers consume `MARKREAD`, close its
+    conversation tag, recompute per-conversation badge state, and then show the generic notification
+    required for every delivered push; every push tidies known read tags, while page open/read
+    updates close them and correct Apple badges from engine counts.
   - [ ] Add rate limits, engine/platform stable network identity, and the unmocked local-Ergo →
     relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
