@@ -232,6 +232,27 @@
             exit "$playwright_status"
           fi
         '';
+        e2eNetwork = pkgs.writeShellApplication {
+          name = "weblounge-e2e-network";
+          runtimeInputs = [
+            pkgs.iproute2
+            pkgs.util-linux
+          ];
+          text = ''
+            exec unshare --user --map-root-user --net \
+              ${pkgs.writeShellScript "weblounge-e2e-network-run" ''
+                ip link set lo up
+                ip link add e2e-online type dummy
+                ip address add 192.0.2.1/24 dev e2e-online
+                ip link set e2e-online up
+                ip route add default via 192.0.2.2 dev e2e-online
+                exec "$@"
+              ''} "$@"
+          '';
+        };
+        runE2e = command: ''
+          ${pkgs.lib.getExe e2eNetwork} ${pkgs.runtimeShell} -c ${pkgs.lib.escapeShellArg command}
+        '';
         appCheck =
           name: command:
           pkgs.stdenvNoCC.mkDerivation {
@@ -305,45 +326,47 @@
           WEBLOUNGE_EXPECTED_BUILD_SHA = buildSha;
           buildPhase = ''
             runHook preBuild
-            weblounge-ergo >ergo.log 2>&1 &
-            ergo_pid=$!
-            node app/e2e/socket-forwarder.mjs >forwarder.log 2>&1 &
-            forwarder_pid=$!
-            export WEBLOUNGE_ERGO_CONTROL_PID="$ergo_pid"
-            trap 'kill "$forwarder_pid" "$ergo_pid" 2>/dev/null || true; wait "$forwarder_pid" "$ergo_pid" 2>/dev/null || true' EXIT
-            ready=false
-            for _ in $(seq 1 200); do
-              if grep --quiet 'local Ergo is ready' ergo.log; then
-                ready=true
-                break
-              fi
-              if ! kill -0 "$ergo_pid" 2>/dev/null; then
+            ${runE2e ''
+              weblounge-ergo >ergo.log 2>&1 &
+              ergo_pid=$!
+              node app/e2e/socket-forwarder.mjs >forwarder.log 2>&1 &
+              forwarder_pid=$!
+              export WEBLOUNGE_ERGO_CONTROL_PID="$ergo_pid"
+              trap 'kill "$forwarder_pid" "$ergo_pid" 2>/dev/null || true; wait "$forwarder_pid" "$ergo_pid" 2>/dev/null || true' EXIT
+              ready=false
+              for _ in $(seq 1 200); do
+                if grep --quiet 'local Ergo is ready' ergo.log; then
+                  ready=true
+                  break
+                fi
+                if ! kill -0 "$ergo_pid" 2>/dev/null; then
+                  cat ergo.log >&2
+                  exit 1
+                fi
+                sleep 0.05
+              done
+              if [[ "$ready" != true ]]; then
                 cat ergo.log >&2
                 exit 1
               fi
-              sleep 0.05
-            done
-            if [[ "$ready" != true ]]; then
-              cat ergo.log >&2
-              exit 1
-            fi
-            forwarder_ready=false
-            for _ in $(seq 1 200); do
-              if curl --silent --fail http://127.0.0.1:8091/health >/dev/null; then
-                forwarder_ready=true
-                break
-              fi
-              if ! kill -0 "$forwarder_pid" 2>/dev/null; then
+              forwarder_ready=false
+              for _ in $(seq 1 200); do
+                if curl --silent --fail http://127.0.0.1:8091/health >/dev/null; then
+                  forwarder_ready=true
+                  break
+                fi
+                if ! kill -0 "$forwarder_pid" 2>/dev/null; then
+                  cat forwarder.log >&2
+                  exit 1
+                fi
+                sleep 0.05
+              done
+              if [[ "$forwarder_ready" != true ]]; then
                 cat forwarder.log >&2
                 exit 1
               fi
-              sleep 0.05
-            done
-            if [[ "$forwarder_ready" != true ]]; then
-              cat forwarder.log >&2
-              exit 1
-            fi
-            ${playwrightCommand}
+              ${playwrightCommand}
+            ''}
             runHook postBuild
           '';
           installPhase = "touch $out";
@@ -366,7 +389,7 @@
           WEBLOUNGE_E2E_DEV = "1";
           buildPhase = ''
             runHook preBuild
-            ${playwrightCommand}
+            ${runE2e playwrightCommand}
             runHook postBuild
           '';
           installPhase = "touch $out";
