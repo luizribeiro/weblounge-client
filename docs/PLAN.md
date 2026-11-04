@@ -474,7 +474,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     the previous build's assets during handoff, ignore and diagnose future config fields, publish a
     revalidated push block live, and show notification setup when its dismissal read fails or
     stalls. Expose every prompt visibility condition in `/debug`, with fresh-profile Firefox and
-    Chromium coverage for the configured-push path.
+    Chromium coverage for the configured-push path. A fading splash no longer authorizes an
+    interactive-page reload, and production push and mobile-input journeys wait for the worker's
+    active controller before exercising delivery or the first shell interaction.
   - [ ] Add urgency policy, rate limits, engine/platform stable network identity, and the unmocked
     local-Ergo → relay → push-service delivery journey.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)

@@ -749,7 +749,23 @@ test.describe("viewport diagnostics overlay", () => {
 
 async function openChannel(page: Page, query = "") {
   await page.goto(`/?irc-password=weblounge-test${query}`);
+  await waitForProductionWorkerControl(page);
   await page.getByRole("button", { name: "#weblounge-test" }).click();
+}
+
+async function waitForProductionWorkerControl(page: Page): Promise<void> {
+  if (process.env.WEBLOUNGE_E2E_DEV === "1") return;
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        return {
+          active: registration.active?.state ?? null,
+          controller: navigator.serviceWorker.controller?.state ?? null,
+        };
+      }),
+    )
+    .toEqual({ active: "activated", controller: "activated" });
 }
 
 interface KeyboardFrame {
