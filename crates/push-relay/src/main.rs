@@ -40,8 +40,24 @@ async fn run() -> weblounge_push_relay::Result<()> {
 
     let database = Database::open(config.database_path()).await?;
     let concierge = ConciergeClient::new(config.concierge_url.clone(), secret)?;
-    let targets = EndpointValidator::production();
-    let sender = WebPushSender::new(&vapid_key, targets.clone())?;
+    #[cfg(feature = "push-e2e")]
+    let (targets, sender) =
+        if let (Some(host), Some(ca_file)) = (&config.test_target_host, &config.test_ca_file) {
+            let targets = EndpointValidator::push_e2e(host.clone());
+            let root = tokio::fs::read(ca_file).await?;
+            let sender = WebPushSender::push_e2e(&vapid_key, targets.clone(), &root)?;
+            (targets, sender)
+        } else {
+            let targets = EndpointValidator::production();
+            let sender = WebPushSender::new(&vapid_key, targets.clone())?;
+            (targets, sender)
+        };
+    #[cfg(not(feature = "push-e2e"))]
+    let (targets, sender) = {
+        let targets = EndpointValidator::production();
+        let sender = WebPushSender::new(&vapid_key, targets.clone())?;
+        (targets, sender)
+    };
     let service = app(
         database,
         concierge,

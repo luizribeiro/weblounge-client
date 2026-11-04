@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+push-e2e = []
+
 [dependencies]
 async-trait = "0.1.89"
 aes-gcm = "0.10.3"

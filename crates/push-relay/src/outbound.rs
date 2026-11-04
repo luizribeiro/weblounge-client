@@ -139,7 +139,7 @@ impl ReqwestTransport {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "push-e2e"))]
     fn with_root_certificate(root: Certificate) -> Self {
         Self {
             root: Some(root),
@@ -245,6 +245,7 @@ pub struct EndpointValidator {
     allowed_suffixes: Arc<Vec<String>>,
     resolver: Arc<dyn DnsResolver>,
     dns_timeout: Duration,
+    allow_documentation_addresses: bool,
 }
 
 impl std::fmt::Debug for EndpointValidator {
@@ -284,7 +285,17 @@ impl EndpointValidator {
             allowed_suffixes: Arc::new(Vec::new()),
             resolver,
             dns_timeout: DNS_LOOKUP_TIMEOUT,
+            allow_documentation_addresses: false,
         }
+    }
+
+    /// Constructs the validator used only by the full-system Web Push fixture.
+    #[cfg(feature = "push-e2e")]
+    #[must_use]
+    pub fn push_e2e(target_host: impl Into<String>) -> Self {
+        let mut validator = Self::new([target_host], Arc::new(SystemDns));
+        validator.allow_documentation_addresses = true;
+        validator
     }
 
     #[cfg(test)]
@@ -327,7 +338,11 @@ impl EndpointValidator {
         let addresses = tokio::time::timeout(self.dns_timeout, self.resolver.resolve(host, port))
             .await
             .map_err(|_| Error::TargetRefused("DNS resolution timed out".to_owned()))??;
-        if addresses.is_empty() || addresses.iter().any(|address| !is_public(*address)) {
+        if addresses.is_empty()
+            || addresses
+                .iter()
+                .any(|address| !self.address_is_allowed(*address))
+        {
             return Err(Error::TargetRefused(
                 "endpoint resolves to a non-public address".to_owned(),
             ));
@@ -338,6 +353,15 @@ impl EndpointValidator {
             .collect();
         addresses.sort_by_key(std::net::SocketAddr::is_ipv6);
         Ok(addresses)
+    }
+
+    fn address_is_allowed(&self, address: IpAddr) -> bool {
+        if self.allow_documentation_addresses
+            && matches!(address, IpAddr::V4(address) if address.is_documentation())
+        {
+            return true;
+        }
+        is_public(address)
     }
 
     fn host_is_allowed(&self, host: &str) -> bool {
@@ -376,6 +400,26 @@ impl WebPushSender {
     /// Returns an error when the key is not a PEM-encoded P-256 private key.
     pub fn new(vapid_key: &[u8], targets: EndpointValidator) -> Result<Self> {
         Self::with_transport(vapid_key, targets, Arc::new(ReqwestTransport::production()))
+    }
+
+    /// Constructs the sender used only by the full-system Web Push fixture.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the relay key or test root certificate is invalid.
+    #[cfg(feature = "push-e2e")]
+    pub fn push_e2e(
+        vapid_key: &[u8],
+        targets: EndpointValidator,
+        root_certificate: &[u8],
+    ) -> Result<Self> {
+        let root = Certificate::from_pem(root_certificate)
+            .map_err(|error| Error::Config(format!("invalid test CA: {error}")))?;
+        Self::with_transport(
+            vapid_key,
+            targets,
+            Arc::new(ReqwestTransport::with_root_certificate(root)),
+        )
     }
 
     /// Constructs a sender with an explicit no-redirect transport.

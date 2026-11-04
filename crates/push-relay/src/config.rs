@@ -64,6 +64,16 @@ pub struct Config {
     /// File containing the push-relay introspection client secret.
     #[arg(long, env = "PUSH_RELAY_CONCIERGE_SECRET_FILE")]
     pub concierge_secret_file: PathBuf,
+
+    /// TEST ONLY: push-service hostname allowed to resolve to TEST-NET-3.
+    #[cfg(feature = "push-e2e")]
+    #[arg(long, env = "PUSH_RELAY_TEST_TARGET_HOST", hide = true)]
+    pub test_target_host: Option<String>,
+
+    /// TEST ONLY: CA trusted for the push-service endpoint.
+    #[cfg(feature = "push-e2e")]
+    #[arg(long, env = "PUSH_RELAY_TEST_CA_FILE", hide = true)]
+    pub test_ca_file: Option<PathBuf>,
 }
 
 impl Config {
@@ -112,6 +122,22 @@ impl Config {
                     "--allowed-origins values must be exact HTTP or HTTPS origins".to_owned(),
                 ));
             }
+        }
+        #[cfg(feature = "push-e2e")]
+        if self.test_target_host.is_some() != self.test_ca_file.is_some() {
+            return Err(Error::Config(
+                "test target host and CA must be configured together".to_owned(),
+            ));
+        }
+        #[cfg(feature = "push-e2e")]
+        if self
+            .test_target_host
+            .as_ref()
+            .is_some_and(|host| host.is_empty() || host.contains(['/', ':']))
+        {
+            return Err(Error::Config(
+                "test target host must be a hostname".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -176,5 +202,26 @@ mod tests {
         assert!(config.validate().is_err());
         config.allowed_origins = vec![Url::parse("ftp://beta.weblounge.org").expect("URL")];
         assert!(config.validate().is_err());
+    }
+
+    #[cfg(feature = "push-e2e")]
+    #[test]
+    fn test_target_requires_its_private_ca() {
+        let mut config = super::Config::try_parse_from([
+            "push-relay",
+            "--vapid-key-file",
+            "vapid.pem",
+            "--concierge-url",
+            "http://127.0.0.1/introspect",
+            "--concierge-secret-file",
+            "concierge.secret",
+            "--test-target-host",
+            "receiver.test",
+        ])
+        .expect("configuration");
+
+        assert!(config.validate().is_err());
+        config.test_ca_file = Some("ca.pem".into());
+        config.validate().expect("paired test target configuration");
     }
 }
