@@ -228,9 +228,10 @@ describe("deployment config", () => {
       finishRevalidation = resolve;
     });
     const backgroundFetch = vi.fn(() => revalidation);
-    await expect(loadDeploymentConfig(backgroundFetch, cache)).resolves.toEqual(
-      hosted,
-    );
+    const onRevalidated = vi.fn();
+    await expect(
+      loadDeploymentConfig(backgroundFetch, cache, onRevalidated),
+    ).resolves.toEqual(hosted);
     expect(backgroundFetch).toHaveBeenCalledOnce();
 
     finishRevalidation(Response.json({ mode: "app" }));
@@ -239,6 +240,7 @@ describe("deployment config", () => {
         JSON.parse(cache.getItem(deploymentConfigCacheKey) ?? "null"),
       ).toEqual({ config: { mode: "app" }, schema: 1 }),
     );
+    expect(onRevalidated).toHaveBeenCalledWith({ mode: "app" });
   });
 
   it("restores validated push configuration from the cache", async () => {

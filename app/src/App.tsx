@@ -87,7 +87,7 @@ interface AppProps {
   beforeReveal?: () => Promise<void>;
   engineClient?: EngineClient;
   hostedSession?: HostedSession;
-  pushConfig?: PushDeploymentConfig;
+  pushConfig?: PushDeploymentConfig | undefined;
   onReady?: () => void;
   onHostedAuthorizationRequired?: (
     reason: "refresh_failed" | "revoked" | "worker_restarted",
@@ -110,6 +110,7 @@ export function App(props: AppProps) {
   const [shellReady, setShellReady] = createSignal(!startupSyncRequired);
   const [startupError, setStartupError] = createSignal<string>();
   const [engineReady, setEngineReady] = createSignal(false);
+  const [engineStarted, setEngineStarted] = createSignal(false);
   const [startupRevealed, setStartupRevealed] = createSignal(false);
   const [startupContentReady, setStartupContentReady] = createSignal(
     !startupSyncRequired,
@@ -150,6 +151,7 @@ export function App(props: AppProps) {
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushStartup: Promise<void> | undefined;
   let notificationPromptLoadId: string | undefined;
+  let loadedPromptConfig: string | undefined;
   let foregroundLease: ForegroundLease | undefined;
   let appIsForeground = false;
   const pendingPushEvents: EngineClientMessage[] = [];
@@ -195,6 +197,26 @@ export function App(props: AppProps) {
     const current = buffers();
     if (props.pushConfig === undefined) return;
     void syncAppBadge(current).catch(() => undefined);
+  });
+  createEffect(() => {
+    const config = props.pushConfig;
+    const mountedClient = client;
+    if (!engineStarted() || config === undefined || mountedClient === undefined)
+      return;
+    const configKey = `${config.relay}\0${config.relay_vapid}`;
+    if (loadedPromptConfig === configKey) return;
+    loadedPromptConfig = configKey;
+    setNotificationPromptDismissed(undefined);
+    notificationPromptLoadId = crypto.randomUUID();
+    void mountedClient
+      .send({
+        id: notificationPromptLoadId,
+        request: { type: "load_notification_prompt_dismissal" },
+      })
+      .catch(() => undefined);
+    if ("Notification" in window && Notification.permission === "granted") {
+      void startConfiguredPush(mountedClient);
+    }
   });
   const noticeActions = new ActionRegistry(
     {
@@ -548,10 +570,9 @@ export function App(props: AppProps) {
         );
       }
     });
-    let engineStarted = false;
     let updateReady = serviceWorkerUpdateIsReady();
     const publishUpdateReady = () => {
-      if (!engineStarted || !updateReady) return;
+      if (!engineStarted() || !updateReady) return;
       void mountedClient
         .send({
           id: crypto.randomUUID(),
@@ -630,19 +651,7 @@ export function App(props: AppProps) {
       if (typeof outcome === "object") {
         void handleInitialHostedFailure(outcome.error);
       }
-      engineStarted = outcome !== "failed";
-      if (engineStarted && props.pushConfig !== undefined) {
-        notificationPromptLoadId = crypto.randomUUID();
-        void mountedClient
-          .send({
-            id: notificationPromptLoadId,
-            request: { type: "load_notification_prompt_dismissal" },
-          })
-          .catch(() => undefined);
-        if ("Notification" in window && Notification.permission === "granted") {
-          void startConfiguredPush(mountedClient);
-        }
-      }
+      setEngineStarted(outcome !== "failed");
       publishUpdateReady();
       setEngineReady(true);
     });

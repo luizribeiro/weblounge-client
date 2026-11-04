@@ -89,8 +89,10 @@ interface BootstrapProps {
 }
 
 function Bootstrap(props: BootstrapProps) {
+  const [revalidatedConfig, setRevalidatedConfig] =
+    createSignal<DeploymentConfig>();
   let deploymentAttempt: Promise<DeploymentAttempt> | undefined =
-    loadDeploymentAttempt();
+    loadDeploymentAttempt(setRevalidatedConfig);
   const platform = platformEnvironment();
   const theme = installTheme(document, platform.prefersDark());
   const removeDensity = installDensity(document);
@@ -111,7 +113,8 @@ function Bootstrap(props: BootstrapProps) {
     if (starting) return;
     starting = true;
     try {
-      const attempt = deploymentAttempt ?? loadDeploymentAttempt();
+      const attempt =
+        deploymentAttempt ?? loadDeploymentAttempt(setRevalidatedConfig);
       deploymentAttempt = undefined;
       const deployment = await attempt;
       if (deployment.type === "app") {
@@ -264,9 +267,7 @@ function Bootstrap(props: BootstrapProps) {
                 beforeReveal={props.beforeReveal}
                 engineClient={current.engineClient}
                 hostedSession={session}
-                {...(current.config.push === undefined
-                  ? {}
-                  : { pushConfig: current.config.push })}
+                pushConfig={livePushConfig(current.config, revalidatedConfig())}
                 onReady={props.onReady}
                 onStartupError={(message, retry) =>
                   props.showError(
@@ -301,12 +302,42 @@ function takePrewarmedEngineClient(): EngineClient {
   return warmed.client;
 }
 
-async function loadDeploymentAttempt(): Promise<DeploymentAttempt> {
-  const config = await loadDeploymentConfig();
+async function loadDeploymentAttempt(
+  onRevalidated: (config: DeploymentConfig) => void,
+): Promise<DeploymentAttempt> {
+  const config = await loadDeploymentConfig(fetch, localStorage, onRevalidated);
   if (config.mode === "app") return { type: "app", config };
   requireCurrentRedirect(config);
   const metadata = acquireInitialMetadata(config);
   return { type: "hosted", config, metadata };
+}
+
+function livePushConfig(
+  initial: HostedConfig,
+  revalidated: DeploymentConfig | undefined,
+): HostedConfig["push"] {
+  if (
+    revalidated?.mode !== "hosted" ||
+    !sameHostedIdentity(initial, revalidated)
+  ) {
+    return initial.push;
+  }
+  return revalidated.push;
+}
+
+function sameHostedIdentity(left: HostedConfig, right: HostedConfig): boolean {
+  return (
+    left.network.name === right.network.name &&
+    left.network.endpoint === right.network.endpoint &&
+    left.network.autojoin.length === right.network.autojoin.length &&
+    left.network.autojoin.every(
+      (channel, index) => channel === right.network.autojoin[index],
+    ) &&
+    left.oauth.issuer === right.oauth.issuer &&
+    left.oauth.client_id === right.oauth.client_id &&
+    left.oauth.redirect_uri === right.oauth.redirect_uri &&
+    left.oauth.session_token_endpoint === right.oauth.session_token_endpoint
+  );
 }
 
 async function acquireInitialAccessToken(

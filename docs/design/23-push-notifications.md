@@ -533,6 +533,10 @@ dismissed it. iOS additionally requires the installed `display-mode: standalone`
 desktop browsers do not. The UI waits for the engine-owned preference read before painting, so a
 remembered dismissal never flashes during startup.
 
+Background deployment-config revalidation publishes a compatible `push` block into the running
+page. The prompt preference load and granted-permission startup react to that live value, so adding
+push at the server does not require one more launch.
+
 The tap handler calls `Notification.requestPermission()` before doing any asynchronous work. A
 grant enters the existing subscription, relay-device, route, and IRC registration path; denial
 hides the prompt without starting push. Explicit dismissal writes a versioned record through the

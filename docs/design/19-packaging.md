@@ -52,8 +52,9 @@ URLs use cache-first. Hashed assets from the immediately previous shell remain a
 running old page during an update. The worker bypasses `config.json`. The window validates
 and versions the last good public deployment configuration in local storage, starts from it
 without a network round trip, and revalidates in the background. A valid changed response is
-persisted for the next launch; a failed or invalid response leaves the last good value intact. A
-first launch with no valid cached configuration waits for the network.
+persisted for the next launch, and a compatible optional push block is published to the running
+page immediately; a failed or invalid response leaves the last good value intact. A first launch
+with no valid cached configuration waits for the network.
 
 Every other request passes through to the browser without a service-worker `respondWith`. In
 particular, the worker never handles non-GET requests, cross-origin requests, `/socket`, OAuth or

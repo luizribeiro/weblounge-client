@@ -92,12 +92,13 @@ not a path derived from the issuer.
 The window keeps the last schema-valid deployment configuration in a versioned local-storage
 record. It is public routing and OAuth-client metadata, never a credential. A returning launch uses
 that record immediately and revalidates `/config.json` in the background; a changed valid response
-takes effect on the next launch so one running session never mixes deployment identities. A cold
-launch without a valid record waits for the fetch. Network failures and the startup deadline are
-reachability errors; only a missing/HTML response, malformed JSON, or schema violation is a
-misconfigured deployment. Known fields are validated strictly, while unknown fields at every
-object level are ignored and listed in `/debug`; a future server addition must not brick an older
-client. The service worker never handles `config.json`.
+persists for the next launch. A compatible optional push block takes effect in the current session,
+while network and OAuth identity changes wait for the next launch so one running session never
+mixes deployment identities. A cold launch without a valid record waits for the fetch. Network
+failures and the startup deadline are reachability errors; only a missing/HTML response, malformed
+JSON, or schema violation is a misconfigured deployment. Known fields are validated strictly,
+while unknown fields at every object level are ignored and listed in `/debug`; a future server
+addition must not brick an older client. The service worker never handles `config.json`.
 
 The window's credential path posts an empty JSON object to the configured session-token endpoint
 with `credentials: "include"`. It validates the bearer response and yields the token once to the

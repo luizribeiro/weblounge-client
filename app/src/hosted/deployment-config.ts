@@ -29,11 +29,15 @@ export class DeploymentConfigError extends Error {
 export async function loadDeploymentConfig(
   fetchConfig: typeof fetch = fetch,
   storage: ConfigStorage = localStorage,
+  onRevalidated: (config: DeploymentConfig) => void = () => {},
 ): Promise<DeploymentConfig> {
   const cached = readCachedDeploymentConfig(storage);
   if (cached !== undefined) {
     void fetchDeploymentConfig(fetchConfig)
-      .then((config) => writeCachedDeploymentConfig(storage, config))
+      .then((config) => {
+        writeCachedDeploymentConfig(storage, config);
+        onRevalidated(config);
+      })
       .catch(() => undefined);
     return cached;
   }

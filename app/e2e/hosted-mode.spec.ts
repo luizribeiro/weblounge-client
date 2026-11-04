@@ -897,6 +897,60 @@ for (const surface of [
   });
 }
 
+test.describe("live notification configuration", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("shows the prompt when revalidation adds push", async ({
+    baseURL,
+    page,
+  }) => {
+    if (baseURL === undefined) throw new Error("app base URL is missing");
+    await installPushManagerStub(page, "default", "granted");
+    await installFakeEngine(page);
+    await installFakeOAuth(page);
+    await page.addInitScript(
+      ({ config, key }) => {
+        localStorage.setItem(key, JSON.stringify({ config, schema: 1 }));
+      },
+      {
+        config: hostedConfig(baseURL),
+        key: "weblounge.deployment-config.v1",
+      },
+    );
+    let finishRevalidation = () => {};
+    const revalidation = new Promise<void>((resolve) => {
+      finishRevalidation = resolve;
+    });
+    await page.route("**/config.json", async (route) => {
+      await revalidation;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(pushHostedConfig(route.request().url())),
+      });
+    });
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(baseURL).origin);
+        return;
+      }
+      await fulfillSessionToken(route, baseURL, "push-session-token");
+    });
+
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Notifications" }),
+    ).toHaveCount(0);
+
+    finishRevalidation();
+    await expect(
+      page.getByRole("region", { name: "Notifications" }),
+    ).toBeVisible();
+  });
+});
+
 for (const surface of [
   { browser: "chromium", use: pixel7 },
   { browser: "webkit", use: iphone16Pro },
