@@ -9,6 +9,10 @@ The single place a fresh session reads to know where the project stands. Update 
   deletion, bind queued failures to the route that failed so a later successful replacement cannot
   be retired, converge duplicate active routes to one, and make every delivered worker push visible
   while duplicate `msgid`s retain one badge count.
+- [x] Drive the unmocked push lifecycle through NixOS Ergo, the production-shaped relay, papo's
+  HTTPS receiver, and Chromium's service worker across upgrade, reconnect, key rotation, multiple
+  tabs and devices, MARKREAD filtering, missing keys, and registration refusal. Relay health now
+  reports duplicate active routes, and the production build proves the test feature stays absent.
 - [x] Keep production push handling live in the isolated classic service-worker bundle by sharing
   worker defines across both Vite passes and verifying its required listeners and import-free output.
 - [x] Converge duplicate relay routes server-side when a replacement activates, so stale home
@@ -534,8 +538,12 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     conversation tag, recompute per-conversation badge state, and then show the generic notification
     required for every delivered push; every push tidies known read tags, while page open/read
     updates close them and correct Apple badges from engine counts.
-  - [ ] Add rate limits, engine/platform stable network identity, and the unmocked local-Ergo →
-    relay → push-service delivery journey.
+  - [x] Cover the unmocked local-Ergo → relay → push-service → worker delivery journey, including
+    the pinned previous build, route/subscription convergence, real encrypted DM and mention
+    payloads, Apple MARKREAD filtering, multiple tabs and devices, missing keys, and refusal
+    recovery. The isolated relay test feature trusts only the fixture CA and TEST-NET target;
+    feature isolation checks keep the production binary identical with the feature disabled.
+  - [ ] Add rate limits and engine/platform stable network identity.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.
   - [x] Keep the initial splash visible through hosted OAuth exchange and engine connection; reveal only the ready shell or a human error, without an intermediate sign-in screen.
