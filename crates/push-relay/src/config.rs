@@ -68,7 +68,7 @@ pub struct Config {
     /// TEST ONLY: push-service hostname allowed to resolve to TEST-NET-3.
     #[cfg(feature = "push-e2e")]
     #[arg(long, env = "PUSH_RELAY_TEST_TARGET_HOST", hide = true)]
-    pub test_target_host: Option<String>,
+    pub test_target_host: Vec<String>,
 
     /// TEST ONLY: CA trusted for the push-service endpoint.
     #[cfg(feature = "push-e2e")]
@@ -124,7 +124,7 @@ impl Config {
             }
         }
         #[cfg(feature = "push-e2e")]
-        if self.test_target_host.is_some() != self.test_ca_file.is_some() {
+        if self.test_target_host.is_empty() != self.test_ca_file.is_none() {
             return Err(Error::Config(
                 "test target host and CA must be configured together".to_owned(),
             ));
@@ -132,8 +132,8 @@ impl Config {
         #[cfg(feature = "push-e2e")]
         if self
             .test_target_host
-            .as_ref()
-            .is_some_and(|host| host.is_empty() || host.contains(['/', ':']))
+            .iter()
+            .any(|host| host.is_empty() || host.contains(['/', ':']))
         {
             return Err(Error::Config(
                 "test target host must be a hostname".to_owned(),
@@ -223,5 +223,10 @@ mod tests {
         assert!(config.validate().is_err());
         config.test_ca_file = Some("ca.pem".into());
         config.validate().expect("paired test target configuration");
+
+        config
+            .test_target_host
+            .push("second.receiver.test".to_owned());
+        config.validate().expect("multiple test targets");
     }
 }

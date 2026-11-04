@@ -292,8 +292,8 @@ impl EndpointValidator {
     /// Constructs the validator used only by the full-system Web Push fixture.
     #[cfg(feature = "push-e2e")]
     #[must_use]
-    pub fn push_e2e(target_host: impl Into<String>) -> Self {
-        let mut validator = Self::new([target_host], Arc::new(SystemDns));
+    pub fn push_e2e(target_hosts: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let mut validator = Self::new(target_hosts, Arc::new(SystemDns));
         validator.allow_documentation_addresses = true;
         validator
     }
