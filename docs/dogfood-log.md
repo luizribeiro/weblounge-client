@@ -107,3 +107,4 @@ Status: **open** (not started), **queued** (assigned, not started), **in progres
 | 99 | 2026-11-04 | Conversation-title loading indicator uses the logo's fill effect; it should be the sweeping shimmer only. | fixed locally; awaiting review |
 | 100 | 2026-11-04 | Push works on iPhone (full notification + badge). Extra generic "New message from weblounge" notifications arrive too: likely Ergo MARKREAD/PING pushes the relay should drop by urgency for web targets. | investigating |
 | 101 | 2026-11-04 | Desktop: DMs that arrived as pushes (from "push test 2" on) are marked "unverified sender". | in progress |
+| 102 | 2026-11-04 | Beta 9f094ac: iPhone push registration fails (engine=Failed(invalid_parameters), relay=none) after the stale-route retirement; Firefox still works; no self-recovery. | in progress |
