@@ -489,6 +489,8 @@ Every failed registration outcome carries the route id that failed. Recovery cap
 when the event arrives and never looks up a later mutable current route to decide what to retire. If
 another tab registers a replacement before the queued recovery acquires the route lock, recovery may
 unregister and delete only the failed old endpoint; it neither retires nor replaces the newer route.
+A later registration outcome supersedes an already queued failure locally, including when two tabs
+refresh the same route id, so delayed recovery cannot undo the newer successful outcome.
 
 `ensurePushSubscription` is the later UI slice's platform entry point. It never prompts: permission
 must already be `granted`. It subscribes with `relay_vapid`, reuses a matching subscription and
