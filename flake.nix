@@ -307,7 +307,7 @@
             runHook preBuild
             weblounge-ergo >ergo.log 2>&1 &
             ergo_pid=$!
-            node e2e/socket-forwarder.mjs >forwarder.log 2>&1 &
+            node app/e2e/socket-forwarder.mjs >forwarder.log 2>&1 &
             forwarder_pid=$!
             export WEBLOUNGE_ERGO_CONTROL_PID="$ergo_pid"
             trap 'kill "$forwarder_pid" "$ergo_pid" 2>/dev/null || true; wait "$forwarder_pid" "$ergo_pid" 2>/dev/null || true' EXIT

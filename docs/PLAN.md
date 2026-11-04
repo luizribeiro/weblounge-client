@@ -77,6 +77,7 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     conversations without a reload (#93).
   - [x] Scope local Ergo always-on state to connection-resilience scenarios, preserving both
     reconnect catch-up and isolated multi-nick engine coverage.
+  - [x] Start the production E2E socket forwarder from the shared workspace source root.
   - [x] Omit channel mode prefixes from every transcript row. IRC history cannot preserve the
     sender's status at message time, so the message protocol carries no mode symbol and live and
     optimistic rows do not guess one. The Mode symbols setting remains scoped to the member list;
