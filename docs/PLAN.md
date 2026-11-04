@@ -539,16 +539,19 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     `Failed(invalid_parameters)` through the wire and browser view.
   - [x] Apply push-service-specific urgency policy while preserving registration probing: Apple
     and Chromium services pass only high, while Mozilla also passes normal for silent `MARKREAD`;
-    all lower priorities return 201 without forwarding. Record urgency outcomes in privacy-safe
-    tracing (#100).
+    all lower priorities return 201 without forwarding. Treat this only as an optimization once
+    Ergo commit `9975d8d` ships: production 2.19.1 sends every control at high urgency, so worker
+    correctness never depends on the filter. Record urgency outcomes in privacy-safe tracing (#100).
   - [x] Reconcile notifications read elsewhere: workers that receive `MARKREAD` persist its
     timestamp, close only notifications from that conversation at or before the marker, and
     recompute per-conversation badge state without showing a control notification. Maintenance
-    `PING` repeats the bounded cleanup; visible pushes never run cleanup themselves. Page open/read
-    updates apply the same marker comparison and correct Apple badges from engine counts. Parsed
+    `PING` repeats the bounded cleanup; visible pushes never run cleanup themselves. This branch is
+    independent of urgency, including Ergo 2.19.1's high controls. Page open/read/foreground updates
+    apply the same marker comparison and correct stale Apple badges from engine counts. Parsed
     visible pushes call `showNotification` before message handoff or badge persistence, with route
     lookup bounded and a generic presentation deadline. Firefox and Chromium browser journeys prove
-    `MARKREAD` itself stays silent while closing the covered DM notification and lowering its badge.
+    `MARKREAD` itself stays silent while closing the covered DM notification and lowering its badge;
+    WebKit covers foreground recovery and documents its user-visible-only revocation/fallback risk.
   - [x] Cover the unmocked local-Ergo → relay → push-service → worker delivery journey, including
     the pinned previous build, route/subscription convergence, real encrypted DM and mention
     payloads, Apple MARKREAD filtering, multiple tabs and devices, missing keys, and refusal

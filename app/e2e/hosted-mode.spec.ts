@@ -976,7 +976,7 @@ async function exerciseNotificationPromptRegistration(
 test.describe("iOS stale app badge", () => {
   test.use({ ...iphone16Pro, serviceWorkers: "block" });
 
-  test("converges an Apple badge after a dropped MARKREAD on foreground", async ({
+  test("converges an Apple badge after missed silent cleanup on foreground", async ({
     baseURL,
     page,
   }, testInfo) => {

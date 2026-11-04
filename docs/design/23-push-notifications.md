@@ -25,18 +25,20 @@ Five facts shape the design:
    `subscribe()` throws `InvalidStateError` for another `applicationServerKey`). Every server or
    bouncer signs with its own key (`VAPID` ISUPPORT), so a PWA can't take pushes straight from two
    homes, and the payload carries no network identity.
-4. **Every push must show a notification on iOS.** WebKit revokes a Web Push subscription after
-   pushes that show nothing (WebKit commit 108ccb442e40, "Enforce silent push quota"; Discourse hit
-   it: https://meta.discourse.org/t/290225). WebKit's blog says a missed notification can revoke it
-   "for any reason"; the grace count is **[unverified]**, so we design for zero. A native NSE can't
-   drop a push either without Apple's discretionary `usernotifications.filtering` entitlement.
+4. **Every push must show a notification on iOS.** Apple says Safari does not support invisible
+   pushes and that every push must present immediately
+   (https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers).
+   WebKit says an event handler that shows nothing can have its subscription revoked
+   (https://webkit.org/blog/12945/meet-web-push/); a badge update alone does not satisfy that promise
+   (https://webkit.org/blog/14112/badging-for-home-screen-web-apps/). A native NSE can't drop a push
+   either without Apple's discretionary `usernotifications.filtering` entitlement.
    Ergo sends pushes that are meant to be silent: the registration test `PING` (high urgency,
    `irc/handlers.go:4384-4390`), a maintenance `PING` when no push has succeeded for over half the
    14-day expiry (checked every 24 h, `irc/server.go:46,346-351`) and `MARKREAD` when a buffer with a
    still-clearable push is read elsewhere (`handlers.go:3265-3274`; never to the endpoint that sent
    the MARKREAD, `client.go:2101`). Ergo 2.19.1 sends all of them at high urgency
-   (`client.go:2127`); upstream PR #2471 (merged 2026-10-22, unreleased) makes the maintenance PING
-   and MARKREAD `UrgencyNormal`. The registration PING stays high.
+   (`client.go:2127`); upstream commit `9975d8d` (unreleased) makes the maintenance PING and
+   MARKREAD `UrgencyNormal`. The registration PING stays high.
 5. **The device can't apply notification rules, so the sender must.** Pushing too much can't be
    undone on iOS (fact 4), and pushing too little can't be fixed while the app is closed. Every
    future rule has to be evaluated by whatever sends the push.
@@ -50,7 +52,9 @@ Five facts shape the design:
   only control is the one-time "Turn on notifications" step the OS requires.
 - **Tapping a notification opens the right buffer and shows the pushed message at once**, from a
   cold start and when the app is open, before the connection is up.
-- **Never a silent push to iOS. Never a duplicate** while the user is looking at the app.
+- **Never have the worker turn a control into a notification. Never a duplicate** while the user is
+  looking at the app. Until the Ergo urgency fix is deployed, this intentionally conflicts with
+  WebKit's no-silent-push contract and carries the revocation/fallback risk below.
 - **Room to grow without changing the wire format:** per-buffer, per-sender and per-network rules,
   all/mentions/none, keywords, and push and badging controlled separately.
 - **The relay never sees plaintext.** It is a small, documented, replaceable service (brief §3.11)
@@ -98,8 +102,9 @@ The brief (§3.12) says Web Push skips the relay. The PWA needs it too:
    key.
 2. **Network identity.** Each home gets its own relay *route* URL, so the device knows which network
    a push came from.
-3. **No silent pushes to iOS.** The relay can drop pushes that would show nothing. Dropping a push
-   is not a silent push; delivering one that shows nothing is.
+3. **Minimize silent pushes where ciphertext metadata permits it.** The relay can drop a
+   non-high-urgency push for visible-only services, but it cannot identify an opaque control sent
+   at high urgency. Correctness therefore stays in the worker and foreground reconciliation.
 
 **Device setup.** On every launch and every return to visible, the page compares
 `PushManager.getSubscription()` with its stored endpoint and upserts that target at the relay. A
@@ -173,18 +178,18 @@ APNs and FCM limits. The ciphertext is base64url-encoded exactly once. An encryp
 truncated, so the relay answers **413** to any home body over 2,800 bytes. In front of it, nginx
 caps bodies at about 4 KB (`client_max_body_size`) and rate-limits with `limit_req`.
 
-**Urgency policy.** `Urgency: high` (messages, INVITE, Ergo's probe) is delivered visibly. Apple Web
-Push drops everything lower because iOS and Safari require every delivered push to show a
-notification. FCM and Windows Push also pass only `high`, because Chromium may replace a silent Web
-Push with its own "site updated in the background" notification. Mozilla alone also forwards
-`normal`, allowing Firefox to apply `MARKREAD` cleanup without a visible notification. All services
-drop `low` and `very-low`. Ergo assigns both `MARKREAD` and its maintenance `PING` to `normal`;
-#2471 only fixes `sendPush` to pass that existing value instead of hardcoding `high`. Because the
-ciphertext is opaque, the relay drops all normal-urgency traffic for visible-push-only services and
-forwards it only to Mozilla. The worker still consumes either control silently as defense in depth:
-`MARKREAD` records its timestamp, closes only notifications at or before that marker and lowers the
-badge, while `PING` repeats the same bounded cleanup. A future Ergo urgency split can move
-maintenance PING to `low` without a relay change.
+**Urgency policy.** The relay forwards `high` to every push service. Apple Web Push drops everything
+lower because iOS and Safari require every delivered push to show a notification. FCM and Windows
+Push also pass only `high`, because Chromium may replace a silent Web Push with its own "site
+updated in the background" notification. Mozilla additionally forwards `normal`; all services drop
+`low` and `very-low`. This is only an optimization for homes that classify their controls. The
+deployed Ergo 2.19.1 hardcodes every push to `high`, including `MARKREAD` and maintenance `PING`, so
+Apple, Chromium and Mozilla all receive those controls today. Upstream commit `9975d8d` (unreleased)
+passes their existing normal urgency through. Because the ciphertext is opaque, the relay cannot
+distinguish a high-urgency control from a visible message. The worker therefore consumes either
+control silently regardless of delivery urgency: `MARKREAD` records its timestamp, closes only
+notifications at or before that marker and lowers the badge, while `PING` repeats the same bounded
+cleanup.
 
 The relay sees which home is pushing (IP and VAPID key), the route and device, timing and urgency.
 It never sees the sender, the target or the text.
@@ -289,18 +294,19 @@ device]**.
   the sum of `mentions` (the engine counts every DM as a mention, `state.rs:1834-1835`). With no
   page open, the service worker increments a counter in `weblounge-push`; on launch the page
   overwrites it with the engine's value.
-- The worker stores a notified count and latest read timestamp per conversation tag. A Mozilla
-  `MARKREAD` zeros that tag, closes only notifications whose server time is at or before the marker,
-  and recomputes the badge without showing a notification. Re-delivery of an existing chat `msgid`
-  replaces its notification without incrementing the count again. Maintenance `PING` repeats that
-  bounded cleanup. It undercounts when Ergo's 16-item push queue overflows
-  (`client.go:53`).
-- Apple never receives `MARKREAD`, so opening the page corrects its badge from the engine and closes
-  each notification at or before that buffer's engine-owned read marker. The same cleanup runs
-  whenever a buffer's read counters change. It scans notification data rather than relying on tag
-  filtering, which Safari does not support. The page seeds the worker's per-tag counts and markers
-  from engine DM unread, channel mention and read state so later closed-page recomputation has the
-  same base. Linux, Firefox and Chrome Android have no badging API, but cleanup still runs.
+- The worker stores a notified count and latest read timestamp per conversation tag. Every delivered
+  `MARKREAD`, including Ergo 2.19.1's high-urgency controls, zeros that tag, closes only notifications
+  whose server time is at or before the marker, and recomputes the badge without calling
+  `showNotification`. Re-delivery of an existing chat `msgid` replaces its notification without
+  incrementing the count again. Maintenance `PING` repeats that bounded cleanup. It undercounts when
+  Ergo's 16-item push queue overflows (`client.go:53`).
+- Opening or foregrounding the page corrects the badge from the engine and closes each notification
+  at or before that buffer's engine-owned read marker, covering a delayed, missed or failed control
+  cleanup on every platform. The same cleanup runs whenever a buffer's read counters change. It
+  scans notification data rather than relying on tag filtering, which Safari does not support. The
+  page seeds the worker's per-tag counts and markers from engine DM unread, channel mention and read
+  state so later closed-page recomputation has the same base. Linux, Firefox and Chrome Android have
+  no badging API, but cleanup still runs.
 
 ## Types
 
@@ -568,16 +574,17 @@ an in-worker ledger. It still decrypts and parses the encrypted envelopes, persi
 closes the covered notification and recomputes the badge in Firefox. The production build check
 proves that the message injection and ledger are absent from the shipped worker.
 
-The same Halloy read left the affected iPhone PWA's icon badge stale. This is the expected Apple
-side of the relay policy rather than another delivery failure: Ergo sends `MARKREAD` at normal
-urgency, and Apple routes accept only high urgency, so the relay acknowledges but does not forward
-that control. A suspended page can therefore retain the worker's last count even when its engine
-buffers already hold the authoritative read state. Launch hydration, every engine counter change
-and every return to the foreground now enqueue a serialized replacement of the worker's aggregate
-and per-conversation counts. Serialization ensures an older foreground snapshot cannot finish
-after a newer read-marker update. WebKit E2E seeds the stale count on an Apple endpoint while the
-page is backgrounded, omits the dropped `MARKREAD`, foregrounds the app and asserts that both the
-icon badge spy and worker state converge to the engine's zero count.
+The same Halloy read left the affected iPhone PWA's icon badge stale. Production Ergo 2.19.1 sends
+every push at high urgency, so the relay did not drop this `MARKREAD`; Apple accepted the high push.
+The evidence does not establish whether iOS dispatched the event, declarative fallback intervened,
+or cleanup/persistence failed. A suspended page can retain the worker's last count even when its
+engine buffers already hold the authoritative read state. Launch hydration, every engine counter
+change and every return to the foreground now enqueue a serialized replacement of the worker's
+aggregate and per-conversation counts. Serialization ensures an older foreground snapshot cannot
+finish after a newer read-marker update. WebKit E2E seeds the resulting stale state on an Apple
+endpoint while the page is backgrounded, foregrounds the app and asserts that both the icon badge
+spy and worker state converge to the engine's zero count; it does not claim that the relay dropped
+the control.
 
 The live relay's route convergence reduced the phone to one route, while the deployed client could
 still delete that relay route without a confirmed IRC UNREGISTER, leaving an Ergo slot until the
@@ -704,22 +711,29 @@ dropped, held, or forwarded outcome without inspecting ciphertext.
 
 The worker persists versioned per-conversation notification counts and read timestamps beside the
 aggregate badge. Visible message and invite pushes increment their notification tag. Chat
-notifications also carry their tag, `msgid` and server time in notification data. On Mozilla, a
-decrypted `MARKREAD` stores the `timestamp=` reference, zeros the matching count and
-closes only notifications from that conversation at or before the marker. A maintenance `PING`
-repeats marker-bounded cleanup without calling `showNotification`; both controls are silent even if
-count persistence fails. Visible and generic pushes do not perform cleanup. The relay forwards these
-normal-urgency controls only to Mozilla; Apple, FCM and Windows Push acknowledge and drop them so
-WebKit's visibility requirement and Chromium's synthesized background-update notification cannot
-surface a control. Ergo currently emits at most a daily maintenance PING for an idle subscription,
-plus user-driven `MARKREAD` events.
+notifications also carry their tag, `msgid` and server time in notification data. A decrypted
+`MARKREAD` stores the `timestamp=` reference, zeros the matching count and closes only notifications
+from that conversation at or before the marker. A maintenance `PING` repeats marker-bounded cleanup
+without calling `showNotification`; both controls are silent even if count persistence fails and
+regardless of the request's urgency. Visible and generic pushes do not perform cleanup. The relay
+can keep future normal-urgency controls away from Apple, FCM and Windows Push, but production Ergo
+2.19.1 sends them at high urgency, which every service receives.
+
+This creates an unavoidable Apple compatibility risk until Ergo commit `9975d8d` is deployed.
+WebKit requires every handled push to produce a visible notification and explicitly says a badge
+update does not count. Our Declarative Web Push envelope also gives Safari a generic proposed
+notification; WebKit may display that fallback when the worker intentionally produces no
+replacement (https://webkit.org/blog/16535/meet-declarative-web-push/). If it treats the handler as a
+silent-push violation instead, it may revoke the subscription. The worker must not synthesize a
+misleading "New message" for a successfully parsed control, so neither outcome can be eliminated
+inside the opaque relay. Launch and foreground subscription refresh recover a revoked subscription
+when permission remains granted; engine-owned foreground reconciliation repairs stale badges.
 
 While the page is open, engine counters and read markers replace the worker's per-tag baseline and
 the aggregate badge. Initial buffer hydration and subsequent counter changes scan notification data
 and close only messages at or before each engine marker, even when the same conversation has newer
 unread messages. Opening or foregrounding the app explicitly repeats that serialized replacement.
-This is the correction path for iOS, where the Apple urgency gate prevents `MARKREAD` from reaching
-the worker.
+This is the correction path when iOS does not dispatch or retain the silent cleanup successfully.
 
 ## Rollout
 
@@ -731,8 +745,8 @@ the worker.
   gains `https://push.weblounge.org` (`app/csp.ts`, `vite.config.ts`, `beta-client.nix`). Then the
   relay MVP (web targets), engine wiring (`Feature::WebPush` in `client_builder`, `lib.rs:120-122`),
   and the service worker and page. Platform order: desktop Chrome/Edge/Firefox; the iOS PWA, gated
-  on #2471 deployed and a week of dogfooding without revocation; Android; desktop Safari. Any other
-  single-network Ergo with webpush uses the same path.
+  on commit `9975d8d` deployed and a week of dogfooding without revocation; Android; desktop Safari.
+  Any other single-network Ergo with webpush uses the same path.
 - **Then: bring-your-own soju** on the same path, once the engine supports multiple networks
   (`runtime.rs:130-140` holds one network).
 - **Later: Tauri native.** Desktop gets local notifications while running (decision 5). iOS: APNs
@@ -772,7 +786,7 @@ migration remain a v1 prerequisite above.
 | route leaked or abused | Pinned VAPID rejects other signers; rate limits; the device can rotate the route. |
 | home's VAPID key changes | The relay rejects the new signer. At the next refresh the engine sees a new `vapid` and creates a new route. |
 | lease outlives the page | Held pushes are delivered when it expires: late by ≤ 75 s, not lost. |
-| stale notification after reading elsewhere (web) | Cleared when the app next opens; native targets clear it via the background MARKREAD. |
+| stale notification or badge after reading elsewhere (web) | A delivered control is handled silently; opening or foregrounding the app reconciles from engine state if background cleanup was missed. |
 | service worker update pending | New handlers apply once old clients close; the declarative fallback keeps iOS pushes visible meanwhile. |
 | inner decrypt fails | One generic "New message" for that network; the route is marked for re-registration. |
 
@@ -804,8 +818,10 @@ migration remain a v1 prerequisite above.
   upstreams.
 - **Local Ergo end to end** (`nix run .#ergo-weblounge`): the fixture gains `webpush.enabled` and
   the relay; two papo clients drive a DM and a mention; the relay's sink records envelopes; the
-  read-elsewhere case asserts the MARKREAD push is normal urgency, forwarded only to Mozilla, and
-  silently applied by the Firefox worker. Ergo
+  read-elsewhere case records production 2.19.1's high-urgency MARKREAD, proves it is forwarded to
+  Apple and Mozilla routes, and verifies that workers never call `showNotification` for the
+  decrypted control. A separate relay matrix proves that normal urgency becomes a Mozilla-only
+  optimization once upstream commit `9975d8d` is deployed. Ergo
   requires `https` (`webpush/security.go:26-35`) and its dialer refuses loopback, private,
   link-local and CGNAT addresses (`security.go:67-76`), but Ergo 2.19.1's `isInternalIP` does not
   block TEST-NET-3. So no Ergo patch: the relay, as Ergo's push target, listens on a 203.0.113.0/24 address with a test CA
@@ -862,9 +878,11 @@ migration remain a v1 prerequisite above.
 6. **The account-wide lease is acceptable for v1.** Renewing activity on one device may discard
    held pushes for the account; an activity-based lease is a later optimization.
 7. **Control pushes are silent wherever delivered.** A successfully decrypted `MARKREAD` or `PING`
-   never creates a notification; it only clears notification state or lowers the badge. The relay
-   forwards normal urgency only to Mozilla. Apple drops it because WebKit requires visible push;
-   FCM and Windows Push drop it because Chromium may synthesize a background-update notification.
+   never makes the worker create a notification; it only clears notification state or lowers the
+   badge, regardless of urgency. The relay forwards normal urgency only to Mozilla as an
+   optimization, but deployed Ergo sends controls at high urgency so every service receives them.
+   On Apple this intentionally risks a declarative fallback notification or subscription revocation
+   until the upstream urgency fix is deployed; a badge update cannot satisfy `userVisibleOnly`.
 
 **Deferred (not v1): where notification rules live.** Proposal: per account on each home (our
 Ergo, a self-hosted soju each hold their own), replicated by the client as the merge
@@ -893,11 +911,13 @@ In deploy order:
    tests, an #ops alert and `tests/e2e/push.py`. Secrets via sops: the relay's VAPID P-256 key pair
    (public key published in `config.json`); later an APNs `.p8` (team id, key id) and FCM
    service-account credentials.
-3. One combined Ergo deploy: bump to a release containing PR #2471 (fix webpush always sending at
-   high urgency) if there is one, else backport it onto the patched 2.19.1 in `pkgs/ergochat.nix`;
+3. One combined Ergo deploy: bump to a release containing commit `9975d8d` (fix webpush always
+   sending at high urgency) if there is one, else backport it onto the patched 2.19.1 in
+   `pkgs/ergochat.nix`;
    and raise `webpush.max-subscriptions` from the default 4 (`default.yaml:1205`) to 10, since each
-   browser, phone and later native app uses one slot. #2471 makes the maintenance PING and MARKREAD
-   `UrgencyNormal`; the registration probe stays high, which the relay's probing state handles.
+   browser, phone and later native app uses one slot. Commit `9975d8d` makes the maintenance PING
+   and MARKREAD `UrgencyNormal`; the registration probe stays high, which the relay's probing state
+   handles.
 4. `beta-client.nix`: add `https://push.weblounge.org` to CSP `connect-src` and serve
    `push: { relay, relay_vapid }` in `/config.json` once `DeploymentConfig` lands.
 
