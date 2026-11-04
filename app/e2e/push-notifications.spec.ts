@@ -417,7 +417,7 @@ test("shows a generic notification within the deadline when the push database up
       if (database instanceof IDBDatabase) database.close();
     });
   }
-  expect(presentationElapsedMs).toBeLessThan(2_800);
+  expect(presentationElapsedMs).toBeLessThan(2_500);
 });
 
 test("shows one generic notification without replacing keys when parsing fails", async ({
