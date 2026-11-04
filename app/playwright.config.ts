@@ -42,6 +42,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "webkit-push-badge-full",
+      grep: /corrects a stale Apple badge when the app opens/,
+      testMatch: "**/push-full-chain.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "firefox-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "firefox" },

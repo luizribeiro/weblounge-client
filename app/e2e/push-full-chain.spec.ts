@@ -321,6 +321,67 @@ test.describe("full unmocked push lifecycle", () => {
       await controlContext.close();
     }
   });
+
+  test("corrects a stale Apple badge when the app opens", async ({
+    browser,
+    browserName,
+  }) => {
+    test.skip(browserName !== "webkit", "models iOS WebKit badge recovery");
+    const deviceId = "ios-badge-stale";
+    const iosContext = await pushContext(browser, deviceId);
+    await iosContext.addInitScript(installAppBadgeSpy);
+    let ios = await iosContext.newPage();
+    const iosBot = await IrcClient.connectIsolated(
+      `ios-badge-bot-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    try {
+      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+      await ios.goto("/");
+      await expect(connectionHeading(ios)).toBeVisible();
+      await ios.getByRole("button", { name: "Turn on" }).click();
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          return created === undefined
+            ? undefined
+            : { active: created.active, probing: created.probing };
+        })
+        .toEqual({ active: 1, probing: 0 });
+      await releaseForegroundLeases([ios]);
+
+      const direct = `stale Apple badge ${randomUUID()}`;
+      const echoed = await iosBot.privmsgConfirmed("weblounge", direct);
+      await nextRecord(`/device/${deviceId}`);
+      const recordsBeforeMarkread = (await records()).length;
+      const droppedBefore = await normalPushesDropped();
+      await audit.markRead(iosBot.nickname, serverTime(echoed));
+      await expect
+        .poll(() => normalPushesDropped())
+        .toBeGreaterThan(droppedBefore);
+      expect(await records()).toHaveLength(recordsBeforeMarkread);
+
+      await seedAppBadge(ios, 999);
+      await ios.close();
+      ios = await iosContext.newPage();
+      await ios.goto("/");
+      await expect(connectionHeading(ios)).toBeVisible();
+      await expect
+        .poll(async () => {
+          const corrected = await latestAppBadgeCall(ios);
+          const stored = await storedAppBadge(ios);
+          return (
+            corrected !== undefined && corrected !== 999 && corrected === stored
+          );
+        })
+        .toBe(true);
+    } finally {
+      iosBot.close();
+      await iosContext.close();
+    }
+  });
 });
 
 function connectionHeading(page: Page) {
@@ -843,6 +904,53 @@ async function seedReadConversationState(
     });
     database.close();
   }, tag);
+}
+
+async function seedAppBadge(page: Page, count: number): Promise<void> {
+  await page.evaluate(async (value) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("state", "readwrite");
+    transaction.objectStore("state").put(value, "app-badge");
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+  }, count);
+}
+
+function installAppBadgeSpy(): void {
+  Reflect.set(globalThis, "pushE2eAppBadgeCalls", []);
+  Object.defineProperties(Navigator.prototype, {
+    setAppBadge: {
+      configurable: true,
+      value: async (count: number) => {
+        const calls = Reflect.get(globalThis, "pushE2eAppBadgeCalls");
+        if (Array.isArray(calls)) calls.push(count);
+      },
+    },
+    clearAppBadge: {
+      configurable: true,
+      value: async () => {
+        const calls = Reflect.get(globalThis, "pushE2eAppBadgeCalls");
+        if (Array.isArray(calls)) calls.push(0);
+      },
+    },
+  });
+}
+
+async function latestAppBadgeCall(page: Page): Promise<number | undefined> {
+  return page.evaluate(() => {
+    const calls = Reflect.get(globalThis, "pushE2eAppBadgeCalls");
+    if (!Array.isArray(calls)) return undefined;
+    const latest: unknown = calls.at(-1);
+    return typeof latest === "number" ? latest : undefined;
+  });
 }
 
 async function storedAppBadge(page: Page): Promise<number | undefined> {

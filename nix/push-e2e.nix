@@ -469,6 +469,8 @@ pkgs.testers.runNixOSTest {
       export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers} \
         PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu-24.04 \
         PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true \
+        __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json \
+        FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }} \
         WEBLOUNGE_PUSH_FULL_E2E=1 \
         WEBLOUNGE_E2E_EXTERNAL_SERVER=1 \
         WEBLOUNGE_E2E_BASE_URL=https://app.test \
@@ -484,6 +486,7 @@ pkgs.testers.runNixOSTest {
       cd app && node node_modules/@playwright/test/cli.js test \
         --project=chromium-push-full \
         --project=firefox-push-controls-full \
+        --project=webkit-push-badge-full \
         --workers=1
     """)
   '';
