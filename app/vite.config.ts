@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
-import type { Plugin } from "vite";
+import { type Plugin, build as viteBuild } from "vite";
 import solid from "vite-plugin-solid";
 import { defineConfig } from "vitest/config";
 import { BETA_CONTENT_SECURITY_POLICY } from "./csp.ts";
@@ -184,17 +184,26 @@ function emitServiceWorker(workerEntry: string): Plugin {
   return {
     name: "weblounge-service-worker",
     apply: "build",
-    buildStart() {
-      this.emitFile({
-        type: "chunk",
-        id: workerEntry,
-        fileName: "service-worker-source.js",
-      });
-    },
-    writeBundle(options) {
+    async writeBundle(options) {
       const directory = resolve(
         options.dir ?? resolve(import.meta.dirname, "dist"),
       );
+      await viteBuild({
+        configFile: false,
+        publicDir: false,
+        logLevel: "error",
+        build: {
+          emptyOutDir: false,
+          outDir: directory,
+          rollupOptions: {
+            input: workerEntry,
+            output: {
+              entryFileNames: "service-worker-source.js",
+              format: "iife",
+            },
+          },
+        },
+      });
       const urls = appShellUrls(directory);
       const sourcePath = resolve(directory, "service-worker-source.js");
       const source = readFileSync(sourcePath, "utf8");
