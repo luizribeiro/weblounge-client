@@ -1,3 +1,16 @@
+import {
+  chmod,
+  cp,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 const development = process.env.WEBLOUNGE_E2E_DEV === "1";
@@ -162,6 +175,55 @@ test("uses network HTML online and the cached shell offline", async ({
   );
 });
 
+test("moves an open profile to the next build on its next launch", async ({
+  context,
+}) => {
+  test.skip(
+    development,
+    "the service worker is intentionally disabled in development",
+  );
+  const builds = await swappableBuildServer();
+  try {
+    const oldPage = await context.newPage();
+    await oldPage.goto(builds.origin);
+    await expect.poll(() => activeWorkerState(oldPage)).toBe("activated");
+    await expect
+      .poll(() =>
+        oldPage.evaluate(() => navigator.serviceWorker.controller !== null),
+      )
+      .toBe(true);
+
+    builds.serveNext();
+    const nextPage = await context.newPage();
+    await nextPage.addInitScript(() => {
+      const count = Number.parseInt(
+        sessionStorage.getItem("build-launch-count") ?? "0",
+        10,
+      );
+      sessionStorage.setItem("build-launch-count", String(count + 1));
+    });
+    await nextPage.goto(builds.origin);
+    await expect(nextPage.locator('meta[name="next-build"]')).toHaveCount(1);
+    await oldPage.bringToFront();
+
+    await expect
+      .poll(() =>
+        nextPage.evaluate(async () =>
+          (await caches.keys()).includes("weblounge-shell-1111111111111111"),
+        ),
+      )
+      .toBe(true);
+    expect(oldPage.isClosed()).toBe(false);
+    const launchCount = await nextPage.evaluate(() =>
+      Number.parseInt(sessionStorage.getItem("build-launch-count") ?? "0", 10),
+    );
+    expect(launchCount).toBeGreaterThanOrEqual(1);
+    expect(launchCount).toBeLessThanOrEqual(2);
+  } finally {
+    await builds.close();
+  }
+});
+
 test("activation removes obsolete app-shell caches", async ({ page }) => {
   test.skip(
     development,
@@ -283,4 +345,120 @@ async function poisonCachedIndex(page: import("@playwright/test").Page) {
       }),
     );
   });
+}
+
+async function swappableBuildServer(): Promise<{
+  readonly origin: string;
+  serveNext(): void;
+  close(): Promise<void>;
+}> {
+  const source =
+    process.env.WEBLOUNGE_APP_DIR ??
+    resolve(dirname(fileURLToPath(import.meta.url)), "../dist");
+  const temporary = await mkdtemp(join(tmpdir(), "weblounge-build-swap-"));
+  const first = join(temporary, "first");
+  const next = join(temporary, "next");
+  await cp(source, first, { recursive: true });
+  await cp(source, next, { recursive: true });
+  await chmod(join(next, "index.html"), 0o600);
+  await chmod(join(next, "service-worker.js"), 0o600);
+  await writeFile(
+    join(next, "index.html"),
+    (await readFile(join(next, "index.html"), "utf8")).replace(
+      "</head>",
+      '<meta name="next-build"></head>',
+    ),
+  );
+  await writeFile(
+    join(next, "service-worker.js"),
+    (await readFile(join(next, "service-worker.js"), "utf8")).replace(
+      /const SHELL_VERSION = "[0-9a-f]{16}";/u,
+      'const SHELL_VERSION = "1111111111111111";',
+    ),
+  );
+  let served = first;
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/config.json") {
+      response.writeHead(200, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+      });
+      response.end('{"mode":"app"}');
+      return;
+    }
+    const relative = pathname === "/" ? "index.html" : pathname.slice(1);
+    const path = resolve(served, relative);
+    if (!path.startsWith(`${served}/`)) {
+      response.writeHead(404).end();
+      return;
+    }
+    void readFile(path).then(
+      (body) => {
+        response.writeHead(200, {
+          "Cache-Control": "no-store",
+          "Content-Type": contentType(path),
+        });
+        response.end(body);
+      },
+      () => response.writeHead(404).end(),
+    );
+  });
+  await new Promise<void>((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("build swap server has no TCP address");
+  }
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    serveNext: () => {
+      served = next;
+    },
+    close: async () => {
+      await new Promise<void>((resolveClose, reject) =>
+        server.close((error) => {
+          if (error === undefined) resolveClose();
+          else reject(error);
+        }),
+      );
+      await makeWritable(temporary);
+      await rm(temporary, { recursive: true });
+    },
+  };
+}
+
+async function makeWritable(path: string): Promise<void> {
+  await chmod(path, 0o700);
+  const entries = await readdir(path, { withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => makeWritable(join(path, entry.name))),
+  );
+}
+
+function contentType(path: string): string {
+  switch (extname(path)) {
+    case ".css":
+      return "text/css";
+    case ".html":
+      return "text/html";
+    case ".js":
+      return "text/javascript";
+    case ".json":
+    case ".webmanifest":
+      return "application/json";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    case ".wasm":
+      return "application/wasm";
+    case ".woff2":
+      return "font/woff2";
+    default:
+      return "application/octet-stream";
+  }
 }

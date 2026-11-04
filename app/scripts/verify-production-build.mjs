@@ -251,7 +251,7 @@ async function verifyServiceWorker(directory) {
   if (
     urls.includes("/config.json") ||
     urls.some((url) => url.startsWith("/startup/")) ||
-    worker.includes("skipWaiting") ||
+    !worker.includes("skipWaiting") ||
     !/priority:\s*["'`]low["'`]/u.test(worker) ||
     !worker.includes("weblounge-shell-") ||
     /^import\b/mu.test(worker.slice(sourceStart))

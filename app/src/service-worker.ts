@@ -3,6 +3,19 @@ export type ServiceWorkerUpdateListener = () => void;
 let updateReady = false;
 const updateListeners = new Set<ServiceWorkerUpdateListener>();
 
+interface ControllerContainer {
+  readonly controller: ServiceWorker | null;
+  addEventListener(type: "controllerchange", listener: () => void): void;
+  removeEventListener(type: "controllerchange", listener: () => void): void;
+}
+
+interface ReloadDocument {
+  readonly visibilityState: DocumentVisibilityState;
+  addEventListener(type: "visibilitychange", listener: () => void): void;
+  removeEventListener(type: "visibilitychange", listener: () => void): void;
+  querySelector(selectors: string): Element | null;
+}
+
 export function serviceWorkerUpdateIsReady(): boolean {
   return updateReady;
 }
@@ -16,9 +29,52 @@ export function onServiceWorkerUpdateReady(
 
 export function registerProductionServiceWorker(): void {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
-  const register = () => scheduleRegistration(navigator.serviceWorker);
+  const container = navigator.serviceWorker;
+  reloadAfterControllerChange(container, document, () =>
+    window.location.reload(),
+  );
+  if (container.controller !== null) {
+    void registerAfterLoad(container);
+    return;
+  }
+  const register = () => scheduleRegistration(container);
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register, { once: true });
+}
+
+export function reloadAfterControllerChange(
+  container: ControllerContainer,
+  pageDocument: ReloadDocument,
+  reload: () => void,
+): () => void {
+  const controlledAtStartup = container.controller !== null;
+  let handled = false;
+  const stop = () => {
+    container.removeEventListener("controllerchange", controllerChanged);
+    pageDocument.removeEventListener("visibilitychange", visibilityChanged);
+  };
+  const reloadOnce = () => {
+    if (handled) return;
+    handled = true;
+    stop();
+    reload();
+  };
+  const visibilityChanged = () => {
+    if (pageDocument.visibilityState === "hidden") reloadOnce();
+  };
+  const controllerChanged = () => {
+    if (!controlledAtStartup || handled) return;
+    if (
+      pageDocument.querySelector("[data-initial-splash]") !== null ||
+      pageDocument.visibilityState === "hidden"
+    ) {
+      reloadOnce();
+      return;
+    }
+    pageDocument.addEventListener("visibilitychange", visibilityChanged);
+  };
+  container.addEventListener("controllerchange", controllerChanged);
+  return stop;
 }
 
 function scheduleRegistration(container: ServiceWorkerContainer): void {

@@ -33,10 +33,11 @@ and reads `weblounge dev` on the development server. The line is available throu
 the top of every debug-overlay section, and as `window.weblounge.version`. This identity is distinct
 from the content-derived UI/worker compatibility and service-worker cache versions.
 
-Development does not register a service worker. Production registration is scheduled after page
-load and the first interactive frame, during browser idle time. Shell requests use low fetch
-priority and bounded concurrency so installation does not compete with first-launch interaction.
-Registration failure is nonfatal because an online launch still works.
+Development does not register a service worker. A first production registration is scheduled after
+page load and the first interactive frame, during browser idle time. A returning controlled launch
+checks for an update immediately while the inline splash still covers startup. Shell requests use
+low fetch priority and bounded concurrency so installation does not compete with first-launch
+interaction. Registration failure is nonfatal because an online launch still works.
 
 The HTML startup surface owns the only launch chair. Normal startup exposes screen-reader status
 but no visible “Connecting” copy; the fixed launch-image geometry communicates progress until the
@@ -64,14 +65,13 @@ requests retain normal browser errors; the worker does not synthesize successful
 
 ## Updates
 
-The worker does not call `skipWaiting`, and the page does not ask it to. A newly installed worker
-therefore remains waiting while any page uses the previous build, then activates on a later launch
-after those clients close. `clients.claim()` lets that activation own the new launch without a
-second reload.
+After a complete precache, the worker calls `skipWaiting()` and claims clients. A page controlled at
+startup reloads once on `controllerchange` while the inline splash is present. If activation lands
+after the shell is interactive, the page waits until it becomes hidden before reloading; an active
+composer and its draft are never interrupted on screen. A first install does not reload.
 
-The page observes `updatefound` and a waiting worker and records a typed `update-ready` state. This
-slice deliberately has no toast or reload button: the next-launch policy needs no mid-session user
-action. `/version` appends “update ready — restart the app” when that state is set.
+The page still records a typed `update-ready` state while installation finishes. `/version` may
+briefly append “update ready — restart the app” before the safe reload policy takes over.
 
 ## Boundaries and failure modes
 
@@ -80,8 +80,9 @@ window owns registration and update observation. None of them owns deployment co
 engine persistence, IRC reconnection, or push events.
 
 Browsers without service workers stay online-only. Private-mode quota failures leave the current
-page usable. A failed update leaves the prior active worker and cache intact. Old caches are removed
-only after the new worker has installed successfully and reached activation.
+page usable. A failed update leaves the prior active worker and cache intact. All but the immediately
+previous cache are removed only after the new worker has installed successfully and reached
+activation.
 
 ## Testing
 

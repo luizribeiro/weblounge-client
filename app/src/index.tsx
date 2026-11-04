@@ -398,6 +398,7 @@ render(
   ),
   application,
 );
+registerProductionServiceWorker();
 
 function createStartupGate(splash: HTMLElement): BootstrapProps {
   let active = true;
@@ -440,14 +441,12 @@ function createStartupGate(splash: HTMLElement): BootstrapProps {
       const animations = splash.getAnimations();
       if (animations.length === 0) {
         splash.remove();
-        registerProductionServiceWorker();
         return;
       }
       void Promise.allSettled(
         animations.map((animation) => animation.finished),
       ).then(() => {
         splash.remove();
-        registerProductionServiceWorker();
       });
     },
     showError: (message, retryLabel, onRetry, retryWhenReachable) => {

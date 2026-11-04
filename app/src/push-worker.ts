@@ -40,6 +40,7 @@ interface WorkerScope {
     }): Promise<readonly WindowClient[]>;
     openWindow(url: string): Promise<WindowClient | null>;
   };
+  skipWaiting(): Promise<void>;
   addEventListener(type: string, listener: (event: Event) => void): void;
   importScripts(...urls: readonly string[]): void;
 }
@@ -104,7 +105,9 @@ let parserReady: Promise<PushPayloadParser> | undefined;
 worker.importScripts("/push-payload.js");
 
 worker.addEventListener("install", (event) => {
-  (event as WorkerEvent).waitUntil(precacheShell());
+  (event as WorkerEvent).waitUntil(
+    precacheShell().then(() => worker.skipWaiting()),
+  );
 });
 
 worker.addEventListener("activate", (event) => {
