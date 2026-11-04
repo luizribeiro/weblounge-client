@@ -698,25 +698,7 @@ async function exerciseNotificationPromptRegistration(
   }
   if (surface.name === "mobile") await installStandaloneDisplay(page);
   await installPushManagerStub(page, "default", "granted");
-  await page.addInitScript(() => {
-    Reflect.set(globalThis, "appBadgeCalls", []);
-    Object.defineProperties(Navigator.prototype, {
-      setAppBadge: {
-        configurable: true,
-        value: async (count: number) => {
-          const calls = Reflect.get(globalThis, "appBadgeCalls");
-          if (Array.isArray(calls)) calls.push(["set", count]);
-        },
-      },
-      clearAppBadge: {
-        configurable: true,
-        value: async () => {
-          const calls = Reflect.get(globalThis, "appBadgeCalls");
-          if (Array.isArray(calls)) calls.push(["clear"]);
-        },
-      },
-    });
-  });
+  await installAppBadgeSpy(page);
   await installFakeEngine(page);
   await installFakeOAuth(page);
   await page.addInitScript(() => {
@@ -745,6 +727,7 @@ async function exerciseNotificationPromptRegistration(
   });
   const relayRequests: string[] = [];
   let relayRouteSequence = 0;
+  let currentRelayRouteId: string | undefined;
   await page.route("https://push.weblounge.org/**", async (route) => {
     const request = route.request();
     const cors = {
@@ -780,16 +763,30 @@ async function exerciseNotificationPromptRegistration(
       expect(await request.headerValue("authorization")).toBe(
         "Bearer device-secret",
       );
-      expect(request.postDataJSON()).toEqual({ home_vapid: "home-vapid" });
-      relayRouteSequence += 1;
-      const routeId =
-        relayRouteSequence === 1
-          ? "route-123456789"
-          : `route-recovered-${relayRouteSequence}`;
-      await page.evaluate((id) => {
-        const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
-        if (Array.isArray(sequence)) sequence.push(`create:${id}`);
-      }, routeId);
+      const ensureBody: unknown = request.postDataJSON();
+      expect(ensureBody).toMatchObject({ home_vapid: "home-vapid" });
+      const suppliedRouteId =
+        typeof ensureBody === "object" &&
+        ensureBody !== null &&
+        "my_route_id" in ensureBody &&
+        typeof ensureBody.my_route_id === "string"
+          ? ensureBody.my_route_id
+          : undefined;
+      if (suppliedRouteId !== undefined)
+        expect(suppliedRouteId).toBe(currentRelayRouteId);
+      let routeId = currentRelayRouteId;
+      if (routeId === undefined || suppliedRouteId === undefined) {
+        relayRouteSequence += 1;
+        routeId =
+          relayRouteSequence === 1
+            ? "route-123456789"
+            : `route-recovered-${relayRouteSequence}`;
+        currentRelayRouteId = routeId;
+        await page.evaluate((id) => {
+          const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
+          if (Array.isArray(sequence)) sequence.push(`create:${id}`);
+        }, routeId);
+      }
       await route.fulfill({
         status: 201,
         headers: cors,
@@ -802,10 +799,22 @@ async function exerciseNotificationPromptRegistration(
       return;
     }
     if (request.method() === "DELETE" && path.startsWith("/v1/routes/")) {
+      const deletedRouteId = path.slice("/v1/routes/".length);
+      if (deletedRouteId === currentRelayRouteId)
+        currentRelayRouteId = undefined;
       await page.evaluate((id) => {
         const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
         if (Array.isArray(sequence)) sequence.push(`delete:${id}`);
-      }, path.slice("/v1/routes/".length));
+      }, deletedRouteId);
+    }
+    if (path === "/v1/devices/device-1/dead-endpoints") {
+      await route.fulfill({
+        status: 200,
+        headers: cors,
+        contentType: "application/json",
+        body: JSON.stringify({ endpoints: [] }),
+      });
+      return;
     }
     await route.fulfill({ status: 204, headers: cors });
   });
@@ -855,7 +864,7 @@ async function exerciseNotificationPromptRegistration(
     )
     .toContainEqual(
       expect.objectContaining({
-        type: "register_push",
+        type: "ensure_push",
         network_id: 1,
         route: expect.objectContaining({ route_id: "route-123456789" }),
       }),
@@ -901,7 +910,7 @@ async function exerciseNotificationPromptRegistration(
   });
   await expect(debug).toContainText("engine=Failed(invalid_parameters)");
   await expect(debug).toContainText(
-    "relay=probing (route-re) / last error=engine: invalid_parameters",
+    "relay=probing (route-re) / last error=none",
   );
   await expect
     .poll(() =>
@@ -909,17 +918,16 @@ async function exerciseNotificationPromptRegistration(
     )
     .toEqual([
       "create:route-123456789",
-      "register:route-123456789",
-      "unregister:route-123456789:https://push.weblounge.org/v1/r/route-123456789",
-      "delete:route-123456789",
+      "ensure:route-123456789",
+      "ensure:route-123456789",
       "create:route-recovered-2",
-      "register:route-recovered-2",
+      "ensure:route-recovered-2",
     ]);
   await composer.fill("/debug");
   await composer.press("Enter");
   await expect(debug).toContainText("[debug]");
   await expect(debug).toContainText(
-    "push: network weblounge: engine=Failed(invalid_parameters) / relay=probing (route-re) / last error=engine: invalid_parameters",
+    "push: network weblounge: engine=Failed(invalid_parameters) / relay=probing (route-re) / last error=none",
   );
   await page.evaluate(() => {
     const complete = Reflect.get(globalThis, "completePushRegistration");
@@ -963,6 +971,182 @@ async function exerciseNotificationPromptRegistration(
       page.evaluate(() => Reflect.get(globalThis, "pushSubscribeOptions")),
     )
     .toMatchObject({ userVisibleOnly: true });
+}
+
+test.describe("iOS stale app badge", () => {
+  test.use({ ...iphone16Pro, serviceWorkers: "block" });
+
+  test("converges an Apple badge after a dropped MARKREAD on foreground", async ({
+    baseURL,
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.use.browserName !== "webkit");
+    if (baseURL === undefined) throw new Error("app base URL is missing");
+    await page.addInitScript(() => {
+      let focused = true;
+      Object.defineProperty(document, "hasFocus", {
+        configurable: true,
+        value: () => focused,
+      });
+      Reflect.set(globalThis, "setBadgeTestFocus", (value: boolean) => {
+        focused = value;
+      });
+      Reflect.set(globalThis, "hostedReadDirect", true);
+    });
+    await installAppBadgeSpy(page);
+    await installFakeEngine(page);
+    await installHostedConfig(page);
+    await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+      if (route.request().method() === "OPTIONS") {
+        await fulfillSessionPreflight(route, new URL(baseURL).origin);
+        return;
+      }
+      await fulfillSessionToken(route, baseURL, "badge-session-token");
+    });
+
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    await expect.poll(() => currentAppBadge(page)).toBe(0);
+
+    await page.evaluate(async () => {
+      Reflect.set(globalThis, "appBadgeCalls", []);
+      const setFocus = Reflect.get(globalThis, "setBadgeTestFocus");
+      if (typeof setFocus !== "function")
+        throw new Error("badge focus control is unavailable");
+      setFocus(false);
+      window.dispatchEvent(new Event("blur"));
+
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("weblounge-push", 4);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const transaction = database.transaction(
+        ["routes", "state"],
+        "readwrite",
+      );
+      transaction.objectStore("routes").put({
+        vapid: "apple-home",
+        routeId: "apple-route",
+        endpoint: "https://web.push.apple.com/Q-e2e",
+      });
+      const state = transaction.objectStore("state");
+      state.put(1, "app-badge");
+      state.put(
+        {
+          schema: 2,
+          conversations: [{ tag: "weblounge/mel", count: 1, read_at_ms: null }],
+          untagged: 0,
+        },
+        "notification-counts",
+      );
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+      database.close();
+      await navigator.setAppBadge?.(1);
+    });
+    await expect.poll(() => currentAppBadge(page)).toBe(1);
+
+    await page.evaluate(() => {
+      const setFocus = Reflect.get(globalThis, "setBadgeTestFocus");
+      if (typeof setFocus !== "function")
+        throw new Error("badge focus control is unavailable");
+      setFocus(true);
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await expect.poll(() => currentAppBadge(page)).toBe(0);
+    await expect
+      .poll(() => storedPushBadge(page))
+      .toEqual({
+        badge: 0,
+        direct: {
+          count: 0,
+          read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
+          tag: "weblounge/mel",
+        },
+      });
+  });
+});
+
+async function installAppBadgeSpy(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "appBadgeCalls", []);
+    Object.defineProperties(Navigator.prototype, {
+      setAppBadge: {
+        configurable: true,
+        value: async (count: number) => {
+          const calls = Reflect.get(globalThis, "appBadgeCalls");
+          if (Array.isArray(calls)) calls.push(["set", count]);
+        },
+      },
+      clearAppBadge: {
+        configurable: true,
+        value: async () => {
+          const calls = Reflect.get(globalThis, "appBadgeCalls");
+          if (Array.isArray(calls)) calls.push(["clear"]);
+        },
+      },
+    });
+  });
+}
+
+async function currentAppBadge(page: Page): Promise<number | undefined> {
+  return page.evaluate(() => {
+    const calls: unknown = Reflect.get(globalThis, "appBadgeCalls");
+    if (!Array.isArray(calls)) return undefined;
+    const last: unknown = calls.at(-1);
+    if (!Array.isArray(last)) return undefined;
+    if (last[0] === "clear") return 0;
+    return last[0] === "set" && typeof last[1] === "number"
+      ? last[1]
+      : undefined;
+  });
+}
+
+async function storedPushBadge(page: Page): Promise<unknown> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push", 4);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("state", "readonly");
+    const store = transaction.objectStore("state");
+    const read = (key: string) =>
+      new Promise<unknown>((resolve, reject) => {
+        const request = store.get(key);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    const [badge, counts] = await Promise.all([
+      read("app-badge"),
+      read("notification-counts"),
+    ]);
+    database.close();
+    const conversations =
+      typeof counts === "object" &&
+      counts !== null &&
+      "conversations" in counts &&
+      Array.isArray(counts.conversations)
+        ? counts.conversations
+        : [];
+    return {
+      badge,
+      direct: conversations.find(
+        (entry) =>
+          typeof entry === "object" &&
+          entry !== null &&
+          "tag" in entry &&
+          entry.tag === "weblounge/mel",
+      ),
+    };
+  });
 }
 
 for (const surface of [
@@ -1423,7 +1607,7 @@ async function installFakeEngine(
           pushDevice = request.credentials ?? null;
         }
         if (request?.type === "clear_push_device") pushDevice = null;
-        if (request?.type === "register_push") {
+        if (request?.type === "ensure_push") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);
           const routeId =
@@ -1434,7 +1618,7 @@ async function installFakeEngine(
               ? request.route.route_id
               : "unknown-route";
           const sequence = Reflect.get(globalThis, "pushRegistrationSequence");
-          if (Array.isArray(sequence)) sequence.push(`register:${routeId}`);
+          if (Array.isArray(sequence)) sequence.push(`ensure:${routeId}`);
           Reflect.set(globalThis, "completePushRegistration", () => {
             this.emit({
               type: "push_state_changed",
@@ -1520,6 +1704,23 @@ async function installFakeEngine(
                   mentions: 0,
                   read_through: null,
                 },
+                ...(Reflect.get(globalThis, "hostedReadDirect") === true
+                  ? [
+                      {
+                        id: 4,
+                        network_id: 1,
+                        kind: "direct",
+                        sync_state: "synced",
+                        title: "mel",
+                        draft_key: "10:weblounge:rfc1459:mel",
+                        topic: null,
+                        unread: 0,
+                        mentions: 0,
+                        read_through: null,
+                        read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
+                      },
+                    ]
+                  : []),
               ],
             });
             Reflect.set(

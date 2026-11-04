@@ -219,6 +219,7 @@ export function App(props: AppProps) {
   let startupCap: number | undefined;
   let startupSettleFrame: number | undefined;
   let startupConfirmFrame: number | undefined;
+  let appPushStateSync = Promise.resolve();
   const startupOnlineNetworks = new Set<number>();
   const startupBufferNetworks = new Set<number>();
   const startupDirectNetworks = new Set<number>();
@@ -255,14 +256,17 @@ export function App(props: AppProps) {
     );
   });
 
-  createEffect(() => {
+  const syncEnginePushState = () => {
     const current = buffers();
     if (current.length === 0) return;
     const networkLabels = new Map(
       networks().map((network) => [network.id, network.label]),
     );
-    void syncAppPushState(current, networkLabels).catch(() => undefined);
-  });
+    appPushStateSync = appPushStateSync
+      .then(() => syncAppPushState(current, networkLabels))
+      .catch(() => undefined);
+  };
+  createEffect(syncEnginePushState);
   createEffect(() => {
     const config = props.pushConfig;
     const mountedClient = client;
@@ -701,6 +705,7 @@ export function App(props: AppProps) {
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
       if (foreground) {
+        syncEnginePushState();
         reconnectNetworks();
         void refreshConfiguredPush(mountedClient);
       }
