@@ -396,13 +396,18 @@ test("keeps a restored pushed direct message verified through history", async ({
         documentRequests += 1;
       }
     });
-    await coldPage.goto(
-      "/Local%20Ergo/@weblounge-bot?irc-password=weblounge-test",
-    );
+    await coldPage.goto("/?irc-password=weblounge-test");
 
+    const directBuffer = coldPage
+      .locator("[data-buffer-id]")
+      .filter({ hasText: "weblounge-bot" });
+    await expect(directBuffer).toHaveAttribute("data-unread", "1");
+    await directBuffer.click();
     const row = coldPage.locator("[data-message-row]", { hasText: text });
     await expect(row).toBeVisible();
     await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
+    await expect(directBuffer).toHaveAttribute("data-unread", "0");
+    await expect(coldPage.getByRole("note")).toHaveCount(0);
     await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
       0,
     );
