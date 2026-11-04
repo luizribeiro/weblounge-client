@@ -95,7 +95,9 @@ that record immediately and revalidates `/config.json` in the background; a chan
 takes effect on the next launch so one running session never mixes deployment identities. A cold
 launch without a valid record waits for the fetch. Network failures and the startup deadline are
 reachability errors; only a missing/HTML response, malformed JSON, or schema violation is a
-misconfigured deployment. The service worker never handles `config.json`.
+misconfigured deployment. Known fields are validated strictly, while unknown fields at every
+object level are ignored and listed in `/debug`; a future server addition must not brick an older
+client. The service worker never handles `config.json`.
 
 The window's credential path posts an empty JSON object to the configured session-token endpoint
 with `credentials: "include"`. It validates the bearer response and yields the token once to the

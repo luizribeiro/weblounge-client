@@ -193,6 +193,9 @@ test("moves an open profile to the next build on its next launch", async ({
       )
       .toBe(true);
 
+    await oldPage.evaluate(() =>
+      localStorage.removeItem("weblounge.deployment-config.v1"),
+    );
     builds.serveNext();
     const nextPage = await context.newPage();
     await nextPage.addInitScript(() => {
@@ -204,6 +207,9 @@ test("moves an open profile to the next build on its next launch", async ({
     });
     await nextPage.goto(builds.origin);
     await expect(nextPage.locator('meta[name="next-build"]')).toHaveCount(1);
+    await expect(
+      nextPage.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
     await oldPage.bringToFront();
 
     await expect
@@ -377,6 +383,7 @@ async function swappableBuildServer(): Promise<{
     ),
   );
   let served = first;
+  let config = '{"mode":"app"}';
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname === "/config.json") {
@@ -384,7 +391,7 @@ async function swappableBuildServer(): Promise<{
         "Cache-Control": "no-store",
         "Content-Type": "application/json",
       });
-      response.end('{"mode":"app"}');
+      response.end(config);
       return;
     }
     const relative = pathname === "/" ? "index.html" : pathname.slice(1);
@@ -415,6 +422,7 @@ async function swappableBuildServer(): Promise<{
     origin: `http://127.0.0.1:${address.port}`,
     serveNext: () => {
       served = next;
+      config = '{"mode":"app","future_server_field":true}';
     },
     close: async () => {
       await new Promise<void>((resolveClose, reject) =>

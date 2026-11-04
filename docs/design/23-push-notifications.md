@@ -433,8 +433,9 @@ never include authorization, device secrets, endpoints or bodies.
 Hosted `config.json` may contain `push: { relay, relay_vapid }`. Absence disables the complete
 page subsystem. The decoder accepts the block only on hosted deployments, requires `relay` to be
 an exact HTTPS origin, and verifies that `relay_vapid` is a base64url uncompressed point on P-256.
-Cached deployment configuration goes through the same decoder before it can enable push. Beta's
-CSP permits the production relay origin.
+Unknown keys are forward-compatible and recorded for `/debug`, while malformed known keys still
+reject the configuration. Cached deployment configuration goes through the same decoder before it
+can enable push. Beta's CSP permits the production relay origin.
 
 The engine's web IndexedDB schema now has a real `Space::Durable` object store. The relay device id
 and redacted device secret are read, written and cleared through a narrow engine protocol; they are

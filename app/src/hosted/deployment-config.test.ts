@@ -3,6 +3,7 @@ import {
   DeploymentConfigUnavailableError,
   decodeDeploymentConfig,
   deploymentConfigCacheKey,
+  deploymentConfigUnknownFields,
   loadDeploymentConfig,
 } from "./deployment-config";
 
@@ -50,18 +51,44 @@ describe("deployment config", () => {
     expect(decodeDeploymentConfig(hosted)).not.toHaveProperty("push");
   });
 
+  it("ignores and records unknown fields at every object level", () => {
+    expect(
+      decodeDeploymentConfig({
+        ...hosted,
+        future: true,
+        network: { ...hosted.network, transport_hint: "webtransport" },
+        oauth: { ...hosted.oauth, audience: "chat" },
+        push: {
+          relay: "https://push.weblounge.org",
+          relay_vapid: relayVapid,
+          urgency: "normal",
+        },
+      }),
+    ).toEqual({
+      ...hosted,
+      push: {
+        relay: "https://push.weblounge.org",
+        relay_vapid: relayVapid,
+      },
+    });
+    expect(decodeDeploymentConfig({ mode: "app", future: true })).toEqual({
+      mode: "app",
+    });
+    expect(deploymentConfigUnknownFields()).toEqual(
+      expect.arrayContaining([
+        "app.future",
+        "hosted.future",
+        "network.transport_hint",
+        "oauth.audience",
+        "push.urgency",
+      ]),
+    );
+  });
+
   it.each([
     [
       {},
       'This deployment is misconfigured. Invalid /config.json: "mode" must be "app" or "hosted"',
-    ],
-    [
-      { mode: "app", network: {} },
-      'This deployment is misconfigured. Invalid /config.json: app configuration has unknown field "network"',
-    ],
-    [
-      { ...hosted, extra: true },
-      'This deployment is misconfigured. Invalid /config.json: hosted configuration has unknown field "extra"',
     ],
     [
       {
@@ -122,17 +149,6 @@ describe("deployment config", () => {
         push: { relay: "https://push.example.test", relay_vapid: "not-a-key" },
       },
       'This deployment is misconfigured. Invalid /config.json: "push.relay_vapid" must be a base64url P-256 public key',
-    ],
-    [
-      {
-        ...hosted,
-        push: {
-          relay: "https://push.example.test",
-          relay_vapid: relayVapid,
-          extra: true,
-        },
-      },
-      'This deployment is misconfigured. Invalid /config.json: "push" has unknown field "extra"',
     ],
   ])("rejects malformed input", (value, message) => {
     expect(() => decodeDeploymentConfig(value)).toThrow(message);

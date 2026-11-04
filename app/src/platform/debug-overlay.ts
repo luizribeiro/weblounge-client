@@ -1,5 +1,6 @@
 import "./viewport-debug.css";
 import { buildVersion } from "../build-version";
+import { deploymentConfigUnknownFields } from "../hosted/deployment-config";
 
 export type DebugReading = readonly [label: string, value: string];
 
@@ -62,6 +63,7 @@ function managerFor(browserWindow: Window): OverlayManager {
           [
             `[${section.title}]`,
             buildVersion.text,
+            `config unknown: ${deploymentConfigUnknownFields().join(", ") || "none"}`,
             ...format(section.read()),
           ].join("\n"),
         )

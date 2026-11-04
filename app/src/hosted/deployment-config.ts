@@ -3,6 +3,7 @@ import { withStartupDeadline } from "./startup-deadline";
 import { startupStrings } from "./strings";
 
 export const deploymentConfigCacheKey = "weblounge.deployment-config.v1";
+const unknownFields = new Set<string>();
 
 interface CachedDeploymentConfig {
   readonly config: DeploymentConfig;
@@ -129,20 +130,20 @@ function writeCachedDeploymentConfig(
 export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
   const root = record(value, "top level");
   if (root.mode === "app") {
-    exactKeys(root, ["mode"], "app configuration");
+    recordUnknownFields(root, ["mode"], "app");
     return { mode: "app" };
   }
   if (root.mode !== "hosted") {
     throw new DeploymentConfigError('"mode" must be "app" or "hosted"');
   }
-  exactKeys(root, ["mode", "network", "oauth", "push"], "hosted configuration");
+  recordUnknownFields(root, ["mode", "network", "oauth", "push"], "hosted");
   const network = record(root.network, '"network"');
-  exactKeys(network, ["name", "endpoint", "autojoin"], '"network"');
+  recordUnknownFields(network, ["name", "endpoint", "autojoin"], "network");
   const oauth = record(root.oauth, '"oauth"');
-  exactKeys(
+  recordUnknownFields(
     oauth,
     ["issuer", "client_id", "redirect_uri", "session_token_endpoint"],
-    '"oauth"',
+    "oauth",
   );
 
   const name = nonemptyString(network.name, '"network.name"');
@@ -175,7 +176,7 @@ export function decodeDeploymentConfig(value: unknown): DeploymentConfig {
 
 function pushConfig(value: unknown): { relay: string; relay_vapid: string } {
   const push = record(value, '"push"');
-  exactKeys(push, ["relay", "relay_vapid"], '"push"');
+  recordUnknownFields(push, ["relay", "relay_vapid"], "push");
   return {
     relay: httpsOrigin(push.relay, '"push.relay"'),
     relay_vapid: p256PublicKey(push.relay_vapid, '"push.relay_vapid"'),
@@ -189,17 +190,17 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function exactKeys(
+function recordUnknownFields(
   value: Record<string, unknown>,
   expected: readonly string[],
   field: string,
 ): void {
-  const extras = Object.keys(value).filter((key) => !expected.includes(key));
-  if (extras.length > 0) {
-    throw new DeploymentConfigError(
-      `${field} has unknown field "${extras[0]}"`,
-    );
-  }
+  for (const key of Object.keys(value))
+    if (!expected.includes(key)) unknownFields.add(`${field}.${key}`);
+}
+
+export function deploymentConfigUnknownFields(): readonly string[] {
+  return [...unknownFields].sort();
 }
 
 function nonemptyString(value: unknown, field: string): string {
