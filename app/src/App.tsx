@@ -451,7 +451,10 @@ export function App(props: AppProps) {
         }
       }
       if (message.type === "notice") {
-        if (isMessageKey(message.key)) {
+        if (
+          message.key !== "engine.mark_read_failed" &&
+          isMessageKey(message.key)
+        ) {
           const action = noticeAction(message.action);
           notifier.notify({
             message: {
