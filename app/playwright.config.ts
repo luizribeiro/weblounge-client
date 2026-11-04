@@ -45,6 +45,14 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-shimmer",
+      testMatch: [
+        "**/conversation-title-shimmer.spec.ts",
+        "**/logo-fill-shimmer.spec.ts",
+      ],
+      use: { browserName: "firefox" },
+    },
+    {
       name: "webkit-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "webkit" },
@@ -101,8 +109,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
-      name: "webkit-logo-fill",
-      testMatch: "**/logo-fill-shimmer.spec.ts",
+      name: "webkit-shimmer",
+      testMatch: [
+        "**/conversation-title-shimmer.spec.ts",
+        "**/logo-fill-shimmer.spec.ts",
+      ],
       use: { browserName: "webkit" },
     },
     {

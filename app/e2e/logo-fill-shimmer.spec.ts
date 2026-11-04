@@ -13,6 +13,7 @@ for (const shell of ["desktop", "mobile"] as const) {
     }
 
     test("moves one rendered fill band from logo through title and settles", async ({
+      browserName,
       page,
     }) => {
       await installDelayedLiveListEngine(page);
@@ -36,8 +37,16 @@ for (const shell of ["desktop", "mobile"] as const) {
       const frames = [];
       for (const time of frameTimes)
         frames.push(await captureFrame(brand, time));
-      expect(frames.map((frame) => frame.sweep)).toEqual(
-        [...frames.map((frame) => frame.sweep)].sort((a, b) => a - b),
+      if (browserName === "firefox") {
+        await captureFrame(brand, 300);
+        await brand.screenshot({
+          animations: "allow",
+          path: `e2e/screenshots/logo-fill-firefox-${shell}-mid.png`,
+          scale: "css",
+        });
+      }
+      expect(frames.map((frame) => frame.progress)).toEqual(
+        [...frames.map((frame) => frame.progress)].sort((a, b) => a - b),
       );
 
       const baseline = frames[0];
@@ -59,7 +68,8 @@ for (const shell of ["desktop", "mobile"] as const) {
       }
 
       await brand.evaluate((element) => {
-        for (const animation of element.getAnimations()) animation.play();
+        for (const animation of element.getAnimations({ subtree: true }))
+          animation.play();
         const release = Reflect.get(globalThis, "releaseLiveChatList");
         if (typeof release !== "function") throw new Error("release missing");
         release();
@@ -124,7 +134,7 @@ interface Frame {
   readonly height: number;
   readonly logo: Rect;
   readonly pixels: readonly number[];
-  readonly sweep: number;
+  readonly progress: number;
   readonly title: Rect;
   readonly width: number;
 }
@@ -136,13 +146,14 @@ function connectionBrand(page: Page, shell: "desktop" | "mobile"): Locator {
 
 async function captureFrame(brand: Locator, time: number): Promise<Frame> {
   await brand.evaluate(async (element, currentTime) => {
-    const animation = element.getAnimations().find((candidate) => {
-      const timing = candidate.effect?.getTiming();
-      return timing?.duration === 1000;
-    });
-    if (animation === undefined) throw new Error("brand sweep is missing");
-    animation.pause();
-    animation.currentTime = currentTime;
+    const animations = element
+      .getAnimations({ subtree: true })
+      .filter((candidate) => candidate.effect?.getTiming().duration === 1000);
+    if (animations.length === 0) throw new Error("brand sweep is missing");
+    for (const animation of animations) {
+      animation.pause();
+      animation.currentTime = currentTime;
+    }
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
@@ -171,8 +182,10 @@ function frameGeometry(element: Element) {
   return {
     height: Math.round(bounds.height),
     logo: relativeRect("[data-connection-logo]"),
-    sweep: Number.parseFloat(
-      getComputedStyle(element).getPropertyValue("--wl-connection-sweep"),
+    progress: Number(
+      element.getAnimations().find((animation) => {
+        return animation.effect?.getTiming().duration === 1000;
+      })?.currentTime ?? 0,
     ),
     title: relativeRect("[data-connection-title]"),
     width: Math.round(bounds.width),

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 
 const channel = "#weblounge-test";
@@ -19,6 +19,7 @@ for (const shell of ["desktop", "mobile"] as const) {
     }
 
     test("fills while history resolves and stops when current", async ({
+      browserName,
       page,
     }) => {
       await installNativeFeelInstrumentation(page);
@@ -30,20 +31,32 @@ for (const shell of ["desktop", "mobile"] as const) {
       await expect(title).toHaveCSS("animation-duration", "1s");
       await expect(title).toHaveCSS("background-clip", "text");
 
-      await pauseSweep(title);
-      for (const theme of ["light", "dark"] as const) {
-        await page.emulateMedia({ colorScheme: theme });
-        await page.screenshot({
-          path: `e2e/screenshots/conversation-title-${shell}-${theme}.png`,
-        });
-      }
-      await resumeSweep(title);
-
       await setVisibility(page, true);
       await expect(title).not.toHaveAttribute("data-connection-visible");
       await expect(title).toHaveCSS("animation-play-state", "paused");
       await setVisibility(page, false);
       await expect(title).toHaveCSS("animation-play-state", "running");
+
+      await pauseSweep(title, 0);
+      const baseline = await renderedPixels(title);
+      await pauseSweep(title, 250);
+      expect(
+        maxPixelChange(baseline, await renderedPixels(title)),
+      ).toBeGreaterThan(10);
+      if (browserName === "firefox") {
+        await title.screenshot({
+          animations: "allow",
+          path: `e2e/screenshots/conversation-title-firefox-${shell}-mid.png`,
+          scale: "css",
+        });
+      }
+      for (const theme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.screenshot({
+          path: `e2e/screenshots/conversation-title-${browserName}-${shell}-${theme}.png`,
+        });
+      }
+      await resumeSweep(title);
 
       await releaseSyncedBufferProjection(page);
       await expect(title).not.toHaveAttribute("data-connection-progress");
@@ -105,19 +118,52 @@ function runningAnimations(locator: ReturnType<Page["locator"]>) {
   );
 }
 
-async function pauseSweep(locator: ReturnType<Page["locator"]>): Promise<void> {
-  await locator.evaluate((element) => {
+async function pauseSweep(
+  locator: ReturnType<Page["locator"]>,
+  currentTime: number,
+): Promise<void> {
+  await locator.evaluate((element, time) => {
     const animation = element.getAnimations()[0];
     if (animation === undefined) throw new Error("title sweep is missing");
     animation.pause();
-    animation.currentTime = 500;
-  });
+    animation.currentTime = time;
+  }, currentTime);
 }
 
 async function resumeSweep(
   locator: ReturnType<Page["locator"]>,
 ): Promise<void> {
   await locator.evaluate((element) => element.getAnimations()[0]?.play());
+}
+
+async function renderedPixels(locator: Locator): Promise<readonly number[]> {
+  const image = await locator.screenshot({ animations: "allow", scale: "css" });
+  return locator.page().evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (character) =>
+      character.charCodeAt(0),
+    );
+    const source = await createImageBitmap(
+      new Blob([bytes], { type: "image/png" }),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("canvas context unavailable");
+    context.drawImage(source, 0, 0);
+    return [...context.getImageData(0, 0, canvas.width, canvas.height).data];
+  }, image.toString("base64"));
+}
+
+function maxPixelChange(
+  baseline: readonly number[],
+  frame: readonly number[],
+): number {
+  return frame.reduce(
+    (maximum, value, index) =>
+      Math.max(maximum, Math.abs(value - (baseline[index] ?? 0))),
+    0,
+  );
 }
 
 async function setVisibility(page: Page, hidden: boolean): Promise<void> {

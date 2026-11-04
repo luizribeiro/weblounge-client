@@ -129,20 +129,6 @@ textarea:focus-visible {
   font-size: max(var(--wl-font-touch-editable-min), 1em);
 }
 
-@property --wl-connection-sweep {
-  syntax: "<length-percentage>";
-  inherits: true;
-  initial-value: -30px;
-}
-
-[data-connection-shimmer] {
-  --wl-connection-band: 18px;
-  --wl-connection-trail: calc(
-    var(--wl-connection-sweep) -
-    var(--wl-connection-band)
-  );
-}
-
 [data-connection-shimmer][data-connection-phase="loading"],
 [data-connection-shimmer][data-connection-phase="finishing"] {
   animation: connection-brand-sweep 1000ms infinite linear;
@@ -150,7 +136,6 @@ textarea:focus-visible {
 }
 
 [data-connection-shimmer][data-connection-phase="filling"] {
-  --wl-connection-trail: -200px;
   animation: connection-brand-fill 770ms linear forwards;
   animation-play-state: paused;
 }
@@ -185,20 +170,22 @@ textarea:focus-visible {
   justify-content: center;
   -webkit-mask-image: linear-gradient(
     90deg,
-    transparent calc(var(--wl-connection-trail) - 12px),
-    var(--wl-connection-fg) var(--wl-connection-trail)
-      calc(var(--wl-connection-sweep) + var(--wl-connection-band)),
-    transparent
-      calc(var(--wl-connection-sweep) + var(--wl-connection-band) + 12px)
+    transparent,
+    var(--wl-connection-fg) 12px 48px,
+    transparent 60px
   );
   mask-image: linear-gradient(
     90deg,
-    transparent calc(var(--wl-connection-trail) - 12px),
-    var(--wl-connection-fg) var(--wl-connection-trail)
-      calc(var(--wl-connection-sweep) + var(--wl-connection-band)),
-    transparent
-      calc(var(--wl-connection-sweep) + var(--wl-connection-band) + 12px)
+    transparent,
+    var(--wl-connection-fg) 12px 48px,
+    transparent 60px
   );
+  -webkit-mask-position: left -60px top 0;
+  mask-position: left -60px top 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 60px 100%;
+  mask-size: 60px 100%;
   position: absolute;
 }
 
@@ -208,44 +195,139 @@ textarea:focus-visible {
 
 [data-connection-shimmer][data-connection-progress][data-connection-title],
 [data-connection-shimmer][data-connection-progress] [data-connection-title] {
-  --wl-connection-local-sweep: calc(
-    var(--wl-connection-sweep) -
-    var(--wl-connection-title-offset, 0px)
-  );
-  --wl-connection-local-trail: calc(
-    var(--wl-connection-trail) -
-    var(--wl-connection-title-offset, 0px)
+  background-color: color-mix(
+    in srgb,
+    var(--wl-connection-fg) 34%,
+    var(--wl-connection-bg)
   );
   background-image: linear-gradient(
     90deg,
+    color-mix(in srgb, var(--wl-connection-fg) 34%, var(--wl-connection-bg)),
+    var(--wl-connection-fg) 12px 48px,
     color-mix(in srgb, var(--wl-connection-fg) 34%, var(--wl-connection-bg))
-      calc(var(--wl-connection-local-trail) - 12px),
-    var(--wl-connection-fg) var(--wl-connection-local-trail)
-      calc(var(--wl-connection-local-sweep) + var(--wl-connection-band)),
-    color-mix(in srgb, var(--wl-connection-fg) 34%, var(--wl-connection-bg))
-      calc(var(--wl-connection-local-sweep) + var(--wl-connection-band) + 12px)
+      60px
   );
+  background-position: left calc(-60px - var(--wl-connection-title-offset, 0px))
+    top 0;
+  background-repeat: no-repeat;
+  background-size: 60px 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
+[data-connection-shimmer][data-connection-phase="loading"]
+  [data-connection-fill],
+[data-connection-shimmer][data-connection-phase="finishing"]
+  [data-connection-fill] {
+  animation: connection-logo-sweep 1000ms infinite linear;
+}
+
+[data-connection-shimmer][data-connection-phase="loading"][data-connection-title],
+[data-connection-shimmer][data-connection-phase="finishing"][data-connection-title],
+[data-connection-shimmer][data-connection-phase="loading"]
+  [data-connection-title],
+[data-connection-shimmer][data-connection-phase="finishing"]
+  [data-connection-title] {
+  animation: connection-title-sweep 1000ms infinite linear;
+}
+
+[data-connection-shimmer][data-connection-phase="filling"]
+  [data-connection-fill] {
+  animation: connection-logo-fill 770ms linear forwards;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+[data-connection-shimmer][data-connection-phase="filling"][data-connection-title],
+[data-connection-shimmer][data-connection-phase="filling"]
+  [data-connection-title] {
+  animation: connection-title-fill 770ms linear forwards;
+  background-image: linear-gradient(
+    90deg,
+    var(--wl-connection-fg),
+    var(--wl-connection-fg)
+  );
+  background-position: left top;
+}
+
+[data-connection-shimmer][data-connection-progress][data-connection-title],
+[data-connection-shimmer][data-connection-progress]
+  :is([data-connection-fill], [data-connection-title]) {
+  animation-play-state: paused;
+}
+
+[data-connection-shimmer][data-connection-progress][data-connection-visible][data-connection-title],
+[data-connection-shimmer][data-connection-progress][data-connection-visible]
+  :is([data-connection-fill], [data-connection-title]) {
+  animation-play-state: running;
+}
+
 @keyframes connection-brand-sweep {
-  0% {
-    --wl-connection-sweep: -30px;
+  from {
+    outline-offset: 0;
   }
-  75%,
-  100% {
-    --wl-connection-sweep: var(--wl-connection-sweep-end, 210px);
+  to {
+    outline-offset: 0;
   }
 }
 
 @keyframes connection-brand-fill {
   from {
-    --wl-connection-sweep: -30px;
+    outline-offset: 0;
   }
   to {
-    --wl-connection-sweep: var(--wl-connection-fill-end, 230px);
+    outline-offset: 0;
+  }
+}
+
+@keyframes connection-logo-sweep {
+  0% {
+    -webkit-mask-position: left -60px top 0;
+    mask-position: left -60px top 0;
+  }
+  75%,
+  100% {
+    -webkit-mask-position: left
+      calc(var(--wl-connection-sweep-end, 210px) - 30px) top 0;
+    mask-position: left calc(var(--wl-connection-sweep-end, 210px) - 30px) top 0;
+  }
+}
+
+@keyframes connection-title-sweep {
+  0% {
+    background-position: left
+      calc(-60px - var(--wl-connection-title-offset, 0px)) top 0;
+  }
+  75%,
+  100% {
+    background-position: left
+      calc(
+        var(--wl-connection-sweep-end, 210px) -
+        30px -
+        var(--wl-connection-title-offset, 0px)
+      )
+      top 0;
+  }
+}
+
+@keyframes connection-logo-fill {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  30%,
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes connection-title-fill {
+  from,
+  20% {
+    background-size: 0% 100%;
+  }
+  to {
+    background-size: 100% 100%;
   }
 }
 

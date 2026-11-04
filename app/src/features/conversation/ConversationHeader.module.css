@@ -20,7 +20,6 @@
 .title {
   --wl-connection-bg: var(--wl-color-surface);
   --wl-connection-fg: var(--wl-color-fg);
-  --wl-connection-fill-end: calc(100% + 50px);
   --wl-connection-sweep-end: calc(100% + 30px);
   flex: 0 0 auto;
   font-size: 15px;
