@@ -1357,6 +1357,15 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell, tole
   render(() => <App engineClient={client} />);
   await vi.advanceTimersByTimeAsync(0);
   client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Test",
+      nickname: "weblounge",
+      state: "online",
+    },
+  });
+  client.emit({
     type: "buffer_added",
     buffer: {
       id: 2,
@@ -1415,6 +1424,26 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell, tole
   expect(client.requests).toContainEqual({
     id: expect.any(String),
     request: { type: "mark_read", buffer_id: 2, through: 9 },
+  });
+  client.emit({
+    type: "buffer_added",
+    buffer: {
+      id: 3,
+      network_id: 1,
+      sync_state: "synced" as const,
+      kind: "channel",
+      title: "#elsewhere",
+      draft_key: "test:#elsewhere",
+      topic: null,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "#elsewhere" }));
+  expect(client.requests).toContainEqual({
+    id: expect.any(String),
+    request: { type: "cancel_deferred_read", buffer_id: 2 },
   });
 
   vi.useRealTimers();

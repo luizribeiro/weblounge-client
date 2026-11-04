@@ -1948,6 +1948,12 @@ impl NetworkModel {
         }
     }
 
+    pub(crate) fn cancel_deferred_read(&mut self, buffer_id: BufferId) {
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            buffer.deferred_read = None;
+        }
+    }
+
     pub(crate) fn resolve_deferred_read(&mut self, buffer_id: BufferId) -> Option<ReadAdvance> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let through = buffer.deferred_read?;
@@ -3951,7 +3957,7 @@ mod tests {
     }
 
     #[test]
-    fn selecting_another_read_buffer_clears_a_deferred_read() {
+    fn deselecting_a_read_buffer_clears_its_deferred_read() {
         let (mut model, state) = model(10);
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
@@ -3980,13 +3986,7 @@ mod tests {
             model.request_mark_read(buffer_id, pushed_id, true),
             ReadPreparation::LocalOnly(_)
         ));
-        let (other_buffer, _) = model.ensure_buffer(
-            NameKey::Channel(channel_name(&state, "#elsewhere")),
-            None,
-            None,
-        );
-
-        model.select_read_buffer(other_buffer);
+        model.cancel_deferred_read(buffer_id);
 
         assert_eq!(model.buffers[&buffer_id].deferred_read, None);
     }
