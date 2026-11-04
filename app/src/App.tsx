@@ -213,7 +213,7 @@ export function App(props: AppProps) {
         id: notificationPromptLoadId,
         request: { type: "load_notification_prompt_dismissal" },
       })
-      .catch(() => undefined);
+      .catch(() => setNotificationPromptDismissed(false));
     if ("Notification" in window && Notification.permission === "granted") {
       void startConfiguredPush(mountedClient);
     }

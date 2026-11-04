@@ -949,6 +949,23 @@ test.describe("live notification configuration", () => {
       page.getByRole("region", { name: "Notifications" }),
     ).toBeVisible();
   });
+
+  test("shows the prompt when the dismissal read fails", async ({
+    baseURL,
+    page,
+  }) => {
+    if (baseURL === undefined) throw new Error("app base URL is missing");
+    await prepareNotificationPrompt(page, baseURL, "granted");
+    await page.addInitScript(() =>
+      Reflect.set(globalThis, "failNotificationPromptRead", true),
+    );
+
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("region", { name: "Notifications" }),
+    ).toBeVisible();
+  });
 });
 
 for (const surface of [
@@ -1257,6 +1274,14 @@ async function installFakeEngine(
           });
         }
         if (request?.type === "load_notification_prompt_dismissal") {
+          if (Reflect.get(globalThis, "failNotificationPromptRead") === true) {
+            this.emit({
+              type: "command_rejected",
+              id,
+              message_key: "engine.storage_unavailable",
+            });
+            return;
+          }
           this.emit({
             type: "notification_prompt_dismissal_loaded",
             command_id: id,

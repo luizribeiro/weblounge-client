@@ -533,6 +533,9 @@ dismissed it. iOS additionally requires the installed `display-mode: standalone`
 desktop browsers do not. The UI waits for the engine-owned preference read before painting, so a
 remembered dismissal never flashes during startup.
 
+If the Settings-space read fails, the page treats the prompt as not dismissed. Losing access to
+optional preference storage must not permanently hide notification setup.
+
 Background deployment-config revalidation publishes a compatible `push` block into the running
 page. The prompt preference load and granted-permission startup react to that live value, so adding
 push at the server does not require one more launch.
