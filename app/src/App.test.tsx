@@ -1471,6 +1471,15 @@ it("closes a conversation notification on open and whenever it becomes read", as
     render(() => <App engineClient={client} />);
     await screen.findByRole("heading", { name: "weblounge" });
     client.emit({
+      type: "network_state_changed",
+      network: {
+        id: 1,
+        label: "Lounge",
+        nickname: "weblounge",
+        state: "online",
+      },
+    });
+    client.emit({
       type: "buffer_added",
       buffer: {
         id: 2,
@@ -1487,7 +1496,9 @@ it("closes a conversation notification on open and whenever it becomes read", as
     });
 
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
-    expect(getNotifications).toHaveBeenLastCalledWith({ tag: "1/#room" });
+    expect(getNotifications).toHaveBeenLastCalledWith({
+      tag: "Lounge/#room",
+    });
 
     client.emit({
       type: "unread_changed",
