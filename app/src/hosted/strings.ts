@@ -1,6 +1,8 @@
+import { t } from "../strings";
+
 export const startupStrings = {
-  misconfigured: "This deployment is misconfigured.",
-  resetApp: "Reset app",
-  resetting: "Resetting weblounge…",
-  unreachable: "Can't reach weblounge. Check your connection.",
+  misconfigured: t("hosted.misconfigured"),
+  resetApp: t("hosted.reset_app"),
+  resetting: t("hosted.resetting"),
+  unreachable: t("hosted.unreachable"),
 } as const;

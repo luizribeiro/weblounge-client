@@ -36,6 +36,7 @@ import {
   type MessageKey,
   type MessageValues,
   t,
+  translate,
 } from "./features/composer/strings";
 import type { MemberWindow } from "./features/members/MemberPanel";
 import {
@@ -454,7 +455,7 @@ export function App(props: AppProps) {
           void restartHostedAuthorization("revoked");
           return;
         }
-        const notice = t(message.key, message.values);
+        const notice = translate(message.key, message.values);
         if (message.key === "engine.connection_failed") {
           if (props.hostedSession !== undefined && !shellReady())
             setHostedError(notice);
@@ -462,7 +463,7 @@ export function App(props: AppProps) {
       }
       if (message.type === "message_failed") {
         if (buffers().some((buffer) => buffer.id === message.buffer_id)) {
-          setComposerNotice(t(message.message_key));
+          setComposerNotice(translate(message.message_key));
         }
       }
       if (message.type === "command_specs_changed") {
@@ -501,7 +502,7 @@ export function App(props: AppProps) {
         } else {
           const messageKey = connectionFailureMessage(message.network.state);
           if (!shellReady() && messageKey !== undefined) {
-            setHostedError(t(messageKey));
+            setHostedError(translate(messageKey));
           }
         }
         if (
@@ -1130,7 +1131,10 @@ export function App(props: AppProps) {
               .catch((error: unknown) => {
                 setComposerNotice(
                   error instanceof EngineCommandError
-                    ? t(error.messageKey, { input: text, ...error.values })
+                    ? translate(error.messageKey, {
+                        input: text,
+                        ...error.values,
+                      })
                     : t("engine.command_failed"),
                 );
                 return false;

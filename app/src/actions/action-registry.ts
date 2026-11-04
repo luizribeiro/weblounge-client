@@ -1,6 +1,6 @@
 import type { CommandPermission } from "../engine/generated/CommandPermission";
 import type { CommandSpec, CompletionResult } from "../engine/protocol";
-import { t } from "../features/composer/strings";
+import { translate } from "../strings";
 
 export type UiActionId =
   | "buffer.next"
@@ -319,7 +319,7 @@ export class ActionRegistry {
       )
       .map((command) => ({
         id: `command.${command.name}` as const,
-        title: t(command.description),
+        title: translate(command.description),
         command,
       }));
     return [...ui, ...commands];

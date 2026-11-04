@@ -4,7 +4,7 @@ import { TouchTapGesture } from "../../platform/focus-without-pan";
 import { nickPaletteSize } from "../../theme/theme-registry";
 import { Line } from "../../ui/Line";
 import styles from "../conversation/SimpleComposer.module.css";
-import { t } from "./strings";
+import { translate } from "./strings";
 
 interface SuggestionListProps {
   readonly candidates: readonly CompletionCandidate[];
@@ -27,7 +27,9 @@ export function SuggestionList(props: SuggestionListProps) {
       data-completion-input={props.completionInput}
       data-composer-suggestions="true"
     >
-      {props.hint !== null && <Line class={styles.hint}>{t(props.hint)}</Line>}
+      {props.hint !== null && (
+        <Line class={styles.hint}>{translate(props.hint)}</Line>
+      )}
       <div class={styles.candidates} id={props.listId} role="listbox">
         <For each={candidateIds()}>
           {(id, index) => {
@@ -151,13 +153,13 @@ function candidateDetail(
   switch (candidate.type) {
     case "command": {
       const invocation = `/${candidate.name}`;
-      const usage = t(candidate.usage);
+      const usage = translate(candidate.usage);
       const argumentsOnly = usage.startsWith(invocation)
         ? usage.slice(invocation.length).trimStart()
         : usage;
       return argumentsOnly === ""
-        ? t(candidate.description)
-        : `${argumentsOnly} · ${t(candidate.description)}`;
+        ? translate(candidate.description)
+        : `${argumentsOnly} · ${translate(candidate.description)}`;
     }
     case "person":
       return candidate.away ? "Away" : null;

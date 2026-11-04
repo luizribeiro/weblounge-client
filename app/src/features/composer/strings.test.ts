@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { messageKeys, t } from "./strings";
+import { type MessageKey, messages, t } from "./strings";
+
+const messageKeys = Object.keys(messages).filter(
+  (key): key is MessageKey =>
+    key.startsWith("composer.") || key.startsWith("engine."),
+);
 
 describe("composer strings", () => {
   it.each(messageKeys)("renders %s as a complete sentence", (key) => {
@@ -76,7 +81,7 @@ describe("composer strings", () => {
     "quit",
     "say",
     "topic",
-  ])("renders human usage and description for %s", (command) => {
+  ] as const)("renders human usage and description for %s", (command) => {
     expect(t(`cmd.${command}.usage`)).toMatch(/^\//u);
     expect(t(`cmd.${command}.description`)).not.toContain("cmd.");
   });

@@ -1,5 +1,5 @@
 import type { CommandSpec } from "../engine/protocol";
-import { t } from "../features/composer/strings";
+import { t, translate } from "../strings";
 
 export function commandHelp(
   commands: readonly CommandSpec[],
@@ -13,5 +13,5 @@ export function commandHelp(
   );
   return command === undefined
     ? t("composer.unknown_command", { input: `/${requested}` })
-    : `${t(command.usage)} — ${t(command.description)}`;
+    : `${translate(command.usage)} — ${translate(command.description)}`;
 }

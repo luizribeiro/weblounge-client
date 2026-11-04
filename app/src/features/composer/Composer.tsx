@@ -16,7 +16,7 @@ import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import { composerGeometryChangeEvent } from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
-import { t } from "./strings";
+import { translate } from "./strings";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -85,7 +85,9 @@ export function Composer(props: ComposerProps) {
   const confirmationText = () => {
     const command = pendingConfirmation();
     const prompt = command?.confirmation_prompt;
-    return prompt === undefined ? "" : t(prompt, { text: props.bufferTitle });
+    return prompt === undefined
+      ? ""
+      : translate(prompt, { text: props.bufferTitle });
   };
   const resize = () => {
     if (textarea === undefined) return;
@@ -349,7 +351,7 @@ export function Composer(props: ComposerProps) {
             ref={confirmButton}
             type="button"
           >
-            {t(pendingConfirmation()?.confirmation_action ?? "")}
+            {translate(pendingConfirmation()?.confirmation_action ?? "")}
           </button>
           <button
             class={styles.cancel}

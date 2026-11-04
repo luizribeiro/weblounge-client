@@ -1,0 +1,61 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { isMessageKey, messages, t, translate } from "./strings";
+
+const appSource = resolve(process.cwd(), "src");
+const engineSource = resolve(process.cwd(), "../crates/engine/src");
+
+describe("app strings", () => {
+  it("interpolates named values", () => {
+    expect(t("engine.not_in_channel", { target: "#garden" })).toBe(
+      "You're not in #garden.",
+    );
+  });
+
+  it("makes a missing runtime key visible", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(translate("engine.future_error")).toBe("engine.future_error");
+    expect(error).toHaveBeenCalledWith(
+      "Missing message key: engine.future_error",
+    );
+
+    error.mockRestore();
+  });
+
+  it("contains every literal key passed to t in the app", () => {
+    const usedKeys = sourceFiles(appSource, [".ts", ".tsx"]).flatMap((file) =>
+      [
+        ...readFileSync(file, "utf8").matchAll(/\bt\(\s*["']([^"']+)["']/gu),
+      ].map((match) => match[1] ?? ""),
+    );
+
+    expect(usedKeys.filter((key) => !isMessageKey(key))).toEqual([]);
+  });
+
+  it("contains every message key emitted by the Rust engine", () => {
+    const engineKeys = sourceFiles(engineSource, [".rs"]).flatMap((file) =>
+      [
+        ...readFileSync(file, "utf8").matchAll(
+          /["']((?:composer|engine)\.[a-z0-9_.-]+)["']/gu,
+        ),
+      ].map((match) => match[1] ?? ""),
+    );
+
+    expect(engineKeys.filter((key) => !isMessageKey(key))).toEqual([]);
+  });
+
+  it("has no empty messages", () => {
+    const allMessages: readonly string[] = Object.values(messages);
+    expect(allMessages.filter((message) => message === "")).toEqual([]);
+  });
+});
+
+function sourceFiles(root: string, extensions: readonly string[]): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path, extensions);
+    return extensions.includes(extname(entry.name)) ? [path] : [];
+  });
+}
