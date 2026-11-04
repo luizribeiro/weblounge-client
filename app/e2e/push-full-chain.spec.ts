@@ -155,13 +155,10 @@ test.describe("full unmocked push lifecycle", () => {
     const record = await nextRecord("/device/a");
     await deliverRecordedEnvelope(context, page, record);
 
-    let presentedWithinDeadline = true;
     try {
       await expect
         .poll(() => notifications(page), { timeout: 2_500 })
-        .toEqual([expect.objectContaining({ body: direct })]);
-    } catch {
-      presentedWithinDeadline = false;
+        .toEqual([{ title: "New message", body: "", tag: "" }]);
     } finally {
       await blocker.evaluate((transaction) => {
         transaction.abort();
@@ -169,12 +166,10 @@ test.describe("full unmocked push lifecycle", () => {
       });
       await blocker.dispose();
     }
-    await expectNotification(page, direct);
-    test.fail(
-      true,
-      "the worker waits indefinitely for its route database before showing a fallback",
-    );
-    expect(presentedWithinDeadline).toBe(true);
+    await drainPushRouteReads(page);
+    await expect(notifications(page)).resolves.toEqual([
+      { title: "New message", body: "", tag: "" },
+    ]);
   });
 
   test("keeps Apple-style MARKREAD silent when another device reads", async ({
@@ -999,6 +994,24 @@ async function blockPushRouteReads(
       holdLock();
     });
     return transaction;
+  });
+}
+
+async function drainPushRouteReads(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readonly");
+    transaction.objectStore("routes").getAll();
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
   });
 }
 
