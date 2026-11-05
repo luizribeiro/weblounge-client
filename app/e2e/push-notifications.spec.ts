@@ -440,8 +440,18 @@ test("anchors queued generic notifications to their receipt deadline", async ({
     await expect
       .poll(() => notifications(page), { intervals: [50] })
       .toEqual([
-        { title: "New message", body: "", tag: "", route: "/" },
-        { title: "New message", body: "", tag: "", route: "/" },
+        {
+          title: "New message",
+          body: "",
+          tag: expect.stringMatching(/^weblounge-fallback\//),
+          route: "/",
+        },
+        {
+          title: "New message",
+          body: "",
+          tag: expect.stringMatching(/^weblounge-fallback\//),
+          route: "/",
+        },
       ]);
     presentationElapsedMs = performance.now() - startedAt;
     await deliveries;

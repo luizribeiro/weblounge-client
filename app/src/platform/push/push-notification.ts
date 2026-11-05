@@ -81,6 +81,7 @@ export function deadlineFallbackNotification(
     ...presentation,
     options: {
       ...presentation.options,
+      tag: `weblounge-fallback/${fallbackId}`,
       data: { route: "/", receiptId: presentation.receiptId, fallbackId },
     },
     fallbackId,

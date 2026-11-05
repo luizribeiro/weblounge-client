@@ -214,6 +214,7 @@ describe("push worker notification presentation", () => {
       title: "New message",
       options: {
         body: "Lounge",
+        tag: "weblounge-fallback/receipt",
         data: {
           route: "/",
           receiptId: "receipt",

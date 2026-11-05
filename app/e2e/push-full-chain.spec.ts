@@ -180,7 +180,13 @@ test.describe("full unmocked push lifecycle", () => {
           intervals: [50],
           timeout: 2_500,
         })
-        .toEqual([{ title: "New message", body: "", tag: "" }]);
+        .toEqual([
+          {
+            title: "New message",
+            body: "",
+            tag: expect.stringMatching(/^weblounge-fallback\//),
+          },
+        ]);
     } finally {
       await blocker.evaluate((transaction) => {
         transaction.abort();
@@ -190,7 +196,11 @@ test.describe("full unmocked push lifecycle", () => {
     }
     await drainPushRouteReads(page);
     await expect(notifications(page)).resolves.toEqual([
-      { title: "New message", body: "", tag: "" },
+      {
+        title: "New message",
+        body: "",
+        tag: expect.stringMatching(/^weblounge-fallback\//),
+      },
     ]);
   });
 

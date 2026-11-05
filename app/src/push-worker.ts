@@ -21,7 +21,7 @@ import {
   PushDeliveryCoordinator,
 } from "./platform/push/push-delivery-coordinator";
 import type { PushPresentationState } from "./platform/push/push-delivery-state";
-import { PushFallbackCoordinator } from "./platform/push/push-fallback-coordinator";
+import { replaceDeadlineFallback } from "./platform/push/push-fallback-replacement";
 import {
   bufferPath,
   deadlineFallbackNotification,
@@ -31,7 +31,10 @@ import {
   type ParsedPushEvent,
   sameIrcName,
 } from "./platform/push/push-notification";
-import { closeNotificationsCoveredByMarkers } from "./platform/push/push-notification-cleanup";
+import {
+  closeNotificationsCoveredByMarkers,
+  closeSupersededFallbackNotifications,
+} from "./platform/push/push-notification-cleanup";
 import {
   markConversationRead as markNotificationStateRead,
   notificationStateTotal,
@@ -111,17 +114,12 @@ const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
 const pushFallbackDeadlineMs = 1_500;
-const fallbackLookupIntervalMs = 20;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
 const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
-const fallbackNotifications = new PushFallbackCoordinator(
-  registrationNotifications,
-  (notification, id) => notificationFallbackId(notification) === id,
-  () => delay(fallbackLookupIntervalMs),
-);
+const pendingFallbacks = new Set<string>();
 
 type PushPresentation = ReturnType<typeof genericNotification>;
 type PushCommit =
@@ -130,10 +128,16 @@ type PushCommit =
       readonly route: StoredRoute;
       readonly event: ParsedPushEvent | undefined;
       readonly tag: string | undefined;
+      readonly receiptId: string;
     }
-  | { readonly kind: "markread"; readonly tag: string; readonly until: string }
-  | { readonly kind: "ping" }
-  | { readonly kind: "fallback" };
+  | {
+      readonly kind: "markread";
+      readonly tag: string;
+      readonly until: string;
+      readonly receiptId: string;
+    }
+  | { readonly kind: "ping"; readonly receiptId: string }
+  | { readonly kind: "fallback"; readonly receiptId: string };
 
 const pushDeliveries = new PushDeliveryCoordinator<
   PushPayloadEvent,
@@ -145,7 +149,10 @@ const pushDeliveries = new PushDeliveryCoordinator<
   generic: () => replaceableGenericNotification(),
   finalFallback: (generic) =>
     genericNotification(generic.options.body, generic.receiptId),
-  fallbackCommit: () => ({ kind: "fallback" }),
+  fallbackCommit: (fallback) => ({
+    kind: "fallback",
+    receiptId: requiredReceiptId(fallback),
+  }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   replace: replaceFallbackNotification,
   prepare: preparePushDelivery,
@@ -371,11 +378,15 @@ async function preparePushDelivery(
         kind: "markread",
         tag: conversationTag(route, parsed.event.target),
         until: parsed.event.until,
+        receiptId: requiredReceiptId(state.generic),
       },
     };
   }
   if (parsed.event?.type === "ping") {
-    return { kind: "silent", commit: { kind: "ping" } };
+    return {
+      kind: "silent",
+      commit: { kind: "ping", receiptId: requiredReceiptId(state.generic) },
+    };
   }
   return {
     kind: "visible",
@@ -385,6 +396,7 @@ async function preparePushDelivery(
       route,
       event: parsed.event,
       tag: parsed.presentation.options.tag,
+      receiptId: requiredReceiptId(state.generic),
     },
   };
 }
@@ -400,22 +412,34 @@ function replaceableGenericNotification(
 }
 
 async function commitPushDelivery(commit: PushCommit): Promise<void> {
-  if (commit.kind === "markread") {
-    await markConversationRead(commit.tag, commit.until);
-    await tidyReadNotifications(false);
-    return;
-  }
-  if (commit.kind === "ping") {
-    await tidyReadNotifications();
-    return;
-  }
-  if (commit.kind === "fallback") {
-    await recordShownNotification(undefined, undefined);
-    return;
-  }
-  await recordShownNotification(commit.tag, commit.event);
-  if (commit.event !== undefined && isChatPayload(commit.event)) {
-    await storePushedMessage(commit.route, commit.event);
+  try {
+    if (commit.kind === "markread") {
+      await markConversationRead(commit.tag, commit.until);
+      await tidyReadNotifications(false);
+      return;
+    }
+    if (commit.kind === "ping") {
+      await tidyReadNotifications();
+      return;
+    }
+    if (commit.kind === "fallback") {
+      await recordShownNotification(undefined, undefined);
+      return;
+    }
+    await recordShownNotification(commit.tag, commit.event);
+    if (commit.event !== undefined && isChatPayload(commit.event)) {
+      await storePushedMessage(commit.route, commit.event);
+    }
+    if (commit.tag !== undefined) {
+      await closeSupersededFallbackNotifications(
+        registrationNotifications,
+        commit.tag,
+        commit.receiptId,
+        pendingFallbacks,
+      );
+    }
+  } finally {
+    pendingFallbacks.delete(commit.receiptId);
   }
 }
 
@@ -464,14 +488,26 @@ async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
   if (recomputeBadge) await setWorkerBadge(notificationStateTotal(state));
 }
 
-function showRegistrationNotification(
+async function showRegistrationNotification(
+  title: string,
+  options: NotificationOptions,
+): Promise<void> {
+  const fallbackId = notificationFallbackId({ data: options.data });
+  if (fallbackId !== undefined) pendingFallbacks.add(fallbackId);
+  try {
+    await presentRegistrationNotification(title, options);
+  } catch (error: unknown) {
+    if (fallbackId !== undefined) pendingFallbacks.delete(fallbackId);
+    throw error;
+  }
+}
+
+function presentRegistrationNotification(
   title: string,
   options: NotificationOptions,
 ): Promise<void> {
   if (!__PUSH_EVENT_HARNESS__) {
-    return worker.registration.showNotification(title, options).then(() => {
-      trackFallbackNotification(options);
-    });
+    return worker.registration.showNotification(title, options);
   }
   if (harnessPresentationFailures > 0) {
     harnessPresentationFailures -= 1;
@@ -494,13 +530,7 @@ function showRegistrationNotification(
     },
   } as Notification;
   harnessNotifications.push(notification);
-  trackFallbackNotification(options);
   return Promise.resolve();
-}
-
-function trackFallbackNotification(options: NotificationOptions): void {
-  const fallbackId = notificationFallbackId({ data: options.data });
-  if (fallbackId !== undefined) fallbackNotifications.track(fallbackId);
 }
 
 function registrationNotifications(): Promise<Notification[]> {
@@ -513,13 +543,9 @@ async function replaceFallbackNotification(
   fallback: PushPresentation,
   presentation: PushPresentation,
 ): Promise<boolean> {
-  if (fallback.fallbackId === undefined) return false;
-  const presentedFallbacks = await fallbackNotifications.take(
-    fallback.fallbackId,
+  return replaceDeadlineFallback(fallback, presentation, ({ title, options }) =>
+    showRegistrationNotification(title, options),
   );
-  await showRegistrationNotification(presentation.title, presentation.options);
-  for (const notification of presentedFallbacks) notification.close();
-  return true;
 }
 
 function notificationFallbackId(notification: {
@@ -534,8 +560,11 @@ function notificationFallbackId(notification: {
     : undefined;
 }
 
-function delay(durationMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
+function requiredReceiptId(presentation: PushPresentation): string {
+  if (presentation.receiptId === undefined) {
+    throw new Error("push presentation receipt is unavailable");
+  }
+  return presentation.receiptId;
 }
 
 function harnessNotificationSnapshots(): readonly unknown[] {

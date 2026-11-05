@@ -18,7 +18,7 @@ interface PushDeliveryDependencies<Input, Presentation, Commit> {
   readonly presentationBudgetMs: number;
   readonly generic: () => Presentation;
   readonly finalFallback: (generic: Presentation) => Presentation;
-  readonly fallbackCommit: () => Commit;
+  readonly fallbackCommit: (fallback: Presentation) => Commit;
   readonly present: (presentation: Presentation) => Promise<void>;
   readonly replace: (
     fallback: Presentation,
@@ -77,7 +77,10 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
       const shown = await showUntilPresented(state, () => state.generic);
       cancelPresentationDeadline(state);
       if (shown) {
-        await this.#commit(predecessor, this.#dependencies.fallbackCommit());
+        await this.#commit(
+          predecessor,
+          this.#dependencies.fallbackCommit(state.generic),
+        );
       }
       return;
     }

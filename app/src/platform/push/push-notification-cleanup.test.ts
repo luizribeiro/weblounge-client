@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { closeNotificationsCoveredByMarkers } from "./push-notification-cleanup";
+import {
+  closeNotificationsCoveredByMarkers,
+  closeSupersededFallbackNotifications,
+} from "./push-notification-cleanup";
 
 const tag = "Lounge/#lounge";
 const marker = Date.parse("2026-11-04T19:24:33.000Z");
@@ -29,11 +32,38 @@ describe("push notification cleanup", () => {
 
     expect(current.close).toHaveBeenCalledOnce();
   });
+
+  it("closes only committed fallback replacements from the same conversation", async () => {
+    const old = fallbackNotification(tag, "old");
+    const current = fallbackNotification(tag, "current");
+    const future = fallbackNotification(tag, "future");
+    const other = fallbackNotification("Lounge/#other", "other");
+    const visible = [old, current, future, other];
+
+    await closeSupersededFallbackNotifications(
+      async () => visible,
+      tag,
+      "current",
+      new Set(["current", "future"]),
+    );
+
+    expect(old.close).toHaveBeenCalledOnce();
+    expect(current.close).not.toHaveBeenCalled();
+    expect(future.close).not.toHaveBeenCalled();
+    expect(other.close).not.toHaveBeenCalled();
+  });
 });
 
 function notification(messageId: string, messageTime: string) {
   return {
     data: { conversationTag: tag, messageId, messageTime },
+    close: vi.fn(),
+  };
+}
+
+function fallbackNotification(conversationTag: string, fallbackId: string) {
+  return {
+    data: { conversationTag, fallbackId },
     close: vi.fn(),
   };
 }
