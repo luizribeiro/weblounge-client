@@ -109,6 +109,8 @@ const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
 const pushFallbackDeadlineMs = 1_500;
+const fallbackLookupBudgetMs = 400;
+const fallbackLookupIntervalMs = 20;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
@@ -134,9 +136,10 @@ const pushDeliveries = new PushDeliveryCoordinator<
 >({
   fallbackDeadlineMs: pushFallbackDeadlineMs,
   presentationBudgetMs: pushNotificationDeadlineMs,
-  generic: () => genericNotification(),
+  generic: () => genericNotification(undefined, crypto.randomUUID()),
   fallbackCommit: () => ({ kind: "fallback" }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
+  replace: replaceFallbackNotification,
   prepare: preparePushDelivery,
   commit: commitPushDelivery,
   reportError: (error) =>
@@ -331,7 +334,10 @@ async function preparePushDelivery(
   const envelope = pushEnvelope(event.data?.json());
   const route = await findRoute(envelope.routeId);
   if (route === undefined) throw new Error("push route is unavailable");
-  state.generic = genericNotification(route.networkLabel);
+  state.generic = genericNotification(
+    route.networkLabel,
+    state.generic.fallbackId,
+  );
   let plaintext: Uint8Array<ArrayBuffer>;
   try {
     plaintext = await decryptPushPayload(
@@ -475,6 +481,51 @@ function registrationNotifications(): Promise<Notification[]> {
   return __PUSH_EVENT_HARNESS__
     ? Promise.resolve([...harnessNotifications])
     : worker.registration.getNotifications();
+}
+
+async function replaceFallbackNotification(
+  fallback: PushPresentation,
+  presentation: PushPresentation,
+): Promise<boolean> {
+  if (fallback.fallbackId === undefined) return false;
+  const fallbackNotifications = await findFallbackNotifications(
+    fallback.fallbackId,
+  );
+  if (fallbackNotifications.length === 0) return false;
+  await showRegistrationNotification(presentation.title, presentation.options);
+  for (const notification of fallbackNotifications) notification.close();
+  return true;
+}
+
+async function findFallbackNotifications(
+  fallbackId: string,
+): Promise<Notification[]> {
+  const expiresAt = Date.now() + fallbackLookupBudgetMs;
+  while (true) {
+    const notifications = (await registrationNotifications()).filter(
+      (notification) => notificationFallbackId(notification) === fallbackId,
+    );
+    if (notifications.length > 0 || Date.now() >= expiresAt) {
+      return notifications;
+    }
+    await delay(fallbackLookupIntervalMs);
+  }
+}
+
+function notificationFallbackId(
+  notification: Notification,
+): string | undefined {
+  const data: unknown = notification.data;
+  return typeof data === "object" &&
+    data !== null &&
+    "fallbackId" in data &&
+    typeof data.fallbackId === "string"
+    ? data.fallbackId
+    : undefined;
+}
+
+function delay(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
 function harnessNotificationSnapshots(): readonly unknown[] {

@@ -19,6 +19,10 @@ interface PushDeliveryDependencies<Input, Presentation, Commit> {
   readonly generic: () => Presentation;
   readonly fallbackCommit: () => Commit;
   readonly present: (presentation: Presentation) => Promise<void>;
+  readonly replace: (
+    fallback: Presentation,
+    presentation: Presentation,
+  ) => Promise<boolean>;
   readonly retryPrepare: (error: unknown) => boolean;
   readonly reportError: (error: unknown) => void;
   readonly prepare: (
@@ -80,7 +84,22 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     }
     const shown = await showUntilPresented(state, () => prepared.presentation);
     cancelPresentationDeadline(state);
-    if (shown) await this.#commit(predecessor, prepared.commit);
+    if (!shown) return;
+    if (
+      state.presented !== undefined &&
+      state.presented !== prepared.presentation
+    ) {
+      try {
+        const replaced = await this.#dependencies.replace(
+          state.presented,
+          prepared.presentation,
+        );
+        if (replaced) state.presented = prepared.presentation;
+      } catch (error: unknown) {
+        this.#dependencies.reportError(error);
+      }
+    }
+    await this.#commit(predecessor, prepared.commit);
   }
 
   async #commit(predecessor: Promise<void>, commit: Commit): Promise<void> {

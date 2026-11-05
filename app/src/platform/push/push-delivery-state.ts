@@ -1,6 +1,7 @@
 export interface PushPresentationState<T> {
   expired: boolean;
   shown: boolean;
+  presented: T | undefined;
   showing: Promise<void> | undefined;
   generic: T;
   fallback: Promise<void>;
@@ -23,6 +24,7 @@ export function schedulePushPresentation<T>(
   const state: PushPresentationState<T> = {
     expired: false,
     shown: false,
+    presented: undefined,
     showing: undefined,
     generic,
     fallback: Promise.resolve(),
@@ -55,6 +57,7 @@ export async function showOnce<T>(
   try {
     await attempt;
     state.shown = true;
+    state.presented = presentation;
     cancelPresentationDeadline(state);
   } finally {
     state.showing = undefined;

@@ -174,6 +174,7 @@ describe("push delivery coordination", () => {
         present: async (presentation) => {
           presentations.push(presentation);
         },
+        replace: async () => false,
         commit: async () => undefined,
         reportError: () => undefined,
         retryPrepare: () => false,
@@ -185,6 +186,51 @@ describe("push delivery coordination", () => {
 
       releasePrepare.resolve();
       await delivery;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces a fallback when preparation finishes after its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const releasePrepare = deferred<void>();
+      const notifications: string[] = [];
+      const present = async (presentation: string) => {
+        notifications.push(presentation);
+      };
+      const dependencies = {
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        generic: () => "generic",
+        fallbackCommit: () => ({ id: "fallback", kind: "fallback" }) as Commit,
+        prepare: async (input: Input) => {
+          await releasePrepare.promise;
+          return visible(input.id);
+        },
+        present,
+        replace: async (fallback: string, presentation: string) => {
+          await present(presentation);
+          const fallbackIndex = notifications.indexOf(fallback);
+          if (fallbackIndex >= 0) notifications.splice(fallbackIndex, 1);
+          return true;
+        },
+        commit: async () => undefined,
+        reportError: () => undefined,
+        retryPrepare: () => false,
+      };
+      const coordinator = new PushDeliveryCoordinator<Input, string, Commit>(
+        dependencies,
+      );
+
+      const delivery = coordinator.enqueue({ id: "message", kind: "visible" });
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(notifications).toEqual(["generic"]);
+
+      releasePrepare.resolve();
+      await delivery;
+
+      expect(notifications).toEqual(["message"]);
     } finally {
       vi.useRealTimers();
     }
@@ -208,6 +254,7 @@ describe("push delivery coordination", () => {
           attempts += 1;
           if (attempts < 3) throw new Error("presentation unavailable");
         },
+        replace: async () => false,
         commit: async () => undefined,
         reportError: () => undefined,
         retryPrepare: () => false,
@@ -243,6 +290,7 @@ describe("push delivery coordination", () => {
           attempts += 1;
           throw new Error("presentation unavailable");
         },
+        replace: async () => false,
         commit: async (commit) => {
           commits.push(commit.id);
         },
@@ -327,6 +375,7 @@ function createCoordinator(overrides: {
     presentationBudgetMs: 60_000,
     generic: () => "generic",
     fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
+    replace: async () => false,
     reportError: () => undefined,
     retryPrepare: () => false,
     ...overrides,
