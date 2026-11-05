@@ -34,6 +34,7 @@ export interface ChatPayload {
 export interface NotificationPresentation {
   readonly title: string;
   readonly options: NotificationOptions;
+  readonly receiptId?: string;
   readonly fallbackId?: string;
 }
 
@@ -57,13 +58,18 @@ export async function notificationForLine(
 
 export function genericNotification(
   networkLabel?: string,
+  receiptId?: string,
 ): NotificationPresentation {
   return {
     title: __PUSH_NEW_MESSAGE__,
     options: {
       ...(networkLabel === undefined ? {} : { body: networkLabel }),
-      data: { route: "/" },
+      data: {
+        route: "/",
+        ...(receiptId === undefined ? {} : { receiptId }),
+      },
     },
+    ...(receiptId === undefined ? {} : { receiptId }),
   };
 }
 
@@ -75,7 +81,7 @@ export function deadlineFallbackNotification(
     ...presentation,
     options: {
       ...presentation.options,
-      data: { route: "/", fallbackId },
+      data: { route: "/", receiptId: presentation.receiptId, fallbackId },
     },
     fallbackId,
   };

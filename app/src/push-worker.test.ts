@@ -201,14 +201,27 @@ describe("push worker notification presentation", () => {
   });
 
   it("marks only a deadline fallback for later replacement", () => {
+    expect(genericNotification(undefined, "receipt")).toEqual({
+      title: "New message",
+      options: { data: { route: "/", receiptId: "receipt" } },
+      receiptId: "receipt",
+    });
     expect(
-      deadlineFallbackNotification(genericNotification("Lounge"), "receipt"),
+      deadlineFallbackNotification(
+        genericNotification("Lounge", "receipt"),
+        "receipt",
+      ),
     ).toEqual({
       title: "New message",
       options: {
         body: "Lounge",
-        data: { route: "/", fallbackId: "receipt" },
+        data: {
+          route: "/",
+          receiptId: "receipt",
+          fallbackId: "receipt",
+        },
       },
+      receiptId: "receipt",
       fallbackId: "receipt",
     });
   });

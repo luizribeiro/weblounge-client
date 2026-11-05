@@ -142,9 +142,12 @@ const pushDeliveries = new PushDeliveryCoordinator<
 >({
   fallbackDeadlineMs: pushFallbackDeadlineMs,
   presentationBudgetMs: pushNotificationDeadlineMs,
-  generic: () => genericNotification(),
+  generic: () => genericNotification(undefined, crypto.randomUUID()),
   deadlineFallback: (generic) =>
-    deadlineFallbackNotification(generic, crypto.randomUUID()),
+    deadlineFallbackNotification(
+      generic,
+      generic.receiptId ?? crypto.randomUUID(),
+    ),
   fallbackCommit: () => ({ kind: "fallback" }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   replace: replaceFallbackNotification,
@@ -342,7 +345,10 @@ async function preparePushDelivery(
   const envelope = pushEnvelope(event.data?.json());
   const route = await findRoute(envelope.routeId);
   if (route === undefined) throw new Error("push route is unavailable");
-  state.generic = genericNotification(route.networkLabel);
+  state.generic = genericNotification(
+    route.networkLabel,
+    state.generic.receiptId,
+  );
   let plaintext: Uint8Array<ArrayBuffer>;
   try {
     plaintext = await decryptPushPayload(
