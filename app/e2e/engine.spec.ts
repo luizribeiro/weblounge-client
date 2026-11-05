@@ -1,4 +1,4 @@
-import { devices, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 import {
@@ -136,9 +136,8 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
-  test("resolves cached direct history on desktop and mobile", async ({
+  test("opens a cached direct with an active typing peer on mobile", async ({
     baseURL,
-    browser,
     context,
     page,
   }) => {
@@ -154,8 +153,8 @@ test.describe("local Ergo user flow", () => {
       fixtureChannel,
     );
     const text = `cached direct history ${suffix}`;
-    let mobileContext: import("@playwright/test").BrowserContext | undefined;
     try {
+      await page.setViewportSize({ height: 874, width: 402 });
       await context.addInitScript(() => {
         Object.defineProperty(globalThis, "SharedWorker", {
           configurable: true,
@@ -163,32 +162,13 @@ test.describe("local Ergo user flow", () => {
         });
       });
       await page.goto("/?irc-password=weblounge-test");
-      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
-        1,
-      );
-      await bot.privmsgConfirmed("weblounge", text);
       await expect(
-        page.getByRole("button", { name: new RegExp(`^${bot.nickname}`) }),
+        page.getByRole("heading", { name: fixtureChannel }),
       ).toBeVisible();
-      await openCachedDirect(page, baseURL, bot.nickname, text);
-      await page.close();
-
-      mobileContext = await browser.newContext({
-        ...devices["iPhone 16 Pro"],
-        baseURL,
-      });
-      await mobileContext.addInitScript(() => {
-        Object.defineProperty(globalThis, "SharedWorker", {
-          configurable: true,
-          value: undefined,
-        });
-      });
-      const mobile = await mobileContext.newPage();
-      await mobile.goto("/?irc-password=weblounge-test");
-      await expect(mobile.locator("[data-mobile-chats]")).toBeVisible();
-      await openCachedDirect(mobile, baseURL, bot.nickname, text);
+      await page.goto("/e2e/draft-key-migration.html");
+      await bot.privmsgConfirmed("weblounge", text);
+      await openCachedDirect(page, baseURL, bot, text);
     } finally {
-      await mobileContext?.close();
       bot.close();
     }
   });
@@ -847,21 +827,39 @@ async function observeDeliveries(
 async function openCachedDirect(
   page: Page,
   baseURL: string | undefined,
-  nick: string,
+  peer: IrcClient,
   text: string,
 ): Promise<void> {
+  const nick = peer.nickname;
   await seedCachedDirect(page, baseURL, nick, text);
 
   await page.goto("/?irc-password=weblounge-test");
+  const chatsToggle = page.getByRole("button", { name: "Toggle channel list" });
+  await expect(chatsToggle).toBeVisible();
+  await chatsToggle.click();
   const row = page.getByRole("button", { name: new RegExp(`^${nick}`) });
   await expect(row).toBeVisible();
+  peer.typing("weblounge", "active");
   await row.click();
   await expect(page.locator("[data-message-list]")).toBeVisible();
 
-  await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   await expect(
     page.locator("[data-message-list]").getByText(text, { exact: true }),
   ).toBeVisible();
+  peer.typing("weblounge", "active");
+  await expect(page.locator("[data-conversation-title]")).not.toHaveAttribute(
+    "data-connection-progress",
+  );
+  await expect(
+    page.getByText(/That person left or the nickname now belongs/u),
+  ).toHaveCount(0);
+
+  const reply = `cached direct reply ${Date.now()}`;
+  await observeDeliveries(page, reply);
+  await page.getByRole("textbox", { name: `Message ${nick}` }).fill(reply);
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText(reply, { exact: true })).toBeVisible();
+  await expect.poll(() => observedDeliveries(page)).toContain("confirmed");
 }
 
 async function seedCachedDirect(
