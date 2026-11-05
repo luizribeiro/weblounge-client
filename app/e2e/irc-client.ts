@@ -216,7 +216,8 @@ export class IrcClient {
     await this.waitFor(
       `echoed reaction to ${target}`,
       (line) =>
-        line.includes(`+draft/react=${reaction};+draft/reply=${messageId}`) &&
+        line.includes(`+draft/react=${reaction}`) &&
+        line.includes(`+draft/reply=${messageId}`) &&
         line.includes(` TAGMSG ${target}`),
     );
   }
