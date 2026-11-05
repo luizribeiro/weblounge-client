@@ -2938,6 +2938,12 @@ mod tests {
         pushed_messages::PushedMessage,
     };
 
+    fn secure_wire_builder() -> papo::Builder {
+        // The in-memory connector never performs a handshake, so platform roots only add a host dependency.
+        papo::Client::builder("ircs://verified.example", "weblounge")
+            .tls_ca_pem(include_bytes!("../tests/data/secure-wire-ca.pem"))
+    }
+
     #[test]
     fn history_state_derives_buffer_sync_state() {
         assert_eq!(
@@ -3183,10 +3189,7 @@ mod tests {
 
     #[tokio::test]
     async fn pushed_direct_message_becomes_verified_when_history_arrives() {
-        let (client, mut events, mut wire) = wire(papo::Client::builder(
-            "ircs://verified.example",
-            "weblounge",
-        ));
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["account-tag", "message-tags", "server-time"])
             .await;
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
@@ -4255,10 +4258,7 @@ mod tests {
 
     #[tokio::test]
     async fn account_discovery_keeps_the_nick_key_and_verifies_the_thread() {
-        let (client, mut events, mut wire) = wire(papo::Client::builder(
-            "ircs://verified.example",
-            "weblounge",
-        ));
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&[
             "account-notify",
             "account-tag",
@@ -4362,10 +4362,7 @@ mod tests {
 
     #[tokio::test]
     async fn matching_continuity_pin_adds_a_note_without_rekeying_the_thread() {
-        let (client, mut events, mut wire) = wire(papo::Client::builder(
-            "ircs://verified.example",
-            "weblounge",
-        ));
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
         wire.register(&["extended-join"]).await;
         while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
         wire.server(":weblounge!u@host JOIN #room * :WebLounge")
