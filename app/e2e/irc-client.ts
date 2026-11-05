@@ -29,6 +29,24 @@ export class IrcClient {
     password: string,
     channel: string,
   ): Promise<IrcClient> {
+    const client = await IrcClient.connectWithoutJoin(
+      nickname,
+      account,
+      password,
+    );
+    client.send(`JOIN ${channel}`);
+    await client.waitFor(
+      `JOIN confirmation for ${channel}`,
+      (line) => line.includes(`!`) && line.includes(` JOIN ${channel}`),
+    );
+    return client;
+  }
+
+  static async connectWithoutJoin(
+    nickname: string,
+    account: string,
+    password: string,
+  ): Promise<IrcClient> {
     const socket = await connectedSocket();
     const client = new IrcClient(socket, nickname);
     client.send("CAP LS 302");
@@ -67,11 +85,6 @@ export class IrcClient {
       line.includes(" 001 "),
     );
     client.#nickname = welcome.match(/ 001 (\S+) /u)?.[1] ?? nickname;
-    client.send(`JOIN ${channel}`);
-    await client.waitFor(
-      `JOIN confirmation for ${channel}`,
-      (line) => line.includes(`!`) && line.includes(` JOIN ${channel}`),
-    );
     return client;
   }
 
