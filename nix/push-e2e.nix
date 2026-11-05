@@ -126,6 +126,7 @@ let
           const notification = {
             title,
             body: options.body ?? "",
+            data: options.data,
             tag: options.tag ?? "",
             close: () => {
               const index = visibleNotifications.indexOf(notification);

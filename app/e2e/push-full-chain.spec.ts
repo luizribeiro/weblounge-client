@@ -350,17 +350,7 @@ test.describe("independent portable push controls", () => {
       await deliverPortableEnvelope(control, markread);
       await expect.poll(() => storedAppBadge(control)).toBe(badgeBefore);
 
-      let controlStayedSilent = true;
-      try {
-        await expect.poll(() => notifications(control)).toEqual([]);
-      } catch {
-        controlStayedSilent = false;
-      }
-      test.fail(
-        true,
-        "the worker replaces the DM with a generic notification for MARKREAD",
-      );
-      expect(controlStayedSilent).toBe(true);
+      await expect.poll(() => notifications(control)).toEqual([]);
     } finally {
       audit.close();
       controlBot.close();
