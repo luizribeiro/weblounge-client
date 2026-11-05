@@ -33,6 +33,39 @@ describe("push notification cleanup", () => {
     expect(current.close).toHaveBeenCalledOnce();
   });
 
+  it("waits for an asynchronous close boundary", async () => {
+    const closeStarted = deferred<void>();
+    const closed = deferred<void>();
+    const current = {
+      data: {
+        conversationTag: tag,
+        messageId: "async-close",
+        messageTime: "2026-11-04T19:24:33.000Z",
+      },
+      close: vi.fn(() => {
+        closeStarted.resolve();
+        return closed.promise;
+      }),
+    };
+    let settled = false;
+
+    const cleanup = closeNotificationsCoveredByMarkers(
+      async () => [current],
+      new Map([[tag, marker]]),
+    ).then(() => {
+      settled = true;
+    });
+    await closeStarted.promise;
+    await Promise.resolve();
+
+    expect(current.close).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+
+    closed.resolve();
+    await cleanup;
+    expect(settled).toBe(true);
+  });
+
   it("closes only committed fallback replacements from the same conversation", async () => {
     const old = fallbackNotification(tag, "old");
     const current = fallbackNotification(tag, "current");
@@ -66,4 +99,15 @@ function fallbackNotification(conversationTag: string, fallbackId: string) {
     data: { conversationTag, fallbackId },
     close: vi.fn(),
   };
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value?: T) => void;
+} {
+  let resolve: (value?: T) => void = () => {};
+  const promise = new Promise<T>((fulfill) => {
+    resolve = (value) => fulfill(value as T);
+  });
+  return { promise, resolve };
 }

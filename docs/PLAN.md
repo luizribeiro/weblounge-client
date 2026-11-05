@@ -2,6 +2,8 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Join portable Firefox notification-ledger closes to the control push lifetime, so a worker
+  cannot terminate after applying MARKREAD state but before publishing the cleared notification list.
 - [x] Keep multi-push browser fixtures on one route key, and surface service-worker preparation
   errors in their assertion output so a fixture rekey cannot masquerade as a slow parser or store.
 - [x] Bound upgrade-fixture push-route inspection so an IndexedDB stall reports its own failure,

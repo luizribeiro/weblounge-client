@@ -131,7 +131,7 @@ let
             close: () => {
               const index = visibleNotifications.indexOf(notification);
               if (index !== -1) visibleNotifications.splice(index, 1);
-              void persistNotifications();
+              return persistNotifications();
             },
           };
           visibleNotifications.push(notification);

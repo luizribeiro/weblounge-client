@@ -2,7 +2,7 @@ import { notificationDataIsRead } from "./push-notification-state";
 
 interface CloseableNotification {
   readonly data: unknown;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 interface FallbackIdentity {
@@ -36,7 +36,7 @@ export async function closeNotificationsCoveredByMarkers(
       current !== undefined &&
       notificationDataIsRead(current.data, readMarkers)
     ) {
-      current.close();
+      await current.close();
     }
   }
 }
@@ -61,7 +61,7 @@ export async function closeSupersededFallbackNotifications(
     const current = (await notifications()).find((notification) =>
       sameFallback(notification.data, identity),
     );
-    if (current !== undefined) current.close();
+    if (current !== undefined) await current.close();
   }
 }
 
