@@ -7,6 +7,7 @@ import {
   openEngineDatabase,
 } from "./engine-database";
 import { IrcClient } from "./irc-client";
+import { deliverStablePushBatch } from "./stable-push-batch";
 
 const routeId = "route-push-e2e";
 const pushHarnessScope = "/e2e/push-events/";
@@ -218,16 +219,14 @@ test("silently applies every delivered MARKREAD and maintenance PING", async ({
 }) => {
   const pushErrors = capturePushErrors(context);
   await prepareServiceWorker(context, page);
-  for (const [msgid, text] of [
-    ["push-read-one", "first unread push"],
-    ["push-read-two", "second unread push"],
-  ]) {
-    const envelope = await seedRouteAndEncrypt(
-      page,
-      `@time=2026-11-03T12:34:56.789Z;msgid=${msgid} :mel!m@example.test PRIVMSG #lounge :${text}`,
-    );
-    await deliverPush(context, page, envelope);
-  }
+  await deliverStablePushBatch(
+    [
+      "@time=2026-11-03T12:34:56.789Z;msgid=push-read-one :mel!m@example.test PRIVMSG #lounge :first unread push",
+      "@time=2026-11-03T12:34:56.789Z;msgid=push-read-two :mel!m@example.test PRIVMSG #lounge :second unread push",
+    ],
+    (lines) => seedRouteAndEncryptMany(page, lines),
+    (envelope) => deliverPush(context, page, envelope),
+  );
   await expect
     .poll(async () => ({
       notificationCount: (await notifications(page))?.length,

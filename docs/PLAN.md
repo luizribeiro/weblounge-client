@@ -2,6 +2,8 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep multi-push browser fixtures on one route key, and surface service-worker preparation
+  errors in their assertion output so a fixture rekey cannot masquerade as a slow parser or store.
 - [x] Bound upgrade-fixture push-route inspection so an IndexedDB stall reports its own failure,
   and close legacy migration connections on version changes and failed reads.
 - [x] Make late push fallback replacement condition-based instead of wall-clock-polled, and keep
