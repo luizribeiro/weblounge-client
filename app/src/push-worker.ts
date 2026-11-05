@@ -21,6 +21,7 @@ import {
   PushDeliveryCoordinator,
 } from "./platform/push/push-delivery-coordinator";
 import type { PushPresentationState } from "./platform/push/push-delivery-state";
+import { PushFallbackCoordinator } from "./platform/push/push-fallback-coordinator";
 import {
   bufferPath,
   genericNotification,
@@ -109,13 +110,17 @@ const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
 const pushFallbackDeadlineMs = 1_500;
-const fallbackLookupBudgetMs = 400;
 const fallbackLookupIntervalMs = 20;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
 const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
+const fallbackNotifications = new PushFallbackCoordinator(
+  registrationNotifications,
+  (notification, id) => notificationFallbackId(notification) === id,
+  () => delay(fallbackLookupIntervalMs),
+);
 
 type PushPresentation = ReturnType<typeof genericNotification>;
 type PushCommit =
@@ -451,7 +456,9 @@ function showRegistrationNotification(
   options: NotificationOptions,
 ): Promise<void> {
   if (!__PUSH_EVENT_HARNESS__) {
-    return worker.registration.showNotification(title, options);
+    return worker.registration.showNotification(title, options).then(() => {
+      trackFallbackNotification(options);
+    });
   }
   if (harnessPresentationFailures > 0) {
     harnessPresentationFailures -= 1;
@@ -474,7 +481,13 @@ function showRegistrationNotification(
     },
   } as Notification;
   harnessNotifications.push(notification);
+  trackFallbackNotification(options);
   return Promise.resolve();
+}
+
+function trackFallbackNotification(options: NotificationOptions): void {
+  const fallbackId = notificationFallbackId({ data: options.data });
+  if (fallbackId !== undefined) fallbackNotifications.track(fallbackId);
 }
 
 function registrationNotifications(): Promise<Notification[]> {
@@ -488,33 +501,17 @@ async function replaceFallbackNotification(
   presentation: PushPresentation,
 ): Promise<boolean> {
   if (fallback.fallbackId === undefined) return false;
-  const fallbackNotifications = await findFallbackNotifications(
+  const presentedFallbacks = await fallbackNotifications.take(
     fallback.fallbackId,
   );
-  if (fallbackNotifications.length === 0) return false;
   await showRegistrationNotification(presentation.title, presentation.options);
-  for (const notification of fallbackNotifications) notification.close();
+  for (const notification of presentedFallbacks) notification.close();
   return true;
 }
 
-async function findFallbackNotifications(
-  fallbackId: string,
-): Promise<Notification[]> {
-  const expiresAt = Date.now() + fallbackLookupBudgetMs;
-  while (true) {
-    const notifications = (await registrationNotifications()).filter(
-      (notification) => notificationFallbackId(notification) === fallbackId,
-    );
-    if (notifications.length > 0 || Date.now() >= expiresAt) {
-      return notifications;
-    }
-    await delay(fallbackLookupIntervalMs);
-  }
-}
-
-function notificationFallbackId(
-  notification: Notification,
-): string | undefined {
+function notificationFallbackId(notification: {
+  readonly data: unknown;
+}): string | undefined {
   const data: unknown = notification.data;
   return typeof data === "object" &&
     data !== null &&
