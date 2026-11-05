@@ -24,6 +24,7 @@ import type { PushPresentationState } from "./platform/push/push-delivery-state"
 import { PushFallbackCoordinator } from "./platform/push/push-fallback-coordinator";
 import {
   bufferPath,
+  deadlineFallbackNotification,
   genericNotification,
   isChatPayload,
   notificationForLine,
@@ -141,7 +142,9 @@ const pushDeliveries = new PushDeliveryCoordinator<
 >({
   fallbackDeadlineMs: pushFallbackDeadlineMs,
   presentationBudgetMs: pushNotificationDeadlineMs,
-  generic: () => genericNotification(undefined, crypto.randomUUID()),
+  generic: () => genericNotification(),
+  deadlineFallback: (generic) =>
+    deadlineFallbackNotification(generic, crypto.randomUUID()),
   fallbackCommit: () => ({ kind: "fallback" }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   replace: replaceFallbackNotification,
@@ -339,10 +342,7 @@ async function preparePushDelivery(
   const envelope = pushEnvelope(event.data?.json());
   const route = await findRoute(envelope.routeId);
   if (route === undefined) throw new Error("push route is unavailable");
-  state.generic = genericNotification(
-    route.networkLabel,
-    state.generic.fallbackId,
-  );
+  state.generic = genericNotification(route.networkLabel);
   let plaintext: Uint8Array<ArrayBuffer>;
   try {
     plaintext = await decryptPushPayload(

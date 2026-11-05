@@ -17,6 +17,7 @@ interface PushDeliveryDependencies<Input, Presentation, Commit> {
   readonly fallbackDeadlineMs: number;
   readonly presentationBudgetMs: number;
   readonly generic: () => Presentation;
+  readonly deadlineFallback: (generic: Presentation) => Presentation;
   readonly fallbackCommit: () => Commit;
   readonly present: (presentation: Presentation) => Promise<void>;
   readonly replace: (
@@ -50,6 +51,7 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     });
     const state = schedulePushPresentation(
       this.#dependencies.generic(),
+      this.#dependencies.deadlineFallback,
       this.#dependencies.present,
       this.#dependencies.fallbackDeadlineMs,
       this.#dependencies.presentationBudgetMs,

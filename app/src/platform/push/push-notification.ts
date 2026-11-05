@@ -57,18 +57,27 @@ export async function notificationForLine(
 
 export function genericNotification(
   networkLabel?: string,
-  fallbackId?: string,
 ): NotificationPresentation {
   return {
     title: __PUSH_NEW_MESSAGE__,
     options: {
       ...(networkLabel === undefined ? {} : { body: networkLabel }),
-      data: {
-        route: "/",
-        ...(fallbackId === undefined ? {} : { fallbackId }),
-      },
+      data: { route: "/" },
     },
-    ...(fallbackId === undefined ? {} : { fallbackId }),
+  };
+}
+
+export function deadlineFallbackNotification(
+  presentation: NotificationPresentation,
+  fallbackId: string,
+): NotificationPresentation {
+  return {
+    ...presentation,
+    options: {
+      ...presentation.options,
+      data: { route: "/", fallbackId },
+    },
+    fallbackId,
   };
 }
 

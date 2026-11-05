@@ -4,6 +4,7 @@ import {
   showOnce,
 } from "./platform/push/push-delivery-state";
 import {
+  deadlineFallbackNotification,
   genericNotification,
   notificationForLine,
   type ParsedPushEvent,
@@ -43,6 +44,7 @@ describe("push delivery state", () => {
       const present = vi.fn(async (_value: string) => undefined);
       const state = schedulePushPresentation<string>(
         "generic",
+        (generic) => generic,
         present,
         1_500,
         2_000,
@@ -195,6 +197,19 @@ describe("push worker notification presentation", () => {
     expect(genericNotification()).toEqual({
       title: "New message",
       options: { data: { route: "/" } },
+    });
+  });
+
+  it("marks only a deadline fallback for later replacement", () => {
+    expect(
+      deadlineFallbackNotification(genericNotification("Lounge"), "receipt"),
+    ).toEqual({
+      title: "New message",
+      options: {
+        body: "Lounge",
+        data: { route: "/", fallbackId: "receipt" },
+      },
+      fallbackId: "receipt",
     });
   });
 });
