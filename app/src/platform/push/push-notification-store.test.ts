@@ -1,10 +1,12 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import {
+  emptyNotificationState,
   markConversationRead,
   notificationDataIsRead,
   notificationStateTotal,
   recordPresentedNotification,
+  replaceNotificationCounts,
 } from "./push-notification-state";
 import {
   readNotificationState,
@@ -64,6 +66,16 @@ describe("push notification state storage", () => {
     state = await readNotificationState(factory);
     expect(notificationStateTotal(state)).toBe(1);
     expect(state.readAtMs.has(tag)).toBe(false);
+  });
+
+  it("does not promote an engine marker to worker cleanup authority", () => {
+    const state = emptyNotificationState();
+    replaceNotificationCounts(state, [{ tag, count: 0, readAtMs: 100 }]);
+    expect(state.readAtMs.has(tag)).toBe(false);
+
+    markConversationRead(state, tag, 200);
+    replaceNotificationCounts(state, [{ tag, count: 0, readAtMs: 300 }]);
+    expect(state.readAtMs.get(tag)).toBe(200);
   });
 });
 

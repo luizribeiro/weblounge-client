@@ -4,9 +4,7 @@ import {
 } from "./engine/generated/EngineDatabaseSchema";
 import { routeNotificationClick } from "./platform/push/notification-routing";
 import {
-  appBadgeKey,
   migrateLegacyPushDatabase,
-  notificationCountsKey,
   pushDatabaseName,
   pushDatabaseVersion,
   pushRouteIdIndex,
@@ -18,14 +16,10 @@ import {
   decryptPushPayload,
 } from "./platform/push/push-decryption";
 import {
-  cancelPresentationDeadline,
-  type NotificationCounts,
-  notificationDataIsRead,
-  type PushPresentationState,
-  recordPresentedNotification,
-  schedulePushPresentation,
-  showOnce,
-} from "./platform/push/push-delivery-state";
+  type PreparedPushDelivery,
+  PushDeliveryCoordinator,
+} from "./platform/push/push-delivery-coordinator";
+import type { PushPresentationState } from "./platform/push/push-delivery-state";
 import {
   bufferPath,
   genericNotification,
@@ -34,6 +28,16 @@ import {
   type ParsedPushEvent,
   sameIrcName,
 } from "./platform/push/push-notification";
+import {
+  markConversationRead as markNotificationStateRead,
+  notificationDataIsRead,
+  notificationStateTotal,
+  recordPresentedNotification,
+} from "./platform/push/push-notification-state";
+import {
+  readNotificationState,
+  updateNotificationState,
+} from "./platform/push/push-notification-store";
 import {
   PushParserLoader,
   type PushPayloadParser,
@@ -107,9 +111,31 @@ const databaseDeadlineMs = 500;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
-let pushQueue = Promise.resolve();
 const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
+
+type PushPresentation = ReturnType<typeof genericNotification>;
+type PushCommit =
+  | {
+      readonly kind: "visible";
+      readonly route: StoredRoute;
+      readonly event: ParsedPushEvent | undefined;
+      readonly tag: string | undefined;
+    }
+  | { readonly kind: "markread"; readonly tag: string; readonly until: string }
+  | { readonly kind: "ping" };
+
+const pushDeliveries = new PushDeliveryCoordinator<
+  PushPayloadEvent,
+  PushPresentation,
+  PushCommit
+>({
+  deadlineMs: pushNotificationDeadlineMs,
+  generic: () => genericNotification(),
+  present: ({ title, options }) => showRegistrationNotification(title, options),
+  prepare: preparePushDelivery,
+  commit: commitPushDelivery,
+});
 
 worker.importScripts("/push-payload.js");
 
@@ -249,12 +275,7 @@ function isHarnessPush(value: unknown): value is {
 }
 
 function queuePush(pushEvent: PushPayloadEvent): Promise<void> {
-  const presentation = schedulePresentation();
-  const handled = pushQueue.then(() =>
-    showPushNotification(pushEvent, presentation),
-  );
-  pushQueue = handled.catch(() => undefined);
-  return handled;
+  return pushDeliveries.enqueue(pushEvent);
 }
 
 function pushError(error: unknown): string {
@@ -296,50 +317,10 @@ async function previousShellAssetResponse(request: Request): Promise<Response> {
   return cached ?? fetch(request);
 }
 
-function schedulePresentation(): PushPresentationState<
-  ReturnType<typeof genericNotification>
-> {
-  return schedulePushPresentation(
-    genericNotification(),
-    ({ title, options }) => showRegistrationNotification(title, options),
-    pushNotificationDeadlineMs,
-  );
-}
-
-async function showPushNotification(
+async function preparePushDelivery(
   event: PushPayloadEvent,
-  state: PushPresentationState<ReturnType<typeof genericNotification>>,
-): Promise<void> {
-  const detailed = preparePushNotification(event, state).catch(() =>
-    showGenericOrWaitForFallback(state),
-  );
-  await Promise.race([detailed, state.fallback]);
-  cancelPresentationDeadline(state);
-  if (state.expired) {
-    // wait-ok: bounded drain keeps timed-out storage work serialized.
-    await Promise.race([
-      detailed,
-      new Promise<void>((resolve) =>
-        setTimeout(resolve, databaseDeadlineMs + 50),
-      ),
-    ]);
-  }
-}
-
-async function showGenericOrWaitForFallback(
-  state: PushPresentationState<ReturnType<typeof genericNotification>>,
-): Promise<void> {
-  try {
-    await showOnce(state, state.generic);
-  } catch {
-    await state.fallback;
-  }
-}
-
-async function preparePushNotification(
-  event: PushPayloadEvent,
-  state: PushPresentationState<ReturnType<typeof genericNotification>>,
-): Promise<void> {
+  state: PushPresentationState<PushPresentation>,
+): Promise<PreparedPushDelivery<PushPresentation, PushCommit>> {
   const envelope = pushEnvelope(event.data?.json());
   const route = await findRoute(envelope.routeId);
   if (route === undefined) throw new Error("push route is unavailable");
@@ -362,31 +343,46 @@ async function preparePushNotification(
     new TextDecoder().decode(plaintext),
     parser,
   );
-  if (state.expired) return;
   if (parsed.event?.type === "markread") {
-    await markConversationRead(
-      conversationTag(route, parsed.event.target),
-      parsed.event.until,
-    ).catch(() => undefined);
+    return {
+      kind: "silent",
+      commit: {
+        kind: "markread",
+        tag: conversationTag(route, parsed.event.target),
+        until: parsed.event.until,
+      },
+    };
+  }
+  if (parsed.event?.type === "ping") {
+    return { kind: "silent", commit: { kind: "ping" } };
+  }
+  return {
+    kind: "visible",
+    presentation: parsed.presentation,
+    commit: {
+      kind: "visible",
+      route,
+      event: parsed.event,
+      tag: parsed.presentation.options.tag,
+    },
+  };
+}
+
+async function commitPushDelivery(commit: PushCommit): Promise<void> {
+  if (commit.kind === "markread") {
+    await markConversationRead(commit.tag, commit.until).catch(() => undefined);
     await tidyReadNotifications(false).catch(() => undefined);
     return;
   }
-  if (parsed.event?.type === "ping") {
+  if (commit.kind === "ping") {
     await tidyReadNotifications().catch(() => undefined);
     return;
   }
-  if (state.expired) return;
-  await showOnce(state, parsed.presentation);
-  let recordNotification = true;
-  if (parsed.event !== undefined && isChatPayload(parsed.event)) {
-    recordNotification = await storePushedMessage(route, parsed.event).catch(
-      () => true,
-    );
-  }
-  if (recordNotification && state.shown) {
-    await recordShownNotification(parsed.presentation.options.tag).catch(
-      () => undefined,
-    );
+  await recordShownNotification(commit.tag, commit.event).catch(
+    () => undefined,
+  );
+  if (commit.event !== undefined && isChatPayload(commit.event)) {
+    await storePushedMessage(commit.route, commit.event).catch(() => undefined);
   }
 }
 
@@ -400,66 +396,39 @@ async function notifyWindowsOfSubscriptionChange(): Promise<void> {
   }
 }
 
-async function recordShownNotification(tag: string | undefined): Promise<void> {
-  await updateNotificationCounts((counts) =>
-    recordPresentedNotification(counts, tag),
+async function recordShownNotification(
+  tag: string | undefined,
+  event: ParsedPushEvent | undefined,
+): Promise<void> {
+  const chat = event !== undefined && isChatPayload(event) ? event : undefined;
+  const total = await updateNotificationState((state) =>
+    recordPresentedNotification(state, {
+      ...(tag === undefined ? {} : { tag }),
+      ...(chat === undefined
+        ? {}
+        : { messageId: chat.msgid, messageTime: chat.time }),
+    }),
   );
+  await setWorkerBadge(total);
 }
 
 async function markConversationRead(tag: string, until: string): Promise<void> {
-  await updateNotificationCounts((counts) => {
-    counts.conversations.set(tag, 0);
-    const marker = readMarkerMillis(until);
-    if (marker !== undefined) {
-      counts.readAtMs.set(tag, Math.max(counts.readAtMs.get(tag) ?? 0, marker));
-    }
-  });
-}
-
-async function updateNotificationCounts(
-  update: (counts: NotificationCounts) => void,
-): Promise<void> {
-  const database = await openPushDatabase();
-  let total = 0;
-  try {
-    const transaction = database.transaction(pushStateStore, "readwrite");
-    const completed = transactionDone(transaction);
-    const store = transaction.objectStore(pushStateStore);
-    const counts = decodeNotificationCounts(
-      await requestResult(store.get(notificationCountsKey)),
-    );
-    update(counts);
-    total = notificationCountTotal(counts);
-    store.put(encodeNotificationCounts(counts), notificationCountsKey);
-    store.put(total, appBadgeKey);
-    await completed;
-  } finally {
-    database.close();
-  }
+  const marker = readMarkerMillis(until);
+  if (marker === undefined) return;
+  const total = await updateNotificationState((state) =>
+    markNotificationStateRead(state, tag, marker),
+  );
   await setWorkerBadge(total);
 }
 
 async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
-  const database = await openPushDatabase();
-  let counts: NotificationCounts;
-  try {
-    const transaction = database.transaction(pushStateStore, "readonly");
-    const completed = transactionDone(transaction);
-    counts = decodeNotificationCounts(
-      await requestResult(
-        transaction.objectStore(pushStateStore).get(notificationCountsKey),
-      ),
-    );
-    await completed;
-  } finally {
-    database.close();
-  }
-  const readMarkers = new Map(counts.readAtMs);
+  const state = await readNotificationState();
+  const readMarkers = new Map(state.readAtMs);
   const notifications = await registrationNotifications();
   for (const notification of notifications) {
     if (notificationIsRead(notification, readMarkers)) notification.close();
   }
-  if (recomputeBadge) await setWorkerBadge(notificationCountTotal(counts));
+  if (recomputeBadge) await setWorkerBadge(notificationStateTotal(state));
 }
 
 function showRegistrationNotification(
@@ -508,68 +477,6 @@ function harnessNotificationSnapshots(): readonly unknown[] {
   }));
 }
 
-function decodeNotificationCounts(value: unknown): NotificationCounts {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("schema" in value) ||
-    (value.schema !== 1 && value.schema !== 2) ||
-    !("conversations" in value) ||
-    !Array.isArray(value.conversations) ||
-    !("untagged" in value) ||
-    !validCount(value.untagged)
-  ) {
-    return emptyNotificationCounts();
-  }
-  const conversations = new Map<string, number>();
-  const readAtMs = new Map<string, number>();
-  for (const entry of value.conversations) {
-    if (value.schema === 1) {
-      if (
-        !Array.isArray(entry) ||
-        entry.length !== 2 ||
-        typeof entry[0] !== "string" ||
-        !validCount(entry[1])
-      ) {
-        return emptyNotificationCounts();
-      }
-      conversations.set(entry[0], entry[1]);
-      continue;
-    }
-    if (
-      typeof entry !== "object" ||
-      entry === null ||
-      !("tag" in entry) ||
-      typeof entry.tag !== "string" ||
-      !("count" in entry) ||
-      !validCount(entry.count) ||
-      !("read_at_ms" in entry) ||
-      (entry.read_at_ms !== null && !validReadMarker(entry.read_at_ms))
-    ) {
-      return emptyNotificationCounts();
-    }
-    conversations.set(entry.tag, entry.count);
-    if (entry.read_at_ms !== null) readAtMs.set(entry.tag, entry.read_at_ms);
-  }
-  return { conversations, readAtMs, untagged: value.untagged };
-}
-
-function encodeNotificationCounts(counts: NotificationCounts): unknown {
-  return {
-    schema: 2,
-    conversations: [...counts.conversations].map(([tag, count]) => ({
-      tag,
-      count,
-      read_at_ms: counts.readAtMs.get(tag) ?? null,
-    })),
-    untagged: counts.untagged,
-  };
-}
-
-function emptyNotificationCounts(): NotificationCounts {
-  return { conversations: new Map(), readAtMs: new Map(), untagged: 0 };
-}
-
 function notificationIsRead(
   notification: Notification,
   readMarkers: ReadonlyMap<string, number>,
@@ -583,24 +490,6 @@ function readMarkerMillis(reference: string): number | undefined {
     : reference;
   const marker = Date.parse(timestamp);
   return Number.isNaN(marker) ? undefined : marker;
-}
-
-function notificationCountTotal(counts: NotificationCounts): number {
-  return (
-    counts.untagged +
-    [...counts.conversations.values()].reduce(
-      (total, count) => total + count,
-      0,
-    )
-  );
-}
-
-function validCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function validReadMarker(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 async function setWorkerBadge(count: number): Promise<void> {

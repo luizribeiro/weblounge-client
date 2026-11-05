@@ -1,3 +1,9 @@
+import {
+  decodeNotificationState,
+  encodeNotificationState,
+  replaceNotificationCounts,
+} from "./push-notification-state";
+
 export const pushDatabaseName = "weblounge-push-v2";
 export const pushDatabaseVersion = 1;
 export const legacyPushDatabaseName = "weblounge-push";
@@ -228,19 +234,12 @@ export async function writeNotificationCounts(
   try {
     const transaction = database.transaction(pushStateStore, "readwrite");
     const store = transaction.objectStore(pushStateStore);
-    const total = counts.reduce((sum, entry) => sum + entry.count, 0);
-    store.put(
-      {
-        schema: 2,
-        conversations: counts.map(({ tag, count, readAtMs }) => ({
-          tag,
-          count,
-          read_at_ms: readAtMs ?? null,
-        })),
-        untagged: 0,
-      },
-      notificationCountsKey,
+    const state = decodeNotificationState(
+      await requestResult(store.get(notificationCountsKey)),
     );
+    replaceNotificationCounts(state, counts);
+    const total = counts.reduce((sum, entry) => sum + entry.count, 0);
+    store.put(encodeNotificationState(state), notificationCountsKey);
     store.put(total, appBadgeKey);
     await transactionDone(transaction);
   } finally {

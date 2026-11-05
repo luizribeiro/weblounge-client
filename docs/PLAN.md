@@ -31,6 +31,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Keep successful push presentation distinct from slower persistence: disarm its receipt
   deadline once shown and retain every delivered badge increment.
 - [x] Prevent an older read watermark from closing a newly presented same-tag notification.
+- [x] Decouple concurrent push presentation from receipt-ordered persistence so slow storage cannot
+  consume the next notification's deadline.
+- [x] Persist worker unread state by `msgid`, retaining explicit unknown engine baselines, so badge
+  counts survive same-time messages, redelivery and delayed IndexedDB completion.
 
 ## Status
 

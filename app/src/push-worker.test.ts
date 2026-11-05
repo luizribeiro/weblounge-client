@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  notificationDataIsRead,
-  recordPresentedNotification,
   schedulePushPresentation,
   showOnce,
 } from "./platform/push/push-delivery-state";
@@ -10,6 +8,10 @@ import {
   notificationForLine,
   type ParsedPushEvent,
 } from "./platform/push/push-notification";
+import {
+  notificationDataIsRead,
+  recordPresentedNotification,
+} from "./platform/push/push-notification-state";
 import {
   PushParserLoader,
   type PushPayloadParser,
@@ -56,16 +58,22 @@ describe("push delivery state", () => {
     const tag = "Lounge/#lounge";
     const time = "2026-11-03T12:34:56.789Z";
     const counts = {
-      conversations: new Map([[tag, 0]]),
+      conversations: new Map([
+        [tag, { unknown: 0, messages: new Map<string, number>() }],
+      ]),
       readAtMs: new Map([[tag, Date.parse(time)]]),
       untagged: 0,
     };
     const data = { conversationTag: tag, messageTime: time };
     expect(notificationDataIsRead(data, counts.readAtMs)).toBe(true);
 
-    recordPresentedNotification(counts, tag);
+    recordPresentedNotification(counts, {
+      tag,
+      messageId: "new-message",
+      messageTime: time,
+    });
 
-    expect(counts.conversations.get(tag)).toBe(1);
+    expect(counts.conversations.get(tag)?.messages.size).toBe(1);
     expect(notificationDataIsRead(data, counts.readAtMs)).toBe(false);
     counts.readAtMs.set(tag, Date.parse(time));
     expect(notificationDataIsRead(data, counts.readAtMs)).toBe(true);

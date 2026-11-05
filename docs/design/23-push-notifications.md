@@ -717,18 +717,27 @@ dropped, held, or forwarded outcome without inspecting ciphertext.
 
 ### Read-elsewhere cleanup implementation (2026-11-04)
 
-The worker persists versioned per-conversation notification counts and read timestamps beside the
-aggregate badge. Visible message and invite pushes increment their notification tag. Chat
-notifications also carry their tag, `msgid` and server time in notification data. A decrypted
-`MARKREAD` stores the `timestamp=` reference, zeros the matching count and closes only notifications
-from that conversation at or before the marker. A maintenance `PING` repeats marker-bounded cleanup
-without calling `showNotification`; both controls are silent even if count persistence fails and
-regardless of the request's urgency. A successful presentation disarms its receipt deadline before
-message and badge persistence, so slow persistence cannot discard the badge increment after the
-notification was shown. A new same-tag presentation also supersedes the prior read watermark, so an
-older marker cannot close the notification that was just shown. Visible and generic pushes do not
-perform cleanup. Production's patched Ergo sends these controls at normal urgency, so the relay
-keeps them away from Apple, FCM and Windows Push while forwarding them to Mozilla.
+The worker persists a versioned per-conversation unread ledger and read timestamps beside the
+aggregate badge. Chat pushes are keyed by `msgid` and retain their server time; id-less visible
+events and engine-reconciled counts remain an explicit unknown baseline. Therefore two distinct
+messages at the same server time both count, while redelivery of one `msgid` does not. The badge is
+the sum of known unread message ids, unknown baselines and untagged visible events.
+
+A decrypted `MARKREAD` stores the `timestamp=` reference, removes matching known messages, zeros the
+matching unknown baseline and closes only notifications from that conversation at or before the
+marker. A maintenance `PING` reapplies only cleanup markers already persisted by `MARKREAD`; engine
+foreground reconciliation closes against its own markers without promoting them to worker cleanup
+authority. Both controls are silent regardless of the request's urgency. A new same-tag receipt
+supersedes the prior worker cleanup marker, so an older marker can never close the notification just
+shown. Visible and generic pushes do not perform cleanup. Production's patched Ergo sends these
+controls at normal urgency, so the relay keeps them away from Apple, FCM and Windows Push while
+forwarding them to Mozilla.
+
+Push delivery preserves receipt order without putting presentation behind storage. Every received
+push begins route lookup, decryption and presentation independently, with its generic deadline
+anchored to receipt. Once prepared, visible pushes present immediately; badge, history and control
+state commits take receipt-ordered turns. Thus a slow earlier commit cannot consume a later push's
+presentation deadline, while a later `MARKREAD` still cannot overtake an earlier message.
 
 An unpatched or different home can still send a control at high urgency, which the opaque relay must
 forward. That is a residual Apple compatibility risk, not the production weblounge path. WebKit
