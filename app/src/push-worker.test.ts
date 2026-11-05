@@ -45,6 +45,7 @@ describe("push delivery state", () => {
 
       await showOnce(state, "detailed");
       await vi.advanceTimersByTimeAsync(2_000);
+      await expect(state.fallback).resolves.toBeUndefined();
 
       expect(state.expired).toBe(false);
       expect(state.shown).toBe(true);

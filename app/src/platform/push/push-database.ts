@@ -12,7 +12,15 @@ export const pushRouteIdIndex = "route-id";
 export const pushStateStore = "state";
 export const appBadgeKey = "app-badge";
 export const notificationCountsKey = "notification-counts";
+export const databaseDeadlineMs = 500;
 const legacyMigrationKey = "legacy-migration-complete";
+
+export class DatabaseTimeoutError extends Error {
+  constructor(operation: string) {
+    super(`${operation} timed out`);
+    this.name = "DatabaseTimeoutError";
+  }
+}
 
 export interface ConversationNotificationCount {
   readonly tag: string;
@@ -26,6 +34,10 @@ export function openPushDatabase(
   return new Promise((resolve, reject) => {
     let settled = false;
     const request = factory.open(pushDatabaseName, pushDatabaseVersion);
+    const deadline = setTimeout(() => {
+      settled = true;
+      reject(new DatabaseTimeoutError("push database open"));
+    }, databaseDeadlineMs);
     request.onupgradeneeded = () => {
       createRoutesStore(request.result);
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
@@ -37,21 +49,34 @@ export function openPushDatabase(
         request.result.close();
         return;
       }
-      settled = true;
       request.result.onversionchange = () => request.result.close();
       void migrateLegacyPushDatabase(request.result, factory).then(
-        () => resolve(request.result),
+        () => {
+          clearTimeout(deadline);
+          if (settled) {
+            request.result.close();
+            return;
+          }
+          settled = true;
+          resolve(request.result);
+        },
         (error: unknown) => {
+          clearTimeout(deadline);
+          if (settled) return;
+          settled = true;
           request.result.close();
           reject(error);
         },
       );
     };
     request.onblocked = () => {
+      clearTimeout(deadline);
+      if (settled) return;
       settled = true;
       reject(new Error("push database open was blocked"));
     };
     request.onerror = () => {
+      clearTimeout(deadline);
       if (settled) return;
       settled = true;
       reject(request.error ?? new Error("push database failed to open"));
@@ -145,13 +170,35 @@ function openLegacyPushDatabase(
 ): Promise<IDBDatabase | undefined> {
   return new Promise((resolve, reject) => {
     let missing = false;
+    let settled = false;
     const request = factory.open(legacyPushDatabaseName);
+    const deadline = setTimeout(() => {
+      settled = true;
+      reject(new DatabaseTimeoutError("legacy push database open"));
+    }, databaseDeadlineMs);
     request.onupgradeneeded = () => {
       missing = true;
       request.transaction?.abort();
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      clearTimeout(deadline);
+      if (settled) {
+        request.result.close();
+        return;
+      }
+      settled = true;
+      resolve(request.result);
+    };
+    request.onblocked = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
+      reject(new Error("legacy push database open was blocked"));
+    };
     request.onerror = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       if (missing) resolve(undefined);
       else reject(request.error ?? new Error("legacy push database failed"));
     };
@@ -249,22 +296,57 @@ export async function writeNotificationCounts(
 
 export function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
+    let settled = false;
+    const deadline = setTimeout(() => {
+      settled = true;
+      reject(new DatabaseTimeoutError("database request"));
+    }, databaseDeadlineMs);
+    request.onsuccess = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       reject(request.error ?? new Error("push database request failed"));
+    };
   });
 }
 
 export function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () =>
+    let settled = false;
+    const deadline = setTimeout(() => {
+      settled = true;
+      try {
+        transaction.abort();
+      } catch {}
+      reject(new DatabaseTimeoutError("database transaction"));
+    }, databaseDeadlineMs);
+    transaction.oncomplete = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    transaction.onabort = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       reject(
         transaction.error ?? new Error("push database transaction aborted"),
       );
-    transaction.onerror = () =>
+    };
+    transaction.onerror = () => {
+      clearTimeout(deadline);
+      if (settled) return;
+      settled = true;
       reject(
         transaction.error ?? new Error("push database transaction failed"),
       );
+    };
   });
 }

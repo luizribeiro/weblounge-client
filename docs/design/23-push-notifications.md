@@ -237,7 +237,9 @@ handlers. On `push`, inside one `waitUntil`:
    (about 80 lines of TS). Rust can't reach a non-extractable key, so the Rust `ece` path is for
    native targets only.
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
-4. For a visible payload, call `showNotification` exactly once, before any further database work.
+4. For a visible payload, establish one successful `showNotification` before any further database
+   work. A rejected presentation is retried while the push event remains alive; presentation state
+   prevents a detailed and deadline fallback attempt from both succeeding.
    Chat notification data includes
    its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
    re-shows the same conversation tag so tag-capable platforms replace the prior notification. A
@@ -246,16 +248,23 @@ handlers. On `push`, inside one `waitUntil`:
 5. After presentation, store the message (msgid, time, target, sender, text) in the engine's
    `Space::Cache` IndexedDB store, keyed so the engine reads it as part of the buffer's history,
    then persist and apply the badge count.
-6. Serialize push events, but give each delivery its own deadline when its push event is received.
-   If route lookup, decryption or parsing has not produced a visible presentation within two
-   seconds, show the generic notification once and suppress all later presentation or route writes
-   from that delivery. IndexedDB opens, requests and transactions have shorter deadlines, reject on
-   `blocked`, close on every path and close on `versionchange`. If the browser rejects the first
-   presentation attempt, the fallback remains attached to `waitUntil` and retries at the same
-   receipt-anchored deadline instead of letting the worker stop early.
+6. Prepare and present concurrent push events independently, with a two-second deadline anchored to
+   each event's receipt. Commits retain receipt order: every event waits for its predecessor before
+   it changes pushed rows, read markers or badge state, including preparation and presentation
+   failure paths. A transient IndexedDB timeout during preparation is retried until the receipt
+   deadline so a delayed `MARKREAD` or `PING` remains silent. A definitively absent route, a
+   non-transient failure, or still-unknown payload at the deadline presents the generic notification.
+   Generic presentations are committed as untagged unread entries; known visible messages retain
+   their `msgid`. IndexedDB opens, requests and transactions share one shorter deadline, reject on
+   `blocked`, close on every path and close on `versionchange`, so neither preparation nor a commit
+   can hold the receipt-order chain forever.
 7. A decryption failure shows the generic "New message" for that network and marks the route for
    re-registration by re-reading the current route id inside its write transaction. Parser failures
    show generic without changing keys.
+
+`MARKREAD` comparisons are inclusive. Before closing a covered notification, cleanup re-reads the
+currently displayed notifications and matches conversation tag, `msgid` and server time; a newer
+same-tag replacement that appeared after the first snapshot is never closed through a stale handle.
 
 The service worker is a classic, non-module worker with a precache list. The parser wasm joins the
 precache, is instantiated from the Cache API, and has a `size-limit` budget; shipping a new parser

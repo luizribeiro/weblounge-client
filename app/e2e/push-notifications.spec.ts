@@ -361,7 +361,7 @@ test("shows one generic notification when decryption fails", async ({
   await expect.poll(() => routeNeedsReregistration(page)).toBe(true);
 });
 
-test("shows one generic notification when route keys are missing", async ({
+test("counts one generic notification when its route record is absent", async ({
   context,
   page,
 }) => {
@@ -379,6 +379,7 @@ test("shows one generic notification when route keys are missing", async ({
   await expect
     .poll(() => notifications(page))
     .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
+  await expect.poll(() => storedAppBadge(page)).toBe(1);
 });
 
 test("retries the fallback while the push event keeps the worker alive", async ({
@@ -434,15 +435,16 @@ test("anchors queued generic notifications to their receipt deadline", async ({
 
   const startedAt = performance.now();
   let presentationElapsedMs: number;
+  const deliveries = deliverPushes(context, page, [envelope, envelope]);
   try {
-    await deliverPushes(context, page, [envelope, envelope]);
     await expect
-      .poll(() => notifications(page))
+      .poll(() => notifications(page), { intervals: [50] })
       .toEqual([
         { title: "New message", body: "", tag: "", route: "/" },
         { title: "New message", body: "", tag: "", route: "/" },
       ]);
     presentationElapsedMs = performance.now() - startedAt;
+    await deliveries;
   } finally {
     await page.evaluate(() => {
       const transaction = Reflect.get(globalThis, "blockedPushTransaction");

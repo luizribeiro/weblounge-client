@@ -175,7 +175,10 @@ test.describe("full unmocked push lifecycle", () => {
 
     try {
       await expect
-        .poll(() => notifications(page), { timeout: 2_500 })
+        .poll(() => notifications(page), {
+          intervals: [50],
+          timeout: 2_500,
+        })
         .toEqual([{ title: "New message", body: "", tag: "" }]);
     } finally {
       await blocker.evaluate((transaction) => {

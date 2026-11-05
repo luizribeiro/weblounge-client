@@ -5,6 +5,7 @@ export interface PushPresentationState<T> {
   generic: T;
   fallback: Promise<void>;
   deadline: ReturnType<typeof setTimeout> | undefined;
+  resolveFallback: (() => void) | undefined;
   readonly present: (presentation: T) => Promise<void>;
 }
 
@@ -20,12 +21,14 @@ export function schedulePushPresentation<T>(
     generic,
     fallback: Promise.resolve(),
     deadline: undefined,
+    resolveFallback: undefined,
     present,
   };
   state.fallback = new Promise<void>((resolve) => {
+    state.resolveFallback = resolve;
     state.deadline = setTimeout(() => {
       state.expired = true;
-      void retryPresentation(state).finally(resolve);
+      void showUntilPresented(state, () => state.generic).finally(resolve);
     }, deadlineMs);
   });
   return state;
@@ -37,7 +40,7 @@ export async function showOnce<T>(
 ): Promise<void> {
   if (state.shown) return;
   if (state.showing !== undefined) return state.showing;
-  const attempt = state.present(presentation);
+  const attempt = Promise.resolve().then(() => state.present(presentation));
   state.showing = attempt;
   try {
     await attempt;
@@ -53,14 +56,17 @@ export function cancelPresentationDeadline<T>(
 ): void {
   if (state.deadline !== undefined) clearTimeout(state.deadline);
   state.deadline = undefined;
+  state.resolveFallback?.();
+  state.resolveFallback = undefined;
 }
 
-async function retryPresentation<T>(
+export async function showUntilPresented<T>(
   state: PushPresentationState<T>,
+  presentation: () => T,
 ): Promise<void> {
-  try {
-    await showOnce(state, state.generic);
-  } catch {
-    await showOnce(state, state.generic).catch(() => undefined);
+  while (!state.shown) {
+    try {
+      await showOnce(state, presentation());
+    } catch {}
   }
 }

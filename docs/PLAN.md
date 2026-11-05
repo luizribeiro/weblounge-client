@@ -33,6 +33,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Prevent an older read watermark from closing a newly presented same-tag notification.
 - [x] Decouple concurrent push presentation from receipt-ordered persistence so slow storage cannot
   consume the next notification's deadline.
+- [x] Keep every push failure path receipt-ordered, retry transient preparation and rejected
+  presentation through the receipt deadline, bound all worker database operations, count generic
+  fallbacks, and revalidate notification identity immediately before read-marker cleanup.
 - [x] Persist worker unread state by `msgid`, retaining explicit unknown engine baselines, so badge
   counts survive same-time messages, redelivery and delayed IndexedDB completion.
 

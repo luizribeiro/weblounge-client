@@ -4,12 +4,13 @@ import {
 } from "./engine/generated/EngineDatabaseSchema";
 import { routeNotificationClick } from "./platform/push/notification-routing";
 import {
-  migrateLegacyPushDatabase,
-  pushDatabaseName,
-  pushDatabaseVersion,
+  DatabaseTimeoutError,
+  databaseDeadlineMs,
+  openPushDatabase,
   pushRouteIdIndex,
   pushRoutesStore,
-  pushStateStore,
+  requestResult,
+  transactionDone,
 } from "./platform/push/push-database";
 import {
   decodePushBase64Url,
@@ -28,9 +29,9 @@ import {
   type ParsedPushEvent,
   sameIrcName,
 } from "./platform/push/push-notification";
+import { closeNotificationsCoveredByMarkers } from "./platform/push/push-notification-cleanup";
 import {
   markConversationRead as markNotificationStateRead,
-  notificationDataIsRead,
   notificationStateTotal,
   recordPresentedNotification,
 } from "./platform/push/push-notification-state";
@@ -107,7 +108,6 @@ const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
-const databaseDeadlineMs = 500;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
@@ -123,7 +123,8 @@ type PushCommit =
       readonly tag: string | undefined;
     }
   | { readonly kind: "markread"; readonly tag: string; readonly until: string }
-  | { readonly kind: "ping" };
+  | { readonly kind: "ping" }
+  | { readonly kind: "fallback" };
 
 const pushDeliveries = new PushDeliveryCoordinator<
   PushPayloadEvent,
@@ -132,9 +133,11 @@ const pushDeliveries = new PushDeliveryCoordinator<
 >({
   deadlineMs: pushNotificationDeadlineMs,
   generic: () => genericNotification(),
+  fallbackCommit: () => ({ kind: "fallback" }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   prepare: preparePushDelivery,
   commit: commitPushDelivery,
+  retryPrepare: (error) => error instanceof DatabaseTimeoutError,
 });
 
 worker.importScripts("/push-payload.js");
@@ -378,6 +381,10 @@ async function commitPushDelivery(commit: PushCommit): Promise<void> {
     await tidyReadNotifications().catch(() => undefined);
     return;
   }
+  if (commit.kind === "fallback") {
+    await recordShownNotification(undefined, undefined).catch(() => undefined);
+    return;
+  }
   await recordShownNotification(commit.tag, commit.event).catch(
     () => undefined,
   );
@@ -424,10 +431,10 @@ async function markConversationRead(tag: string, until: string): Promise<void> {
 async function tidyReadNotifications(recomputeBadge = true): Promise<void> {
   const state = await readNotificationState();
   const readMarkers = new Map(state.readAtMs);
-  const notifications = await registrationNotifications();
-  for (const notification of notifications) {
-    if (notificationIsRead(notification, readMarkers)) notification.close();
-  }
+  await closeNotificationsCoveredByMarkers(
+    registrationNotifications,
+    readMarkers,
+  );
   if (recomputeBadge) await setWorkerBadge(notificationStateTotal(state));
 }
 
@@ -475,13 +482,6 @@ function harnessNotificationSnapshots(): readonly unknown[] {
     tag,
     title,
   }));
-}
-
-function notificationIsRead(
-  notification: Notification,
-  readMarkers: ReadonlyMap<string, number>,
-): boolean {
-  return notificationDataIsRead(notification.data, readMarkers);
 }
 
 function readMarkerMillis(reference: string): number | undefined {
@@ -674,112 +674,6 @@ function openCurrentEngineDatabase(): Promise<IDBDatabase> {
       if (settled) return;
       settled = true;
       reject(request.error ?? new Error("engine database failed to open"));
-    };
-  });
-}
-
-function openPushDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const request = indexedDB.open(pushDatabaseName, pushDatabaseVersion);
-    const deadline = setTimeout(() => {
-      settled = true;
-      reject(new Error("push database open timed out"));
-    }, databaseDeadlineMs);
-    request.onupgradeneeded = () => {
-      createRoutesStore(request.result);
-      if (!request.result.objectStoreNames.contains(pushStateStore)) {
-        request.result.createObjectStore(pushStateStore);
-      }
-    };
-    request.onsuccess = () => {
-      if (settled) {
-        request.result.close();
-        return;
-      }
-      request.result.onversionchange = () => request.result.close();
-      void migrateLegacyPushDatabase(request.result).then(
-        () => {
-          clearTimeout(deadline);
-          if (settled) {
-            request.result.close();
-            return;
-          }
-          settled = true;
-          resolve(request.result);
-        },
-        (error: unknown) => {
-          clearTimeout(deadline);
-          if (settled) return;
-          settled = true;
-          request.result.close();
-          reject(error);
-        },
-      );
-    };
-    request.onblocked = () => {
-      clearTimeout(deadline);
-      if (settled) return;
-      settled = true;
-      reject(new Error("push database open was blocked"));
-    };
-    request.onerror = () => {
-      clearTimeout(deadline);
-      if (settled) return;
-      settled = true;
-      reject(request.error ?? new Error("push database failed to open"));
-    };
-  });
-}
-
-function createRoutesStore(database: IDBDatabase): IDBObjectStore {
-  const store = database.createObjectStore(pushRoutesStore, {
-    keyPath: "vapid",
-  });
-  store.createIndex(pushRouteIdIndex, "routeId", { unique: true });
-  return store;
-}
-
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const deadline = setTimeout(
-      () => reject(new Error("push database request timed out")),
-      databaseDeadlineMs,
-    );
-    request.onsuccess = () => {
-      clearTimeout(deadline);
-      resolve(request.result);
-    };
-    request.onerror = () => {
-      clearTimeout(deadline);
-      reject(request.error ?? new Error("push database request failed"));
-    };
-  });
-}
-
-function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const deadline = setTimeout(() => {
-      try {
-        transaction.abort();
-      } catch {}
-      reject(new Error("push database transaction timed out"));
-    }, databaseDeadlineMs);
-    transaction.oncomplete = () => {
-      clearTimeout(deadline);
-      resolve();
-    };
-    transaction.onabort = () => {
-      clearTimeout(deadline);
-      reject(
-        transaction.error ?? new Error("push database transaction aborted"),
-      );
-    };
-    transaction.onerror = () => {
-      clearTimeout(deadline);
-      reject(
-        transaction.error ?? new Error("push database transaction failed"),
-      );
     };
   });
 }

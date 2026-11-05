@@ -2,7 +2,7 @@ import {
   cancelPresentationDeadline,
   type PushPresentationState,
   schedulePushPresentation,
-  showOnce,
+  showUntilPresented,
 } from "./push-delivery-state";
 
 export type PreparedPushDelivery<Presentation, Commit> =
@@ -16,7 +16,9 @@ export type PreparedPushDelivery<Presentation, Commit> =
 interface PushDeliveryDependencies<Input, Presentation, Commit> {
   readonly deadlineMs: number;
   readonly generic: () => Presentation;
+  readonly fallbackCommit: () => Commit;
   readonly present: (presentation: Presentation) => Promise<void>;
+  readonly retryPrepare: (error: unknown) => boolean;
   readonly prepare: (
     input: Input,
     state: PushPresentationState<Presentation>,
@@ -45,7 +47,10 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
       this.#dependencies.present,
       this.#dependencies.deadlineMs,
     );
-    return this.#deliver(input, state, predecessor).finally(releaseCommitTurn);
+    return this.#deliver(input, state, predecessor).finally(async () => {
+      await predecessor;
+      releaseCommitTurn();
+    });
   }
 
   async #deliver(
@@ -58,7 +63,9 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
       state,
       predecessor,
     ).catch(async () => {
-      await showGenericOrWaitForFallback(state);
+      await showUntilPresented(state, () => state.generic);
+      await predecessor;
+      await this.#dependencies.commit(this.#dependencies.fallbackCommit());
     });
     await Promise.race([detailed, state.fallback]);
     cancelPresentationDeadline(state);
@@ -70,23 +77,28 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     state: PushPresentationState<Presentation>,
     predecessor: Promise<void>,
   ): Promise<void> {
-    const prepared = await this.#dependencies.prepare(input, state);
+    const prepared = await this.#prepareUntilKnown(input, state);
     if (prepared.kind === "silent") {
       cancelPresentationDeadline(state);
-    } else if (!state.expired) {
-      await showOnce(state, prepared.presentation);
+    } else {
+      await showUntilPresented(state, () => prepared.presentation);
     }
     await predecessor;
     await this.#dependencies.commit(prepared.commit);
   }
-}
 
-async function showGenericOrWaitForFallback<T>(
-  state: PushPresentationState<T>,
-): Promise<void> {
-  try {
-    await showOnce(state, state.generic);
-  } catch {
-    await state.fallback;
+  async #prepareUntilKnown(
+    input: Input,
+    state: PushPresentationState<Presentation>,
+  ): Promise<PreparedPushDelivery<Presentation, Commit>> {
+    while (true) {
+      try {
+        return await this.#dependencies.prepare(input, state);
+      } catch (error: unknown) {
+        if (state.expired || !this.#dependencies.retryPrepare(error)) {
+          throw error;
+        }
+      }
+    }
   }
 }

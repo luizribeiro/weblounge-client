@@ -11,7 +11,7 @@ interface Input {
 
 interface Commit {
   readonly id: string;
-  readonly kind: "visible" | "markread";
+  readonly kind: "visible" | "markread" | "fallback";
 }
 
 describe("push delivery coordination", () => {
@@ -65,6 +65,7 @@ describe("push delivery coordination", () => {
   it("keeps a silent MARKREAD behind every earlier received message", async () => {
     const releaseFirst = deferred<void>();
     const markreadPrepared = deferred<void>();
+    const messagePresented = deferred<void>();
     const commits: string[] = [];
     const presentations: string[] = [];
     const coordinator = createCoordinator({
@@ -77,6 +78,7 @@ describe("push delivery coordination", () => {
       },
       present: async (presentation) => {
         presentations.push(presentation);
+        if (presentation === "message") messagePresented.resolve();
       },
       commit: async (commit) => {
         if (commit.id === "message") await releaseFirst.promise;
@@ -86,7 +88,7 @@ describe("push delivery coordination", () => {
 
     const message = coordinator.enqueue({ id: "message", kind: "visible" });
     const markread = coordinator.enqueue({ id: "read", kind: "markread" });
-    await markreadPrepared.promise;
+    await Promise.all([markreadPrepared.promise, messagePresented.promise]);
 
     expect(presentations).toEqual(["message"]);
     expect(commits).toEqual([]);
@@ -94,6 +96,65 @@ describe("push delivery coordination", () => {
     releaseFirst.resolve();
     await Promise.all([message, markread]);
     expect(commits).toEqual(["message", "read"]);
+  });
+
+  it("does not release a failed preparation past an earlier commit", async () => {
+    const releaseFirst = deferred<void>();
+    const fallbackPresented = deferred<void>();
+    const readPrepared = deferred<void>();
+    const commits: string[] = [];
+    const coordinator = createCoordinator({
+      prepare: async (input) => {
+        if (input.id === "missing") throw new Error("missing route");
+        if (input.kind === "markread") {
+          readPrepared.resolve();
+          return { kind: "silent", commit: input };
+        }
+        return visible(input.id);
+      },
+      present: async (presentation) => {
+        if (presentation === "generic") fallbackPresented.resolve();
+      },
+      commit: async (commit) => {
+        if (commit.id === "first") await releaseFirst.promise;
+        commits.push(commit.id);
+      },
+    });
+
+    const first = coordinator.enqueue({ id: "first", kind: "visible" });
+    const missing = coordinator.enqueue({ id: "missing", kind: "visible" });
+    const markread = coordinator.enqueue({ id: "read", kind: "markread" });
+    await Promise.all([fallbackPresented.promise, readPrepared.promise]);
+    expect(commits).toEqual([]);
+
+    releaseFirst.resolve();
+    await Promise.all([first, missing, markread]);
+    expect(commits).toEqual(["first", "fallback", "read"]);
+  });
+
+  it("retries a transient prepare failure before classifying a control", async () => {
+    let attempts = 0;
+    const presentations: string[] = [];
+    const commits: string[] = [];
+    const coordinator = createCoordinator({
+      prepare: async (input) => {
+        attempts += 1;
+        if (attempts === 1) throw new RetryableTestError();
+        return { kind: "silent", commit: input };
+      },
+      present: async (presentation) => {
+        presentations.push(presentation);
+      },
+      commit: async (commit) => {
+        commits.push(commit.id);
+      },
+      retryPrepare: (error) => error instanceof RetryableTestError,
+    });
+
+    await coordinator.enqueue({ id: "read", kind: "markread" });
+    expect(attempts).toBe(2);
+    expect(presentations).toEqual([]);
+    expect(commits).toEqual(["read"]);
   });
 
   it("presents the generic fallback while route storage is blocked", async () => {
@@ -104,6 +165,7 @@ describe("push delivery coordination", () => {
       const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
         deadlineMs: 2_000,
         generic: () => "generic",
+        fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
         prepare: async (input) => {
           await releasePrepare.promise;
           return visible(input.id);
@@ -112,11 +174,44 @@ describe("push delivery coordination", () => {
           presentations.push(presentation);
         },
         commit: async () => undefined,
+        retryPrepare: () => false,
       });
 
       const delivery = coordinator.enqueue({ id: "slow", kind: "visible" });
       await vi.advanceTimersByTimeAsync(2_000);
       expect(presentations).toEqual(["generic"]);
+
+      releasePrepare.resolve();
+      await delivery;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps retrying a failed deadline presentation", async () => {
+    vi.useFakeTimers();
+    try {
+      const releasePrepare = deferred<void>();
+      let attempts = 0;
+      const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
+        deadlineMs: 2_000,
+        generic: () => "generic",
+        fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
+        prepare: async (input) => {
+          await releasePrepare.promise;
+          return visible(input.id);
+        },
+        present: async () => {
+          attempts += 1;
+          if (attempts < 3) throw new Error("presentation unavailable");
+        },
+        commit: async () => undefined,
+        retryPrepare: () => false,
+      });
+
+      const delivery = coordinator.enqueue({ id: "slow", kind: "visible" });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(attempts).toBe(3);
 
       releasePrepare.resolve();
       await delivery;
@@ -132,13 +227,18 @@ function createCoordinator(overrides: {
   ) => Promise<PreparedPushDelivery<string, Commit>>;
   readonly present: (presentation: string) => Promise<void>;
   readonly commit: (commit: Commit) => Promise<void>;
+  readonly retryPrepare?: (error: unknown) => boolean;
 }): PushDeliveryCoordinator<Input, string, Commit> {
   return new PushDeliveryCoordinator({
     deadlineMs: 60_000,
     generic: () => "generic",
+    fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
+    retryPrepare: () => false,
     ...overrides,
   });
 }
+
+class RetryableTestError extends Error {}
 
 function visible(id: string): PreparedPushDelivery<string, Commit> {
   return {
