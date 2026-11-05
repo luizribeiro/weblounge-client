@@ -19,7 +19,10 @@ import {
 } from "./platform/push/push-decryption";
 import {
   cancelPresentationDeadline,
+  type NotificationCounts,
+  notificationDataIsRead,
   type PushPresentationState,
+  recordPresentedNotification,
   schedulePushPresentation,
   showOnce,
 } from "./platform/push/push-delivery-state";
@@ -397,20 +400,10 @@ async function notifyWindowsOfSubscriptionChange(): Promise<void> {
   }
 }
 
-interface NotificationCounts {
-  readonly conversations: Map<string, number>;
-  readonly readAtMs: Map<string, number>;
-  untagged: number;
-}
-
 async function recordShownNotification(tag: string | undefined): Promise<void> {
-  await updateNotificationCounts((counts) => {
-    if (tag === undefined || tag.length === 0) {
-      counts.untagged += 1;
-      return;
-    }
-    counts.conversations.set(tag, (counts.conversations.get(tag) ?? 0) + 1);
-  });
+  await updateNotificationCounts((counts) =>
+    recordPresentedNotification(counts, tag),
+  );
 }
 
 async function markConversationRead(tag: string, until: string): Promise<void> {
@@ -581,20 +574,7 @@ function notificationIsRead(
   notification: Notification,
   readMarkers: ReadonlyMap<string, number>,
 ): boolean {
-  const data: unknown = notification.data;
-  if (typeof data !== "object" || data === null) return false;
-  if (
-    !("conversationTag" in data) ||
-    typeof data.conversationTag !== "string" ||
-    !("messageTime" in data) ||
-    typeof data.messageTime !== "string"
-  )
-    return false;
-  const marker = readMarkers.get(data.conversationTag);
-  const messageTime = Date.parse(data.messageTime);
-  return (
-    marker !== undefined && !Number.isNaN(messageTime) && messageTime <= marker
-  );
+  return notificationDataIsRead(notification.data, readMarkers);
 }
 
 function readMarkerMillis(reference: string): number | undefined {

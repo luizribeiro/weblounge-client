@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  notificationDataIsRead,
+  recordPresentedNotification,
   schedulePushPresentation,
   showOnce,
 } from "./platform/push/push-delivery-state";
@@ -48,6 +50,25 @@ describe("push delivery state", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("lets a fresh same-tag notification supersede an older read marker", () => {
+    const tag = "Lounge/#lounge";
+    const time = "2026-11-03T12:34:56.789Z";
+    const counts = {
+      conversations: new Map([[tag, 0]]),
+      readAtMs: new Map([[tag, Date.parse(time)]]),
+      untagged: 0,
+    };
+    const data = { conversationTag: tag, messageTime: time };
+    expect(notificationDataIsRead(data, counts.readAtMs)).toBe(true);
+
+    recordPresentedNotification(counts, tag);
+
+    expect(counts.conversations.get(tag)).toBe(1);
+    expect(notificationDataIsRead(data, counts.readAtMs)).toBe(false);
+    counts.readAtMs.set(tag, Date.parse(time));
+    expect(notificationDataIsRead(data, counts.readAtMs)).toBe(true);
   });
 });
 

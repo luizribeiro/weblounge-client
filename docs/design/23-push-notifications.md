@@ -725,9 +725,10 @@ from that conversation at or before the marker. A maintenance `PING` repeats mar
 without calling `showNotification`; both controls are silent even if count persistence fails and
 regardless of the request's urgency. A successful presentation disarms its receipt deadline before
 message and badge persistence, so slow persistence cannot discard the badge increment after the
-notification was shown. Visible and generic pushes do not perform cleanup. Production's patched
-Ergo sends these controls at normal urgency, so the relay keeps them away from Apple, FCM and Windows
-Push while forwarding them to Mozilla.
+notification was shown. A new same-tag presentation also supersedes the prior read watermark, so an
+older marker cannot close the notification that was just shown. Visible and generic pushes do not
+perform cleanup. Production's patched Ergo sends these controls at normal urgency, so the relay
+keeps them away from Apple, FCM and Windows Push while forwarding them to Mozilla.
 
 An unpatched or different home can still send a control at high urgency, which the opaque relay must
 forward. That is a residual Apple compatibility risk, not the production weblounge path. WebKit

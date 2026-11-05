@@ -8,6 +8,12 @@ export interface PushPresentationState<T> {
   readonly present: (presentation: T) => Promise<void>;
 }
 
+export interface NotificationCounts {
+  readonly conversations: Map<string, number>;
+  readonly readAtMs: Map<string, number>;
+  untagged: number;
+}
+
 export function schedulePushPresentation<T>(
   generic: T,
   present: (presentation: T) => Promise<void>,
@@ -53,6 +59,37 @@ export function cancelPresentationDeadline<T>(
 ): void {
   if (state.deadline !== undefined) clearTimeout(state.deadline);
   state.deadline = undefined;
+}
+
+export function recordPresentedNotification(
+  counts: NotificationCounts,
+  tag: string | undefined,
+): void {
+  if (tag === undefined || tag.length === 0) {
+    counts.untagged += 1;
+    return;
+  }
+  counts.conversations.set(tag, (counts.conversations.get(tag) ?? 0) + 1);
+  counts.readAtMs.delete(tag);
+}
+
+export function notificationDataIsRead(
+  data: unknown,
+  readMarkers: ReadonlyMap<string, number>,
+): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  if (
+    !("conversationTag" in data) ||
+    typeof data.conversationTag !== "string" ||
+    !("messageTime" in data) ||
+    typeof data.messageTime !== "string"
+  )
+    return false;
+  const marker = readMarkers.get(data.conversationTag);
+  const messageTime = Date.parse(data.messageTime);
+  return (
+    marker !== undefined && !Number.isNaN(messageTime) && messageTime <= marker
+  );
 }
 
 async function retryPresentation<T>(
