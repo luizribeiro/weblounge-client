@@ -255,6 +255,19 @@ test("upgrades the last deployed build and preserves its active push route", asy
   }
 });
 
+test("bounds inspection of a stalled deployed push route", async ({ page }) => {
+  await page.goto("/");
+  await seedPreviousPushRoute(page);
+  await holdPreviousPushRouteWrite(page);
+  try {
+    await expect(page.evaluate(readPreviousPushRoute, 100)).rejects.toThrow(
+      "previous push route read timed out",
+    );
+  } finally {
+    await releasePreviousPushRouteWrite(page);
+  }
+});
+
 test("a minimum hosted build navigates to the current build once", async ({
   context,
 }) => {
@@ -367,33 +380,126 @@ async function seedPreviousPushRoute(page: Page): Promise<void> {
   });
 }
 
+async function holdPreviousPushRouteWrite(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push", 2);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readwrite");
+    const store = transaction.objectStore("routes");
+    let active = true;
+    const keepAlive = () => {
+      const request = store.get(41);
+      request.onsuccess = () => {
+        if (active) keepAlive();
+      };
+    };
+    keepAlive();
+    Reflect.set(globalThis, "previousPushRouteBlocker", {
+      release: () => {
+        active = false;
+        transaction.abort();
+        database.close();
+      },
+    });
+  });
+}
+
+async function releasePreviousPushRouteWrite(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const blocker = Reflect.get(globalThis, "previousPushRouteBlocker") as
+      | { release(): void }
+      | undefined;
+    blocker?.release();
+  });
+}
+
 async function readPreviousPushRoute(): Promise<{
   keyPath: string | string[] | null;
   routeId: string;
   version: number;
+}>;
+async function readPreviousPushRoute(deadlineMs: number): Promise<{
+  keyPath: string | string[] | null;
+  routeId: string;
+  version: number;
+}>;
+async function readPreviousPushRoute(deadlineMs = 5_000): Promise<{
+  keyPath: string | string[] | null;
+  routeId: string;
+  version: number;
 }> {
-  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
+    let database: IDBDatabase | undefined;
+    let transaction: IDBTransaction | undefined;
+    let settled = false;
+    const finish = (
+      result:
+        | {
+            keyPath: string | string[] | null;
+            routeId: string;
+            version: number;
+          }
+        | Error,
+    ) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+      database?.close();
+    };
+    // wait-ok: this is the deadline under test for an intentionally stalled IDB read.
+    const deadline = setTimeout(() => {
+      try {
+        transaction?.abort();
+      } catch {}
+      finish(new Error("previous push route read timed out"));
+    }, deadlineMs);
     const request = indexedDB.open("weblounge-push");
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onblocked = () =>
+      finish(new Error("previous push route database open was blocked"));
+    request.onerror = () =>
+      finish(request.error ?? new Error("previous push route database failed"));
+    request.onsuccess = () => {
+      database = request.result;
+      database.onversionchange = () =>
+        finish(new Error("previous push route database version changed"));
+      if (settled) {
+        database.close();
+        return;
+      }
+      transaction = database.transaction("routes", "readonly");
+      const store = transaction.objectStore("routes");
+      const route = store.get(41);
+      route.onerror = () =>
+        finish(route.error ?? new Error("previous push route read failed"));
+      route.onsuccess = () => {
+        const value = route.result as Record<string, unknown> | undefined;
+        if (value === undefined) {
+          finish(new Error("previous push route is missing"));
+          return;
+        }
+        finish({
+          keyPath: store.keyPath,
+          routeId: String(value.routeId),
+          version: database?.version ?? 0,
+        });
+      };
+      transaction.onabort = () =>
+        finish(
+          transaction?.error ??
+            new Error("previous push route transaction aborted"),
+        );
+      transaction.onerror = () =>
+        finish(
+          transaction?.error ??
+            new Error("previous push route transaction failed"),
+        );
+    };
   });
-  const transaction = database.transaction("routes", "readonly");
-  const store = transaction.objectStore("routes");
-  const route = await new Promise<Record<string, unknown>>(
-    (resolve, reject) => {
-      const request = store.get(41);
-      request.onsuccess = () =>
-        resolve(request.result as Record<string, unknown>);
-      request.onerror = () => reject(request.error);
-    },
-  );
-  const result = {
-    keyPath: store.keyPath,
-    routeId: String(route.routeId),
-    version: database.version,
-  };
-  database.close();
-  return result;
 }
 
 test("a hosted reset token clears the shell only once", async ({ context }) => {

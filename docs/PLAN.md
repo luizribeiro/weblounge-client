@@ -2,6 +2,8 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Bound upgrade-fixture push-route inspection so an IndexedDB stall reports its own failure,
+  and close legacy migration connections on version changes and failed reads.
 - [x] Keep Chromium's full-chain push injector attached for the serial lifecycle, so ending a CDP
   session cannot discard a queued service-worker delivery before its `waitUntil` work begins.
 - [x] Replace a receipt-deadline push fallback when its detailed notification becomes presentable,
