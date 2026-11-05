@@ -239,12 +239,16 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. For a visible payload, establish one successful `showNotification` before any further database
    work. A rejected presentation retries with 50–250 ms backoff inside one receipt-anchored
-   two-second budget. Exhaustion is logged and releases the receipt-order chain. Each generic
-   deadline fallback carries a private per-receipt marker. If detailed content becomes presentable
-   after that fallback, the worker captures the marked notification, shows the detailed
-   notification and then closes the fallback, all within the original push event. Failure to find
-   or show the replacement leaves the already-presented fallback in place. This keeps iOS's
-   immediate presentation guarantee while ensuring only one notification survives the delivery.
+   two-second budget. Exhaustion is logged and releases the receipt-order chain. Each generic has a
+   private per-receipt identity, while only a generic actually shown by the receipt deadline keeps
+   that identity as a replacement marker; a preparation failure that wins first produces a final,
+   non-replaceable generic. If detailed content becomes presentable after a deadline fallback, the
+   worker waits for that exact marked notification to become enumerable, without a wall-clock
+   polling cutoff, shows the detailed notification and then closes the fallback, all within the
+   original push event. The lookup begins only when replacement is needed, so it cannot contend
+   with another receipt's concurrent presentation. Failure to show the replacement leaves the
+   already-presented fallback in place. This keeps iOS's immediate presentation guarantee while
+   ensuring only one notification survives the delivery.
    Chat notification data includes
    its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
    re-shows the same conversation tag so tag-capable platforms replace the prior notification. A
