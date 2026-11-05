@@ -254,7 +254,24 @@ handlers. On `push`, inside one `waitUntil`:
    immediate presentation guarantee, cannot hold the receipt-order chain in an observation loop and
    ensures only one notification survives the delivery.
    Chat notification data includes
-   its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
+   its conversation tag, `msgid` and server time as well as the route. Its body is the latest
+   message followed, when the conversation has more than one unread notified message, by the
+   localized count (for example, `· 3 new messages`). The count comes from the worker's persisted
+   per-conversation ledger, including its engine-seeded unknown baseline; it never comes from the
+   number of notifications the platform happens to expose. A duplicate chat `msgid` keeps the same
+   count. A read marker or foreground reconciliation resets the conversation count.
+
+   The worker cannot rely on native tag replacement because Safari does not implement it. Every
+   detailed chat push is therefore presented first, then a deadline-bounded notification scan
+   closes older notifications carrying the same logical conversation tag. The scan takes a second
+   bounded snapshot immediately before closing and re-checks the receipt identity, conversation
+   tag, `msgid` and server time. It preserves the current receipt and every newer receipt that has
+   already been presented. Reaching the scan deadline safely leaves an older notification for the
+   next cleanup pass rather than risking the current or a newer notification; it never delays or
+   suppresses the required presentation. This gives tag-less platforms one eventual notification
+   per DM or mentioned channel while tag-capable platforms retain their native atomic replacement.
+
+   A duplicate chat `msgid`
    re-shows the same conversation tag so tag-capable platforms replace the prior notification. A
    detailed notification that replaced a deadline fallback retains the private tag and records both
    its logical conversation and fallback identity. After a subsequent visible notification for that
@@ -334,8 +351,9 @@ connection is up; on a warm tap, `open-route` makes the running engine read them
 engine deduplicates it, so it never shows twice. The stored messages are also the push source for
 Activity (brief §3.8).
 
-The tag is `<networkLabel>/<bufferKey>`. The stable label avoids per-run `NetworkId` churn. BCD says Safari doesn't support tags: **[verify on
-device]**.
+The tag is `<networkLabel>/<bufferKey>`. The stable label avoids per-run `NetworkId` churn. Safari's
+lack of notification-tag replacement is covered by the worker's logical-conversation collapse and
+the built-worker tag-less harness; device verification remains in the rollout checklist.
 
 ### Badging (separate from push)
 
@@ -349,7 +367,8 @@ device]**.
 - The worker stores a notified count and latest read timestamp per conversation tag. Every delivered
   `MARKREAD` zeros that tag, closes only notifications whose server time is at or before the marker,
   and recomputes the badge without calling `showNotification`, regardless of urgency. Re-delivery of
-  an existing chat `msgid` replaces its notification without incrementing the count again.
+  an existing chat `msgid` replaces its notification without incrementing the count again. The same
+  count supplies the collapsed notification's localized unread suffix.
   Maintenance `PING` repeats that bounded cleanup. It undercounts when Ergo's 16-item push queue
   overflows (`client.go:53`).
 - Opening or foregrounding the page corrects the badge from the engine and closes each notification
