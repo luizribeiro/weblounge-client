@@ -18,6 +18,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  TypingProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import { ConversationTitle } from "../../features/conversation/ConversationTitle";
@@ -47,6 +48,7 @@ export interface MobileConversationProps {
   readonly completion?: CompletionResult;
   readonly messages: readonly MessageProjection[];
   readonly memberships: readonly MembershipProjection[];
+  readonly typers?: readonly TypingProjection[] | undefined;
   readonly network?: NetworkProjection | undefined;
   readonly onBack: () => void;
   readonly onLoadHistory: (bufferId: number) => void;
@@ -61,6 +63,9 @@ export interface MobileConversationProps {
     cursor: number,
     explicit: boolean,
   ) => void;
+  readonly onComposerChanged?:
+    | ((bufferId: number, input: string) => void)
+    | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly showConnectionError?: boolean | undefined;
   readonly onRetry?:
@@ -258,6 +263,7 @@ export function MobileConversation(props: MobileConversationProps) {
                 ? props.completion
                 : undefined
             }
+            typers={props.typers ?? []}
             onRequestCandidates={(input, cursor, explicit) =>
               props.onRequestCompletion(
                 props.buffer.id,
@@ -265,6 +271,9 @@ export function MobileConversation(props: MobileConversationProps) {
                 cursor,
                 explicit,
               )
+            }
+            onComposerChanged={(input) =>
+              props.onComposerChanged?.(props.buffer.id, input)
             }
             onSelectLast={() => listController?.selectLastOwn()}
             disabled={

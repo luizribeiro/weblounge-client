@@ -32,6 +32,46 @@ it("reports the wasm worker round trip", async () => {
   ).toBeInTheDocument();
 });
 
+it("projects engine-owned typing state into the active composer", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "buffer_added",
+    buffer: bufferProjection(2, "channel", "#room"),
+  });
+  expect(await screen.findByRole("heading", { name: "#room" })).toBeVisible();
+
+  client.emit({
+    type: "typing_changed",
+    buffer_id: 2,
+    typers: [{ nick: "ana", nick_color_index: 3, paused: false }],
+  });
+  await waitFor(() =>
+    expect(document.querySelector("[data-typing-indicator]")).toHaveTextContent(
+      "ana is typing…",
+    ),
+  );
+
+  fireEvent.input(screen.getByRole("textbox", { name: "Message #room" }), {
+    target: { value: "hello" },
+  });
+  await waitFor(() =>
+    expect(client.requests).toContainEqual({
+      id: expect.any(String),
+      request: {
+        type: "composer_changed",
+        buffer_id: 2,
+        input: "hello",
+      },
+    }),
+  );
+
+  client.emit({ type: "typing_changed", buffer_id: 2, typers: [] });
+  expect(document.querySelector("[data-typing-indicator]")?.textContent).toBe(
+    "",
+  );
+});
+
 it("keeps one app status region while a polite toast is shown", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);

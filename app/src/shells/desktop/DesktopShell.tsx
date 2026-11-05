@@ -20,6 +20,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  TypingProjection,
 } from "../../engine/protocol";
 import { Composer } from "../../features/composer/Composer";
 import { ConversationHeader } from "../../features/conversation/ConversationHeader";
@@ -64,6 +65,9 @@ export interface DesktopShellProps extends NotificationPromptControls {
     | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
+  readonly typers?:
+    | ReadonlyMap<number, readonly TypingProjection[]>
+    | undefined;
   readonly memberWindows?: ReadonlyMap<string, MemberWindow> | undefined;
   readonly memberViewScope?: string | undefined;
   readonly showMemberModeSymbols?: boolean | undefined;
@@ -87,6 +91,9 @@ export interface DesktopShellProps extends NotificationPromptControls {
     cursor: number,
     explicit: boolean,
   ) => void;
+  readonly onComposerChanged?:
+    | ((bufferId: number, input: string) => void)
+    | undefined;
   readonly onRequestMembers?:
     | ((
         viewId: string,
@@ -461,6 +468,7 @@ export function DesktopShell(props: DesktopShellProps) {
                           ? props.completion
                           : undefined
                       }
+                      typers={props.typers?.get(bufferId) ?? []}
                       disabled={
                         buffer()?.kind === "server" ||
                         buffer()?.channel_status === "kicked" ||
@@ -476,6 +484,9 @@ export function DesktopShell(props: DesktopShellProps) {
                           cursor,
                           explicit,
                         )
+                      }
+                      onComposerChanged={(input) =>
+                        props.onComposerChanged?.(bufferId, input)
                       }
                       onSelectLast={() =>
                         messageListController?.selectLastOwn()

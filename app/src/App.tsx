@@ -29,6 +29,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  TypingProjection,
 } from "./engine/protocol";
 import { migrateDraft } from "./features/composer/draft-storage";
 import type { MemberWindow } from "./features/members/MemberPanel";
@@ -171,6 +172,9 @@ export function App(props: AppProps) {
   >(new Map());
   const [memberships, setMemberships] = createSignal<
     ReadonlyMap<number, readonly MembershipProjection[]>
+  >(new Map());
+  const [typers, setTypers] = createSignal<
+    ReadonlyMap<number, readonly TypingProjection[]>
   >(new Map());
   const [memberWindows, setMemberWindows] = createSignal<
     ReadonlyMap<string, MemberWindow>
@@ -640,6 +644,16 @@ export function App(props: AppProps) {
             }),
           );
       }
+      if (message.type === "typing_changed") {
+        setTypers((current) => {
+          const previous = current.get(message.buffer_id) ?? [];
+          if (sameTypers(previous, message.typers)) return current;
+          const next = new Map(current);
+          if (message.typers.length === 0) next.delete(message.buffer_id);
+          else next.set(message.buffer_id, message.typers);
+          return next;
+        });
+      }
       if (message.type === "buffers_changed") {
         setLoadedNetworkIds((current) =>
           new Set(current).add(message.network_id),
@@ -715,6 +729,7 @@ export function App(props: AppProps) {
               ),
             ),
         );
+        setTypers((current) => withoutMapKey(current, message.buffer_id));
       }
       const stagedLiveBufferEvent =
         cachedChatListActive() &&
@@ -1275,6 +1290,7 @@ export function App(props: AppProps) {
           focusRequest={focusRequest()}
           messages={messages()}
           memberships={memberships()}
+          typers={typers()}
           memberWindows={memberWindows()}
           onMarkRead={(bufferId, through) => {
             if (client === undefined) return;
@@ -1372,6 +1388,19 @@ export function App(props: AppProps) {
                   input,
                   cursor,
                   explicit,
+                },
+              })
+              .catch(() => undefined);
+          }}
+          onComposerChanged={(bufferId, input) => {
+            if (client === undefined) return;
+            void client
+              .send({
+                id: crypto.randomUUID(),
+                request: {
+                  type: "composer_changed",
+                  buffer_id: bufferId,
+                  input,
                 },
               })
               .catch(() => undefined);
@@ -1791,6 +1820,24 @@ function applyDebugEvent(
       return next;
     });
   }
+}
+
+function sameTypers(
+  left: readonly TypingProjection[],
+  right: readonly TypingProjection[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((typer, index) => {
+      const candidate = right[index];
+      return (
+        candidate !== undefined &&
+        typer.nick === candidate.nick &&
+        typer.nick_color_index === candidate.nick_color_index &&
+        typer.paused === candidate.paused
+      );
+    })
+  );
 }
 
 function upsert<T extends { id: number }>(current: T[], value: T): T[] {

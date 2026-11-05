@@ -6,6 +6,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
+  TypingProjection,
 } from "../../engine/protocol";
 import type { NotificationPromptControls } from "../../features/notifications/NotificationPrompt";
 import { movingTransform } from "../../ui/transform-motion";
@@ -30,6 +31,9 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly completion: CompletionResult | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
+  readonly typers?:
+    | ReadonlyMap<number, readonly TypingProjection[]>
+    | undefined;
   readonly onLoadHistory: (bufferId: number) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
@@ -45,6 +49,9 @@ export interface MobileShellData extends NotificationPromptControls {
     cursor: number,
     explicit: boolean,
   ) => void;
+  readonly onComposerChanged?:
+    | ((bufferId: number, input: string) => void)
+    | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
@@ -144,6 +151,7 @@ export function MobileScreen(props: MobileScreenProps) {
             : { completion: props.completion })}
           memberships={props.memberships.get(buffer()?.id ?? -1) ?? []}
           messages={props.messages.get(buffer()?.id ?? -1) ?? []}
+          typers={props.typers?.get(buffer()?.id ?? -1) ?? []}
           network={props.networks.find(
             (network) => network.id === buffer()?.network_id,
           )}
@@ -157,6 +165,7 @@ export function MobileScreen(props: MobileScreenProps) {
           onDeferDirectIdentity={props.onDeferDirectIdentity}
           onTrustDirectIdentity={props.onTrustDirectIdentity}
           onRequestCompletion={props.onRequestCompletion}
+          onComposerChanged={props.onComposerChanged}
           onRetryNetwork={props.onRetryNetwork}
           showConnectionError={!props.retained}
           onRetry={props.onRetry}
