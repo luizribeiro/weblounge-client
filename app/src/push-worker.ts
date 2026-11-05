@@ -377,23 +377,21 @@ async function preparePushDelivery(
 
 async function commitPushDelivery(commit: PushCommit): Promise<void> {
   if (commit.kind === "markread") {
-    await markConversationRead(commit.tag, commit.until).catch(() => undefined);
-    await tidyReadNotifications(false).catch(() => undefined);
+    await markConversationRead(commit.tag, commit.until);
+    await tidyReadNotifications(false);
     return;
   }
   if (commit.kind === "ping") {
-    await tidyReadNotifications().catch(() => undefined);
+    await tidyReadNotifications();
     return;
   }
   if (commit.kind === "fallback") {
-    await recordShownNotification(undefined, undefined).catch(() => undefined);
+    await recordShownNotification(undefined, undefined);
     return;
   }
-  await recordShownNotification(commit.tag, commit.event).catch(
-    () => undefined,
-  );
+  await recordShownNotification(commit.tag, commit.event);
   if (commit.event !== undefined && isChatPayload(commit.event)) {
-    await storePushedMessage(commit.route, commit.event).catch(() => undefined);
+    await storePushedMessage(commit.route, commit.event);
   }
 }
 

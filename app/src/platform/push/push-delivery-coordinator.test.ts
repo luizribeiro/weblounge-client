@@ -288,6 +288,29 @@ describe("push delivery coordination", () => {
     expect(commits).toEqual(["read"]);
     expect(errors).toHaveLength(1);
   });
+
+  it("does not re-present a visible push after its commit fails", async () => {
+    const presentations: string[] = [];
+    const commits: string[] = [];
+    const errors: unknown[] = [];
+    const coordinator = createCoordinator({
+      prepare: async (input) => visible(input.id),
+      present: async (presentation) => {
+        presentations.push(presentation);
+      },
+      commit: async (commit) => {
+        commits.push(commit.id);
+        throw new Error("commit failed");
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    await coordinator.enqueue({ id: "message", kind: "visible" });
+
+    expect(presentations).toEqual(["message"]);
+    expect(commits).toEqual(["message"]);
+    expect(errors).toHaveLength(1);
+  });
 });
 
 function createCoordinator(overrides: {
