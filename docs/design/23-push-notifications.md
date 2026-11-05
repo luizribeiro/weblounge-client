@@ -262,11 +262,11 @@ handlers. On `push`, inside one `waitUntil`:
    count. A read marker or foreground reconciliation resets the conversation count.
 
    The worker cannot rely on native tag replacement because Safari does not implement it. Every
-   detailed chat push is therefore presented first, then a deadline-bounded notification scan
+   detailed chat push is therefore presented first, then a deadline- and item-bounded notification scan
    closes older notifications carrying the same logical conversation tag. The scan takes a second
    bounded snapshot immediately before closing and re-checks the receipt identity, conversation
    tag, `msgid` and server time. It preserves the current receipt and every newer receipt that has
-   already been presented. Reaching the scan deadline safely leaves an older notification for the
+   already been presented. Reaching either scan bound safely leaves an older notification for the
    next cleanup pass rather than risking the current or a newer notification; it never delays or
    suppresses the required presentation. This gives tag-less platforms one eventual notification
    per DM or mentioned channel while tag-capable platforms retain their native atomic replacement.
