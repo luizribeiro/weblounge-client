@@ -5,6 +5,7 @@ declare const __BUILD_SHA__: string;
 declare const __BUILD_TIMESTAMP__: string;
 declare const __KEYBOARD_MOTION_TEST_ENABLED__: boolean;
 declare const __PUSH_NEW_MESSAGE__: string;
+declare const __PUSH_NEW_MESSAGES__: string;
 declare const __DEBUG_IRC_CONFIG__: {
   endpoint: string;
   nickname: string;

@@ -54,6 +54,9 @@ export default defineConfig(({ mode }) => {
   }
   const pushWorkerDefines = {
     __PUSH_NEW_MESSAGE__: JSON.stringify(messages["notifications.new_message"]),
+    __PUSH_NEW_MESSAGES__: JSON.stringify(
+      messages["notifications.new_messages"],
+    ),
     __PUSH_EVENT_HARNESS__: "false",
   };
 

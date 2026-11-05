@@ -226,6 +226,7 @@ export const messages = {
   "notifications.prompt": "Get notified about DMs and mentions",
   "notifications.turn_on": "Turn on",
   "notifications.new_message": "New message",
+  "notifications.new_messages": "· {count} new messages",
   "notice.message_not_delivered": "Message to {target} wasn't delivered",
   "sidebar.add_network": "Add network",
   "sidebar.channel_list": "Channel list",

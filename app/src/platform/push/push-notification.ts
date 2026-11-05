@@ -90,6 +90,19 @@ export function deadlineFallbackNotification(
   };
 }
 
+export function withNotificationCount(
+  presentation: NotificationPresentation,
+  count: number,
+): NotificationPresentation {
+  const body = presentation.options.body;
+  if (count <= 1 || body === undefined) return presentation;
+  const suffix = __PUSH_NEW_MESSAGES__.replace("{count}", String(count));
+  return {
+    ...presentation,
+    options: { ...presentation.options, body: `${body}\n${suffix}` },
+  };
+}
+
 export function isChatPayload(
   event: ParsedPushEvent,
 ): event is Extract<

@@ -9,6 +9,7 @@ import {
   genericNotification,
   notificationForLine,
   type ParsedPushEvent,
+  withNotificationCount,
 } from "./platform/push/push-notification";
 import {
   notificationDataIsRead,
@@ -213,6 +214,22 @@ describe("push worker notification presentation", () => {
     expect(genericNotification()).toEqual({
       title: "New message",
       options: { data: { route: "/" } },
+    });
+  });
+
+  it("adds the persisted conversation count to the latest message", () => {
+    const presentation = {
+      title: "iris",
+      options: { body: "latest from iris", data: { route: "/Lounge/@iris" } },
+    };
+
+    expect(withNotificationCount(presentation, 1)).toBe(presentation);
+    expect(withNotificationCount(presentation, 3)).toEqual({
+      title: "iris",
+      options: {
+        body: "latest from iris\n· 3 new messages",
+        data: { route: "/Lounge/@iris" },
+      },
     });
   });
 

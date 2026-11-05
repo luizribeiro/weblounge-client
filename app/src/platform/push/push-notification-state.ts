@@ -100,6 +100,16 @@ export function notificationStateTotal(state: NotificationState): number {
   );
 }
 
+export function conversationNotificationCount(
+  state: NotificationState,
+  tag: string,
+): number {
+  const conversation = state.conversations.get(tag);
+  return conversation === undefined
+    ? 0
+    : conversation.unknown + conversation.messages.size;
+}
+
 export function replaceNotificationCounts(
   state: NotificationState,
   counts: readonly NotificationCountSnapshot[],
