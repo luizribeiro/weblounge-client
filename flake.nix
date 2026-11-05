@@ -489,7 +489,7 @@
             cp -r app node_modules package.json pnpm-lock.yaml pnpm-workspace.yaml $out/
           '';
         };
-        pushE2e = import ./nix/push-e2e.nix {
+        pushE2e = pkgs.lib.makeOverridable (import ./nix/push-e2e.nix) {
           inherit
             checkApp
             papo-test-infra

@@ -79,6 +79,18 @@ It drives the pinned previous app through Ergo, the push relay, papo's HTTPS
 receiver, and the production service worker before upgrading to the current
 build.
 
+For a local iteration, select scenarios by Playwright title without changing
+the default CI check:
+
+```sh
+nice -n 10 nix build --no-link --impure --max-jobs 2 --cores 4 --expr '
+  let flake = builtins.getFlake (toString ./.);
+  in (flake.packages.${builtins.currentSystem}.push-e2e.override {
+    grep = "blocked IndexedDB|portable control";
+  })
+'
+```
+
 ## License
 
 WebLounge is available under either the Apache License 2.0 or the MIT license, at your option.
