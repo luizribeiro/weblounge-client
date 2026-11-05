@@ -111,6 +111,7 @@ enum HistoryState {
     Unrequested,
     QueuedLatest,
     LoadingLatest,
+    FailedLatest,
     Ready {
         oldest: Option<papo::HistoryReference>,
         at_start: bool,
@@ -137,7 +138,7 @@ impl HistoryState {
             | Self::CatchingUp { .. }
             | Self::CatchingUpLatest { .. } => BufferSyncState::Syncing,
             Self::Ready { .. } => BufferSyncState::Synced,
-            Self::Unrequested | Self::QueuedLatest => BufferSyncState::Pending,
+            Self::Unrequested | Self::QueuedLatest | Self::FailedLatest => BufferSyncState::Pending,
         }
     }
 }
@@ -534,7 +535,10 @@ impl NetworkModel {
             && self.buffers.values().all(|buffer| {
                 buffer.projection.kind == BufferKind::Server
                     || buffer.projection.available == Some(false)
-                    || matches!(buffer.history, HistoryState::Ready { .. })
+                    || matches!(
+                        buffer.history,
+                        HistoryState::Ready { .. } | HistoryState::FailedLatest
+                    )
             })
     }
 
@@ -1296,7 +1300,7 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let target = HistoryTarget::from_key(buffer.key.clone()?);
         match &buffer.history {
-            HistoryState::Unrequested | HistoryState::QueuedLatest => {
+            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::FailedLatest => {
                 set_history_state(buffer, HistoryState::LoadingLatest);
                 Some(HistoryFetch::Latest(target))
             }
@@ -1325,7 +1329,10 @@ impl NetworkModel {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return false;
         };
-        if !matches!(buffer.history, HistoryState::Unrequested) {
+        if !matches!(
+            buffer.history,
+            HistoryState::Unrequested | HistoryState::FailedLatest
+        ) {
             return false;
         }
         set_history_state(buffer, HistoryState::QueuedLatest);
@@ -1338,10 +1345,13 @@ impl NetworkModel {
             .iter()
             .filter_map(|id| {
                 let buffer = self.buffers.get(id)?;
-                matches!(buffer.history, HistoryState::QueuedLatest)
-                    .then(|| buffer.key.clone().map(HistoryTarget::from_key))
-                    .flatten()
-                    .map(|target| (*id, target))
+                matches!(
+                    buffer.history,
+                    HistoryState::QueuedLatest | HistoryState::FailedLatest
+                )
+                .then(|| buffer.key.clone().map(HistoryTarget::from_key))
+                .flatten()
+                .map(|target| (*id, target))
             })
             .collect::<Vec<_>>();
         let mut fetches = queued
@@ -1411,7 +1421,10 @@ impl NetworkModel {
             .get(&NameKey::Channel(channel.clone()))
             .copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        if !matches!(buffer.history, HistoryState::Unrequested) {
+        if !matches!(
+            buffer.history,
+            HistoryState::Unrequested | HistoryState::FailedLatest
+        ) {
             return None;
         }
         let target = HistoryTarget::from_key(buffer.key.clone()?);
@@ -1427,9 +1440,10 @@ impl NetworkModel {
             HistoryState::LoadingOlder { .. } => Some(HistoryLoad::Older),
             HistoryState::CatchingUp { .. } => Some(HistoryLoad::Catchup),
             HistoryState::CatchingUpLatest { .. } => Some(HistoryLoad::CatchupLatest),
-            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
-                None
-            }
+            HistoryState::Unrequested
+            | HistoryState::QueuedLatest
+            | HistoryState::FailedLatest
+            | HistoryState::Ready { .. } => None,
         }
     }
 
@@ -1506,9 +1520,10 @@ impl NetworkModel {
                 buffer.history = HistoryState::Ready { oldest, at_start };
                 None
             }
-            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
-                return None;
-            }
+            HistoryState::Unrequested
+            | HistoryState::QueuedLatest
+            | HistoryState::FailedLatest
+            | HistoryState::Ready { .. } => return None,
         };
         buffer.projection.sync_state = buffer.history.sync_state();
         Some(HistoryCompletion {
@@ -1529,7 +1544,7 @@ impl NetworkModel {
         let buffer_id = self.names.get(&target.name_key()).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let history = match &buffer.history {
-            HistoryState::LoadingLatest => HistoryState::Unrequested,
+            HistoryState::LoadingLatest => HistoryState::FailedLatest,
             HistoryState::LoadingOlder { oldest } => HistoryState::Ready {
                 oldest: Some(oldest.clone()),
                 at_start: false,
@@ -1541,9 +1556,10 @@ impl NetworkModel {
                 oldest: oldest.clone(),
                 at_start: *at_start,
             },
-            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::Ready { .. } => {
-                return None;
-            }
+            HistoryState::Unrequested
+            | HistoryState::QueuedLatest
+            | HistoryState::FailedLatest
+            | HistoryState::Ready { .. } => return None,
         };
         set_history_state(buffer, history);
         Some(buffer_id)
@@ -1695,9 +1711,9 @@ impl NetworkModel {
         let fetch = self.buffers.get(&buffer_id).and_then(|buffer| {
             let target = HistoryTarget::Direct(nick.clone());
             match &buffer.history {
-                HistoryState::Unrequested | HistoryState::QueuedLatest => {
-                    Some(HistoryFetch::Latest(target))
-                }
+                HistoryState::Unrequested
+                | HistoryState::QueuedLatest
+                | HistoryState::FailedLatest => Some(HistoryFetch::Latest(target)),
                 HistoryState::Ready { .. }
                     if buffer
                         .newest
@@ -2959,6 +2975,10 @@ mod tests {
             BufferSyncState::Syncing
         );
         assert_eq!(
+            HistoryState::FailedLatest.sync_state(),
+            BufferSyncState::Pending
+        );
+        assert_eq!(
             HistoryState::Ready {
                 oldest: None,
                 at_start: true,
@@ -3007,6 +3027,31 @@ mod tests {
         assert_eq!(
             model.buffers[&buffer_id].projection.sync_state,
             BufferSyncState::Synced
+        );
+    }
+
+    #[test]
+    fn failed_initial_history_ends_chat_list_hydration_and_remains_retryable() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let (buffer_id, _) = model.ensure_buffer(key, None, None);
+        model.set_connection(crate::NetworkConnectionState::Online, None);
+        let failed = model.request_history(buffer_id).expect("initial request");
+
+        assert_eq!(model.fail_history(&failed), Some(buffer_id));
+        assert_eq!(
+            model.buffers[&buffer_id].projection.sync_state,
+            BufferSyncState::Pending
+        );
+        assert!(model.chat_list_complete());
+
+        assert!(matches!(
+            model.request_history(buffer_id),
+            Some(HistoryFetch::Latest(_))
+        ));
+        assert_eq!(
+            model.buffers[&buffer_id].projection.sync_state,
+            BufferSyncState::Syncing
         );
     }
 
