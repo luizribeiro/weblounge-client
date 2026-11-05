@@ -4,6 +4,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 - [x] Keep mobile transcript anchoring synchronous when resolving per-buffer send-failure notices,
   so composer resizing and cold or warm keyboard motion finish at the live edge.
+- [ ] Papo question for Luiz: an established non-shared `DirectRef` remains alive across MONITOR
+  `731`, but a later `730` for the same nick does not emit `MonitorOnline`. The focused
+  `papo-testing` scenario `direct_ref_reopens_after_monitored_peer_returns` fails on current papo
+  before it can issue the fresh `WHO nick %na`. The built WebLounge app separately reproduces the
+  unsendable returned-peer DM while visible, hidden, and reconnecting. Fix this in papo; WebLounge
+  must not infer presence or bypass guarded identity.
 - [x] Keep an installed iOS PWA's foreground lease authoritative while its visible page reports a
   false focus signal, so a blur from the keyboard or system chrome cannot release a lease and
   present burst DMs already visible in the open conversation. The real Ergo/relay/worker journey
