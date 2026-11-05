@@ -4,6 +4,16 @@ import {
 } from "./engine/generated/EngineDatabaseSchema";
 import { routeNotificationClick } from "./platform/push/notification-routing";
 import {
+  appBadgeKey,
+  migrateLegacyPushDatabase,
+  notificationCountsKey,
+  pushDatabaseName,
+  pushDatabaseVersion,
+  pushRouteIdIndex,
+  pushRoutesStore,
+  pushStateStore,
+} from "./platform/push/push-database";
+import {
   decodePushBase64Url,
   decryptPushPayload,
 } from "./platform/push/push-decryption";
@@ -85,13 +95,6 @@ const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
 const databaseDeadlineMs = 500;
-const pushDatabaseName = "weblounge-push";
-const pushDatabaseVersion = 4;
-const pushRoutesStore = "routes";
-const pushRouteIdIndex = "route-id";
-const pushStateStore = "state";
-const appBadgeKey = "app-badge";
-const notificationCountsKey = "notification-counts";
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
@@ -824,37 +827,35 @@ function openPushDatabase(): Promise<IDBDatabase> {
       reject(new Error("push database open timed out"));
     }, databaseDeadlineMs);
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(pushRoutesStore)) {
-        createRoutesStore(request.result);
-      } else if (
-        request.transaction?.objectStore(pushRoutesStore).keyPath !== "vapid"
-      ) {
-        const transaction = request.transaction;
-        if (transaction === null)
-          throw new Error("missing upgrade transaction");
-        migrateRoutesToHomes(request.result, transaction);
-      } else {
-        const routes = request.transaction?.objectStore(pushRoutesStore);
-        if (
-          routes !== undefined &&
-          !routes.indexNames.contains(pushRouteIdIndex)
-        ) {
-          routes.createIndex(pushRouteIdIndex, "routeId", { unique: true });
-        }
-      }
+      createRoutesStore(request.result);
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
         request.result.createObjectStore(pushStateStore);
       }
     };
     request.onsuccess = () => {
-      clearTimeout(deadline);
       if (settled) {
         request.result.close();
         return;
       }
-      settled = true;
       request.result.onversionchange = () => request.result.close();
-      resolve(request.result);
+      void migrateLegacyPushDatabase(request.result).then(
+        () => {
+          clearTimeout(deadline);
+          if (settled) {
+            request.result.close();
+            return;
+          }
+          settled = true;
+          resolve(request.result);
+        },
+        (error: unknown) => {
+          clearTimeout(deadline);
+          if (settled) return;
+          settled = true;
+          request.result.close();
+          reject(error);
+        },
+      );
     };
     request.onblocked = () => {
       clearTimeout(deadline);
@@ -871,62 +872,12 @@ function openPushDatabase(): Promise<IDBDatabase> {
   });
 }
 
-function migrateRoutesToHomes(
-  database: IDBDatabase,
-  transaction: IDBTransaction,
-): void {
-  const routes = transaction.objectStore(pushRoutesStore).getAll();
-  routes.onsuccess = () => {
-    database.deleteObjectStore(pushRoutesStore);
-    const store = createRoutesStore(database);
-    const selected = new Map<string, unknown>();
-    for (const route of routes.result) {
-      if (!isStoredHomeRoute(route)) continue;
-      const current = selected.get(route.vapid);
-      if (current === undefined || preferRoute(route, current)) {
-        selected.set(route.vapid, route);
-      }
-    }
-    for (const route of selected.values()) store.put(route);
-  };
-}
-
 function createRoutesStore(database: IDBDatabase): IDBObjectStore {
   const store = database.createObjectStore(pushRoutesStore, {
     keyPath: "vapid",
   });
   store.createIndex(pushRouteIdIndex, "routeId", { unique: true });
   return store;
-}
-
-function isStoredHomeRoute(value: unknown): value is Record<string, unknown> & {
-  vapid: string;
-  routeId: string;
-} {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "vapid" in value &&
-    typeof value.vapid === "string" &&
-    "routeId" in value &&
-    typeof value.routeId === "string"
-  );
-}
-
-function preferRoute(candidate: unknown, current: unknown): boolean {
-  if (!isStoredHomeRoute(candidate) || !isStoredHomeRoute(current))
-    return false;
-  const candidateComplete =
-    typeof candidate.deviceId === "string" &&
-    typeof candidate.networkLabel === "string" &&
-    candidate.networkLabel.length > 0;
-  const currentComplete =
-    typeof current.deviceId === "string" &&
-    typeof current.networkLabel === "string" &&
-    current.networkLabel.length > 0;
-  return candidateComplete === currentComplete
-    ? candidate.routeId.localeCompare(current.routeId) < 0
-    : candidateComplete;
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {

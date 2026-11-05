@@ -38,6 +38,8 @@ test.describe("full unmocked push lifecycle", () => {
 
   let context: BrowserContext;
   let page: Page;
+  let deployedDatabasePage: Page;
+  let deployedPushDatabase: JSHandle<IDBDatabase>;
   let audit: IrcClient;
   let bot: IrcClient;
 
@@ -60,6 +62,17 @@ test.describe("full unmocked push lifecycle", () => {
 
     await expectOneRoutePerDevice(1);
     await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
+
+    deployedDatabasePage = await context.newPage();
+    await deployedDatabasePage.goto("/push-driver.html");
+    deployedPushDatabase = await deployedDatabasePage.evaluateHandle(
+      () =>
+        new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("weblounge-push");
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        }),
+    );
 
     await switchToCurrentBuild();
     await page.reload();
@@ -106,6 +119,9 @@ test.describe("full unmocked push lifecycle", () => {
     expect(Number(directRecord.headers.ttl)).toBeGreaterThan(0);
     await deliverRecordedEnvelope(context, page, directRecord);
     await expectNotification(page, direct);
+    await deployedPushDatabase.evaluate((database) => database.close());
+    await deployedPushDatabase.dispose();
+    await deployedDatabasePage.close();
     await closeNotifications(page);
 
     const mention = `weblounge: full-chain mention ${randomUUID()}`;
@@ -956,7 +972,7 @@ async function seedReadConversationState(
 ): Promise<void> {
   await page.evaluate(async (conversationTag) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -979,7 +995,7 @@ async function seedReadConversationState(
 async function seedAppBadge(page: Page, count: number): Promise<void> {
   await page.evaluate(async (value) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -1026,7 +1042,7 @@ async function latestAppBadgeCall(page: Page): Promise<number | undefined> {
 async function storedAppBadge(page: Page): Promise<number | undefined> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -1046,7 +1062,7 @@ async function blockPushRouteReads(
 ): Promise<JSHandle<IDBTransaction>> {
   return page.evaluateHandle(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -1077,7 +1093,7 @@ async function blockPushRouteReads(
 async function drainPushRouteReads(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -1095,7 +1111,7 @@ async function drainPushRouteReads(page: Page): Promise<void> {
 async function breakStoredRouteKeys(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -1126,7 +1142,7 @@ async function restoreStoredRouteKeys(page: Page): Promise<void> {
       | undefined;
     if (routes === undefined) throw new Error("push route keys were not saved");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -1145,7 +1161,7 @@ async function restoreStoredRouteKeys(page: Page): Promise<void> {
 async function routeNeedsReregistration(page: Page): Promise<boolean> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });

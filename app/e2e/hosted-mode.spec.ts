@@ -1019,7 +1019,7 @@ test.describe("iOS stale app badge", () => {
       window.dispatchEvent(new Event("blur"));
 
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push", 4);
+        const request = indexedDB.open("weblounge-push-v2", 1);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
@@ -1112,7 +1112,7 @@ async function currentAppBadge(page: Page): Promise<number | undefined> {
 async function storedPushBadge(page: Page): Promise<unknown> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push", 4);
+      const request = indexedDB.open("weblounge-push-v2", 1);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });

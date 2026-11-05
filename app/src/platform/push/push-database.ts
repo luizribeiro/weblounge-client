@@ -1,10 +1,12 @@
-export const pushDatabaseName = "weblounge-push";
-export const pushDatabaseVersion = 4;
+export const pushDatabaseName = "weblounge-push-v2";
+export const pushDatabaseVersion = 1;
+export const legacyPushDatabaseName = "weblounge-push";
 export const pushRoutesStore = "routes";
 export const pushRouteIdIndex = "route-id";
 export const pushStateStore = "state";
 export const appBadgeKey = "app-badge";
 export const notificationCountsKey = "notification-counts";
+const legacyMigrationKey = "legacy-migration-complete";
 
 export interface ConversationNotificationCount {
   readonly tag: string;
@@ -19,24 +21,7 @@ export function openPushDatabase(
     let settled = false;
     const request = factory.open(pushDatabaseName, pushDatabaseVersion);
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(pushRoutesStore)) {
-        createRoutesStore(request.result);
-      } else if (
-        request.transaction?.objectStore(pushRoutesStore).keyPath !== "vapid"
-      ) {
-        const transaction = request.transaction;
-        if (transaction === null)
-          throw new Error("missing upgrade transaction");
-        migrateRoutesToHomes(request.result, transaction);
-      } else {
-        const routes = request.transaction?.objectStore(pushRoutesStore);
-        if (
-          routes !== undefined &&
-          !routes.indexNames.contains(pushRouteIdIndex)
-        ) {
-          routes.createIndex(pushRouteIdIndex, "routeId", { unique: true });
-        }
-      }
+      createRoutesStore(request.result);
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
         request.result.createObjectStore(pushStateStore);
       }
@@ -48,7 +33,13 @@ export function openPushDatabase(
       }
       settled = true;
       request.result.onversionchange = () => request.result.close();
-      resolve(request.result);
+      void migrateLegacyPushDatabase(request.result, factory).then(
+        () => resolve(request.result),
+        (error: unknown) => {
+          request.result.close();
+          reject(error);
+        },
+      );
     };
     request.onblocked = () => {
       settled = true;
@@ -62,24 +53,23 @@ export function openPushDatabase(
   });
 }
 
-function migrateRoutesToHomes(
+export async function migrateLegacyPushDatabase(
   database: IDBDatabase,
-  transaction: IDBTransaction,
-): void {
-  const routes = transaction.objectStore(pushRoutesStore).getAll();
-  routes.onsuccess = () => {
-    database.deleteObjectStore(pushRoutesStore);
-    const store = createRoutesStore(database);
-    const selected = new Map<string, unknown>();
-    for (const route of routes.result) {
-      if (!isStoredHomeRoute(route)) continue;
-      const current = selected.get(route.vapid);
-      if (current === undefined || preferRoute(route, current)) {
-        selected.set(route.vapid, route);
-      }
-    }
-    for (const route of selected.values()) store.put(route);
-  };
+  factory: IDBFactory = indexedDB,
+): Promise<void> {
+  if (await migrationComplete(database)) return;
+  const legacy = await openLegacyPushDatabase(factory);
+  const routes = legacy === undefined ? [] : await readRoutes(legacy);
+  const badge =
+    legacy === undefined ? undefined : await readState(legacy, appBadgeKey);
+  const counts =
+    legacy === undefined
+      ? undefined
+      : await readState(legacy, notificationCountsKey);
+  legacy?.close();
+  const current = await readRoutes(database);
+  const selected = selectRoutes([...routes, ...current]);
+  await writeMigration(database, selected, badge, counts);
 }
 
 function createRoutesStore(database: IDBDatabase): IDBObjectStore {
@@ -107,6 +97,9 @@ function isStoredHomeRoute(value: unknown): value is Record<string, unknown> & {
 function preferRoute(candidate: unknown, current: unknown): boolean {
   if (!isStoredHomeRoute(candidate) || !isStoredHomeRoute(current))
     return false;
+  const candidateRetiring = candidate.retiring === true;
+  const currentRetiring = current.retiring === true;
+  if (candidateRetiring !== currentRetiring) return !candidateRetiring;
   const candidateComplete =
     typeof candidate.deviceId === "string" &&
     typeof candidate.networkLabel === "string" &&
@@ -118,6 +111,88 @@ function preferRoute(candidate: unknown, current: unknown): boolean {
   return candidateComplete === currentComplete
     ? candidate.routeId.localeCompare(current.routeId) < 0
     : candidateComplete;
+}
+
+function selectRoutes(routes: readonly unknown[]): readonly unknown[] {
+  const selected = new Map<string, unknown>();
+  for (const route of routes) {
+    if (!isStoredHomeRoute(route)) continue;
+    const current = selected.get(route.vapid);
+    if (current === undefined || preferRoute(route, current)) {
+      selected.set(route.vapid, route);
+    }
+  }
+  return [...selected.values()];
+}
+
+async function migrationComplete(database: IDBDatabase): Promise<boolean> {
+  const transaction = database.transaction(pushStateStore, "readonly");
+  const value = await requestResult(
+    transaction.objectStore(pushStateStore).get(legacyMigrationKey),
+  );
+  await transactionDone(transaction);
+  return value === true;
+}
+
+function openLegacyPushDatabase(
+  factory: IDBFactory,
+): Promise<IDBDatabase | undefined> {
+  return new Promise((resolve, reject) => {
+    let missing = false;
+    const request = factory.open(legacyPushDatabaseName);
+    request.onupgradeneeded = () => {
+      missing = true;
+      request.transaction?.abort();
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      if (missing) resolve(undefined);
+      else reject(request.error ?? new Error("legacy push database failed"));
+    };
+  });
+}
+
+async function readRoutes(database: IDBDatabase): Promise<readonly unknown[]> {
+  if (!database.objectStoreNames.contains(pushRoutesStore)) return [];
+  const transaction = database.transaction(pushRoutesStore, "readonly");
+  const routes = await requestResult(
+    transaction.objectStore(pushRoutesStore).getAll(),
+  );
+  await transactionDone(transaction);
+  return routes;
+}
+
+async function readState(database: IDBDatabase, key: string): Promise<unknown> {
+  if (!database.objectStoreNames.contains(pushStateStore)) return undefined;
+  const transaction = database.transaction(pushStateStore, "readonly");
+  const value = await requestResult(
+    transaction.objectStore(pushStateStore).get(key),
+  );
+  await transactionDone(transaction);
+  return value;
+}
+
+async function writeMigration(
+  database: IDBDatabase,
+  routes: readonly unknown[],
+  badge: unknown,
+  counts: unknown,
+): Promise<void> {
+  const transaction = database.transaction(
+    [pushRoutesStore, pushStateStore],
+    "readwrite",
+  );
+  const routeStore = transaction.objectStore(pushRoutesStore);
+  const stateStore = transaction.objectStore(pushStateStore);
+  const marker = stateStore.get(legacyMigrationKey);
+  marker.onsuccess = () => {
+    if (marker.result === true) return;
+    for (const route of routes) routeStore.put(route);
+    if (badge !== undefined) stateStore.put(badge, appBadgeKey);
+    if (counts !== undefined) stateStore.put(counts, notificationCountsKey);
+    stateStore.put(true, legacyMigrationKey);
+  };
+  await transactionDone(transaction);
 }
 
 export async function writeAppBadgeCount(count: number): Promise<void> {

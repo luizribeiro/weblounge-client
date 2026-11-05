@@ -186,6 +186,7 @@ test("migrates and decrypts an active route from the previous schema", async ({
     "@time=2026-11-03T12:34:56.789Z;msgid=push-upgrade :mel!m@example.test PRIVMSG #lounge :hello after upgrade",
     { networkLabel: "Lounge", nickname: "weblounge" },
     3,
+    true,
   );
 
   await deliverPush(context, page, envelope);
@@ -389,18 +390,32 @@ test("anchors queued generic notifications to their receipt deadline", async ({
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=push-blocked :mel!m@example.test PRIVMSG #lounge :still visible",
     { networkLabel: "Lounge", nickname: "weblounge" },
-    3,
   );
   await page.evaluate(async () => {
-    Reflect.set(
-      globalThis,
-      "blockedPushDatabase",
-      await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push", 3);
-        request.onsuccess = () => resolve(request.result);
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push-v2");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    Reflect.set(globalThis, "blockedPushDatabase", database);
+    const transaction = database.transaction("routes", "readwrite");
+    Reflect.set(globalThis, "blockedPushTransaction", transaction);
+    const store = transaction.objectStore("routes");
+    await new Promise<void>((resolve, reject) => {
+      let acquired = false;
+      const holdLock = () => {
+        const request = store.get("__push-test-lock__");
+        request.onsuccess = () => {
+          holdLock();
+          if (!acquired) {
+            acquired = true;
+            resolve();
+          }
+        };
         request.onerror = () => reject(request.error);
-      }),
-    );
+      };
+      holdLock();
+    });
   });
 
   const startedAt = performance.now();
@@ -416,6 +431,8 @@ test("anchors queued generic notifications to their receipt deadline", async ({
     presentationElapsedMs = performance.now() - startedAt;
   } finally {
     await page.evaluate(() => {
+      const transaction = Reflect.get(globalThis, "blockedPushTransaction");
+      if (transaction instanceof IDBTransaction) transaction.abort();
       const database = Reflect.get(globalThis, "blockedPushDatabase");
       if (database instanceof IDBDatabase) database.close();
     });
@@ -769,7 +786,7 @@ async function deliverBrowserPush(
 async function routeNeedsReregistration(page: Page): Promise<boolean> {
   return page.evaluate(async (seededRouteId) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -795,7 +812,7 @@ async function routeNeedsReregistration(page: Page): Promise<boolean> {
 async function storedAppBadge(page: Page): Promise<number | undefined> {
   return page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -822,7 +839,7 @@ async function seedReadNotification(page: Page): Promise<void> {
       },
     });
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("weblounge-push");
+      const request = indexedDB.open("weblounge-push-v2");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -858,7 +875,7 @@ async function seedReadMarker(
   await page.evaluate(
     async ({ conversationTag, marker }) => {
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push");
+        const request = indexedDB.open("weblounge-push-v2");
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
@@ -956,12 +973,14 @@ async function seedRouteAndEncrypt(
     readonly nickname: string;
   } = { networkLabel: "Lounge", nickname: "weblounge" },
   databaseVersion: 3 | 4 = 4,
+  seedRetiringDuplicate = false,
 ): Promise<string> {
   const [envelope] = await seedRouteAndEncryptMany(
     page,
     [line],
     routeContext,
     databaseVersion,
+    seedRetiringDuplicate,
   );
   if (envelope === undefined) throw new Error("push envelope was not created");
   return envelope;
@@ -975,9 +994,16 @@ async function seedRouteAndEncryptMany(
     readonly nickname: string;
   } = { networkLabel: "Lounge", nickname: "weblounge" },
   databaseVersion: 3 | 4 = 4,
+  seedRetiringDuplicate = false,
 ): Promise<readonly string[]> {
   return page.evaluate(
-    async ({ plaintexts, route, seededRouteId, seededDatabaseVersion }) => {
+    async ({
+      plaintexts,
+      route,
+      seededRouteId,
+      seededDatabaseVersion,
+      includeRetiringDuplicate,
+    }) => {
       const encode = (bytes: ArrayBuffer | ArrayBufferView): string => {
         const view = ArrayBuffer.isView(bytes)
           ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -1025,13 +1051,17 @@ async function seedRouteAndEncryptMany(
       );
       const authentication = crypto.getRandomValues(new Uint8Array(16));
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("weblounge-push", seededDatabaseVersion);
+        const currentDatabase = seededDatabaseVersion === 4;
+        const request = indexedDB.open(
+          currentDatabase ? "weblounge-push-v2" : "weblounge-push",
+          currentDatabase ? 1 : seededDatabaseVersion,
+        );
         request.onupgradeneeded = () => {
           if (!request.result.objectStoreNames.contains("routes")) {
             const store = request.result.createObjectStore("routes", {
-              keyPath: seededDatabaseVersion === 3 ? "routeId" : "vapid",
+              keyPath: currentDatabase ? "vapid" : "routeId",
             });
-            if (seededDatabaseVersion === 4) {
+            if (currentDatabase) {
               store.createIndex("route-id", "routeId", { unique: true });
             }
           }
@@ -1044,6 +1074,20 @@ async function seedRouteAndEncryptMany(
       });
       await new Promise<void>((resolve, reject) => {
         const transaction = database.transaction("routes", "readwrite");
+        if (includeRetiringDuplicate) {
+          transaction.objectStore("routes").put({
+            networkId: 0,
+            networkLabel: route.networkLabel,
+            nickname: route.nickname,
+            vapid: "test-home",
+            routeId: "a-retiring-route",
+            endpoint: "https://push.example.test/v1/r/a-retiring-route",
+            p256dh: "AQID",
+            auth: "BAUG",
+            privateKey: routePair.privateKey,
+            retiring: true,
+          });
+        }
         transaction.objectStore("routes").put({
           networkId: 1,
           networkLabel: route.networkLabel,
@@ -1151,6 +1195,7 @@ async function seedRouteAndEncryptMany(
       route: routeContext,
       seededRouteId: routeId,
       seededDatabaseVersion: databaseVersion,
+      includeRetiringDuplicate: seedRetiringDuplicate,
     },
   );
 }
