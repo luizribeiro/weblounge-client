@@ -2,6 +2,11 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Collapse Web Push alerts to one notification per conversation even when the platform ignores
+  native tags: present the latest DM or mention first, append the receipt-ordered unread ledger count,
+  then close older identity-revalidated notifications within fixed scan bounds. Built-worker tag-less
+  coverage delivers three Iris DMs and leaves the latest tappable notification with `3 new messages`;
+  the unmocked Ergo, relay and browser-worker chain remains green.
 - [x] Keep mobile transcript anchoring synchronous when resolving per-buffer send-failure notices,
   so composer resizing and cold or warm keyboard motion finish at the live edge.
 - [ ] Papo question for Luiz: an established non-shared `DirectRef` remains alive across MONITOR
