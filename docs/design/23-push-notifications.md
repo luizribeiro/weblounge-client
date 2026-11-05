@@ -305,11 +305,22 @@ grow into a second engine.
 
 `notification.data` carries the buffer route, e.g. `/weblounge/@mel`, plus the conversation tag,
 message id and server time needed for read-marker cleanup (`10-navigation.md:201-222`,
-`app/src/navigation/buffer-route.ts`). On `notificationclick`, `clients.matchAll({type:'window',
-includeUncontrolled:true})`; if a window exists, `focus()` it and post `{kind:"open-route", route}`
-(a new channel: the desktop shell has no `popstate` handling today, only `MobileShell.tsx:503`
-listens); otherwise `clients.openWindow(route)`, which works cold because the service worker serves
-the cached `index.html` for any navigation.
+`app/src/navigation/buffer-route.ts`). On `notificationclick`, the worker first records one
+short-lived pending route intent in its IndexedDB state store. The page atomically takes that intent
+on startup, on return to visibility or focus, and when the worker's best-effort `open-route` message
+arrives. Taking deletes the record in the same transaction, so overlapping lifecycle signals apply
+it exactly once. The page then retains the route in memory until its network and buffer exist; a
+cached-shell reveal or the wholesale cached/live chat-list swap cannot consume it early.
+
+The worker then calls `clients.matchAll({type:'window', includeUncontrolled:true})`. With a window,
+it tries `focus()` and posts the intent id and route; the durable record covers a suspended,
+reloaded, or newly relaunched page whose listener misses that message. If focus rejects, the worker
+navigates that client to the route, falling back to `openWindow(route)` if navigation also fails.
+With no window it calls `openWindow(route)`. The recorded intent covers iOS opening `start_url`
+instead of the requested deep link, while the route URL remains a fallback if IndexedDB is
+unavailable. Generic notifications retain `/` because no conversation is known; a detailed
+notification, including one that replaces a deadline fallback through its private native tag,
+retains its parsed buffer route.
 
 **Tap before history.** The engine loads the buffer's stored pushed messages from the local store
 before any connection exists, so the tapped message is on screen on a cold start before the
@@ -895,7 +906,9 @@ migration remain a v1 prerequisite above.
   `getNotifications()` shows title, body, tag and `data.route`; a focused page produces no
   delivered envelope; opening the buffer closes its notifications; app badge via a stubbed
   `setAppBadge`; the page side of `open-route` (warm) and the deep link (cold), with the
-  `notificationclick` routing function unit-tested; tap before history: on a cold start with the
+  `notificationclick` routing function unit-tested; Chromium and WebKit drive the built worker's
+  notification harness through open, discarded/reloaded, and closed page states and assert a DM
+  opens; tap before history: on a cold start with the
   IRC connection blocked, the tapped buffer shows the pushed message, and once the connection and
   chathistory deliver the same `msgid` it still appears exactly once. `nativeFeelAudit` and the idle/hidden checks
   stay green with the lease heartbeat.
