@@ -1,5 +1,11 @@
+import {
+  type PendingOpenRouteIntent,
+  recordPendingOpenRoute,
+} from "./pending-open-route";
+
 interface WindowClientLike {
   focus(): Promise<WindowClientLike>;
+  navigate(url: string): Promise<WindowClientLike | null>;
   postMessage(message: unknown): void;
 }
 
@@ -19,9 +25,13 @@ export interface ClickedNotification {
 export async function routeNotificationClick(
   clients: NotificationClients,
   notification: ClickedNotification,
+  recordIntent: (
+    route: string,
+  ) => Promise<PendingOpenRouteIntent> = recordPendingOpenRoute,
 ): Promise<void> {
   notification.close();
   const route = notificationRoute(notification.data);
+  const intent = await recordIntent(route).catch(() => undefined);
   const windows = await clients.matchAll({
     type: "window",
     includeUncontrolled: true,
@@ -31,8 +41,20 @@ export async function routeNotificationClick(
     await clients.openWindow(route);
     return;
   }
-  const focused = await existing.focus();
-  focused.postMessage({ kind: "open-route", route });
+  try {
+    const focused = await existing.focus();
+    focused.postMessage({
+      kind: "open-route",
+      route,
+      ...(intent === undefined ? {} : { intentId: intent.id }),
+    });
+  } catch {
+    try {
+      const navigated = await existing.navigate(route);
+      if (navigated !== null) return;
+    } catch {}
+    await clients.openWindow(route);
+  }
 }
 
 function notificationRoute(data: unknown): string {

@@ -89,6 +89,7 @@ interface WorkerScope {
 
 interface WindowClient {
   focus(): Promise<WindowClient>;
+  navigate(url: string): Promise<WindowClient | null>;
   postMessage(message: unknown): void;
 }
 
