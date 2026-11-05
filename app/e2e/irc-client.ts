@@ -205,6 +205,22 @@ export class IrcClient {
     await this.privmsgConfirmed(channel, `\u0001ACTION ${text}\u0001`);
   }
 
+  async reactionConfirmed(
+    target: string,
+    messageId: string,
+    reaction: string,
+  ): Promise<void> {
+    this.send(
+      `@+draft/react=${reaction};+draft/reply=${messageId} TAGMSG ${target}`,
+    );
+    await this.waitFor(
+      `echoed reaction to ${target}`,
+      (line) =>
+        line.includes(`+draft/react=${reaction};+draft/reply=${messageId}`) &&
+        line.includes(` TAGMSG ${target}`),
+    );
+  }
+
   async mode(target: string, change: string, nick?: string): Promise<void> {
     const argument = nick === undefined ? "" : ` ${nick}`;
     this.send(`MODE ${target} ${change}${argument}`);

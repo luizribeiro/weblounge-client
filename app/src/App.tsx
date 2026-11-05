@@ -66,6 +66,7 @@ import {
   ForegroundLease,
   foregroundLeaseTabId,
 } from "./platform/push/foreground-lease";
+import { pageIsForeground } from "./platform/push/foreground-state";
 import {
   decodeOpenRouteMessage,
   type OpenRouteMessage,
@@ -712,7 +713,7 @@ export function App(props: AppProps) {
     const updateVisibility = () => {
       if ("Notification" in window)
         setNotificationPermission(Notification.permission);
-      setAppForeground(!document.hidden && document.hasFocus());
+      setAppForeground(pageIsForeground(document, navigator));
     };
     const reconnectNetworks = () => {
       for (const network of networks()) {

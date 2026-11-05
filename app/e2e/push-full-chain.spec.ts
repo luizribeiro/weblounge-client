@@ -25,6 +25,7 @@ interface RelayDeviceState {
   readonly active: number;
   readonly dead: number;
   readonly leases: number;
+  readonly held: number;
 }
 
 interface ReceiverRecord {
@@ -352,6 +353,130 @@ test.describe("independent push route reopen", () => {
   });
 });
 
+test.describe("independent foreground push suppression", () => {
+  test.skip(!enabled, "requires the local push E2E VM");
+
+  test("does not present a DM while an installed iOS app is visibly open on it", async ({
+    browser,
+  }) => {
+    await switchToCurrentBuild();
+    const deviceId = "foreground-ios";
+    const foregroundContext = await pushContext(browser, deviceId);
+    await foregroundContext.addInitScript(() => {
+      Object.defineProperty(navigator, "standalone", {
+        configurable: true,
+        value: true,
+      });
+    });
+    const foreground = await foregroundContext.newPage();
+    const foregroundBot = await IrcClient.connectIsolated(
+      `foreground-bot-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    try {
+      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+      await foreground.goto("/");
+      await expect(connectionHeading(foreground)).toBeVisible();
+
+      const seed = `foreground seed ${randomUUID()}`;
+      const seedEcho = await foregroundBot.privmsgConfirmed("weblounge", seed);
+      await foreground
+        .getByRole("complementary", { name: "Channel list" })
+        .getByRole("button", {
+          name: new RegExp(`^${foregroundBot.nickname},`, "u"),
+        })
+        .click();
+      const composer = foreground.getByRole("textbox", { name: "Message" });
+      await foreground.getByRole("button", { name: "Turn on" }).click();
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          return created === undefined
+            ? undefined
+            : { active: created.active, leases: created.leases };
+        })
+        .toEqual({ active: 1, leases: 1 });
+      await composer.focus();
+      await expect(composer).toBeFocused();
+      await foreground.evaluate(() => {
+        Object.defineProperty(document, "hasFocus", {
+          configurable: true,
+          value: () => false,
+        });
+        window.dispatchEvent(new Event("blur"));
+      });
+      await expect
+        .poll(() =>
+          foreground.evaluate(() => ({
+            focusedComposer:
+              document.activeElement
+                ?.getAttribute("aria-label")
+                ?.startsWith("Message") ?? false,
+            hasFocus: document.hasFocus(),
+            visibility: document.visibilityState,
+          })),
+        )
+        .toEqual({
+          focusedComposer: true,
+          hasFocus: false,
+          visibility: "visible",
+        });
+      await closeNotifications(foreground);
+      const recordsBefore = (await records()).filter(
+        ({ path }) => path === `/device/${deviceId}`,
+      ).length;
+      const burst = [
+        `foreground burst one ${randomUUID()}`,
+        `foreground burst two ${randomUUID()}`,
+        `foreground burst three ${randomUUID()}`,
+      ];
+      for (const [index, direct] of burst.entries()) {
+        await foregroundBot.privmsgConfirmed("weblounge", direct);
+        if (index === 0) {
+          await foregroundBot.reactionConfirmed(
+            "weblounge",
+            messageId(seedEcho),
+            "👍",
+          );
+        }
+      }
+
+      let delivered: readonly ReceiverRecord[] = [];
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          delivered = (await records())
+            .filter(({ path }) => path === `/device/${deviceId}`)
+            .slice(recordsBefore);
+          return (created?.held ?? 0) + delivered.length;
+        })
+        .toBe(burst.length);
+      for (const record of delivered) {
+        await deliverRecordedEnvelope(foregroundContext, foreground, record);
+      }
+
+      await expect.poll(() => notifications(foreground)).toEqual([]);
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          return created === undefined
+            ? undefined
+            : { held: created.held, leases: created.leases };
+        })
+        .toEqual({ held: burst.length, leases: 1 });
+    } finally {
+      foregroundBot.close();
+      await foregroundContext.close();
+    }
+  });
+});
+
 test.describe("independent push recovery", () => {
   test.skip(!enabled, "requires the local push E2E VM");
 
@@ -572,6 +697,12 @@ function serverTime(line: string): string {
   if (timestamp === undefined)
     throw new Error(`IRC line has no server time: ${line}`);
   return timestamp;
+}
+
+function messageId(line: string): string {
+  const id = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
+  if (id === undefined) throw new Error(`IRC line has no msgid: ${line}`);
+  return id;
 }
 
 async function pushContext(
