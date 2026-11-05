@@ -3,6 +3,7 @@ import { rename, rm, symlink } from "node:fs/promises";
 import {
   type Browser,
   type BrowserContext,
+  type CDPSession,
   expect,
   type JSHandle,
   type Page,
@@ -1013,8 +1014,36 @@ async function deliverPush(
   page: Page,
   data: string,
 ): Promise<void> {
+  const { registrationId, session } = await pushDeliveryTarget(context, page);
+  await session.send("ServiceWorker.deliverPushMessage", {
+    origin: new URL(page.url()).origin,
+    registrationId,
+    data,
+  });
+}
+
+const pushDeliveryTargets = new WeakMap<
+  Page,
+  Promise<{ readonly registrationId: string; readonly session: CDPSession }>
+>();
+
+function pushDeliveryTarget(
+  context: BrowserContext,
+  page: Page,
+): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
+  const existing = pushDeliveryTargets.get(page);
+  if (existing !== undefined) return existing;
+  const created = createPushDeliveryTarget(context, page);
+  pushDeliveryTargets.set(page, created);
+  return created;
+}
+
+async function createPushDeliveryTarget(
+  context: BrowserContext,
+  page: Page,
+): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
   const session = await context.newCDPSession(page);
-  const registration = new Promise<string>((resolve) => {
+  const registrationId = new Promise<string>((resolve) => {
     session.on(
       "ServiceWorker.workerRegistrationUpdated",
       ({ registrations }) => {
@@ -1028,12 +1057,7 @@ async function deliverPush(
     );
   });
   await session.send("ServiceWorker.enable");
-  await session.send("ServiceWorker.deliverPushMessage", {
-    origin: new URL(page.url()).origin,
-    registrationId: await registration,
-    data,
-  });
-  await session.detach();
+  return { registrationId: await registrationId, session };
 }
 
 async function notifications(page: Page) {
