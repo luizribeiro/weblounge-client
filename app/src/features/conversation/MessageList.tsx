@@ -18,6 +18,7 @@ import type {
   MembershipProjection,
   MessageProjection,
   NoticeKind,
+  TypingProjection,
 } from "../../engine/protocol";
 import {
   type AppGeometryChange,
@@ -32,7 +33,11 @@ import { Selectable } from "../../ui/Selectable";
 import { ScrollIntentTracker } from "../../ui/scroll-intent";
 import { observeVirtualizerOffset } from "../../ui/virtualizer-observer";
 import { preserveVisualScrollAnchor } from "../../ui/visual-scroll-anchor";
-import { composerGeometryChangeEvent } from "../composer/geometry";
+import {
+  composerGeometryChangeEvent,
+  composerGeometryWillChangeEvent,
+} from "../composer/geometry";
+import { TypingIndicator } from "../composer/TypingIndicator";
 import styles from "./MessageList.module.css";
 import { MessageText, Nickname } from "./MessageText";
 import {
@@ -46,6 +51,7 @@ interface MessageListProps {
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
+  readonly typers?: readonly TypingProjection[] | undefined;
   readonly readAtMs?: number | null | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
@@ -333,6 +339,9 @@ export function MessageList(props: MessageListProps) {
     const anchorComposerGeometry = () => {
       syncViewportRect?.();
     };
+    const cancelComposerScroll = () => {
+      if (logicallyAtLiveEdge) virtualizer.cancelScroll();
+    };
     const handleFontsLoaded = () => {
       remeasure();
       if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
@@ -363,6 +372,10 @@ export function MessageList(props: MessageListProps) {
       composerGeometryChangeEvent,
       anchorComposerGeometry,
     );
+    composerOwner?.addEventListener(
+      composerGeometryWillChangeEvent,
+      cancelComposerScroll,
+    );
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
     window.addEventListener(appGeometryChangeEvent, anchorGeometryChange);
     onCleanup(() => {
@@ -370,6 +383,10 @@ export function MessageList(props: MessageListProps) {
       composerOwner?.removeEventListener(
         composerGeometryChangeEvent,
         anchorComposerGeometry,
+      );
+      composerOwner?.removeEventListener(
+        composerGeometryWillChangeEvent,
+        cancelComposerScroll,
       );
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
       window.removeEventListener(appGeometryChangeEvent, anchorGeometryChange);
@@ -510,6 +527,7 @@ export function MessageList(props: MessageListProps) {
           </ol>
         </div>
       </div>
+      <TypingIndicator typers={props.typers ?? []} />
       {unseen() > 0 && (
         <button class={styles.jump} onClick={jumpToBottom} type="button">
           {t(unseen() === 1 ? "messages.jump.one" : "messages.jump.many", {

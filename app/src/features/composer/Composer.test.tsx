@@ -9,7 +9,10 @@ import { installPlatformEnvironment } from "../../platform/environment";
 import { keyboardGeometryMeasuredEvent } from "../../platform/viewport-geometry";
 import { Composer, replacementFor } from "./Composer";
 import { migrateDraft, readDraft, writeDraft } from "./draft-storage";
-import { composerGeometryChangeEvent } from "./geometry";
+import {
+  composerGeometryChangeEvent,
+  composerGeometryWillChangeEvent,
+} from "./geometry";
 
 const identify = {
   name: "identify",
@@ -579,15 +582,20 @@ it("grows the textarea with multiline content", async () => {
   const input = screen.getByRole<HTMLTextAreaElement>("textbox");
   await Promise.resolve();
   Object.defineProperty(input, "scrollHeight", { value: 84 });
+  const geometryWillChange = vi.fn();
   const geometryChanged = vi.fn();
-  input
-    .closest("[data-composer]")
-    ?.addEventListener(composerGeometryChangeEvent, geometryChanged);
+  const composer = input.closest("[data-composer]");
+  composer?.addEventListener(
+    composerGeometryWillChangeEvent,
+    geometryWillChange,
+  );
+  composer?.addEventListener(composerGeometryChangeEvent, geometryChanged);
 
   fireEvent.input(input, { target: { value: "first\nsecond\nthird" } });
   await Promise.resolve();
 
   expect(input.style.height).toBe("84px");
+  expect(geometryWillChange).toHaveBeenCalledOnce();
   expect(geometryChanged).toHaveBeenCalledOnce();
 });
 

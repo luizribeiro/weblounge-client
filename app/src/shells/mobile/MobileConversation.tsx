@@ -234,6 +234,7 @@ export function MobileConversation(props: MobileConversationProps) {
             }
             presentation="mobile"
             readAtMs={props.buffer.read_at_ms}
+            typers={props.typers ?? []}
             registerController={(controller) => {
               listController = controller;
             }}
@@ -260,7 +261,6 @@ export function MobileConversation(props: MobileConversationProps) {
                 ? props.completion
                 : undefined
             }
-            typers={props.typers ?? []}
             onRequestCandidates={(input, cursor, explicit) =>
               props.onRequestCompletion(
                 props.buffer.id,

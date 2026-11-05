@@ -3,7 +3,6 @@ import type {
   CommandSpec,
   CompletionCandidate,
   CompletionResult,
-  TypingProjection,
 } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import {
@@ -15,10 +14,12 @@ import { t, translate } from "../../strings";
 import styles from "../conversation/SimpleComposer.module.css";
 import { commandForInput } from "./command-input";
 import { readDraft, removeDraft, writeDraft } from "./draft-storage";
-import { composerGeometryChangeEvent } from "./geometry";
+import {
+  composerGeometryChangeEvent,
+  composerGeometryWillChangeEvent,
+} from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
-import { TypingIndicator } from "./TypingIndicator";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -26,7 +27,6 @@ interface ComposerProps {
   readonly bufferTitle: string;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult | undefined;
-  readonly typers?: readonly TypingProjection[] | undefined;
   readonly disabled?: boolean;
   readonly focusOnMount?: boolean | undefined;
   readonly onRequestCandidates?: (
@@ -97,6 +97,10 @@ export function Composer(props: ComposerProps) {
     const previousHeight = textarea.style.height;
     textarea.style.height = "0";
     const nextHeight = `${textarea.scrollHeight}px`;
+    if (nextHeight !== previousHeight)
+      textarea.dispatchEvent(
+        new Event(composerGeometryWillChangeEvent, { bubbles: true }),
+      );
     textarea.style.height = nextHeight;
     if (nextHeight !== previousHeight)
       textarea.dispatchEvent(
@@ -323,7 +327,6 @@ export function Composer(props: ComposerProps) {
         else touchFocus.cancel();
       }}
     >
-      <TypingIndicator typers={props.typers ?? []} />
       {suggestions() !== undefined && (
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}

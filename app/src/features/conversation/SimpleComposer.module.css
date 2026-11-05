@@ -20,13 +20,14 @@
 
 .typing {
   align-items: center;
+  background: var(--wl-color-surface);
   color: var(--wl-color-muted);
   display: flex;
   font-size: var(--wl-font-section-size);
   height: 24px;
-  margin: -8px 0 0;
+  margin: 0;
   overflow: hidden;
-  padding-inline: 4px;
+  padding-inline: 18px;
   white-space: nowrap;
 }
 

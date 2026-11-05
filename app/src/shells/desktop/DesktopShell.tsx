@@ -434,6 +434,7 @@ export function DesktopShell(props: DesktopShellProps) {
                     props.onRetry?.(buffer.id, localSendId);
                 }}
                 readAtMs={activeBuffer()?.read_at_ms}
+                typers={props.typers?.get(activeBuffer()?.id ?? -1) ?? []}
                 registerController={(controller) => {
                   messageListController = controller;
                 }}
@@ -465,7 +466,6 @@ export function DesktopShell(props: DesktopShellProps) {
                           ? props.completion
                           : undefined
                       }
-                      typers={props.typers?.get(bufferId) ?? []}
                       disabled={
                         buffer()?.kind === "server" ||
                         buffer()?.channel_status === "kicked" ||
