@@ -161,7 +161,7 @@ test.describe("full unmocked push lifecycle", () => {
     const record = await nextRecord("/device/a");
     await deliverRecordedEnvelope(context, page, record);
 
-    await expectNotification(page, direct);
+    await expectNotification(page, direct, 2);
     await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
   });
 
@@ -227,12 +227,12 @@ test.describe("full unmocked push lifecycle", () => {
       const [first, second] = await nextRecords(["/device/a", "/device/b"]);
       await deliverRecordedEnvelope(context, page, first);
       await deliverRecordedEnvelope(otherContext, other, second);
-      await expectNotification(page, direct, 2);
+      await expectNotification(page, direct, 3);
       await expectNotification(other, direct);
       const originalNotification = [
         {
           title: bot.nickname,
-          body: notificationBody(direct, 2),
+          body: notificationBody(direct, 3),
           tag: `weblounge/${bot.nickname.toLowerCase()}`,
         },
       ];

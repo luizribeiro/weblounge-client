@@ -35,6 +35,7 @@ export interface NotificationPresentation {
   readonly title: string;
   readonly options: NotificationOptions;
   readonly receiptId?: string;
+  readonly receiptSequence?: number;
   readonly fallbackId?: string;
 }
 

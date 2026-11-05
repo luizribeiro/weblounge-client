@@ -132,6 +132,19 @@ const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
 let harnessTagReplacement = true;
 const pendingReceipts = new Set<string>();
+const pendingConversationMessages = new Map<
+  string,
+  PendingConversationMessage
+>();
+let nextReceiptSequence = 1;
+
+interface PendingConversationMessage {
+  readonly receiptId: string;
+  readonly receiptSequence: number;
+  readonly tag: string;
+  readonly messageId: string;
+  readonly messageTime: string;
+}
 
 type PushPresentation = ReturnType<typeof genericNotification>;
 type PushCommit =
@@ -442,7 +455,7 @@ async function preparePushDelivery(
   const envelope = pushEnvelope(event.data?.json());
   const context = await findRouteContext(envelope.routeId);
   if (context === undefined) throw new Error("push route is unavailable");
-  const { notificationState, route } = context;
+  const { notificationState, pendingMessages, route } = context;
   state.generic = replaceableGenericNotification(
     route.networkLabel,
     state.generic.receiptId,
@@ -484,6 +497,7 @@ async function preparePushDelivery(
     };
   }
   const receiptId = requiredReceiptId(state.generic);
+  const receiptSequence = requiredReceiptSequence(state.generic);
   const presentation =
     parsed.event !== undefined && isChatPayload(parsed.event)
       ? countedChatPresentation(
@@ -491,6 +505,8 @@ async function preparePushDelivery(
           parsed.event,
           notificationState,
           receiptId,
+          receiptSequence,
+          pendingMessages,
         )
       : parsed.presentation;
   return {
@@ -510,10 +526,13 @@ function replaceableGenericNotification(
   networkLabel?: string,
   receiptId: string = crypto.randomUUID(),
 ): PushPresentation {
-  return deadlineFallbackNotification(
-    genericNotification(networkLabel, receiptId),
-    receiptId,
-  );
+  return {
+    ...deadlineFallbackNotification(
+      genericNotification(networkLabel, receiptId),
+      receiptId,
+    ),
+    receiptSequence: nextReceiptSequence++,
+  };
 }
 
 async function commitPushDelivery(commit: PushCommit): Promise<void> {
@@ -549,6 +568,7 @@ async function commitPushDelivery(commit: PushCommit): Promise<void> {
     }
   } finally {
     pendingReceipts.delete(commit.receiptId);
+    pendingConversationMessages.delete(commit.receiptId);
   }
 }
 
@@ -603,10 +623,17 @@ async function showRegistrationNotification(
 ): Promise<void> {
   const receiptId = notificationReceiptId({ data: options.data });
   if (receiptId !== undefined) pendingReceipts.add(receiptId);
+  const pendingMessage = pendingConversationMessage(options.data);
+  if (pendingMessage !== undefined) {
+    pendingConversationMessages.set(pendingMessage.receiptId, pendingMessage);
+  }
   try {
     await presentRegistrationNotification(title, options);
   } catch (error: unknown) {
     if (receiptId !== undefined) pendingReceipts.delete(receiptId);
+    if (pendingMessage !== undefined) {
+      pendingConversationMessages.delete(pendingMessage.receiptId);
+    }
     throw error;
   }
 }
@@ -677,6 +704,13 @@ function requiredReceiptId(presentation: PushPresentation): string {
   return presentation.receiptId;
 }
 
+function requiredReceiptSequence(presentation: PushPresentation): number {
+  if (presentation.receiptSequence === undefined) {
+    throw new Error("push presentation receipt sequence is unavailable");
+  }
+  return presentation.receiptSequence;
+}
+
 function harnessNotificationSnapshots(): readonly unknown[] {
   return harnessNotifications.map(({ body, data, tag, title }) => ({
     body,
@@ -745,9 +779,11 @@ async function findRouteContext(routeId: string): Promise<
   | {
       readonly route: StoredRoute;
       readonly notificationState: NotificationState;
+      readonly pendingMessages: readonly PendingConversationMessage[];
     }
   | undefined
 > {
+  const pendingMessages = [...pendingConversationMessages.values()];
   const database = await openPushDatabase();
   try {
     const transaction = database.transaction(
@@ -771,6 +807,7 @@ async function findRouteContext(routeId: string): Promise<
       : {
           route: decodeStoredRoute(route),
           notificationState: decodeNotificationState(notificationState),
+          pendingMessages,
         };
   } finally {
     database.close();
@@ -782,14 +819,23 @@ function countedChatPresentation(
   event: Extract<ParsedPushEvent, { type: "message" | "notice" | "action" }>,
   state: NotificationState,
   receiptId: string,
+  receiptSequence: number,
+  pendingMessages: readonly PendingConversationMessage[],
 ): PushPresentation {
   const tag = presentation.options.tag;
   if (tag === undefined) return presentation;
-  recordPresentedNotification(state, {
+  const current = {
+    receiptId,
+    receiptSequence,
     tag,
     messageId: event.msgid,
     messageTime: event.time,
-  });
+  };
+  for (const pending of [...pendingMessages, current]
+    .filter((message) => message.receiptSequence <= receiptSequence)
+    .sort((left, right) => left.receiptSequence - right.receiptSequence)) {
+    recordPresentedNotification(state, pending);
+  }
   const counted = withNotificationCount(
     presentation,
     conversationNotificationCount(state, tag),
@@ -801,9 +847,37 @@ function countedChatPresentation(
       ...counted.options,
       data:
         typeof data === "object" && data !== null
-          ? { ...data, receiptId }
-          : { receiptId },
+          ? { ...data, receiptId, receiptSequence }
+          : { receiptId, receiptSequence },
     },
+  };
+}
+
+function pendingConversationMessage(
+  data: unknown,
+): PendingConversationMessage | undefined {
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !("receiptId" in data) ||
+    typeof data.receiptId !== "string" ||
+    !("receiptSequence" in data) ||
+    typeof data.receiptSequence !== "number" ||
+    !("conversationTag" in data) ||
+    typeof data.conversationTag !== "string" ||
+    !("messageId" in data) ||
+    typeof data.messageId !== "string" ||
+    !("messageTime" in data) ||
+    typeof data.messageTime !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    receiptId: data.receiptId,
+    receiptSequence: data.receiptSequence,
+    tag: data.conversationTag,
+    messageId: data.messageId,
+    messageTime: data.messageTime,
   };
 }
 
