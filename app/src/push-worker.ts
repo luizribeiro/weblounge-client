@@ -157,8 +157,7 @@ const pushDeliveries = new PushDeliveryCoordinator<
   replace: replaceFallbackNotification,
   prepare: preparePushDelivery,
   commit: commitPushDelivery,
-  reportError: (error) =>
-    console.error("push delivery failed", pushError(error)),
+  reportError: reportPushError,
   retryPrepare: (error) => error instanceof DatabaseTimeoutError,
 });
 
@@ -308,6 +307,10 @@ function pushError(error: unknown): string {
   return `${error.name}: ${error.message}${error.stack === undefined ? "" : `\n${error.stack}`}`;
 }
 
+function reportPushError(error: unknown): void {
+  console.error("push delivery failed", pushError(error));
+}
+
 async function navigationResponse(request: Request): Promise<Response> {
   const network = fetch(request);
   const fallback = caches.match("/index.html", { cacheName: shellCache });
@@ -370,6 +373,7 @@ async function preparePushDelivery(
     route,
     new TextDecoder().decode(plaintext),
     parser,
+    reportPushError,
   );
   if (parsed.event?.type === "markread") {
     return {

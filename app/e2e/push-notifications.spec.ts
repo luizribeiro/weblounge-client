@@ -85,6 +85,17 @@ async function prepareServiceWorker(
     .toEqual({ active: "activated", controller: "activated" });
 }
 
+function capturePushErrors(context: BrowserContext): string[] {
+  const errors: string[] = [];
+  context.on("console", (message) => {
+    const text = message.text();
+    if (message.type() === "error" && text.startsWith("push delivery failed")) {
+      errors.push(text);
+    }
+  });
+  return errors;
+}
+
 test("decrypts a real envelope into one routed notification", async ({
   context,
   page,
@@ -205,6 +216,7 @@ test("silently applies every delivered MARKREAD and maintenance PING", async ({
   context,
   page,
 }) => {
+  const pushErrors = capturePushErrors(context);
   await prepareServiceWorker(context, page);
   for (const [msgid, text] of [
     ["push-read-one", "first unread push"],
@@ -216,7 +228,12 @@ test("silently applies every delivered MARKREAD and maintenance PING", async ({
     );
     await deliverPush(context, page, envelope);
   }
-  await expect.poll(() => notifications(page)).toHaveLength(1);
+  await expect
+    .poll(async () => ({
+      notificationCount: (await notifications(page))?.length,
+      pushErrors,
+    }))
+    .toEqual({ notificationCount: 1, pushErrors: [] });
   await expect.poll(() => storedAppBadge(page)).toBe(2);
 
   const markread = await seedRouteAndEncrypt(

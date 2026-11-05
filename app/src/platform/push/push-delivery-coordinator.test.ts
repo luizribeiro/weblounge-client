@@ -320,6 +320,7 @@ describe("push delivery coordination", () => {
     try {
       const failPreparation = deferred<void>();
       const presentations: string[] = [];
+      const errors: unknown[] = [];
       const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
         fallbackDeadlineMs: 1_500,
         presentationBudgetMs: 2_000,
@@ -335,7 +336,7 @@ describe("push delivery coordination", () => {
         },
         replace: async () => false,
         commit: async () => undefined,
-        reportError: () => undefined,
+        reportError: (error) => errors.push(error),
         retryPrepare: () => false,
       });
 
@@ -345,6 +346,9 @@ describe("push delivery coordination", () => {
       await delivery;
 
       expect(presentations).toEqual(["final generic"]);
+      expect(errors).toEqual([
+        expect.objectContaining({ message: "invalid route keys" }),
+      ]);
     } finally {
       vi.useRealTimers();
     }

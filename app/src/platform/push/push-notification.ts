@@ -47,11 +47,13 @@ export async function notificationForLine(
   route: PushNotificationRoute,
   line: string,
   parser: PushParserLoader,
+  reportError: (error: unknown) => void = () => undefined,
 ): Promise<ParsedNotification> {
   try {
     const event = decodeParsedEvent(JSON.parse(await parser.parse(line)));
     return { presentation: notificationFor(route, event), event };
-  } catch {
+  } catch (error: unknown) {
+    reportError(error);
     return { presentation: genericNotification(route.networkLabel) };
   }
 }

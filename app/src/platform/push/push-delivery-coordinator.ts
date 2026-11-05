@@ -70,7 +70,8 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     let prepared: PreparedPushDelivery<Presentation, Commit>;
     try {
       prepared = await this.#prepareUntilKnown(input, state);
-    } catch {
+    } catch (error: unknown) {
+      this.#dependencies.reportError(error);
       if (!state.shown) {
         state.generic = this.#dependencies.finalFallback(state.generic);
       }

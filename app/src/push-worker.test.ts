@@ -183,13 +183,18 @@ describe("push worker notification presentation", () => {
       event: { type: "ping" as const },
     },
   ])("uses the generic notification for $name", async (fixture) => {
+    const reportError = vi.fn();
     const result = await notificationForLine(
       route,
       fixture.line,
       parserReturning(fixture.line, fixture.event),
+      reportError,
     );
 
     expect(result.presentation).toEqual(genericNotification("Lounge"));
+    expect(reportError).toHaveBeenCalledTimes(
+      fixture.event instanceof Error ? 1 : 0,
+    );
   });
 
   it("uses a generic notification without a body for an unknown route", () => {
