@@ -569,8 +569,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     feature isolation checks keep the production binary identical with the feature disabled.
     Chromium, Firefox, and WebKit now cover provider-specific controls, Apple badge convergence,
     and blocked worker storage against the production-equivalent urgency-patched Ergo. The
-    blocked-storage fallback remains an expected failure because notification presentation still
-    waits beyond its deadline.
+    blocked-storage fallback presents at its receipt-anchored deadline and retries a failed browser
+    presentation while the push stays alive. The upgrade journey waits for the replacement worker
+    to control the page before exercising current-worker push storage.
   - [ ] Add rate limits and engine/platform stable network identity.
 - **Polish pass before beta:** screen by screen (desktop and mobile, light and dark) against the prototype source: spacing, button styles, typography, time formats, badges, icons, everything in `docs/polish-notes.md`, and the desktop focus policy from doc 15 with Playwright tests. Before/after screenshots for every fix. (The mobile focus rules and keyboard behaviour belong to 7d.)
   - [x] Apply the desktop focus policy after navigation, transient surfaces, sends, and member DMs; route printable chrome keys to the composer without taking navigation keys, dialog input, or text selection.

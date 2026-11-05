@@ -75,6 +75,7 @@ test.describe("full unmocked push lifecycle", () => {
     );
 
     await switchToCurrentBuild();
+    await activateCurrentServiceWorker(page);
     await page.reload();
     await expect(connectionHeading(page)).toBeVisible();
     await expect
@@ -633,6 +634,32 @@ async function switchToCurrentBuild(): Promise<void> {
   await rm(next, { force: true });
   await symlink(currentApp, next);
   await rename(next, appLink);
+}
+
+async function activateCurrentServiceWorker(page: Page): Promise<void> {
+  const previous = await page.evaluateHandle(
+    () => navigator.serviceWorker.controller,
+  );
+  try {
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration("/");
+      if (registration === undefined)
+        throw new Error("root service worker is not registered");
+      await registration.update();
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (oldController) =>
+            navigator.serviceWorker.controller !== oldController &&
+            navigator.serviceWorker.controller?.state === "activated",
+          previous,
+        ),
+      )
+      .toBe(true);
+  } finally {
+    await previous.dispose();
+  }
 }
 
 async function relayStates(): Promise<readonly RelayDeviceState[]> {
