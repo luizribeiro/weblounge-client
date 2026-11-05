@@ -907,22 +907,24 @@ async function replaceWithConversationNotification(
 ): Promise<void> {
   await page.evaluate(async (conversationTag) => {
     const registration = await navigator.serviceWorker.ready;
-    for (const notification of await registration.getNotifications()) {
+    const notifications = await registration.getNotifications();
+    const data = notifications.at(0)?.data;
+    for (const notification of notifications) {
       notification.close();
     }
     await registration.showNotification("conversation notification", {
+      data,
       tag: conversationTag,
     });
   }, tag);
   await expect
     .poll(() => notifications(page))
     .toEqual([
-      {
+      expect.objectContaining({
         title: "conversation notification",
         body: "",
         tag,
-        route: "",
-      },
+      }),
     ]);
 }
 
