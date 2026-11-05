@@ -380,7 +380,7 @@ test("shows one generic notification when route keys are missing", async ({
     .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
 });
 
-test("shows a generic notification within the deadline when the push database upgrade is blocked", async ({
+test("anchors queued generic notifications to their receipt deadline", async ({
   context,
   page,
 }) => {
@@ -406,10 +406,13 @@ test("shows a generic notification within the deadline when the push database up
   const startedAt = performance.now();
   let presentationElapsedMs: number;
   try {
-    await deliverPush(context, page, envelope);
+    await deliverPushes(context, page, [envelope, envelope]);
     await expect
       .poll(() => notifications(page))
-      .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
+      .toEqual([
+        { title: "New message", body: "", tag: "", route: "/" },
+        { title: "New message", body: "", tag: "", route: "/" },
+      ]);
     presentationElapsedMs = performance.now() - startedAt;
   } finally {
     await page.evaluate(() => {

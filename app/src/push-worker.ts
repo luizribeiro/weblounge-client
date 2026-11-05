@@ -230,7 +230,10 @@ function isHarnessPush(value: unknown): value is {
 }
 
 function queuePush(pushEvent: PushPayloadEvent): Promise<void> {
-  const handled = pushQueue.then(() => showPushNotification(pushEvent));
+  const presentation = schedulePushPresentation();
+  const handled = pushQueue.then(() =>
+    showPushNotification(pushEvent, presentation),
+  );
   pushQueue = handled.catch(() => undefined);
   return handled;
 }
@@ -279,27 +282,37 @@ interface PushPresentationState {
   shown: boolean;
   showing: Promise<void> | undefined;
   generic: ReturnType<typeof genericNotification>;
+  fallback: Promise<void>;
+  deadline: ReturnType<typeof setTimeout> | undefined;
 }
 
-async function showPushNotification(event: PushPayloadEvent): Promise<void> {
+function schedulePushPresentation(): PushPresentationState {
   const state: PushPresentationState = {
     expired: false,
     shown: false,
     showing: undefined,
     generic: genericNotification(),
+    fallback: Promise.resolve(),
+    deadline: undefined,
   };
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  const fallback = new Promise<void>((resolve) => {
-    deadline = setTimeout(() => {
+  state.fallback = new Promise<void>((resolve) => {
+    state.deadline = setTimeout(() => {
       state.expired = true;
       void showOnce(state, state.generic).finally(resolve);
     }, pushNotificationDeadlineMs);
   });
+  return state;
+}
+
+async function showPushNotification(
+  event: PushPayloadEvent,
+  state: PushPresentationState,
+): Promise<void> {
   const detailed = preparePushNotification(event, state).catch(() =>
     showOnce(state, state.generic),
   );
-  await Promise.race([detailed, fallback]);
-  if (deadline !== undefined) clearTimeout(deadline);
+  await Promise.race([detailed, state.fallback]);
+  if (state.deadline !== undefined) clearTimeout(state.deadline);
   if (state.expired) {
     // wait-ok: bounded drain keeps timed-out storage work serialized.
     await Promise.race([
