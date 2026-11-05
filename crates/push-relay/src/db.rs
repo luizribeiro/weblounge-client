@@ -158,7 +158,9 @@ impl Database {
                         COALESCE(SUM(routes.state = 'active'), 0),
                         COALESCE(SUM(routes.state = 'dead'), 0),
                         (SELECT COUNT(*) FROM leases WHERE leases.device_id = devices.id),
-                        (SELECT COUNT(*) FROM held_pushes WHERE held_pushes.account = devices.account)
+                        (SELECT COUNT(*) FROM held_pushes
+                         JOIN routes AS held_routes ON held_routes.id = held_pushes.route_id
+                         WHERE held_routes.device_id = devices.id)
                  FROM devices LEFT JOIN routes ON routes.device_id = devices.id
                  GROUP BY devices.id ORDER BY devices.id",
             )?;
