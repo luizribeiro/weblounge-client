@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep the prototype-height typing indicator over the transcript's reserved bottom padding,
+  so it stays outside composer geometry without adding 24px to mobile live-edge and keyboard-motion
+  gaps. Composer-anchor fixtures no longer contribute `an`-matching speakers to the shared
+  completion history; typing remains absent from completion ranking.
 - [x] Collapse Web Push alerts to one notification per conversation even when the platform ignores
   native tags: present the latest DM or mention first, append the receipt-ordered unread ledger count,
   then close older identity-revalidated notifications within fixed scan bounds. Built-worker tag-less
