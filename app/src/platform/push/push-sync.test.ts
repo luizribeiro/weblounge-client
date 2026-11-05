@@ -429,6 +429,26 @@ describe("push state synchronization", () => {
     expect(current.routes.values.has("legacy-home")).toBe(false);
   });
 
+  it("keeps legacy route keys when relay ensure fails", async () => {
+    const current = fixture();
+    const { deviceId: _deviceId, ...legacy } = route({
+      vapid: "legacy-home",
+      routeId: "legacy-route",
+      networkLabel: "",
+    });
+    current.routes.values.set("legacy-home", legacy);
+    current.relay.ensureRoute.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "unavailable" },
+    });
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.routes.values.get("legacy-home")).toEqual(legacy);
+    expect(current.engine.requests).toEqual([]);
+  });
+
   it("deletes the relay device on sign-out even when IRC cleanup fails", async () => {
     const current = fixture();
     current.devices.credentials = {

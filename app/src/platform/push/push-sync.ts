@@ -246,7 +246,7 @@ export class PushSynchronizer {
       return;
     }
     const device = deviceResult.value;
-    await this.#cleanLegacyRoutes(device);
+    const legacyRoutes = await this.#legacyRoutes(device);
     const stored = await this.#routes.get(home);
     const current =
       stored !== undefined &&
@@ -290,6 +290,9 @@ export class PushSynchronizer {
             device.id,
           );
     await this.#routes.put(route);
+    for (const legacy of legacyRoutes) {
+      if (legacy.vapid !== route.vapid) await this.#routes.delete(legacy.vapid);
+    }
     this.#currentRoutes.set(networkId, route.routeId);
     const dead = await this.#relay.takeDeadEndpoints(device);
     if (!dead.ok && dead.error.kind === "gone") {
@@ -461,7 +464,10 @@ export class PushSynchronizer {
     });
   }
 
-  async #cleanLegacyRoutes(device: RelayDevice): Promise<void> {
+  async #legacyRoutes(
+    device: RelayDevice,
+  ): Promise<readonly StoredPushRoute[]> {
+    const legacy: StoredPushRoute[] = [];
     for (const route of await this.#routes.all()) {
       if (
         route.networkLabel.length === 0 ||
@@ -469,9 +475,10 @@ export class PushSynchronizer {
         route.deviceId !== device.id
       ) {
         this.#legacyEndpoints.add(route.endpoint);
-        await this.#routes.delete(route.vapid);
+        legacy.push(route);
       }
     }
+    return legacy;
   }
 
   async #unregisterExact(
