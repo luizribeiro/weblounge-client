@@ -166,7 +166,7 @@ describe("push delivery coordination", () => {
         fallbackDeadlineMs: 1_500,
         presentationBudgetMs: 2_000,
         generic: () => "generic",
-        deadlineFallback: (generic: string) => generic,
+        finalFallback: (generic: string) => generic,
         fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
         prepare: async (input) => {
           await releasePrepare.promise;
@@ -204,7 +204,7 @@ describe("push delivery coordination", () => {
         fallbackDeadlineMs: 1_500,
         presentationBudgetMs: 2_000,
         generic: () => "generic",
-        deadlineFallback: (generic: string) => generic,
+        finalFallback: (generic: string) => generic,
         fallbackCommit: () => ({ id: "fallback", kind: "fallback" }) as Commit,
         prepare: async (input: Input) => {
           await releasePrepare.promise;
@@ -247,7 +247,7 @@ describe("push delivery coordination", () => {
         fallbackDeadlineMs: 1_500,
         presentationBudgetMs: 2_000,
         generic: () => "generic",
-        deadlineFallback: (generic) => generic,
+        finalFallback: (generic) => generic,
         fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
         prepare: async (input) => {
           await releasePrepare.promise;
@@ -284,7 +284,7 @@ describe("push delivery coordination", () => {
         fallbackDeadlineMs: 200,
         presentationBudgetMs: 500,
         generic: () => "generic",
-        deadlineFallback: (generic) => generic,
+        finalFallback: (generic) => generic,
         fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
         prepare: async (input) =>
           input.kind === "markread"
@@ -320,8 +320,8 @@ describe("push delivery coordination", () => {
     const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
       fallbackDeadlineMs: 1_500,
       presentationBudgetMs: 2_000,
-      generic: () => "final generic",
-      deadlineFallback: () => "replaceable generic",
+      generic: () => "replaceable generic",
+      finalFallback: () => "final generic",
       fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
       prepare: async () => {
         throw new Error("invalid route keys");
@@ -403,7 +403,7 @@ function createCoordinator(overrides: {
     fallbackDeadlineMs: 59_500,
     presentationBudgetMs: 60_000,
     generic: () => "generic",
-    deadlineFallback: (generic) => generic,
+    finalFallback: (generic) => generic,
     fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
     replace: async () => false,
     reportError: () => undefined,

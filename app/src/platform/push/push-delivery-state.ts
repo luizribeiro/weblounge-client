@@ -4,7 +4,6 @@ export interface PushPresentationState<T> {
   presented: T | undefined;
   showing: Promise<void> | undefined;
   generic: T;
-  readonly deadlineFallback: (generic: T) => T;
   fallback: Promise<void>;
   deadline: ReturnType<typeof setTimeout> | undefined;
   resolveFallback: (() => void) | undefined;
@@ -17,7 +16,6 @@ export interface PushPresentationState<T> {
 
 export function schedulePushPresentation<T>(
   generic: T,
-  deadlineFallback: (generic: T) => T,
   present: (presentation: T) => Promise<void>,
   fallbackDeadlineMs: number,
   presentationBudgetMs: number,
@@ -29,7 +27,6 @@ export function schedulePushPresentation<T>(
     presented: undefined,
     showing: undefined,
     generic,
-    deadlineFallback,
     fallback: Promise.resolve(),
     deadline: undefined,
     resolveFallback: undefined,
@@ -43,9 +40,7 @@ export function schedulePushPresentation<T>(
     state.resolveFallback = resolve;
     state.deadline = setTimeout(() => {
       state.expired = true;
-      void showUntilPresented(state, () =>
-        state.deadlineFallback(state.generic),
-      ).finally(resolve);
+      void showUntilPresented(state, () => state.generic).finally(resolve);
     }, fallbackDeadlineMs);
   });
   return state;

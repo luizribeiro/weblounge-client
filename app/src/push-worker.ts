@@ -142,12 +142,9 @@ const pushDeliveries = new PushDeliveryCoordinator<
 >({
   fallbackDeadlineMs: pushFallbackDeadlineMs,
   presentationBudgetMs: pushNotificationDeadlineMs,
-  generic: () => genericNotification(undefined, crypto.randomUUID()),
-  deadlineFallback: (generic) =>
-    deadlineFallbackNotification(
-      generic,
-      generic.receiptId ?? crypto.randomUUID(),
-    ),
+  generic: () => replaceableGenericNotification(),
+  finalFallback: (generic) =>
+    genericNotification(generic.options.body, generic.receiptId),
   fallbackCommit: () => ({ kind: "fallback" }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   replace: replaceFallbackNotification,
@@ -345,7 +342,7 @@ async function preparePushDelivery(
   const envelope = pushEnvelope(event.data?.json());
   const route = await findRoute(envelope.routeId);
   if (route === undefined) throw new Error("push route is unavailable");
-  state.generic = genericNotification(
+  state.generic = replaceableGenericNotification(
     route.networkLabel,
     state.generic.receiptId,
   );
@@ -390,6 +387,16 @@ async function preparePushDelivery(
       tag: parsed.presentation.options.tag,
     },
   };
+}
+
+function replaceableGenericNotification(
+  networkLabel?: string,
+  receiptId: string = crypto.randomUUID(),
+): PushPresentation {
+  return deadlineFallbackNotification(
+    genericNotification(networkLabel, receiptId),
+    receiptId,
+  );
 }
 
 async function commitPushDelivery(commit: PushCommit): Promise<void> {

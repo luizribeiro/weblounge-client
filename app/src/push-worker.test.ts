@@ -44,7 +44,6 @@ describe("push delivery state", () => {
       const present = vi.fn(async (_value: string) => undefined);
       const state = schedulePushPresentation<string>(
         "generic",
-        (generic) => generic,
         present,
         1_500,
         2_000,
