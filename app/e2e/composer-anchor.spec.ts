@@ -49,7 +49,7 @@ for (const shell of [
     const page = await context.newPage();
     const suffix = `${shell.name}-${Date.now().toString(36)}`;
     const bot = await IrcClient.connect(
-      `anchor-${shell.name}`,
+      `resize-${shell.name}`,
       "weblounge-bot",
       "weblounge-bot-test",
       "#weblounge-test",
