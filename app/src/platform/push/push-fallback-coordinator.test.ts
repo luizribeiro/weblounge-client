@@ -15,10 +15,11 @@ describe("push fallback coordination", () => {
     );
 
     coordinator.track("receipt");
+    const taken = coordinator.take("receipt");
     await vi.advanceTimersByTimeAsync(2_000);
     notifications = [fallback];
     await vi.advanceTimersByTimeAsync(20);
 
-    await expect(coordinator.take("receipt")).resolves.toEqual([fallback]);
+    await expect(taken).resolves.toEqual([fallback]);
   });
 });

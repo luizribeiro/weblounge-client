@@ -1,6 +1,6 @@
 export class PushFallbackCoordinator<Notification> {
   readonly #find: (id: string) => Promise<readonly Notification[]>;
-  readonly #lookups = new Map<string, Promise<readonly Notification[]>>();
+  readonly #tracked = new Set<string>();
 
   constructor(
     notifications: () => Promise<readonly Notification[]>,
@@ -19,15 +19,15 @@ export class PushFallbackCoordinator<Notification> {
   }
 
   track(id: string): void {
-    this.#lookups.set(id, this.#find(id));
+    this.#tracked.add(id);
   }
 
   async take(id: string): Promise<readonly Notification[]> {
-    const lookup = this.#lookups.get(id) ?? this.#find(id);
+    if (!this.#tracked.has(id)) return [];
     try {
-      return await lookup;
+      return await this.#find(id);
     } finally {
-      this.#lookups.delete(id);
+      this.#tracked.delete(id);
     }
   }
 }
