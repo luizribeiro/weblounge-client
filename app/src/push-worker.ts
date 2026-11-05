@@ -9,9 +9,11 @@ import {
 import {
   DatabaseTimeoutError,
   databaseDeadlineMs,
+  notificationCountsKey,
   openPushDatabase,
   pushRouteIdIndex,
   pushRoutesStore,
+  pushStateStore,
   requestResult,
   transactionDone,
 } from "./platform/push/push-database";
@@ -33,13 +35,17 @@ import {
   notificationForLine,
   type ParsedPushEvent,
   sameIrcName,
+  withNotificationCount,
 } from "./platform/push/push-notification";
 import {
   closeNotificationsCoveredByMarkers,
-  closeSupersededFallbackNotifications,
+  closeSupersededConversationNotifications,
 } from "./platform/push/push-notification-cleanup";
 import {
+  conversationNotificationCount,
+  decodeNotificationState,
   markConversationRead as markNotificationStateRead,
+  type NotificationState,
   notificationStateTotal,
   recordPresentedNotification,
 } from "./platform/push/push-notification-state";
@@ -118,12 +124,14 @@ const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
 const pushFallbackDeadlineMs = 1_500;
+const notificationScanDeadlineMs = 500;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
 const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
-const pendingFallbacks = new Set<string>();
+let harnessTagReplacement = true;
+const pendingReceipts = new Set<string>();
 
 type PushPresentation = ReturnType<typeof genericNotification>;
 type PushCommit =
@@ -182,6 +190,7 @@ worker.addEventListener("message", (event) => {
   const data: unknown = message.data;
   if (__PUSH_EVENT_HARNESS__ && isHarnessPush(data)) {
     harnessPresentationFailures = data.presentationFailures ?? 0;
+    harnessTagReplacement = data.tagReplacement ?? true;
     const handled = queuePush({
       data: { json: () => JSON.parse(data.payload) },
     });
@@ -311,6 +320,7 @@ function isHarnessPush(value: unknown): value is {
   readonly id: string;
   readonly payload: string;
   readonly presentationFailures?: number;
+  readonly tagReplacement?: boolean;
 } {
   return (
     typeof value === "object" &&
@@ -324,7 +334,8 @@ function isHarnessPush(value: unknown): value is {
     (!("presentationFailures" in value) ||
       (typeof value.presentationFailures === "number" &&
         Number.isSafeInteger(value.presentationFailures) &&
-        value.presentationFailures >= 0))
+        value.presentationFailures >= 0)) &&
+    (!("tagReplacement" in value) || typeof value.tagReplacement === "boolean")
   );
 }
 
@@ -429,8 +440,9 @@ async function preparePushDelivery(
   state: PushPresentationState<PushPresentation>,
 ): Promise<PreparedPushDelivery<PushPresentation, PushCommit>> {
   const envelope = pushEnvelope(event.data?.json());
-  const route = await findRoute(envelope.routeId);
-  if (route === undefined) throw new Error("push route is unavailable");
+  const context = await findRouteContext(envelope.routeId);
+  if (context === undefined) throw new Error("push route is unavailable");
+  const { notificationState, route } = context;
   state.generic = replaceableGenericNotification(
     route.networkLabel,
     state.generic.receiptId,
@@ -471,15 +483,25 @@ async function preparePushDelivery(
       commit: { kind: "ping", receiptId: requiredReceiptId(state.generic) },
     };
   }
+  const receiptId = requiredReceiptId(state.generic);
+  const presentation =
+    parsed.event !== undefined && isChatPayload(parsed.event)
+      ? countedChatPresentation(
+          parsed.presentation,
+          parsed.event,
+          notificationState,
+          receiptId,
+        )
+      : parsed.presentation;
   return {
     kind: "visible",
-    presentation: parsed.presentation,
+    presentation,
     commit: {
       kind: "visible",
       route,
       event: parsed.event,
-      tag: parsed.presentation.options.tag,
-      receiptId: requiredReceiptId(state.generic),
+      tag: presentation.options.tag,
+      receiptId,
     },
   };
 }
@@ -512,17 +534,17 @@ async function commitPushDelivery(commit: PushCommit): Promise<void> {
     await recordShownNotification(commit.tag, commit.event);
     if (commit.event !== undefined && isChatPayload(commit.event)) {
       await storePushedMessage(commit.route, commit.event);
-    }
-    if (commit.tag !== undefined) {
-      await closeSupersededFallbackNotifications(
-        registrationNotifications,
-        commit.tag,
-        commit.receiptId,
-        pendingFallbacks,
-      );
+      if (commit.tag !== undefined) {
+        await closeSupersededConversationNotifications(
+          registrationNotifications,
+          commit.tag,
+          commit.receiptId,
+          pendingReceipts,
+        );
+      }
     }
   } finally {
-    pendingFallbacks.delete(commit.receiptId);
+    pendingReceipts.delete(commit.receiptId);
   }
 }
 
@@ -575,12 +597,12 @@ async function showRegistrationNotification(
   title: string,
   options: NotificationOptions,
 ): Promise<void> {
-  const fallbackId = notificationFallbackId({ data: options.data });
-  if (fallbackId !== undefined) pendingFallbacks.add(fallbackId);
+  const receiptId = notificationReceiptId({ data: options.data });
+  if (receiptId !== undefined) pendingReceipts.add(receiptId);
   try {
     await presentRegistrationNotification(title, options);
   } catch (error: unknown) {
-    if (fallbackId !== undefined) pendingFallbacks.delete(fallbackId);
+    if (receiptId !== undefined) pendingReceipts.delete(receiptId);
     throw error;
   }
 }
@@ -597,7 +619,7 @@ function presentRegistrationNotification(
     return Promise.reject(new Error("injected notification failure"));
   }
   const tag = options.tag ?? "";
-  if (tag.length > 0) {
+  if (harnessTagReplacement && tag.length > 0) {
     for (const notification of [...harnessNotifications]) {
       if (notification.tag === tag) notification.close();
     }
@@ -617,9 +639,10 @@ function presentRegistrationNotification(
 }
 
 function registrationNotifications(): Promise<Notification[]> {
-  return __PUSH_EVENT_HARNESS__
+  const request = __PUSH_EVENT_HARNESS__
     ? Promise.resolve([...harnessNotifications])
     : worker.registration.getNotifications();
+  return withNotificationScanDeadline(request);
 }
 
 async function replaceFallbackNotification(
@@ -631,15 +654,15 @@ async function replaceFallbackNotification(
   );
 }
 
-function notificationFallbackId(notification: {
+function notificationReceiptId(notification: {
   readonly data: unknown;
 }): string | undefined {
   const data: unknown = notification.data;
   return typeof data === "object" &&
     data !== null &&
-    "fallbackId" in data &&
-    typeof data.fallbackId === "string"
-    ? data.fallbackId
+    "receiptId" in data &&
+    typeof data.receiptId === "string"
+    ? data.receiptId
     : undefined;
 }
 
@@ -714,20 +737,86 @@ function pushEnvelope(value: unknown): {
   };
 }
 
-async function findRoute(routeId: string): Promise<StoredRoute | undefined> {
+async function findRouteContext(routeId: string): Promise<
+  | {
+      readonly route: StoredRoute;
+      readonly notificationState: NotificationState;
+    }
+  | undefined
+> {
   const database = await openPushDatabase();
   try {
-    const transaction = database.transaction(pushRoutesStore, "readonly");
-    const route = await requestResult(
-      transaction
-        .objectStore(pushRoutesStore)
-        .index(pushRouteIdIndex)
-        .get(routeId),
+    const transaction = database.transaction(
+      [pushRoutesStore, pushStateStore],
+      "readonly",
     );
+    const [route, notificationState] = await Promise.all([
+      requestResult(
+        transaction
+          .objectStore(pushRoutesStore)
+          .index(pushRouteIdIndex)
+          .get(routeId),
+      ),
+      requestResult(
+        transaction.objectStore(pushStateStore).get(notificationCountsKey),
+      ),
+    ]);
     await transactionDone(transaction);
-    return route === undefined ? undefined : decodeStoredRoute(route);
+    return route === undefined
+      ? undefined
+      : {
+          route: decodeStoredRoute(route),
+          notificationState: decodeNotificationState(notificationState),
+        };
   } finally {
     database.close();
+  }
+}
+
+function countedChatPresentation(
+  presentation: PushPresentation,
+  event: Extract<ParsedPushEvent, { type: "message" | "notice" | "action" }>,
+  state: NotificationState,
+  receiptId: string,
+): PushPresentation {
+  const tag = presentation.options.tag;
+  if (tag === undefined) return presentation;
+  recordPresentedNotification(state, {
+    tag,
+    messageId: event.msgid,
+    messageTime: event.time,
+  });
+  const counted = withNotificationCount(
+    presentation,
+    conversationNotificationCount(state, tag),
+  );
+  const data = counted.options.data;
+  return {
+    ...counted,
+    options: {
+      ...counted.options,
+      data:
+        typeof data === "object" && data !== null
+          ? { ...data, receiptId }
+          : { receiptId },
+    },
+  };
+}
+
+async function withNotificationScanDeadline<T>(
+  request: Promise<T>,
+): Promise<T> {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    deadline = setTimeout(
+      () => reject(new Error("notification scan timed out")),
+      notificationScanDeadlineMs,
+    );
+  });
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    if (deadline !== undefined) clearTimeout(deadline);
   }
 }
 

@@ -153,6 +153,43 @@ test("re-shows a duplicate msgid without incrementing its badge", async ({
   await expect.poll(() => storedAppBadge(page)).toBe(1);
 });
 
+test("collapses a busy DM without native tag replacement", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  const scope = await preparePushEventHarness(context, page);
+  const envelopes = await seedRouteAndEncryptMany(page, [
+    "@time=2026-11-05T12:34:56.787Z;msgid=iris-one :iris!i@example.test PRIVMSG weblounge :first from iris",
+    "@time=2026-11-05T12:34:56.788Z;msgid=iris-two :iris!i@example.test PRIVMSG weblounge :second from iris",
+    "@time=2026-11-05T12:34:56.789Z;msgid=iris-three :iris!i@example.test PRIVMSG weblounge :latest from iris",
+  ]);
+
+  for (const envelope of envelopes) {
+    await deliverBrowserPush(
+      browserName,
+      context,
+      page,
+      scope,
+      envelope,
+      0,
+      false,
+    );
+  }
+
+  await expect
+    .poll(() => notifications(page, scope))
+    .toEqual([
+      {
+        title: "iris",
+        body: "latest from iris\n· 3 new messages",
+        tag: "Lounge/iris",
+        route: "/Lounge/@iris",
+      },
+    ]);
+  await expect.poll(() => storedAppBadge(page)).toBe(3);
+});
+
 test("serializes concurrent pushes without closing either notification", async ({
   context,
   page,
@@ -992,13 +1029,19 @@ async function deliverBrowserPush(
   scope: string,
   data: string,
   presentationFailures = 0,
+  tagReplacement = true,
 ): Promise<void> {
   if (browserName === "chromium" && scope === "/") {
     await deliverPush(context, page, data);
     return;
   }
   await page.evaluate(
-    async ({ payload, presentationFailures, registrationScope }) => {
+    async ({
+      payload,
+      presentationFailures,
+      registrationScope,
+      tagReplacement,
+    }) => {
       const registration =
         await navigator.serviceWorker.getRegistration(registrationScope);
       if (registration?.active === null || registration?.active === undefined) {
@@ -1040,10 +1083,16 @@ async function deliverBrowserPush(
           id,
           payload,
           presentationFailures,
+          tagReplacement,
         });
       });
     },
-    { payload: data, presentationFailures, registrationScope: scope },
+    {
+      payload: data,
+      presentationFailures,
+      registrationScope: scope,
+      tagReplacement,
+    },
   );
 }
 
