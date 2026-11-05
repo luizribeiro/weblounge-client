@@ -239,8 +239,12 @@ handlers. On `push`, inside one `waitUntil`:
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. For a visible payload, establish one successful `showNotification` before any further database
    work. A rejected presentation retries with 50–250 ms backoff inside one receipt-anchored
-   two-second budget. Exhaustion is logged and releases the receipt-order chain; presentation state
-   prevents a detailed and deadline fallback attempt from both succeeding.
+   two-second budget. Exhaustion is logged and releases the receipt-order chain. Each generic
+   deadline fallback carries a private per-receipt marker. If detailed content becomes presentable
+   after that fallback, the worker captures the marked notification, shows the detailed
+   notification and then closes the fallback, all within the original push event. Failure to find
+   or show the replacement leaves the already-presented fallback in place. This keeps iOS's
+   immediate presentation guarantee while ensuring only one notification survives the delivery.
    Chat notification data includes
    its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
    re-shows the same conversation tag so tag-capable platforms replace the prior notification. A

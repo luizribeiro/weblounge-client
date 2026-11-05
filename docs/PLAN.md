@@ -4,6 +4,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 - [x] Keep Chromium's full-chain push injector attached for the serial lifecycle, so ending a CDP
   session cannot discard a queued service-worker delivery before its `waitUntil` work begins.
+- [x] Replace a receipt-deadline push fallback when its detailed notification becomes presentable,
+  without risking the already-visible fallback or double-counting its badge.
 - [x] Keep independent push-reopen coverage scoped to its own route endpoint, regardless of Ergo's
   subscription ordering or retained endpoints from other scenarios.
 - [x] Keep active push routes through app-open connection transients: unsupported snapshots are
