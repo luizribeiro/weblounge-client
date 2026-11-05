@@ -214,51 +214,99 @@ test.describe("full unmocked push lifecycle", () => {
       await otherContext.close();
     }
   });
+});
 
-  test("re-grants permission, rotates keys, and recovers a refused REGISTER", async () => {
-    await page.bringToFront();
-    await closeNotifications(page);
-    await releaseForegroundLeases([page]);
-    const previousEndpoints = await audit.pushSubscriptionEndpoints();
-    expect(previousEndpoints).toHaveLength(2);
-    const direct = `registration refusal ${randomUUID()}`;
-    await bot.privmsgConfirmed("weblounge", direct);
-    const record = await nextRecord("/device/a");
-    const envelope = JSON.parse(
-      await decryptRecordedEnvelope(page, record),
-    ) as { notification: { data: { c: string } } };
-    const ciphertext = envelope.notification.data.c;
-    envelope.notification.data.c = `${ciphertext.startsWith("A") ? "B" : "A"}${ciphertext.slice(1)}`;
-    await deliverPush(context, page, JSON.stringify(envelope));
-    await expect.poll(() => routeNeedsReregistration(page)).toBe(true);
+test.describe("independent push recovery", () => {
+  test.skip(!enabled, "requires the local push E2E VM");
 
-    const refusal = await fetch(`${relayControl}/test/refuse-next-push`, {
-      method: "POST",
-    });
-    expect(refusal.status).toBe(204);
-    await page.evaluate(() => localStorage.removeItem("push-e2e-permission"));
-    await page.goto("/");
-    await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-    await page.getByRole("button", { name: "Turn on" }).click();
-    let currentEndpoints: readonly string[] = [];
-    await expect
-      .poll(async () => {
-        currentEndpoints = await audit.pushSubscriptionEndpoints();
-        return {
-          count: currentEndpoints.length,
-          retained: currentEndpoints.filter((endpoint) =>
-            previousEndpoints.includes(endpoint),
-          ).length,
-        };
-      })
-      .toEqual({ count: 2, retained: 1 });
-    await expectOneRoutePerDevice(2);
+  test("re-grants permission, rotates keys, and recovers a refused REGISTER", async ({
+    browser,
+  }) => {
+    await switchToCurrentBuild();
+    const context = await pushContext(browser, "registration-refusal");
+    const page = await context.newPage();
+    const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
+    const bot = await IrcClient.connectIsolated(
+      `push-bot-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    try {
+      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+      const endpointsBefore = await audit.pushSubscriptionEndpoints();
+      await page.goto("/");
+      await expect(connectionHeading(page)).toBeVisible();
+      await page.getByRole("button", { name: "Turn on" }).click();
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          return created === undefined
+            ? undefined
+            : { active: created.active, probing: created.probing };
+        })
+        .toEqual({ active: 1, probing: 0 });
+      const deviceCount = (await relayStates()).length;
+      await expectOneRoutePerDevice(deviceCount);
+      await closeNotifications(page);
+      await releaseForegroundLeases([page]);
+      await expect
+        .poll(() => audit.pushSubscriptionEndpoints())
+        .toHaveLength(endpointsBefore.length + 1);
+      const previousEndpoints = await audit.pushSubscriptionEndpoints();
+      const direct = `registration refusal ${randomUUID()}`;
+      await bot.privmsgConfirmed("weblounge", direct);
+      const record = await nextRecord("/device/registration-refusal");
+      const envelope = JSON.parse(
+        await decryptRecordedEnvelope(page, record),
+      ) as { notification: { data: { c: string } } };
+      const ciphertext = envelope.notification.data.c;
+      envelope.notification.data.c = `${ciphertext.startsWith("A") ? "B" : "A"}${ciphertext.slice(1)}`;
+      await deliverPush(context, page, JSON.stringify(envelope));
+      await expect.poll(() => routeNeedsReregistration(page)).toBe(true);
+
+      const refusal = await fetch(`${relayControl}/test/refuse-next-push`, {
+        method: "POST",
+      });
+      expect(refusal.status).toBe(204);
+      await page.evaluate(() => localStorage.removeItem("push-e2e-permission"));
+      await page.goto("/");
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        1,
+      );
+      await page.getByRole("button", { name: "Turn on" }).click();
+      let currentEndpoints: readonly string[] = [];
+      await expect
+        .poll(async () => {
+          currentEndpoints = await audit.pushSubscriptionEndpoints();
+          return {
+            count: currentEndpoints.length,
+            retained: currentEndpoints.filter((endpoint) =>
+              previousEndpoints.includes(endpoint),
+            ).length,
+          };
+        })
+        .toEqual({
+          count: previousEndpoints.length,
+          retained: previousEndpoints.length - 1,
+        });
+      await expectOneRoutePerDevice(deviceCount);
+    } finally {
+      bot.close();
+      audit.close();
+      await context.close();
+    }
   });
+});
+
+test.describe("independent portable push controls", () => {
+  test.skip(!enabled, "requires the local push E2E VM");
 
   test("keeps portable control messages silent", async ({
     browser,
     browserName,
   }) => {
+    await switchToCurrentBuild();
     const deviceId = `controls-${browserName}`;
     const controlContext = await pushContext(
       browser,
@@ -270,6 +318,7 @@ test.describe("full unmocked push lifecycle", () => {
       `control-bot-${randomUUID().slice(0, 8)}`,
       "#push-e2e",
     );
+    const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
     try {
       const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await control.goto("/");
@@ -313,16 +362,22 @@ test.describe("full unmocked push lifecycle", () => {
       );
       expect(controlStayedSilent).toBe(true);
     } finally {
+      audit.close();
       controlBot.close();
       await controlContext.close();
     }
   });
+});
+
+test.describe("independent Apple badge recovery", () => {
+  test.skip(!enabled, "requires the local push E2E VM");
 
   test("corrects a stale Apple badge when the app opens", async ({
     browser,
     browserName,
   }) => {
     test.skip(browserName !== "webkit", "models iOS WebKit badge recovery");
+    await switchToCurrentBuild();
     const deviceId = "ios-badge-stale";
     const iosContext = await pushContext(browser, deviceId);
     await iosContext.addInitScript(installAppBadgeSpy);
@@ -331,6 +386,7 @@ test.describe("full unmocked push lifecycle", () => {
       `ios-badge-bot-${randomUUID().slice(0, 8)}`,
       "#push-e2e",
     );
+    const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
     try {
       const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await ios.goto("/");
@@ -372,6 +428,7 @@ test.describe("full unmocked push lifecycle", () => {
         })
         .toBe(true);
     } finally {
+      audit.close();
       iosBot.close();
       await iosContext.close();
     }
