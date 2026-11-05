@@ -138,9 +138,7 @@ export function MobileScreen(props: MobileScreenProps) {
           buffer={buffer() as BufferProjection}
           hydrating={props.hydrating}
           commandSpecs={props.commandSpecs}
-          {...(composerNotice() === undefined
-            ? {}
-            : { composerNotice: composerNotice() })}
+          composerNotice={composerNotice()}
           {...(props.completion === undefined
             ? {}
             : { completion: props.completion })}

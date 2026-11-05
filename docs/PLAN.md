@@ -2,6 +2,8 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep mobile transcript anchoring synchronous when resolving per-buffer send-failure notices,
+  so composer resizing and cold or warm keyboard motion finish at the live edge.
 - [x] Keep an installed iOS PWA's foreground lease authoritative while its visible page reports a
   false focus signal, so a blur from the keyboard or system chrome cannot release a lease and
   present burst DMs already visible in the open conversation. The real Ergo/relay/worker journey
