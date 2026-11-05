@@ -49,7 +49,7 @@ export function observeKeyboardMotion(
   root: HTMLElement,
   browserWindow: Window,
   {
-    enabled = keyboardMotionEnabled || __KEYBOARD_MOTION_TEST_ENABLED__,
+    enabled = keyboardMotionEnabled || testMotionEnabled(browserWindow),
     prefersReducedMotion = () => false,
   }: KeyboardMotionOptions = {},
 ): () => void {
@@ -290,6 +290,13 @@ export function observeKeyboardMotion(
     opening = undefined;
     closingSnapshot = undefined;
   };
+}
+
+function testMotionEnabled(browserWindow: Window): boolean {
+  return (
+    __KEYBOARD_MOTION_TEST_ENABLED__ &&
+    new URLSearchParams(browserWindow.location.search).has("keyboard-motion")
+  );
 }
 
 function viewportHeight(browserWindow: Window): number {

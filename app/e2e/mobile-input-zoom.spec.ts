@@ -352,11 +352,34 @@ test.describe("mobile text field zoom", () => {
     }
   });
 
-  test("animates cold and warm keyboard motion over one-step layout", async ({
+  test("does not mount keyboard motion while the experiment is disabled", async ({
     page,
   }) => {
     await installVisualViewportHook(page);
     await openChannel(page);
+    const root = page.locator("#root");
+    const openHeight = (await page.evaluate(() => innerHeight)) - 358;
+
+    await page
+      .getByRole("textbox", { name: "Message #weblounge-test" })
+      .focus();
+    await page.evaluate(
+      (height) => window.__setVisualViewport?.(height),
+      openHeight,
+    );
+
+    await expect(root).toHaveAttribute("data-keyboard", "open");
+    await expect(root).not.toHaveAttribute("data-keyboard-motion");
+    await expect(
+      page.locator("[data-keyboard-transcript-snapshot]"),
+    ).toHaveCount(0);
+  });
+
+  test("animates cold and warm keyboard motion over one-step layout", async ({
+    page,
+  }) => {
+    await installVisualViewportHook(page);
+    await openChannel(page, "&keyboard-motion=1");
     const suffix = Date.now().toString(36);
     const bots = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
@@ -449,7 +472,7 @@ test.describe("mobile text field zoom", () => {
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await installVisualViewportHook(page);
-    await openChannel(page);
+    await openChannel(page, "&keyboard-motion=1");
     const suffix = Date.now().toString(36);
     const bot = await IrcClient.connect(
       `reduced-${suffix}`,
@@ -488,7 +511,7 @@ test.describe("mobile text field zoom", () => {
   }) => {
     await installPausedKeyboardAnimations(page);
     await installVisualViewportHook(page);
-    await openChannel(page);
+    await openChannel(page, "&keyboard-motion=1");
     const suffix = Date.now().toString(36);
     const bots = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>

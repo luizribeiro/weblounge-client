@@ -420,6 +420,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     post-`willCommit` layout-height read while retaining the synchronous live-edge pin; frame-by-frame
     WebKit coverage protects pixels, hit targets, clock lead, and close anchoring (awaiting a new
     on-device video before re-enabling).
+  - [x] Keep the disabled keyboard-motion experiment disabled in the E2E harness too. Motion-specific
+    journeys opt in explicitly; default WebKit coverage proves viewport commits never mount a
+    keyboard snapshot that could intercept unrelated taps (#104).
   - [x] Update papo to `0070f15`: typed IRC names now select display spelling or folded storage
     keys explicitly. DM storage uses the folded account when known and the folded nick otherwise,
     preserving one buffer, draft, read position, and closed-buffer record through account discovery;

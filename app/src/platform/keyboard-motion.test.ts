@@ -211,6 +211,10 @@ describe("keyboard motion", () => {
 
     expect(fixture.composerAnimate).not.toHaveBeenCalled();
     expect(fixture.transcriptAnimate).not.toHaveBeenCalled();
+    expect(
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+    ).toBeNull();
+    expect(fixture.root.dataset.keyboardMotion).toBeUndefined();
     stop();
   });
 });
