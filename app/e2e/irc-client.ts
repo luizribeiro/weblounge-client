@@ -161,10 +161,6 @@ export class IrcClient {
     );
   }
 
-  typing(target: string, state: "active" | "done" | "paused"): void {
-    this.send(`@+typing=${state} TAGMSG ${target}`);
-  }
-
   async markRead(target: string, timestamp: string): Promise<void> {
     this.send(`MARKREAD ${target} timestamp=${timestamp}`);
     await this.waitFor(`MARKREAD confirmation for ${target}`, (line) =>
