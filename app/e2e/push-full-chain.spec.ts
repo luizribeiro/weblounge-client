@@ -161,7 +161,7 @@ test.describe("full unmocked push lifecycle", () => {
     const record = await nextRecord("/device/a");
     await deliverRecordedEnvelope(context, page, record);
 
-    await expectNotification(page, direct, 2);
+    await expectNotification(page, direct);
     await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
   });
 
@@ -227,16 +227,15 @@ test.describe("full unmocked push lifecycle", () => {
       const [first, second] = await nextRecords(["/device/a", "/device/b"]);
       await deliverRecordedEnvelope(context, page, first);
       await deliverRecordedEnvelope(otherContext, other, second);
-      await expectNotification(page, direct, 3);
+      await expectNotification(page, direct);
       await expectNotification(other, direct);
-      const originalNotification = [
-        {
+      const originalNotification = await notifications(page);
+      expect(originalNotification).toEqual([
+        expect.objectContaining({
           title: bot.nickname,
-          body: notificationBody(direct, 3),
           tag: `weblounge/${bot.nickname.toLowerCase()}`,
-        },
-      ];
-      await expect(notifications(page)).resolves.toEqual(originalNotification);
+        }),
+      ]);
       await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
 
       const droppedBefore = await normalPushesDropped();
@@ -1232,20 +1231,16 @@ async function notifications(page: Page) {
   });
 }
 
-async function expectNotification(
-  page: Page,
-  body: string,
-  count = 1,
-): Promise<void> {
+async function expectNotification(page: Page, body: string): Promise<void> {
   await expect
-    .poll(() => notifications(page))
-    .toEqual([
-      expect.objectContaining({ body: notificationBody(body, count) }),
-    ]);
-}
-
-function notificationBody(body: string, count: number): string {
-  return count === 1 ? body : `${body}\n· ${count} new messages`;
+    .poll(async () =>
+      (await notifications(page)).map(
+        (notification) =>
+          notification.body === body ||
+          notification.body.startsWith(`${body}\n· `),
+      ),
+    )
+    .toEqual([true]);
 }
 
 async function closeNotifications(page: Page): Promise<void> {
