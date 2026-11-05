@@ -1,5 +1,7 @@
 import { notificationDataIsRead } from "./push-notification-state";
 
+const notificationScanLimit = 64;
+
 interface CloseableNotification {
   readonly data: unknown;
   close(): void | Promise<void>;
@@ -16,11 +18,20 @@ interface NotificationIdentity {
   readonly messageTime: string;
 }
 
+interface ConversationIdentity {
+  readonly conversationTag?: string;
+  readonly fallbackId?: string;
+  readonly messageId?: string;
+  readonly messageTime?: string;
+  readonly receiptId?: string;
+}
+
 export async function closeNotificationsCoveredByMarkers(
   notifications: () => Promise<readonly CloseableNotification[]>,
   readMarkers: ReadonlyMap<string, number>,
 ): Promise<void> {
-  const candidates = await notifications();
+  const candidates = await notificationSnapshot(notifications);
+  const currentNotifications = await notificationSnapshot(notifications);
   for (const candidate of candidates) {
     const identity = notificationIdentity(candidate.data);
     if (
@@ -29,7 +40,7 @@ export async function closeNotificationsCoveredByMarkers(
     ) {
       continue;
     }
-    const current = (await notifications()).find((notification) =>
+    const current = currentNotifications.find((notification) =>
       sameNotification(notification.data, identity),
     );
     if (
@@ -47,7 +58,8 @@ export async function closeSupersededFallbackNotifications(
   currentReceiptId: string,
   pendingFallbacks: ReadonlySet<string>,
 ): Promise<void> {
-  const candidates = await notifications();
+  const candidates = await notificationSnapshot(notifications);
+  const currentNotifications = await notificationSnapshot(notifications);
   for (const candidate of candidates) {
     const identity = fallbackIdentity(candidate.data);
     if (
@@ -58,11 +70,50 @@ export async function closeSupersededFallbackNotifications(
     ) {
       continue;
     }
-    const current = (await notifications()).find((notification) =>
+    const current = currentNotifications.find((notification) =>
       sameFallback(notification.data, identity),
     );
     if (current !== undefined) await current.close();
   }
+}
+
+export async function closeSupersededConversationNotifications(
+  notifications: () => Promise<readonly CloseableNotification[]>,
+  conversationTag: string,
+  currentReceiptId: string,
+  pendingReceipts: ReadonlySet<string>,
+): Promise<void> {
+  const candidates = await notificationSnapshot(notifications);
+  const currentNotifications = await notificationSnapshot(notifications);
+  const relatedFallbacks = new Set(
+    currentNotifications.flatMap((notification) => {
+      const identity = conversationIdentity(notification.data);
+      return identity?.conversationTag === conversationTag &&
+        identity.fallbackId !== undefined
+        ? [identity.fallbackId]
+        : [];
+    }),
+  );
+  for (const candidate of candidates) {
+    const identity = conversationIdentity(candidate.data);
+    if (
+      identity === undefined ||
+      !belongsToConversation(identity, conversationTag, relatedFallbacks) ||
+      isProtectedReceipt(identity, currentReceiptId, pendingReceipts)
+    ) {
+      continue;
+    }
+    const current = currentNotifications.find((notification) =>
+      sameConversationNotification(notification.data, identity),
+    );
+    if (current !== undefined) await current.close();
+  }
+}
+
+async function notificationSnapshot(
+  notifications: () => Promise<readonly CloseableNotification[]>,
+): Promise<readonly CloseableNotification[]> {
+  return (await notifications()).slice(0, notificationScanLimit);
 }
 
 function notificationIdentity(data: unknown): NotificationIdentity | undefined {
@@ -121,5 +172,67 @@ function sameFallback(data: unknown, identity: FallbackIdentity): boolean {
     current !== undefined &&
     current.conversationTag === identity.conversationTag &&
     current.fallbackId === identity.fallbackId
+  );
+}
+
+function conversationIdentity(data: unknown): ConversationIdentity | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const identity: ConversationIdentity = {
+    ...stringField(data, "conversationTag"),
+    ...stringField(data, "fallbackId"),
+    ...stringField(data, "messageId"),
+    ...stringField(data, "messageTime"),
+    ...stringField(data, "receiptId"),
+  };
+  return Object.keys(identity).length === 0 ? undefined : identity;
+}
+
+function stringField(
+  data: object,
+  key: keyof ConversationIdentity,
+): Partial<ConversationIdentity> {
+  const value = Reflect.get(data, key);
+  return typeof value === "string" ? { [key]: value } : {};
+}
+
+function belongsToConversation(
+  identity: ConversationIdentity,
+  conversationTag: string,
+  relatedFallbacks: ReadonlySet<string>,
+): boolean {
+  return (
+    identity.conversationTag === conversationTag ||
+    (identity.conversationTag === undefined &&
+      identity.fallbackId !== undefined &&
+      relatedFallbacks.has(identity.fallbackId))
+  );
+}
+
+function isProtectedReceipt(
+  identity: ConversationIdentity,
+  currentReceiptId: string,
+  pendingReceipts: ReadonlySet<string>,
+): boolean {
+  if (identity.receiptId === undefined) return false;
+  const detailed = identity.conversationTag !== undefined;
+  return (
+    detailed &&
+    (identity.receiptId === currentReceiptId ||
+      pendingReceipts.has(identity.receiptId))
+  );
+}
+
+function sameConversationNotification(
+  data: unknown,
+  identity: ConversationIdentity,
+): boolean {
+  const current = conversationIdentity(data);
+  return (
+    current !== undefined &&
+    current.conversationTag === identity.conversationTag &&
+    current.fallbackId === identity.fallbackId &&
+    current.messageId === identity.messageId &&
+    current.messageTime === identity.messageTime &&
+    current.receiptId === identity.receiptId
   );
 }

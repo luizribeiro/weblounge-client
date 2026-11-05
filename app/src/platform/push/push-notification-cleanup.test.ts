@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   closeNotificationsCoveredByMarkers,
+  closeSupersededConversationNotifications,
   closeSupersededFallbackNotifications,
 } from "./push-notification-cleanup";
 
@@ -85,6 +86,97 @@ describe("push notification cleanup", () => {
     expect(future.close).not.toHaveBeenCalled();
     expect(other.close).not.toHaveBeenCalled();
   });
+
+  it("keeps the current and newer receipts while closing older conversation notifications", async () => {
+    const old = conversationNotification(tag, "old", "old-message");
+    const current = conversationNotification(tag, "current", "current-message");
+    const newer = conversationNotification(tag, "newer", "newer-message");
+    const other = conversationNotification(
+      "Lounge/#other",
+      "other",
+      "other-message",
+    );
+    const visible = [old, current, newer, other];
+
+    await closeSupersededConversationNotifications(
+      async () => visible,
+      tag,
+      "current",
+      new Set(["current", "newer"]),
+    );
+
+    expect(old.close).toHaveBeenCalledOnce();
+    expect(current.close).not.toHaveBeenCalled();
+    expect(newer.close).not.toHaveBeenCalled();
+    expect(other.close).not.toHaveBeenCalled();
+  });
+
+  it("closes a tag-less deadline fallback after its detail is visible", async () => {
+    const fallback = {
+      data: { fallbackId: "current", receiptId: "current" },
+      close: vi.fn(),
+    };
+    const detail = {
+      data: {
+        conversationTag: tag,
+        fallbackId: "current",
+        messageId: "current-message",
+        messageTime: "2026-11-04T19:24:34.000Z",
+        receiptId: "current",
+      },
+      close: vi.fn(),
+    };
+
+    await closeSupersededConversationNotifications(
+      async () => [fallback, detail],
+      tag,
+      "current",
+      new Set(["current"]),
+    );
+
+    expect(fallback.close).toHaveBeenCalledOnce();
+    expect(detail.close).not.toHaveBeenCalled();
+  });
+
+  it("does not close an identity replaced between its two bounded snapshots", async () => {
+    const old = conversationNotification(tag, "old", "old-message");
+    const replacement = conversationNotification(
+      tag,
+      "replacement",
+      "replacement-message",
+    );
+    const snapshots = [[old], [replacement]];
+
+    await closeSupersededConversationNotifications(
+      async () => snapshots.shift() ?? [replacement],
+      tag,
+      "current",
+      new Set(["current"]),
+    );
+
+    expect(old.close).not.toHaveBeenCalled();
+    expect(replacement.close).not.toHaveBeenCalled();
+  });
+
+  it("stops at the item bound without closing the current notification", async () => {
+    const older = Array.from({ length: 65 }, (_, index) =>
+      conversationNotification(tag, `old-${index}`, `old-message-${index}`),
+    );
+    const current = conversationNotification(tag, "current", "current-message");
+
+    await closeSupersededConversationNotifications(
+      async () => [...older, current],
+      tag,
+      "current",
+      new Set(["current"]),
+    );
+
+    expect(
+      older.filter(({ close }) => close.mock.calls.length > 0),
+    ).toHaveLength(64);
+    expect(older.at(-1)?.close).not.toHaveBeenCalled();
+    expect(current.close).not.toHaveBeenCalled();
+  });
 });
 
 function notification(messageId: string, messageTime: string) {
@@ -97,6 +189,22 @@ function notification(messageId: string, messageTime: string) {
 function fallbackNotification(conversationTag: string, fallbackId: string) {
   return {
     data: { conversationTag, fallbackId },
+    close: vi.fn(),
+  };
+}
+
+function conversationNotification(
+  conversationTag: string,
+  receiptId: string,
+  messageId: string,
+) {
+  return {
+    data: {
+      conversationTag,
+      messageId,
+      messageTime: "2026-11-04T19:24:34.000Z",
+      receiptId,
+    },
     close: vi.fn(),
   };
 }
