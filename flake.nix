@@ -17,7 +17,7 @@
       flake = false;
     };
     crane.url = "github:ipetkov/crane";
-    weblounge-client-previous.url = "github:luizribeiro/weblounge-client/3252cde0a0221c58dc7f54e78efeb49cf226efd5";
+    weblounge-client-previous.url = "github:luizribeiro/weblounge-client/e8adc9993d7e28092df643bc1ee31b9302b3a35d";
   };
 
   outputs =
