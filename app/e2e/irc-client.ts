@@ -233,18 +233,23 @@ export class IrcClient {
     this.#nickname = nickname;
   }
 
-  async waitForNickDeparture(nickname: string, channel: string): Promise<void> {
-    const present = this.#lines.some((line) =>
+  async waitForNickDeparture(nickname: string): Promise<void> {
+    const isStatus = (line: string, numeric: "730" | "731") =>
+      line.includes(` ${numeric} `) &&
       line
-        .split(` = ${channel} :`)[1]
-        ?.split(" ")
-        .some((member) => member.replace(/^[~&@%+]*/u, "") === nickname),
+        .split(/[ ,]/u)
+        .some((entry) => entry.replace(/^:/u, "").split("!")[0] === nickname);
+    const isOnline = (line: string) => isStatus(line, "730");
+    const isOffline = (line: string) => isStatus(line, "731");
+    this.#discardLines((line) => isOnline(line) || isOffline(line));
+    this.send(`MONITOR + ${nickname}`);
+    const status = await this.waitFor(
+      `MONITOR status for ${nickname}`,
+      (line) => isOnline(line) || isOffline(line),
     );
-    if (!present) return;
-    await this.waitFor(
-      `QUIT from ${nickname}`,
-      (line) => line.includes(`:${nickname}!`) && line.includes(" QUIT "),
-    );
+    if (isOnline(status)) {
+      await this.waitFor(`MONITOR offline status for ${nickname}`, isOffline);
+    }
   }
 
   async part(channel: string): Promise<void> {

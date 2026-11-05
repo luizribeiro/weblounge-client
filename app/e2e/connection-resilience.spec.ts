@@ -422,7 +422,7 @@ async function setAppAlwaysOn(enabled: boolean): Promise<void> {
   );
   try {
     if (client.nickname !== "weblounge") {
-      await client.waitForNickDeparture("weblounge", channel);
+      await client.waitForNickDeparture("weblounge");
       await client.nick("weblounge");
     }
     await client.setAlwaysOn(enabled);

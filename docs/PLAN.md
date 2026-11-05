@@ -13,8 +13,8 @@ The single place a fresh session reads to know where the project stands. Update 
   session cannot discard a queued service-worker delivery before its `waitUntil` work begins.
 - [x] Replace a receipt-deadline push fallback when its detailed notification becomes presentable,
   without risking the already-visible fallback or double-counting its badge.
-- [x] Register the resilience fixture's account-settings connection under its own nick, wait for
-  any still-closing app socket to quit, then take the account nick after SASL completes.
+- [x] Gate the resilience fixture's account-settings nick takeover on authoritative MONITOR state,
+  so buffered or replayed QUIT lines cannot release a still-connected app nick.
 - [x] Keep independent push-reopen coverage scoped to its own route endpoint, regardless of Ergo's
   subscription ordering or retained endpoints from other scenarios.
 - [x] Keep active push routes through app-open connection transients: unsupported snapshots are
