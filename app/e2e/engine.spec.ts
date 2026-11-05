@@ -136,6 +136,66 @@ test.describe("local Ergo user flow", () => {
     }
   });
 
+  test("keeps a reconnecting direct failure out of channels", async ({
+    context,
+    page,
+  }) => {
+    const suffix = Date.now().toString().slice(-6);
+    const bot = await IrcClient.connect(
+      `resume-dm-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      fixtureChannel,
+    );
+    try {
+      await page.setViewportSize({ height: 874, width: 402 });
+      await page.goto("/?irc-password=weblounge-test");
+      await expect(
+        page.getByRole("heading", { name: fixtureChannel }),
+      ).toBeVisible();
+      const opening = `open before reconnect ${suffix}`;
+      await bot.privmsgConfirmed("weblounge", opening);
+      await page.getByRole("button", { name: "Toggle channel list" }).click();
+      const direct = page.getByRole("button", {
+        name: new RegExp(`^${bot.nickname}`),
+      });
+      await expect(direct).toBeVisible();
+      await direct.click();
+      await expect(page.getByText(opening, { exact: true })).toBeVisible();
+
+      await context.setOffline(true);
+      const queued = `queued before peer leaves ${suffix}`;
+      const composer = page.getByRole("textbox", {
+        name: `Message ${bot.nickname}`,
+      });
+      await composer.fill(queued);
+      await composer.press("Enter");
+      await expect(page.getByText(queued, { exact: true })).toBeVisible();
+      bot.close();
+      await bot.waitForDisconnect();
+
+      await context.setOffline(false);
+      await page.evaluate(() => {
+        const event = new Event("pageshow");
+        Object.defineProperty(event, "persisted", { value: true });
+        window.dispatchEvent(event);
+      });
+      const gone = page.getByText(
+        /That person left or the nickname now belongs/u,
+      );
+      await expect(gone).toBeVisible();
+
+      await page.getByRole("button", { name: "Toggle channel list" }).click();
+      await page.getByRole("button", { name: fixtureChannel }).click();
+      await expect(
+        page.getByRole("heading", { name: fixtureChannel }),
+      ).toBeVisible();
+      await expect(gone).toHaveCount(0);
+    } finally {
+      bot.close();
+    }
+  });
+
   test("opens a cached direct with an active typing peer on mobile", async ({
     baseURL,
     context,
