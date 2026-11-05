@@ -42,7 +42,6 @@ test("registers the app-shell worker only in production", async ({ page }) => {
 });
 
 test("launches the shell and engine from cache with the origin offline", async ({
-  context,
   page,
 }) => {
   test.skip(
@@ -55,116 +54,129 @@ test("launches the shell and engine from cache with the origin offline", async (
       value: undefined,
     });
   });
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
-  await expect.poll(() => activeWorkerState(page)).toBe("activated");
-  await expect
-    .poll(() =>
-      page.evaluate(() => navigator.serviceWorker.controller !== null),
-    )
-    .toBe(true);
-  expect(
-    await page.evaluate(async () => {
-      const requests = await Promise.all(
-        (await caches.keys()).map(async (name) =>
-          (await caches.open(name)).keys(),
-        ),
-      );
-      return requests
-        .flat()
-        .some((request) => new URL(request.url).pathname === "/config.json");
-    }),
-  ).toBe(false);
-  await page.addInitScript(() => {
-    Reflect.set(globalThis, "offlineSawSplash", false);
-    Reflect.set(globalThis, "offlineWorkers", []);
-    const NativeWorker = Worker;
-    Object.defineProperty(globalThis, "Worker", {
-      configurable: true,
-      value: new Proxy(NativeWorker, {
-        construct(target, argumentsList) {
-          const workers = Reflect.get(globalThis, "offlineWorkers");
-          if (Array.isArray(workers)) workers.push(String(argumentsList[0]));
-          return Reflect.construct(target, argumentsList);
-        },
-      }),
-    });
-    const observer = new MutationObserver(() => {
-      if (document.querySelector("[data-initial-splash]") !== null) {
-        Reflect.set(globalThis, "offlineSawSplash", true);
-        observer.disconnect();
-      }
-    });
-    observer.observe(document, { childList: true, subtree: true });
-  });
-
-  await context.setOffline(true);
-  await page.reload();
-
-  await expect(page.getByRole("heading", { name: "weblounge" })).toBeVisible();
-  expect(
-    await page.evaluate(() => Reflect.get(globalThis, "offlineSawSplash")),
-  ).toBe(true);
-  expect(
-    await page.evaluate(() => Reflect.get(globalThis, "offlineWorkers")),
-  ).toEqual([
-    expect.stringMatching(/\/assets\/engine\.dedicated-worker-[^/]+\.js$/u),
-  ]);
-  expect(
-    await page.evaluate(async () => {
-      const names = await caches.keys();
-      const requests = await Promise.all(
-        names
-          .filter((name) => name.startsWith("weblounge-shell-"))
-          .map(async (name) => (await caches.open(name)).keys()),
-      );
-      return requests.flat().some((request) => request.url.endsWith(".wasm"));
-    }),
-  ).toBe(true);
-  expect(
-    await page.evaluate(async () => {
-      const names = await caches.keys();
-      const requests = await Promise.all(
-        names
-          .filter((name) => name.startsWith("weblounge-shell-"))
-          .map(async (name) => (await caches.open(name)).keys()),
-      );
-      return requests
-        .flat()
-        .some((request) =>
-          new URL(request.url).pathname.startsWith("/startup/"),
+  const origin = await offlineBuildServer();
+  try {
+    await page.goto(origin.origin);
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    await expect.poll(() => activeWorkerState(page)).toBe("activated");
+    await expect
+      .poll(() =>
+        page.evaluate(() => navigator.serviceWorker.controller !== null),
+      )
+      .toBe(true);
+    expect(
+      await page.evaluate(async () => {
+        const requests = await Promise.all(
+          (await caches.keys()).map(async (name) =>
+            (await caches.open(name)).keys(),
+          ),
         );
-    }),
-  ).toBe(false);
+        return requests
+          .flat()
+          .some((request) => new URL(request.url).pathname === "/config.json");
+      }),
+    ).toBe(false);
+    await page.addInitScript(() => {
+      Reflect.set(globalThis, "offlineSawSplash", false);
+      Reflect.set(globalThis, "offlineWorkers", []);
+      const NativeWorker = Worker;
+      Object.defineProperty(globalThis, "Worker", {
+        configurable: true,
+        value: new Proxy(NativeWorker, {
+          construct(target, argumentsList) {
+            const workers = Reflect.get(globalThis, "offlineWorkers");
+            if (Array.isArray(workers)) workers.push(String(argumentsList[0]));
+            return Reflect.construct(target, argumentsList);
+          },
+        }),
+      });
+      const observer = new MutationObserver(() => {
+        if (document.querySelector("[data-initial-splash]") !== null) {
+          Reflect.set(globalThis, "offlineSawSplash", true);
+          observer.disconnect();
+        }
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    });
+
+    origin.goOffline();
+    await page.reload();
+
+    await expect(
+      page.getByRole("heading", { name: "weblounge" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => Reflect.get(globalThis, "offlineSawSplash")),
+    ).toBe(true);
+    expect(
+      await page.evaluate(() => Reflect.get(globalThis, "offlineWorkers")),
+    ).toEqual([
+      expect.stringMatching(/\/assets\/engine\.dedicated-worker-[^/]+\.js$/u),
+    ]);
+    expect(
+      await page.evaluate(async () => {
+        const names = await caches.keys();
+        const requests = await Promise.all(
+          names
+            .filter((name) => name.startsWith("weblounge-shell-"))
+            .map(async (name) => (await caches.open(name)).keys()),
+        );
+        return requests.flat().some((request) => request.url.endsWith(".wasm"));
+      }),
+    ).toBe(true);
+    expect(
+      await page.evaluate(async () => {
+        const names = await caches.keys();
+        const requests = await Promise.all(
+          names
+            .filter((name) => name.startsWith("weblounge-shell-"))
+            .map(async (name) => (await caches.open(name)).keys()),
+        );
+        return requests
+          .flat()
+          .some((request) =>
+            new URL(request.url).pathname.startsWith("/startup/"),
+          );
+      }),
+    ).toBe(false);
+  } finally {
+    await origin.close();
+  }
 });
 
 test("uses network HTML online and the cached shell offline", async ({
-  context,
   page,
 }) => {
   test.skip(
     development,
     "the service worker is intentionally disabled in development",
   );
-  await page.goto("/");
-  await expect.poll(() => activeWorkerState(page)).toBe("activated");
-  await expect
-    .poll(() =>
-      page.evaluate(() => navigator.serviceWorker.controller !== null),
-    )
-    .toBe(true);
+  const origin = await offlineBuildServer();
+  try {
+    await page.goto(origin.origin);
+    await expect.poll(() => activeWorkerState(page)).toBe("activated");
+    await expect
+      .poll(() =>
+        page.evaluate(() => navigator.serviceWorker.controller !== null),
+      )
+      .toBe(true);
 
-  await poisonCachedIndex(page);
-  await page.reload();
-  await expect(page.locator('meta[name="cached-shell-sentinel"]')).toHaveCount(
-    0,
-  );
+    await poisonCachedIndex(page);
+    await page.reload();
+    await expect(
+      page.locator('meta[name="cached-shell-sentinel"]'),
+    ).toHaveCount(0);
 
-  await context.setOffline(true);
-  await page.reload();
-  await expect(page.locator('meta[name="cached-shell-sentinel"]')).toHaveCount(
-    1,
-  );
+    origin.goOffline();
+    await page.reload();
+    await expect(
+      page.locator('meta[name="cached-shell-sentinel"]'),
+    ).toHaveCount(1);
+  } finally {
+    await origin.close();
+  }
 });
 
 test("upgrades the last deployed build and preserves its active push route", async ({
@@ -628,6 +640,7 @@ async function swappableBuildServer(previous: string): Promise<{
 
 async function emergencyConfigServer(): Promise<{
   readonly origin: string;
+  goOffline(): void;
   serveClient(client?: {
     readonly min_build?: string;
     readonly reset_token?: string;
@@ -644,7 +657,12 @@ async function emergencyConfigServer(): Promise<{
   let navigationCount = 0;
   let configRequestCount = 0;
   let sessionRequestCount = 0;
+  let offline = false;
   const server = createServer((request, response) => {
+    if (offline) {
+      request.socket.destroy();
+      return;
+    }
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname === "/config.json") {
       configRequestCount += 1;
@@ -707,6 +725,10 @@ async function emergencyConfigServer(): Promise<{
   const origin = `http://127.0.0.1:${address.port}`;
   return {
     origin,
+    goOffline: () => {
+      offline = true;
+      server.closeAllConnections();
+    },
     serveClient: (client) => {
       config = {
         mode: "hosted",
@@ -737,6 +759,10 @@ async function emergencyConfigServer(): Promise<{
       );
     },
   };
+}
+
+function offlineBuildServer() {
+  return emergencyConfigServer();
 }
 
 async function makeWritable(path: string): Promise<void> {

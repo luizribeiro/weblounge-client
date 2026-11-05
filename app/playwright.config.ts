@@ -64,6 +64,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-service-worker",
+      grep: /launches the shell and engine from cache|uses network HTML online and the cached shell offline/,
+      testMatch: "**/service-worker.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "firefox-routing",
       testMatch: "**/routing.spec.ts",
       use: { browserName: "firefox" },

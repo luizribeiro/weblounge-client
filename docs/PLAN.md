@@ -543,6 +543,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     active controller before exercising delivery or the first shell interaction. Keyboard
     diagnostics stay click-through until their first trace frame so the expanded overlay cannot
     cover the mobile chat that starts one.
+  - [x] Prove Firefox offline launch against a real origin outage. Playwright's Firefox offline
+    override can satisfy reload from the ordinary HTTP cache instead of exercising the worker's
+    Cache Storage fallback; the outage-backed shell and stale-shell checks now run in Firefox CI.
   - [x] Retire stale push routes without discarding their decryption keys, retry relay cleanup on
     launch, unregister replaced endpoints at the home, and keep route identity independent of the
     engine's per-run network handles. Push parser loads recover after cache failures; worker tests
