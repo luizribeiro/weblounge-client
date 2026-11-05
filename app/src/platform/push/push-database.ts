@@ -93,17 +93,18 @@ export async function migrateLegacyPushDatabase(
 ): Promise<void> {
   if (await migrationComplete(database, deadlineMs)) return;
   const legacy = await openLegacyPushDatabase(factory, deadlineMs);
-  const routes =
-    legacy === undefined ? [] : await readRoutes(legacy, deadlineMs);
-  const badge =
-    legacy === undefined
-      ? undefined
-      : await readState(legacy, appBadgeKey, deadlineMs);
-  const counts =
-    legacy === undefined
-      ? undefined
-      : await readState(legacy, notificationCountsKey, deadlineMs);
-  legacy?.close();
+  let routes: readonly unknown[] = [];
+  let badge: unknown;
+  let counts: unknown;
+  if (legacy !== undefined) {
+    try {
+      routes = await readRoutes(legacy, deadlineMs);
+      badge = await readState(legacy, appBadgeKey, deadlineMs);
+      counts = await readState(legacy, notificationCountsKey, deadlineMs);
+    } finally {
+      legacy.close();
+    }
+  }
   const current = await readRoutes(database, deadlineMs);
   const selected = selectRoutes([...routes, ...current]);
   await writeMigration(database, selected, badge, counts, deadlineMs);
@@ -198,6 +199,7 @@ function openLegacyPushDatabase(
         return;
       }
       settled = true;
+      request.result.onversionchange = () => request.result.close();
       resolve(request.result);
     };
     request.onblocked = () => {
