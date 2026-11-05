@@ -415,12 +415,16 @@ async function connectBot(label: string): Promise<IrcClient> {
 
 async function setAppAlwaysOn(enabled: boolean): Promise<void> {
   const client = await IrcClient.connect(
-    "weblounge",
+    "always-on-control",
     "weblounge",
     "weblounge-test",
     channel,
   );
   try {
+    if (client.nickname !== "weblounge") {
+      await client.waitForNickDeparture("weblounge", channel);
+      await client.nick("weblounge");
+    }
     await client.setAlwaysOn(enabled);
   } finally {
     client.close();

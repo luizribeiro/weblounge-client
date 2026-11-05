@@ -233,6 +233,20 @@ export class IrcClient {
     this.#nickname = nickname;
   }
 
+  async waitForNickDeparture(nickname: string, channel: string): Promise<void> {
+    const present = this.#lines.some((line) =>
+      line
+        .split(` = ${channel} :`)[1]
+        ?.split(" ")
+        .some((member) => member.replace(/^[~&@%+]*/u, "") === nickname),
+    );
+    if (!present) return;
+    await this.waitFor(
+      `QUIT from ${nickname}`,
+      (line) => line.includes(`:${nickname}!`) && line.includes(" QUIT "),
+    );
+  }
+
   async part(channel: string): Promise<void> {
     this.send(`PART ${channel} :screenshot seed complete`);
     await this.waitFor(`PART confirmation for ${channel}`, (line) =>
