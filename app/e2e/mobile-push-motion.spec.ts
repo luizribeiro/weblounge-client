@@ -3,8 +3,8 @@ import { emulateStandalone } from "./mobile-platform";
 import {
   durationMs,
   expectDistanceScaledTransition,
+  expectEqualAtDevicePixelPrecision,
   expectNoTransformOrTransition,
-  expectStepsFollowCurve,
   expectTransitionMatches,
   hasIntermediatePosition,
   type TransitionStyle,
@@ -149,12 +149,14 @@ interface PanDispatch {
 interface PanResult {
   readonly base: number;
   readonly chatLeft: number | null;
+  readonly chatTransformX: number | null;
   readonly devicePixelRatio: number;
 }
 
 interface Settle {
   readonly devicePixelRatio: number;
   readonly releaseLeft: number;
+  readonly releaseTransformX: number;
   readonly frames: readonly Frame[];
 }
 
@@ -181,9 +183,15 @@ function dispatchPan({ base, release, steps }: PanDispatch): PanResult {
     shell.dispatchEvent(event);
   });
   const chat = document.querySelector("[data-mobile-chat]")?.parentElement;
+  const transform =
+    chat === null || chat === undefined
+      ? null
+      : getComputedStyle(chat).transform;
   return {
     base: start,
     chatLeft: chat?.getBoundingClientRect().left ?? null,
+    chatTransformX:
+      transform === null ? null : new DOMMatrixReadOnly(transform).m41,
     devicePixelRatio: window.devicePixelRatio,
   };
 }
@@ -212,6 +220,7 @@ async function swipeAndRelease(
     devicePixelRatio: drag.devicePixelRatio,
     frames: frames.slice(released),
     releaseLeft: drag.chatLeft ?? Number.NaN,
+    releaseTransformX: drag.chatTransformX ?? Number.NaN,
   };
 }
 
@@ -238,18 +247,14 @@ function expectSettlesFromFinger(
   );
   const transitioning = moving.filter((frame) => frame.motion !== null);
   expect(
-    transitioning.every((frame) => frame.transformElapsedMs !== null),
+    transitioning.every((frame) => frame.transformStartProgress !== null),
   ).toBe(true);
-  expectStepsFollowCurve(
-    transitioning.map((frame) => ({
-      position: left(frame),
-      time: frame.transformElapsedMs ?? Number.NaN,
-    })),
-    { position: releaseLeft, time: 0 },
-    restingLeft,
-    transitionFrame.transition,
-    settle.devicePixelRatio,
-  );
+  for (const frame of transitioning)
+    expectEqualAtDevicePixelPrecision(
+      (frame.transformStartProgress ?? Number.NaN) * width,
+      settle.releaseTransformX,
+      settle.devicePixelRatio,
+    );
   const final = settle.frames.at(-1)?.transformEndLeft ?? Number.NaN;
   expect(Math.abs(final - restingLeft)).toBeLessThan(1.5);
   expect(settle.frames.at(-1)?.transformEndElapsedMs).toBeCloseTo(
@@ -278,7 +283,7 @@ interface Frame {
   readonly motion: string | null;
   readonly shadow: string | null;
   readonly shadowOpacity: number;
-  readonly transformElapsedMs: number | null;
+  readonly transformStartProgress: number | null;
   readonly transformEndElapsedMs: number | null;
   readonly transformEndLeft: number | null;
   readonly tokens: {
@@ -343,13 +348,24 @@ async function recordMotion(
           "[data-mobile-chat]",
         )?.parentElement;
       const chatLeft = chat?.getBoundingClientRect().left ?? null;
-      const transformTime = chat
+      const transformTransition = chat
         ?.getAnimations()
         .find(
           (animation) =>
             animation instanceof CSSTransition &&
             animation.transitionProperty === "transform",
-        )?.currentTime;
+        );
+      // WebKit's accelerated bounding geometry and cached animation time can
+      // represent different frames. The generated start keyframe directly
+      // records the transform from which the browser runs this transition.
+      const transformStart =
+        transformTransition?.effect instanceof KeyframeEffect
+          ? transformTransition.effect.getKeyframes()[0]?.transform
+          : undefined;
+      const transformStartMatch =
+        typeof transformStart === "string"
+          ? /^translate3d\((-?\d*\.?\d+)%, 0px, 0px\)$/.exec(transformStart)
+          : null;
       const list = document.querySelector<HTMLElement>("[data-mobile-chats]");
       const rect = list?.getBoundingClientRect();
       const motion = chat?.dataset.motion ?? null;
@@ -388,8 +404,10 @@ async function recordMotion(
         motion,
         shadow: shadow?.content === "none" ? null : (shadow?.boxShadow ?? null),
         shadowOpacity: Number(shadow?.opacity ?? 0),
-        transformElapsedMs:
-          typeof transformTime === "number" ? transformTime : null,
+        transformStartProgress:
+          transformStartMatch === null
+            ? null
+            : Number(transformStartMatch[1]) / 100,
         transformEndElapsedMs: recording.transformEndElapsedMs,
         transformEndLeft: recording.transformEndLeft,
         tokens: {
