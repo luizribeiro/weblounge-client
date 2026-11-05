@@ -316,28 +316,38 @@ describe("push delivery coordination", () => {
   });
 
   it("keeps an immediate preparation failure out of deadline replacement", async () => {
-    const presentations: string[] = [];
-    const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
-      fallbackDeadlineMs: 1_500,
-      presentationBudgetMs: 2_000,
-      generic: () => "replaceable generic",
-      finalFallback: () => "final generic",
-      fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
-      prepare: async () => {
-        throw new Error("invalid route keys");
-      },
-      present: async (presentation) => {
-        presentations.push(presentation);
-      },
-      replace: async () => false,
-      commit: async () => undefined,
-      reportError: () => undefined,
-      retryPrepare: () => false,
-    });
+    vi.useFakeTimers();
+    try {
+      const failPreparation = deferred<void>();
+      const presentations: string[] = [];
+      const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        generic: () => "replaceable generic",
+        finalFallback: () => "final generic",
+        fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
+        prepare: async () => {
+          await failPreparation.promise;
+          throw new Error("invalid route keys");
+        },
+        present: async (presentation) => {
+          presentations.push(presentation);
+        },
+        replace: async () => false,
+        commit: async () => undefined,
+        reportError: () => undefined,
+        retryPrepare: () => false,
+      });
 
-    await coordinator.enqueue({ id: "missing", kind: "visible" });
+      const delivery = coordinator.enqueue({ id: "missing", kind: "visible" });
+      await vi.advanceTimersByTimeAsync(1_499);
+      failPreparation.resolve();
+      await delivery;
 
-    expect(presentations).toEqual(["final generic"]);
+      expect(presentations).toEqual(["final generic"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports a commit failure without presenting or committing a fallback", async () => {
