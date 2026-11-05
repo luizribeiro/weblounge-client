@@ -161,6 +161,19 @@ export class IrcClient {
     );
   }
 
+  async waitForPrivmsg(
+    target: string,
+    text: string,
+    nickname: string,
+  ): Promise<void> {
+    await this.waitFor(
+      `PRIVMSG from ${nickname} to ${target}`,
+      (line) =>
+        line.includes(`:${nickname}!`) &&
+        line.includes(` PRIVMSG ${target} :${text}`),
+    );
+  }
+
   async markRead(target: string, timestamp: string): Promise<void> {
     this.send(`MARKREAD ${target} timestamp=${timestamp}`);
     await this.waitFor(`MARKREAD confirmation for ${target}`, (line) =>
@@ -220,6 +233,32 @@ export class IrcClient {
         line.includes(`+draft/reply=${messageId}`) &&
         line.includes(` TAGMSG ${target}`),
     );
+  }
+
+  async typingConfirmed(
+    target: string,
+    state: "active" | "paused" | "done",
+  ): Promise<void> {
+    this.send(`@+typing=${state} TAGMSG ${target}`);
+    await this.waitFor(`echoed ${state} typing state to ${target}`, (line) =>
+      isTypingLine(line, target, state, this.#nickname),
+    );
+  }
+
+  async waitForNextTyping(
+    target: string,
+    nickname: string,
+  ): Promise<"active" | "paused" | "done"> {
+    const line = await this.waitFor(`typing state from ${nickname}`, (entry) =>
+      isTypingLine(entry, target, undefined, nickname),
+    );
+    const state = /(?:^|;|@)\+typing=(active|paused|done)(?:;| )/u.exec(
+      line,
+    )?.[1];
+    if (state !== "active" && state !== "paused" && state !== "done") {
+      throw new Error(`Could not parse typing state: ${line}`);
+    }
+    return state;
   }
 
   async mode(target: string, change: string, nick?: string): Promise<void> {
@@ -352,6 +391,21 @@ export class IrcClient {
       );
     }
   }
+}
+
+function isTypingLine(
+  line: string,
+  target: string,
+  state: "active" | "paused" | "done" | undefined,
+  nickname: string,
+): boolean {
+  return (
+    (state === undefined
+      ? /(?:^|;|@)\+typing=(?:active|paused|done)(?:;| )/u.test(line)
+      : line.includes(`+typing=${state}`)) &&
+    line.includes(`:${nickname}!`) &&
+    line.includes(` TAGMSG ${target}`)
+  );
 }
 
 async function connectedSocket(): Promise<Socket> {
