@@ -21,6 +21,10 @@ The single place a fresh session reads to know where the project stands. Update 
   worker defines across both Vite passes and verifying its required listeners and import-free output.
 - [x] Converge duplicate relay routes server-side when a replacement activates, so stale home
   subscriptions receive 404 without affecting another device or pinned home.
+- [x] Harden the reviewed push redesign before deployment: bound failed service-worker update
+  waits, forward urgency, scope and acknowledge bounded dead-endpoint cleanup, preserve local keys
+  through relay failures, anchor fallback deadlines at receipt, and migrate deployed push state to
+  a new database without blocking on old pages.
 
 ## Status
 

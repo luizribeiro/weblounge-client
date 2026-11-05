@@ -147,8 +147,9 @@ probing ──(client: PUT /v1/routes/:id/active, after papo returns REGISTER su
   remain 404.
 - Probing routes expire after five minutes. Expiry, replacement, device takeover and upstream target
   death all turn their public endpoints into 404s and queue those endpoints for explicit home
-  cleanup. `GET /v1/devices/:id/dead-endpoints` drains the authenticated account's not-yet-purged
-  endpoints; the engine sends exact `WEBPUSH UNREGISTER` commands for them before registration.
+  cleanup. `GET /v1/devices/:id/dead-endpoints?home_vapid=...` offers at most five matching
+  endpoints without deleting them; the engine sends exact `WEBPUSH UNREGISTER` commands before
+  registration, then the page acknowledges the completed ids. Failed cleanup is offered again.
   Once a device has no routes left, the relay removes its target and retains only the credential
   tombstone needed to return 410 instead of letting stale clients recreate routes.
 
@@ -231,7 +232,7 @@ default of 0, so pushes are never delayed by the home.
 `app/service-worker.js` gains `push`, `notificationclick`, `pushsubscriptionchange` and `message`
 handlers. On `push`, inside one `waitUntil`:
 
-1. Look up the route (network label, buffer map) in the `weblounge-push` IndexedDB database.
+1. Look up the route (network label, buffer map) in the `weblounge-push-v2` IndexedDB database.
 2. Decrypt the inner payload with **WebCrypto**: ECDH with the non-extractable key, HKDF, AES-GCM
    (about 80 lines of TS). Rust can't reach a non-extractable key, so the Rust `ece` path is for
    native targets only.
@@ -245,10 +246,11 @@ handlers. On `push`, inside one `waitUntil`:
 5. After presentation, store the message (msgid, time, target, sender, text) in the engine's
    `Space::Cache` IndexedDB store, keyed so the engine reads it as part of the buffer's history,
    then persist and apply the badge count.
-6. Serialize push events. If route lookup, decryption or parsing has not produced a visible
-   presentation within 2.8 seconds, show the generic notification once and suppress all later
-   presentation or route writes from that delivery. IndexedDB opens, requests and transactions have
-   shorter deadlines, reject on `blocked`, close on every path and close on `versionchange`.
+6. Serialize push events, but give each delivery its own deadline when its push event is received.
+   If route lookup, decryption or parsing has not produced a visible presentation within two
+   seconds, show the generic notification once and suppress all later presentation or route writes
+   from that delivery. IndexedDB opens, requests and transactions have shorter deadlines, reject on
+   `blocked`, close on every path and close on `versionchange`.
 7. A decryption failure shows the generic "New message" for that network and marks the route for
    re-registration by re-reading the current route id inside its write transaction. Parser failures
    show generic without changing keys.
@@ -291,7 +293,7 @@ device]**.
 - **The app-icon badge** uses `navigator.setAppBadge` where it exists (installed Chrome/Edge PWAs
   on Windows and macOS, Safari 17 web apps, iOS 16.4+ home-screen apps). While a page is open it is
   the sum of `mentions` (the engine counts every DM as a mention, `state.rs:1834-1835`). With no
-  page open, the service worker increments a counter in `weblounge-push`; on launch the page
+  page open, the service worker increments a counter in `weblounge-push-v2`; on launch the page
   overwrites it with the engine's value.
 - The worker stores a notified count and latest read timestamp per conversation tag. Every delivered
   `MARKREAD` zeros that tag, closes only notifications whose server time is at or before the marker,
@@ -417,7 +419,7 @@ Where rules live is deferred (see Decisions).
   shows stored pushed messages and deduplicates them by `msgid`; owns badge counts and the mention classifier; never holds a private key or talks to the relay.
 - **Platform** (`app/src/platform/push/` on the web): asks for OS permission (from a user gesture
   on iOS and Firefox); creates the push subscription; talks to the relay; generates and stores
-  route keys in its own `weblounge-push` database, since the engine's byte store can't hold live
+  route keys in its own `weblounge-push-v2` database, since the engine's byte store can't hold live
   `CryptoKey`s; holds the lease; sets the app badge.
 - **UI:** one "Turn on notifications" affordance, shown when a network has `ConfigurePushAction`
   and this device hasn't decided; on iOS only in an installed PWA (Safari tabs get "Add to Home
@@ -427,7 +429,7 @@ Where rules live is deferred (see Decisions).
 - **Relay** (`crates/push-relay`, in this repo per `docs/design/README.md:37,144`; brief §3.10 makes
   it infrastructure run for every user; deployed from `~/weblounge`):
   - API: `POST /v1/devices`, `PUT /v1/devices/:id/target`, `DELETE /v1/devices/:id`,
-    `POST /v1/devices/:id/routes`, `GET /v1/devices/:id/dead-endpoints`,
+    `POST /v1/devices/:id/routes`, `GET` and `POST /v1/devices/:id/dead-endpoints`,
     `PUT /v1/routes/:id/active`, `DELETE /v1/routes/:id`, `POST /v1/devices/:id/lease`,
     `POST /v1/devices/:id/lease/release`, and the public `POST /v1/r/:route` for homes.
   - Device calls carry the device secret. Creating a device requires a concierge session token,
@@ -495,14 +497,17 @@ creates one relay device. Route creation, replacement, activation and deletion a
 per network so tabs sharing the engine cannot create competing relay routes. Cache storage may
 still fall back to memory, but Durable fails closed when IndexedDB is unavailable.
 
-The page owns `weblounge-push`, with one route record keyed by pinned home VAPID key. The page opens
-or migrates it only after a pending production service-worker update activates, so the previous
-worker never observes a primary-key schema it cannot read during an in-place upgrade. Each record
+The page owns `weblounge-push-v2`, with one route record keyed by pinned home VAPID key. A bounded,
+failure-tolerant service-worker update wait precedes push setup. The page and current worker create
+the new database directly, then copy routes and badge state by opening deployed `weblounge-push`
+without requesting a version change. A deployed page may therefore retain its old connection
+without blocking current push delivery; a missing old database is also valid. Each record
 contains its relay device id, current `NetworkId` and label, relay endpoint, public key, auth secret
 and a non-extractable ECDH private `CryptoKey`. Each route receives independently generated P-256
-and 16-byte auth material. Schema v4 migrates the route-id-keyed records deployed in build
-`3252cde0a0221c58dc7f54e78efeb49cf226efd5` by deterministically keeping one complete record per
-home; records without a device id or label are exact-unregistered and removed on first convergence.
+and 16-byte auth material. The one-time copy migrates route-id-keyed records deployed in build
+`3252cde0a0221c58dc7f54e78efeb49cf226efd5` by keeping one record per home, preferring an active
+record over a retiring duplicate and then a complete record. Records without a device id or label
+are exact-unregistered and removed on first convergence.
 
 On each eligible connection the engine emits one `PushRouteRequired` to the active shell. The page
 buffers it until setup is ready, upserts the browser target, calls the relay's idempotent
@@ -515,10 +520,11 @@ keep the current route and back off, and `web_push_forbidden` deletes the route 
 off. Relay 410 clears the dead device and re-upserts; 401 enters hosted reauthorization.
 
 The relay owns reconciliation and retires every duplicate live route for the same device and home.
-Its dead-endpoint drain lets the next `EnsurePush` exact-unregister those retired endpoints before
-REGISTER, so deployed records converge without consuming an Ergo slot. Hosted sign-out attempts
-every exact IRC unregister but always deletes the relay device and local records even when IRC is
-unavailable.
+Its dead-endpoint drain returns at most five endpoints for the requested home VAPID key. The page
+acknowledges only after the engine has exact-unregistered them, so failures are re-offered before a
+later REGISTER instead of losing cleanup work. Local legacy route keys likewise remain until the
+relay convergence call succeeds. Hosted sign-out attempts every exact IRC unregister but always
+deletes the relay device and local records even when IRC is unavailable.
 
 Every registration outcome carries the route id that produced it. The engine emits even an older
 generation's command result instead of silently dropping it, while only the current generation
@@ -644,7 +650,7 @@ credentials flow directly from existing durable storage or device creation into 
 page never polls.
 
 The app-icon badge is the unread count of direct buffers plus the mention count of other buffers.
-The page overwrites both the Badging API and a versioned `weblounge-push` counter from engine
+The page overwrites both the Badging API and a versioned `weblounge-push-v2` counter from engine
 projections; zero uses `clearAppBadge`. After showing a notification, the classic worker atomically
 increments that counter and applies it through its own Badging API. Both sides feature-detect and
 remain inert when the deployment has no `push` block. Urgency filtering, application rate limits,
