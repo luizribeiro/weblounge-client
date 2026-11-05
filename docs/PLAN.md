@@ -11,6 +11,14 @@ The single place a fresh session reads to know where the project stands. Update 
   retain it through cached/live buffer replacement, cancel WebKit's default click handling, and
   fall back from focus to navigation or a new window. Built-app Chromium and iPhone WebKit coverage
   opens the routed DM from open, discarded and closed states.
+- [x] Keep failed-send notices with their owning conversation, reserve the direct-target-gone copy
+  for direct sends, and let a failed initial history page end cached-list hydration without claiming
+  the buffer is synced. Production-profile mobile coverage restores a closed-app DM from cache while
+  its peer is actively typing, then proves the title settles and a reply confirms without the notice.
+- [ ] Papo question for Luiz: a non-shared direct can receive MONITOR `730` and an account-tagged
+  `+typing=active` TAGMSG for the expected account, then have `WHO nick %na` finish without a matching
+  `354`; pinned papo returns `TargetGone` from `who_account`. Add this as a papo-testing case and decide
+  whether the proven event identity should survive a missing WHOX row. WebLounge must not work around it.
 - [x] Join portable Firefox notification-ledger closes to the control push lifetime, so a worker
   cannot terminate after applying MARKREAD state but before publishing the cleared notification list.
 - [x] Prove released mobile swipes start from the finger through the CSS transition's generated
