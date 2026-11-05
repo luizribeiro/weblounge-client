@@ -6,6 +6,9 @@ The single place a fresh session reads to know where the project stands. Update 
   and close legacy migration connections on version changes and failed reads.
 - [x] Make late push fallback replacement condition-based instead of wall-clock-polled, and keep
   failed-preparation generics distinct without making them replacement candidates.
+- [x] Make late push fallback replacement atomic through a private native tag, so a dismissed or
+  unobservable fallback cannot stall its push or later receipt-ordered commits; tidy an older
+  private-tag replacement without letting an earlier push close the current or a newer push.
 - [x] Keep Chromium's full-chain push injector attached for the serial lifecycle, so ending a CDP
   session cannot discard a queued service-worker delivery before its `waitUntil` work begins.
 - [x] Replace a receipt-deadline push fallback when its detailed notification becomes presentable,

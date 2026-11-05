@@ -240,20 +240,25 @@ handlers. On `push`, inside one `waitUntil`:
 4. For a visible payload, establish one successful `showNotification` before any further database
    work. A rejected presentation retries with 50–250 ms backoff inside one receipt-anchored
    two-second budget. Exhaustion is logged and releases the receipt-order chain. Each generic has a
-   private per-receipt identity, while only a generic actually shown by the receipt deadline keeps
-   that identity as a replacement marker; a preparation failure that wins first produces a final,
-   non-replaceable generic. If detailed content becomes presentable after a deadline fallback, the
-   worker waits for that exact marked notification to become enumerable, without a wall-clock
-   polling cutoff, shows the detailed notification and then closes the fallback, all within the
-   original push event. The lookup begins only when replacement is needed, so it cannot contend
-   with another receipt's concurrent presentation. Failure to show the replacement leaves the
-   already-presented fallback in place. This keeps iOS's immediate presentation guarantee while
-   ensuring only one notification survives the delivery.
+   private per-receipt identity and native tag, while only a generic actually shown by the receipt
+   deadline keeps that identity as a replacement marker; a preparation failure that wins first
+   produces a final, non-replaceable generic. If detailed content becomes presentable after a
+   deadline fallback, the worker shows it with that same private native tag. The platform therefore
+   replaces the fallback atomically without notification enumeration; if the fallback was dismissed
+   or never became observable, the detailed notification is simply the one notification created.
+   Failure to show the replacement leaves the already-presented fallback in place. This keeps iOS's
+   immediate presentation guarantee, cannot hold the receipt-order chain in an observation loop and
+   ensures only one notification survives the delivery.
    Chat notification data includes
    its conversation tag, `msgid` and server time as well as the route. A duplicate chat `msgid`
    re-shows the same conversation tag so tag-capable platforms replace the prior notification. A
+   detailed notification that replaced a deadline fallback retains the private tag and records both
+   its logical conversation and fallback identity. After a subsequent visible notification for that
+   conversation commits, a bounded identity-revalidated scan closes older committed private-tag
+   replacements. The pending-receipt set protects both the current push and any newer concurrently
+   presented push from an earlier commit's cleanup. A
    decrypted `MARKREAD` or `PING` never calls `showNotification`; it only performs marker-bounded
-   cleanup. A visible push never performs cleanup before or after showing itself.
+   cleanup. A visible push otherwise performs no cleanup before or after showing itself.
 5. After presentation, store the message (msgid, time, target, sender, text) in the engine's
    `Space::Cache` IndexedDB store, keyed so the engine reads it as part of the buffer's history,
    then persist and apply the badge count.
