@@ -866,6 +866,7 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
     assert_eq!(states.0, StatusCode::OK);
     assert_eq!(states.1[0]["probing"], 1);
     assert_eq!(states.1[0]["leases"], 0);
+    assert_eq!(states.1[0]["held"], 0);
 
     let refusal = call_json(
         &harness.app,
@@ -893,6 +894,16 @@ async fn full_chain_controls_report_state_and_refuse_exactly_one_push() {
         StatusCode::CREATED
     );
     assert!(harness.deliveries.lock().expect("deliveries").is_empty());
+    let states = call_json(
+        &harness.app,
+        Method::GET,
+        "/test/device-states",
+        None,
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(states.1[0]["held"], 1);
     let expired = call_json(
         &harness.app,
         Method::POST,
