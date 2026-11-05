@@ -44,7 +44,7 @@ describe("push notification state storage", () => {
     await expect(total(factory)).resolves.toBe(1);
   });
 
-  it("applies MARKREAD after earlier messages and not to a later receipt", async () => {
+  it("does not count a delayed message already covered by MARKREAD", async () => {
     const factory = new IDBFactory();
     const marker = Date.parse(time);
     await record(factory, "before-read", time);
@@ -62,7 +62,12 @@ describe("push notification state storage", () => {
       ),
     ).toBe(true);
 
-    await record(factory, "after-read", time);
+    await record(factory, "delayed", time);
+    state = await readNotificationState(factory);
+    expect(notificationStateTotal(state)).toBe(0);
+    expect(state.readAtMs.get(tag)).toBe(marker);
+
+    await record(factory, "after-read", "2026-11-03T12:34:56.790Z");
     state = await readNotificationState(factory);
     expect(notificationStateTotal(state)).toBe(1);
     expect(state.readAtMs.has(tag)).toBe(false);

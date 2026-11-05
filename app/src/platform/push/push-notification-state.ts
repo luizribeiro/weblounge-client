@@ -43,6 +43,9 @@ export function recordPresentedNotification(
     Number.isNaN(messageTime)
   ) {
     conversation.unknown += 1;
+  } else if ((state.readAtMs.get(presented.tag) ?? -1) >= messageTime) {
+    state.conversations.set(presented.tag, conversation);
+    return;
   } else if (!conversation.messages.has(presented.messageId)) {
     conversation.messages.set(presented.messageId, messageTime);
   }
