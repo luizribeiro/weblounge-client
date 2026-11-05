@@ -2265,7 +2265,7 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
         } else {
             client.privmsg(channel, pending.text.clone()).await
         }
-        .map_err(|error| classify_send_error(&error)),
+        .map_err(|error| classify_send_error(&error, false)),
         SendTarget::Direct {
             nick,
             recipient,
@@ -2277,7 +2277,7 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
                     Err(papo::Error::PeerPinMismatch(mismatch)) => {
                         return Err(SendError::PeerPinMismatch(mismatch));
                     }
-                    Err(error) => return Err(classify_send_error(&error)),
+                    Err(error) => return Err(classify_send_error(&error, true)),
                 }
             } else if let Some(recipient) = recipient {
                 recipient
@@ -2292,14 +2292,14 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
                 }
             }
         }
-        .map_err(|error| classify_send_error(&error)),
+        .map_err(|error| classify_send_error(&error, true)),
     }
 }
 
-fn classify_send_error(error: &papo::Error) -> SendError {
+fn classify_send_error(error: &papo::Error, direct: bool) -> SendError {
     match error {
         papo::Error::Disconnected(_) => SendError::Offline,
-        papo::Error::TargetGone => SendError::DirectTargetGone,
+        papo::Error::TargetGone if direct => SendError::DirectTargetGone,
         _ => SendError::Protocol,
     }
 }
@@ -4679,11 +4679,11 @@ mod tests {
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL, PushRegistration,
         READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork, Runtime, RuntimeState,
-        attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
-        join_request_events, lock, next_connection_state, permanent_mark_read_error,
-        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
-        schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch,
-        state_limit_events, utf16_len,
+        attach_shell, classify_send_error, completion_context, connection_failure_notice,
+        drain_events, fetch_history, join_request_events, lock, next_connection_state,
+        permanent_mark_read_error, person_candidates, process_event, process_history,
+        queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
+        spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -8826,6 +8826,18 @@ async fn delay(duration: Duration) {
         for (name, error, expected) in cases {
             assert_eq!(permanent_mark_read_error(&error), expected, "{name}");
         }
+    }
+
+    #[test]
+    fn target_gone_copy_is_reserved_for_direct_sends() {
+        assert!(matches!(
+            classify_send_error(&papo::Error::TargetGone, true),
+            super::SendError::DirectTargetGone
+        ));
+        assert!(matches!(
+            classify_send_error(&papo::Error::TargetGone, false),
+            super::SendError::Protocol
+        ));
     }
 
     #[tokio::test(start_paused = true)]
