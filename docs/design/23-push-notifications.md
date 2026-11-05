@@ -250,7 +250,9 @@ handlers. On `push`, inside one `waitUntil`:
    If route lookup, decryption or parsing has not produced a visible presentation within two
    seconds, show the generic notification once and suppress all later presentation or route writes
    from that delivery. IndexedDB opens, requests and transactions have shorter deadlines, reject on
-   `blocked`, close on every path and close on `versionchange`.
+   `blocked`, close on every path and close on `versionchange`. If the browser rejects the first
+   presentation attempt, the fallback remains attached to `waitUntil` and retries at the same
+   receipt-anchored deadline instead of letting the worker stop early.
 7. A decryption failure shows the generic "New message" for that network and marks the route for
    re-registration by re-reading the current route id inside its write transaction. Parser failures
    show generic without changing keys.

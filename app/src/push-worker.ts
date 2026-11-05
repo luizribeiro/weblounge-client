@@ -100,6 +100,7 @@ const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
 let pushQueue = Promise.resolve();
 const harnessNotifications: Notification[] = [];
+let harnessPresentationFailures = 0;
 
 worker.importScripts("/push-payload.js");
 
@@ -117,6 +118,7 @@ worker.addEventListener("message", (event) => {
   const message = event as WorkerEvent & MessageEvent;
   const data: unknown = message.data;
   if (__PUSH_EVENT_HARNESS__ && isHarnessPush(data)) {
+    harnessPresentationFailures = data.presentationFailures ?? 0;
     const handled = queuePush({
       data: { json: () => JSON.parse(data.payload) },
     });
@@ -219,6 +221,7 @@ function isHarnessPush(value: unknown): value is {
   readonly type: "deliver_push";
   readonly id: string;
   readonly payload: string;
+  readonly presentationFailures?: number;
 } {
   return (
     typeof value === "object" &&
@@ -228,7 +231,11 @@ function isHarnessPush(value: unknown): value is {
     "id" in value &&
     typeof value.id === "string" &&
     "payload" in value &&
-    typeof value.payload === "string"
+    typeof value.payload === "string" &&
+    (!("presentationFailures" in value) ||
+      (typeof value.presentationFailures === "number" &&
+        Number.isSafeInteger(value.presentationFailures) &&
+        value.presentationFailures >= 0))
   );
 }
 
@@ -301,7 +308,7 @@ function schedulePushPresentation(): PushPresentationState {
   state.fallback = new Promise<void>((resolve) => {
     state.deadline = setTimeout(() => {
       state.expired = true;
-      void showOnce(state, state.generic).finally(resolve);
+      void retryPresentation(state).finally(resolve);
     }, pushNotificationDeadlineMs);
   });
   return state;
@@ -312,7 +319,7 @@ async function showPushNotification(
   state: PushPresentationState,
 ): Promise<void> {
   const detailed = preparePushNotification(event, state).catch(() =>
-    showOnce(state, state.generic),
+    showGenericOrWaitForFallback(state),
   );
   await Promise.race([detailed, state.fallback]);
   if (state.deadline !== undefined) clearTimeout(state.deadline);
@@ -324,6 +331,24 @@ async function showPushNotification(
         setTimeout(resolve, databaseDeadlineMs + 50),
       ),
     ]);
+  }
+}
+
+async function showGenericOrWaitForFallback(
+  state: PushPresentationState,
+): Promise<void> {
+  try {
+    await showOnce(state, state.generic);
+  } catch {
+    await state.fallback;
+  }
+}
+
+async function retryPresentation(state: PushPresentationState): Promise<void> {
+  try {
+    await showOnce(state, state.generic);
+  } catch {
+    await showOnce(state, state.generic).catch(() => undefined);
   }
 }
 
@@ -488,6 +513,10 @@ function showRegistrationNotification(
 ): Promise<void> {
   if (!__PUSH_EVENT_HARNESS__) {
     return worker.registration.showNotification(title, options);
+  }
+  if (harnessPresentationFailures > 0) {
+    harnessPresentationFailures -= 1;
+    return Promise.reject(new Error("injected notification failure"));
   }
   const tag = options.tag ?? "";
   if (tag.length > 0) {

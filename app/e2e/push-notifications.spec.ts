@@ -381,6 +381,20 @@ test("shows one generic notification when route keys are missing", async ({
     .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
 });
 
+test("retries the fallback while the push event keeps the worker alive", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  const scope = await preparePushEventHarness(context, page);
+
+  await deliverBrowserPush(browserName, context, page, scope, "{}", 1);
+
+  await expect
+    .poll(() => notifications(page, scope))
+    .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
+});
+
 test("anchors queued generic notifications to their receipt deadline", async ({
   context,
   page,
@@ -733,13 +747,14 @@ async function deliverBrowserPush(
   page: Page,
   scope: string,
   data: string,
+  presentationFailures = 0,
 ): Promise<void> {
-  if (browserName === "chromium") {
+  if (browserName === "chromium" && scope === "/") {
     await deliverPush(context, page, data);
     return;
   }
   await page.evaluate(
-    async ({ payload, registrationScope }) => {
+    async ({ payload, presentationFailures, registrationScope }) => {
       const registration =
         await navigator.serviceWorker.getRegistration(registrationScope);
       if (registration?.active === null || registration?.active === undefined) {
@@ -776,10 +791,15 @@ async function deliverBrowserPush(
           }
         };
         navigator.serviceWorker.addEventListener("message", onMessage);
-        registration.active.postMessage({ type: "deliver_push", id, payload });
+        registration.active.postMessage({
+          type: "deliver_push",
+          id,
+          payload,
+          presentationFailures,
+        });
       });
     },
-    { payload: data, registrationScope: scope },
+    { payload: data, presentationFailures, registrationScope: scope },
   );
 }
 

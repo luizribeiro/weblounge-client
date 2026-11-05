@@ -25,6 +25,9 @@ The single place a fresh session reads to know where the project stands. Update 
   waits, forward urgency, scope and acknowledge bounded dead-endpoint cleanup, preserve local keys
   through relay failures, anchor fallback deadlines at receipt, and migrate deployed push state to
   a new database without blocking on old pages.
+- [x] Close the full-CI push findings: keep a rejected notification attempt alive through its
+  fallback retry, preserve cleanup metadata in cold-history coverage, and make relay lifecycle log
+  coverage exercise a real legacy-route convergence while passing workspace rustfmt and clippy.
 
 ## Status
 
