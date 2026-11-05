@@ -595,7 +595,6 @@ impl Runtime {
         let snapshot = running.client.state();
         if let Some(reason) = push_unsupported_reason(&snapshot) {
             let push_state = PushState::Unsupported { reason };
-            running.push.route = None;
             running.push.state = Some(push_state.clone());
             return vec![
                 EngineToUi::PushStateChanged {
@@ -3364,6 +3363,9 @@ fn process_papo_event(
         }
         papo::Event::AccountChanged(changed) => {
             process_account_change(&mut running.model, &changed, output);
+            if changed.authorship == papo::Authorship::Own {
+                connected_push_action(running, snapshot, output);
+            }
             Vec::new()
         }
         papo::Event::Message(message) => {
@@ -9319,6 +9321,40 @@ async fn delay(duration: Duration) {
                     .is_some_and(|running| running.push.route.is_none())
             );
         }
+    }
+
+    #[tokio::test]
+    async fn late_account_confirmation_rechecks_push_registration() {
+        let (client, mut events, mut wire) = push_wire();
+        register_push_connection(&mut wire, Some("home-vapid"), false).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let runtime = Runtime { state, outbound };
+        process_runtime_event(&runtime, connected);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::PushStateChanged {
+                state: PushState::Unsupported {
+                    reason: crate::PushUnsupportedReason::NoAccount,
+                },
+                ..
+            }
+        )));
+
+        wire.server(":weblounge!u@host ACCOUNT account").await;
+        let account_changed = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::AccountChanged(changed) if changed.authorship == papo::Authorship::Own)
+        })
+        .await;
+        process_runtime_event(&runtime, account_changed);
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::PushRouteRequired { vapid, .. } if vapid == "home-vapid"
+        )));
     }
 
     #[tokio::test]
