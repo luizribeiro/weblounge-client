@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  schedulePushPresentation,
+  showOnce,
+} from "./platform/push/push-delivery-state";
+import {
   genericNotification,
   notificationForLine,
   type ParsedPushEvent,
@@ -26,6 +30,25 @@ it("retries loading the push parser after a cached failure", async () => {
     JSON.stringify({ type: "second" }),
   );
   expect(load).toHaveBeenCalledTimes(2);
+});
+
+describe("push delivery state", () => {
+  it("keeps a successful presentation live while persistence crosses its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const present = vi.fn(async (_value: string) => undefined);
+      const state = schedulePushPresentation<string>("generic", present, 2_000);
+
+      await showOnce(state, "detailed");
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(state.expired).toBe(false);
+      expect(state.shown).toBe(true);
+      expect(present).toHaveBeenCalledExactlyOnceWith("detailed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 const route = {

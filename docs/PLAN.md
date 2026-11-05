@@ -28,6 +28,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Close the full-CI push findings: keep a rejected notification attempt alive through its
   fallback retry, preserve cleanup metadata in cold-history coverage, and make relay lifecycle log
   coverage exercise a real legacy-route convergence while passing workspace rustfmt and clippy.
+- [x] Keep successful push presentation distinct from slower persistence: disarm its receipt
+  deadline once shown and retain every delivered badge increment.
 
 ## Status
 

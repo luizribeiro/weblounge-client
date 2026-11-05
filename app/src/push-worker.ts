@@ -18,6 +18,12 @@ import {
   decryptPushPayload,
 } from "./platform/push/push-decryption";
 import {
+  cancelPresentationDeadline,
+  type PushPresentationState,
+  schedulePushPresentation,
+  showOnce,
+} from "./platform/push/push-delivery-state";
+import {
   bufferPath,
   genericNotification,
   isChatPayload,
@@ -240,7 +246,7 @@ function isHarnessPush(value: unknown): value is {
 }
 
 function queuePush(pushEvent: PushPayloadEvent): Promise<void> {
-  const presentation = schedulePushPresentation();
+  const presentation = schedulePresentation();
   const handled = pushQueue.then(() =>
     showPushNotification(pushEvent, presentation),
   );
@@ -287,42 +293,25 @@ async function previousShellAssetResponse(request: Request): Promise<Response> {
   return cached ?? fetch(request);
 }
 
-interface PushPresentationState {
-  expired: boolean;
-  shown: boolean;
-  showing: Promise<void> | undefined;
-  generic: ReturnType<typeof genericNotification>;
-  fallback: Promise<void>;
-  deadline: ReturnType<typeof setTimeout> | undefined;
-}
-
-function schedulePushPresentation(): PushPresentationState {
-  const state: PushPresentationState = {
-    expired: false,
-    shown: false,
-    showing: undefined,
-    generic: genericNotification(),
-    fallback: Promise.resolve(),
-    deadline: undefined,
-  };
-  state.fallback = new Promise<void>((resolve) => {
-    state.deadline = setTimeout(() => {
-      state.expired = true;
-      void retryPresentation(state).finally(resolve);
-    }, pushNotificationDeadlineMs);
-  });
-  return state;
+function schedulePresentation(): PushPresentationState<
+  ReturnType<typeof genericNotification>
+> {
+  return schedulePushPresentation(
+    genericNotification(),
+    ({ title, options }) => showRegistrationNotification(title, options),
+    pushNotificationDeadlineMs,
+  );
 }
 
 async function showPushNotification(
   event: PushPayloadEvent,
-  state: PushPresentationState,
+  state: PushPresentationState<ReturnType<typeof genericNotification>>,
 ): Promise<void> {
   const detailed = preparePushNotification(event, state).catch(() =>
     showGenericOrWaitForFallback(state),
   );
   await Promise.race([detailed, state.fallback]);
-  if (state.deadline !== undefined) clearTimeout(state.deadline);
+  cancelPresentationDeadline(state);
   if (state.expired) {
     // wait-ok: bounded drain keeps timed-out storage work serialized.
     await Promise.race([
@@ -335,7 +324,7 @@ async function showPushNotification(
 }
 
 async function showGenericOrWaitForFallback(
-  state: PushPresentationState,
+  state: PushPresentationState<ReturnType<typeof genericNotification>>,
 ): Promise<void> {
   try {
     await showOnce(state, state.generic);
@@ -344,17 +333,9 @@ async function showGenericOrWaitForFallback(
   }
 }
 
-async function retryPresentation(state: PushPresentationState): Promise<void> {
-  try {
-    await showOnce(state, state.generic);
-  } catch {
-    await showOnce(state, state.generic).catch(() => undefined);
-  }
-}
-
 async function preparePushNotification(
   event: PushPayloadEvent,
-  state: PushPresentationState,
+  state: PushPresentationState<ReturnType<typeof genericNotification>>,
 ): Promise<void> {
   const envelope = pushEnvelope(event.data?.json());
   const route = await findRoute(envelope.routeId);
@@ -399,29 +380,10 @@ async function preparePushNotification(
       () => true,
     );
   }
-  if (recordNotification && !state.expired) {
+  if (recordNotification && state.shown) {
     await recordShownNotification(parsed.presentation.options.tag).catch(
       () => undefined,
     );
-  }
-}
-
-async function showOnce(
-  state: PushPresentationState,
-  presentation: ReturnType<typeof genericNotification>,
-): Promise<void> {
-  if (state.shown) return;
-  if (state.showing !== undefined) return state.showing;
-  const attempt = showRegistrationNotification(
-    presentation.title,
-    presentation.options,
-  );
-  state.showing = attempt;
-  try {
-    await attempt;
-    state.shown = true;
-  } finally {
-    state.showing = undefined;
   }
 }
 
