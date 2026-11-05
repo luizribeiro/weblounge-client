@@ -17,7 +17,7 @@ use serde::Serialize;
 const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
 const MAX_HELD_PUSHES_PER_ACCOUNT: u32 = 100;
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 const PROBING_ROUTE_TTL_SECONDS: i64 = 5 * 60;
 
 #[derive(Clone, Debug)]
@@ -68,6 +68,7 @@ pub(crate) struct HeldPush {
     pub target: WebPushTarget,
     pub body: Vec<u8>,
     pub ttl: u32,
+    pub urgency: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -537,6 +538,7 @@ impl Database {
         route_id: String,
         body: Vec<u8>,
         ttl: u32,
+        urgency: String,
         now: i64,
     ) -> Result<bool> {
         let path = Arc::clone(&self.path);
@@ -556,9 +558,9 @@ impl Database {
             )?;
             if leased {
                 transaction.execute(
-                    "INSERT INTO held_pushes (account, route_id, body, ttl, held_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![account, route_id, body, ttl, now],
+                    "INSERT INTO held_pushes (account, route_id, body, ttl, urgency, held_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![account, route_id, body, ttl, urgency, now],
                 )?;
                 let held_count = transaction.query_row(
                     "SELECT COUNT(*) FROM held_pushes WHERE account = ?1",
@@ -603,7 +605,8 @@ impl Database {
                 .query_row(
                     "SELECT held_pushes.id, routes.device_id, held_pushes.route_id,
                             devices.endpoint, devices.p256dh, devices.auth,
-                            held_pushes.body, held_pushes.ttl, held_pushes.held_at
+                            held_pushes.body, held_pushes.ttl, held_pushes.urgency,
+                            held_pushes.held_at
                      FROM held_pushes
                      JOIN routes ON routes.id = held_pushes.route_id
                      JOIN devices ON devices.id = routes.device_id
@@ -618,7 +621,7 @@ impl Database {
                     [now],
                     |row| {
                         let ttl = row.get::<_, u32>(7)?;
-                        let held_at = row.get::<_, i64>(8)?;
+                        let held_at = row.get::<_, i64>(9)?;
                         Ok(HeldPush {
                             id: row.get(0)?,
                             device_id: row.get(1)?,
@@ -630,6 +633,7 @@ impl Database {
                             },
                             body: row.get(6)?,
                             ttl: remaining_ttl(ttl, held_at, now),
+                            urgency: row.get(8)?,
                         })
                     },
                 )
@@ -685,6 +689,7 @@ fn migrate_schema(connection: &Connection, version: u32) -> Result<()> {
         0 => create_schema(connection)?,
         1 => migrate_schema_one(connection)?,
         2 => migrate_schema_two(connection)?,
+        3 => migrate_schema_three(connection)?,
         SCHEMA_VERSION => {}
         version => {
             return Err(Error::Config(format!(
@@ -716,7 +721,9 @@ fn create_schema(connection: &Connection) -> Result<()> {
          CREATE TABLE held_pushes (
            id INTEGER PRIMARY KEY, account TEXT NOT NULL,
            route_id TEXT NOT NULL REFERENCES routes(id), body BLOB NOT NULL,
-           ttl INTEGER NOT NULL, held_at INTEGER NOT NULL
+           ttl INTEGER NOT NULL,
+           urgency TEXT NOT NULL CHECK (urgency IN ('very-low', 'low', 'normal', 'high')),
+           held_at INTEGER NOT NULL
          );
          CREATE INDEX held_pushes_account ON held_pushes(account);
          CREATE TABLE retired_devices (
@@ -728,7 +735,7 @@ fn create_schema(connection: &Connection) -> Result<()> {
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
-         PRAGMA user_version = 3;
+         PRAGMA user_version = 4;
          COMMIT;",
     )?;
     Ok(())
@@ -744,7 +751,9 @@ fn migrate_schema_one(connection: &Connection) -> Result<()> {
          CREATE TABLE held_pushes (
            id INTEGER PRIMARY KEY, account TEXT NOT NULL,
            route_id TEXT NOT NULL REFERENCES routes(id), body BLOB NOT NULL,
-           ttl INTEGER NOT NULL, held_at INTEGER NOT NULL
+           ttl INTEGER NOT NULL,
+           urgency TEXT NOT NULL CHECK (urgency IN ('very-low', 'low', 'normal', 'high')),
+           held_at INTEGER NOT NULL
          );
          CREATE INDEX held_pushes_account ON held_pushes(account);
          CREATE TABLE retired_devices (
@@ -756,7 +765,7 @@ fn migrate_schema_one(connection: &Connection) -> Result<()> {
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
-         PRAGMA user_version = 3;
+         PRAGMA user_version = 4;
          COMMIT;",
     )?;
     Ok(())
@@ -781,7 +790,20 @@ fn migrate_schema_two(connection: &Connection) -> Result<()> {
            SELECT id FROM routes WHERE state = 'dead'
          );
          DELETE FROM routes WHERE state = 'dead';
-         PRAGMA user_version = 3;
+         ALTER TABLE held_pushes ADD COLUMN urgency TEXT NOT NULL DEFAULT 'normal'
+           CHECK (urgency IN ('very-low', 'low', 'normal', 'high'));
+         PRAGMA user_version = 4;
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+fn migrate_schema_three(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "BEGIN;
+         ALTER TABLE held_pushes ADD COLUMN urgency TEXT NOT NULL DEFAULT 'normal'
+           CHECK (urgency IN ('very-low', 'low', 'normal', 'high'));
+         PRAGMA user_version = 4;
          COMMIT;",
     )?;
     Ok(())
@@ -1111,7 +1133,7 @@ mod tests {
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         assert_eq!(journal, "wal");
         assert_eq!(mode, 0o600);
     }

@@ -31,13 +31,13 @@ use tracing_subscriber::fmt::MakeWriter;
 use url::Url;
 use weblounge_push_relay::{
     Concierge, Database, Delivery, DnsResolver, EndpointValidator, Error, Introspection,
-    PushOutcome, PushSender, Result, app_with_lease_ttl,
+    PushOutcome, PushSender, Result, Urgency, app_with_lease_ttl,
 };
 
 const ORIGIN: &str = "https://push.weblounge.test";
 const CLIENT_ORIGIN: &str = "https://beta.weblounge.test";
 const FIXTURE_ACCOUNT: &str = "private-account@example.test";
-type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32)>>>;
+type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32, Urgency)>>>;
 
 #[derive(Clone, Default)]
 struct LogCapture(Arc<Mutex<Vec<u8>>>);
@@ -111,6 +111,7 @@ impl PushSender for FakeSender {
             delivery.route_id().to_owned(),
             delivery.body().to_vec(),
             delivery.ttl(),
+            delivery.urgency(),
         ));
         self.delivered.notify_waiters();
         Ok(*self.outcome.lock().expect("outcome lock"))
@@ -454,33 +455,7 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
         StatusCode::CREATED
     );
 
-    let wrong_home = SecretKey::random(&mut OsRng);
-    assert_eq!(
-        harness
-            .push(&route, &wrong_home, b"secret-pin-payload")
-            .await,
-        StatusCode::UNAUTHORIZED
-    );
-    let no_jwt = call_bytes(
-        &harness.app,
-        Method::POST,
-        &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
-        None,
-        b"secret-jwt-payload".to_vec(),
-        &[("TTL", "60")],
-    )
-    .await;
-    assert_eq!(no_jwt, StatusCode::UNAUTHORIZED);
-    let oversized = call_bytes(
-        &harness.app,
-        Method::POST,
-        &format!("/v1/r/{}", route["id"].as_str().expect("route id")),
-        None,
-        vec![b'x'; 2_801],
-        &[],
-    )
-    .await;
-    assert_eq!(oversized, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_logged_push_rejections(&harness, &route).await;
 
     let converged_route = harness.create_route(&device, &home).await;
     harness.activate(&device, &converged_route).await;
@@ -533,6 +508,37 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
         converged_route,
         deleted_route,
     }
+}
+
+async fn assert_logged_push_rejections(harness: &Harness, route: &Value) {
+    let wrong_home = SecretKey::random(&mut OsRng);
+    assert_eq!(
+        harness
+            .push(route, &wrong_home, b"secret-pin-payload")
+            .await,
+        StatusCode::UNAUTHORIZED
+    );
+    let path = format!("/v1/r/{}", route["id"].as_str().expect("route id"));
+    let no_jwt = call_bytes(
+        &harness.app,
+        Method::POST,
+        &path,
+        None,
+        b"secret-jwt-payload".to_vec(),
+        &[("TTL", "60")],
+    )
+    .await;
+    assert_eq!(no_jwt, StatusCode::UNAUTHORIZED);
+    let oversized = call_bytes(
+        &harness.app,
+        Method::POST,
+        &path,
+        None,
+        vec![b'x'; 2_801],
+        &[],
+    )
+    .await;
+    assert_eq!(oversized, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
@@ -1236,6 +1242,7 @@ async fn probing_discards_then_active_verifies_vapid_and_passes_ttl() {
             route_id.to_owned(),
             b"opaque encrypted body".to_vec(),
             604_800,
+            Urgency::High,
         )]
     );
 }
@@ -1360,6 +1367,10 @@ async fn account_lease_holds_another_device_push_until_expiry() {
     assert_eq!(
         harness.deliveries.lock().expect("deliveries")[0].1,
         b"held until expiry"
+    );
+    assert_eq!(
+        harness.deliveries.lock().expect("deliveries")[0].3,
+        Urgency::High
     );
 }
 

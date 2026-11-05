@@ -37,6 +37,42 @@ pub struct Delivery {
     pub(crate) target: WebPushTarget,
     pub(crate) body: Vec<u8>,
     pub(crate) ttl: u32,
+    pub(crate) urgency: Urgency,
+}
+
+/// RFC 8030 delivery priority forwarded to the browser push service.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Urgency {
+    /// Very low priority.
+    VeryLow,
+    /// Low priority.
+    Low,
+    /// Normal priority.
+    Normal,
+    /// High priority.
+    High,
+}
+
+impl Urgency {
+    pub(crate) fn from_stored(value: &str) -> Self {
+        match value {
+            "very-low" => Self::VeryLow,
+            "low" => Self::Low,
+            "high" => Self::High,
+            _ => Self::Normal,
+        }
+    }
+}
+
+impl std::fmt::Display for Urgency {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::VeryLow => "very-low",
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+        })
+    }
 }
 
 impl Delivery {
@@ -59,7 +95,15 @@ impl Delivery {
             },
             body,
             ttl,
+            urgency: Urgency::Normal,
         }
+    }
+
+    /// Overrides the default normal delivery priority.
+    #[must_use]
+    pub fn with_urgency(mut self, urgency: Urgency) -> Self {
+        self.urgency = urgency;
+        self
     }
 
     /// The opaque route identifier included in the declarative envelope.
@@ -78,6 +122,12 @@ impl Delivery {
     #[must_use]
     pub fn ttl(&self) -> u32 {
         self.ttl
+    }
+
+    /// The priority forwarded to the browser push service.
+    #[must_use]
+    pub fn urgency(&self) -> Urgency {
+        self.urgency
     }
 
     /// The browser push-service endpoint.
@@ -112,6 +162,8 @@ pub struct OutboundRequest {
     pub address: std::net::SocketAddr,
     /// Home-provided lifetime in seconds.
     pub ttl: u32,
+    /// Home-provided RFC 8030 priority.
+    pub urgency: Urgency,
     /// Relay VAPID authorization header.
     pub authorization: String,
     /// RFC 8291 encrypted body.
@@ -201,6 +253,7 @@ impl HttpTransport for ReqwestTransport {
         client
             .post(request.endpoint)
             .header("TTL", request.ttl)
+            .header("Urgency", request.urgency.to_string())
             .header("Content-Encoding", "aes128gcm")
             .header("Content-Type", "application/octet-stream")
             .header("Authorization", request.authorization)
@@ -516,6 +569,7 @@ impl PushSender for WebPushSender {
                         endpoint: endpoint.clone(),
                         address,
                         ttl: delivery.ttl,
+                        urgency: delivery.urgency,
                         authorization: authorization.clone(),
                         body: payload.clone(),
                     })
@@ -710,7 +764,7 @@ mod tests {
 
     use super::{
         DnsResolver, EndpointValidator, HttpTransport as _, OutboundRequest, ReqwestTransport,
-        is_public,
+        Urgency, is_public,
     };
     use crate::{Result, test_tls::TlsServer};
 
@@ -719,6 +773,7 @@ mod tests {
             endpoint,
             address,
             ttl: 60,
+            urgency: Urgency::Normal,
             authorization: "vapid t=test,k=test".to_owned(),
             body: b"encrypted".to_vec(),
         }

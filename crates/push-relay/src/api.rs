@@ -19,7 +19,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use url::Url;
 
 use crate::{
-    Concierge, Database, Delivery, EndpointValidator, Error, PushSender, Result,
+    Concierge, Database, Delivery, EndpointValidator, Error, PushSender, Result, Urgency,
     auth::verify_vapid,
     db::{Route, WebPushTarget},
     outbound::PushOutcome,
@@ -560,14 +560,6 @@ impl TargetKind {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Urgency {
-    VeryLow,
-    Low,
-    Normal,
-    High,
-}
-
 impl Urgency {
     fn from_headers(headers: &HeaderMap) -> Result<Self> {
         let Some(value) = headers.get("Urgency") else {
@@ -587,17 +579,6 @@ impl Urgency {
             TargetKind::MozillaWebPush => matches!(self, Self::Normal | Self::High),
             TargetKind::VisiblePushRequired => matches!(self, Self::High),
         }
-    }
-}
-
-impl std::fmt::Display for Urgency {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::VeryLow => "very-low",
-            Self::Low => "low",
-            Self::Normal => "normal",
-            Self::High => "high",
-        })
     }
 }
 
@@ -635,6 +616,7 @@ async fn deliver_push(
                     route_id.clone(),
                     body.to_vec(),
                     ttl,
+                    urgency.to_string(),
                     unix_milliseconds(),
                 )
                 .await?
@@ -649,6 +631,7 @@ async fn deliver_push(
                     target,
                     body: body.to_vec(),
                     ttl,
+                    urgency,
                 })
                 .await?;
             match outcome {
@@ -677,6 +660,7 @@ async fn deliver_held_pushes(state: AppState) {
                         target: held.target,
                         body: held.body,
                         ttl: held.ttl,
+                        urgency: Urgency::from_stored(&held.urgency),
                     })
                     .await;
                 match outcome {

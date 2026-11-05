@@ -29,7 +29,7 @@ use tracing_subscriber::fmt::MakeWriter;
 use url::Url;
 use weblounge_push_relay::{
     Delivery, DnsResolver, EndpointValidator, Error, HttpTransport, OutboundRequest, PushOutcome,
-    PushSender, Result, WebPushSender,
+    PushSender, Result, Urgency, WebPushSender,
 };
 
 #[derive(Clone, Default)]
@@ -212,14 +212,17 @@ async fn wraps_ciphertext_once_and_signs_the_fake_push_service_request() {
             .expect("sender");
     let inner = b"still encrypted by the home".to_vec();
     let outcome = sender
-        .send(Delivery::web_push(
-            "route-id",
-            "https://push.example/send/device",
-            URL_SAFE_NO_PAD.encode(receiver_public.as_bytes()),
-            URL_SAFE_NO_PAD.encode(receiver_auth),
-            inner.clone(),
-            604_800,
-        ))
+        .send(
+            Delivery::web_push(
+                "route-id",
+                "https://push.example/send/device",
+                URL_SAFE_NO_PAD.encode(receiver_public.as_bytes()),
+                URL_SAFE_NO_PAD.encode(receiver_auth),
+                inner.clone(),
+                604_800,
+            )
+            .with_urgency(Urgency::High),
+        )
         .await
         .expect("delivery");
     assert_eq!(outcome, PushOutcome::Accepted);
@@ -228,6 +231,7 @@ async fn wraps_ciphertext_once_and_signs_the_fake_push_service_request() {
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
     assert_eq!(request.ttl, 604_800);
+    assert_eq!(request.urgency, Urgency::High);
     assert_eq!(request.address.ip(), IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)));
     assert!(request.authorization.starts_with("vapid t="));
     let envelope = decrypt(&request.body, &receiver, &receiver_auth);

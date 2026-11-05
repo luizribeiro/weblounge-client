@@ -4675,13 +4675,13 @@ mod tests {
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
-        HostedReconnectConfig, MemberViews, PushRegistration, READ_RETRY_INITIAL, READ_RETRY_MAX,
-        PUSH_REFRESH_INTERVAL, ReadRetryState, RunningNetwork, Runtime, RuntimeState, attach_shell,
-        completion_context,
-        connection_failure_notice, drain_events, fetch_history, join_request_events, lock,
-        next_connection_state, permanent_mark_read_error, person_candidates, process_event,
-        process_history, queue_read_advance, read_retry_delay, schedule_snapshot_write_after,
-        spawn_history_fetch, spawn_read_marker_fetch, state_limit_events, utf16_len,
+        HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL, PushRegistration,
+        READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork, Runtime, RuntimeState,
+        attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
+        join_request_events, lock, next_connection_state, permanent_mark_read_error,
+        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
+        schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch,
+        state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,

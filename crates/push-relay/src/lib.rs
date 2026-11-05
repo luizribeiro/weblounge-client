@@ -16,5 +16,5 @@ pub use db::Database;
 pub use error::{Error, Result};
 pub use outbound::{
     Delivery, DnsResolver, EndpointValidator, HttpTransport, OutboundRequest, PushOutcome,
-    PushSender, WebPushSender,
+    PushSender, Urgency, WebPushSender,
 };
