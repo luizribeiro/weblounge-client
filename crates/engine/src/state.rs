@@ -523,10 +523,14 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn is_cached_buffer(&self, buffer_id: BufferId) -> bool {
-        self.buffers
-            .get(&buffer_id)
-            .is_some_and(|buffer| buffer.projection.cached == Some(true))
+    pub(crate) fn awaits_live_target(&self, buffer_id: BufferId) -> bool {
+        self.buffers.get(&buffer_id).is_some_and(|buffer| {
+            buffer.projection.cached == Some(true)
+                || matches!(
+                    &buffer.direct,
+                    Some(DirectAvailability::Pending | DirectAvailability::Resolving)
+                )
+        })
     }
 
     pub(crate) fn chat_list_complete(&self) -> bool {
@@ -918,10 +922,15 @@ impl NetworkModel {
         let direct = buffer.direct.clone();
         let pin = buffer.direct_pin.clone();
         let mismatched = buffer.direct_mismatch.is_some();
+        let awaits_live_target = cached
+            || matches!(
+                &direct,
+                Some(DirectAvailability::Pending | DirectAvailability::Resolving)
+            );
         let target =
             SendTarget::from_buffer(key.clone(), direct.as_ref(), pin.as_ref(), mismatched)
                 .or_else(|| {
-                    if cached {
+                    if awaits_live_target && !mismatched {
                         match key.clone() {
                             NameKey::Direct(nick) => Some(SendTarget::Direct {
                                 nick,
@@ -940,7 +949,7 @@ impl NetworkModel {
                 recipient: None,
                 ..
             }
-        ) && !cached
+        ) && !awaits_live_target
         {
             return None;
         }
@@ -994,7 +1003,7 @@ impl NetworkModel {
         ))
     }
 
-    pub(crate) fn prepare_cached_send(&self, pending: &mut PendingSend) -> PendingTargetState {
+    pub(crate) fn prepare_live_send(&self, pending: &mut PendingSend) -> PendingTargetState {
         let Some(buffer) = self.buffers.get(&pending.buffer_id) else {
             return PendingTargetState::Gone;
         };
@@ -1625,6 +1634,15 @@ impl NetworkModel {
         for buffer in self.buffers.values_mut() {
             if buffer.projection.kind == BufferKind::Direct {
                 buffer.direct = Some(DirectAvailability::Pending);
+                if buffer
+                    .direct_pin
+                    .as_ref()
+                    .is_some_and(|pin| !pin.is_verified())
+                {
+                    buffer.direct_pin = None;
+                    buffer.direct_mismatch = None;
+                    buffer.projection.direct_identity = Some(DirectIdentityState::Unverified);
+                }
             }
         }
     }
@@ -1812,6 +1830,28 @@ impl NetworkModel {
         } else {
             None
         }
+    }
+
+    pub(crate) fn begin_online_direct_resolution(
+        &mut self,
+        nick: &papo::Nick,
+    ) -> Option<(BufferId, Option<papo::DirectRef>)> {
+        let buffer_id = self.names.get(&NameKey::Direct(nick.clone())).copied()?;
+        let direct = self
+            .buffers
+            .get_mut(&buffer_id)
+            .and_then(|buffer| buffer.direct.as_mut())?;
+        let previous = match std::mem::replace(direct, DirectAvailability::Resolving) {
+            DirectAvailability::Guarded(direct) => Some(direct),
+            DirectAvailability::Pending
+            | DirectAvailability::Resolving
+            | DirectAvailability::Failed => None,
+            current @ DirectAvailability::MonitorFull => {
+                *direct = current;
+                return None;
+            }
+        };
+        Some((buffer_id, previous))
     }
 
     pub(crate) fn resolve_direct(&mut self, buffer_id: BufferId, availability: DirectAvailability) {
@@ -4465,6 +4505,7 @@ mod tests {
         assert_ne!(phone_buffer, buffer_id);
         assert!(!added.is_empty());
         assert_eq!(model.directs.len(), 2);
+        assert!(model.buffers[&buffer_id].direct_pin.is_some());
         model.invalidate_direct_handles();
         let alice = client
             .state()
@@ -4475,6 +4516,7 @@ mod tests {
             model.direct(&alice),
             Some(super::DirectAvailability::Pending)
         ));
+        assert!(model.buffers[&buffer_id].direct_pin.is_none());
         assert_eq!(
             model.directs.get(&DirectKey("alice".into())),
             Some(&buffer_id)
@@ -4684,12 +4726,12 @@ mod tests {
             .expect("cached direct accepts an optimistic send");
 
         assert!(matches!(
-            model.prepare_cached_send(&mut pending),
+            model.prepare_live_send(&mut pending),
             PendingTargetState::Waiting
         ));
         model.mark_vanished_cached_rows();
         assert!(matches!(
-            model.prepare_cached_send(&mut pending),
+            model.prepare_live_send(&mut pending),
             PendingTargetState::Gone
         ));
     }

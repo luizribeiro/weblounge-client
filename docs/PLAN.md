@@ -13,12 +13,11 @@ The single place a fresh session reads to know where the project stands. Update 
   the unmocked Ergo, relay and browser-worker chain remains green.
 - [x] Keep mobile transcript anchoring synchronous when resolving per-buffer send-failure notices,
   so composer resizing and cold or warm keyboard motion finish at the live edge.
-- [ ] Papo question for Luiz: an established non-shared `DirectRef` remains alive across MONITOR
-  `731`, but a later `730` for the same nick does not emit `MonitorOnline`. The focused
-  `papo-testing` scenario `direct_ref_reopens_after_monitored_peer_returns` fails on current papo
-  before it can issue the fresh `WHO nick %na`. The built WebLounge app separately reproduces the
-  unsendable returned-peer DM while visible, hidden, and reconnecting. Fix this in papo; WebLounge
-  must not infer presence or bypass guarded identity.
+- [x] Pin papo `1f87c93`, which retains shared MONITOR leases and emits `MonitorOnline` when an
+  unshared peer returns. The engine refreshes its guarded handle on that event, queues sends while
+  the handle resolves, and drops connection-local continuity pins when their IRC session ends.
+  Built-app local-Ergo coverage confirms the reply while visible, hidden, and reconnecting without
+  bypassing guarded identity; the direct-title shimmer settles in every case.
 - [x] Keep an installed iOS PWA's foreground lease authoritative while its visible page reports a
   false focus signal, so a blur from the keyboard or system chrome cannot release a lease and
   present burst DMs already visible in the open conversation. The real Ergo/relay/worker journey
@@ -32,10 +31,11 @@ The single place a fresh session reads to know where the project stands. Update 
   for direct sends, and let a failed initial history page end cached-list hydration without claiming
   the buffer is synced. Production-profile mobile coverage restores a closed-app DM from cache while
   its peer is actively typing, then proves the title settles and a reply confirms without the notice.
-- [ ] Papo question for Luiz: a non-shared direct can receive MONITOR `730` and an account-tagged
-  `+typing=active` TAGMSG for the expected account, then have `WHO nick %na` finish without a matching
-  `354`; pinned papo returns `TargetGone` from `who_account`. Add this as a papo-testing case and decide
-  whether the proven event identity should survive a missing WHOX row. WebLounge must not work around it.
+- [ ] Papo question for Luiz: `1f87c93` still returns `TargetGone` when a non-shared direct receives
+  MONITOR `730` and an account-tagged `+typing=active` TAGMSG for the expected account, then has
+  `WHO nick %na` finish with `315` but no matching `354`. Add the focused papo-testing scenario
+  `direct_ref_accepts_event_identity_when_who_omits_row` and decide whether the proven event identity
+  should survive the missing WHOX row. WebLounge must not work around it.
 - [x] Scope failed-send notices to their owning conversation. A built-app local-Ergo regression
   queues a DM while offline, removes the peer, reconnects, observes the direct-target-gone failure,
   then proves that opening a channel does not carry the DM notice with it.
@@ -741,10 +741,11 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `3508be1`. Persistable TLS-host-scoped peer identity pins,
+- **papo:** papo 0.1 pinned at `1f87c93`. Persistable TLS-host-scoped peer identity pins,
   per-send `direct_pinned` verification, post-registration SASL account-state hardening, explicit
   display spelling and folded storage keys, split-send reconciliation, exact live
   and nested-history multiline concatenation, server name rules, lag diagnostics,
   channel-recreation warnings, hardened typed inputs, correlated history responses, exact live
   actor facts, tri-state account/bot evidence, completed JOIN refusals, and bounded request-state
-  failures are integrated.
+  failures are integrated. Shared direct MONITOR leases survive peer departure and support guarded
+  reacquisition when the peer returns.

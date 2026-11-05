@@ -1398,7 +1398,7 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let await_live_target = running.model.is_cached_buffer(buffer_id);
+        let await_live_target = running.model.awaits_live_target(buffer_id);
         let pending = match kind {
             crate::MessageKind::Text => {
                 running
@@ -1417,9 +1417,8 @@ impl Runtime {
         };
         let typing_done = running.typing.done(buffer_id);
         let typing_target = running.model.typing_target(buffer_id);
-        let retry_if_disconnected = running.model.is_cached_buffer(buffer_id)
-            || !running.device_online
-            || running.model.is_online();
+        let retry_if_disconnected =
+            await_live_target || !running.device_online || running.model.is_online();
         running.pending_sends.push_back(QueuedSend {
             pending,
             retry_if_disconnected,
@@ -2484,7 +2483,7 @@ fn take_next_send(running: &mut RunningNetwork) -> FlushNext {
     if !queued.await_live_target {
         return pop_send(running);
     }
-    match running.model.prepare_cached_send(&mut queued.pending) {
+    match running.model.prepare_live_send(&mut queued.pending) {
         PendingTargetState::Waiting => {
             running.flushing_sends = false;
             FlushNext::Stop
@@ -2876,6 +2875,10 @@ async fn drain_events(
             continue;
         }
         let restore_directs = matches!(event, papo::Event::Connected(_));
+        let online_direct = match &event {
+            papo::Event::MonitorOnline(online) => Some(online.subject.nick().clone()),
+            _ => None,
+        };
         let schedule_members = lock(&member_changes).record(&event, &client.state());
         let direct_message = match &event {
             papo::Event::Message(message)
@@ -2895,6 +2898,15 @@ async fn drain_events(
                 client.clone(),
                 instance,
                 message,
+            );
+        }
+        if let Some(nick) = online_direct {
+            spawn_online_direct_resolution(
+                Arc::clone(&state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                nick,
             );
         }
         for fetch in history_fetches {
@@ -2929,6 +2941,28 @@ async fn drain_events(
             });
         }
     }
+}
+
+fn spawn_online_direct_resolution(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    nick: papo::Nick,
+) {
+    let resolution = lock(&state)
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+        .and_then(|running| running.model.begin_online_direct_resolution(&nick));
+    let Some((buffer_id, previous)) = resolution else {
+        return;
+    };
+    spawn_task(async move {
+        let result = client.direct(&nick).await;
+        drop(previous);
+        apply_direct_resolution(&state, &outbound, instance, buffer_id, result);
+    });
 }
 
 fn spawn_direct_resolution(
@@ -4831,8 +4865,8 @@ mod tests {
         attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
         join_request_events, lock, next_connection_state, permanent_mark_read_error,
         person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
-        schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch,
-        state_limit_events, utf16_len,
+        schedule_snapshot_write_after, spawn_history_fetch, spawn_online_direct_resolution,
+        spawn_read_marker_fetch, state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -6066,6 +6100,106 @@ async fn delay(duration: Duration) {
             Some(EngineToUi::CommandResult { .. })
         ));
         assert_eq!(wire.next_sent().await, "MONITOR - alice");
+    }
+
+    #[tokio::test]
+    async fn monitored_peer_return_refreshes_its_direct_handle() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 100).await;
+
+        let request = tokio::spawn({
+            let client = client.clone();
+            async move { client.direct("alice").await }
+        });
+        assert_eq!(wire.next_sent().await, "MONITOR + alice");
+        assert_eq!(wire.next_sent().await, "WHO alice %na");
+        wire.server(":offline.test 354 weblounge alice alice-account")
+            .await;
+        wire.server(":offline.test 315 weblounge alice :End of WHO list")
+            .await;
+        let direct = request
+            .await
+            .expect("direct task completes")
+            .expect("direct");
+        let nick = direct.nick();
+        let first_key = direct.peer_key().clone();
+        let (state, outbound, _receiver) = harness(client.clone());
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .open_direct(
+                nick.clone(),
+                DirectAvailability::Guarded(direct),
+                &client.state(),
+            );
+        let held = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .begin_online_direct_resolution(&nick)
+            .expect("reconnect resolution starts")
+            .1;
+
+        wire.server(":offline.test 731 weblounge :alice").await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::MonitorOffline(_))
+        })
+        .await;
+        wire.server(":offline.test 730 weblounge :alice!~alice@cloak.example")
+            .await;
+        let online = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::MonitorOnline(_))
+        })
+        .await;
+        let papo::Event::MonitorOnline(online) = online else {
+            panic!("monitor online expected")
+        };
+        spawn_online_direct_resolution(
+            Arc::clone(&state),
+            outbound,
+            client,
+            1,
+            online.subject.nick().clone(),
+        );
+        assert_eq!(wire.next_sent().await, "WHO alice %na");
+        wire.server(":offline.test 354 weblounge alice alice-account")
+            .await;
+        wire.server(":offline.test 315 weblounge alice :End of WHO list")
+            .await;
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let current = lock(&state)
+                    .network
+                    .as_ref()
+                    .expect("network remains active")
+                    .model
+                    .direct(&nick);
+                if matches!(
+                    current,
+                    Some(DirectAvailability::Guarded(ref refreshed))
+                        if matches!(
+                            first_key.check(refreshed.peer_key()),
+                            papo::PeerKeyCheck::Match | papo::PeerKeyCheck::Upgrade(_)
+                        )
+                ) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("returned peer is resolved");
+        drop(held);
     }
 
     #[tokio::test]
@@ -9922,7 +10056,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn direct_send_during_reconnect_requires_a_fresh_handle() {
+    async fn direct_send_during_reconnect_waits_for_a_fresh_handle() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&["extended-join"]).await;
@@ -9974,14 +10108,19 @@ async fn delay(duration: Duration) {
                 text: "do not leave this pending".into(),
             },
         });
-        assert_eq!(
-            output,
-            [EngineToUi::CommandRejected {
-                id: "reconnecting-direct".into(),
-                message_key: EngineMessageKey::BufferNotSendable,
-                values: None,
-            }]
-        );
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].delivery == crate::MessageDelivery::Optimistic
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::CommandResult { id } if id == "reconnecting-direct"
+        )));
+        let state = lock(&state);
+        let running = state.network.as_ref().expect("network remains active");
+        assert_eq!(running.pending_sends.len(), 1);
+        assert!(running.pending_sends[0].await_live_target);
     }
 
     #[tokio::test]
