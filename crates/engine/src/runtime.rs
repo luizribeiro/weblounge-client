@@ -2972,6 +2972,7 @@ fn spawn_history_fetch(
                     }])
                     .collect(),
             );
+            update_chat_list(&state, &outbound, instance);
         }
     });
 }
@@ -4683,7 +4684,7 @@ mod tests {
         drain_events, fetch_history, join_request_events, lock, next_connection_state,
         permanent_mark_read_error, person_candidates, process_event, process_history,
         queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
-        spawn_read_marker_fetch, state_limit_events, utf16_len,
+        spawn_read_marker_fetch, state_limit_events, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -7967,6 +7968,61 @@ async fn delay(duration: Duration) {
         assert!(after.ends_with("CHATHISTORY AFTER Bob msgid=dm-1 100"));
 
         drain.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_initial_history_releases_a_restored_chat_list() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_for_history(&mut wire).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let fetch = {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.model.restore_chat_list(ChatListSnapshot::new(
+                "network".into(),
+                vec![SnapshotRow {
+                    conversation: SnapshotConversation::Direct {
+                        key: "alice".into(),
+                    },
+                    title: "alice".into(),
+                    last_activity_ms: Some(1_000),
+                    badge: SnapshotBadge::None,
+                    preview: Some("cached".into()),
+                    peer_pin: None,
+                }],
+            ));
+            running
+                .model
+                .set_connection(NetworkConnectionState::Online, None);
+            running.chat_list.recent_directs_ready = true;
+            running.chat_list.restored_from_cache = true;
+            let EngineToUi::BuffersChanged { buffers, .. } = running.model.buffers_event() else {
+                unreachable!("buffer projection event")
+            };
+            let buffer_id = buffers
+                .iter()
+                .find(|buffer| buffer.kind == BufferKind::Direct)
+                .expect("restored direct buffer")
+                .id;
+            running
+                .model
+                .request_history(buffer_id)
+                .expect("restored direct requests initial history")
+        };
+
+        spawn_history_fetch(Arc::clone(&state), outbound.clone(), client, 1, fetch);
+        _ = next_sent_containing(&mut wire, " CHATHISTORY LATEST alice ").await;
+        wire.close().await;
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !matches!(receiver.recv().await, Some(EngineToUi::ChatListLive { .. })) {}
+        })
+        .await
+        .expect("failed initial history releases cached hydration");
+
+        update_chat_list(&state, &outbound, 1);
+        assert!(receiver.try_recv().is_err(), "chat list becomes live once");
     }
 
     #[tokio::test]
