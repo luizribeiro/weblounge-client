@@ -19,6 +19,12 @@ The single place a fresh session reads to know where the project stands. Update 
   `+typing=active` TAGMSG for the expected account, then have `WHO nick %na` finish without a matching
   `354`; pinned papo returns `TargetGone` from `who_account`. Add this as a papo-testing case and decide
   whether the proven event identity should survive a missing WHOX row. WebLounge must not work around it.
+- [x] Scope failed-send notices to their owning conversation. A built-app local-Ergo regression
+  queues a DM while offline, removes the peer, reconnects, observes the direct-target-gone failure,
+  then proves that opening a channel does not carry the DM notice with it.
+- [ ] Reproduce the reported long-running direct-title shimmer before changing its state machine.
+  Fresh cache hydration and an established DM across a real websocket reconnect both settle on the
+  untouched base, including active peer typing traffic; the iOS-only symptom remains unconfirmed.
 - [x] Join portable Firefox notification-ledger closes to the control push lifetime, so a worker
   cannot terminate after applying MARKREAD state but before publishing the cleared notification list.
 - [x] Prove released mobile swipes start from the finger through the CSS transition's generated
