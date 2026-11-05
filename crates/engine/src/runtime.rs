@@ -2265,7 +2265,7 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
         } else {
             client.privmsg(channel, pending.text.clone()).await
         }
-        .map_err(|error| classify_send_error(&error, false)),
+        .map_err(|error| classify_send_error(&error)),
         SendTarget::Direct {
             nick,
             recipient,
@@ -2277,7 +2277,7 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
                     Err(papo::Error::PeerPinMismatch(mismatch)) => {
                         return Err(SendError::PeerPinMismatch(mismatch));
                     }
-                    Err(error) => return Err(classify_send_error(&error, true)),
+                    Err(error) => return Err(classify_send_error(&error)),
                 }
             } else if let Some(recipient) = recipient {
                 recipient
@@ -2292,14 +2292,14 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
                 }
             }
         }
-        .map_err(|error| classify_send_error(&error, true)),
+        .map_err(|error| classify_send_error(&error)),
     }
 }
 
-fn classify_send_error(error: &papo::Error, direct: bool) -> SendError {
+fn classify_send_error(error: &papo::Error) -> SendError {
     match error {
         papo::Error::Disconnected(_) => SendError::Offline,
-        papo::Error::TargetGone if direct => SendError::DirectTargetGone,
+        papo::Error::TargetGone => SendError::DirectTargetGone,
         _ => SendError::Protocol,
     }
 }
@@ -2972,7 +2972,6 @@ fn spawn_history_fetch(
                     }])
                     .collect(),
             );
-            update_chat_list(&state, &outbound, instance);
         }
     });
 }
@@ -4680,11 +4679,11 @@ mod tests {
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL, PushRegistration,
         READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork, Runtime, RuntimeState,
-        attach_shell, classify_send_error, completion_context, connection_failure_notice,
-        drain_events, fetch_history, join_request_events, lock, next_connection_state,
-        permanent_mark_read_error, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
-        spawn_read_marker_fetch, state_limit_events, update_chat_list, utf16_len,
+        attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
+        join_request_events, lock, next_connection_state, permanent_mark_read_error,
+        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
+        schedule_snapshot_write_after, spawn_history_fetch, spawn_read_marker_fetch,
+        state_limit_events, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -7971,61 +7970,6 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn failed_initial_history_releases_a_restored_chat_list() {
-        let (client, _events, mut wire) =
-            wire(papo::Client::builder("irc://offline.test", "weblounge"));
-        register_for_history(&mut wire).await;
-        let (state, outbound, mut receiver) = harness(client.clone());
-        let fetch = {
-            let mut state = lock(&state);
-            let running = state.network.as_mut().expect("network remains active");
-            running.model.restore_chat_list(ChatListSnapshot::new(
-                "network".into(),
-                vec![SnapshotRow {
-                    conversation: SnapshotConversation::Direct {
-                        key: "alice".into(),
-                    },
-                    title: "alice".into(),
-                    last_activity_ms: Some(1_000),
-                    badge: SnapshotBadge::None,
-                    preview: Some("cached".into()),
-                    peer_pin: None,
-                }],
-            ));
-            running
-                .model
-                .set_connection(NetworkConnectionState::Online, None);
-            running.chat_list.recent_directs_ready = true;
-            running.chat_list.restored_from_cache = true;
-            let EngineToUi::BuffersChanged { buffers, .. } = running.model.buffers_event() else {
-                unreachable!("buffer projection event")
-            };
-            let buffer_id = buffers
-                .iter()
-                .find(|buffer| buffer.kind == BufferKind::Direct)
-                .expect("restored direct buffer")
-                .id;
-            running
-                .model
-                .request_history(buffer_id)
-                .expect("restored direct requests initial history")
-        };
-
-        spawn_history_fetch(Arc::clone(&state), outbound.clone(), client, 1, fetch);
-        _ = next_sent_containing(&mut wire, " CHATHISTORY LATEST alice ").await;
-        wire.close().await;
-
-        tokio::time::timeout(Duration::from_secs(1), async {
-            while !matches!(receiver.recv().await, Some(EngineToUi::ChatListLive { .. })) {}
-        })
-        .await
-        .expect("failed initial history releases cached hydration");
-
-        update_chat_list(&state, &outbound, 1);
-        assert!(receiver.try_recv().is_err(), "chat list becomes live once");
-    }
-
-    #[tokio::test]
     async fn hosted_fresh_client_catches_up_a_ready_channel_with_the_retained_cursor() {
         let (first, mut first_events, mut first_wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
@@ -8882,18 +8826,6 @@ async fn delay(duration: Duration) {
         for (name, error, expected) in cases {
             assert_eq!(permanent_mark_read_error(&error), expected, "{name}");
         }
-    }
-
-    #[test]
-    fn target_gone_copy_is_reserved_for_direct_sends() {
-        assert!(matches!(
-            classify_send_error(&papo::Error::TargetGone, true),
-            super::SendError::DirectTargetGone
-        ));
-        assert!(matches!(
-            classify_send_error(&papo::Error::TargetGone, false),
-            super::SendError::Protocol
-        ));
     }
 
     #[tokio::test(start_paused = true)]
