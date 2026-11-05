@@ -3,6 +3,7 @@ export type ServiceWorkerUpdateListener = () => void;
 let updateReady = false;
 const updateListeners = new Set<ServiceWorkerUpdateListener>();
 let productionUpdateSettled = Promise.resolve();
+const productionUpdateDeadlineMs = 5_000;
 
 interface ControllerContainer {
   readonly controller: ServiceWorker | null;
@@ -44,11 +45,26 @@ export function checkForProductionServiceWorkerUpdate(): void {
   reloadAfterControllerChange(container, document, () =>
     window.location.reload(),
   );
-  productionUpdateSettled = updateProductionServiceWorker(container);
+  productionUpdateSettled = settleProductionServiceWorkerUpdate(
+    updateProductionServiceWorker(container),
+  );
 }
 
 export function waitForProductionServiceWorkerUpdate(): Promise<void> {
   return productionUpdateSettled;
+}
+
+export function settleProductionServiceWorkerUpdate(
+  update: Promise<void>,
+  deadlineMs = productionUpdateDeadlineMs,
+): Promise<void> {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    deadline = setTimeout(resolve, deadlineMs);
+  });
+  return Promise.race([update.catch(() => undefined), timeout]).finally(() => {
+    if (deadline !== undefined) clearTimeout(deadline);
+  });
 }
 
 export async function prepareProductionServiceWorkerUpdate(): Promise<void> {

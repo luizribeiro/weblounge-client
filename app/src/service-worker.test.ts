@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   prepareProductionServiceWorkerUpdate,
   reloadAfterControllerChange,
+  settleProductionServiceWorkerUpdate,
   updateProductionServiceWorker,
   waitForServiceWorkerActivation,
 } from "./service-worker";
@@ -136,6 +137,42 @@ describe("service worker controller activation", () => {
     await update;
 
     expect(settled).toBe(true);
+  });
+
+  it("continues push setup when an update check fails", async () => {
+    const registration = {
+      active: null,
+      installing: null,
+      waiting: null,
+      addEventListener: vi.fn(),
+      update: vi.fn().mockRejectedValueOnce(new Error("offline")),
+    } as unknown as ServiceWorkerRegistration;
+    const container = {
+      getRegistration: vi.fn(async () => registration),
+    } as unknown as ServiceWorkerContainer;
+    const pushSetup = vi.fn();
+
+    await settleProductionServiceWorkerUpdate(
+      updateProductionServiceWorker(container),
+    ).then(pushSetup);
+
+    expect(registration.update).toHaveBeenCalledOnce();
+    expect(pushSetup).toHaveBeenCalledOnce();
+  });
+
+  it("continues push setup when worker activation stalls", async () => {
+    vi.useFakeTimers();
+    const pushSetup = vi.fn();
+    const update = settleProductionServiceWorkerUpdate(
+      new Promise<void>(() => undefined),
+      5_000,
+    ).then(pushSetup);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await update;
+
+    expect(pushSetup).toHaveBeenCalledOnce();
+    vi.useRealTimers();
   });
 
   it("reloads an existing client once while startup is covered", () => {
