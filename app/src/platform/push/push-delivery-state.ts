@@ -6,13 +6,19 @@ export interface PushPresentationState<T> {
   fallback: Promise<void>;
   deadline: ReturnType<typeof setTimeout> | undefined;
   resolveFallback: (() => void) | undefined;
+  readonly presentationExpiresAt: number;
+  presentationFailure: unknown;
+  presentationFailureReported: boolean;
   readonly present: (presentation: T) => Promise<void>;
+  readonly reportError: (error: unknown) => void;
 }
 
 export function schedulePushPresentation<T>(
   generic: T,
   present: (presentation: T) => Promise<void>,
-  deadlineMs: number,
+  fallbackDeadlineMs: number,
+  presentationBudgetMs: number,
+  reportError: (error: unknown) => void,
 ): PushPresentationState<T> {
   const state: PushPresentationState<T> = {
     expired: false,
@@ -22,14 +28,18 @@ export function schedulePushPresentation<T>(
     fallback: Promise.resolve(),
     deadline: undefined,
     resolveFallback: undefined,
+    presentationExpiresAt: Date.now() + presentationBudgetMs,
+    presentationFailure: undefined,
+    presentationFailureReported: false,
     present,
+    reportError,
   };
   state.fallback = new Promise<void>((resolve) => {
     state.resolveFallback = resolve;
     state.deadline = setTimeout(() => {
       state.expired = true;
       void showUntilPresented(state, () => state.generic).finally(resolve);
-    }, deadlineMs);
+    }, fallbackDeadlineMs);
   });
   return state;
 }
@@ -63,10 +73,28 @@ export function cancelPresentationDeadline<T>(
 export async function showUntilPresented<T>(
   state: PushPresentationState<T>,
   presentation: () => T,
-): Promise<void> {
-  while (!state.shown) {
+): Promise<boolean> {
+  let retryDelayMs = 50;
+  while (!state.shown && Date.now() < state.presentationExpiresAt) {
     try {
       await showOnce(state, presentation());
-    } catch {}
+    } catch (error: unknown) {
+      state.presentationFailure = error;
+      const remainingMs = state.presentationExpiresAt - Date.now();
+      if (remainingMs <= 0) break;
+      await delay(Math.min(retryDelayMs, remainingMs));
+      retryDelayMs = Math.min(retryDelayMs * 2, 250);
+    }
   }
+  if (!state.shown && !state.presentationFailureReported) {
+    state.presentationFailureReported = true;
+    state.reportError(
+      state.presentationFailure ?? new Error("push presentation timed out"),
+    );
+  }
+  return state.shown;
+}
+
+function delay(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
 }

@@ -14,11 +14,13 @@ export type PreparedPushDelivery<Presentation, Commit> =
   | { readonly kind: "silent"; readonly commit: Commit };
 
 interface PushDeliveryDependencies<Input, Presentation, Commit> {
-  readonly deadlineMs: number;
+  readonly fallbackDeadlineMs: number;
+  readonly presentationBudgetMs: number;
   readonly generic: () => Presentation;
   readonly fallbackCommit: () => Commit;
   readonly present: (presentation: Presentation) => Promise<void>;
   readonly retryPrepare: (error: unknown) => boolean;
+  readonly reportError: (error: unknown) => void;
   readonly prepare: (
     input: Input,
     state: PushPresentationState<Presentation>,
@@ -45,7 +47,9 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     const state = schedulePushPresentation(
       this.#dependencies.generic(),
       this.#dependencies.present,
-      this.#dependencies.deadlineMs,
+      this.#dependencies.fallbackDeadlineMs,
+      this.#dependencies.presentationBudgetMs,
+      this.#dependencies.reportError,
     );
     return this.#deliver(input, state, predecessor).finally(async () => {
       await predecessor;
@@ -58,33 +62,34 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     state: PushPresentationState<Presentation>,
     predecessor: Promise<void>,
   ): Promise<void> {
-    const detailed = this.#preparePresentAndCommit(
-      input,
-      state,
-      predecessor,
-    ).catch(async () => {
-      await showUntilPresented(state, () => state.generic);
-      await predecessor;
-      await this.#dependencies.commit(this.#dependencies.fallbackCommit());
-    });
-    await Promise.race([detailed, state.fallback]);
-    cancelPresentationDeadline(state);
-    await detailed;
-  }
-
-  async #preparePresentAndCommit(
-    input: Input,
-    state: PushPresentationState<Presentation>,
-    predecessor: Promise<void>,
-  ): Promise<void> {
-    const prepared = await this.#prepareUntilKnown(input, state);
+    let prepared: PreparedPushDelivery<Presentation, Commit>;
+    try {
+      prepared = await this.#prepareUntilKnown(input, state);
+    } catch {
+      const shown = await showUntilPresented(state, () => state.generic);
+      cancelPresentationDeadline(state);
+      if (shown) {
+        await this.#commit(predecessor, this.#dependencies.fallbackCommit());
+      }
+      return;
+    }
     if (prepared.kind === "silent") {
       cancelPresentationDeadline(state);
-    } else {
-      await showUntilPresented(state, () => prepared.presentation);
+      await this.#commit(predecessor, prepared.commit);
+      return;
     }
+    const shown = await showUntilPresented(state, () => prepared.presentation);
+    cancelPresentationDeadline(state);
+    if (shown) await this.#commit(predecessor, prepared.commit);
+  }
+
+  async #commit(predecessor: Promise<void>, commit: Commit): Promise<void> {
     await predecessor;
-    await this.#dependencies.commit(prepared.commit);
+    try {
+      await this.#dependencies.commit(commit);
+    } catch (error: unknown) {
+      this.#dependencies.reportError(error);
+    }
   }
 
   async #prepareUntilKnown(

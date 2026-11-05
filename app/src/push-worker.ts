@@ -108,6 +108,7 @@ const precachePaths = new Set(PRECACHE_URLS);
 const precacheBatchSize = 2;
 const navigationDeadlineMs = 2_500;
 const pushNotificationDeadlineMs = 2_000;
+const pushFallbackDeadlineMs = 1_500;
 const engineCacheStore = "cache";
 const textEncoder = new TextEncoder();
 const parser = new PushParserLoader(loadPushParser);
@@ -131,12 +132,15 @@ const pushDeliveries = new PushDeliveryCoordinator<
   PushPresentation,
   PushCommit
 >({
-  deadlineMs: pushNotificationDeadlineMs,
+  fallbackDeadlineMs: pushFallbackDeadlineMs,
+  presentationBudgetMs: pushNotificationDeadlineMs,
   generic: () => genericNotification(),
   fallbackCommit: () => ({ kind: "fallback" }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   prepare: preparePushDelivery,
   commit: commitPushDelivery,
+  reportError: (error) =>
+    console.error("push delivery failed", pushError(error)),
   retryPrepare: (error) => error instanceof DatabaseTimeoutError,
 });
 

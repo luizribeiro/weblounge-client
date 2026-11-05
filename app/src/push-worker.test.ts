@@ -41,7 +41,13 @@ describe("push delivery state", () => {
     vi.useFakeTimers();
     try {
       const present = vi.fn(async (_value: string) => undefined);
-      const state = schedulePushPresentation<string>("generic", present, 2_000);
+      const state = schedulePushPresentation<string>(
+        "generic",
+        present,
+        1_500,
+        2_000,
+        () => undefined,
+      );
 
       await showOnce(state, "detailed");
       await vi.advanceTimersByTimeAsync(2_000);
@@ -55,7 +61,7 @@ describe("push delivery state", () => {
     }
   });
 
-  it("lets a fresh same-tag notification supersede an older read marker", () => {
+  it("lets a newer same-tag notification supersede an older read marker", () => {
     const tag = "Lounge/#lounge";
     const time = "2026-11-03T12:34:56.789Z";
     const counts = {
@@ -71,7 +77,7 @@ describe("push delivery state", () => {
     recordPresentedNotification(counts, {
       tag,
       messageId: "new-message",
-      messageTime: time,
+      messageTime: "2026-11-03T12:34:56.790Z",
     });
 
     expect(counts.conversations.get(tag)?.messages.size).toBe(1);

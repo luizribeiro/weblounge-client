@@ -163,7 +163,8 @@ describe("push delivery coordination", () => {
       const releasePrepare = deferred<void>();
       const presentations: string[] = [];
       const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
-        deadlineMs: 2_000,
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
         generic: () => "generic",
         fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
         prepare: async (input) => {
@@ -174,11 +175,12 @@ describe("push delivery coordination", () => {
           presentations.push(presentation);
         },
         commit: async () => undefined,
+        reportError: () => undefined,
         retryPrepare: () => false,
       });
 
       const delivery = coordinator.enqueue({ id: "slow", kind: "visible" });
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1_500);
       expect(presentations).toEqual(["generic"]);
 
       releasePrepare.resolve();
@@ -188,13 +190,14 @@ describe("push delivery coordination", () => {
     }
   });
 
-  it("keeps retrying a failed deadline presentation", async () => {
+  it("backs off while retrying a failed deadline presentation", async () => {
     vi.useFakeTimers();
     try {
       const releasePrepare = deferred<void>();
       let attempts = 0;
       const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
-        deadlineMs: 2_000,
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
         generic: () => "generic",
         fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
         prepare: async (input) => {
@@ -206,11 +209,12 @@ describe("push delivery coordination", () => {
           if (attempts < 3) throw new Error("presentation unavailable");
         },
         commit: async () => undefined,
+        reportError: () => undefined,
         retryPrepare: () => false,
       });
 
       const delivery = coordinator.enqueue({ id: "slow", kind: "visible" });
-      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(1_650);
       expect(attempts).toBe(3);
 
       releasePrepare.resolve();
@@ -218,6 +222,71 @@ describe("push delivery coordination", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("settles permanent presentation failure and releases later commits", async () => {
+    vi.useFakeTimers();
+    try {
+      const commits: string[] = [];
+      const errors: unknown[] = [];
+      let attempts = 0;
+      const coordinator = new PushDeliveryCoordinator<Input, string, Commit>({
+        fallbackDeadlineMs: 200,
+        presentationBudgetMs: 500,
+        generic: () => "generic",
+        fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
+        prepare: async (input) =>
+          input.kind === "markread"
+            ? { kind: "silent", commit: input }
+            : visible(input.id),
+        present: async () => {
+          attempts += 1;
+          throw new Error("presentation unavailable");
+        },
+        commit: async (commit) => {
+          commits.push(commit.id);
+        },
+        reportError: (error) => errors.push(error),
+        retryPrepare: () => false,
+      });
+
+      const failed = coordinator.enqueue({ id: "failed", kind: "visible" });
+      const markread = coordinator.enqueue({ id: "read", kind: "markread" });
+      await vi.advanceTimersByTimeAsync(500);
+      await Promise.all([failed, markread]);
+
+      expect(attempts).toBeGreaterThan(1);
+      expect(errors).toHaveLength(1);
+      expect(commits).toEqual(["read"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a commit failure without presenting or committing a fallback", async () => {
+    const presentations: string[] = [];
+    const commits: string[] = [];
+    const errors: unknown[] = [];
+    const coordinator = createCoordinator({
+      prepare: async (input) =>
+        input.kind === "markread"
+          ? { kind: "silent", commit: input }
+          : visible(input.id),
+      present: async (presentation) => {
+        presentations.push(presentation);
+      },
+      commit: async (commit) => {
+        commits.push(commit.id);
+        if (commit.id === "read") throw new Error("commit failed");
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    await coordinator.enqueue({ id: "read", kind: "markread" });
+
+    expect(presentations).toEqual([]);
+    expect(commits).toEqual(["read"]);
+    expect(errors).toHaveLength(1);
   });
 });
 
@@ -227,12 +296,15 @@ function createCoordinator(overrides: {
   ) => Promise<PreparedPushDelivery<string, Commit>>;
   readonly present: (presentation: string) => Promise<void>;
   readonly commit: (commit: Commit) => Promise<void>;
+  readonly reportError?: (error: unknown) => void;
   readonly retryPrepare?: (error: unknown) => boolean;
 }): PushDeliveryCoordinator<Input, string, Commit> {
   return new PushDeliveryCoordinator({
-    deadlineMs: 60_000,
+    fallbackDeadlineMs: 59_500,
+    presentationBudgetMs: 60_000,
     generic: () => "generic",
     fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
+    reportError: () => undefined,
     retryPrepare: () => false,
     ...overrides,
   });
