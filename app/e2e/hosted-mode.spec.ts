@@ -1066,9 +1066,10 @@ test.describe("iOS stale app badge", () => {
       .toEqual({
         badge: 0,
         direct: {
-          count: 0,
-          read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
+          messages: [],
+          read_at_ms: null,
           tag: "weblounge/mel",
+          unknown_count: 0,
         },
       });
   });

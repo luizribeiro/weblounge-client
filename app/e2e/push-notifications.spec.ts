@@ -558,6 +558,8 @@ test("keeps a restored pushed direct message verified through history", async ({
   const text = `pushed direct before history ${Date.now()}`;
   try {
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    await context.setOffline(true);
+    await expect(page.locator('[data-network-state="online"]')).toHaveCount(0);
     const echoed = await bot.privmsgConfirmed("weblounge", text);
     const line = echoed.replace(/^@/u, "@account=weblounge-bot;");
     const envelope = await seedRouteAndEncrypt(page, line, {
@@ -577,7 +579,6 @@ test("keeps a restored pushed direct message verified through history", async ({
       ]);
 
     await page.close();
-    await context.setOffline(true);
     const coldPage = await context.newPage();
     let documentRequests = 0;
     coldPage.on("request", (request) => {

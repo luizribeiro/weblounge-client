@@ -36,6 +36,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Keep every push failure path receipt-ordered, retry transient preparation and rejected
   presentation through the receipt deadline, bound all worker database operations, count generic
   fallbacks, and revalidate notification identity immediately before read-marker cleanup.
+- [x] Make push CI fixtures model their intended ownership: take the engine offline before a cold
+  pushed-DM restore, and assert the schema-3 worker state without granting engine markers cleanup
+  authority.
 - [x] Persist worker unread state by `msgid`, retaining explicit unknown engine baselines, so badge
   counts survive same-time messages, redelivery and delayed IndexedDB completion.
 
