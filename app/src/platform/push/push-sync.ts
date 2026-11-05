@@ -251,7 +251,8 @@ export class PushSynchronizer {
     const current =
       stored !== undefined &&
       stored.deviceId === device.id &&
-      stored.networkLabel.length > 0
+      stored.networkLabel.length > 0 &&
+      stored.needsReregistration !== true
         ? stored
         : undefined;
     const ensured = await this.#relay.ensureRoute(

@@ -275,6 +275,31 @@ describe("push state synchronization", () => {
     expect(current.routes.values.size).toBe(1);
   });
 
+  it("rotates a route whose worker keys failed", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set(
+      "home-vapid",
+      route({ routeId: "failed-route", needsReregistration: true }),
+    );
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.relay.ensureRoute).toHaveBeenCalledWith(
+      { id: "device-1", secret: "device-secret" },
+      "home-vapid",
+      undefined,
+    );
+    const stored = current.routes.values.get("home-vapid");
+    expect(stored?.routeId).toBe("route-1");
+    expect(stored?.needsReregistration).toBeUndefined();
+  });
+
   it("rotates invalid parameters once per connection", async () => {
     const current = fixture();
     requireRoute(current.engine);
