@@ -911,7 +911,11 @@ async function expectOneRoutePerDevice(deviceCount: number): Promise<void> {
 }
 
 async function releaseForegroundLeases(pages: readonly Page[]): Promise<void> {
-  for (const target of pages) await target.goto("/push-driver.html");
+  for (const target of pages) {
+    if (new URL(target.url()).pathname !== "/push-driver.html") {
+      await target.goto("/push-driver.html");
+    }
+  }
   const expired = await fetch(`${relayControl}/test/expire-leases`, {
     method: "POST",
   });
