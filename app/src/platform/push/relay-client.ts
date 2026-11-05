@@ -10,6 +10,11 @@ export interface RelayRoute {
   readonly endpoint: string;
 }
 
+export interface RelayDeadEndpoint {
+  readonly id: string;
+  readonly endpoint: string;
+}
+
 export type RelayFailure =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "gone" }
@@ -85,15 +90,31 @@ export class RelayClient {
 
   takeDeadEndpoints(
     device: RelayDevice,
-  ): Promise<RelayResult<readonly string[]>> {
+    homeVapid: string,
+  ): Promise<RelayResult<readonly RelayDeadEndpoint[]>> {
+    const query = new URLSearchParams({ home_vapid: homeVapid });
     return this.request(
-      `/v1/devices/${encodeURIComponent(device.id)}/dead-endpoints`,
+      `/v1/devices/${encodeURIComponent(device.id)}/dead-endpoints?${query}`,
       device.secret,
       "GET",
       undefined,
       isDeadEndpoints,
     ).then((result) =>
       result.ok ? { ok: true, value: result.value.endpoints } : result,
+    );
+  }
+
+  acknowledgeDeadEndpoints(
+    device: RelayDevice,
+    homeVapid: string,
+    routeIds: readonly string[],
+  ): Promise<RelayResult<null>> {
+    return this.request(
+      `/v1/devices/${encodeURIComponent(device.id)}/dead-endpoints`,
+      device.secret,
+      "POST",
+      { home_vapid: homeVapid, route_ids: [...routeIds] },
+      isNull,
     );
   }
 
@@ -232,11 +253,16 @@ function isRoute(value: unknown): value is RelayRoute {
 
 function isDeadEndpoints(
   value: unknown,
-): value is { readonly endpoints: readonly string[] } {
+): value is { readonly endpoints: readonly RelayDeadEndpoint[] } {
   return (
     isRecord(value) &&
     Array.isArray(value.endpoints) &&
-    value.endpoints.every((endpoint) => typeof endpoint === "string")
+    value.endpoints.every(
+      (endpoint) =>
+        isRecord(endpoint) &&
+        typeof endpoint.id === "string" &&
+        typeof endpoint.endpoint === "string",
+    )
   );
 }
 

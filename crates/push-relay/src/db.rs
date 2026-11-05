@@ -17,7 +17,8 @@ use serde::Serialize;
 const MAX_DEVICES_PER_ACCOUNT: u32 = 20;
 const MAX_ROUTES_PER_DEVICE: u32 = 25;
 const MAX_HELD_PUSHES_PER_ACCOUNT: u32 = 100;
-const SCHEMA_VERSION: u32 = 4;
+const DEAD_ENDPOINT_BATCH_SIZE: u32 = 5;
+const SCHEMA_VERSION: u32 = 5;
 const PROBING_ROUTE_TTL_SECONDS: i64 = 5 * 60;
 
 #[derive(Clone, Debug)]
@@ -458,10 +459,11 @@ impl Database {
         .await?
     }
 
-    pub(crate) async fn take_dead_endpoints(
+    pub(crate) async fn dead_endpoints(
         &self,
         device_id: String,
         secret: String,
+        home_vapid: Vec<u8>,
     ) -> Result<Vec<String>> {
         let path = Arc::clone(&self.path);
         tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
@@ -472,15 +474,46 @@ impl Database {
             let account = device_account(&transaction, &device_id)?;
             let endpoints = {
                 let mut statement = transaction.prepare(
-                    "SELECT route_id FROM dead_endpoints WHERE account = ?1 ORDER BY retired_at, route_id",
+                    "SELECT route_id FROM dead_endpoints
+                     WHERE account = ?1 AND home_vapid = ?2
+                     ORDER BY retired_at, route_id LIMIT ?3",
                 )?;
                 statement
-                    .query_map([&account], |row| row.get(0))?
+                    .query_map(
+                        params![account, home_vapid, DEAD_ENDPOINT_BATCH_SIZE],
+                        |row| row.get(0),
+                    )?
                     .collect::<rusqlite::Result<Vec<String>>>()?
             };
-            transaction.execute("DELETE FROM dead_endpoints WHERE account = ?1", [&account])?;
             transaction.commit()?;
             Ok(endpoints)
+        })
+        .await?
+    }
+
+    pub(crate) async fn acknowledge_dead_endpoints(
+        &self,
+        device_id: String,
+        secret: String,
+        home_vapid: Vec<u8>,
+        route_ids: Vec<String>,
+    ) -> Result<()> {
+        let path = Arc::clone(&self.path);
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let mut connection = connect(&path)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            authenticate_device(&transaction, &device_id, &secret)?;
+            let account = device_account(&transaction, &device_id)?;
+            for route_id in route_ids {
+                transaction.execute(
+                    "DELETE FROM dead_endpoints
+                     WHERE route_id = ?1 AND account = ?2 AND home_vapid = ?3",
+                    params![route_id, account, home_vapid],
+                )?;
+            }
+            transaction.commit()?;
+            Ok(())
         })
         .await?
     }
@@ -690,6 +723,7 @@ fn migrate_schema(connection: &Connection, version: u32) -> Result<()> {
         1 => migrate_schema_one(connection)?,
         2 => migrate_schema_two(connection)?,
         3 => migrate_schema_three(connection)?,
+        4 => migrate_schema_four(connection)?,
         SCHEMA_VERSION => {}
         version => {
             return Err(Error::Config(format!(
@@ -731,11 +765,11 @@ fn create_schema(connection: &Connection) -> Result<()> {
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE TABLE dead_endpoints (
-           route_id TEXT PRIMARY KEY, account TEXT NOT NULL,
+           route_id TEXT PRIMARY KEY, account TEXT NOT NULL, home_vapid BLOB NOT NULL,
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
-         PRAGMA user_version = 4;
+         PRAGMA user_version = 5;
          COMMIT;",
     )?;
     Ok(())
@@ -761,11 +795,11 @@ fn migrate_schema_one(connection: &Connection) -> Result<()> {
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE TABLE dead_endpoints (
-           route_id TEXT PRIMARY KEY, account TEXT NOT NULL,
+           route_id TEXT PRIMARY KEY, account TEXT NOT NULL, home_vapid BLOB NOT NULL,
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
-         PRAGMA user_version = 4;
+         PRAGMA user_version = 5;
          COMMIT;",
     )?;
     Ok(())
@@ -779,12 +813,12 @@ fn migrate_schema_two(connection: &Connection) -> Result<()> {
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE TABLE dead_endpoints (
-           route_id TEXT PRIMARY KEY, account TEXT NOT NULL,
+           route_id TEXT PRIMARY KEY, account TEXT NOT NULL, home_vapid BLOB NOT NULL,
            retired_at INTEGER NOT NULL DEFAULT (unixepoch())
          );
          CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
-         INSERT OR IGNORE INTO dead_endpoints (route_id, account)
-           SELECT routes.id, devices.account FROM routes
+         INSERT OR IGNORE INTO dead_endpoints (route_id, account, home_vapid)
+           SELECT routes.id, devices.account, routes.home_vapid FROM routes
            JOIN devices ON devices.id = routes.device_id WHERE routes.state = 'dead';
          DELETE FROM held_pushes WHERE route_id IN (
            SELECT id FROM routes WHERE state = 'dead'
@@ -792,7 +826,7 @@ fn migrate_schema_two(connection: &Connection) -> Result<()> {
          DELETE FROM routes WHERE state = 'dead';
          ALTER TABLE held_pushes ADD COLUMN urgency TEXT NOT NULL DEFAULT 'normal'
            CHECK (urgency IN ('very-low', 'low', 'normal', 'high'));
-         PRAGMA user_version = 4;
+         PRAGMA user_version = 5;
          COMMIT;",
     )?;
     Ok(())
@@ -803,7 +837,28 @@ fn migrate_schema_three(connection: &Connection) -> Result<()> {
         "BEGIN;
          ALTER TABLE held_pushes ADD COLUMN urgency TEXT NOT NULL DEFAULT 'normal'
            CHECK (urgency IN ('very-low', 'low', 'normal', 'high'));
-         PRAGMA user_version = 4;
+         DROP TABLE dead_endpoints;
+         CREATE TABLE dead_endpoints (
+           route_id TEXT PRIMARY KEY, account TEXT NOT NULL, home_vapid BLOB NOT NULL,
+           retired_at INTEGER NOT NULL DEFAULT (unixepoch())
+         );
+         CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
+         PRAGMA user_version = 5;
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+fn migrate_schema_four(connection: &Connection) -> Result<()> {
+    connection.execute_batch(
+        "BEGIN;
+         DROP TABLE dead_endpoints;
+         CREATE TABLE dead_endpoints (
+           route_id TEXT PRIMARY KEY, account TEXT NOT NULL, home_vapid BLOB NOT NULL,
+           retired_at INTEGER NOT NULL DEFAULT (unixepoch())
+         );
+         CREATE INDEX dead_endpoints_account ON dead_endpoints(account);
+         PRAGMA user_version = 5;
          COMMIT;",
     )?;
     Ok(())
@@ -921,22 +976,23 @@ fn retire_home_routes_except(
 }
 
 fn retire_route(transaction: &rusqlite::Transaction<'_>, route_id: &str) -> Result<()> {
-    let account = transaction
+    let retired = transaction
         .query_row(
-            "SELECT devices.account FROM routes
+            "SELECT devices.account, routes.home_vapid FROM routes
              JOIN devices ON devices.id = routes.device_id WHERE routes.id = ?1",
             [route_id],
-            |row| row.get::<_, String>(0),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
         .optional()?;
-    let Some(account) = account else {
+    let Some((account, home_vapid)) = retired else {
         return Ok(());
     };
     transaction.execute("DELETE FROM held_pushes WHERE route_id = ?1", [route_id])?;
     transaction.execute("DELETE FROM routes WHERE id = ?1", [route_id])?;
     transaction.execute(
-        "INSERT OR IGNORE INTO dead_endpoints (route_id, account) VALUES (?1, ?2)",
-        params![route_id, account],
+        "INSERT OR IGNORE INTO dead_endpoints (route_id, account, home_vapid)
+         VALUES (?1, ?2, ?3)",
+        params![route_id, account, home_vapid],
     )?;
     Ok(())
 }
@@ -1101,6 +1157,70 @@ mod tests {
         assert!(matches!(extra_route, Err(Error::Capacity)));
     }
 
+    #[tokio::test]
+    async fn dead_endpoints_are_scoped_bounded_and_acknowledged() {
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let path = temporary.path().join("relay.sqlite3");
+        let database = Database::open(path.clone()).await.expect("database");
+        let device = database
+            .create_device("mel".to_owned(), target(0))
+            .await
+            .expect("device");
+        let first_home = vec![1_u8; 65];
+        let second_home = vec![2_u8; 65];
+        let connection = rusqlite::Connection::open(path).expect("connection");
+        for index in 0..6 {
+            connection
+                .execute(
+                    "INSERT INTO dead_endpoints (route_id, account, home_vapid)
+                     VALUES (?1, 'mel', ?2)",
+                    rusqlite::params![format!("first-{index}"), first_home],
+                )
+                .expect("first-home endpoint");
+        }
+        connection
+            .execute(
+                "INSERT INTO dead_endpoints (route_id, account, home_vapid)
+                 VALUES ('second-0', 'mel', ?1)",
+                [&second_home],
+            )
+            .expect("second-home endpoint");
+
+        let batch = database
+            .dead_endpoints(device.id.clone(), device.secret.clone(), first_home.clone())
+            .await
+            .expect("first batch");
+        assert_eq!(
+            batch,
+            (0..5)
+                .map(|index| format!("first-{index}"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            database
+                .dead_endpoints(device.id.clone(), device.secret.clone(), second_home,)
+                .await
+                .expect("other home"),
+            vec!["second-0"]
+        );
+        database
+            .acknowledge_dead_endpoints(
+                device.id.clone(),
+                device.secret.clone(),
+                first_home.clone(),
+                batch,
+            )
+            .await
+            .expect("acknowledge batch");
+        assert_eq!(
+            database
+                .dead_endpoints(device.id, device.secret, first_home)
+                .await
+                .expect("remaining batch"),
+            vec!["first-5"]
+        );
+    }
+
     #[test]
     fn device_credentials_debug_redacts_the_secret() {
         let credentials = super::DeviceCredentials {
@@ -1133,7 +1253,7 @@ mod tests {
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         assert_eq!(journal, "wal");
         assert_eq!(mode, 0o600);
     }

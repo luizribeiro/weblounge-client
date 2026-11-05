@@ -5,6 +5,7 @@ import type { EngineClientMessage } from "../../engine/protocol";
 import type { PushDeviceStore } from "./engine-device-store";
 import type {
   RelayClient,
+  RelayDeadEndpoint,
   RelayDevice,
   RelayFailure,
   RelayResult,
@@ -20,6 +21,7 @@ import type { WebPushTarget } from "./subscription";
 type RelayApi = Pick<
   RelayClient,
   | "activateRoute"
+  | "acknowledgeDeadEndpoints"
   | "createDevice"
   | "deleteDevice"
   | "deleteRoute"
@@ -294,7 +296,7 @@ export class PushSynchronizer {
       if (legacy.vapid !== route.vapid) await this.#routes.delete(legacy.vapid);
     }
     this.#currentRoutes.set(networkId, route.routeId);
-    const dead = await this.#relay.takeDeadEndpoints(device);
+    const dead = await this.#relay.takeDeadEndpoints(device, home);
     if (!dead.ok && dead.error.kind === "gone") {
       await this.#devices.clear(this.#relayOrigin);
       await this.#ensureHome(networkId, false);
@@ -304,16 +306,20 @@ export class PushSynchronizer {
       this.#onAuthorizationRequired();
     }
     const unregister = new Set(this.#legacyEndpoints);
-    if (dead.ok) for (const endpoint of dead.value) unregister.add(endpoint);
-    await this.#sendEnsure(networkId, route, [...unregister]);
-    this.#legacyEndpoints.clear();
+    if (dead.ok) {
+      for (const endpoint of dead.value) unregister.add(endpoint.endpoint);
+    }
+    if (await this.#sendEnsure(networkId, route, [...unregister])) {
+      this.#legacyEndpoints.clear();
+      if (dead.ok) await this.#acknowledgeDead(device, home, dead.value);
+    }
   }
 
   async #sendEnsure(
     networkId: number,
     route: StoredPushRoute,
     unregister: readonly string[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.#publish(networkId, "probing", route.routeId);
     try {
       await this.#engine.send({
@@ -330,10 +336,12 @@ export class PushSynchronizer {
           unregister: [...unregister],
         },
       });
+      return true;
     } catch {
       for (const endpoint of unregister) this.#legacyEndpoints.add(endpoint);
       this.#publish(networkId, "probing", route.routeId, "engine: request");
       this.#scheduleRetry(networkId);
+      return false;
     }
   }
 
@@ -398,7 +406,8 @@ export class PushSynchronizer {
       this.#recoveries.set(networkId, recovery);
       const device = await this.#devices.load(this.#relayOrigin);
       if (device === undefined) return;
-      const dead = await this.#relay.takeDeadEndpoints(asRelayDevice(device));
+      const relayDevice = asRelayDevice(device);
+      const dead = await this.#relay.takeDeadEndpoints(relayDevice, home);
       if (!dead.ok && dead.error.kind === "gone") {
         await this.#devices.clear(this.#relayOrigin);
         await this.#withHomeLock(home, () =>
@@ -409,7 +418,12 @@ export class PushSynchronizer {
       if (!dead.ok && dead.error.kind === "unauthorized") {
         this.#onAuthorizationRequired();
       }
-      await this.#sendEnsure(networkId, route, dead.ok ? dead.value : []);
+      const endpoints = dead.ok
+        ? dead.value.map((endpoint) => endpoint.endpoint)
+        : [];
+      if (await this.#sendEnsure(networkId, route, endpoints)) {
+        if (dead.ok) await this.#acknowledgeDead(relayDevice, home, dead.value);
+      }
       return;
     }
     if (reason === "web_push_forbidden") {
@@ -479,6 +493,25 @@ export class PushSynchronizer {
       }
     }
     return legacy;
+  }
+
+  async #acknowledgeDead(
+    device: RelayDevice,
+    home: string,
+    endpoints: readonly RelayDeadEndpoint[],
+  ): Promise<void> {
+    if (endpoints.length === 0) return;
+    const acknowledged = await this.#relay.acknowledgeDeadEndpoints(
+      device,
+      home,
+      endpoints.map((endpoint) => endpoint.id),
+    );
+    if (!acknowledged.ok && acknowledged.error.kind === "unauthorized") {
+      this.#onAuthorizationRequired();
+    }
+    if (!acknowledged.ok && acknowledged.error.kind === "gone") {
+      await this.#devices.clear(this.#relayOrigin);
+    }
   }
 
   async #unregisterExact(

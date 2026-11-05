@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State, rejection::BytesRejection},
+    extract::{DefaultBodyLimit, Path, Query, State, rejection::BytesRejection},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -27,6 +27,7 @@ use crate::{
 
 const MAX_HOME_BODY: usize = 2_800;
 const MAX_TTL: u32 = 28 * 24 * 60 * 60;
+const MAX_DEAD_ENDPOINT_ACKS: usize = 5;
 const LEASE_TTL: Duration = Duration::from_secs(75);
 
 #[derive(Clone)]
@@ -98,7 +99,7 @@ pub fn app_with_lease_ttl(
         .route("/v1/devices/{device}/routes", post(ensure_route))
         .route(
             "/v1/devices/{device}/dead-endpoints",
-            get(take_dead_endpoints),
+            get(dead_endpoints).post(acknowledge_dead_endpoints),
         )
         .route("/v1/devices/{device}/lease", post(renew_lease))
         .route("/v1/devices/{device}/lease/release", post(release_lease))
@@ -329,25 +330,71 @@ async fn ensure_route(
 
 #[derive(Serialize)]
 struct DeadEndpoints {
-    endpoints: Vec<String>,
+    endpoints: Vec<DeadEndpoint>,
 }
 
-async fn take_dead_endpoints(
+#[derive(Serialize)]
+struct DeadEndpoint {
+    id: String,
+    endpoint: String,
+}
+
+#[derive(Deserialize)]
+struct DeadEndpointsQuery {
+    home_vapid: String,
+}
+
+async fn dead_endpoints(
     State(state): State<AppState>,
     Path(device): Path<String>,
+    Query(query): Query<DeadEndpointsQuery>,
     headers: HeaderMap,
 ) -> Result<Response> {
+    let home_vapid = decode_public_key(&query.home_vapid)?;
     let routes = state
         .database
-        .take_dead_endpoints(device, bearer(&headers)?.to_owned())
+        .dead_endpoints(device, bearer(&headers)?.to_owned(), home_vapid)
         .await?;
     Ok(Json(DeadEndpoints {
         endpoints: routes
             .into_iter()
-            .map(|route| format!("{}/v1/r/{route}", state.origin))
+            .map(|id| DeadEndpoint {
+                endpoint: format!("{}/v1/r/{id}", state.origin),
+                id,
+            })
             .collect(),
     })
     .into_response())
+}
+
+#[derive(Deserialize)]
+struct AcknowledgeDeadEndpoints {
+    home_vapid: String,
+    route_ids: Vec<String>,
+}
+
+async fn acknowledge_dead_endpoints(
+    State(state): State<AppState>,
+    Path(device): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<AcknowledgeDeadEndpoints>,
+) -> Result<Response> {
+    if request.route_ids.len() > MAX_DEAD_ENDPOINT_ACKS {
+        return Err(Error::BadRequest(
+            "too many dead endpoints acknowledged".to_owned(),
+        ));
+    }
+    let home_vapid = decode_public_key(&request.home_vapid)?;
+    state
+        .database
+        .acknowledge_dead_endpoints(
+            device,
+            bearer(&headers)?.to_owned(),
+            home_vapid,
+            request.route_ids,
+        )
+        .await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn activate_route(

@@ -159,9 +159,15 @@ describe("relay client", () => {
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(
         Response.json({
-          endpoints: ["https://push.example.test/v1/r/dead-route"],
+          endpoints: [
+            {
+              id: "dead-route",
+              endpoint: "https://push.example.test/v1/r/dead-route",
+            },
+          ],
         }),
       )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     const client = new RelayClient("https://push.example.test", fetchRelay);
     const device = { id: "device-1", secret: "device-secret" };
@@ -170,10 +176,20 @@ describe("relay client", () => {
       ok: true,
       value: null,
     });
-    await expect(client.takeDeadEndpoints(device)).resolves.toEqual({
+    await expect(
+      client.takeDeadEndpoints(device, "home/vapid"),
+    ).resolves.toEqual({
       ok: true,
-      value: ["https://push.example.test/v1/r/dead-route"],
+      value: [
+        {
+          id: "dead-route",
+          endpoint: "https://push.example.test/v1/r/dead-route",
+        },
+      ],
     });
+    await expect(
+      client.acknowledgeDeadEndpoints(device, "home/vapid", ["dead-route"]),
+    ).resolves.toEqual({ ok: true, value: null });
     await expect(client.deleteDevice(device)).resolves.toEqual({
       ok: true,
       value: null,
@@ -182,8 +198,18 @@ describe("relay client", () => {
     expect(fetchRelay.mock.calls.map(([, init]) => init?.method)).toEqual([
       "PUT",
       "GET",
+      "POST",
       "DELETE",
     ]);
+    expect(fetchRelay.mock.calls[1]?.[0]).toBe(
+      "https://push.example.test/v1/devices/device-1/dead-endpoints?home_vapid=home%2Fvapid",
+    );
+    expect(fetchRelay.mock.calls[2]?.[1]?.body).toBe(
+      JSON.stringify({
+        home_vapid: "home/vapid",
+        route_ids: ["dead-route"],
+      }),
+    );
   });
 
   it("falls back to a keepalive release when sendBeacon declines it", async () => {

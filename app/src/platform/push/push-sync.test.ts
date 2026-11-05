@@ -24,6 +24,7 @@ const target = {
 class FakeEngine implements EngineClient {
   readonly requests: EngineRequestEnvelope[] = [];
   failExactUnregister = false;
+  failEnsure = false;
   readonly #listeners = new Set<(message: EngineClientMessage) => void>();
 
   start(_hello: Hello): Promise<void> {
@@ -36,6 +37,9 @@ class FakeEngine implements EngineClient {
       this.failExactUnregister &&
       request.request.type === "unregister_push_route"
     ) {
+      return Promise.reject(new Error("offline"));
+    }
+    if (this.failEnsure && request.request.type === "ensure_push") {
       return Promise.reject(new Error("offline"));
     }
     return Promise.resolve({ type: "command_result" as const, id: request.id });
@@ -109,7 +113,7 @@ class MemoryRoutes implements PushRouteStore {
 
 function fakeRelay() {
   let routeSequence = 0;
-  const deadEndpoints: string[][] = [[]];
+  const deadEndpoints: Array<Array<{ id: string; endpoint: string }>> = [[]];
   const relay = {
     createDevice: vi.fn<RelayClient["createDevice"]>(async () => ({
       ok: true,
@@ -137,6 +141,9 @@ function fakeRelay() {
       ok: true,
       value: deadEndpoints.shift() ?? [],
     })),
+    acknowledgeDeadEndpoints: vi.fn<RelayClient["acknowledgeDeadEndpoints"]>(
+      async () => ({ ok: true, value: null }),
+    ),
     activateRoute: vi.fn<RelayClient["activateRoute"]>(async () => ({
       ok: true,
       value: null,
@@ -220,7 +227,9 @@ function route(overrides: Partial<StoredPushRoute> = {}): StoredPushRoute {
 describe("push state synchronization", () => {
   it("ensures one route with dead endpoints and activates only after registration", async () => {
     const current = fixture();
-    current.deadEndpoints[0] = [`${relayOrigin}/v1/r/dead-route`];
+    current.deadEndpoints[0] = [
+      { id: "dead-route", endpoint: `${relayOrigin}/v1/r/dead-route` },
+    ];
 
     requireRoute(current.engine);
     await current.synchronizer.settled();
@@ -238,6 +247,15 @@ describe("push state synchronization", () => {
       route: { route_id: "route-1" },
     });
     expect(current.relay.activateRoute).not.toHaveBeenCalled();
+    expect(current.relay.takeDeadEndpoints).toHaveBeenCalledWith(
+      { id: "device-1", secret: "device-secret" },
+      "home-vapid",
+    );
+    expect(current.relay.acknowledgeDeadEndpoints).toHaveBeenCalledWith(
+      { id: "device-1", secret: "device-secret" },
+      "home-vapid",
+      ["dead-route"],
+    );
 
     current.engine.emit({
       type: "push_state_changed",
@@ -341,7 +359,9 @@ describe("push state synchronization", () => {
 
   it("purges newly dead endpoints and retries a registration limit once", async () => {
     const current = fixture();
-    current.deadEndpoints.push([`${relayOrigin}/v1/r/expired`]);
+    current.deadEndpoints.push([
+      { id: "expired", endpoint: `${relayOrigin}/v1/r/expired` },
+    ]);
     requireRoute(current.engine);
     await current.synchronizer.settled();
 
@@ -360,6 +380,25 @@ describe("push state synchronization", () => {
       unregister: [`${relayOrigin}/v1/r/expired`],
       route: { route_id: "route-1" },
     });
+    expect(current.relay.acknowledgeDeadEndpoints).toHaveBeenLastCalledWith(
+      { id: "device-1", secret: "device-secret" },
+      "home-vapid",
+      ["expired"],
+    );
+  });
+
+  it("does not acknowledge dead endpoints before engine cleanup succeeds", async () => {
+    const current = fixture();
+    current.engine.failEnsure = true;
+    current.deadEndpoints[0] = [
+      { id: "dead-route", endpoint: `${relayOrigin}/v1/r/dead-route` },
+    ];
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.relay.acknowledgeDeadEndpoints).not.toHaveBeenCalled();
+    expect(current.retries).toHaveLength(1);
   });
 
   it("keeps temporary failures and backs off", async () => {

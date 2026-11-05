@@ -39,6 +39,18 @@ const CLIENT_ORIGIN: &str = "https://beta.weblounge.test";
 const FIXTURE_ACCOUNT: &str = "private-account@example.test";
 type Deliveries = Arc<Mutex<Vec<(String, Vec<u8>, u32, Urgency)>>>;
 
+fn encoded_home(home: &SecretKey) -> String {
+    URL_SAFE_NO_PAD.encode(home.public_key().to_encoded_point(false).as_bytes())
+}
+
+fn dead_endpoints_path(device: &Value, home: &SecretKey) -> String {
+    format!(
+        "/v1/devices/{}/dead-endpoints?home_vapid={}",
+        device["id"].as_str().expect("device id"),
+        encoded_home(home),
+    )
+}
+
 #[derive(Clone, Default)]
 struct LogCapture(Arc<Mutex<Vec<u8>>>);
 
@@ -928,25 +940,46 @@ async fn subscription_endpoint_takeover_retires_the_old_device_and_drains_its_ro
     let dead = call_json(
         &harness.app,
         Method::GET,
-        &format!(
-            "/v1/devices/{}/dead-endpoints",
-            replacement["id"].as_str().expect("device id")
-        ),
+        &dead_endpoints_path(&replacement, &home),
         replacement["secret"].as_str(),
         Value::Null,
         &[],
     )
     .await;
     assert_eq!(dead.0, StatusCode::OK);
-    assert_eq!(dead.1["endpoints"], json!([route["endpoint"]]));
+    assert_eq!(
+        dead.1["endpoints"],
+        json!([{ "id": route["id"], "endpoint": route["endpoint"] }])
+    );
 
-    let drained = call_json(
+    let repeated = call_json(
         &harness.app,
         Method::GET,
+        &dead_endpoints_path(&replacement, &home),
+        replacement["secret"].as_str(),
+        Value::Null,
+        &[],
+    )
+    .await;
+    assert_eq!(repeated.1, dead.1);
+
+    let acknowledged = call_json(
+        &harness.app,
+        Method::POST,
         &format!(
             "/v1/devices/{}/dead-endpoints",
             replacement["id"].as_str().expect("device id")
         ),
+        replacement["secret"].as_str(),
+        json!({ "home_vapid": encoded_home(&home), "route_ids": [route["id"]] }),
+        &[],
+    )
+    .await;
+    assert_eq!(acknowledged.0, StatusCode::NO_CONTENT);
+    let drained = call_json(
+        &harness.app,
+        Method::GET,
+        &dead_endpoints_path(&replacement, &home),
         replacement["secret"].as_str(),
         Value::Null,
         &[],
@@ -1078,16 +1111,16 @@ async fn target_upsert_keeps_routes_live_and_expired_probes_turn_into_dead_endpo
     let dead = call_json(
         &harness.app,
         Method::GET,
-        &format!(
-            "/v1/devices/{}/dead-endpoints",
-            device["id"].as_str().expect("device id")
-        ),
+        &dead_endpoints_path(&device, &home),
         device["secret"].as_str(),
         Value::Null,
         &[],
     )
     .await;
-    assert_eq!(dead.1["endpoints"], json!([route["endpoint"]]));
+    assert_eq!(
+        dead.1["endpoints"],
+        json!([{ "id": route["id"], "endpoint": route["endpoint"] }])
+    );
 }
 
 #[tokio::test]
