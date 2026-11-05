@@ -8,9 +8,9 @@ The single place a fresh session reads to know where the project stands. Update 
   holds all three DMs, presents none, and proves the interleaved reaction `TAGMSG` is not pushed.
 - [x] Make notification taps durable across iOS suspension, discard, relaunch and rejected focus:
   atomically consume one short-lived route intent on startup and foreground lifecycle signals,
-  retain it through cached/live buffer replacement, and fall back from focus to navigation or a new
-  window. Built-app Chromium and iPhone WebKit coverage opens the routed DM from open, discarded
-  and closed states.
+  retain it through cached/live buffer replacement, cancel WebKit's default click handling, and
+  fall back from focus to navigation or a new window. Built-app Chromium and iPhone WebKit coverage
+  opens the routed DM from open, discarded and closed states.
 - [x] Join portable Firefox notification-ledger closes to the control push lifetime, so a worker
   cannot terminate after applying MARKREAD state but before publishing the cleared notification list.
 - [x] Prove released mobile swipes start from the finger through the CSS transition's generated

@@ -266,6 +266,7 @@ worker.addEventListener("pushsubscriptionchange", (event) => {
 
 worker.addEventListener("notificationclick", (event) => {
   const click = event as WorkerNotificationEvent;
+  click.preventDefault();
   click.waitUntil(routeNotificationClick(worker.clients, click.notification));
 });
 

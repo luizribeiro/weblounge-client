@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   schedulePushPresentation,
@@ -96,6 +97,17 @@ const route = {
 const time = "2026-11-03T12:34:56.789Z";
 
 describe("push worker notification presentation", () => {
+  it("prevents platform default routing before handling a notification tap", () => {
+    const source = readFileSync("src/push-worker.ts", "utf8");
+    const preventDefault = source.indexOf("click.preventDefault();");
+    const routeClick = source.indexOf(
+      "click.waitUntil(routeNotificationClick(worker.clients, click.notification));",
+    );
+
+    expect(preventDefault).toBeGreaterThan(-1);
+    expect(routeClick).toBeGreaterThan(preventDefault);
+  });
+
   it.each([
     {
       name: "account-tagged PRIVMSG",

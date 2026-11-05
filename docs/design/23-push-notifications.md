@@ -322,6 +322,12 @@ unavailable. Generic notifications retain `/` because no conversation is known; 
 notification, including one that replaces a deadline fallback through its private native tag,
 retains its parsed buffer route.
 
+The click listener also calls `preventDefault()` before beginning that work. iOS 17 and 18 field
+reports ([733604](https://developer.apple.com/forums/thread/733604),
+[768448](https://developer.apple.com/forums/thread/768448)) say it can improve `navigate()` and
+`openWindow()` handling, but Apple has not documented that behavior; correctness therefore remains
+with the durable intent rather than the cancellation or any one client API.
+
 **Tap before history.** The engine loads the buffer's stored pushed messages from the local store
 before any connection exists, so the tapped message is on screen on a cold start before the
 connection is up; on a warm tap, `open-route` makes the running engine read them too. When chathistory or the live connection later delivers the same `msgid`, the
