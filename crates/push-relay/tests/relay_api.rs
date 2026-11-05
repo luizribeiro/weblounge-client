@@ -296,6 +296,22 @@ impl Harness {
         transaction.commit().expect("seed commit");
     }
 
+    fn seed_legacy_active_route(&self, device: &Value, route: &Value, home: &SecretKey) {
+        let connection = rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+            .expect("relay database");
+        connection
+            .execute(
+                "INSERT INTO routes (id, device_id, state, home_vapid)
+                 VALUES (?1, ?2, 'active', ?3)",
+                rusqlite::params![
+                    route["id"].as_str().expect("route id"),
+                    device["id"].as_str().expect("device id"),
+                    home.public_key().to_encoded_point(false).as_bytes(),
+                ],
+            )
+            .expect("seed legacy active route");
+    }
+
     async fn renew_lease(&self, device: &Value, tab_id: &str) {
         let response = call_json(
             &self.app,
@@ -442,34 +458,12 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
     let device = harness.create_device().await;
     let home = SecretKey::random(&mut OsRng);
     let route = harness.create_route(&device, &home).await;
-    assert_eq!(
-        harness.push(&route, &home, b"secret-probe-payload").await,
-        StatusCode::CREATED
-    );
-    harness.activate(&device, &route).await;
-    assert_eq!(
-        harness
-            .push_with_urgency(&route, &home, b"secret-normal-payload", Some("normal"),)
-            .await,
-        StatusCode::CREATED
-    );
-    harness.renew_lease(&device, "secret-tab-id").await;
-    assert_eq!(
-        harness.push(&route, &home, b"secret-held-payload").await,
-        StatusCode::CREATED
-    );
-    harness.release_lease(&device, "secret-tab-id").await;
-    harness.wait_for_deliveries(1).await;
-    assert_eq!(
-        harness
-            .push(&route, &home, b"secret-forwarded-payload")
-            .await,
-        StatusCode::CREATED
-    );
+    run_logged_push_lifecycle(&harness, &device, &home, &route).await;
 
     assert_logged_push_rejections(&harness, &route).await;
 
     let converged_route = harness.create_route(&device, &home).await;
+    harness.seed_legacy_active_route(&device, &route, &home);
     harness.activate(&device, &converged_route).await;
     let reused = harness
         .ensure_route(&device, &home, converged_route["id"].as_str())
@@ -520,6 +514,36 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
         converged_route,
         deleted_route,
     }
+}
+
+async fn run_logged_push_lifecycle(
+    harness: &Harness,
+    device: &Value,
+    home: &SecretKey,
+    route: &Value,
+) {
+    assert_eq!(
+        harness.push(route, home, b"secret-probe-payload").await,
+        StatusCode::CREATED
+    );
+    harness.activate(device, route).await;
+    assert_eq!(
+        harness
+            .push_with_urgency(route, home, b"secret-normal-payload", Some("normal"),)
+            .await,
+        StatusCode::CREATED
+    );
+    harness.renew_lease(device, "secret-tab-id").await;
+    assert_eq!(
+        harness.push(route, home, b"secret-held-payload").await,
+        StatusCode::CREATED
+    );
+    harness.release_lease(device, "secret-tab-id").await;
+    harness.wait_for_deliveries(1).await;
+    assert_eq!(
+        harness.push(route, home, b"secret-forwarded-payload").await,
+        StatusCode::CREATED
+    );
 }
 
 async fn assert_logged_push_rejections(harness: &Harness, route: &Value) {
