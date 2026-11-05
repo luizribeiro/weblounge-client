@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep an installed iOS PWA's foreground lease authoritative while its visible page reports a
+  false focus signal, so a blur from the keyboard or system chrome cannot release a lease and
+  present burst DMs already visible in the open conversation. The real Ergo/relay/worker journey
+  holds all three DMs, presents none, and proves the interleaved reaction `TAGMSG` is not pushed.
 - [x] Join portable Firefox notification-ledger closes to the control push lifetime, so a worker
   cannot terminate after applying MARKREAD state but before publishing the cleared notification list.
 - [x] Prove released mobile swipes start from the finger through the CSS transition's generated
