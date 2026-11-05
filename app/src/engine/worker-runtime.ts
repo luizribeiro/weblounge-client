@@ -203,6 +203,7 @@ function isSharedStateEvent(event: unknown): boolean {
     event.type === "draft_key_changed" ||
     event.type === "members_changed" ||
     event.type === "messages_appended" ||
+    event.type === "typing_changed" ||
     event.type === "message_updated" ||
     event.type === "messages_prepended" ||
     event.type === "history_state_changed" ||

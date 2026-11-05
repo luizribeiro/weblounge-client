@@ -611,6 +611,13 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "typing_changed": {
+      const typers = decodeArray(value.typers, decodeTypingProjection);
+      if (typeof value.buffer_id === "number" && typers !== undefined) {
+        return { type: messageType, buffer_id: value.buffer_id, typers };
+      }
+      break;
+    }
     case "message_updated": {
       const message = decodeMessage(value.message);
       if (typeof value.buffer_id === "number" && message !== undefined) {
@@ -800,6 +807,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "draft_key_changed" ||
     value === "focus_buffer_requested" ||
     value === "messages_appended" ||
+    value === "typing_changed" ||
     value === "message_updated" ||
     value === "messages_prepended" ||
     value === "buffer_snapshot" ||
@@ -951,6 +959,25 @@ function decodeMember(value: unknown): MemberProjection | undefined {
     account: value.account,
     nick_color_index: value.nick_color_index,
     is_you: value.is_you,
+  };
+}
+
+function decodeTypingProjection(
+  value: unknown,
+):
+  | Extract<EngineToUi, { type: "typing_changed" }>["typers"][number]
+  | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.nick !== "string" ||
+    typeof value.nick_color_index !== "number" ||
+    typeof value.paused !== "boolean"
+  )
+    return undefined;
+  return {
+    nick: value.nick,
+    nick_color_index: value.nick_color_index,
+    paused: value.paused,
   };
 }
 

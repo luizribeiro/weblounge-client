@@ -13,6 +13,7 @@ mod request_error;
 mod runtime;
 mod state;
 pub mod storage;
+mod typing;
 
 use tokio::sync::mpsc;
 
@@ -28,7 +29,7 @@ pub use protocol::{
     MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
     NetworkProjection, NoticeAction, NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig,
     PushDeviceCredentials, PushFailure, PushRoute, PushState, PushUnsupportedReason,
-    RedactedSecret, SaslCredentials, ShellKind, UiToEngine,
+    RedactedSecret, SaslCredentials, ShellKind, TypingProjection, UiToEngine,
 };
 
 /// Reads service-worker push records while constructing the web engine.

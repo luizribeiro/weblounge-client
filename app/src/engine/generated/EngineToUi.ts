@@ -16,6 +16,7 @@ import type { NoticeAction } from "./NoticeAction";
 import type { NoticeTone } from "./NoticeTone";
 import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushState } from "./PushState";
+import type { TypingProjection } from "./TypingProjection";
 
 /**
  * Events emitted to a UI client.
@@ -152,7 +153,15 @@ replacement_suffix: string,
 /**
  * Ordered, bounded rich candidates.
  */
-candidates: Array<CompletionCandidate>, } | { "type": "network_state_changed",
+candidates: Array<CompletionCandidate>, } | { "type": "typing_changed",
+/**
+ * Conversation buffer whose typers changed.
+ */
+buffer_id: BufferId,
+/**
+ * Current bounded typers in start order.
+ */
+typers: Array<TypingProjection>, } | { "type": "network_state_changed",
 /**
  * Complete current network projection.
  */

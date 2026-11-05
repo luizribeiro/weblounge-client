@@ -178,6 +178,14 @@ buffer_id: BufferId,
 /**
  * Nonempty composer contents.
  */
+input: string, } | { "type": "composer_changed",
+/**
+ * Buffer whose composer changed.
+ */
+buffer_id: BufferId,
+/**
+ * Current input, discarded after classifying empty, command, or message text.
+ */
 input: string, } | { "type": "complete_input",
 /**
  * Buffer whose composer owns the completion session.

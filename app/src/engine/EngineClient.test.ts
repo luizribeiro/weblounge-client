@@ -526,6 +526,28 @@ describe("WorkerEngineClient", () => {
     expect(listener).toHaveBeenCalledWith(message);
   });
 
+  it("decodes bounded typing projections", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const message = {
+      type: "typing_changed",
+      buffer_id: 4,
+      typers: [
+        {
+          nick: "alice",
+          nick_color_index: 2,
+          paused: true,
+        },
+      ],
+    };
+
+    port.emit(message);
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith(message);
+  });
+
   it("rejects unversioned member windows", () => {
     const { client, port } = fixture();
     const listener = vi.fn();

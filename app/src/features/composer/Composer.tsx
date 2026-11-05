@@ -3,6 +3,7 @@ import type {
   CommandSpec,
   CompletionCandidate,
   CompletionResult,
+  TypingProjection,
 } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import {
@@ -17,6 +18,7 @@ import { readDraft, removeDraft, writeDraft } from "./draft-storage";
 import { composerGeometryChangeEvent } from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
+import { TypingIndicator } from "./TypingIndicator";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -24,6 +26,7 @@ interface ComposerProps {
   readonly bufferTitle: string;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult | undefined;
+  readonly typers?: readonly TypingProjection[] | undefined;
   readonly disabled?: boolean;
   readonly focusOnMount?: boolean | undefined;
   readonly onRequestCandidates?: (
@@ -32,6 +35,7 @@ interface ComposerProps {
     explicit: boolean,
   ) => void;
   readonly onSelectLast?: () => void;
+  readonly onComposerChanged?: ((input: string) => void) | undefined;
   readonly onSend: (
     text: string,
   ) => boolean | undefined | Promise<boolean | undefined>;
@@ -184,6 +188,7 @@ export function Composer(props: ComposerProps) {
     const cursor = result.replace_start + replacement.length;
     tabCycle = { result, index, currentInput: next };
     update(next, true);
+    props.onComposerChanged?.(next);
     queueMicrotask(() => {
       textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
@@ -207,6 +212,7 @@ export function Composer(props: ComposerProps) {
       return false;
     const cursor = result.replace_start + replacement.length;
     update(next);
+    props.onComposerChanged?.(next);
     queueMicrotask(() => {
       textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
@@ -320,6 +326,7 @@ export function Composer(props: ComposerProps) {
         else touchFocus.cancel();
       }}
     >
+      <TypingIndicator typers={props.typers ?? []} />
       {suggestions() !== undefined && (
         <SuggestionList
           candidates={suggestions()?.candidates ?? []}
@@ -391,6 +398,7 @@ export function Composer(props: ComposerProps) {
             composing = false;
             const value = event.currentTarget.value;
             update(value);
+            props.onComposerChanged?.(value);
             request(value, event.currentTarget.selectionStart, false);
           }}
           onCompositionStart={() => {
@@ -401,8 +409,10 @@ export function Composer(props: ComposerProps) {
           onInput={(event) => {
             const value = event.currentTarget.value;
             update(value);
-            if (!composing)
+            if (!composing) {
+              props.onComposerChanged?.(value);
               request(value, event.currentTarget.selectionStart, false);
+            }
           }}
           onKeyDown={keydown}
           placeholder={t("composer.input", { target: props.bufferTitle })}

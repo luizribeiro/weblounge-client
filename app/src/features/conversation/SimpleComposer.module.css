@@ -18,6 +18,22 @@
   padding: 0;
 }
 
+.typing {
+  align-items: center;
+  color: var(--wl-color-muted);
+  display: flex;
+  font-size: var(--wl-font-section-size);
+  height: 24px;
+  margin: -8px 0 0;
+  overflow: hidden;
+  padding-inline: 4px;
+  white-space: nowrap;
+}
+
+.typing span {
+  font-weight: 600;
+}
+
 .input {
   background: var(--wl-color-input-bg);
   border: 1px solid var(--wl-color-border);

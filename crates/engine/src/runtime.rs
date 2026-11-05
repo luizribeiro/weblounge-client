@@ -19,7 +19,7 @@ use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineMessageKey,
     EngineRequest, EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId, NoticeKind, OfflineReason, PushFailure, PushState,
-    PushUnsupportedReason,
+    PushUnsupportedReason, TypingProjection,
     chat_list_snapshot::{self, ChatListSnapshot},
     commands::{self, Command},
     notification_settings, push_device,
@@ -78,6 +78,7 @@ struct RunningNetwork {
     hosted_reconnect: Option<HostedReconnectConfig>,
     chat_list: ChatListSync,
     push: PushRegistration,
+    typing: crate::typing::OutgoingTyping,
 }
 
 impl RunningNetwork {
@@ -408,6 +409,9 @@ impl Runtime {
             } => self.retry_message(envelope.id, buffer_id, local_send_id),
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
+            }
+            EngineRequest::ComposerChanged { buffer_id, input } => {
+                self.composer_changed(envelope.id, buffer_id, &input)
             }
             EngineRequest::CompleteInput {
                 buffer_id,
@@ -757,6 +761,34 @@ impl Runtime {
         }
     }
 
+    fn composer_changed(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        input: &str,
+    ) -> Vec<EngineToUi> {
+        let mut state = lock(&self.state);
+        let Some(running) = state.network.as_mut() else {
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        };
+        if !running.client.state().supports(papo::Feature::Typing) {
+            _ = running.typing.done(buffer_id);
+            return vec![EngineToUi::CommandResult { id: command_id }];
+        }
+        let target = running.model.typing_target(buffer_id);
+        let (typing, pause) = running.typing.changed(buffer_id, input);
+        let client = running.client.clone();
+        let instance = running.instance;
+        drop(state);
+        if let (Some(target), Some(typing)) = (target, typing) {
+            spawn_typing(client, target, typing);
+        }
+        if let Some(pause) = pause {
+            spawn_typing_pause(Arc::clone(&self.state), instance, pause);
+        }
+        vec![EngineToUi::CommandResult { id: command_id }]
+    }
+
     fn show_version(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let text = if state.update_ready {
@@ -1021,6 +1053,7 @@ impl Runtime {
                 ..ChatListSync::default()
             },
             push: PushRegistration::default(),
+            typing: crate::typing::OutgoingTyping::default(),
         });
         drop(state);
 
@@ -1111,6 +1144,7 @@ impl Runtime {
                 ..ChatListSync::default()
             },
             push: PushRegistration::default(),
+            typing: crate::typing::OutgoingTyping::default(),
         });
         output
     }
@@ -1151,6 +1185,7 @@ impl Runtime {
         running.connection_attempt = 1;
         running.flushing_sends = false;
         running.flushing_reads = false;
+        running.typing = crate::typing::OutgoingTyping::default();
         state.network = Some(running);
         drop(state);
 
@@ -1386,6 +1421,8 @@ impl Runtime {
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
         };
+        let typing_done = running.typing.done(buffer_id);
+        let typing_target = running.model.typing_target(buffer_id);
         let retry_if_disconnected = running.model.is_cached_buffer(buffer_id)
             || !running.device_online
             || running.model.is_online();
@@ -1402,6 +1439,10 @@ impl Runtime {
         let instance = running.instance;
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
+
+        if let (Some(target), Some(typing)) = (typing_target, typing_done) {
+            spawn_typing(client.clone(), target, typing);
+        }
 
         if should_flush {
             spawn_send_flush(
@@ -1933,6 +1974,7 @@ fn attach_shell(running: &RunningNetwork, command_id: String) -> Vec<EngineToUi>
         },
     ];
     output.extend(model.snapshot_events());
+    output.extend(typing_snapshot_events(model, &running.client.state()));
     if let Some(state) = running.push.state.clone() {
         output.push(EngineToUi::PushStateChanged {
             network_id: model.id(),
@@ -2294,6 +2336,65 @@ async fn send(client: &papo::Client, pending: &PendingSend) -> Result<papo::Sent
         }
         .map_err(|error| classify_send_error(&error)),
     }
+}
+
+fn spawn_typing(client: papo::Client, target: SendTarget, typing: papo::Typing) {
+    spawn_task(async move {
+        match target {
+            SendTarget::Channel(channel) => {
+                _ = client.typing(channel, typing).await;
+            }
+            SendTarget::Direct {
+                recipient: Some(recipient),
+                ..
+            } => {
+                _ = client.typing(recipient, typing).await;
+            }
+            SendTarget::Direct {
+                recipient: None, ..
+            } => {}
+        }
+    });
+}
+
+fn spawn_typing_pause(state: Arc<Mutex<RuntimeState>>, instance: u64, pause: crate::typing::Pause) {
+    spawn_task(async move {
+        delay(crate::typing::PAUSE_AFTER).await;
+        let command = {
+            let mut state = lock(&state);
+            let Some(running) = state
+                .network
+                .as_mut()
+                .filter(|running| running.instance == instance)
+            else {
+                return;
+            };
+            let typing = running.typing.expire_scheduled(pause);
+            typing.map(|typing| {
+                (
+                    running.client.clone(),
+                    running.model.typing_target(pause.buffer_id),
+                    typing,
+                )
+            })
+        };
+        if let Some((client, Some(target), typing)) = command {
+            match target {
+                SendTarget::Channel(channel) => {
+                    _ = client.typing(channel, typing).await;
+                }
+                SendTarget::Direct {
+                    recipient: Some(recipient),
+                    ..
+                } => {
+                    _ = client.typing(recipient, typing).await;
+                }
+                SendTarget::Direct {
+                    recipient: None, ..
+                } => {}
+            }
+        }
+    });
 }
 
 fn classify_send_error(error: &papo::Error) -> SendError {
@@ -3375,6 +3476,14 @@ fn process_papo_event(
             output.extend(received);
             Vec::new()
         }
+        papo::Event::TypingChanged(changed) => {
+            if let Some(event) =
+                typing_changed_event(&running.model, snapshot, &changed.conversation)
+            {
+                output.push(event);
+            }
+            Vec::new()
+        }
         papo::Event::ReadMarkerChanged(marker) => {
             process_read_marker(&mut running.model, &marker, output);
             Vec::new()
@@ -3409,6 +3518,44 @@ fn process_papo_event(
     effects
 }
 
+fn typing_snapshot_events(model: &NetworkModel, state: &papo::State) -> Vec<EngineToUi> {
+    model
+        .conversation_buffers()
+        .filter_map(|(buffer_id, conversation)| {
+            let typers = typing_projection(state, &conversation);
+            (!typers.is_empty()).then_some(EngineToUi::TypingChanged { buffer_id, typers })
+        })
+        .collect()
+}
+
+fn typing_changed_event(
+    model: &NetworkModel,
+    state: &papo::State,
+    conversation: &papo::Conversation,
+) -> Option<EngineToUi> {
+    Some(EngineToUi::TypingChanged {
+        buffer_id: model.buffer_id_for_conversation(conversation)?,
+        typers: typing_projection(state, conversation),
+    })
+}
+
+fn typing_projection(
+    state: &papo::State,
+    conversation: &papo::Conversation,
+) -> Vec<TypingProjection> {
+    state
+        .typing(conversation)
+        .map(|typer| TypingProjection {
+            nick: typer.nick().to_string(),
+            nick_color_index: crate::state::nick_color_index(
+                state.casemapping(),
+                typer.nick().as_str(),
+            ),
+            paused: typer.is_paused(),
+        })
+        .collect()
+}
+
 fn spawn_event_flushes(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: &mpsc::UnboundedSender<EngineToUi>,
@@ -3441,6 +3588,13 @@ fn process_disconnected_event(
     disconnected: &papo::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
+    running.typing = crate::typing::OutgoingTyping::default();
+    output.extend(running.model.conversation_buffers().map(|(buffer_id, _)| {
+        EngineToUi::TypingChanged {
+            buffer_id,
+            typers: Vec::new(),
+        }
+    }));
     let clear_authentication = process_disconnect(running, disconnected, output);
     let refresh_token = running.authentication_kind == AuthenticationKind::HostedOAuth
         && !clear_authentication
@@ -5422,6 +5576,183 @@ async fn delay(duration: Duration) {
         drain.abort();
     }
 
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn channel_typing_projects_multiple_users_transitions_and_expiry() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
+        wire.register(&["message-tags"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        assert!(wire.next_sent().await.ends_with("JOIN #room"));
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        _ = collect(&mut receiver);
+
+        for line in [
+            "@+typing=active :alice!u@host TAGMSG #room",
+            "@+typing=paused :alice!u@host TAGMSG #room",
+            "@+typing=active :bob!u@host TAGMSG #room",
+        ] {
+            wire.server(line).await;
+            let changed = next_matching(&mut events, |event| {
+                matches!(event, papo::Event::TypingChanged(_))
+            })
+            .await;
+            process_event(&state, &outbound, &client, 1, changed);
+        }
+        let projected = collect(&mut receiver);
+        assert!(projected.iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. }
+                if typers.len() == 2
+                    && typers[0].nick == "alice"
+                    && typers[0].paused
+                    && typers[1].nick == "bob"
+                    && !typers[1].paused
+        )));
+
+        wire.server(":bob!u@host PRIVMSG #room :finished").await;
+        let cleared = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, cleared);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. }
+                if typers.len() == 1 && typers[0].nick == "alice"
+        )));
+
+        wire.server("@+typing=active :carol!u@host TAGMSG #room")
+            .await;
+        let active = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, active);
+        _ = collect(&mut receiver);
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let expired = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(changed)
+                if changed.reason == papo::event::TypingReason::TimedOut)
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, expired);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. }
+                if typers.len() == 1 && typers[0].nick == "alice"
+        )));
+    }
+
+    #[tokio::test]
+    async fn direct_typing_uses_the_existing_buffer_and_ignores_own_state() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["message-tags"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        wire.server(":alice!u@host PRIVMSG weblounge :hello").await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        _ = collect(&mut receiver);
+
+        wire.server("@+typing=active :alice!u@host TAGMSG weblounge")
+            .await;
+        let active = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, active);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. }
+                if typers.len() == 1 && typers[0].nick == "alice"
+        )));
+
+        wire.server("@+typing=active :weblounge!u@host TAGMSG alice")
+            .await;
+        let own = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, own);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. } if typers.len() == 1
+        )));
+
+        wire.server("@+typing=done :alice!u@host TAGMSG weblounge")
+            .await;
+        let done = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, done);
+        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. } if typers.is_empty()
+        )));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn composer_typing_is_throttled_paused_and_done_before_send() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["message-tags"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        wire.server(":alice!u@host PRIVMSG #room :hello").await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        let buffer_id = lock(&state)
+            .network
+            .as_ref()
+            .expect("network remains running")
+            .model
+            .buffer_id_for_channel(&known_channel(&client, "#room"))
+            .expect("channel buffer exists");
+        let runtime = Runtime { state, outbound };
+
+        for (id, input) in [("first", "h"), ("second", "he")] {
+            assert!(matches!(
+                runtime.request(EngineRequestEnvelope {
+                    id: id.into(),
+                    request: EngineRequest::ComposerChanged {
+                        buffer_id,
+                        input: input.into(),
+                    },
+                })[..],
+                [EngineToUi::CommandResult { .. }]
+            ));
+        }
+        assert_eq!(wire.next_sent().await, "@+typing=active TAGMSG #room");
+        tokio::time::advance(crate::typing::PAUSE_AFTER).await;
+        assert_eq!(wire.next_sent().await, "@+typing=paused TAGMSG #room");
+
+        _ = runtime.request(EngineRequestEnvelope {
+            id: "resume".into(),
+            request: EngineRequest::ComposerChanged {
+                buffer_id,
+                input: "hel".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "@+typing=active TAGMSG #room");
+
+        _ = runtime.request(EngineRequestEnvelope {
+            id: "send".into(),
+            request: EngineRequest::SubmitInput {
+                buffer_id,
+                input: "hello".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "@+typing=done TAGMSG #room");
+        assert_eq!(wire.next_sent().await, "PRIVMSG #room hello");
+    }
+
     fn assert_window(
         events: &[EngineToUi],
         view_id: &str,
@@ -5550,6 +5881,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -5621,6 +5953,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -5823,6 +6156,7 @@ async fn delay(duration: Duration) {
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
+                    typing: crate::typing::OutgoingTyping::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -5918,6 +6252,7 @@ async fn delay(duration: Duration) {
                     }),
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
+                    typing: crate::typing::OutgoingTyping::default(),
                     client,
                     model: NetworkModel::new(
                         NetworkId(1),
@@ -6032,6 +6367,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -6183,6 +6519,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
             }))),
@@ -6281,6 +6618,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model,
             }))),
@@ -6351,6 +6689,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model,
             }))),
@@ -6429,6 +6768,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model,
             }))),
@@ -6533,6 +6873,7 @@ async fn delay(duration: Duration) {
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
+                    typing: crate::typing::OutgoingTyping::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -6924,6 +7265,7 @@ async fn delay(duration: Duration) {
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
+                    typing: crate::typing::OutgoingTyping::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -7050,6 +7392,7 @@ async fn delay(duration: Duration) {
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
+                    typing: crate::typing::OutgoingTyping::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -7117,6 +7460,7 @@ async fn delay(duration: Duration) {
                     hosted_reconnect: None,
                     chat_list: ChatListSync::default(),
                     push: PushRegistration::default(),
+                    typing: crate::typing::OutgoingTyping::default(),
                     client,
                     model: NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50),
                 }),
@@ -7448,6 +7792,7 @@ async fn delay(duration: Duration) {
                 hosted_reconnect: None,
                 chat_list: ChatListSync::default(),
                 push: PushRegistration::default(),
+                typing: crate::typing::OutgoingTyping::default(),
                 client,
                 model,
             }),

@@ -701,6 +701,18 @@ pub struct MemberProjection {
     pub is_you: bool,
 }
 
+/// One user currently composing in a conversation.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct TypingProjection {
+    /// Current nickname.
+    pub nick: String,
+    /// Stable theme palette index for the nickname.
+    #[ts(type = "number")]
+    pub nick_color_index: u32,
+    /// Whether input has paused while the draft remains nonempty.
+    pub paused: bool,
+}
+
 /// Initial UI identity and revision state.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct Hello {
@@ -886,6 +898,13 @@ pub enum EngineRequest {
         /// Buffer whose composer produced the input.
         buffer_id: BufferId,
         /// Nonempty composer contents.
+        input: String,
+    },
+    /// Report a user edit so the engine can publish transient typing state.
+    ComposerChanged {
+        /// Buffer whose composer changed.
+        buffer_id: BufferId,
+        /// Current input, discarded after classifying empty, command, or message text.
         input: String,
     },
     /// Resolve composer completion candidates from input around the caret.
@@ -1083,6 +1102,13 @@ pub enum EngineToUi {
         replacement_suffix: String,
         /// Ordered, bounded rich candidates.
         candidates: Vec<CompletionCandidate>,
+    },
+    /// Replace one buffer's complete transient typing projection.
+    TypingChanged {
+        /// Conversation buffer whose typers changed.
+        buffer_id: BufferId,
+        /// Current bounded typers in start order.
+        typers: Vec<TypingProjection>,
     },
     /// A network's connection projection changed.
     NetworkStateChanged {

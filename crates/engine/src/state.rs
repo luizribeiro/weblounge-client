@@ -1560,6 +1560,37 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    pub(crate) fn buffer_id_for_conversation(
+        &self,
+        conversation: &papo::Conversation,
+    ) -> Option<BufferId> {
+        self.names
+            .get(&NameKey::from_conversation(conversation)?)
+            .copied()
+    }
+
+    pub(crate) fn conversation_buffers(
+        &self,
+    ) -> impl Iterator<Item = (BufferId, papo::Conversation)> + '_ {
+        self.buffers.iter().filter_map(|(buffer_id, buffer)| {
+            let conversation = match buffer.key.as_ref()? {
+                NameKey::Channel(channel) => papo::Conversation::Channel(channel.clone()),
+                NameKey::Direct(nick) => papo::Conversation::Private(nick.clone()),
+            };
+            Some((*buffer_id, conversation))
+        })
+    }
+
+    pub(crate) fn typing_target(&self, buffer_id: BufferId) -> Option<SendTarget> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        SendTarget::from_buffer(
+            buffer.key.clone()?,
+            buffer.direct.as_ref(),
+            buffer.direct_pin.as_ref(),
+            buffer.direct_mismatch.is_some(),
+        )
+    }
+
     pub(crate) fn remove_channel(&mut self, channel: &papo::ChannelName) -> Option<EngineToUi> {
         let key = NameKey::Channel(channel.clone());
         let buffer_id = self.names.remove(&key)?;
