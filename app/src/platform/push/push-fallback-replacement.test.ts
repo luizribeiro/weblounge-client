@@ -39,7 +39,11 @@ describe("push fallback replacement", () => {
         title: "first message",
         options: expect.objectContaining({
           tag: "weblounge-fallback/first",
-          data: expect.objectContaining({ fallbackId: "first" }),
+          data: expect.objectContaining({
+            route: "/first-message",
+            fallbackId: "first",
+            conversationTag: "Lounge/#first",
+          }),
         }),
       }),
     ]);
