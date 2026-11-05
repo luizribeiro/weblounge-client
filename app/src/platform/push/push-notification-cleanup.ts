@@ -26,6 +26,12 @@ interface ConversationIdentity {
   readonly receiptId?: string;
 }
 
+export interface CurrentConversationNotification {
+  readonly receiptId: string;
+  readonly messageId: string;
+  readonly messageTime: string;
+}
+
 export async function closeNotificationsCoveredByMarkers(
   notifications: () => Promise<readonly CloseableNotification[]>,
   readMarkers: ReadonlyMap<string, number>,
@@ -80,7 +86,7 @@ export async function closeSupersededFallbackNotifications(
 export async function closeSupersededConversationNotifications(
   notifications: () => Promise<readonly CloseableNotification[]>,
   conversationTag: string,
-  currentReceiptId: string,
+  currentNotification: CurrentConversationNotification,
   pendingReceipts: ReadonlySet<string>,
 ): Promise<void> {
   const candidates = await notificationSnapshot(notifications);
@@ -94,12 +100,22 @@ export async function closeSupersededConversationNotifications(
         : [];
     }),
   );
+  const currentReceiptIsVisible = currentNotifications.some(
+    (notification) =>
+      conversationIdentity(notification.data)?.receiptId ===
+      currentNotification.receiptId,
+  );
   for (const candidate of candidates) {
     const identity = conversationIdentity(candidate.data);
     if (
       identity === undefined ||
       !belongsToConversation(identity, conversationTag, relatedFallbacks) ||
-      isProtectedReceipt(identity, currentReceiptId, pendingReceipts)
+      isProtectedReceipt(
+        identity,
+        currentNotification,
+        currentReceiptIsVisible,
+        pendingReceipts,
+      )
     ) {
       continue;
     }
@@ -210,15 +226,19 @@ function belongsToConversation(
 
 function isProtectedReceipt(
   identity: ConversationIdentity,
-  currentReceiptId: string,
+  current: CurrentConversationNotification,
+  currentReceiptIsVisible: boolean,
   pendingReceipts: ReadonlySet<string>,
 ): boolean {
-  if (identity.receiptId === undefined) return false;
   const detailed = identity.conversationTag !== undefined;
   return (
     detailed &&
-    (identity.receiptId === currentReceiptId ||
-      pendingReceipts.has(identity.receiptId))
+    (identity.receiptId === current.receiptId ||
+      (identity.receiptId !== undefined &&
+        pendingReceipts.has(identity.receiptId)) ||
+      (!currentReceiptIsVisible &&
+        identity.messageId === current.messageId &&
+        identity.messageTime === current.messageTime))
   );
 }
 

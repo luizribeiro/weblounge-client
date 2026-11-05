@@ -101,7 +101,7 @@ describe("push notification cleanup", () => {
     await closeSupersededConversationNotifications(
       async () => visible,
       tag,
-      "current",
+      currentIdentity(),
       new Set(["current", "newer"]),
     );
 
@@ -130,7 +130,7 @@ describe("push notification cleanup", () => {
     await closeSupersededConversationNotifications(
       async () => [fallback, detail],
       tag,
-      "current",
+      currentIdentity(),
       new Set(["current"]),
     );
 
@@ -150,7 +150,7 @@ describe("push notification cleanup", () => {
     await closeSupersededConversationNotifications(
       async () => snapshots.shift() ?? [replacement],
       tag,
-      "current",
+      currentIdentity(),
       new Set(["current"]),
     );
 
@@ -167,7 +167,7 @@ describe("push notification cleanup", () => {
     await closeSupersededConversationNotifications(
       async () => [...older, current],
       tag,
-      "current",
+      currentIdentity(),
       new Set(["current"]),
     );
 
@@ -175,6 +175,24 @@ describe("push notification cleanup", () => {
       older.filter(({ close }) => close.mock.calls.length > 0),
     ).toHaveLength(64);
     expect(older.at(-1)?.close).not.toHaveBeenCalled();
+    expect(current.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current message identity when its receipt is unavailable", async () => {
+    const old = conversationNotification(tag, "old", "old-message");
+    const current = notification(
+      "current-message",
+      currentIdentity().messageTime,
+    );
+
+    await closeSupersededConversationNotifications(
+      async () => [old, current],
+      tag,
+      currentIdentity(),
+      new Set(["current"]),
+    );
+
+    expect(old.close).toHaveBeenCalledOnce();
     expect(current.close).not.toHaveBeenCalled();
   });
 });
@@ -206,6 +224,14 @@ function conversationNotification(
       receiptId,
     },
     close: vi.fn(),
+  };
+}
+
+function currentIdentity() {
+  return {
+    receiptId: "current",
+    messageId: "current-message",
+    messageTime: "2026-11-04T19:24:34.000Z",
   };
 }
 

@@ -538,7 +538,11 @@ async function commitPushDelivery(commit: PushCommit): Promise<void> {
         await closeSupersededConversationNotifications(
           registrationNotifications,
           commit.tag,
-          commit.receiptId,
+          {
+            receiptId: commit.receiptId,
+            messageId: commit.event.msgid,
+            messageTime: commit.event.time,
+          },
           pendingReceipts,
         );
       }
