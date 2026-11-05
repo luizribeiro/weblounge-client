@@ -56,6 +56,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly hydrating?: boolean | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
+  readonly messageFailureNotices?: ReadonlyMap<number, string> | undefined;
   readonly completion: CompletionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly onFocusRequestHandled?:
@@ -128,6 +129,11 @@ export function DesktopShell(props: DesktopShellProps) {
     props.buffers.find((buffer) => buffer.id === layout().root.bufferId),
   );
   const activeBufferId = createMemo(() => activeBuffer()?.id);
+  const activeComposerNotice = createMemo(
+    () =>
+      props.messageFailureNotices?.get(activeBufferId() ?? -1) ??
+      props.composerNotice,
+  );
   const activeBufferSync = createMemo(() => {
     const buffer = activeBuffer();
     return buffer === undefined
@@ -428,9 +434,9 @@ export function DesktopShell(props: DesktopShellProps) {
                   messageListController = controller;
                 }}
               />
-              {props.composerNotice !== undefined && (
+              {activeComposerNotice() !== undefined && (
                 <p class={styles.notice} role="status">
-                  {props.composerNotice}
+                  {activeComposerNotice()}
                 </p>
               )}
               {activeBuffer()?.channel_status === "kicked" && (

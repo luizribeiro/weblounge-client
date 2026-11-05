@@ -1289,6 +1289,69 @@ it("shows an optimistic message as failed when sending fails", async () => {
   ).toBeInTheDocument();
 });
 
+it("shows a send failure only in its owning conversation", async () => {
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Local",
+      nickname: "me",
+      state: "online",
+    },
+  });
+  client.emit({
+    type: "buffers_changed",
+    network_id: 1,
+    buffers: [
+      {
+        id: 2,
+        network_id: 1,
+        sync_state: "synced",
+        kind: "channel",
+        title: "#room",
+        draft_key: "test:#room",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+      {
+        id: 3,
+        network_id: 1,
+        sync_state: "synced",
+        kind: "direct",
+        title: "ana",
+        draft_key: "test:ana",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    ],
+  });
+  expect(await screen.findByRole("heading", { name: "#room" })).toBeVisible();
+
+  client.emit({
+    type: "message_failed",
+    network_id: 1,
+    buffer_id: 3,
+    target: "ana",
+    local_send_id: 7,
+    message_key: "engine.direct_target_gone",
+  });
+
+  expect(
+    screen.queryByText(/nickname now belongs to someone else/u),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "ana" }));
+  expect(await screen.findByRole("heading", { name: "ana" })).toBeVisible();
+  expect(
+    screen.getByText(/nickname now belongs to someone else/u),
+  ).toBeVisible();
+});
+
 it("reopens a hidden failed DM from its typed notice", async () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);

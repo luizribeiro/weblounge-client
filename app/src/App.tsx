@@ -150,6 +150,11 @@ export function App(props: AppProps) {
   );
   const [startupCapReached, setStartupCapReached] = createSignal(false);
   const [composerNotice, setComposerNotice] = createSignal<string>();
+  const [messageFailureNotices, setMessageFailureNotices] = createSignal<
+    ReadonlyMap<number, string>
+  >(new Map());
+  const clearMessageFailureNotice = (bufferId: number) =>
+    setMessageFailureNotices((current) => withoutMapKey(current, bufferId));
   const [commandSpecs, setCommandSpecs] = createSignal<CommandSpec[]>();
   const [completion, setCompletion] = createSignal<CompletionResult>();
   const [focusRequest, setFocusRequest] = createSignal<{ bufferId: number }>();
@@ -545,9 +550,19 @@ export function App(props: AppProps) {
       }
       if (message.type === "message_failed") {
         if (buffers().some((buffer) => buffer.id === message.buffer_id)) {
-          setComposerNotice(translate(message.message_key));
+          setMessageFailureNotices((current) =>
+            new Map(current).set(
+              message.buffer_id,
+              translate(message.message_key),
+            ),
+          );
         }
       }
+      if (
+        message.type === "message_confirmed" ||
+        message.type === "message_retrying"
+      )
+        clearMessageFailureNotice(message.buffer_id);
       if (message.type === "command_specs_changed") {
         setCommandSpecs(message.specs);
       }
@@ -682,6 +697,7 @@ export function App(props: AppProps) {
         migrateDraft(message.previous, message.current);
       }
       if (message.type === "buffer_removed") {
+        clearMessageFailureNotice(message.buffer_id);
         const current = buffers();
         const index = current.findIndex(
           (buffer) => buffer.id === message.buffer_id,
@@ -1254,6 +1270,7 @@ export function App(props: AppProps) {
           bufferRemoval={bufferRemoval()}
           commandSpecs={commandSpecs()}
           composerNotice={composerNotice()}
+          messageFailureNotices={messageFailureNotices()}
           completion={completion()}
           focusRequest={focusRequest()}
           messages={messages()}
@@ -1303,6 +1320,7 @@ export function App(props: AppProps) {
           onSend={(bufferId, text) => {
             if (client === undefined) return Promise.resolve(false);
             setComposerNotice(undefined);
+            clearMessageFailureNotice(bufferId);
             const uiResult = noticeActions.runInput(text, {
               bufferCount: buffers().length,
               listActive: false,
@@ -1421,6 +1439,7 @@ export function App(props: AppProps) {
           }}
           onRetry={(bufferId, localSendId) => {
             if (client === undefined) return;
+            clearMessageFailureNotice(bufferId);
             void client.send({
               id: crypto.randomUUID(),
               request: {

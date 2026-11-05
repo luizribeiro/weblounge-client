@@ -575,6 +575,7 @@ export function MobileShell(props: MobileShellProps) {
             chatsScrollVersion={scrollRestoreVersion}
             commandSpecs={props.commandSpecs}
             composerNotice={props.composerNotice}
+            messageFailureNotices={props.messageFailureNotices}
             completion={props.completion}
             filter={filter()}
             hydrating={props.hydrating}

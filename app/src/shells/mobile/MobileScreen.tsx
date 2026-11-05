@@ -26,6 +26,7 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly hydrating?: boolean | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
+  readonly messageFailureNotices?: ReadonlyMap<number, string> | undefined;
   readonly completion: CompletionResult | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
@@ -91,6 +92,9 @@ export function MobileScreen(props: MobileScreenProps) {
       ? props.buffers.find((item) => item.id === screen.bufferId)
       : undefined;
   };
+  const composerNotice = () =>
+    props.messageFailureNotices?.get(buffer()?.id ?? -1) ??
+    props.composerNotice;
   return (
     <div
       aria-hidden={props.inactive || props.retained || undefined}
@@ -134,9 +138,9 @@ export function MobileScreen(props: MobileScreenProps) {
           buffer={buffer() as BufferProjection}
           hydrating={props.hydrating}
           commandSpecs={props.commandSpecs}
-          {...(props.composerNotice === undefined
+          {...(composerNotice() === undefined
             ? {}
-            : { composerNotice: props.composerNotice })}
+            : { composerNotice: composerNotice() })}
           {...(props.completion === undefined
             ? {}
             : { completion: props.completion })}
