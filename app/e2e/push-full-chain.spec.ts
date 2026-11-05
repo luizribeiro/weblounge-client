@@ -189,6 +189,7 @@ test.describe("full unmocked push lifecycle", () => {
 
       await closeNotifications(page);
       await releaseForegroundLeases([page, other]);
+      const badgeBefore = (await storedAppBadge(page)) ?? 0;
       const direct = `read elsewhere ${randomUUID()}`;
       await bot.privmsgConfirmed("weblounge", direct);
       const [first, second] = await nextRecords(["/device/a", "/device/b"]);
@@ -196,6 +197,15 @@ test.describe("full unmocked push lifecycle", () => {
       await deliverRecordedEnvelope(otherContext, other, second);
       await expectNotification(page, direct);
       await expectNotification(other, direct);
+      const originalNotification = [
+        {
+          title: bot.nickname,
+          body: direct,
+          tag: `weblounge/${bot.nickname.toLowerCase()}`,
+        },
+      ];
+      await expect(notifications(page)).resolves.toEqual(originalNotification);
+      await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
 
       const droppedBefore = await normalPushesDropped();
       await other.goto("/");
@@ -209,7 +219,26 @@ test.describe("full unmocked push lifecycle", () => {
       await expect.poll(() => normalPushesDropped()).toBe(droppedBefore + 2);
       expect((await records()).length).toBe(receiverCursor);
       await expect.poll(() => notifications(other)).toEqual([]);
+      await expect
+        .poll(() => notifications(page))
+        .toEqual(originalNotification);
+      await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
+
+      await context.addInitScript(installAppBadgeSpy);
+      await page.goto("/");
+      await expect(connectionHeading(page)).toBeVisible();
       await expect.poll(() => notifications(page)).toEqual([]);
+      await expect
+        .poll(async () => {
+          const corrected = await latestAppBadgeCall(page);
+          const stored = await storedAppBadge(page);
+          return (
+            corrected !== undefined &&
+            corrected < badgeBefore + 1 &&
+            corrected === stored
+          );
+        })
+        .toBe(true);
     } finally {
       await otherContext.close();
     }
