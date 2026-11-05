@@ -227,12 +227,12 @@ test.describe("full unmocked push lifecycle", () => {
       const [first, second] = await nextRecords(["/device/a", "/device/b"]);
       await deliverRecordedEnvelope(context, page, first);
       await deliverRecordedEnvelope(otherContext, other, second);
-      await expectNotification(page, direct);
+      await expectNotification(page, direct, 2);
       await expectNotification(other, direct);
       const originalNotification = [
         {
           title: bot.nickname,
-          body: direct,
+          body: notificationBody(direct, 2),
           tag: `weblounge/${bot.nickname.toLowerCase()}`,
         },
       ];
@@ -1232,10 +1232,20 @@ async function notifications(page: Page) {
   });
 }
 
-async function expectNotification(page: Page, body: string): Promise<void> {
+async function expectNotification(
+  page: Page,
+  body: string,
+  count = 1,
+): Promise<void> {
   await expect
     .poll(() => notifications(page))
-    .toEqual([expect.objectContaining({ body })]);
+    .toEqual([
+      expect.objectContaining({ body: notificationBody(body, count) }),
+    ]);
+}
+
+function notificationBody(body: string, count: number): string {
+  return count === 1 ? body : `${body}\n· ${count} new messages`;
 }
 
 async function closeNotifications(page: Page): Promise<void> {
