@@ -900,13 +900,6 @@ pub enum EngineRequest {
         /// Nonempty composer contents.
         input: String,
     },
-    /// Report a user edit so the engine can publish transient typing state.
-    ComposerChanged {
-        /// Buffer whose composer changed.
-        buffer_id: BufferId,
-        /// Current input, discarded after classifying empty, command, or message text.
-        input: String,
-    },
     /// Resolve composer completion candidates from input around the caret.
     CompleteInput {
         /// Buffer whose composer owns the completion session.

@@ -91,9 +91,6 @@ export interface DesktopShellProps extends NotificationPromptControls {
     cursor: number,
     explicit: boolean,
   ) => void;
-  readonly onComposerChanged?:
-    | ((bufferId: number, input: string) => void)
-    | undefined;
   readonly onRequestMembers?:
     | ((
         viewId: string,
@@ -484,9 +481,6 @@ export function DesktopShell(props: DesktopShellProps) {
                           cursor,
                           explicit,
                         )
-                      }
-                      onComposerChanged={(input) =>
-                        props.onComposerChanged?.(bufferId, input)
                       }
                       onSelectLast={() =>
                         messageListController?.selectLastOwn()

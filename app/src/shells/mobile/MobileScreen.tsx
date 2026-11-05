@@ -49,9 +49,6 @@ export interface MobileShellData extends NotificationPromptControls {
     cursor: number,
     explicit: boolean,
   ) => void;
-  readonly onComposerChanged?:
-    | ((bufferId: number, input: string) => void)
-    | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onRetry?:
     | ((bufferId: number, localSendId: number) => void)
@@ -165,7 +162,6 @@ export function MobileScreen(props: MobileScreenProps) {
           onDeferDirectIdentity={props.onDeferDirectIdentity}
           onTrustDirectIdentity={props.onTrustDirectIdentity}
           onRequestCompletion={props.onRequestCompletion}
-          onComposerChanged={props.onComposerChanged}
           onRetryNetwork={props.onRetryNetwork}
           showConnectionError={!props.retained}
           onRetry={props.onRetry}

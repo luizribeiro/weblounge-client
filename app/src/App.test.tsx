@@ -59,9 +59,11 @@ it("projects engine-owned typing state into the active composer", async () => {
     expect(client.requests).toContainEqual({
       id: expect.any(String),
       request: {
-        type: "composer_changed",
+        type: "complete_input",
         buffer_id: 2,
         input: "hello",
+        cursor: 5,
+        explicit: false,
       },
     }),
   );

@@ -410,15 +410,15 @@ impl Runtime {
             EngineRequest::SubmitInput { buffer_id, input } => {
                 self.submit_input(envelope.id, buffer_id, &input)
             }
-            EngineRequest::ComposerChanged { buffer_id, input } => {
-                self.composer_changed(envelope.id, buffer_id, &input)
-            }
             EngineRequest::CompleteInput {
                 buffer_id,
                 input,
                 cursor,
                 explicit,
-            } => self.complete_input(envelope.id, buffer_id, input, cursor, explicit),
+            } => {
+                self.composer_changed(buffer_id, &input);
+                self.complete_input(envelope.id, buffer_id, input, cursor, explicit)
+            }
             EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }
@@ -761,19 +761,14 @@ impl Runtime {
         }
     }
 
-    fn composer_changed(
-        &self,
-        command_id: String,
-        buffer_id: BufferId,
-        input: &str,
-    ) -> Vec<EngineToUi> {
+    fn composer_changed(&self, buffer_id: BufferId, input: &str) {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
-            return vec![EngineToUi::CommandResult { id: command_id }];
+            return;
         };
         if !running.client.state().supports(papo::Feature::Typing) {
             _ = running.typing.done(buffer_id);
-            return vec![EngineToUi::CommandResult { id: command_id }];
+            return;
         }
         let target = running.model.typing_target(buffer_id);
         let (typing, pause) = running.typing.changed(buffer_id, input);
@@ -786,7 +781,6 @@ impl Runtime {
         if let Some(pause) = pause {
             spawn_typing_pause(Arc::clone(&self.state), instance, pause);
         }
-        vec![EngineToUi::CommandResult { id: command_id }]
     }
 
     fn show_version(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
@@ -5721,9 +5715,11 @@ async fn delay(duration: Duration) {
             assert!(matches!(
                 runtime.request(EngineRequestEnvelope {
                     id: id.into(),
-                    request: EngineRequest::ComposerChanged {
+                    request: EngineRequest::CompleteInput {
                         buffer_id,
                         input: input.into(),
+                        cursor: u32::try_from(input.len()).expect("test input fits u32"),
+                        explicit: false,
                     },
                 })[..],
                 [EngineToUi::CommandResult { .. }]
@@ -5735,9 +5731,11 @@ async fn delay(duration: Duration) {
 
         _ = runtime.request(EngineRequestEnvelope {
             id: "resume".into(),
-            request: EngineRequest::ComposerChanged {
+            request: EngineRequest::CompleteInput {
                 buffer_id,
                 input: "hel".into(),
+                cursor: 3,
+                explicit: false,
             },
         });
         assert_eq!(wire.next_sent().await, "@+typing=active TAGMSG #room");

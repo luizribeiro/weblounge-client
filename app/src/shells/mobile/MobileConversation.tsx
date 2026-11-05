@@ -63,9 +63,6 @@ export interface MobileConversationProps {
     cursor: number,
     explicit: boolean,
   ) => void;
-  readonly onComposerChanged?:
-    | ((bufferId: number, input: string) => void)
-    | undefined;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly showConnectionError?: boolean | undefined;
   readonly onRetry?:
@@ -271,9 +268,6 @@ export function MobileConversation(props: MobileConversationProps) {
                 cursor,
                 explicit,
               )
-            }
-            onComposerChanged={(input) =>
-              props.onComposerChanged?.(props.buffer.id, input)
             }
             onSelectLast={() => listController?.selectLastOwn()}
             disabled={

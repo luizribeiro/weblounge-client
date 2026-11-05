@@ -16,10 +16,11 @@ reflow the conversation nor make a polite live region chatter.
 buffer. Empty `typers` clears it. The engine derives this list from `State::typing`; it does not
 keep a second incoming typing table.
 
-`EngineRequest::ComposerChanged { buffer_id, input }` reports a user edit. The engine immediately
-discards the text after classifying it as empty, slash-command, or message text. Its per-buffer
-outgoing state machine retains only phase, generation, and pause deadline. A clock boundary makes
-the three-second idle transition deterministic in tests.
+The existing `EngineRequest::CompleteInput` reports each user edit for completion and typing, so
+the UI does not create a second input-observation path. The engine immediately discards the text
+after classifying it as empty, slash-command, or message text. Its per-buffer outgoing state
+machine retains only phase, generation, and pause deadline. A clock boundary makes the
+three-second idle transition deterministic in tests.
 
 ## Boundaries and behaviour
 

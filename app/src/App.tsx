@@ -1392,19 +1392,6 @@ export function App(props: AppProps) {
               })
               .catch(() => undefined);
           }}
-          onComposerChanged={(bufferId, input) => {
-            if (client === undefined) return;
-            void client
-              .send({
-                id: crypto.randomUUID(),
-                request: {
-                  type: "composer_changed",
-                  buffer_id: bufferId,
-                  input,
-                },
-              })
-              .catch(() => undefined);
-          }}
           onRequestMembers={(viewId, bufferId, offset, filter = "") => {
             if (client === undefined) return;
             void client.send({

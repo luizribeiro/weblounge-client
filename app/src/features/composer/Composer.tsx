@@ -35,7 +35,6 @@ interface ComposerProps {
     explicit: boolean,
   ) => void;
   readonly onSelectLast?: () => void;
-  readonly onComposerChanged?: ((input: string) => void) | undefined;
   readonly onSend: (
     text: string,
   ) => boolean | undefined | Promise<boolean | undefined>;
@@ -188,7 +187,6 @@ export function Composer(props: ComposerProps) {
     const cursor = result.replace_start + replacement.length;
     tabCycle = { result, index, currentInput: next };
     update(next, true);
-    props.onComposerChanged?.(next);
     queueMicrotask(() => {
       textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
@@ -212,7 +210,6 @@ export function Composer(props: ComposerProps) {
       return false;
     const cursor = result.replace_start + replacement.length;
     update(next);
-    props.onComposerChanged?.(next);
     queueMicrotask(() => {
       textarea?.focus({ preventScroll: true });
       textarea?.setSelectionRange(cursor, cursor);
@@ -398,7 +395,6 @@ export function Composer(props: ComposerProps) {
             composing = false;
             const value = event.currentTarget.value;
             update(value);
-            props.onComposerChanged?.(value);
             request(value, event.currentTarget.selectionStart, false);
           }}
           onCompositionStart={() => {
@@ -410,7 +406,6 @@ export function Composer(props: ComposerProps) {
             const value = event.currentTarget.value;
             update(value);
             if (!composing) {
-              props.onComposerChanged?.(value);
               request(value, event.currentTarget.selectionStart, false);
             }
           }}
