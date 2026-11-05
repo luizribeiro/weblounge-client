@@ -13,6 +13,7 @@ export const pushStateStore = "state";
 export const appBadgeKey = "app-badge";
 export const notificationCountsKey = "notification-counts";
 export const databaseDeadlineMs = 500;
+export const pageDatabaseDeadlineMs = 5_000;
 const legacyMigrationKey = "legacy-migration-complete";
 
 export class DatabaseTimeoutError extends Error {
@@ -30,6 +31,7 @@ export interface ConversationNotificationCount {
 
 export function openPushDatabase(
   factory: IDBFactory = indexedDB,
+  deadlineMs = databaseDeadlineMs,
 ): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -37,7 +39,7 @@ export function openPushDatabase(
     const deadline = setTimeout(() => {
       settled = true;
       reject(new DatabaseTimeoutError("push database open"));
-    }, databaseDeadlineMs);
+    }, deadlineMs);
     request.onupgradeneeded = () => {
       createRoutesStore(request.result);
       if (!request.result.objectStoreNames.contains(pushStateStore)) {
@@ -50,7 +52,7 @@ export function openPushDatabase(
         return;
       }
       request.result.onversionchange = () => request.result.close();
-      void migrateLegacyPushDatabase(request.result, factory).then(
+      void migrateLegacyPushDatabase(request.result, factory, deadlineMs).then(
         () => {
           clearTimeout(deadline);
           if (settled) {
@@ -87,20 +89,24 @@ export function openPushDatabase(
 export async function migrateLegacyPushDatabase(
   database: IDBDatabase,
   factory: IDBFactory = indexedDB,
+  deadlineMs = databaseDeadlineMs,
 ): Promise<void> {
-  if (await migrationComplete(database)) return;
-  const legacy = await openLegacyPushDatabase(factory);
-  const routes = legacy === undefined ? [] : await readRoutes(legacy);
+  if (await migrationComplete(database, deadlineMs)) return;
+  const legacy = await openLegacyPushDatabase(factory, deadlineMs);
+  const routes =
+    legacy === undefined ? [] : await readRoutes(legacy, deadlineMs);
   const badge =
-    legacy === undefined ? undefined : await readState(legacy, appBadgeKey);
+    legacy === undefined
+      ? undefined
+      : await readState(legacy, appBadgeKey, deadlineMs);
   const counts =
     legacy === undefined
       ? undefined
-      : await readState(legacy, notificationCountsKey);
+      : await readState(legacy, notificationCountsKey, deadlineMs);
   legacy?.close();
-  const current = await readRoutes(database);
+  const current = await readRoutes(database, deadlineMs);
   const selected = selectRoutes([...routes, ...current]);
-  await writeMigration(database, selected, badge, counts);
+  await writeMigration(database, selected, badge, counts, deadlineMs);
 }
 
 function createRoutesStore(database: IDBDatabase): IDBObjectStore {
@@ -156,17 +162,22 @@ function selectRoutes(routes: readonly unknown[]): readonly unknown[] {
   return [...selected.values()];
 }
 
-async function migrationComplete(database: IDBDatabase): Promise<boolean> {
+async function migrationComplete(
+  database: IDBDatabase,
+  deadlineMs: number,
+): Promise<boolean> {
   const transaction = database.transaction(pushStateStore, "readonly");
   const value = await requestResult(
     transaction.objectStore(pushStateStore).get(legacyMigrationKey),
+    deadlineMs,
   );
-  await transactionDone(transaction);
+  await transactionDone(transaction, deadlineMs);
   return value === true;
 }
 
 function openLegacyPushDatabase(
   factory: IDBFactory,
+  deadlineMs: number,
 ): Promise<IDBDatabase | undefined> {
   return new Promise((resolve, reject) => {
     let missing = false;
@@ -175,7 +186,7 @@ function openLegacyPushDatabase(
     const deadline = setTimeout(() => {
       settled = true;
       reject(new DatabaseTimeoutError("legacy push database open"));
-    }, databaseDeadlineMs);
+    }, deadlineMs);
     request.onupgradeneeded = () => {
       missing = true;
       request.transaction?.abort();
@@ -205,23 +216,32 @@ function openLegacyPushDatabase(
   });
 }
 
-async function readRoutes(database: IDBDatabase): Promise<readonly unknown[]> {
+async function readRoutes(
+  database: IDBDatabase,
+  deadlineMs: number,
+): Promise<readonly unknown[]> {
   if (!database.objectStoreNames.contains(pushRoutesStore)) return [];
   const transaction = database.transaction(pushRoutesStore, "readonly");
   const routes = await requestResult(
     transaction.objectStore(pushRoutesStore).getAll(),
+    deadlineMs,
   );
-  await transactionDone(transaction);
+  await transactionDone(transaction, deadlineMs);
   return routes;
 }
 
-async function readState(database: IDBDatabase, key: string): Promise<unknown> {
+async function readState(
+  database: IDBDatabase,
+  key: string,
+  deadlineMs: number,
+): Promise<unknown> {
   if (!database.objectStoreNames.contains(pushStateStore)) return undefined;
   const transaction = database.transaction(pushStateStore, "readonly");
   const value = await requestResult(
     transaction.objectStore(pushStateStore).get(key),
+    deadlineMs,
   );
-  await transactionDone(transaction);
+  await transactionDone(transaction, deadlineMs);
   return value;
 }
 
@@ -230,6 +250,7 @@ async function writeMigration(
   routes: readonly unknown[],
   badge: unknown,
   counts: unknown,
+  deadlineMs: number,
 ): Promise<void> {
   const transaction = database.transaction(
     [pushRoutesStore, pushStateStore],
@@ -245,29 +266,32 @@ async function writeMigration(
     if (counts !== undefined) stateStore.put(counts, notificationCountsKey);
     stateStore.put(true, legacyMigrationKey);
   };
-  await transactionDone(transaction);
+  await transactionDone(transaction, deadlineMs);
 }
 
 export async function writeAppBadgeCount(count: number): Promise<void> {
-  const database = await openPushDatabase();
+  const database = await openPushDatabase(indexedDB, pageDatabaseDeadlineMs);
   try {
     const transaction = database.transaction(pushStateStore, "readwrite");
     transaction.objectStore(pushStateStore).put(count, appBadgeKey);
-    await transactionDone(transaction);
+    await transactionDone(transaction, pageDatabaseDeadlineMs);
   } finally {
     database.close();
   }
 }
 
 export async function incrementAppBadgeCount(): Promise<number> {
-  const database = await openPushDatabase();
+  const database = await openPushDatabase(indexedDB, pageDatabaseDeadlineMs);
   try {
     const transaction = database.transaction(pushStateStore, "readwrite");
     const store = transaction.objectStore(pushStateStore);
-    const current = await requestResult(store.get(appBadgeKey));
+    const current = await requestResult(
+      store.get(appBadgeKey),
+      pageDatabaseDeadlineMs,
+    );
     const count = (typeof current === "number" ? current : 0) + 1;
     store.put(count, appBadgeKey);
-    await transactionDone(transaction);
+    await transactionDone(transaction, pageDatabaseDeadlineMs);
     return count;
   } finally {
     database.close();
@@ -277,30 +301,36 @@ export async function incrementAppBadgeCount(): Promise<number> {
 export async function writeNotificationCounts(
   counts: readonly ConversationNotificationCount[],
 ): Promise<void> {
-  const database = await openPushDatabase();
+  const database = await openPushDatabase(indexedDB, pageDatabaseDeadlineMs);
   try {
     const transaction = database.transaction(pushStateStore, "readwrite");
     const store = transaction.objectStore(pushStateStore);
     const state = decodeNotificationState(
-      await requestResult(store.get(notificationCountsKey)),
+      await requestResult(
+        store.get(notificationCountsKey),
+        pageDatabaseDeadlineMs,
+      ),
     );
     replaceNotificationCounts(state, counts);
     const total = counts.reduce((sum, entry) => sum + entry.count, 0);
     store.put(encodeNotificationState(state), notificationCountsKey);
     store.put(total, appBadgeKey);
-    await transactionDone(transaction);
+    await transactionDone(transaction, pageDatabaseDeadlineMs);
   } finally {
     database.close();
   }
 }
 
-export function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+export function requestResult<T>(
+  request: IDBRequest<T>,
+  deadlineMs = databaseDeadlineMs,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const deadline = setTimeout(() => {
       settled = true;
       reject(new DatabaseTimeoutError("database request"));
-    }, databaseDeadlineMs);
+    }, deadlineMs);
     request.onsuccess = () => {
       clearTimeout(deadline);
       if (settled) return;
@@ -316,7 +346,10 @@ export function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-export function transactionDone(transaction: IDBTransaction): Promise<void> {
+export function transactionDone(
+  transaction: IDBTransaction,
+  deadlineMs = databaseDeadlineMs,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const deadline = setTimeout(() => {
@@ -325,7 +358,7 @@ export function transactionDone(transaction: IDBTransaction): Promise<void> {
         transaction.abort();
       } catch {}
       reject(new DatabaseTimeoutError("database transaction"));
-    }, databaseDeadlineMs);
+    }, deadlineMs);
     transaction.oncomplete = () => {
       clearTimeout(deadline);
       if (settled) return;

@@ -1,6 +1,7 @@
 import { encodeBase64Url } from "./base64url";
 import {
   openPushDatabase,
+  pageDatabaseDeadlineMs,
   pushRouteIdIndex,
   pushRoutesStore,
   requestResult,
@@ -70,8 +71,9 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
       const transaction = database.transaction(pushRoutesStore, "readonly");
       const value = await requestResult(
         transaction.objectStore(pushRoutesStore).get(homeVapid),
+        pageDatabaseDeadlineMs,
       );
-      await transactionDone(transaction);
+      await transactionDone(transaction, pageDatabaseDeadlineMs);
       return value === undefined ? undefined : decodeRoute(value);
     } finally {
       database.close();
@@ -87,8 +89,9 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
           .objectStore(pushRoutesStore)
           .index(pushRouteIdIndex)
           .get(routeId),
+        pageDatabaseDeadlineMs,
       );
-      await transactionDone(transaction);
+      await transactionDone(transaction, pageDatabaseDeadlineMs);
       return value === undefined ? undefined : decodeRoute(value);
     } finally {
       database.close();
@@ -100,7 +103,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     try {
       const transaction = database.transaction(pushRoutesStore, "readwrite");
       transaction.objectStore(pushRoutesStore).put(route);
-      await transactionDone(transaction);
+      await transactionDone(transaction, pageDatabaseDeadlineMs);
     } finally {
       database.close();
     }
@@ -111,7 +114,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     try {
       const transaction = database.transaction(pushRoutesStore, "readwrite");
       transaction.objectStore(pushRoutesStore).delete(homeVapid);
-      await transactionDone(transaction);
+      await transactionDone(transaction, pageDatabaseDeadlineMs);
     } finally {
       database.close();
     }
@@ -123,8 +126,9 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
       const transaction = database.transaction(pushRoutesStore, "readonly");
       const values = await requestResult(
         transaction.objectStore(pushRoutesStore).getAll(),
+        pageDatabaseDeadlineMs,
       );
-      await transactionDone(transaction);
+      await transactionDone(transaction, pageDatabaseDeadlineMs);
       return values.map(decodeRoute);
     } finally {
       database.close();
@@ -133,7 +137,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
 }
 
 function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
-  return openPushDatabase(factory);
+  return openPushDatabase(factory, pageDatabaseDeadlineMs);
 }
 
 function decodeRoute(value: unknown): StoredPushRoute {

@@ -33,6 +33,19 @@ describe("push database deadlines", () => {
     await assertion;
   });
 
+  it("accepts a longer page-side request deadline", async () => {
+    vi.useFakeTimers();
+    const request = {} as IDBRequest<unknown>;
+
+    const result = requestResult(request, databaseDeadlineMs * 4);
+    const assertion =
+      expect(result).rejects.toBeInstanceOf(DatabaseTimeoutError);
+    await vi.advanceTimersByTimeAsync(databaseDeadlineMs);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(databaseDeadlineMs * 3);
+    await assertion;
+  });
+
   it("aborts a transaction at its deadline", async () => {
     vi.useFakeTimers();
     const abort = vi.fn();
