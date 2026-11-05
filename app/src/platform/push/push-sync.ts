@@ -147,9 +147,6 @@ export class PushSynchronizer {
       );
       return;
     }
-    if (pushState.status === "unsupported") {
-      this.#enqueue(() => this.unregisterNetwork(message.network_id));
-    }
   }
 
   dispose(): void {

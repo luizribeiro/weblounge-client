@@ -265,6 +265,79 @@ test.describe("full unmocked push lifecycle", () => {
   });
 });
 
+test.describe("independent push route reopen", () => {
+  test.skip(!enabled, "requires the local push E2E VM");
+
+  test("keeps the active route and delivers after the app reopens", async ({
+    browser,
+  }) => {
+    await switchToCurrentBuild();
+    const context = await pushContext(browser, "route-reopen");
+    let page = await context.newPage();
+    const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
+    const bot = await IrcClient.connectIsolated(
+      `push-reopen-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    try {
+      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+      const endpointsBefore = await audit.pushSubscriptionEndpoints();
+      await page.goto("/");
+      await expect(connectionHeading(page)).toBeVisible();
+      await page.getByRole("button", { name: "Turn on" }).click();
+
+      let deviceId: string | undefined;
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          deviceId = created?.id;
+          return created === undefined
+            ? undefined
+            : { active: created.active, probing: created.probing };
+        })
+        .toEqual({ active: 1, probing: 0 });
+      await expect
+        .poll(() => audit.pushSubscriptionEndpoints())
+        .toHaveLength(endpointsBefore.length + 1);
+      const registeredEndpoints = await audit.pushSubscriptionEndpoints();
+      if (deviceId === undefined)
+        throw new Error("relay device was not created");
+
+      await page.close();
+      page = await context.newPage();
+      await page.goto("/");
+      await expect(connectionHeading(page)).toBeVisible();
+      await expect
+        .poll(async () => {
+          const reopened = (await relayStates()).find(
+            ({ id }) => id === deviceId,
+          );
+          return reopened === undefined
+            ? undefined
+            : { active: reopened.active, probing: reopened.probing };
+        })
+        .toEqual({ active: 1, probing: 0 });
+      expect(await audit.pushSubscriptionEndpoints()).toEqual(
+        registeredEndpoints,
+      );
+
+      await closeNotifications(page);
+      await releaseForegroundLeases([page]);
+      const direct = `push survives reopen ${randomUUID()}`;
+      await bot.privmsgConfirmed("weblounge", direct);
+      const record = await nextRecord("/device/route-reopen");
+      await deliverRecordedEnvelope(context, page, record);
+      await expectNotification(page, direct);
+    } finally {
+      bot.close();
+      audit.close();
+      await context.close();
+    }
+  });
+});
+
 test.describe("independent push recovery", () => {
   test.skip(!enabled, "requires the local push E2E VM");
 

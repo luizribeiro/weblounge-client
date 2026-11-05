@@ -421,6 +421,33 @@ describe("push state synchronization", () => {
     expect(current.retries).toHaveLength(1);
   });
 
+  it("keeps an active route when the engine briefly reports unsupported", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route());
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "unsupported", reason: "no_account" },
+    });
+    await current.synchronizer.settled();
+
+    expect(current.relay.deleteRoute).not.toHaveBeenCalled();
+    expect(current.routes.values.get("home-vapid")?.routeId).toBe("route-1");
+    expect(current.engine.requests).not.toContainEqual(
+      expect.objectContaining({
+        request: expect.objectContaining({ type: "unregister_push_route" }),
+      }),
+    );
+  });
+
   it("turns forbidden registration off visibly", async () => {
     const current = fixture();
     requireRoute(current.engine);

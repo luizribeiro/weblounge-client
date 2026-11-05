@@ -438,9 +438,6 @@ export function App(props: AppProps) {
         setEnginePushStates((current) =>
           new Map(current).set(message.network_id, message.state),
         );
-        if (message.state.status === "unsupported") {
-          knownPushRequirements.delete(message.network_id);
-        }
       }
       if (
         pushSynchronizer === undefined &&

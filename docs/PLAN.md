@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep active push routes through app-open connection transients: unsupported snapshots are
+  non-destructive, late own-account confirmation rechecks registration, and the full relay journey
+  closes and reopens the app before proving the route and delivery remain live.
 - [x] Make the relay own push route identity and converge deployed browser state: target-upserted
   devices, one home-keyed route, exact dead-endpoint cleanup, one engine ensure per connection,
   daily refresh, presentation-first bounded serialized worker delivery, read-marker-bounded
