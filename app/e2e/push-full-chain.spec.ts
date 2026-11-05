@@ -973,6 +973,15 @@ async function preparePortablePushDriver(page: Page): Promise<void> {
       });
     });
   });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const registration =
+          await navigator.serviceWorker.getRegistration("/push-driver/");
+        return registration?.active?.state;
+      }),
+    )
+    .toBe("activated");
 }
 
 async function deliverPortableEnvelope(
