@@ -3471,8 +3471,9 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::TypingChanged(changed) => {
-            if let Some(event) =
-                typing_changed_event(&running.model, snapshot, &changed.conversation)
+            if changed.authorship != papo::Authorship::Own
+                && let Some(event) =
+                    typing_changed_event(&running.model, snapshot, &changed.conversation)
             {
                 output.push(event);
             }
@@ -5674,9 +5675,7 @@ async fn delay(duration: Duration) {
         })
         .await;
         process_event(&state, &outbound, &client, 1, own);
-        assert!(collect(&mut receiver).iter().any(|event| matches!(event,
-            EngineToUi::TypingChanged { typers, .. } if typers.len() == 1
-        )));
+        assert!(collect(&mut receiver).is_empty());
 
         wire.server("@+typing=done :alice!u@host TAGMSG weblounge")
             .await;
