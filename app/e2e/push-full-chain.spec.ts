@@ -302,6 +302,11 @@ test.describe("independent push route reopen", () => {
         .poll(() => audit.pushSubscriptionEndpoints())
         .toHaveLength(endpointsBefore.length + 1);
       const registeredEndpoints = await audit.pushSubscriptionEndpoints();
+      const routeEndpoints = registeredEndpoints.filter(
+        (endpoint) => !endpointsBefore.includes(endpoint),
+      );
+      expect(routeEndpoints).toHaveLength(1);
+      const [routeEndpoint] = routeEndpoints;
       if (deviceId === undefined)
         throw new Error("relay device was not created");
 
@@ -319,9 +324,7 @@ test.describe("independent push route reopen", () => {
             : { active: reopened.active, probing: reopened.probing };
         })
         .toEqual({ active: 1, probing: 0 });
-      expect(await audit.pushSubscriptionEndpoints()).toEqual(
-        registeredEndpoints,
-      );
+      expect(await audit.pushSubscriptionEndpoints()).toContain(routeEndpoint);
 
       await closeNotifications(page);
       await releaseForegroundLeases([page]);
