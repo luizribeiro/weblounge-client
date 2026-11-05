@@ -54,6 +54,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "webkit-push-taps",
+      grep: /routes a tapped DM/,
+      testMatch: "**/push-notifications.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "firefox-timestamps",
       testMatch: "**/timestamps.spec.ts",
       use: { browserName: "firefox" },

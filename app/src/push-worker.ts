@@ -2,7 +2,10 @@ import {
   ENGINE_DATABASE_NAME,
   ENGINE_DATABASE_VERSION,
 } from "./engine/generated/EngineDatabaseSchema";
-import { routeNotificationClick } from "./platform/push/notification-routing";
+import {
+  type NotificationClients,
+  routeNotificationClick,
+} from "./platform/push/notification-routing";
 import {
   DatabaseTimeoutError,
   databaseDeadlineMs,
@@ -200,6 +203,31 @@ worker.addEventListener("message", (event) => {
     );
     return;
   }
+  if (__PUSH_EVENT_HARNESS__ && isHarnessNotificationClick(data)) {
+    const notification = harnessNotifications[0];
+    const harnessClients = harnessNotificationClients(data.clientState);
+    const handled =
+      notification === undefined
+        ? Promise.reject(new Error("push harness notification is unavailable"))
+        : routeNotificationClick(harnessClients.clients, notification);
+    message.waitUntil(
+      handled.then(
+        () =>
+          message.source?.postMessage({
+            type: "notification_clicked",
+            id: data.id,
+            openedRoute: harnessClients.openedRoute(),
+          }),
+        (error: unknown) =>
+          message.source?.postMessage({
+            type: "notification_click_failed",
+            id: data.id,
+            error: pushError(error),
+          }),
+      ),
+    );
+    return;
+  }
   if (!requestsActivation(data)) return;
   message.waitUntil(worker.skipWaiting());
 });
@@ -297,6 +325,55 @@ function isHarnessPush(value: unknown): value is {
         Number.isSafeInteger(value.presentationFailures) &&
         value.presentationFailures >= 0))
   );
+}
+
+function isHarnessNotificationClick(value: unknown): value is {
+  readonly type: "click_notification";
+  readonly id: string;
+  readonly clientState: "open" | "discarded" | "closed";
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "click_notification" &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "clientState" in value &&
+    ["open", "discarded", "closed"].includes(String(value.clientState))
+  );
+}
+
+function harnessNotificationClients(state: "open" | "discarded" | "closed"): {
+  readonly clients: NotificationClients;
+  readonly openedRoute: () => string | undefined;
+} {
+  let openedRoute: string | undefined;
+  const clients = {
+    openWindow: async (url: string) => {
+      openedRoute = url;
+      return null;
+    },
+    matchAll: async (options: {
+      readonly type: "window";
+      readonly includeUncontrolled: true;
+    }) => {
+      if (state === "closed") return [];
+      return (await worker.clients.matchAll(options)).map((client) => ({
+        focus: async () =>
+          state === "open"
+            ? client
+            : {
+                focus: () => client.focus(),
+                navigate: (url: string) => client.navigate(url),
+                postMessage: () => undefined,
+              },
+        navigate: (url: string) => client.navigate(url),
+        postMessage: (message: unknown) => client.postMessage(message),
+      }));
+    },
+  } as NotificationClients;
+  return { clients, openedRoute: () => openedRoute };
 }
 
 function queuePush(pushEvent: PushPayloadEvent): Promise<void> {

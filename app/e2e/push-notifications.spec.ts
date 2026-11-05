@@ -192,7 +192,14 @@ test("migrates and decrypts an active route from the previous schema", async ({
   context,
   page,
 }) => {
-  await prepareServiceWorker(context, page);
+  test.skip(
+    process.env.WEBLOUNGE_E2E_DEV === "1",
+    "the service worker is intentionally disabled in development",
+  );
+  await page.route("**/push-upgrade", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
+  );
+  await page.goto("/push-upgrade");
   const envelope = await seedRouteAndEncrypt(
     page,
     "@time=2026-11-03T12:34:56.789Z;msgid=push-upgrade :mel!m@example.test PRIVMSG #lounge :hello after upgrade",
@@ -200,6 +207,15 @@ test("migrates and decrypts an active route from the previous schema", async ({
     3,
     true,
   );
+  await context.grantPermissions(["notifications"], {
+    origin: new URL(page.url()).origin,
+  });
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/service-worker.js", {
+      scope: "/",
+    });
+    await navigator.serviceWorker.ready;
+  });
 
   await deliverPush(context, page, envelope);
 
@@ -316,6 +332,48 @@ test("MARKREAD silently closes a direct-message notification", async ({
   await expect.poll(() => notifications(page, notificationScope)).toEqual([]);
   await expect.poll(() => storedAppBadge(page)).toBe(0);
 });
+
+for (const clientState of ["open", "discarded", "closed"] as const) {
+  test(`routes a tapped DM when the app client is ${clientState}`, async ({
+    browserName,
+    context,
+    page,
+  }) => {
+    await installNotificationTapEngine(context);
+    const scope = await preparePushEventHarness(context, page);
+    const envelope = await seedRouteAndEncrypt(
+      page,
+      `@account=louro;time=2026-11-05T12:34:56.789Z;msgid=tap-${clientState} :louro!l@example.test PRIVMSG weblounge :tap ${clientState}`,
+    );
+    await deliverBrowserPush(browserName, context, page, scope, envelope);
+    await expect
+      .poll(() => notifications(page, scope))
+      .toEqual([
+        expect.objectContaining({
+          title: "louro",
+          route: "/Lounge/@louro",
+        }),
+      ]);
+
+    if (clientState === "open") {
+      await clickHarnessNotification(page, scope, clientState);
+      await expect(page.getByRole("heading", { name: "louro" })).toBeVisible();
+      return;
+    }
+    if (clientState === "discarded") {
+      await clickHarnessNotification(page, scope, clientState);
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "louro" })).toBeVisible();
+      return;
+    }
+    const click = await clickHarnessNotification(page, scope, clientState);
+    expect(click.openedRoute).toBe("/Lounge/@louro");
+    await page.close();
+    const opened = await context.newPage();
+    await opened.goto("/");
+    await expect(opened.getByRole("heading", { name: "louro" })).toBeVisible();
+  });
+}
 
 test("does not tidy a notification newer than its read marker", async ({
   context,
@@ -768,6 +826,163 @@ async function preparePushEventHarness(
     )
     .toBe("activated");
   return pushHarnessScope;
+}
+
+async function clickHarnessNotification(
+  page: Page,
+  scope: string,
+  clientState: "open" | "discarded" | "closed",
+): Promise<{ readonly openedRoute?: string }> {
+  return page.evaluate(
+    async ({ clientState, registrationScope }) => {
+      const registration =
+        await navigator.serviceWorker.getRegistration(registrationScope);
+      if (registration?.active === null || registration?.active === undefined) {
+        throw new Error("push event harness is unavailable");
+      }
+      const id = crypto.randomUUID();
+      return new Promise<{ readonly openedRoute?: string }>(
+        (resolve, reject) => {
+          const onMessage = (event: MessageEvent<unknown>) => {
+            const message = event.data;
+            if (
+              typeof message !== "object" ||
+              message === null ||
+              !("id" in message) ||
+              message.id !== id ||
+              !("type" in message)
+            ) {
+              return;
+            }
+            navigator.serviceWorker.removeEventListener("message", onMessage);
+            if (message.type === "notification_clicked") {
+              resolve({
+                ...("openedRoute" in message &&
+                typeof message.openedRoute === "string"
+                  ? { openedRoute: message.openedRoute }
+                  : {}),
+              });
+            } else if (
+              message.type === "notification_click_failed" &&
+              "error" in message
+            ) {
+              reject(new Error(String(message.error)));
+            }
+          };
+          navigator.serviceWorker.addEventListener("message", onMessage);
+          registration.active.postMessage({
+            type: "click_notification",
+            id,
+            clientState,
+          });
+        },
+      );
+    },
+    { clientState, registrationScope: scope },
+  );
+}
+
+async function installNotificationTapEngine(
+  context: BrowserContext,
+): Promise<void> {
+  await context.addInitScript(() => {
+    const buffers = (withDirect: boolean) => [
+      {
+        id: 2,
+        network_id: 1,
+        sync_state: "synced",
+        kind: "channel",
+        title: "#home",
+        draft_key: "test:#home",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+      ...(withDirect
+        ? [
+            {
+              id: 3,
+              network_id: 1,
+              sync_state: "synced",
+              kind: "direct",
+              title: "louro",
+              draft_key: "test:louro",
+              topic: null,
+              unread: 1,
+              mentions: 1,
+              read_through: null,
+            },
+          ]
+        : []),
+    ];
+    class NotificationTapPort extends EventTarget {
+      postMessage(message: unknown): void {
+        if (!isRecord(message)) return;
+        if (message.type === "hello") {
+          this.emit({
+            type: "ready",
+            engine_instance: "notification-tap-engine",
+            revision: 0,
+          });
+          return;
+        }
+        const payload = message.payload;
+        if (!isRecord(payload) || typeof payload.id !== "string") return;
+        const request = payload.request;
+        if (isRecord(request) && request.type === "diagnostic") {
+          this.emit({
+            type: "diagnostic",
+            command_id: payload.id,
+            message: "wasm worker round trip complete",
+          });
+          this.emit({
+            type: "network_state_changed",
+            network: {
+              id: 1,
+              label: "Lounge",
+              nickname: "weblounge",
+              state: "online",
+            },
+          });
+          this.emit({
+            type: "chat_list_snapshot_loaded",
+            network_id: 1,
+            buffers: buffers(false).map((buffer) => ({
+              ...buffer,
+              cached: true,
+              cached_preview: "cached message",
+            })),
+          });
+        }
+        if (isRecord(request) && request.type === "load_pushed_messages") {
+          this.emit({
+            type: "chat_list_live",
+            network_id: 1,
+            buffers: buffers(true),
+          });
+        }
+        this.emit({ type: "command_result", id: payload.id });
+      }
+
+      start(): void {}
+      close(): void {}
+
+      private emit(data: unknown): void {
+        this.dispatchEvent(new MessageEvent("message", { data }));
+      }
+    }
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: class {
+        readonly port = new NotificationTapPort();
+      },
+    });
+
+    function isRecord(value: unknown): value is Record<string, unknown> {
+      return typeof value === "object" && value !== null;
+    }
+  });
 }
 
 async function deliverBrowserPush(
