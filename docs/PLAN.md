@@ -39,6 +39,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Make push CI fixtures model their intended ownership: take the engine offline before a cold
   pushed-DM restore, and assert the schema-3 worker state without granting engine markers cleanup
   authority.
+- [x] Bound rejected push presentation with backoff, request fallback before the delivery budget,
+  isolate commit failure from presentation, ignore marker-covered delayed pushes, and give page
+  IndexedDB work a separate longer deadline.
 - [x] Persist worker unread state by `msgid`, retaining explicit unknown engine baselines, so badge
   counts survive same-time messages, redelivery and delayed IndexedDB completion.
 
