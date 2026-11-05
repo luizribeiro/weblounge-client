@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { connectionStateKind } from "../../engine/connection-state";
 import type {
   BufferProjection,
@@ -30,6 +30,10 @@ export function NetworkSection(props: NetworkSectionProps) {
   const server = () => props.buffers.find((buffer) => buffer.kind === "server");
   const conversations = () =>
     props.buffers.filter((buffer) => buffer.kind !== "server");
+  const conversationsById = createMemo(
+    () => new Map(conversations().map((buffer) => [buffer.id, buffer])),
+  );
+  const conversationIds = createMemo(() => [...conversationsById().keys()]);
   return (
     <section aria-label={props.network.label} class={styles.network}>
       {server() !== undefined && (
@@ -61,19 +65,28 @@ export function NetworkSection(props: NetworkSectionProps) {
         </button>
       )}
       <div class={styles.rows}>
-        <For each={conversations()}>
-          {(buffer) => (
-            <SidebarRow
-              active={props.activeBufferId === buffer.id}
-              badgesSuppressed={props.visibleBufferIds.has(buffer.id)}
-              buffer={buffer}
-              muted={buffer.muted === true}
-              onClick={() => props.onOpenBuffer(buffer)}
-              onFocus={() => props.onFocus(buffer.id)}
-              ref={(element) => props.registerElement(buffer.id, element)}
-              tabIndex={props.rovingId === buffer.id ? 0 : -1}
-            />
-          )}
+        <For each={conversationIds()}>
+          {(bufferId) => {
+            const buffer = () => conversationsById().get(bufferId);
+            return (
+              <Show when={buffer()}>
+                {(current) => (
+                  <SidebarRow
+                    active={props.activeBufferId === current().id}
+                    badgesSuppressed={props.visibleBufferIds.has(current().id)}
+                    buffer={current()}
+                    muted={current().muted === true}
+                    onClick={() => props.onOpenBuffer(current())}
+                    onFocus={() => props.onFocus(current().id)}
+                    ref={(element) =>
+                      props.registerElement(current().id, element)
+                    }
+                    tabIndex={props.rovingId === current().id ? 0 : -1}
+                  />
+                )}
+              </Show>
+            );
+          }}
         </For>
       </div>
     </section>

@@ -298,6 +298,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
     as unavailable without retargeting queued work. Row activity preserves mobile timestamps and
     recent-DM order without a visible change at the cached-to-live swap. The Vite dev E2E harness
     uses its own port-correct debug endpoint, so the same startup swap runs in both build modes.
+  - [x] Keep desktop sidebar rows keyed by stable buffer identity across the cached-to-live list
+    replacement, so a press that spans the swap still opens its buffer (#103).
   - [x] Show the pointer cursor for clickable URL and channel tokens in messages.
   - [x] Keep composer suggestions mounted while Backspace shrinks a pending engine query.
   - [x] Apply engine-owned nick addressing to explicit Tab completion and preserve it while cycling.

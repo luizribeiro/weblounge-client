@@ -84,6 +84,48 @@ test("shimmers through cached-list hydration and finishes its sweep", async ({
   ).toHaveCount(0);
 });
 
+test.describe("desktop cached chat list", () => {
+  test.use({
+    hasTouch: false,
+    isMobile: false,
+    viewport: { width: 1280, height: 800 },
+  });
+
+  test("opens a cached row when the live list arrives during its tap", async ({
+    page,
+  }) => {
+    await installDelayedLiveListEngine(page, true);
+    await page.goto("/?irc-password=weblounge-test");
+
+    const row = page.getByRole("button", { name: "#tapped" });
+    await expect(row).toBeVisible();
+    await expect(page.locator("[data-conversation-title]")).toContainText(
+      "#first",
+    );
+    const bounds = await row.boundingBox();
+    if (bounds === null) throw new Error("cached row is not laid out");
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await page.mouse.down();
+    await page.evaluate(() => {
+      const release = Reflect.get(globalThis, "releaseLiveChatList");
+      if (typeof release !== "function")
+        throw new Error("live list unavailable");
+      release();
+    });
+    await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
+      "data-chat-list-hydrating",
+    );
+    await page.mouse.up();
+
+    await expect(page.locator("[data-conversation-title]")).toContainText(
+      "#tapped",
+    );
+  });
+});
+
 test("turns a stalled startup into a human error", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.clock.install();
@@ -1053,8 +1095,11 @@ async function installHistoryStallEngine(
   }, swap);
 }
 
-async function installDelayedLiveListEngine(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installDelayedLiveListEngine(
+  page: Page,
+  stableRows = false,
+): Promise<void> {
+  await page.addInitScript((stableRows) => {
     class DelayedLiveListPort extends EventTarget {
       postMessage(message: unknown): void {
         if (!isRecord(message)) return;
@@ -1087,7 +1132,9 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
           this.emit({
             type: "chat_list_snapshot_loaded",
             network_id: 1,
-            buffers: [buffer(2, "#cached", true)],
+            buffers: stableRows
+              ? [buffer(2, "#first", true), buffer(3, "#tapped", true)]
+              : [buffer(2, "#cached", true)],
           });
         }
         this.emit({ type: "command_result", id: payload.id });
@@ -1100,7 +1147,9 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
         this.emit({
           type: "chat_list_live",
           network_id: 1,
-          buffers: [buffer(3, "#live", false)],
+          buffers: stableRows
+            ? [buffer(2, "#first", false), buffer(3, "#tapped", false)]
+            : [buffer(3, "#live", false)],
         });
       }
 
@@ -1136,5 +1185,5 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
     function isRecord(value: unknown): value is Record<string, unknown> {
       return typeof value === "object" && value !== null;
     }
-  });
+  }, stableRows);
 }
