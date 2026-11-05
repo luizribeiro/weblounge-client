@@ -1,15 +1,18 @@
 import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { IDBFactory } from "fake-indexeddb";
 import { expect, it, vi } from "vitest";
 import { App, recoverFromBuildMismatch } from "./App";
 import { type EngineClient, EngineCommandError } from "./engine/EngineClient";
 import type {
+  BufferProjection,
   EngineClientMessage,
   EngineMessageKey,
   EngineRequestEnvelope,
 } from "./engine/protocol";
 import { OneShotAccessToken } from "./hosted/HostedSession";
 import { startupDeadlineMs } from "./hosted/startup-deadline";
+import { recordPendingOpenRoute } from "./platform/push/pending-open-route";
 
 it("keeps synthetic timelines out of the production app", () => {
   const source = readFileSync("src/App.tsx", "utf8");
@@ -932,6 +935,48 @@ it("loads pushed messages and retains a service-worker route until its buffer ar
   expect(await screen.findByRole("heading", { name: "#pushed" })).toBeVisible();
 });
 
+it("retains a durable notification route through the cached-to-live swap", async () => {
+  const factory = new IDBFactory();
+  vi.stubGlobal("indexedDB", factory);
+  await recordPendingOpenRoute("/Lounge/@louro", {
+    factory,
+    createId: () => "intent-1",
+  });
+  const client = new FakeEngineClient();
+  render(() => <App engineClient={client} />);
+  client.emit({
+    type: "network_state_changed",
+    network: {
+      id: 1,
+      label: "Lounge",
+      nickname: "weblounge",
+      state: "online",
+    },
+  });
+  client.emit({
+    type: "chat_list_snapshot_loaded",
+    network_id: 1,
+    buffers: [bufferProjection(2, "channel", "#home", true)],
+  });
+
+  await waitFor(() =>
+    expect(client.requests).toContainEqual({
+      id: expect.any(String),
+      request: { type: "load_pushed_messages", network_id: 1 },
+    }),
+  );
+  client.emit({
+    type: "chat_list_live",
+    network_id: 1,
+    buffers: [
+      bufferProjection(2, "channel", "#home"),
+      bufferProjection(3, "direct", "louro"),
+    ],
+  });
+
+  expect(await screen.findByRole("heading", { name: "louro" })).toBeVisible();
+});
+
 it("retains engine focus until a delayed shell can consume it", async () => {
   const client = new FakeEngineClient();
   render(() => (
@@ -1564,6 +1609,27 @@ it("reloads only once for the same stale build", () => {
     "Engine update failed; reload site data to recover",
   );
 });
+
+function bufferProjection(
+  id: number,
+  kind: "channel" | "direct",
+  title: string,
+  cached = false,
+): BufferProjection {
+  return {
+    id,
+    network_id: 1,
+    sync_state: cached ? "pending" : "synced",
+    kind,
+    title,
+    draft_key: `test:${title}`,
+    topic: null,
+    unread: 0,
+    mentions: 0,
+    read_through: null,
+    ...(cached ? { cached: true, cached_preview: "cached message" } : {}),
+  };
+}
 
 class FakeEngineClient implements EngineClient {
   readonly visibility: Parameters<EngineClient["setVisibility"]>[0][] = [];

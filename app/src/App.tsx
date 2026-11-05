@@ -71,6 +71,7 @@ import {
   decodeOpenRouteMessage,
   type OpenRouteMessage,
 } from "./platform/push/open-route-message";
+import { consumePendingOpenRoute } from "./platform/push/pending-open-route";
 import { buildPushDebugSnapshot } from "./platform/push/push-debug";
 import {
   type PushRouteDiagnostic,
@@ -414,9 +415,39 @@ export function App(props: AppProps) {
           });
     const mountedClient = props.engineClient ?? createEngineClient();
     client = mountedClient;
+    const handledOpenRouteIntents = new Set<string>();
+    const applyOpenRoute = (message: OpenRouteMessage) => {
+      if (message.intentId !== undefined) {
+        if (handledOpenRouteIntents.has(message.intentId)) return;
+        handledOpenRouteIntents.add(message.intentId);
+      }
+      setPendingOpenRoute(message);
+    };
+    const consumeOpenRoute = async (): Promise<boolean> => {
+      try {
+        const intent = await consumePendingOpenRoute();
+        if (disposed || intent === undefined) return false;
+        const message = decodeOpenRouteMessage({
+          kind: "open-route",
+          route: intent.route,
+          intentId: intent.id,
+        });
+        if (message === undefined) return false;
+        applyOpenRoute(message);
+        return true;
+      } catch {
+        return false;
+      }
+    };
     const handleServiceWorkerMessage = (event: MessageEvent<unknown>) => {
       const message = decodeOpenRouteMessage(event.data);
-      if (message !== undefined) setPendingOpenRoute(message);
+      if (message !== undefined) {
+        if (message.intentId === undefined) applyOpenRoute(message);
+        else
+          void consumeOpenRoute().then((consumed) => {
+            if (!consumed) applyOpenRoute(message);
+          });
+      }
       if (isPushSubscriptionChange(event.data)) {
         void refreshConfiguredPush(mountedClient);
       }
@@ -705,6 +736,7 @@ export function App(props: AppProps) {
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
       if (foreground) {
+        void consumeOpenRoute();
         syncEnginePushState();
         reconnectNetworks();
         void refreshConfiguredPush(mountedClient);
@@ -753,6 +785,7 @@ export function App(props: AppProps) {
     window.addEventListener("online", updateConnectivity);
     window.addEventListener("offline", updateConnectivity);
     window.addEventListener("pageshow", handlePageShow);
+    void consumeOpenRoute();
     updateVisibility();
     void startEngine(
       mountedClient,
