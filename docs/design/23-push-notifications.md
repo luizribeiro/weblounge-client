@@ -1,6 +1,6 @@
 # 23 — Push notifications
 
-Status: approved (decisions 2026-11-02 and 2026-11-04); lifecycle redesign implemented. This is the brief's subsystem
+Status: approved (decisions 2026-11-02, 2026-11-04 and 2026-11-05); lifecycle redesign implemented. This is the brief's subsystem
 7; it overrides the earlier statements listed under "Conflicts with signed-off text".
 
 ## Problem
@@ -199,13 +199,17 @@ It never sees the sender, the target or the text.
 **Foreground lease (web targets only).** The device can't drop a Web Push, and neither can an
 iOS NSE in the background (fact 4), so duplicates are suppressed at the relay:
 
-- Each tab holds its own lease, keyed by a per-tab id; the relay keeps a set per device. A tab holds
-  its lease while it is visible **and** focused, renewing with `POST /v1/devices/:id/lease` every
-  30 s (TTL 75 s). The signal is the engine's existing `setVisibility` (`App.tsx:419-421`), extended
-  with focus, not a second listener.
+- Each tab holds its own lease, keyed by a per-tab id; the relay keeps a set per device. An ordinary
+  browser tab holds its lease while it is visible **and** focused. An installed iOS home-screen app
+  uses visibility alone: iOS can report `document.hasFocus() === false` or emit `blur` while the app,
+  its current conversation and its keyboard remain on screen. Treating that signal as background
+  releases the lease and presents pushes for messages the person is already reading. Every lease
+  renews with `POST /v1/devices/:id/lease` every 30 s (TTL 75 s). The signal is the engine's existing
+  `setVisibility`, not a second lifecycle listener.
 - Release is `POST /v1/devices/:id/lease/release`, sent with `navigator.sendBeacon` (which can't
-  send PUT or DELETE) on `visibilitychange`/`pagehide`. iOS suspends JS soon after hiding, so the
-  release often never arrives.
+  send PUT or DELETE) when the authoritative foreground signal changes to hidden and on `pagehide`.
+  Ordinary tabs also release on genuine focus loss; installed iOS apps do not release on `blur`.
+  iOS suspends JS soon after hiding, so the release often never arrives.
 - While any lease is live, the relay **holds** user-visible pushes instead of dropping them. A
   renewal proves the page was alive and showed everything up to that moment, so it discards pushes
   held before it. When every lease expires without renewal, the relay delivers the held pushes. A
