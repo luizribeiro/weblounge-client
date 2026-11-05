@@ -188,6 +188,9 @@ test("collapses a busy DM without native tag replacement", async ({
       },
     ]);
   await expect.poll(() => storedAppBadge(page)).toBe(3);
+  await expect(
+    clickHarnessNotification(page, scope, "closed"),
+  ).resolves.toEqual({ openedRoute: "/Lounge/@iris" });
 });
 
 test("serializes concurrent pushes without closing either notification", async ({
