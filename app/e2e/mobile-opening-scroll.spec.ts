@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { devices, expect, type Locator, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollToTranscriptTop } from "./message-list-scroll";
 import { useDedicatedWorker } from "./production-ergo";
 
 test.skip(
@@ -69,21 +70,29 @@ test("opens a mobile channel at the live edge and respects a user scroll away", 
     const list = page.locator("[data-message-list]");
     await expect(list).toBeVisible();
     await expect(page.locator("[data-motion]")).toHaveCount(0);
-    await expect.poll(() => historyRequestPending(page)).toBe(true);
     await expect.poll(() => renderedRowCount(list)).toBeGreaterThan(0);
     await expect(page.getByText(newest, { exact: true })).toBeVisible();
     await expect(page.getByText(newest, { exact: true })).toBeInViewport();
     await watchForEmptyRange(list);
-    const heightBeforeHistory = await list.evaluate(
-      (element) => element.scrollHeight,
-    );
+    await expect
+      .poll(async () => {
+        await scrollToTranscriptTop(list);
+        return historyRequestPending(page);
+      })
+      .toBe(true);
     await releaseHistoryRequest(page);
     await expect
-      .poll(() => list.evaluate((element) => element.scrollHeight))
-      .toBeGreaterThan(heightBeforeHistory + 500);
+      .poll(async () => {
+        await scrollToTranscriptTop(list);
+        return page
+          .getByText(backlogMessage(suffix, 0), { exact: true })
+          .count();
+      })
+      .toBe(1);
     await expect.poll(() => renderedRowCount(list)).toBeGreaterThan(0);
     await expect.poll(() => renderedRowsInViewport(list)).toBeGreaterThan(0);
     expect(await sawEmptyRange(list)).toBe(false);
+    await list.press("End");
     await expect(page.getByText(newest, { exact: true })).toBeVisible();
     await expect(page.getByText(newest, { exact: true })).toBeInViewport();
     await expect
@@ -274,11 +283,12 @@ async function holdHistoryRequests(page: import("@playwright/test").Page) {
     Worker.prototype.postMessage = function (message, transfer = []) {
       const envelope = message as {
         type?: unknown;
-        payload?: { request?: { type?: unknown } };
+        payload?: { request?: { direction?: unknown; type?: unknown } };
       };
       if (
         envelope.type === "request" &&
-        envelope.payload?.request?.type === "load_history"
+        envelope.payload?.request?.type === "load_history" &&
+        envelope.payload.request.direction === "older"
       ) {
         pending = { worker: this, message, transfer };
         return;

@@ -7,6 +7,7 @@ import {
   test,
 } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { scrollToTranscriptTop } from "./message-list-scroll";
 import {
   hasSelfNickColour,
   productionMessageRow,
@@ -19,7 +20,7 @@ test.skip(
 );
 
 // One engine history page holds 100 rows, so 100 newer fillers push the
-// seeded long messages into the older page that opening the buffer requests.
+// seeded long messages into the older page requested at the transcript top.
 const fillerCount = 100;
 const fillerSenders = 10;
 
@@ -55,10 +56,9 @@ for (const shell of shells) {
 
       const list = page.locator("[data-message-list]");
       const older = [...seeded.older, seeded.ownMultiline];
-      await list.hover();
       await expect
         .poll(async () => {
-          await page.mouse.wheel(0, -100_000);
+          await scrollToTranscriptTop(list);
           return renderedRowText(list, "first");
         })
         .toBe(older[0]);

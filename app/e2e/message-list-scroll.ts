@@ -37,6 +37,59 @@ export async function scrollAwayFromLiveEdge(
   return list.evaluate((element) => element.scrollTop);
 }
 
+export async function scrollToTranscriptTop(list: Locator): Promise<void> {
+  const bounds = await list.boundingBox();
+  if (bounds === null) throw new Error("message list has no touch target");
+  const clientX = bounds.x + bounds.width / 2;
+  const clientY = bounds.y + bounds.height / 2;
+  const touch = {
+    clientX,
+    clientY,
+    force: 1,
+    identifier: 71,
+    pageX: clientX,
+    pageY: clientY,
+    radiusX: 1,
+    radiusY: 1,
+    rotationAngle: 0,
+    screenX: clientX,
+    screenY: clientY,
+  };
+  await list.dispatchEvent("pointerdown", {
+    button: 0,
+    clientX,
+    clientY,
+    isPrimary: true,
+    pointerId: touch.identifier,
+    pointerType: "touch",
+  });
+  await list.dispatchEvent("touchstart", {
+    changedTouches: [touch],
+    targetTouches: [touch],
+    touches: [touch],
+  });
+  await list.dispatchEvent("pointercancel", {
+    button: 0,
+    clientX,
+    clientY,
+    isPrimary: true,
+    pointerId: touch.identifier,
+    pointerType: "touch",
+  });
+  await list.evaluate((element) => {
+    const maximum = element.scrollHeight - element.clientHeight;
+    element.scrollTop = Math.min(maximum, Math.max(element.scrollTop, 8));
+    element.dispatchEvent(new Event("scroll"));
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  await list.dispatchEvent("touchend", {
+    changedTouches: [touch],
+    targetTouches: [],
+    touches: [],
+  });
+}
+
 async function touchPanAway(list: Locator, distance: number): Promise<void> {
   // Playwright exposes only touch tap, so WebKit pans use its legacy-event fallback.
   const bounds = await list.boundingBox();
