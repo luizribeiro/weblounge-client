@@ -171,6 +171,17 @@ pops to root; reselecting again scrolls the root list to top. A chat opened from
 on Activity's stack, so Back restores its exact state. Settings permits root → section and Networks
 → Server messages, but no deeper route.
 
+Mobile Chats presents channels and direct messages in one most-recent-activity list. Rows with an
+activity time sort newest first for every filter and search result; equal times and rows without an
+activity time retain the engine's order, after rows with activity. Cached startup rows and live
+rows pass through the same pure ordering function, so an unchanged cached-to-live replacement does
+not reorder them. Desktop continues to use the engine order and its separate channel/direct
+sections.
+
+Rows remain keyed by stable buffer ID and do not animate between positions. While a primary pointer
+is held on a row, the visible order is retained and the latest order is applied on release or
+cancellation, so incoming activity cannot move the pressed target under the user's finger.
+
 Back processing dismisses the top overlay, then pops a screen, then yields to the platform. Android
 back, header controls, browser history, and the swipe gesture dispatch the same action. Browser
 history stores opaque route IDs rather than state snapshots.
