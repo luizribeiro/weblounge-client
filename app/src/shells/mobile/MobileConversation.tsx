@@ -15,6 +15,7 @@ import type {
   BufferProjection,
   CommandSpec,
   CompletionResult,
+  HistoryDirection,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -52,7 +53,10 @@ export interface MobileConversationProps {
   readonly typers?: readonly TypingProjection[] | undefined;
   readonly network?: NetworkProjection | undefined;
   readonly onBack: () => void;
-  readonly onLoadHistory: (bufferId: number) => void;
+  readonly onLoadHistory: (
+    bufferId: number,
+    direction: HistoryDirection,
+  ) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onOpenMembers: () => void;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
@@ -109,7 +113,7 @@ export function MobileConversation(props: MobileConversationProps) {
     )
       return;
     historyRequested = true;
-    props.onLoadHistory(props.buffer.id);
+    props.onLoadHistory(props.buffer.id, "latest");
   });
 
   onMount(() => {
@@ -219,6 +223,7 @@ export function MobileConversation(props: MobileConversationProps) {
             messages={props.messages}
             memberships={props.memberships}
             onLiveEdgeChange={setAtLiveEdge}
+            onLoadOlder={() => props.onLoadHistory(props.buffer.id, "older")}
             onOpenChannel={(channel) => {
               void props.onSend(props.buffer.id, `/join ${channel}`);
             }}

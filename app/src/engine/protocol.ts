@@ -6,6 +6,7 @@ import type { EngineMessageKey } from "./generated/EngineMessageKey";
 import type { EngineRequestEnvelope } from "./generated/EngineRequestEnvelope";
 import type { EngineToUi } from "./generated/EngineToUi";
 import type { Hello } from "./generated/Hello";
+import type { HistoryDirection } from "./generated/HistoryDirection";
 import type { MembershipProjection } from "./generated/MembershipProjection";
 import type { MessageProjection } from "./generated/MessageProjection";
 import type { NetworkProjection } from "./generated/NetworkProjection";
@@ -23,6 +24,7 @@ export type {
   EngineRequestEnvelope,
   EngineToUi,
   Hello,
+  HistoryDirection,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,

@@ -382,10 +382,20 @@ pub enum BufferKind {
 pub enum BufferSyncState {
     /// No history request is active and the buffer has not completed its initial load.
     Pending,
-    /// Initial history, older history, or reconnect catch-up is in flight.
+    /// Initial history or reconnect catch-up is in flight.
     Syncing,
     /// The latest requested history has been applied.
     Synced,
+}
+
+/// Which edge of a conversation history request should be fetched.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryDirection {
+    /// Ensure the current live edge is known.
+    Latest,
+    /// Fetch the next page before the retained oldest cursor.
+    Older,
 }
 
 /// Whether a channel buffer currently represents an active membership.
@@ -923,10 +933,12 @@ pub enum EngineRequest {
     },
     /// Advance every conversation through its latest committed row.
     MarkAllRead,
-    /// Fetch the latest history page the first time a buffer is opened.
+    /// Fetch one history edge for a conversation.
     LoadHistory {
-        /// Conversation buffer to hydrate.
+        /// Conversation buffer to hydrate or page.
         buffer_id: BufferId,
+        /// History edge requested by the UI interaction.
+        direction: HistoryDirection,
     },
     /// Project a bounded range of one channel's current members.
     #[allow(missing_docs)]

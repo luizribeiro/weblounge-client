@@ -133,11 +133,10 @@ enum HistoryState {
 impl HistoryState {
     const fn sync_state(&self) -> BufferSyncState {
         match self {
-            Self::LoadingLatest
-            | Self::LoadingOlder { .. }
-            | Self::CatchingUp { .. }
-            | Self::CatchingUpLatest { .. } => BufferSyncState::Syncing,
-            Self::Ready { .. } => BufferSyncState::Synced,
+            Self::LoadingLatest | Self::CatchingUp { .. } | Self::CatchingUpLatest { .. } => {
+                BufferSyncState::Syncing
+            }
+            Self::Ready { .. } | Self::LoadingOlder { .. } => BufferSyncState::Synced,
             Self::Unrequested | Self::QueuedLatest => BufferSyncState::Pending,
         }
     }
@@ -1383,18 +1382,28 @@ impl NetworkModel {
         })
     }
 
-    pub(crate) fn request_history(&mut self, buffer_id: BufferId) -> Option<HistoryFetch> {
+    pub(crate) fn request_history(
+        &mut self,
+        buffer_id: BufferId,
+        direction: crate::HistoryDirection,
+    ) -> Option<HistoryFetch> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let target = HistoryTarget::from_key(buffer.key.clone()?);
-        match &buffer.history {
-            HistoryState::Unrequested | HistoryState::QueuedLatest => {
+        match (direction, &buffer.history) {
+            (
+                crate::HistoryDirection::Latest,
+                HistoryState::Unrequested | HistoryState::QueuedLatest,
+            ) => {
                 set_history_state(buffer, HistoryState::LoadingLatest);
                 Some(HistoryFetch::Latest(target))
             }
-            HistoryState::Ready {
-                oldest: Some(oldest),
-                at_start: false,
-            } => {
+            (
+                crate::HistoryDirection::Older,
+                HistoryState::Ready {
+                    oldest: Some(oldest),
+                    at_start: false,
+                },
+            ) => {
                 let oldest = oldest.clone();
                 set_history_state(
                     buffer,
@@ -1404,11 +1413,7 @@ impl NetworkModel {
                 );
                 Some(HistoryFetch::Before { target, oldest })
             }
-            HistoryState::LoadingLatest
-            | HistoryState::LoadingOlder { .. }
-            | HistoryState::CatchingUp { .. }
-            | HistoryState::CatchingUpLatest { .. }
-            | HistoryState::Ready { .. } => None,
+            _ => None,
         }
     }
 
@@ -3144,6 +3149,13 @@ mod tests {
             BufferSyncState::Syncing
         );
         assert_eq!(
+            HistoryState::LoadingOlder {
+                oldest: papo::HistoryReference::from(papo::MessageId::from("oldest")),
+            }
+            .sync_state(),
+            BufferSyncState::Synced
+        );
+        assert_eq!(
             HistoryState::Ready {
                 oldest: None,
                 at_start: true,
@@ -3173,7 +3185,9 @@ mod tests {
             BufferSyncState::Pending
         );
 
-        let fetch = model.request_history(buffer_id).expect("initial request");
+        let fetch = model
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("initial request");
         assert_eq!(
             model.buffers[&buffer_id].projection.sync_state,
             BufferSyncState::Syncing
@@ -4250,7 +4264,7 @@ mod tests {
     }
 
     #[test]
-    fn latest_channel_request_preserves_an_older_page_request() {
+    fn opening_ready_history_does_not_request_an_older_page() {
         let (mut model, state) = model(10);
         let channel = channel_name(&state, "#room");
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
@@ -4263,7 +4277,14 @@ mod tests {
         };
 
         assert!(model.request_latest_channel(&channel).is_none());
-        let Some(HistoryFetch::Before { oldest, .. }) = model.request_history(buffer_id) else {
+        assert!(
+            model
+                .request_history(buffer_id, crate::HistoryDirection::Latest)
+                .is_none()
+        );
+        let Some(HistoryFetch::Before { oldest, .. }) =
+            model.request_history(buffer_id, crate::HistoryDirection::Older)
+        else {
             panic!("older history remains requestable");
         };
         assert_eq!(
@@ -5144,7 +5165,7 @@ mod tests {
         assert!(model.chat_list_complete());
         let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
         assert!(matches!(
-            model.request_history(buffer_id),
+            model.request_history(buffer_id, crate::HistoryDirection::Older),
             Some(HistoryFetch::Before { .. })
         ));
     }

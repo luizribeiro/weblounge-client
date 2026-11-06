@@ -17,6 +17,7 @@ import type {
   BufferProjection,
   CommandSpec,
   CompletionResult,
+  HistoryDirection,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -85,7 +86,10 @@ export interface DesktopShellProps extends NotificationPromptControls {
     | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
-  readonly onLoadHistory: (bufferId: number) => void;
+  readonly onLoadHistory: (
+    bufferId: number,
+    direction: HistoryDirection,
+  ) => void;
   readonly onRequestCompletion: (
     bufferId: number,
     input: string,
@@ -317,7 +321,7 @@ export function DesktopShell(props: DesktopShellProps) {
       return;
     }
     requestedHistory.add(buffer.id);
-    props.onLoadHistory(buffer.id);
+    props.onLoadHistory(buffer.id, "latest");
   });
 
   createEffect(() => {
@@ -413,6 +417,11 @@ export function DesktopShell(props: DesktopShellProps) {
                   props.memberships.get(activeBuffer()?.id ?? -1) ?? []
                 }
                 onLiveEdgeChange={setAtLiveEdge}
+                onLoadOlder={() => {
+                  const buffer = activeBuffer();
+                  if (buffer !== undefined)
+                    props.onLoadHistory(buffer.id, "older");
+                }}
                 onOpenChannel={(channel) => {
                   const buffer = activeBuffer();
                   if (buffer !== undefined)

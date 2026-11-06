@@ -3,6 +3,7 @@ import type {
   BufferProjection,
   CommandSpec,
   CompletionResult,
+  HistoryDirection,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -34,7 +35,10 @@ export interface MobileShellData extends NotificationPromptControls {
   readonly typers?:
     | ReadonlyMap<number, readonly TypingProjection[]>
     | undefined;
-  readonly onLoadHistory: (bufferId: number) => void;
+  readonly onLoadHistory: (
+    bufferId: number,
+    direction: HistoryDirection,
+  ) => void;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly onRetryNetwork?: ((networkId: number) => void) | undefined;
   readonly onOpenMembers?: ((bufferId: number) => void) | undefined;

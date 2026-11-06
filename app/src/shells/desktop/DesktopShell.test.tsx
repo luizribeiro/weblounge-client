@@ -131,7 +131,7 @@ it("resolves a cached direct through normal history", () => {
     />
   ));
 
-  expect(loadHistory).toHaveBeenCalledWith(4);
+  expect(loadHistory).toHaveBeenCalledWith(4, "latest");
   expect(document.querySelector("[data-message-list]")).not.toBeNull();
 });
 

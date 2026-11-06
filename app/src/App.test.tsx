@@ -536,7 +536,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
   );
   expect(client.requests).not.toContainEqual(
     expect.objectContaining({
-      request: { type: "load_history", buffer_id: 2 },
+      request: { type: "load_history", buffer_id: 2, direction: "latest" },
     }),
   );
   fireEvent.input(screen.getByRole("textbox"), {
@@ -589,7 +589,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
   await waitFor(() =>
     expect(client.requests).toContainEqual(
       expect.objectContaining({
-        request: { type: "load_history", buffer_id: 2 },
+        request: { type: "load_history", buffer_id: 2, direction: "latest" },
       }),
     ),
   );
@@ -688,7 +688,7 @@ it("lists projected networks, buffers, and messages", async () => {
   expect(screen.getByText("hello")).toBeInTheDocument();
   expect(client.requests).toContainEqual({
     id: expect.any(String),
-    request: { type: "load_history", buffer_id: 2 },
+    request: { type: "load_history", buffer_id: 2, direction: "latest" },
   });
 });
 

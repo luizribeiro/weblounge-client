@@ -434,7 +434,10 @@ impl Runtime {
                 self.mark_read(envelope.id, buffer_id, through)
             }
             EngineRequest::MarkAllRead => self.mark_all_read(envelope.id),
-            EngineRequest::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
+            EngineRequest::LoadHistory {
+                buffer_id,
+                direction,
+            } => self.load_history(envelope.id, buffer_id, direction),
             EngineRequest::RequestMembers {
                 buffer_id,
                 view_id,
@@ -1934,16 +1937,23 @@ impl Runtime {
         output
     }
 
-    fn load_history(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
+    fn load_history(
+        &self,
+        command_id: String,
+        buffer_id: BufferId,
+        direction: crate::HistoryDirection,
+    ) -> Vec<EngineToUi> {
         let mut state = lock(&self.state);
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         if !running.model.is_online() {
-            running.model.queue_latest_history(buffer_id);
+            if direction == crate::HistoryDirection::Latest {
+                running.model.queue_latest_history(buffer_id);
+            }
             return vec![EngineToUi::CommandResult { id: command_id }];
         }
-        let Some(fetch) = running.model.request_history(buffer_id) else {
+        let Some(fetch) = running.model.request_history(buffer_id, direction) else {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
         let promoted = running.model.promote_cached_for_history(buffer_id);
@@ -8195,7 +8205,12 @@ async fn delay(duration: Duration) {
                 pin: None,
             })
             .expect("direct buffer exists");
-        assert!(running.model.request_history(buffer_id).is_some());
+        assert!(
+            running
+                .model
+                .request_history(buffer_id, crate::HistoryDirection::Older)
+                .is_some()
+        );
         assert!(
             running
                 .model
@@ -8857,7 +8872,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .request_history(buffer_id)
+            .request_history(buffer_id, crate::HistoryDirection::Older)
             .expect("an older page is available");
         let page = fetch_requested_page(
             &client,
@@ -8880,7 +8895,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .request_history(buffer_id)
+            .request_history(buffer_id, crate::HistoryDirection::Older)
             .expect("the server boundary has not been reached yet");
         let page = fetch_requested_page(
             &client,
@@ -8898,7 +8913,7 @@ async fn delay(duration: Duration) {
                 .as_mut()
                 .expect("network remains active")
                 .model
-                .request_history(buffer_id)
+                .request_history(buffer_id, crate::HistoryDirection::Older)
                 .is_none()
         );
     }
@@ -8948,7 +8963,7 @@ async fn delay(duration: Duration) {
                 .as_mut()
                 .expect("network remains active")
                 .model
-                .request_history(buffer_id)
+                .request_history(buffer_id, crate::HistoryDirection::Older)
                 .expect("an older page remains requestable");
             let items = same_time_history_items(page_start..page_end);
             let item_refs = items.iter().map(String::as_str).collect::<Vec<_>>();
@@ -8972,7 +8987,7 @@ async fn delay(duration: Duration) {
             .as_mut()
             .expect("network remains active")
             .model
-            .request_history(buffer_id)
+            .request_history(buffer_id, crate::HistoryDirection::Older)
             .expect("only an empty older page is terminal");
         let page = fetch_requested_page(
             &client,
@@ -11338,7 +11353,7 @@ async fn delay(duration: Duration) {
                 .buffer_id_for_channel(&channel)
                 .expect("channel buffer");
             model
-                .request_history(buffer_id)
+                .request_history(buffer_id, crate::HistoryDirection::Older)
                 .expect("an older page is requestable")
         };
         spawn_history_fetch(

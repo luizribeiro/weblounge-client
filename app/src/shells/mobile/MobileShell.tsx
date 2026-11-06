@@ -7,6 +7,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
+import type { HistoryDirection } from "../../engine/protocol";
 import type { MemberWindow } from "../../features/members/MemberPanel";
 import { platformEnvironment } from "../../platform/environment";
 import { recordGestureNotStarted } from "../../platform/gesture-debug";
@@ -109,10 +110,17 @@ export function MobileShell(props: MobileShellProps) {
   let chatsStable = true;
   let returnScrollTop = 0;
   const requestedHistory = new Set<number>();
-  const requestHistoryOnce = (bufferId: number) => {
+  const requestHistoryOnce = (
+    bufferId: number,
+    direction: HistoryDirection,
+  ) => {
+    if (direction === "older") {
+      props.onLoadHistory(bufferId, direction);
+      return;
+    }
     if (requestedHistory.has(bufferId)) return;
     requestedHistory.add(bufferId);
-    props.onLoadHistory(bufferId);
+    props.onLoadHistory(bufferId, direction);
   };
 
   createEffect(() => {

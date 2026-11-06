@@ -1349,12 +1349,16 @@ export function App(props: AppProps) {
               })
               .catch(() => undefined);
           }}
-          onLoadHistory={(bufferId) => {
+          onLoadHistory={(bufferId, direction) => {
             if (client === undefined) return;
             void client
               .send({
                 id: crypto.randomUUID(),
-                request: { type: "load_history", buffer_id: bufferId },
+                request: {
+                  type: "load_history",
+                  buffer_id: bufferId,
+                  direction,
+                },
               })
               .catch(() => undefined);
           }}
