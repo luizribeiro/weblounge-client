@@ -23,9 +23,11 @@ describe("keyboard motion", () => {
 
     fixture.setComposerHeight(83);
     fixture.willOpen();
+    expect(motionComposerHeight(fixture.screen)).toBe("83px");
     fixture.setComposerHeight(63);
     fixture.setComposerBottom(516);
     fixture.didOpen();
+    expect(motionComposerHeight(fixture.screen)).toBe("63px");
 
     expect(fixture.composerAnimate).toHaveBeenCalledWith(
       [{ transform: "translateY(338px)" }, { transform: "none" }],
@@ -46,11 +48,6 @@ describe("keyboard motion", () => {
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
-    expect(
-      fixture.root
-        .querySelector("[data-keyboard-transcript-snapshot]")
-        ?.getAttribute("data-keyboard-transcript-snapshot"),
-    ).toBe("opening");
     fixture.animations[1]?.finish();
     await Promise.resolve();
     expect(fixture.root.dataset.keyboardMotion).toBe("open");
@@ -108,9 +105,7 @@ describe("keyboard motion", () => {
     );
     expect(fixture.transcriptAnimate).toHaveBeenCalledOnce();
     expect(
-      fixture.root.querySelector(
-        '[data-keyboard-transcript-snapshot="closing"]',
-      ),
+      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
     fixture.animations[2]?.finish();
     await Promise.resolve();
@@ -226,6 +221,10 @@ describe("keyboard motion", () => {
   });
 });
 
+function motionComposerHeight(screen: HTMLElement): string {
+  return screen.style.getPropertyValue("--wl-keyboard-composer-height");
+}
+
 function motionFixture() {
   const root = document.createElement("div");
   root.dataset.shell = "mobile";
@@ -262,6 +261,7 @@ function motionFixture() {
   return {
     animations,
     composerAnimate,
+    screen,
     didClose() {
       window.dispatchEvent(
         new CustomEvent(keyboardLayoutCommitEvent, {

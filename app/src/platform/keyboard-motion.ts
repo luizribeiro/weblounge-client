@@ -101,15 +101,11 @@ export function observeKeyboardMotion(
         snapshot: createTranscriptSnapshot(
           surfaces.transcript,
           surfaces.screen,
-          "opening",
         ),
       };
       openingLayout = layout;
       root.dataset.keyboardMotion = "opening";
-      surfaces.screen.style.setProperty(
-        "--wl-keyboard-composer-height",
-        `${composerRect.height}px`,
-      );
+      setMotionComposerHeight(surfaces.screen, composerRect.height);
       opening = { ...surfaces, composerTop: composerRect.top };
     } else if (
       detail.previousGeometry.keyboard === "open" &&
@@ -133,7 +129,9 @@ export function observeKeyboardMotion(
         startClosing(closingStart);
       return;
     }
-    const committedComposerTop = snapshot.composer.getBoundingClientRect().top;
+    const committedComposer = snapshot.composer.getBoundingClientRect();
+    setMotionComposerHeight(snapshot.screen, committedComposer.height);
+    const committedComposerTop = committedComposer.top;
     if (openingLayout !== undefined)
       openingLayout.composerTop = committedComposerTop;
     const delta = snapshot.composerTop - committedComposerTop;
@@ -194,7 +192,6 @@ export function observeKeyboardMotion(
     const transcriptSnapshot = createTranscriptSnapshot(
       snapshot.transcript,
       snapshot.screen,
-      "closing",
     );
     const animation = snapshot.composer.animate(
       [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
@@ -340,10 +337,13 @@ function motionTiming(browserWindow: Window): {
     : { duration: 380, easing: springFallback };
 }
 
+function setMotionComposerHeight(screen: HTMLElement, height: number): void {
+  screen.style.setProperty("--wl-keyboard-composer-height", `${height}px`);
+}
+
 function createTranscriptSnapshot(
   transcript: HTMLElement,
   screen: HTMLElement,
-  phase: "closing" | "opening",
 ): HTMLElement {
   const list = transcript.closest<HTMLElement>("[data-message-list]");
   const listRect =
@@ -365,7 +365,7 @@ function createTranscriptSnapshot(
     snapshot.className = list.className;
     snapshot.dataset.presentation = list.dataset.presentation;
   }
-  snapshot.dataset.keyboardTranscriptSnapshot = phase;
+  snapshot.dataset.keyboardTranscriptSnapshot = "true";
   snapshot.style.bottom = "0";
   snapshot.style.left = `${listRect.left - screenRect.left}px`;
   snapshot.style.overflow = "clip";

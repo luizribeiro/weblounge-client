@@ -40,26 +40,9 @@
   );
 }
 
-/* Motion spans the composer row, so both fixed rows leave the transcript edge. */
 :global(#root[data-keyboard-motion] [data-message-motion-layer]) {
   translate: 0
-    calc(
-      -1 *
-      (
-        var(--wl-keyboard-inset) +
-        var(--wl-keyboard-composer-height) -
-        var(--wl-typing-slot-height) -
-        var(--wl-typing-slot-height)
-      )
-    );
-}
-
-:global(
-  #root[data-keyboard-motion]
-    [data-keyboard-transcript-snapshot="opening"]
-    [data-keyboard-transcript-snapshot-layer]
-) {
-  translate: 0 var(--wl-typing-slot-height);
+    calc(-1 * (var(--wl-keyboard-inset) + var(--wl-keyboard-composer-height)));
 }
 
 :global(#root[data-keyboard-motion] [data-composer]) {

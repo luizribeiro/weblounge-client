@@ -233,7 +233,6 @@ export function MobileConversation(props: MobileConversationProps) {
             }
             presentation="mobile"
             readAtMs={props.buffer.read_at_ms}
-            typers={props.typers ?? []}
             registerController={(controller) => {
               listController = controller;
             }}
@@ -274,6 +273,7 @@ export function MobileConversation(props: MobileConversationProps) {
               directIdentityBlocked(props.buffer)
             }
             onSend={(text) => props.onSend(props.buffer.id, text)}
+            typers={props.typers}
           />
         </Show>
       </div>

@@ -8,8 +8,7 @@
 
 .wrap {
   background: var(--wl-color-surface);
-  border-top: 1px solid var(--wl-color-border);
-  padding: 8px 14px max(14px, var(--wl-safe-bottom-effective));
+  padding: 0 14px max(14px, var(--wl-safe-bottom-effective));
   position: relative;
 }
 
@@ -20,14 +19,13 @@
 
 .typing {
   align-items: center;
-  background: var(--wl-color-surface);
   color: var(--wl-color-muted);
   display: flex;
   font-size: var(--wl-font-section-size);
-  height: var(--wl-typing-slot-height);
+  height: 24px;
   margin: 0;
   overflow: hidden;
-  padding-inline: 18px;
+  padding-inline: 12px;
   white-space: nowrap;
 }
 

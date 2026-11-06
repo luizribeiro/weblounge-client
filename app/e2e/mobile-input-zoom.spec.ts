@@ -563,7 +563,7 @@ test.describe("mobile text field zoom", () => {
         expect(
           Math.abs(audit.newestGap),
           JSON.stringify(audit),
-        ).toBeLessThanOrEqual(24.1);
+        ).toBeLessThanOrEqual(1);
         expect(await screenshotPixelVariance(page, screenshot)).toBeGreaterThan(
           1,
         );
@@ -1590,7 +1590,7 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(frames.at(-1)?.animations).toBe(0);
   const headerTop = frames[0]?.headerTop ?? 0;
   const scrollerTop = frames[0]?.scrollerTop ?? 0;
-  expect(Math.abs((frames[0]?.newestGap ?? 0) - 24)).toBeLessThanOrEqual(1);
+  expect(Math.abs(frames[0]?.newestGap ?? 0)).toBeLessThanOrEqual(1);
   expect(
     frames
       .slice(1)
@@ -1694,7 +1694,7 @@ function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   ).toBe(true);
   expect(frames.at(-1)?.animations).toBe(0);
   expect(frames.at(-1)?.composerVisible).toBe(true);
-  expect(Math.abs((frames.at(-1)?.newestGap ?? 0) - 24)).toBeLessThanOrEqual(1);
+  expect(Math.abs(frames.at(-1)?.newestGap ?? 0)).toBeLessThanOrEqual(1);
   expect(
     frames.at(-1)?.overlappingRows,
     JSON.stringify(frames),

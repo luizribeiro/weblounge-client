@@ -3,6 +3,7 @@ import type {
   CommandSpec,
   CompletionCandidate,
   CompletionResult,
+  TypingProjection,
 } from "../../engine/protocol";
 import { platformEnvironment } from "../../platform/environment";
 import {
@@ -20,6 +21,7 @@ import {
 } from "./geometry";
 import { SuggestionList } from "./SuggestionList";
 import { isSecretInput } from "./secret-input";
+import { TypingIndicator } from "./TypingIndicator";
 
 interface ComposerProps {
   readonly bufferId: number;
@@ -38,6 +40,7 @@ interface ComposerProps {
   readonly onSend: (
     text: string,
   ) => boolean | undefined | Promise<boolean | undefined>;
+  readonly typers?: readonly TypingProjection[] | undefined;
 }
 
 interface TabCycle {
@@ -339,6 +342,7 @@ export function Composer(props: ComposerProps) {
           selected={selected()}
         />
       )}
+      <TypingIndicator typers={props.typers ?? []} />
       {pendingConfirmation() !== undefined && (
         <div
           aria-label={t("composer.confirm", {

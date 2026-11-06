@@ -90,6 +90,25 @@ it("applies engine-owned completion punctuation", () => {
   ).toBe("ana: ");
 });
 
+it("shows who is typing above the field inside the composer", () => {
+  render(() => (
+    <Composer
+      bufferId={1}
+      bufferTitle="#lounge"
+      draftKey="test:typing"
+      onSend={() => {}}
+      typers={[{ nick: "ana", nick_color_index: 2, paused: false }]}
+    />
+  ));
+
+  const composer = document.querySelector("[data-composer]");
+  const indicator = composer?.querySelector("[data-typing-indicator]");
+  expect(indicator).toHaveTextContent("ana is typing…");
+  expect(indicator?.compareDocumentPosition(screen.getByRole("textbox"))).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
 it("focuses a desktop composer when it mounts", async () => {
   render(() => (
     <Composer

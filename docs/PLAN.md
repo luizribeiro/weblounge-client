@@ -9,6 +9,10 @@ The single place a fresh session reads to know where the project stands. Update 
   first write behind the 750ms foreground throttle. An iPhone WebKit journey restores an unread DM
   among several channel histories, reads it, backgrounds immediately after hydration, and proves
   the next launch's cached frame is already clear.
+- [x] Move the typing line into the composer (Luiz's dogfood request). The composer reserves the
+  24px line above its field and draws no top border, so the transcript runs straight down to it and
+  typing changes move neither. The transcript surface lost its typing grid row, and keyboard motion
+  offsets the transcript by the committed open-composer height instead of fixed typing-row terms.
 - [x] Make CI-loaded WebKit fixtures observe settled state instead of the first visible virtual
   row: concurrent keyboard traffic now ends with an ordered IRC barrier, transcript gestures and
   hit tests require three identical animation-frame geometry snapshots, and startup recovery closes

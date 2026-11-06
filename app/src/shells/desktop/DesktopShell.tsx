@@ -432,7 +432,6 @@ export function DesktopShell(props: DesktopShellProps) {
                     props.onRetry?.(buffer.id, localSendId);
                 }}
                 readAtMs={activeBuffer()?.read_at_ms}
-                typers={props.typers?.get(activeBuffer()?.id ?? -1) ?? []}
                 registerController={(controller) => {
                   messageListController = controller;
                 }}
@@ -472,6 +471,7 @@ export function DesktopShell(props: DesktopShellProps) {
                           directIdentityBlocked(buffer() as BufferProjection))
                       }
                       focusOnMount
+                      typers={props.typers?.get(bufferId)}
                       onRequestCandidates={(input, cursor, explicit) =>
                         props.onRequestCompletion(
                           bufferId,

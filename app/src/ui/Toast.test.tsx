@@ -7,7 +7,7 @@ import { Toast } from "./Toast";
 
 afterEach(() => vi.useRealTimers());
 
-it("stays above the composer and permanent typing slot", () => {
+it("stays above the composer and its typing line", () => {
   const css = readFileSync("src/ui/Toast.module.css", "utf8");
 
   expect(css).toMatch(

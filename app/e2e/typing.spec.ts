@@ -10,18 +10,30 @@ import { waitForStableGeometry } from "./stable-geometry";
 
 const channel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
+interface Box {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
+
 interface TranscriptEdgeGeometry {
-  readonly composerTop: number;
+  readonly composer: Box;
+  readonly composerBorderTopWidth: string;
+  readonly composerHeight: number;
   readonly hitElement: string | undefined;
   readonly hitLastTextLine: boolean;
   readonly hitMessageText: string | undefined;
+  readonly inputTop: number;
   readonly lastTextLineBottom: number | undefined;
   readonly listBottom: number;
   readonly listClientHeight: number;
   readonly listScrollHeight: number;
+  readonly listScrollTop: number;
   readonly messageBottom: number;
-  readonly typingBottom: number;
-  readonly typingTop: number;
+  readonly newestRowBottom: number;
+  readonly typing: Box;
+  readonly typingInComposer: boolean;
 }
 
 test.describe("typing indicators", () => {
@@ -84,7 +96,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("renders spaces in the typing row for one and two typers", async ({
+  test("renders spaces in the composer typing line for one and two typers", async ({
     page,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
@@ -143,7 +155,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("keeps the newest transcript line clear of the typing row", async ({
+  test("keeps the transcript against the composer while the typing line changes", async ({
     page,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
@@ -216,9 +228,13 @@ test.describe("typing indicators", () => {
         .filter({ has: page.getByText(incoming, { exact: true }) });
       await expect(incomingRow).toBeVisible();
 
-      const emptyGeometry = await transcriptEdgeGeometry(incomingRow);
       await expect(indicator).toHaveText("");
-      expectTranscriptClear(emptyGeometry, "empty typing row");
+      const emptyGeometry = await transcriptEdgeGeometry(
+        conversationRoot,
+        incomingRow,
+      );
+      expectTranscriptMeetsComposer(emptyGeometry, "nobody typing");
+      expectNewestRowAgainstComposer(emptyGeometry, "nobody typing");
 
       if (mobile) {
         await page.getByRole("button", { name: "Back to chats" }).click();
@@ -244,12 +260,19 @@ test.describe("typing indicators", () => {
         await expect(page.locator("[data-motion]")).toHaveCount(0);
         await expect(indicator).toContainText(`${sender.nickname} is typing…`);
         await expectMobileTypingIndicatorVisible(indicator);
-        const activeGeometry = await transcriptEdgeGeometry(incomingRow);
-        expectTranscriptClear(activeGeometry, "active typing row");
-        expectStableTypingGeometry(emptyGeometry, activeGeometry);
+        await expectTypingLineChangeKeepsGeometry(
+          conversationRoot,
+          incomingRow,
+          emptyGeometry,
+        );
         const done = await sender.typingConfirmed("weblounge", "done");
         expectServerTags(done, sender.nickname);
         await expect(indicator).toHaveText("");
+        expectStableTypingGeometry(
+          emptyGeometry,
+          await transcriptEdgeGeometry(conversationRoot, incomingRow),
+          "after typing stops",
+        );
         const reply = `typing edge reply ${Date.now()}`;
         const echoedReply = await sender.privmsgConfirmed("weblounge", reply);
         expectServerTags(echoedReply, sender.nickname);
@@ -259,11 +282,18 @@ test.describe("typing indicators", () => {
       } else {
         await typer.typingConfirmed(channel, "active");
         await expect(indicator).toContainText(`${typer.nickname} is typing…`);
-        const activeGeometry = await transcriptEdgeGeometry(incomingRow);
-        expectTranscriptClear(activeGeometry, "active typing row");
-        expectStableTypingGeometry(emptyGeometry, activeGeometry);
+        await expectTypingLineChangeKeepsGeometry(
+          conversationRoot,
+          incomingRow,
+          emptyGeometry,
+        );
         await typer.typingConfirmed(channel, "done");
         await expect(indicator).toHaveText("");
+        expectStableTypingGeometry(
+          emptyGeometry,
+          await transcriptEdgeGeometry(conversationRoot, incomingRow),
+          "after typing stops",
+        );
       }
       const sent = `typing edge sent ${Date.now()}`;
       const composer = page.getByRole("textbox", {
@@ -275,8 +305,8 @@ test.describe("typing indicators", () => {
         .locator('[data-message-row][data-delivery="confirmed"]')
         .filter({ has: page.getByText(sent, { exact: true }) });
       await expect(sentRow).toBeVisible();
-      expectTranscriptClear(
-        await transcriptEdgeGeometry(sentRow),
+      expectTranscriptMeetsComposer(
+        await transcriptEdgeGeometry(conversationRoot, sentRow),
         "after sending",
       );
     } finally {
@@ -285,7 +315,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("keeps a long transcript clear of the typing row", async ({
+  test("keeps a long transcript against the composer typing line", async ({
     page,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
@@ -345,9 +375,9 @@ test.describe("typing indicators", () => {
         .locator('[data-message-row][data-delivery="confirmed"]')
         .filter({ has: page.getByText(sent, { exact: true }) });
       await expect(sentRow).toBeVisible();
-      const sentGeometry = await transcriptEdgeGeometry(sentRow);
+      const sentGeometry = await transcriptEdgeGeometry(root, sentRow);
       expectLongTranscript(sentGeometry, "after sending in long history");
-      expectTranscriptClear(
+      expectTranscriptMeetsComposer(
         sentGeometry,
         "after sending in long history",
         true,
@@ -357,7 +387,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("keeps unread rows clear of the typing row when opening at New", async ({
+  test("keeps unread rows above the composer typing line when opening at New", async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -564,10 +594,6 @@ async function expectMobileTypingIndicatorVisible(
   await expect(indicator).toBeVisible();
   const visibility = await indicator.evaluate((element) => {
     const rect = element.getBoundingClientRect();
-    const composer = element
-      .closest("[data-mobile-chat]")
-      ?.querySelector<HTMLElement>("[data-composer]");
-    const composerRect = composer?.getBoundingClientRect();
     const clippedBy: string[] = [];
     for (
       let ancestor = element.parentElement;
@@ -602,7 +628,6 @@ async function expectMobileTypingIndicatorVisible(
     element.style.pointerEvents = previousPointerEvents;
     return {
       clippedBy,
-      composerTop: composerRect?.top,
       covered: hit !== element && !element.contains(hit),
       hit:
         hit instanceof HTMLElement
@@ -632,34 +657,47 @@ async function expectMobileTypingIndicatorVisible(
   expect(visibility.rect.bottom, measurement).toBeLessThanOrEqual(
     visibility.viewport.height,
   );
-  expect(visibility.composerTop, measurement).toBeDefined();
-  expect(visibility.rect.bottom, measurement).toBeLessThanOrEqual(
-    visibility.composerTop as number,
-  );
 }
 
+const edgeGeometrySelectors =
+  "[data-message-list], [data-message-row], [data-typing-indicator], [data-composer]";
+
 async function transcriptEdgeGeometry(
+  root: Locator,
   row: Locator,
 ): Promise<TranscriptEdgeGeometry> {
+  await waitForStableGeometry(root, edgeGeometrySelectors);
   let measured: TranscriptEdgeGeometry | undefined;
   await expect
     .poll(async () => {
       measured = await row
         .evaluate((message) => {
           const list = message.closest<HTMLElement>("[data-message-list]");
-          const surface = list?.parentElement;
-          const typing = surface?.querySelector<HTMLElement>(
-            "[data-typing-indicator]",
-          );
+          const conversation = list?.parentElement?.parentElement;
           const composer =
-            surface?.parentElement?.querySelector<HTMLElement>(
-              "[data-composer]",
-            );
-          if (list === null || typing === null || composer === null) return;
+            conversation?.querySelector<HTMLElement>("[data-composer]") ?? null;
+          const typing =
+            conversation?.querySelector<HTMLElement>(
+              "[data-typing-indicator]",
+            ) ?? null;
+          const input = composer?.querySelector("textarea") ?? null;
+          if (
+            list === null ||
+            typing === null ||
+            composer === null ||
+            input === null
+          )
+            return;
+          const box = (rect: DOMRect) => ({
+            bottom: rect.bottom,
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+          });
           const listRect = list.getBoundingClientRect();
           const messageRect = message.getBoundingClientRect();
-          const typingRect = typing.getBoundingClientRect();
           const composerRect = composer.getBoundingClientRect();
+          const composerStyle = getComputedStyle(composer);
           const selectable =
             message.querySelector<HTMLElement>("[data-selectable]");
           const walker =
@@ -687,7 +725,9 @@ async function transcriptEdgeGeometry(
                   lineRect.bottom - 1,
                 );
           return {
-            composerTop: composerRect.top,
+            composer: box(composerRect),
+            composerBorderTopWidth: composerStyle.borderTopWidth,
+            composerHeight: composerRect.height,
             hitElement:
               hit instanceof Element ? hit.tagName.toLowerCase() : undefined,
             hitLastTextLine:
@@ -698,13 +738,20 @@ async function transcriptEdgeGeometry(
                 ? hit.closest<HTMLElement>("[data-message-row]")?.dataset
                     .messageText
                 : undefined,
+            inputTop: input.getBoundingClientRect().top,
             lastTextLineBottom: lineRect?.bottom,
             listBottom: listRect.bottom,
             listClientHeight: list.clientHeight,
             listScrollHeight: list.scrollHeight,
+            listScrollTop: list.scrollTop,
             messageBottom: messageRect.bottom,
-            typingBottom: typingRect.bottom,
-            typingTop: typingRect.top,
+            newestRowBottom: Math.max(
+              ...[...list.querySelectorAll("li[data-index]")].map(
+                (virtualRow) => virtualRow.getBoundingClientRect().bottom,
+              ),
+            ),
+            typing: box(typing.getBoundingClientRect()),
+            typingInComposer: composer.contains(typing),
           };
         })
         .catch(() => undefined);
@@ -716,33 +763,73 @@ async function transcriptEdgeGeometry(
   return measured;
 }
 
-function expectTranscriptClear(
+function expectTranscriptMeetsComposer(
   geometry: TranscriptEdgeGeometry,
   state: string,
   soft = false,
 ): void {
   const measurement = `${state}: ${JSON.stringify(geometry)}`;
   const check = soft ? expect.soft : expect;
-  check(geometry.listBottom, measurement).toBeLessThanOrEqual(
-    geometry.typingTop,
-  );
   check(
-    geometry.typingTop - geometry.listBottom,
-    measurement,
+    Math.abs(geometry.composer.top - geometry.listBottom),
+    `transcript runs to the composer, ${measurement}`,
   ).toBeLessThanOrEqual(1);
+  check(
+    geometry.composerBorderTopWidth,
+    `no line on the composer's top edge, ${measurement}`,
+  ).toBe("0px");
   check(geometry.lastTextLineBottom, measurement).toBeDefined();
   // WebKit can place the row's padding box a fractional pixel beyond the
   // scroller, where overflow clips it; the rendered text must stay inside.
   check(geometry.lastTextLineBottom as number, measurement).toBeLessThanOrEqual(
     geometry.listBottom,
   );
-  check(geometry.lastTextLineBottom as number, measurement).toBeLessThanOrEqual(
-    geometry.typingTop,
-  );
   check(geometry.hitLastTextLine, measurement).toBe(true);
-  check(geometry.typingBottom, measurement).toBeLessThanOrEqual(
-    geometry.composerTop,
+  expectTypingLineInComposer(geometry, state, soft);
+}
+
+function expectTypingLineInComposer(
+  geometry: TranscriptEdgeGeometry,
+  state: string,
+  soft: boolean,
+): void {
+  const measurement = `typing line inside the composer, ${state}: ${JSON.stringify(geometry)}`;
+  const check = soft ? expect.soft : expect;
+  check(geometry.typingInComposer, measurement).toBe(true);
+  check(geometry.typing.top, measurement).toBeGreaterThanOrEqual(
+    geometry.composer.top,
   );
+  check(geometry.typing.bottom, measurement).toBeLessThanOrEqual(
+    geometry.inputTop,
+  );
+  check(geometry.typing.left, measurement).toBeGreaterThanOrEqual(
+    geometry.composer.left,
+  );
+  check(geometry.typing.right, measurement).toBeLessThanOrEqual(
+    geometry.composer.right,
+  );
+}
+
+function expectNewestRowAgainstComposer(
+  geometry: TranscriptEdgeGeometry,
+  state: string,
+  soft = false,
+): void {
+  const check = soft ? expect.soft : expect;
+  check(
+    Math.abs(geometry.composer.top - geometry.newestRowBottom),
+    `newest row meets the composer, ${state}: ${JSON.stringify(geometry)}`,
+  ).toBeLessThanOrEqual(1);
+}
+
+async function expectTypingLineChangeKeepsGeometry(
+  root: Locator,
+  row: Locator,
+  idle: TranscriptEdgeGeometry,
+): Promise<void> {
+  const active = await transcriptEdgeGeometry(root, row);
+  expectTranscriptMeetsComposer(active, "while typing");
+  expectStableTypingGeometry(idle, active, "while typing");
 }
 
 async function expectNewestRowClear(
@@ -752,13 +839,10 @@ async function expectNewestRowClear(
 ): Promise<void> {
   const row = root.locator("[data-message-row]", { hasText: text });
   await expect(row).toBeVisible();
-  await waitForStableGeometry(
-    root,
-    "[data-message-list], [data-message-row], [data-typing-indicator], [data-composer]",
-  );
-  const geometry = await transcriptEdgeGeometry(row);
+  const geometry = await transcriptEdgeGeometry(root, row);
   expectLongTranscript(geometry, state);
-  expectTranscriptClear(geometry, state, true);
+  expectTranscriptMeetsComposer(geometry, state, true);
+  expectNewestRowAgainstComposer(geometry, state, true);
 }
 
 function expectLongTranscript(
@@ -772,14 +856,23 @@ function expectLongTranscript(
 }
 
 function expectStableTypingGeometry(
-  empty: TranscriptEdgeGeometry,
-  active: TranscriptEdgeGeometry,
+  idle: TranscriptEdgeGeometry,
+  current: TranscriptEdgeGeometry,
+  state: string,
 ): void {
-  expect(
-    Math.abs(active.messageBottom - empty.messageBottom),
-  ).toBeLessThanOrEqual(1);
-  expect(Math.abs(active.listBottom - empty.listBottom)).toBeLessThanOrEqual(1);
-  expect(Math.abs(active.composerTop - empty.composerTop)).toBeLessThanOrEqual(
-    1,
-  );
+  const measurement = `${state}: idle ${JSON.stringify(idle)}, now ${JSON.stringify(current)}`;
+  for (const [name, read] of [
+    ["newest row bottom", (geometry) => geometry.messageBottom],
+    ["transcript bottom", (geometry) => geometry.listBottom],
+    ["transcript scroll position", (geometry) => geometry.listScrollTop],
+    ["composer top", (geometry) => geometry.composer.top],
+    ["composer height", (geometry) => geometry.composerHeight],
+  ] as const satisfies readonly (readonly [
+    string,
+    (geometry: TranscriptEdgeGeometry) => number,
+  ])[])
+    expect(
+      Math.abs(read(current) - read(idle)),
+      `${name} ${measurement}`,
+    ).toBeLessThanOrEqual(1);
 }

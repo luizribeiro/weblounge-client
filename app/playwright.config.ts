@@ -159,7 +159,7 @@ export default defineConfig({
     },
     {
       name: "webkit-mobile-typing",
-      grep: /typing row/u,
+      grep: /typing line/u,
       testMatch: "**/typing.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
