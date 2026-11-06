@@ -571,6 +571,7 @@ async function swipeFromNickname(
       pointer("pointermove", clientX, timeStamp);
     const last = points.at(-1) ?? points[0];
     pointer("pointerup", last[0], last[1]);
+    if (!target.isConnected) return true;
     return !target.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
