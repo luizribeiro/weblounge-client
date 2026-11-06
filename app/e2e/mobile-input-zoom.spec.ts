@@ -803,6 +803,7 @@ interface KeyboardFrame {
   readonly newestGap: number;
   readonly newestBottom: number | undefined;
   readonly offsetTop: number;
+  readonly overlappingRowContent: number;
   readonly overlappingRows: number;
   readonly rootTop: number;
   readonly scrollerTop: number;
@@ -1154,6 +1155,16 @@ async function sampleKeyboardTransition(
           ),
         ];
         const rowRects = rows.map((row) => row.getBoundingClientRect());
+        const rowContentRects = rows.map((row, index) => {
+          const content = row.firstElementChild;
+          if (!(content instanceof HTMLElement)) return rowRects[index];
+          const rect = content.getBoundingClientRect();
+          const style = getComputedStyle(content);
+          return {
+            bottom: rect.bottom - Number.parseFloat(style.paddingBottom),
+            top: rect.top + Number.parseFloat(style.paddingTop),
+          };
+        });
         const newest = rows
           .at(-1)
           ?.querySelector<HTMLElement>("[data-message-row]")
@@ -1185,6 +1196,12 @@ async function sampleKeyboardTransition(
               : composerRect.top - newest.bottom,
           newestBottom: newest?.bottom,
           offsetTop: viewport.offsetTop,
+          overlappingRowContent: rowContentRects.filter(
+            (row, index) =>
+              index > 0 &&
+              row !== undefined &&
+              row.top < (rowContentRects[index - 1]?.bottom ?? row.top) - 0.5,
+          ).length,
           overlappingRows: rowRects.filter(
             (row, index) =>
               index > 0 &&
@@ -1577,6 +1594,7 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
           frame.visibleRows > 0 &&
           frame.desktopGridRows === 0 &&
           frame.overlappingRows <= 2 &&
+          frame.overlappingRowContent === 0 &&
           Math.abs(frame.headerTop - headerTop) <= 0.5 &&
           Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
           Math.abs(frame.rootTop) <= 0.5 &&
@@ -1588,7 +1606,13 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   ).toBe(true);
   expect(frames[0]?.liveEdgeGap).toBeLessThanOrEqual(22);
   expect(frames.at(-1)?.liveEdgeGap).toBeLessThanOrEqual(22);
-  expect(frames.at(-1)?.overlappingRows).toBe(0);
+  // Fractional WebKit layout may overlap one adjacent pair's outer padding
+  // boxes after motion; rendered row content must still remain disjoint.
+  expect(
+    frames.at(-1)?.overlappingRows,
+    JSON.stringify(frames),
+  ).toBeLessThanOrEqual(1);
+  expect(frames.at(-1)?.overlappingRowContent, JSON.stringify(frames)).toBe(0);
   expect(frames.at(-1)?.transcriptAnimations).toBe(0);
   expect(frames.at(-1)?.composerVisible).toBe(true);
   expect(Math.abs(frames.at(-1)?.newestGap ?? 0)).toBeLessThanOrEqual(8);
@@ -1653,6 +1677,7 @@ function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
         frame.visibleRows > 0 &&
         frame.desktopGridRows === 0 &&
         frame.overlappingRows <= 1 &&
+        frame.overlappingRowContent === 0 &&
         frame.transcriptAnimations === 0 &&
         Math.abs(frame.headerTop - headerTop) <= 0.5 &&
         Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
@@ -1665,5 +1690,9 @@ function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(frames.at(-1)?.animations).toBe(0);
   expect(frames.at(-1)?.composerVisible).toBe(true);
   expect(Math.abs((frames.at(-1)?.newestGap ?? 0) - 24)).toBeLessThanOrEqual(1);
-  expect(frames.at(-1)?.overlappingRows).toBe(0);
+  expect(
+    frames.at(-1)?.overlappingRows,
+    JSON.stringify(frames),
+  ).toBeLessThanOrEqual(1);
+  expect(frames.at(-1)?.overlappingRowContent, JSON.stringify(frames)).toBe(0);
 }
