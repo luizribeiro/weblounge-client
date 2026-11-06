@@ -9379,7 +9379,7 @@ async fn delay(duration: Duration) {
         let (state, outbound, mut receiver) = harness(client.clone());
         process_event(&state, &outbound, &client, 1, joined);
         _ = collect(&mut receiver);
-        wire.server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+        wire.server("@time=2026-10-27T12:00:00.377Z;msgid=one :alice!a@host PRIVMSG #room :hello")
             .await;
         let message = next_matching(&mut events, |event| {
             matches!(event, papo::Event::Message(_))
@@ -9416,10 +9416,10 @@ async fn delay(duration: Duration) {
             EngineToUi::CommandResult { id } if id == "mark-server"
         )));
         let request = wire.next_sent().await;
-        assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+        assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.377Z"));
         let label = request_label(&request).to_owned();
         wire.server(format!(
-            "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"
+            "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.377Z"
         ))
         .await;
     }

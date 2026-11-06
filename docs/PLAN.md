@@ -22,6 +22,10 @@ The single place a fresh session reads to know where the project stands. Update 
   visible in the transcript. TARGETS and cached activity remain provisional only until history
   loads; local notices, reactions and typing cannot create phantom row times. Built-app local-Ergo
   coverage reproduces reaction-only TARGETS activity in desktop Chromium and iPhone WebKit.
+- [x] Preserve an IRC server-time millisecond across the browser's `SystemTime` boundary instead of
+  truncating sub-microsecond platform drift into the preceding millisecond. Papo-wire coverage marks
+  a `.377` message at exactly `.377`; fresh-Ergo Chromium and iPhone WebKit coverage observes the
+  marker from a second client before navigation, then proves the badge stays clear after live relaunch.
 - [x] Keep startup chat-list snapshots writable after a brand-new live direct arrives by treating
   its authoritative live cursor as a complete current row while retaining `BEFORE` paging for older
   history. A fresh-Ergo desktop Chromium and iPhone WebKit relaunch journey covers an empty channel,

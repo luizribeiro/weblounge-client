@@ -243,11 +243,11 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         current.getByText(`closed-app unread 3 ${suffix}`, { exact: true }),
       ).toBeVisible();
       await expect.poll(() => markReadRequestCount(current)).toBeGreaterThan(0);
-      await leaveConversation(current, channel);
-      await expectRead(bufferRow(current, channel), channel);
       await expect
         .poll(() => markerReader.readMarker(channel))
         .toBe(newestUnreadTime);
+      await leaveConversation(current, channel);
+      await expectRead(bufferRow(current, channel), channel);
 
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
       const finalRows = await visibleChatRows(current);
@@ -261,6 +261,10 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await recordCachedChatRows(current, titles);
       await current.goto(startUrl(channel, emptyChannel));
       await expect.poll(() => cachedChatRows(current)).toEqual(finalRows);
+      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
+        "data-chat-list-hydrating",
+        "true",
+      );
       await expectRead(bufferRow(current, channel), channel);
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
     } finally {
