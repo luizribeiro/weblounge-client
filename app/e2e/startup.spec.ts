@@ -1,4 +1,10 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  expect,
+  type Locator,
+  type Page,
+  type Route,
+  test,
+} from "@playwright/test";
 import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
@@ -437,8 +443,12 @@ for (const recovery of [
   }) => {
     await page.clock.install();
     let reachable = false;
+    let blockedRoute: Route | undefined;
     await page.route("**/config.json", async (route) => {
-      if (!reachable) return new Promise(() => {});
+      if (!reachable) {
+        blockedRoute = route;
+        return;
+      }
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ mode: "app" }),
@@ -451,6 +461,9 @@ for (const recovery of [
       "Can't reach weblounge",
     );
 
+    if (blockedRoute === undefined)
+      throw new Error("unreachable config request was not intercepted");
+    await blockedRoute.abort("timedout");
     reachable = true;
     await page.clock.resume();
     await page.evaluate((event) => {
