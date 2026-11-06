@@ -2,6 +2,11 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Mark the greatest committed chat server-time at the live edge instead of the last delivered
+  UI row. A live message can overtake a reconnect `CHATHISTORY AFTER` page, leaving an older row
+  appended last; choosing that row kept newer unread state and sent Ergo a non-advancing MARKREAD.
+  Papo-wire coverage proves the ordering, while desktop Chromium and iPhone WebKit retain bot
+  traffic clearing and reload persistence.
 - [x] Keep the 500ms read dwell attached to continuous foreground live-edge visibility instead of
   restarting it for every committed row. A local-Ergo regression interleaves four bots' messages,
   NOTICE, multiline and typing traffic at one-second per-bot intervals on desktop Chromium and
