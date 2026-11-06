@@ -13,6 +13,9 @@ The single place a fresh session reads to know where the project stands. Update 
   24px line above its field and draws no top border, so the transcript runs straight down to it and
   typing changes move neither. The transcript surface lost its typing grid row, and keyboard motion
   offsets the transcript by the committed open-composer height instead of fixed typing-row terms.
+- [x] Keep opening an already-current conversation instant by separating latest-edge hydration from
+  user-requested older paging. A ready buffer ignores the opening request, reaching the transcript
+  top still sends `CHATHISTORY BEFORE`, and older loading stays out of the title shimmer state.
 - [x] Make CI-loaded WebKit fixtures observe settled state instead of the first visible virtual
   row: concurrent keyboard traffic now ends with an ordered IRC barrier, transcript gestures and
   hit tests require three identical animation-frame geometry snapshots, and startup recovery closes
