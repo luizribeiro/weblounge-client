@@ -6,6 +6,15 @@ The single place a fresh session reads to know where the project stands. Update 
   value exported at build time to transcript geometry, so mount timing and missing computed styles
   cannot erase it. Preserve WebKit's fractional row measurements, and treat a swipe-completed
   detached nickname as already unable to receive its compatibility click.
+- [x] Keep the permanent typing reserve effective under the production CSP by owning its 24px
+  token in CSS and reading that token for transcript geometry after mount. Preserve WebKit's
+  fractional row measurements so the newest line cannot cross the reserve, and reacquire visible
+  transcript hit points after each mobile navigation before driving swipe gestures.
+- [x] Mark the greatest committed chat server-time at the live edge instead of the last delivered
+  UI row. A live message can overtake a reconnect `CHATHISTORY AFTER` page, leaving an older row
+  appended last; choosing that row kept newer unread state and sent Ergo a non-advancing MARKREAD.
+  Papo-wire coverage proves the ordering, while desktop Chromium and iPhone WebKit retain bot
+  traffic clearing and reload persistence.
 - [x] Keep the 500ms read dwell attached to continuous foreground live-edge visibility instead of
   restarting it for every committed row. A local-Ergo regression interleaves four bots' messages,
   NOTICE, multiline and typing traffic at one-second per-bot intervals on desktop Chromium and
