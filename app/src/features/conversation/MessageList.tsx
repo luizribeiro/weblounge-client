@@ -20,6 +20,7 @@ import type {
   NoticeKind,
   TypingProjection,
 } from "../../engine/protocol";
+import { pageIsForeground } from "../../platform/push/foreground-state";
 import {
   type AppGeometryChange,
   appGeometryChangeEvent,
@@ -105,6 +106,9 @@ export function MessageList(props: MessageListProps) {
   let scrollLiveEdgeFrame: number | undefined;
   let scrollFrozenReadAt: number | undefined;
   const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
+  const [foreground, setForeground] = createSignal(
+    pageIsForeground(document, navigator),
+  );
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
@@ -313,8 +317,7 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const marker = props.readAtMs ?? null;
     const hasUnread = hasUnreadAfter(props.messages, marker);
-    const away =
-      !publishedAtLiveEdge() || document.hidden || !document.hasFocus();
+    const away = !publishedAtLiveEdge() || !foreground();
     if (hasUnread && away) {
       boundaryFrozen = true;
       setFrozenReadAt(marker);
@@ -345,6 +348,11 @@ export function MessageList(props: MessageListProps) {
     const handleFontsLoaded = () => {
       remeasure();
       if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+    };
+    const updateForeground = () => {
+      const next = pageIsForeground(document, navigator);
+      setForeground(next);
+      if (!next) freezeUnreadBoundary(setFrozenReadAt);
     };
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
@@ -377,6 +385,9 @@ export function MessageList(props: MessageListProps) {
       cancelComposerScroll,
     );
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
+    document.addEventListener("visibilitychange", updateForeground);
+    window.addEventListener("focus", updateForeground);
+    window.addEventListener("blur", updateForeground);
     window.addEventListener(appGeometryChangeEvent, anchorGeometryChange);
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
@@ -389,6 +400,9 @@ export function MessageList(props: MessageListProps) {
         cancelComposerScroll,
       );
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
+      document.removeEventListener("visibilitychange", updateForeground);
+      window.removeEventListener("focus", updateForeground);
+      window.removeEventListener("blur", updateForeground);
       window.removeEventListener(appGeometryChangeEvent, anchorGeometryChange);
       list?.removeEventListener("keydown", markScrollKeyIntent);
       list?.removeEventListener("pointerdown", markPointerScrollIntent);

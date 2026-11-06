@@ -34,6 +34,7 @@ import {
   createReadDwell,
   newestCommittedMessageId,
 } from "../../features/unread/createReadDwell";
+import { pageIsForeground } from "../../platform/push/foreground-state";
 import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
@@ -75,7 +76,7 @@ export interface MobileConversationProps {
 export function MobileConversation(props: MobileConversationProps) {
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   const [foreground, setForeground] = createSignal(
-    document.visibilityState === "visible" && document.hasFocus(),
+    pageIsForeground(document, navigator),
   );
   let listController: MessageListController | undefined;
   const connection = () =>
@@ -114,9 +115,7 @@ export function MobileConversation(props: MobileConversationProps) {
 
   onMount(() => {
     const updateForeground = () =>
-      setForeground(
-        document.visibilityState === "visible" && document.hasFocus(),
-      );
+      setForeground(pageIsForeground(document, navigator));
     document.addEventListener("visibilitychange", updateForeground);
     window.addEventListener("focus", updateForeground);
     window.addEventListener("blur", updateForeground);

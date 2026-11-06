@@ -196,6 +196,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-new-divider",
+      testMatch: "**/new-divider-focused.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "android-mobile-history",
       testMatch: "**/mobile-history.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },

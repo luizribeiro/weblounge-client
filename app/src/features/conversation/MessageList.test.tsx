@@ -19,6 +19,10 @@ const scrollToDescriptor = Object.getOwnPropertyDescriptor(
   "scrollTo",
 );
 const fontsDescriptor = Object.getOwnPropertyDescriptor(document, "fonts");
+const standaloneDescriptor = Object.getOwnPropertyDescriptor(
+  navigator,
+  "standalone",
+);
 
 beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollTo", {
@@ -43,6 +47,9 @@ afterEach(() => {
     );
   if (fontsDescriptor === undefined) Reflect.deleteProperty(document, "fonts");
   else Object.defineProperty(document, "fonts", fontsDescriptor);
+  if (standaloneDescriptor === undefined)
+    Reflect.deleteProperty(navigator, "standalone");
+  else Object.defineProperty(navigator, "standalone", standaloneDescriptor);
 });
 
 const message: MessageProjection = {
@@ -761,8 +768,12 @@ it("defers live-edge geometry until after the scroll handler", async () => {
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
-it("does not add New for a message arriving at the focused live edge", async () => {
-  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+it("does not add New for a message arriving at the foreground live edge", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  Object.defineProperty(navigator, "standalone", {
+    configurable: true,
+    value: true,
+  });
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
     { ...message, delivery: "received" },
   ]);
@@ -783,6 +794,36 @@ it("does not add New for a message arriving at the focused live edge", async () 
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(container.querySelector("[data-new-line]")).toBeNull();
+});
+
+it("keeps New when a hidden arrival is delivered after foregrounding", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  let hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    { ...message, delivery: "received" },
+  ]);
+  const { container } = render(() => (
+    <MessageList messages={messages()} readAtMs={1} />
+  ));
+
+  hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  setMessages([
+    ...messages(),
+    {
+      ...message,
+      id: 2,
+      delivery: "received",
+      text: "delivered after foregrounding",
+      received_at_ms: 2,
+    },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
 it("restacks measured rows when the New boundary moves past a long row", async () => {

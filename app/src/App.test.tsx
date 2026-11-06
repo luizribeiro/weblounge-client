@@ -165,6 +165,8 @@ it("reports document visibility to the engine", () => {
   document.dispatchEvent(new Event("visibilitychange"));
 
   expect(client.visibility).toEqual(["visible", "hidden", "visible", "hidden"]);
+  hidden.mockRestore();
+  focused.mockRestore();
 });
 
 it("checks worker liveness on a persisted page restore", () => {

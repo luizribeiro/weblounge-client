@@ -52,19 +52,24 @@ const message: MessageProjection = {
 };
 
 let focused = true;
-let visibility: DocumentVisibilityState = "visible";
+let hidden = false;
+const standaloneDescriptor = Object.getOwnPropertyDescriptor(
+  navigator,
+  "standalone",
+);
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
-  vi.spyOn(document, "visibilityState", "get").mockImplementation(
-    () => visibility,
-  );
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
 });
 
 afterEach(() => {
   focused = true;
-  visibility = "visible";
+  hidden = false;
+  if (standaloneDescriptor === undefined)
+    Reflect.deleteProperty(navigator, "standalone");
+  else Object.defineProperty(navigator, "standalone", standaloneDescriptor);
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -149,13 +154,13 @@ it("cancels the dwell when the conversation becomes inactive", () => {
 });
 
 it("waits for both visibility and window focus before starting the dwell", () => {
-  visibility = "hidden";
+  hidden = true;
   focused = false;
   const markRead = vi.fn();
   renderConversation(markRead);
 
   vi.advanceTimersByTime(1_000);
-  visibility = "visible";
+  hidden = false;
   document.dispatchEvent(new Event("visibilitychange"));
   vi.advanceTimersByTime(1_000);
   expect(markRead).not.toHaveBeenCalled();
@@ -163,6 +168,20 @@ it("waits for both visibility and window focus before starting the dwell", () =>
   focused = true;
   window.dispatchEvent(new Event("focus"));
   vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenCalledWith(2, 8);
+});
+
+it("treats a visible iOS standalone conversation as foreground", () => {
+  focused = false;
+  Object.defineProperty(navigator, "standalone", {
+    configurable: true,
+    value: true,
+  });
+  const markRead = vi.fn();
+  renderConversation(markRead);
+
+  vi.advanceTimersByTime(500);
+
   expect(markRead).toHaveBeenCalledWith(2, 8);
 });
 

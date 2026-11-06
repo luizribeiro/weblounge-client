@@ -46,6 +46,7 @@ import {
   newestCommittedMessageId,
 } from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
+import { pageIsForeground } from "../../platform/push/foreground-state";
 import { t } from "../../strings";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
@@ -122,7 +123,7 @@ export function DesktopShell(props: DesktopShellProps) {
   const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
   const [foreground, setForeground] = createSignal(
-    document.visibilityState === "visible" && document.hasFocus(),
+    pageIsForeground(document, navigator),
   );
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
@@ -334,9 +335,7 @@ export function DesktopShell(props: DesktopShellProps) {
     };
     document.addEventListener("keydown", handleKeydown);
     const updateForeground = () =>
-      setForeground(
-        document.visibilityState === "visible" && document.hasFocus(),
-      );
+      setForeground(pageIsForeground(document, navigator));
     document.addEventListener("visibilitychange", updateForeground);
     window.addEventListener("focus", updateForeground);
     window.addEventListener("blur", updateForeground);
