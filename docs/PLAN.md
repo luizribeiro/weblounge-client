@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Match CI regressions to the normal-flow typing row: WebKit transcript checks now require
+  visible text rather than fractional clipped padding, keyboard motion distinguishes padding-box
+  contact from content overlap, and slow-buffer hydration permits its concurrent marker query while
+  still rejecting history, identity, or marker-write work queued ahead of the opened conversation.
 - [x] Put the permanent 24px typing row back in normal flow between the transcript scroller and
   composer. The scroller now ends at the row instead of extending under an overlay, so virtual
   geometry no longer owns a typing reserve or rounds fractional measurements to reach it; built-app

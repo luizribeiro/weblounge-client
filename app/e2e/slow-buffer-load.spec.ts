@@ -151,13 +151,17 @@ test("settles the opened conversation without waiting for background history", a
     );
     expect(synced).toBeDefined();
     expect(measured.phases.at(-1)?.phase).toBeNull();
+    // A timestamp-less MARKREAD queries this buffer's server baseline and is
+    // launched alongside its history. Only queued history, identity work, or
+    // a marker write can hold useful work ahead of the opened conversation.
     expect(
       measured.wire.filter(
         (entry) =>
           entry.direction === "sent" &&
           entry.at >= measured.timeOrigin + measured.openedAt &&
           entry.at < request.at &&
-          /(?:CHATHISTORY|MARKREAD|WHO) /u.test(entry.line),
+          (/(?:CHATHISTORY|WHO) /u.test(entry.line) ||
+            / MARKREAD \S+ timestamp=/u.test(entry.line)),
       ),
     ).toHaveLength(0);
     if (reply === undefined || synced === undefined)
