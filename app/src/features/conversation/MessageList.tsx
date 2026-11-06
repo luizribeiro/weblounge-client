@@ -89,6 +89,11 @@ type NoticeMessage = MessageProjection & {
 };
 
 const liveEdgeTolerance = 2;
+const { typingSlotHeight: typingSlotHeightValue } = styles as Record<
+  "typingSlotHeight",
+  string
+>;
+const typingSlotHeight = Number.parseFloat(typingSlotHeightValue);
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
@@ -110,7 +115,6 @@ export function MessageList(props: MessageListProps) {
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
-  const [typingSlotHeight, setTypingSlotHeight] = createSignal(0);
   const rows = createMemo(() =>
     timelineRows(props.messages, props.memberships ?? [], frozenReadAt()),
   );
@@ -336,14 +340,6 @@ export function MessageList(props: MessageListProps) {
       virtualizer.scrollToEnd();
   });
   onMount(() => {
-    if (list !== undefined) {
-      const value = Number.parseFloat(
-        getComputedStyle(list).getPropertyValue("--wl-typing-slot-height"),
-      );
-      if (!Number.isFinite(value))
-        throw new Error("typing slot height is not defined in CSS");
-      setTypingSlotHeight(value);
-    }
     const fonts = document.fonts;
     const composerOwner = list?.parentElement?.parentElement;
     const anchorComposerGeometry = () => {
@@ -527,7 +523,7 @@ export function MessageList(props: MessageListProps) {
                     data-selected={selected()}
                     ref={(element) => measureRow(element, virtualRow.index)}
                     style={{
-                      transform: `translateY(${virtualRow.start + bottomOffset(viewportHeight(), virtualizer.getTotalSize(), typingSlotHeight())}px)`,
+                      transform: `translateY(${virtualRow.start + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
                     }}
                   >
                     <TimelineRowView
@@ -954,11 +950,7 @@ function formatNoticeTime(milliseconds: number): string {
     timeStyle: "short",
   }).format(milliseconds);
 }
-function bottomOffset(
-  viewportHeight: number,
-  contentHeight: number,
-  typingSlotHeight: number,
-): number {
+function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight - typingSlotHeight);
 }
 

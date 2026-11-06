@@ -33,22 +33,6 @@ beforeEach(() => {
       this.dispatchEvent(new Event("scroll"));
     },
   });
-  const nativeGetComputedStyle = window.getComputedStyle.bind(window);
-  vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
-    const style = nativeGetComputedStyle(element, pseudo);
-    if (!(element instanceof HTMLElement) || !element.dataset.messageList)
-      return style;
-    return new Proxy(style, {
-      get(target, property) {
-        if (property !== "getPropertyValue")
-          return Reflect.get(target, property, target);
-        return (name: string) =>
-          name === "--wl-typing-slot-height"
-            ? "24px"
-            : target.getPropertyValue(name);
-      },
-    });
-  });
 });
 
 afterEach(() => {

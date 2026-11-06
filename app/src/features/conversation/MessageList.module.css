@@ -1,5 +1,7 @@
+@value typingSlotHeight: 24px;
+
 .surface {
-  --wl-typing-slot-height: 24px;
+  --wl-typing-slot-height: typingSlotHeight;
 
   min-height: 0;
   overflow: clip;
