@@ -7,6 +7,7 @@ import {
   hasIntermediatePosition,
   type TransitionStyle,
 } from "./motion-assertions";
+import { waitForStableGeometry } from "./stable-geometry";
 
 test.beforeEach(async ({ browserName, page }) => {
   test.skip(
@@ -264,7 +265,7 @@ test("mobile back swipe starts on selectable transcript content", async ({
   );
   const text = `selectable swipe target ${Date.now()}`;
   try {
-    bot.privmsg("#weblounge-test", text);
+    await bot.privmsgConfirmed("#weblounge-test", text);
     await openChat(page);
     const message = page.getByText(text, { exact: true });
     await expect(message).toBeVisible();
@@ -273,6 +274,10 @@ test("mobile back swipe starts on selectable transcript content", async ({
       "pan-y",
     );
     await expect(message).toHaveCSS("user-select", "text");
+    await waitForStableGeometry(
+      page.locator("[data-message-list]"),
+      "[data-message-row]",
+    );
 
     const messagePoint = await visiblePoint(message);
     await panOverTranscript(page, messagePoint.x, messagePoint.y, 401, 600);
@@ -280,6 +285,10 @@ test("mobile back swipe starts on selectable transcript content", async ({
     await expectAligned(page);
 
     await openChat(page);
+    await waitForStableGeometry(
+      page.locator("[data-message-list]"),
+      "[data-message-row]",
+    );
     const reopenedMessagePoint = await visiblePoint(message);
     await panOverTranscript(page, 5, reopenedMessagePoint.y, 80, 500);
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();

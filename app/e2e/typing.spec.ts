@@ -6,6 +6,7 @@ import {
 } from "./engine-clock";
 import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
+import { waitForStableGeometry } from "./stable-geometry";
 
 const channel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
@@ -751,6 +752,10 @@ async function expectNewestRowClear(
 ): Promise<void> {
   const row = root.locator("[data-message-row]", { hasText: text });
   await expect(row).toBeVisible();
+  await waitForStableGeometry(
+    root,
+    "[data-message-list], [data-message-row], [data-typing-indicator], [data-composer]",
+  );
   const geometry = await transcriptEdgeGeometry(row);
   expectLongTranscript(geometry, state);
   expectTranscriptClear(geometry, state, true);
