@@ -9,11 +9,9 @@ export interface BufferSyncPresentation {
 export function bufferSyncPresentation(
   buffer: BufferProjection,
   network: NetworkProjection | undefined,
-  hydrating = false,
 ): BufferSyncPresentation {
   const connection = connectionPresentation(
     network === undefined ? [] : [network],
-    hydrating,
   );
   const interrupted = connection.error !== undefined;
   return {

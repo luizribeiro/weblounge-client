@@ -146,7 +146,6 @@ export function DesktopShell(props: DesktopShellProps) {
       : bufferSyncPresentation(
           buffer,
           props.networks.find((network) => network.id === buffer.network_id),
-          props.hydrating,
         );
   });
   const activeUnread = createMemo(() => activeBuffer()?.unread ?? 0);

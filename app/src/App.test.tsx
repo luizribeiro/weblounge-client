@@ -466,7 +466,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
       {
         id: 2,
         network_id: 1,
-        sync_state: "synced" as const,
+        sync_state: "syncing" as const,
         kind: "channel",
         cached: true,
         available: true,
@@ -503,6 +503,32 @@ it("reveals and navigates a cached chat list before live synchronization", async
   );
   fireEvent.click(await screen.findByRole("button", { name: "#cached" }));
   expect(screen.queryByText(/connecting/i)).toBeNull();
+  const title = container.querySelector("[data-conversation-title]");
+  expect(title).toHaveAttribute("data-connection-phase", "loading");
+  client.emit({
+    type: "buffer_updated",
+    buffer: {
+      id: 3,
+      network_id: 1,
+      sync_state: "synced",
+      kind: "channel",
+      title: "#cached",
+      draft_key: "weblounge:#cached",
+      topic: "Live topic",
+      member_count: 3,
+      unread: 0,
+      mentions: 0,
+      read_through: null,
+    },
+  });
+  expect(title).toHaveAttribute("data-connection-phase", "fading");
+  if (title === null) throw new Error("conversation title missing");
+  fireEvent.animationEnd(title);
+  expect(title).not.toHaveAttribute("data-connection-progress");
+  expect(container.querySelector("[data-app-root]")).toHaveAttribute(
+    "data-chat-list-hydrating",
+    "true",
+  );
   expect(client.requests).not.toContainEqual(
     expect.objectContaining({
       request: { type: "load_history", buffer_id: 2 },
@@ -546,14 +572,12 @@ it("reveals and navigates a cached chat list before live synchronization", async
     "data-chat-list-hydrating",
   );
   const brand = container.querySelector("[data-connection-brand]");
-  const title = container.querySelector("[data-conversation-title]");
   expect(brand).toHaveAttribute("data-connection-phase", "finishing");
-  expect(title).toHaveAttribute("data-connection-phase", "fading");
-  if (brand === null || title === null) throw new Error("progress UI missing");
+  expect(title).not.toHaveAttribute("data-connection-progress");
+  if (brand === null) throw new Error("progress UI missing");
   fireEvent.animationIteration(brand);
   expect(brand).toHaveAttribute("data-connection-phase", "filling");
   fireEvent.animationEnd(brand);
-  fireEvent.animationEnd(title);
   await waitFor(() =>
     expect(container.querySelector("[data-connection-progress]")).toBeNull(),
   );

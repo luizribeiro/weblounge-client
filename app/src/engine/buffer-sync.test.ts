@@ -30,14 +30,13 @@ it("lets actionable errors interrupt progress", () => {
   ).toEqual({ interrupted: true, progressing: false });
 });
 
-it("keeps a hydrated cached buffer progressing until its live replacement", () => {
-  expect(presentation("online", "pending", true).progressing).toBe(true);
+it("does not make one title wait for whole-list cache hydration", () => {
+  expect(presentation("online", "pending").progressing).toBe(false);
 });
 
 function presentation(
   state: NetworkProjection["state"],
   syncState: BufferProjection["sync_state"],
-  hydrating = false,
 ) {
   return bufferSyncPresentation(
     {
@@ -53,6 +52,5 @@ function presentation(
       read_through: null,
     },
     { id: 1, label: "Local", nickname: "me", state },
-    hydrating,
   );
 }

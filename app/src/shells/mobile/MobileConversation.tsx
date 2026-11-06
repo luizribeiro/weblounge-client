@@ -84,8 +84,7 @@ export function MobileConversation(props: MobileConversationProps) {
       props.network === undefined ? [] : [props.network],
       props.hydrating,
     );
-  const sync = () =>
-    bufferSyncPresentation(props.buffer, props.network, props.hydrating);
+  const sync = () => bufferSyncPresentation(props.buffer, props.network);
   const bufferId = createMemo(() => props.buffer.id);
   const unread = createMemo(() => props.buffer.unread);
   const newestMessageId = createMemo(() =>

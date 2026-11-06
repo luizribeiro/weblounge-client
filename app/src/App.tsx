@@ -711,6 +711,22 @@ export function App(props: AppProps) {
         startupHistoryPending.delete(message.buffer_id);
         scheduleStartupContentCheck();
       }
+      if (
+        cachedChatListActive() &&
+        message.type === "buffer_updated" &&
+        message.buffer.cached !== true
+      ) {
+        setBuffers((current) =>
+          current.map((buffer) =>
+            buffer.draft_key === message.buffer.draft_key
+              ? {
+                  ...buffer,
+                  sync_state: message.buffer.sync_state,
+                }
+              : buffer,
+          ),
+        );
+      }
       if (message.type === "buffer_snapshot" && !startupRevealed()) {
         startupHistoryComplete.add(message.buffer_id);
         startupHistoryPending.delete(message.buffer_id);
