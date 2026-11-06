@@ -40,10 +40,7 @@
   );
 }
 
-/*
- * Keyboard motion already compensated for the overlay; virtual end geometry
- * needs the same compensation while the indicator stays below the keyboard.
- */
+/* Motion spans the composer row, so both fixed rows leave the transcript edge. */
 :global(#root[data-keyboard-motion] [data-message-motion-layer]) {
   translate: 0
     calc(

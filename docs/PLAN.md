@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Put the permanent 24px typing row back in normal flow between the transcript scroller and
+  composer. The scroller now ends at the row instead of extending under an overlay, so virtual
+  geometry no longer owns a typing reserve or rounds fractional measurements to reach it; built-app
+  iPhone WebKit coverage keeps long transcripts and keyboard motion pinned to their physical edges.
 - [x] Preserve fractional WebKit row measurements while rounding the virtual transcript's scroll
   extent up to the next device-independent pixel. Integer `scrollTop` can now reach far enough for
   long-history, command, appended and New-divider rows to end at or above the permanent typing

@@ -89,12 +89,6 @@ type NoticeMessage = MessageProjection & {
 };
 
 const liveEdgeTolerance = 2;
-const { typingSlotHeight: typingSlotHeightValue } = styles as Record<
-  "typingSlotHeight",
-  string
->;
-const typingSlotHeight = Number.parseFloat(typingSlotHeightValue);
-
 export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
   let liveEdgeSentinel: HTMLElement | undefined;
@@ -255,7 +249,6 @@ export function MessageList(props: MessageListProps) {
     },
     anchorTo: "end",
     followOnAppend: true,
-    paddingEnd: typingSlotHeight,
     scrollEndThreshold: liveEdgeTolerance,
     // The sentinel can report before the virtualizer has seen a scroll that
     // reached the end. Arrival can therefore come from either source, while
@@ -480,9 +473,7 @@ export function MessageList(props: MessageListProps) {
           <li
             aria-hidden="true"
             class={styles.spacer}
-            style={{
-              height: `${scrollGeometrySize(virtualizer.getTotalSize())}px`,
-            }}
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
           />
           <li
             aria-hidden="true"
@@ -955,10 +946,6 @@ function formatNoticeTime(milliseconds: number): string {
 }
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight);
-}
-
-function scrollGeometrySize(contentHeight: number): number {
-  return Math.ceil(contentHeight);
 }
 
 function measureRowElement(

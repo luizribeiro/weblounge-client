@@ -21,19 +21,14 @@
 .typing {
   align-items: center;
   background: var(--wl-color-surface);
-  bottom: 0;
   color: var(--wl-color-muted);
   display: flex;
   font-size: var(--wl-font-section-size);
   height: var(--wl-typing-slot-height);
-  inset-inline: 0;
   margin: 0;
   overflow: hidden;
   padding-inline: 18px;
-  pointer-events: none;
-  position: absolute;
   white-space: nowrap;
-  z-index: 1;
 }
 
 .typing span {

@@ -83,7 +83,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("keeps the newest transcript line clear of the typing reserve", async ({
+  test("keeps the newest transcript line clear of the typing row", async ({
     page,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
@@ -225,7 +225,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("keeps a long transcript clear of the typing reserve", async ({
+  test("keeps a long transcript clear of the typing row", async ({
     page,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
@@ -297,7 +297,7 @@ test.describe("typing indicators", () => {
     }
   });
 
-  test("keeps unread rows clear of the typing reserve when opening at New", async ({
+  test("keeps unread rows clear of the typing row when opening at New", async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -594,6 +594,10 @@ function expectTranscriptClear(
 ): void {
   const measurement = `${state}: ${JSON.stringify(geometry)}`;
   const check = soft ? expect.soft : expect;
+  check(
+    Math.abs(geometry.listBottom - geometry.typingTop),
+    measurement,
+  ).toBeLessThanOrEqual(1);
   check(geometry.messageBottom, measurement).toBeLessThanOrEqual(
     geometry.typingTop,
   );

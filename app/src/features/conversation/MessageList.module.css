@@ -5,6 +5,8 @@
 }
 
 .surface {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--wl-typing-slot-height);
   min-height: 0;
   overflow: clip;
   position: relative;
