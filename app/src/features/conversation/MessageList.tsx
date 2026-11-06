@@ -106,9 +106,6 @@ export function MessageList(props: MessageListProps) {
   let scrollLiveEdgeFrame: number | undefined;
   let scrollFrozenReadAt: number | undefined;
   const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
-  const [foreground, setForeground] = createSignal(
-    pageIsForeground(document, navigator),
-  );
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
@@ -317,7 +314,8 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const marker = props.readAtMs ?? null;
     const hasUnread = hasUnreadAfter(props.messages, marker);
-    const away = !publishedAtLiveEdge() || !foreground();
+    const away =
+      !publishedAtLiveEdge() || !pageIsForeground(document, navigator);
     if (hasUnread && away) {
       boundaryFrozen = true;
       setFrozenReadAt(marker);
@@ -350,9 +348,8 @@ export function MessageList(props: MessageListProps) {
       if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
     };
     const updateForeground = () => {
-      const next = pageIsForeground(document, navigator);
-      setForeground(next);
-      if (!next) freezeUnreadBoundary(setFrozenReadAt);
+      if (!pageIsForeground(document, navigator))
+        freezeUnreadBoundary(setFrozenReadAt);
     };
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
