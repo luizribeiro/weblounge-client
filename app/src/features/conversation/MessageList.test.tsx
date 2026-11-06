@@ -5,7 +5,11 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import { keyboardMotionTranscriptRevealEvent } from "../../platform/keyboard-motion";
+import { observeKeyboardMotion } from "../../platform/keyboard-motion";
+import {
+  keyboardLayoutCommitEvent,
+  keyboardLayoutWillCommitEvent,
+} from "../../platform/viewport-geometry";
 import { composerGeometryChangeEvent } from "../composer/geometry";
 import { MessageList, type MessageListController } from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
@@ -357,7 +361,8 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
   expect(list.scrollHeight - list.scrollTop - list.clientHeight).toBe(0);
 });
 
-it("remeasures live rows before a keyboard snapshot reveals them", async () => {
+it("remeasures stale live rows before a keyboard snapshot reveals them", async () => {
+  vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
   let firstHeight = 28;
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
     function (this: HTMLElement) {
@@ -366,10 +371,16 @@ it("remeasures live rows before a keyboard snapshot reveals them", async () => {
     },
   );
   const { container } = render(() => (
-    <MessageList messages={[message, { ...message, id: 2 }]} />
+    <div data-shell="mobile">
+      <section data-mobile-chat="1">
+        <MessageList messages={[message, { ...message, id: 2 }]} />
+        <div data-composer="true" />
+      </section>
+    </div>
   ));
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
   const rowStart = (key: string) => {
     const row = container.querySelector<HTMLLIElement>(
       `li[data-row-key="${key}"]`,
@@ -379,15 +390,76 @@ it("remeasures live rows before a keyboard snapshot reveals them", async () => {
   };
   expect(rowStart("message-2") - rowStart("message-1")).toBe(28);
 
-  firstHeight = 80;
-  container
-    .querySelector<HTMLElement>("[data-message-motion-layer]")
-    ?.dispatchEvent(
-      new Event(keyboardMotionTranscriptRevealEvent, { bubbles: true }),
-    );
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const root = container.firstElementChild;
+  const composer = container.querySelector<HTMLElement>("[data-composer]");
+  const transcript = container.querySelector<HTMLElement>(
+    "[data-message-motion-layer]",
+  );
+  if (
+    !(root instanceof HTMLElement) ||
+    composer === null ||
+    transcript === null
+  )
+    throw new Error("keyboard motion fixture is incomplete");
+  let composerBottom = 874;
+  composer.getBoundingClientRect = () =>
+    ({
+      bottom: composerBottom,
+      height: 63,
+      top: composerBottom - 63,
+    }) as DOMRect;
+  const animations: ControlledAnimation[] = [];
+  composer.animate = () => controlledAnimation(animations);
+  transcript.animate = () => controlledAnimation(animations);
+  const stop = observeKeyboardMotion(root, window, { enabled: true });
+  window.dispatchEvent(
+    new CustomEvent(keyboardLayoutWillCommitEvent, {
+      detail: {
+        geometry: { keyboard: "open", height: 516 },
+        owner: root,
+        previousGeometry: { keyboard: "closed" },
+        source: "measured",
+      },
+    }),
+  );
 
+  // ResizeObserver owns the normal correction and remains deliberately
+  // undelivered while the frozen snapshot covers these stale transforms.
+  firstHeight = 80;
+  composerBottom = 516;
+  window.dispatchEvent(
+    new CustomEvent(keyboardLayoutCommitEvent, {
+      detail: {
+        geometry: { keyboard: "open", height: 516 },
+        owner: root,
+        previousGeometry: { keyboard: "closed" },
+        source: "measured",
+      },
+    }),
+  );
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(rowStart("message-2") - rowStart("message-1")).toBeLessThan(
+    firstHeight,
+  );
+
+  const frames: FrameRequestCallback[] = [];
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  animations[1]?.finish();
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(
+    container.querySelector("[data-keyboard-transcript-snapshot]"),
+  ).not.toBeNull();
+  for (const callback of frames.splice(0)) callback(0);
+  for (const callback of frames.splice(0)) callback(16);
+
+  expect(
+    container.querySelector("[data-keyboard-transcript-snapshot]"),
+  ).toBeNull();
   expect(rowStart("message-2") - rowStart("message-1")).toBe(80);
+  stop();
 });
 
 it("preserves fractional row measurements without transcript reserve", async () => {
@@ -1257,6 +1329,26 @@ class ControlledResizeObserver {
       this as unknown as ResizeObserver,
     );
   }
+}
+
+interface ControlledAnimation {
+  readonly animation: Animation;
+  readonly finish: () => void;
+}
+
+function controlledAnimation(collection: ControlledAnimation[]): Animation {
+  let finish: () => void = () => undefined;
+  const animation = {
+    cancel: vi.fn(),
+    finished: new Promise<Animation>((resolve) => {
+      finish = () => resolve(animation);
+    }),
+    playbackRate: 1,
+    playState: "running",
+    startTime: null,
+  } as unknown as Animation;
+  collection.push({ animation, finish });
+  return animation;
 }
 
 class ControlledIntersectionObserver {
