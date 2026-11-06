@@ -28,8 +28,7 @@ type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
 
 let sharedRuntime: EngineWorkerRuntime | undefined;
 const historyWireTestPorts = new Set<WorkerHostPort>();
-
-installHistoryWireTestTrace();
+let historyWireTestInstalled = false;
 
 export function attachEnginePort(port: WorkerHostPort): void {
   sharedRuntime ??= new EngineWorkerRuntime(loadEngine);
@@ -55,6 +54,10 @@ export class EngineWorkerRuntime {
         isHistoryWireTestSubscription(event.data)
       ) {
         historyWireTestPorts.add(port);
+        if (!historyWireTestInstalled) {
+          historyWireTestInstalled = true;
+          installHistoryWireTestTrace();
+        }
         return;
       }
       if (isHostDetach(event.data)) {

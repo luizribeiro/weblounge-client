@@ -40,12 +40,14 @@ it("keeps the runtime password out of build-time debug config", () => {
 it("consumes runtime connection fields and removes them from the URL", () => {
   const replace = vi.fn();
   const url = new URL(
-    "http://127.0.0.1:5173/?irc-password=runtime-secret&irc-autojoin=%23two&irc-autojoin=&keep=yes#channel",
+    "http://127.0.0.1:5173/?irc-password=runtime-secret&irc-account=tester&irc-nickname=tester-away&irc-autojoin=%23two&irc-autojoin=&keep=yes#channel",
   );
 
   expect(consumeDebugConnection(url, replace)).toEqual({
     password: "runtime-secret",
     additionalAutojoin: ["#two"],
+    account: "tester",
+    nickname: "tester-away",
   });
   expect(replace).toHaveBeenCalledWith("/?keep=yes#channel");
 });

@@ -1667,9 +1667,9 @@ async function connectDebugNetwork(
       type: "connect",
       label: "Local Ergo",
       endpoint: __DEBUG_IRC_CONFIG__.endpoint,
-      nickname: __DEBUG_IRC_CONFIG__.nickname,
+      nickname: connection.nickname ?? __DEBUG_IRC_CONFIG__.nickname,
       sasl: {
-        account: __DEBUG_IRC_CONFIG__.account,
+        account: connection.account ?? __DEBUG_IRC_CONFIG__.account,
         password: connection.password,
       },
       autojoin: [

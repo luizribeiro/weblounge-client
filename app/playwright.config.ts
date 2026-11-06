@@ -17,6 +17,7 @@ export default defineConfig({
     {
       name: "chromium",
       testIgnore: [
+        "**/slow-buffer-load.spec.ts",
         "**/push-notifications.spec.ts",
         "**/mobile-input-zoom.spec.ts",
         "**/mobile-page-zoom.spec.ts",
@@ -231,6 +232,12 @@ export default defineConfig({
       name: "android-mobile-read-state",
       testMatch: "**/mobile-read-state.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
+      name: "chromium-slow-buffer",
+      dependencies: ["chromium"],
+      testMatch: "**/slow-buffer-load.spec.ts",
+      use: { browserName: "chromium" },
     },
     {
       name: "resilience-desktop-chromium",

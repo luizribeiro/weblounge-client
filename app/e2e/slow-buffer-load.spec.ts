@@ -17,28 +17,21 @@ test("settles the opened conversation without waiting for background history", a
 }) => {
   await captureHistoryWire(page);
   const suffix = Date.now().toString(36).slice(-5);
-  const keeper = await IrcClient.connectWithoutJoin(
-    "weblounge",
-    "weblounge",
-    "weblounge-test",
-  );
-  let bots: IrcClient[] = [];
+  const account = `slow-user-${suffix}`;
+  const password = `test-${account}`;
+  const keeper = await IrcClient.connectIsolated(account, targetChannel);
+  const bots: IrcClient[] = [];
   try {
-    bots = await Promise.all(
-      Array.from({ length: directCount }, async (_, index) => {
-        const nick = `slow${index.toString().padStart(2, "0")}-${suffix}`;
-        return IrcClient.connectIsolated(nick, targetChannel);
-      }),
-    );
+    for (let index = 0; index < directCount; index += 1) {
+      const nick = `slow${index.toString().padStart(2, "0")}-${suffix}`;
+      bots.push(await IrcClient.connectIsolated(nick, targetChannel));
+    }
     const directNicks = bots.map((bot) => bot.nickname);
     const firstBot = bots[0];
     if (firstBot === undefined) throw new Error("channel bot is missing");
     await firstBot.privmsgConfirmed(targetChannel, `ops history ${suffix}`);
-    await Promise.all(
-      bots.map(async (bot, index) => {
-        await bot.privmsgConfirmed("weblounge", `direct history ${index}`);
-      }),
-    );
+    for (const [index, bot] of bots.entries())
+      await bot.privmsgConfirmed(account, `direct history ${index}`);
     await page.goto("/config.json");
     await seedSnapshot(page, baseURL, [
       "#weblounge-test",
@@ -50,7 +43,9 @@ test("settles the opened conversation without waiting for background history", a
     if (target === undefined) throw new Error("direct target is missing");
     await recordTitleTimeline(page, target);
     const url = new URL("/", baseURL);
-    url.searchParams.set("irc-password", "weblounge-test");
+    url.searchParams.set("irc-password", password);
+    url.searchParams.set("irc-account", account);
+    url.searchParams.set("irc-nickname", account);
     for (const channel of [...otherChannels, targetChannel])
       url.searchParams.append("irc-autojoin", channel);
     await page.goto(url.href);

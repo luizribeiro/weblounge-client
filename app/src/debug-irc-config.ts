@@ -9,6 +9,8 @@ export interface DebugIrcConfig {
 export interface DebugConnection {
   readonly password: string;
   readonly additionalAutojoin: readonly string[];
+  readonly account?: string;
+  readonly nickname?: string;
 }
 
 type DebugEnvironment = Readonly<Record<string, string | undefined>>;
@@ -51,8 +53,21 @@ export function consumeDebugConnection(
   const additionalAutojoin = url.searchParams
     .getAll("irc-autojoin")
     .filter((channel) => channel !== "");
+  const account = nonempty(url.searchParams.get("irc-account"));
+  const nickname = nonempty(url.searchParams.get("irc-nickname"));
   url.searchParams.delete("irc-password");
   url.searchParams.delete("irc-autojoin");
+  url.searchParams.delete("irc-account");
+  url.searchParams.delete("irc-nickname");
   replace(`${url.pathname}${url.search}${url.hash}`);
-  return { password, additionalAutojoin };
+  return {
+    password,
+    additionalAutojoin,
+    ...(account === undefined ? {} : { account }),
+    ...(nickname === undefined ? {} : { nickname }),
+  };
+}
+
+function nonempty(value: string | null): string | undefined {
+  return value === null || value === "" ? undefined : value;
 }
