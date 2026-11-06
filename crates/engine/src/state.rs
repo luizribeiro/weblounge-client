@@ -588,6 +588,7 @@ impl NetworkModel {
             })
     }
 
+    #[cfg(test)]
     pub(crate) fn chat_list_snapshot(&self, fingerprint: String) -> ChatListSnapshot {
         let rows = self
             .buffer_order
@@ -599,6 +600,37 @@ impl NetworkModel {
                     && buffer.projection.cached != Some(true)
             })
             .filter_map(snapshot_row)
+            .collect();
+        ChatListSnapshot::new(fingerprint, rows)
+    }
+
+    pub(crate) fn merge_chat_list_snapshot(
+        &self,
+        fingerprint: String,
+        previous: &ChatListSnapshot,
+    ) -> ChatListSnapshot {
+        let rows = self
+            .buffer_order
+            .iter()
+            .filter_map(|id| self.buffers.get(id))
+            .filter(|buffer| {
+                buffer.projection.kind != BufferKind::Server
+                    && buffer.projection.available != Some(false)
+            })
+            .filter_map(|buffer| {
+                if matches!(
+                    buffer.history,
+                    HistoryState::Ready { .. } | HistoryState::LoadingOlder { .. }
+                ) {
+                    return snapshot_row(buffer);
+                }
+                let conversation = snapshot_conversation(buffer)?;
+                previous
+                    .rows
+                    .iter()
+                    .find(|row| row.conversation == conversation)
+                    .cloned()
+            })
             .collect();
         ChatListSnapshot::new(fingerprint, rows)
     }
@@ -2675,14 +2707,7 @@ fn advance_cursor(buffer: &mut BufferState, cursor: Option<HistoryCursor>) {
 }
 
 fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
-    let conversation = match buffer.key.as_ref()? {
-        NameKey::Channel(channel) => SnapshotConversation::Channel {
-            key: channel.key().to_owned(),
-        },
-        NameKey::Direct(nick) => SnapshotConversation::Direct {
-            key: nick.key().to_owned(),
-        },
-    };
+    let conversation = snapshot_conversation(buffer)?;
     let badge = if buffer.projection.mentions > 0 {
         SnapshotBadge::Mentions {
             count: buffer.projection.unread,
@@ -2710,6 +2735,17 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
             .as_ref()
             .and_then(papo::PeerKey::as_verified_str)
             .map(str::to_owned),
+    })
+}
+
+fn snapshot_conversation(buffer: &BufferState) -> Option<SnapshotConversation> {
+    Some(match buffer.key.as_ref()? {
+        NameKey::Channel(channel) => SnapshotConversation::Channel {
+            key: channel.key().to_owned(),
+        },
+        NameKey::Direct(nick) => SnapshotConversation::Direct {
+            key: nick.key().to_owned(),
+        },
     })
 }
 
@@ -4944,7 +4980,66 @@ mod tests {
     }
 
     #[test]
-    fn chat_list_is_writable_only_when_online_and_fully_hydrated() {
+    fn chat_list_snapshot_merges_authoritative_rows_with_unresolved_cache() {
+        let (mut model, state) = model(10);
+        let unresolved = SnapshotRow {
+            conversation: SnapshotConversation::Channel {
+                key: "#slow".into(),
+            },
+            title: "#slow cached".into(),
+            last_activity_ms: Some(100),
+            badge: SnapshotBadge::Unread { count: 4 },
+            preview: Some("cached channel preview".into()),
+            peer_pin: None,
+        };
+        let previous = ChatListSnapshot::new(
+            "network".into(),
+            vec![
+                unresolved.clone(),
+                SnapshotRow {
+                    conversation: SnapshotConversation::Direct {
+                        key: "alice".into(),
+                    },
+                    title: "Alice cached".into(),
+                    last_activity_ms: Some(200),
+                    badge: SnapshotBadge::Mentions {
+                        count: 2,
+                        mentions: 2,
+                    },
+                    preview: Some("cached direct preview".into()),
+                    peer_pin: None,
+                },
+            ],
+        );
+        model.restore_chat_list(previous.clone());
+
+        let alice = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        let slow = model.names[&NameKey::Channel(channel_name(&state, "#slow"))];
+        let alice_buffer = model.buffers.get_mut(&alice).expect("alice buffer");
+        super::promote_cached_buffer(alice_buffer);
+        alice_buffer.projection.title = "Alice live".into();
+        alice_buffer.history = HistoryState::Ready {
+            oldest: None,
+            at_start: true,
+        };
+        let slow_buffer = model.buffers.get_mut(&slow).expect("slow buffer");
+        super::promote_cached_buffer(slow_buffer);
+        slow_buffer.projection.title = "#slow provisional".into();
+        slow_buffer.history = HistoryState::LoadingLatest;
+        model.ensure_buffer(NameKey::Direct(nick_name(&state, "bob")), None, None);
+
+        let merged = model.merge_chat_list_snapshot("network".into(), &previous);
+
+        assert_eq!(merged.rows.len(), 2);
+        assert!(merged.rows.contains(&unresolved));
+        assert!(merged.rows.iter().any(|row| {
+            row.title == "Alice live" && row.badge == SnapshotBadge::None && row.preview.is_none()
+        }));
+        assert!(merged.rows.iter().all(|row| row.title != "bob"));
+    }
+
+    #[test]
+    fn chat_list_is_complete_only_when_online_and_fully_hydrated() {
         let (mut model, state) = model(10);
         let key = NameKey::Channel(channel_name(&state, "#room"));
         let (buffer_id, _) = model.ensure_buffer(key, None, None);

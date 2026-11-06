@@ -274,7 +274,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
-  test("flushes a cleared cached DM before a background relaunch", async ({
+  test("flushes a cleared cached DM while another row is still hydrating", async ({
     baseURL,
     context,
     page,
@@ -282,8 +282,10 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     if (baseURL === undefined)
       throw new Error("Playwright base URL is missing");
     const suffix = Date.now().toString(36).slice(-6);
+    const appAccount = `cache-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
     const channels = Array.from(
-      { length: 4 },
+      { length: 3 },
       (_, index) => `#cache-${index}-${suffix}`,
     );
     const firstChannel = channels[0];
@@ -294,9 +296,22 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       "weblounge-bot-test",
       firstChannel,
     );
+    const keeper = await IrcClient.connectIsolated(appAccount, firstChannel);
+    const backgroundBots: IrcClient[] = [];
     const directText = `cached direct ${suffix}`;
     let current = page;
     try {
+      for (let index = 0; index < 15; index += 1) {
+        const nick = `cache-slow-${index.toString().padStart(2, "0")}-${suffix}`;
+        backgroundBots.push(
+          await IrcClient.connectIsolated(nick, firstChannel),
+        );
+      }
+      for (const [index, backgroundBot] of backgroundBots.entries())
+        await backgroundBot.privmsgConfirmed(
+          appAccount,
+          `background direct ${index} ${suffix}`,
+        );
       await current.goto("/config.json");
       await seedUnreadDirectSnapshot(
         current,
@@ -304,18 +319,20 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         bot.nickname,
         directText,
         channels,
+        backgroundBots.map((backgroundBot) => backgroundBot.nickname),
       );
       await useDedicatedWorker(current);
+      await observeMarkReadRequests(current);
       await recordCachedRow(current, bot.nickname);
-      const joined = bot.waitForNextJoin(firstChannel, "weblounge");
-      await current.goto(startUrl(...channels));
+      await current.goto(
+        startUrlForAccount(appAccount, appPassword, ...channels),
+      );
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({
           label: `${bot.nickname}, 1 unread, including mentions`,
         });
-      await joined;
-      await bot.privmsgConfirmed("weblounge", directText);
+      await bot.privmsgConfirmed(appAccount, directText);
 
       await bufferRow(current, bot.nickname).click();
       await expect(
@@ -326,25 +343,35 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           .getByRole("list", { name: "Messages" })
           .getByText(directText, { exact: true }),
       ).toBeVisible();
-      await expectRead(bufferRow(current, bot.nickname), bot.nickname);
+      await expect(
+        current.locator("[data-conversation-title]"),
+      ).not.toHaveAttribute("data-connection-progress");
+      await expect.poll(() => markReadRequestCount(current)).toBeGreaterThan(0);
 
-      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
+      await expect(current.locator("[data-app-root]")).toHaveAttribute(
         "data-chat-list-hydrating",
         "true",
       );
+      await expect
+        .poll(() => snapshotRow(current, bot.nickname))
+        .toMatchObject({ badge: { kind: "none" } });
       await backgroundPage(current);
       await current.close();
 
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedRow(current, bot.nickname);
-      await current.goto(startUrl(...channels));
+      await current.goto(
+        startUrlForAccount(appAccount, appPassword, ...channels),
+      );
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({ label: bot.nickname });
     } finally {
       if (!current.isClosed()) await current.close();
       bot.close();
+      keeper.close();
+      for (const backgroundBot of backgroundBots) backgroundBot.close();
     }
   });
 });
@@ -424,6 +451,20 @@ async function expectRead(
 
 function startUrl(...channels: string[]): string {
   const params = new URLSearchParams({ "irc-password": "weblounge-test" });
+  for (const channel of channels) params.append("irc-autojoin", channel);
+  return `/?${params.toString()}`;
+}
+
+function startUrlForAccount(
+  account: string,
+  password: string,
+  ...channels: string[]
+): string {
+  const params = new URLSearchParams({
+    "irc-account": account,
+    "irc-nickname": account,
+    "irc-password": password,
+  });
   for (const channel of channels) params.append("irc-autojoin", channel);
   return `/?${params.toString()}`;
 }
@@ -517,6 +558,7 @@ async function seedUnreadDirectSnapshot(
   nick: string,
   preview: string,
   channels: readonly string[],
+  backgroundDirects: readonly string[],
 ): Promise<void> {
   const endpoint = new URL("/socket", baseURL);
   endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
@@ -549,10 +591,18 @@ async function seedUnreadDirectSnapshot(
             badge: { kind: "mentions", count: 1, mentions: 1 },
             preview,
           },
+          ...backgroundDirects.map((backgroundNick, index) => ({
+            conversation: { kind: "direct", key: backgroundNick },
+            title: backgroundNick,
+            last_activity_ms: 1_799_999_999_999 - index,
+            badge: { kind: "none" },
+            preview: `cached ${backgroundNick}`,
+          })),
           ...channels.map((channel, index) => ({
             conversation: { kind: "channel", key: channel },
             title: channel,
-            last_activity_ms: 1_799_999_999_999 - index,
+            last_activity_ms:
+              1_799_999_999_999 - backgroundDirects.length - index,
             badge: { kind: "none" },
             preview: `cached ${channel}`,
           })),

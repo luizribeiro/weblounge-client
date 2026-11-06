@@ -117,6 +117,11 @@ The single place a fresh session reads to know where the project stands. Update 
   so it stays outside composer geometry without adding 24px to mobile live-edge and keyboard-motion
   gaps. Composer-anchor fixtures no longer contribute `an`-matching speakers to the shared
   completion history; typing remains absent from completion ranking.
+- [x] Persist authoritative chat-list rows without waiting for every background history. Each list
+  update now atomically merges loaded rows into the in-memory snapshot while retaining cached rows
+  that are still pending, syncing, or failed; local read clears wake the pending write immediately.
+  A built-app Chromium and iPhone WebKit relaunch clears a cached DM while the rest of the list is
+  still hydrating, and the engine regression preserves an unresolved channel's cached projection.
 - [x] Collapse Web Push alerts to one notification per conversation even when the platform ignores
   native tags: present the latest DM or mention first, append the receipt-ordered unread ledger count,
   then close older identity-revalidated notifications within fixed scan bounds. Built-worker tag-less

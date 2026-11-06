@@ -129,6 +129,7 @@ struct HostedReconnectConfig {
 #[derive(Default)]
 struct ChatListSync {
     fingerprint: String,
+    snapshot: Option<ChatListSnapshot>,
     recent_directs_ready: bool,
     live: bool,
     restored_from_cache: bool,
@@ -1014,8 +1015,8 @@ impl Runtime {
             .take()
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
         let had_cached_chat_list = cached_snapshot.is_some();
-        if let Some(snapshot) = cached_snapshot {
-            model.restore_chat_list(snapshot);
+        if let Some(snapshot) = cached_snapshot.as_ref() {
+            model.restore_chat_list(snapshot.clone());
         }
         let pushed = std::mem::take(&mut state.cached_pushed_messages);
         let restored_push = !model
@@ -1049,7 +1050,11 @@ impl Runtime {
             flushing_reads: false,
             hosted_reconnect,
             chat_list: ChatListSync {
-                fingerprint: snapshot_fingerprint,
+                fingerprint: snapshot_fingerprint.clone(),
+                snapshot: Some(
+                    cached_snapshot
+                        .unwrap_or_else(|| ChatListSnapshot::new(snapshot_fingerprint, Vec::new())),
+                ),
                 restored_from_cache: had_cached_chat_list,
                 ..ChatListSync::default()
             },
@@ -1101,8 +1106,8 @@ impl Runtime {
             .take()
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
         let had_cached_chat_list = cached_snapshot.is_some();
-        if let Some(snapshot) = cached_snapshot {
-            model.restore_chat_list(snapshot);
+        if let Some(snapshot) = cached_snapshot.as_ref() {
+            model.restore_chat_list(snapshot.clone());
         }
         let pushed = std::mem::take(&mut state.cached_pushed_messages);
         let restored_push = !model
@@ -1140,7 +1145,11 @@ impl Runtime {
                 autojoin,
             }),
             chat_list: ChatListSync {
-                fingerprint: snapshot_fingerprint,
+                fingerprint: snapshot_fingerprint.clone(),
+                snapshot: Some(
+                    cached_snapshot
+                        .unwrap_or_else(|| ChatListSnapshot::new(snapshot_fingerprint, Vec::new())),
+                ),
                 restored_from_cache: had_cached_chat_list,
                 ..ChatListSync::default()
             },
@@ -1884,8 +1893,11 @@ impl Runtime {
         };
         let mut output = record_read_preparations(running, [preparation]);
         let flush = start_read_flush(running);
+        let instance = running.instance;
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
+        update_chat_list(&self.state, &self.outbound, instance);
+        flush_snapshot_write(&lock(&self.state).snapshot_writer);
         if let Some((client, instance)) = flush {
             spawn_read_flush(
                 Arc::clone(&self.state),
@@ -1906,8 +1918,11 @@ impl Runtime {
         let preparations = running.model.request_mark_all_read(server_backed);
         let mut output = record_read_preparations(running, preparations);
         let flush = start_read_flush(running);
+        let instance = running.instance;
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
+        update_chat_list(&self.state, &self.outbound, instance);
+        flush_snapshot_write(&lock(&self.state).snapshot_writer);
         if let Some((client, instance)) = flush {
             spawn_read_flush(
                 Arc::clone(&self.state),
@@ -4297,15 +4312,18 @@ fn update_chat_list(
         else {
             return;
         };
-        if !running.chat_list.recent_directs_ready || !running.model.chat_list_complete() {
-            return;
-        }
-        let live_event = (!running.chat_list.live && running.chat_list.restored_from_cache)
-            .then(|| running.model.finish_cached_chat_list());
-        running.chat_list.live = true;
+        let complete = running.chat_list.recent_directs_ready && running.model.chat_list_complete();
+        let live_event =
+            (complete && !running.chat_list.live && running.chat_list.restored_from_cache)
+                .then(|| running.model.finish_cached_chat_list());
+        running.chat_list.live |= complete;
+        let previous = running.chat_list.snapshot.get_or_insert_with(|| {
+            ChatListSnapshot::new(running.chat_list.fingerprint.clone(), Vec::new())
+        });
         let snapshot = running
             .model
-            .chat_list_snapshot(running.chat_list.fingerprint.clone());
+            .merge_chat_list_snapshot(running.chat_list.fingerprint.clone(), previous);
+        running.chat_list.snapshot = Some(snapshot.clone());
         (live_event, snapshot, storage, writer)
     };
     if let Some(event) = live_event {
@@ -8196,7 +8214,18 @@ async fn delay(duration: Duration) {
             .expect("read snapshot")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
             .expect("stored snapshot");
-        snapshot.rows[0].badge.clone()
+        snapshot
+            .rows
+            .iter()
+            .find(|row| {
+                row.conversation
+                    == SnapshotConversation::Direct {
+                        key: "alice".into(),
+                    }
+            })
+            .expect("alice snapshot row")
+            .badge
+            .clone()
     }
 
     async fn enable_test_monitor(
@@ -9362,7 +9391,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn initial_direct_read_marker_fetch_clears_restored_badges_and_snapshot() {
+    async fn read_marker_persists_while_another_snapshot_row_is_unresolved() {
         let caps = [
             "draft/read-marker",
             "labeled-response",
@@ -9395,7 +9424,33 @@ async fn delay(duration: Duration) {
             }
         )));
 
+        let unresolved = SnapshotRow {
+            conversation: SnapshotConversation::Channel {
+                key: "#slow".into(),
+            },
+            title: "#slow cached".into(),
+            last_activity_ms: Some(1_700_000_000_000),
+            badge: SnapshotBadge::Unread { count: 4 },
+            preview: Some("cached slow preview".into()),
+            peer_pin: None,
+        };
+        {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            let snapshot = ChatListSnapshot::new("network".into(), vec![unresolved.clone()]);
+            running.model.restore_chat_list(snapshot.clone());
+            running.chat_list.snapshot = Some(snapshot);
+        }
+
         let target = complete_alice_chat_list(&state, &client);
+        assert!(
+            !lock(&state)
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .model
+                .chat_list_complete()
+        );
         update_chat_list(&state, &outbound, 1);
         tokio::task::yield_now().await;
         tokio::time::advance(Duration::from_millis(750)).await;
@@ -9434,6 +9489,14 @@ async fn delay(duration: Duration) {
         tokio::time::advance(Duration::from_millis(750)).await;
         tokio::task::yield_now().await;
         assert_eq!(stored_snapshot_badge(&state).await, SnapshotBadge::None);
+
+        let storage = lock(&state).storage.clone();
+        let snapshot = read(storage.as_ref())
+            .await
+            .expect("read snapshot")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
+            .expect("stored snapshot");
+        assert!(snapshot.rows.contains(&unresolved));
     }
 
     #[tokio::test]
