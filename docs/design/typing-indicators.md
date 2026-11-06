@@ -41,6 +41,7 @@ seconds without another edit publishes `Paused`. Emptying the field publishes `D
 message send publishes `Done` before it is queued. Inputs beginning with a single `/` do not
 publish typing, while `//` remains literal message text. Unsupported, disconnected, unavailable,
 or tag-denied targets produce no user-facing error and typing is never queued for reconnect.
+Outgoing typing is on whenever the target supports it and has no user-facing off switch.
 
 The UI owns only draft text, rendering, and edit observation. Both shells render one permanently
 reserved line immediately above the composer, matching the prototype's 24px slot, so appearing or
@@ -52,7 +53,7 @@ continue while hidden as required by the brief.
 ## Out of scope
 
 Typing is not persisted, added to history, used for unread state, shown in server buffers, or
-treated as delivery-critical. This slice does not add a typing-privacy setting.
+treated as delivery-critical. WebLounge does not provide a typing-privacy setting.
 
 ## Testing
 
@@ -66,9 +67,3 @@ Playwright drives the built app against local Ergo with a second IRC client. It 
 channel indicators; done, message, and clock-driven expiry clearing; outgoing throttled active and
 done-on-send. The touched desktop/mobile specs and `nativeFeelAudit`, including idle and hidden
 checks, remain green.
-
-## Open question for Luiz
-
-The IRCv3 typing specification recommends a privacy control. No such WebLounge setting exists yet.
-Should outgoing typing default on when supported, or wait for a per-network or global privacy
-setting? This slice follows the requested default-on behaviour without inventing settings state.
