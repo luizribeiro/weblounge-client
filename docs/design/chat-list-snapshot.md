@@ -54,9 +54,10 @@ is removed. This lets one slow buffer retain its safe cached values without bloc
 changes from every other buffer.
 
 The merge happens in engine memory before the rewrite; storage still receives one ordered record
-in one atomic commit. Repeated changes coalesce. When the page becomes hidden or fires `pagehide`,
-it asks the engine to start an already-pending rewrite immediately, before the browser can suspend
-its worker. A lifecycle flush does not create a write when no update is pending.
+in one atomic commit. Repeated changes coalesce. Clearing one or all read badges starts the pending
+rewrite immediately. When the page becomes hidden or fires `pagehide`, it likewise asks the engine
+to start an already-pending rewrite before the browser can suspend its worker. A lifecycle flush
+does not create a write when no update is pending.
 
 At launch the engine reads and validates the record before live synchronization completes. A valid
 record renders through the normal chat-list geometry. There is no “Connecting…” or “Reconnecting…”
