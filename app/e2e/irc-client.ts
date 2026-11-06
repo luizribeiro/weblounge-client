@@ -56,7 +56,7 @@ export class IrcClient {
       line.includes(" CAP * LS "),
     );
     client.send(
-      "CAP REQ :account-tag batch draft/multiline echo-message message-tags sasl server-time",
+      "CAP REQ :account-tag batch draft/multiline draft/read-marker echo-message message-tags sasl server-time",
     );
     await client.waitFor(
       "requested capability acknowledgement",
@@ -65,6 +65,7 @@ export class IrcClient {
         line.includes("account-tag") &&
         line.includes("batch") &&
         line.includes("draft/multiline") &&
+        line.includes("draft/read-marker") &&
         line.includes("message-tags") &&
         line.includes("sasl") &&
         line.includes("echo-message") &&
@@ -177,6 +178,21 @@ export class IrcClient {
     );
   }
 
+  async privmsgReplyConfirmed(
+    target: string,
+    text: string,
+    replyTo: string,
+  ): Promise<string> {
+    this.send(`@+draft/reply=${replyTo} PRIVMSG ${target} :${text}`);
+    return this.waitFor(
+      `echoed reply PRIVMSG to ${target}`,
+      (line) =>
+        line.includes(`+draft/reply=${replyTo}`) &&
+        lineTargets(line, "PRIVMSG", target) &&
+        line.endsWith(` :${text}`),
+    );
+  }
+
   async noticeConfirmed(channel: string, text: string): Promise<string> {
     this.send(`NOTICE ${channel} :${text}`);
     return this.waitFor(`echoed NOTICE to ${channel}`, (line) =>
@@ -216,6 +232,14 @@ export class IrcClient {
     await this.waitFor(`MARKREAD confirmation for ${target}`, (line) =>
       line.includes(` MARKREAD ${target} timestamp=${timestamp}`),
     );
+  }
+
+  async readMarker(target: string): Promise<string | undefined> {
+    this.send(`MARKREAD ${target}`);
+    const response = await this.waitFor(`read marker for ${target}`, (line) =>
+      line.includes(` MARKREAD ${target} `),
+    );
+    return / timestamp=([^ ]+)/u.exec(response)?.[1];
   }
 
   async privmsgSplitConfirmed(
