@@ -2,6 +2,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
 import { auditMobileTextFieldZoom } from "./native-feel-audit";
+import { waitForStableGeometry } from "./stable-geometry";
 import {
   expectTranscriptHitTarget,
   screenshotPixelVariance,
@@ -401,13 +402,16 @@ test.describe("mobile text field zoom", () => {
             ),
           ),
         );
+      const barrier = `keyboard step barrier ${suffix}`;
+      const barrierSender = bots[0];
+      if (barrierSender === undefined)
+        throw new Error("keyboard motion barrier sender is missing");
+      await barrierSender.privmsgConfirmed("#weblounge-test", barrier);
       const root = page.locator("#root");
       const composer = page.locator("[data-composer]");
       const messages = page.locator("[data-message-list]");
       await messages.press("End");
-      await expect(
-        page.getByText(`keyboard step row 39 ${suffix}`, { exact: true }),
-      ).toBeVisible();
+      await expect(page.getByText(barrier, { exact: true })).toBeVisible();
       const messageListHeight = await messages.evaluate(
         (element) => element.clientHeight,
       );
@@ -420,6 +424,7 @@ test.describe("mobile text field zoom", () => {
         .poll(() => messages.evaluate((element) => element.clientHeight))
         .toBe(messageListHeight - 20);
       await expect.poll(() => liveEdgeGap(messages)).toBeLessThanOrEqual(2);
+      await waitForStableGeometry(messages, "[data-message-row]");
       const layoutHeight = await page.evaluate(() => innerHeight);
       const openHeight = layoutHeight - 358;
       const coldOpening = await sampleKeyboardTransition(
