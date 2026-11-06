@@ -15,6 +15,10 @@ The single place a fresh session reads to know where the project stands. Update 
   appended last; choosing that row kept newer unread state and sent Ergo a non-advancing MARKREAD.
   Papo-wire coverage proves the ordering, while desktop Chromium and iPhone WebKit retain bot
   traffic clearing and reload persistence.
+- [x] Preserve the engine's canonical timeline order when reconnect catch-up or unsolicited
+  playback lands behind a newer live row. Interleaved `CHATHISTORY AFTER` now replaces the visible
+  bounded window in engine order, while edge pages stay incremental; the built-app Chromium and
+  iPhone WebKit regression asserts that the older row is visibly above the newer row.
 - [x] Keep the cached chat list converged with late server read markers, and throttle whole-record
   rewrites without starving them under continuous traffic. Built-app desktop Chromium and iPhone
   WebKit coverage reads from another client, relaunches twice, and interleaves a newer live line

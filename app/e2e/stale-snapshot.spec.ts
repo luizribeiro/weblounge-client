@@ -123,6 +123,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       ).toBeVisible();
       await expect(current.getByText(live, { exact: true })).toBeVisible();
       await expect(current.getByText(missed, { exact: true })).toBeVisible();
+      await expect
+        .poll(() => transcriptOrders(current, missed, live))
+        .toBe(true);
       if (isMobile(current))
         await expect(bufferRow(current, channel)).toContainText(live);
       await expect
@@ -265,4 +268,23 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
 
 function cachedRow(page: Page): Promise<unknown> {
   return page.evaluate(() => Reflect.get(globalThis, "staleSnapshotCachedRow"));
+}
+
+async function transcriptOrders(
+  page: Page,
+  earlier: string,
+  later: string,
+): Promise<boolean> {
+  return page.locator("[data-message-row]").evaluateAll(
+    (rows, [earlierText, laterText]) => {
+      const earlierIndex = rows.findIndex(
+        (row) => row.getAttribute("data-message-text") === earlierText,
+      );
+      const laterIndex = rows.findIndex(
+        (row) => row.getAttribute("data-message-text") === laterText,
+      );
+      return earlierIndex >= 0 && earlierIndex < laterIndex;
+    },
+    [earlier, later],
+  );
 }

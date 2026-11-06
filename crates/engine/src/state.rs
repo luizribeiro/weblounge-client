@@ -452,6 +452,49 @@ impl NetworkModel {
             .collect()
     }
 
+    pub(crate) fn history_append_event(
+        &self,
+        buffer_id: BufferId,
+        messages: Vec<MessageProjection>,
+    ) -> Option<EngineToUi> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        let positions = buffer
+            .timeline
+            .iter()
+            .enumerate()
+            .map(|(index, record)| (record.projection.id, index))
+            .collect::<HashMap<_, _>>();
+        let mut retained_positions = messages
+            .iter()
+            .filter_map(|message| positions.get(&message.id).copied())
+            .collect::<Vec<_>>();
+        retained_positions.sort_unstable();
+        let edge_start = buffer
+            .timeline
+            .len()
+            .saturating_sub(retained_positions.len());
+        let occupies_edge = !retained_positions.is_empty()
+            && retained_positions
+                .iter()
+                .enumerate()
+                .all(|(index, position)| *position == edge_start + index);
+        if occupies_edge {
+            return Some(EngineToUi::MessagesAppended {
+                buffer_id,
+                messages,
+            });
+        }
+        Some(EngineToUi::BufferSnapshot {
+            buffer_id,
+            messages: buffer
+                .timeline
+                .iter()
+                .map(|record| record.projection.clone())
+                .collect(),
+            memberships: buffer.memberships.clone(),
+        })
+    }
+
     pub(crate) fn set_nickname(&mut self, nickname: String) -> EngineToUi {
         self.network.nickname = nickname;
         self.network_event()

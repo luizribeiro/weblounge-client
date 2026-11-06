@@ -4148,9 +4148,7 @@ fn process_history(
             _ => {}
         }
     }
-    if let Some((buffer_id, mut messages)) = timeline {
-        output.push(history_timeline_event(prepend, buffer_id, &mut messages));
-    }
+    push_history_timeline(&running.model, &mut output, timeline, prepend);
     if let Some(unread) = unread {
         output.push(unread);
     }
@@ -4170,6 +4168,26 @@ fn process_history(
     flush_history_read_advances(&shared_state, outbound, instance, read_advances);
     spawn_next_history(&shared_state, outbound, client, instance, next);
     update_chat_list(&shared_state, outbound, instance);
+}
+
+fn push_history_timeline(
+    model: &NetworkModel,
+    output: &mut Vec<EngineToUi>,
+    timeline: Option<(BufferId, Vec<crate::MessageProjection>)>,
+    prepend: bool,
+) {
+    let Some((buffer_id, mut messages)) = timeline else {
+        return;
+    };
+    messages.sort_by_key(message_projection_order);
+    if prepend {
+        output.push(EngineToUi::MessagesPrepended {
+            buffer_id,
+            messages,
+        });
+    } else if let Some(event) = model.history_append_event(buffer_id, messages) {
+        output.push(event);
+    }
 }
 
 fn resolve_history_read(
@@ -4457,37 +4475,20 @@ fn history_page_bounds(
     (oldest, newest)
 }
 
-fn history_timeline_event(
-    prepend: bool,
-    buffer_id: BufferId,
-    messages: &mut [crate::MessageProjection],
-) -> EngineToUi {
-    messages.sort_by_key(|message| {
-        (
-            message.server_time_ms.unwrap_or(message.received_at_ms),
-            message.received_at_ms,
-            message.id.0,
-        )
-    });
-    if prepend {
-        EngineToUi::MessagesPrepended {
-            buffer_id,
-            messages: messages.to_vec(),
-        }
-    } else {
-        EngineToUi::MessagesAppended {
-            buffer_id,
-            messages: messages.to_vec(),
-        }
-    }
-}
-
 fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
     let Ok(endpoint) = endpoint.parse::<papo::Endpoint>() else {
         return false;
     };
     matches!(endpoint.kind(), papo::EndpointKind::SecureWebSocket)
         || (allow_insecure && matches!(endpoint.kind(), papo::EndpointKind::WebSocket))
+}
+
+fn message_projection_order(message: &crate::MessageProjection) -> (i64, i64, u64) {
+    (
+        message.server_time_ms.unwrap_or(message.received_at_ms),
+        message.received_at_ms,
+        message.id.0,
+    )
 }
 
 fn channel_target(
@@ -10581,11 +10582,7 @@ async fn delay(duration: Duration) {
             "@time=2026-10-15T12:00:00.000Z;msgid=live-1 :alice!a@host PRIVMSG #room :before disconnect",
         )
         .await;
-        let live = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Message(_))
-        })
-        .await;
-        process_event(&state, &outbound, &client, 1, live);
+        process_next_message(&mut events, &state, &outbound, &client).await;
         _ = collect(&mut receiver);
 
         wire.close().await;
@@ -10615,11 +10612,7 @@ async fn delay(duration: Duration) {
             "@time=2026-10-15T12:00:02.000Z;msgid=live-2 :alice!a@host PRIVMSG #room :newer live arrival",
         )
         .await;
-        let live = next_matching(&mut events, |event| {
-            matches!(event, papo::Event::Message(message) if message.text == "newer live arrival")
-        })
-        .await;
-        process_event(&state, &outbound, &client, 1, live);
+        process_next_message(&mut events, &state, &outbound, &client).await;
         send_history_page(
             &mut wire,
             label,
@@ -10638,17 +10631,25 @@ async fn delay(duration: Duration) {
         let final_label = request_label(&final_request);
         assert!(final_request.contains("CHATHISTORY AFTER #room msgid=live-2"));
         send_history_page(&mut wire, final_label, &[]).await;
-        let appended = collect(&mut receiver)
+        let merged = collect(&mut receiver)
             .into_iter()
-            .filter_map(|event| match event {
-                EngineToUi::MessagesAppended { messages, .. } => Some(messages),
+            .find_map(|event| match event {
+                EngineToUi::BufferSnapshot { messages, .. } => Some(messages),
                 _ => None,
             })
-            .flatten()
+            .expect("interleaved catch-up replaces the visible timeline")
+            .into_iter()
             .map(|message| message.text)
             .collect::<Vec<_>>();
 
-        assert_eq!(appended, ["newer live arrival", "missed while away"]);
+        assert_eq!(
+            merged,
+            [
+                "before disconnect",
+                "missed while away",
+                "newer live arrival"
+            ]
+        );
     }
 
     #[tokio::test]
@@ -11124,6 +11125,7 @@ async fn delay(duration: Duration) {
             .flat_map(|event| match event {
                 EngineToUi::MessagesPrepended { messages, .. } if prepended => messages.as_slice(),
                 EngineToUi::MessagesAppended { messages, .. } if !prepended => messages.as_slice(),
+                EngineToUi::BufferSnapshot { messages, .. } if !prepended => messages.as_slice(),
                 _ => &[],
             })
             .map(|message| message.text.clone())
@@ -11135,7 +11137,8 @@ async fn delay(duration: Duration) {
             .iter()
             .flat_map(|event| match event {
                 EngineToUi::MessagesAppended { messages, .. }
-                | EngineToUi::MessagesPrepended { messages, .. } => messages.as_slice(),
+                | EngineToUi::MessagesPrepended { messages, .. }
+                | EngineToUi::BufferSnapshot { messages, .. } => messages.as_slice(),
                 _ => &[],
             })
             .collect()
@@ -11243,7 +11246,7 @@ async fn delay(duration: Duration) {
             .await;
         assert_eq!(
             timeline_texts(&output, false),
-            ["server playback", "live after playback"]
+            ["server playback", "initial-sentinel", "live after playback"]
         );
         harness.drain.abort();
     }
