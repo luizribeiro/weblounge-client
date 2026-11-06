@@ -1,5 +1,6 @@
-import { expect, type Locator, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { useDedicatedWorker } from "./production-ergo";
 
 test.use({
   colorScheme: "light",
@@ -104,7 +105,91 @@ test.describe("mobile chat list against local Ergo", () => {
       bot?.close();
     }
   });
+
+  test("uses the newest visible message after reaction-only TARGETS activity", async ({
+    context,
+    page,
+  }) => {
+    await useDedicatedWorker(page);
+    await setAppAlwaysOn(true);
+    const suffix = Date.now().toString(36).slice(-6);
+    const bot = await IrcClient.connect(
+      `reaction-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const text = `before reaction ${suffix}`;
+    let current = page;
+    try {
+      await current.goto("/?irc-password=weblounge-test");
+      await expect(
+        current.getByRole("button", { name: "#weblounge-test" }),
+      ).toBeVisible();
+      const echoed = await bot.privmsgConfirmed("weblounge", text);
+      let row = directRow(current, bot.nickname);
+      await expect(row).toContainText(text);
+      await bot.reactionConfirmed("weblounge", messageId(echoed), "thumbsup");
+
+      await current.close();
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await current.goto("/?irc-password=weblounge-test");
+      row = directRow(current, bot.nickname);
+      await expect(row).toContainText(text);
+      await row.click();
+      await expect(messageRow(current, text)).toBeVisible();
+      await current.getByRole("button", { name: "Back to chats" }).click();
+
+      await expect(row.locator("time")).toHaveAttribute(
+        "datetime",
+        serverTime(echoed),
+      );
+    } finally {
+      if (!current.isClosed()) await current.close();
+      bot.close();
+      await setAppAlwaysOn(false);
+    }
+  });
 });
+
+function directRow(page: Page, nick: string) {
+  return page.locator(`[data-buffer-id][aria-label^="${nick}"]`);
+}
+
+function messageRow(page: Page, text: string) {
+  return page.locator("[data-message-row]", { hasText: text });
+}
+
+function messageId(line: string): string {
+  const value = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
+  if (value === undefined) throw new Error(`IRC line has no msgid: ${line}`);
+  return value;
+}
+
+function serverTime(line: string): string {
+  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
+  if (value === undefined)
+    throw new Error(`IRC line has no server time: ${line}`);
+  return new Date(value).toISOString();
+}
+
+async function setAppAlwaysOn(enabled: boolean): Promise<void> {
+  const control = await IrcClient.connectWithoutJoin(
+    "weblounge",
+    "weblounge",
+    "weblounge-test",
+  );
+  try {
+    if (control.nickname !== "weblounge") {
+      await control.waitForNickDeparture("weblounge");
+      await control.nick("weblounge");
+    }
+    await control.setAlwaysOn(enabled);
+  } finally {
+    control.close();
+  }
+}
 
 async function expectChatOrder(
   rows: Locator,

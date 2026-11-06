@@ -83,6 +83,7 @@ enum StateError {
 #[derive(Clone, Debug)]
 struct BufferState {
     projection: BufferProjection,
+    provisional_activity_ms: Option<i64>,
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
     timeline: Vec<TimelineRecord>,
@@ -364,6 +365,7 @@ impl NetworkModel {
                 last_activity_ms: None,
                 cached_preview: None,
             },
+            provisional_activity_ms: None,
             key: None,
             direct_key: None,
             timeline: Vec::new(),
@@ -529,7 +531,7 @@ impl NetworkModel {
                 buffer.projection.title = row.title;
                 buffer.projection.cached = Some(true);
                 buffer.projection.cached_preview = row.preview;
-                buffer.projection.last_activity_ms = row.last_activity_ms;
+                buffer.provisional_activity_ms = row.last_activity_ms;
                 match row.badge {
                     SnapshotBadge::None => {}
                     SnapshotBadge::Unread { count } => buffer.projection.unread = count,
@@ -540,6 +542,7 @@ impl NetworkModel {
                 }
                 buffer.direct_pin = row.peer_pin.and_then(|pin| pin.parse().ok());
                 buffer.projection.direct_identity = direct_identity(buffer);
+                derive_chat_projection(buffer);
             }
         }
         self.sort_buffer_order();
@@ -1563,6 +1566,7 @@ impl NetworkModel {
             }
         };
         buffer.projection.sync_state = buffer.history.sync_state();
+        derive_chat_projection(buffer);
         Some(HistoryCompletion {
             buffer_id,
             at_start,
@@ -1808,11 +1812,10 @@ impl NetworkModel {
             }
         });
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
-            buffer.projection.last_activity_ms =
-                Some(buffer.projection.last_activity_ms.map_or_else(
-                    || time_millis(latest),
-                    |current| current.max(time_millis(latest)),
-                ));
+            buffer.provisional_activity_ms = Some(buffer.provisional_activity_ms.map_or_else(
+                || time_millis(latest),
+                |current| current.max(time_millis(latest)),
+            ));
             match &fetch {
                 Some(HistoryFetch::Latest(_)) => {
                     set_history_state(buffer, HistoryState::LoadingLatest);
@@ -1835,6 +1838,7 @@ impl NetworkModel {
             if should_resolve {
                 buffer.direct = Some(DirectAvailability::Resolving);
             }
+            derive_chat_projection(buffer);
         }
         self.sort_buffer_order();
         (fetch, should_resolve.then_some(buffer_id), added)
@@ -2326,11 +2330,6 @@ impl NetworkModel {
             && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
         record.provisional_identity = None;
         buffer.timeline.sort_by_key(order_key);
-        buffer.projection.last_activity_ms = buffer
-            .timeline
-            .iter()
-            .map(|record| message_time(&record.projection))
-            .max();
         derive_read_projection(buffer);
         let buffer = buffer.projection.clone();
         let mut events = vec![
@@ -2505,6 +2504,7 @@ impl NetworkModel {
             id,
             BufferState {
                 projection: projection.clone(),
+                provisional_activity_ms: None,
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
                 timeline: Vec::new(),
@@ -2611,10 +2611,6 @@ impl NetworkModel {
             return Err(StateError::MissingBuffer(buffer_id));
         };
         buffer.last_membership = None;
-        buffer.projection.last_activity_ms = Some(buffer.projection.last_activity_ms.map_or_else(
-            || message_time(&record.projection),
-            |current| current.max(message_time(&record.projection)),
-        ));
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
         if let Some(read_at) = own_read_at {
@@ -2698,7 +2694,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
     Some(SnapshotRow {
         conversation,
         title: buffer.projection.title.clone(),
-        last_activity_ms: buffer.projection.last_activity_ms,
+        last_activity_ms: chat_activity_time(buffer),
         badge,
         preview: buffer
             .projection
@@ -2766,12 +2762,7 @@ fn confirmed_text(kind: &MessageKind, text: &str) -> String {
 
 fn derive_read_projection(buffer: &mut BufferState) {
     buffer.projection.read_at_ms = buffer.read_at_ms;
-    buffer.projection.last_message = buffer
-        .timeline
-        .iter()
-        .filter(|record| !matches!(&record.projection.kind, MessageKind::Notice(_)))
-        .max_by_key(|record| order_key(record))
-        .map(|record| record.projection.clone());
+    derive_chat_projection(buffer);
     buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
         buffer
             .timeline
@@ -2796,6 +2787,38 @@ fn derive_read_projection(buffer: &mut BufferState) {
         });
     buffer.projection.unread = unread;
     buffer.projection.mentions = mentions;
+}
+
+fn derive_chat_projection(buffer: &mut BufferState) {
+    buffer.projection.last_message =
+        latest_real_message(buffer).map(|record| record.projection.clone());
+    buffer.projection.last_activity_ms = chat_activity_time(buffer);
+}
+
+fn latest_real_message(buffer: &BufferState) -> Option<&TimelineRecord> {
+    buffer
+        .timeline
+        .iter()
+        .filter(|record| {
+            is_committed(&record.projection)
+                && !matches!(&record.projection.kind, MessageKind::Notice(_))
+        })
+        .max_by_key(|record| order_key(record))
+}
+
+fn chat_activity_time(buffer: &BufferState) -> Option<i64> {
+    latest_real_message(buffer)
+        .map(|record| message_time(&record.projection))
+        .or_else(|| {
+            matches!(
+                buffer.history,
+                HistoryState::Unrequested
+                    | HistoryState::QueuedLatest
+                    | HistoryState::LoadingLatest
+            )
+            .then_some(buffer.provisional_activity_ms)
+            .flatten()
+        })
 }
 
 fn is_committed(message: &MessageProjection) -> bool {
@@ -3267,6 +3290,11 @@ mod tests {
             EngineToUi::MessagesAppended { messages, .. }
                 if messages[0].text == "arrived while closed"
         )));
+        let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#room"))];
+        assert_eq!(
+            model.buffers[&buffer_id].projection.last_activity_ms,
+            Some(1_793_709_296_789)
+        );
         let history = model.receive_incoming(
             incoming(
                 &state,
@@ -3283,6 +3311,10 @@ mod tests {
             EngineToUi::MessageUpdated { message, .. }
                 if message.text == "arrived while closed"
         )));
+        assert_eq!(
+            model.buffers[&buffer_id].projection.last_activity_ms,
+            Some(1_793_708_096_789)
+        );
         assert!(
             model
                 .receive_incoming(
@@ -3568,6 +3600,22 @@ mod tests {
             model.buffers[&buffer_id].history,
             HistoryState::CatchingUp { .. }
         ));
+
+        let mut history = direct_incoming(&state, "alice", "after", 150);
+        history.origin = TimelineOrigin::History;
+        model.receive_incoming(history, &state);
+        model
+            .finish_history(&papo::Conversation::Private(nick), None, None, 1, true)
+            .expect("catch-up finishes");
+
+        assert_eq!(
+            model.buffers[&buffer_id].projection.last_activity_ms,
+            Some(150)
+        );
+        assert_eq!(
+            model.chat_list_snapshot("network".into()).rows[0].last_activity_ms,
+            Some(150)
+        );
     }
 
     #[test]
@@ -3877,6 +3925,7 @@ mod tests {
             &state,
         );
         let unread_before = model.buffers[&buffer.id].projection.unread;
+        let activity_before = model.buffers[&buffer.id].projection.last_activity_ms;
         let event = model
             .append_notice(buffer.id, "A quiet room".into(), crate::NoticeKind::Info)
             .expect("notice row");
@@ -3903,6 +3952,14 @@ mod tests {
             Some(&crate::MessageKind::Notice(crate::NoticeKind::Info))
         );
         assert_eq!(model.buffers[&buffer.id].projection.unread, unread_before);
+        assert_eq!(
+            model.buffers[&buffer.id].projection.last_activity_ms,
+            activity_before
+        );
+        assert_eq!(
+            model.chat_list_snapshot("network".into()).rows[0].last_activity_ms,
+            activity_before
+        );
     }
 
     #[test]

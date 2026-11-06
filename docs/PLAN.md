@@ -7,6 +7,10 @@ The single place a fresh session reads to know where the project stands. Update 
   Chromium and iPhone WebKit now keep long-history `/version`, received, sent and New-divider
   unread rows visible and hit-testable without manual scrolling, while short transcripts and
   keyboard motion count the CSS-exported 24px reserve exactly once.
+- [x] Derive chat-list activity, preview, ordering and snapshots from the newest committed message
+  visible in the transcript. TARGETS and cached activity remain provisional only until history
+  loads; local notices, reactions and typing cannot create phantom row times. Built-app local-Ergo
+  coverage reproduces reaction-only TARGETS activity in desktop Chromium and iPhone WebKit.
 - [x] Keep the permanent typing reserve effective under the production CSP with one CSS Module
   value exported at build time to transcript geometry, so mount timing and missing computed styles
   cannot erase it. Preserve WebKit's fractional row measurements, and treat a swipe-completed

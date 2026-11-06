@@ -212,6 +212,12 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-chat-list",
+      testMatch: "**/mobile-chat-list.spec.ts",
+      grep: /reaction-only TARGETS activity/u,
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-new-divider",
       testMatch: "**/new-divider-focused.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
