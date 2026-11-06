@@ -57,8 +57,12 @@ row to a server time and records that local read position immediately. This loca
 clears unread state, including when the row was restored from push. Such a row remains provisional
 for server sync: `Client::mark_read` waits until live delivery or a history result verifies that
 exact row's server msgid and time, then marks only that row. Unrelated traffic cannot consume or
-advance the deferred intent; selecting another read buffer or disconnecting drops it without
-restoring local unread state. When read
+advance the deferred intent. Leaving the conversation retains that buffer's intent; when live
+delivery or history later verifies the exact row, the engine sends its marker even if another
+conversation is selected. A disconnect also retains in-memory deferred intent so resumed history
+can verify it, while an already validated advance remains queued until `Connected`. A full engine
+termination does not persist an unverified intent: relaunch rebuilds the read position from the
+server and may show that row unread again if verification and MARKREAD had not completed. When read
 markers are supported, the engine coalesces pending advances per conversation; an unavailable
 connection leaves a validated advance queued until `Connected` instead of rejecting or losing it.
 A server refusal is retried with bounded backoff and recorded in diagnostics rather than shown as a
