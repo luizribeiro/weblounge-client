@@ -15,6 +15,10 @@ The single place a fresh session reads to know where the project stands. Update 
   appended last; choosing that row kept newer unread state and sent Ergo a non-advancing MARKREAD.
   Papo-wire coverage proves the ordering, while desktop Chromium and iPhone WebKit retain bot
   traffic clearing and reload persistence.
+- [x] Keep the cached chat list converged with late server read markers, and throttle whole-record
+  rewrites without starving them under continuous traffic. Built-app desktop Chromium and iPhone
+  WebKit coverage reads from another client, relaunches twice, and interleaves a newer live line
+  with restart catch-up so cached badges and previews match the complete live projection.
 - [x] Keep the 500ms read dwell attached to continuous foreground live-edge visibility instead of
   restarting it for every committed row. A local-Ergo regression interleaves four bots' messages,
   NOTICE, multiline and typing traffic at one-second per-bot intervals on desktop Chromium and

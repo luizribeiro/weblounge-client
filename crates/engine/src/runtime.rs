@@ -1,9 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, SystemTime},
 };
 
@@ -231,11 +228,18 @@ struct RuntimeState {
     network: Option<RunningNetwork>,
     member_views: MemberViews,
     storage: RuntimeStorage,
-    snapshot_generation: Arc<AtomicU64>,
+    snapshot_writer: Arc<Mutex<SnapshotWriter>>,
     cached_snapshot: Option<Vec<u8>>,
     cached_pushed_messages: Vec<PushedMessage>,
     build_version: String,
     update_ready: bool,
+}
+
+#[derive(Default)]
+struct SnapshotWriter {
+    generation: u64,
+    active: bool,
+    pending: Option<ChatListSnapshot>,
 }
 
 #[derive(Clone)]
@@ -305,7 +309,7 @@ impl Runtime {
                 network: None,
                 member_views: MemberViews::default(),
                 storage,
-                snapshot_generation: Arc::new(AtomicU64::new(0)),
+                snapshot_writer: Arc::default(),
                 cached_snapshot,
                 cached_pushed_messages,
                 build_version,
@@ -1349,7 +1353,7 @@ impl Runtime {
         let push_endpoint = running.push.route.map(|route| route.endpoint);
         let client = running.client;
         let storage = state.storage.clone();
-        state.snapshot_generation.fetch_add(1, Ordering::Relaxed);
+        cancel_snapshot_writes(&state.snapshot_writer);
         drop(state);
         spawn_task(async move {
             if let Some(endpoint) = push_endpoint {
@@ -4270,10 +4274,10 @@ fn update_chat_list(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
 ) {
-    let (live_event, snapshot, storage, generation) = {
+    let (live_event, snapshot, storage, writer) = {
         let mut state = lock(state);
         let storage = state.storage.clone();
-        let generation = Arc::clone(&state.snapshot_generation);
+        let writer = Arc::clone(&state.snapshot_writer);
         let Some(running) = state
             .network
             .as_mut()
@@ -4290,25 +4294,76 @@ fn update_chat_list(
         let snapshot = running
             .model
             .chat_list_snapshot(running.chat_list.fingerprint.clone());
-        (live_event, snapshot, storage, generation)
+        (live_event, snapshot, storage, writer)
     };
     if let Some(event) = live_event {
         let _ = outbound.send(event);
     }
-    schedule_snapshot_write(storage, generation, snapshot);
+    schedule_snapshot_write(storage, writer, snapshot);
 }
 
 fn schedule_snapshot_write(
     storage: RuntimeStorage,
-    generation: Arc<AtomicU64>,
+    writer: Arc<Mutex<SnapshotWriter>>,
     snapshot: ChatListSnapshot,
 ) {
-    schedule_snapshot_write_after(
-        storage,
-        generation,
-        snapshot,
-        delay(Duration::from_millis(750)),
-    );
+    schedule_snapshot_write_after(storage, writer, snapshot, delay(Duration::from_millis(750)));
+}
+
+fn begin_snapshot_write(
+    writer: &Arc<Mutex<SnapshotWriter>>,
+    snapshot: ChatListSnapshot,
+) -> Option<u64> {
+    let mut writer = lock(writer);
+    writer.pending = Some(snapshot);
+    if writer.active {
+        return None;
+    }
+    writer.active = true;
+    Some(writer.generation)
+}
+
+fn cancel_snapshot_writes(writer: &Arc<Mutex<SnapshotWriter>>) {
+    let mut writer = lock(writer);
+    writer.generation = writer.generation.wrapping_add(1);
+    writer.active = false;
+    writer.pending = None;
+}
+
+async fn write_snapshot_intervals(
+    storage: RuntimeStorage,
+    writer: Arc<Mutex<SnapshotWriter>>,
+    generation: u64,
+) {
+    loop {
+        let snapshot = {
+            let mut writer = lock(&writer);
+            if writer.generation != generation {
+                return;
+            }
+            let Some(snapshot) = writer.pending.take() else {
+                writer.active = false;
+                return;
+            };
+            snapshot
+        };
+        let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
+        let pending = {
+            let mut writer = lock(&writer);
+            if writer.generation != generation {
+                return;
+            }
+            let pending = writer.pending.is_some();
+            if !pending {
+                writer.active = false;
+            }
+            pending
+        };
+        if !pending {
+            return;
+        }
+        delay(Duration::from_millis(750)).await;
+    }
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -4335,32 +4390,32 @@ async fn delay(duration: Duration) {
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn schedule_snapshot_write_after(
     storage: RuntimeStorage,
-    generation: Arc<AtomicU64>,
+    writer: Arc<Mutex<SnapshotWriter>>,
     snapshot: ChatListSnapshot,
     delay: impl std::future::Future<Output = ()> + 'static,
 ) {
-    let scheduled = generation.fetch_add(1, Ordering::Relaxed) + 1;
+    let Some(generation) = begin_snapshot_write(&writer, snapshot) else {
+        return;
+    };
     spawn_task(async move {
         delay.await;
-        if generation.load(Ordering::Relaxed) == scheduled {
-            let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
-        }
+        write_snapshot_intervals(storage, writer, generation).await;
     });
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn schedule_snapshot_write_after(
     storage: RuntimeStorage,
-    generation: Arc<AtomicU64>,
+    writer: Arc<Mutex<SnapshotWriter>>,
     snapshot: ChatListSnapshot,
     delay: impl std::future::Future<Output = ()> + Send + 'static,
 ) {
-    let scheduled = generation.fetch_add(1, Ordering::Relaxed) + 1;
+    let Some(generation) = begin_snapshot_write(&writer, snapshot) else {
+        return;
+    };
     spawn_task(async move {
         delay.await;
-        if generation.load(Ordering::Relaxed) == scheduled {
-            let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
-        }
+        write_snapshot_intervals(storage, writer, generation).await;
     });
 }
 
@@ -4874,7 +4929,7 @@ fn spawn_task(future: impl std::future::Future<Output = ()> + Send + 'static) {
 mod tests {
     use std::{
         collections::VecDeque,
-        sync::{Arc, Mutex, atomic::AtomicU64},
+        sync::{Arc, Mutex},
         time::{Duration, UNIX_EPOCH},
     };
 
@@ -4929,7 +4984,7 @@ async fn delay(duration: Duration) {
             next_instance: 2,
             member_views: MemberViews::default(),
             storage: Arc::default(),
-            snapshot_generation: Arc::default(),
+            snapshot_writer: Arc::default(),
             cached_snapshot: None,
             cached_pushed_messages: Vec::new(),
             build_version: "weblounge test".into(),
@@ -4953,9 +5008,9 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn snapshot_rewrites_are_trailing_and_coalesced_by_an_injected_clock() {
+    async fn snapshot_rewrites_are_throttled_without_starving_the_injected_clock() {
         let storage = Arc::new(MemoryKv::default());
-        let generation = Arc::new(AtomicU64::new(0));
+        let writer = Arc::default();
         let first = ChatListSnapshot::new("network".into(), Vec::new());
         let second = ChatListSnapshot::new(
             "network".into(),
@@ -4974,7 +5029,7 @@ async fn delay(duration: Duration) {
         let (second_tick, second_clock) = oneshot::channel();
         schedule_snapshot_write_after(
             Arc::clone(&storage),
-            Arc::clone(&generation),
+            Arc::clone(&writer),
             first,
             async move {
                 let _ = first_clock.await;
@@ -4982,7 +5037,7 @@ async fn delay(duration: Duration) {
         );
         schedule_snapshot_write_after(
             Arc::clone(&storage),
-            Arc::clone(&generation),
+            Arc::clone(&writer),
             second.clone(),
             async move {
                 let _ = second_clock.await;
@@ -4991,14 +5046,12 @@ async fn delay(duration: Duration) {
 
         let _ = first_tick.send(());
         tokio::task::yield_now().await;
-        assert_eq!(read(storage.as_ref()).await.expect("read"), None);
-        let _ = second_tick.send(());
-        tokio::task::yield_now().await;
         let stored = read(storage.as_ref())
             .await
             .expect("read")
-            .expect("latest rewrite");
+            .expect("throttled rewrite");
         assert_eq!(ChatListSnapshot::decode(&stored, "network"), Some(second));
+        assert!(second_tick.send(()).is_err());
     }
 
     #[test]
@@ -6360,7 +6413,7 @@ async fn delay(duration: Duration) {
                 next_instance: 2,
                 member_views: MemberViews::default(),
                 storage: Arc::default(),
-                snapshot_generation: Arc::default(),
+                snapshot_writer: Arc::default(),
                 cached_snapshot: None,
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
@@ -6452,7 +6505,7 @@ async fn delay(duration: Duration) {
                 next_instance: 2,
                 member_views: MemberViews::default(),
                 storage: Arc::default(),
-                snapshot_generation: Arc::default(),
+                snapshot_writer: Arc::default(),
                 cached_snapshot: None,
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
@@ -7077,7 +7130,7 @@ async fn delay(duration: Duration) {
                 next_instance: 2,
                 member_views: MemberViews::default(),
                 storage: Arc::default(),
-                snapshot_generation: Arc::default(),
+                snapshot_writer: Arc::default(),
                 cached_snapshot: None,
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
@@ -7469,7 +7522,7 @@ async fn delay(duration: Duration) {
                 next_instance: 2,
                 member_views: MemberViews::default(),
                 storage: Arc::default(),
-                snapshot_generation: Arc::default(),
+                snapshot_writer: Arc::default(),
                 cached_snapshot: None,
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
@@ -7596,7 +7649,7 @@ async fn delay(duration: Duration) {
                 next_instance: 2,
                 member_views: MemberViews::default(),
                 storage: Arc::default(),
-                snapshot_generation: Arc::default(),
+                snapshot_writer: Arc::default(),
                 cached_snapshot: None,
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
@@ -7664,7 +7717,7 @@ async fn delay(duration: Duration) {
                 next_instance: 2,
                 member_views: MemberViews::default(),
                 storage: Arc::default(),
-                snapshot_generation: Arc::default(),
+                snapshot_writer: Arc::default(),
                 cached_snapshot: None,
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
@@ -7996,7 +8049,7 @@ async fn delay(duration: Duration) {
             next_instance: 2,
             member_views: MemberViews::default(),
             storage: Arc::default(),
-            snapshot_generation: Arc::default(),
+            snapshot_writer: Arc::default(),
             cached_snapshot: None,
             cached_pushed_messages: Vec::new(),
             build_version: "weblounge test".into(),
