@@ -66,10 +66,30 @@ export function createReadDwell(options: ReadDwellOptions): void {
 export function newestCommittedMessageId(
   messages: readonly MessageProjection[],
 ): number | undefined {
-  return [...messages]
-    .reverse()
-    .find(
-      (message) =>
-        message.delivery === "received" || message.delivery === "confirmed",
-    )?.id;
+  let newest: MessageProjection | undefined;
+  for (const message of messages) {
+    if (
+      (message.delivery !== "received" && message.delivery !== "confirmed") ||
+      typeof message.kind === "object"
+    ) {
+      continue;
+    }
+    if (newest === undefined || compareMessageTime(message, newest) > 0)
+      newest = message;
+  }
+  return newest?.id;
+}
+
+function compareMessageTime(
+  left: MessageProjection,
+  right: MessageProjection,
+): number {
+  const primary = messageTime(left) - messageTime(right);
+  if (primary !== 0) return primary;
+  const receipt = left.received_at_ms - right.received_at_ms;
+  return receipt === 0 ? left.id - right.id : receipt;
+}
+
+function messageTime(message: MessageProjection): number {
+  return message.server_time_ms ?? message.received_at_ms;
 }

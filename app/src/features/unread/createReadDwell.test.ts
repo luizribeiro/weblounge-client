@@ -1,10 +1,51 @@
 import { render } from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createReadDwell } from "./createReadDwell";
+import type { MessageProjection } from "../../engine/protocol";
+import { createReadDwell, newestCommittedMessageId } from "./createReadDwell";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
+
+it("marks the newest server time when catch-up appends behind live traffic", () => {
+  const newerLive: MessageProjection = {
+    id: 9,
+    author: "bender",
+    text: "newer live arrival",
+    kind: "text",
+    bot: true,
+    authorship: "other",
+    nick_color_index: 0,
+    highlighted: false,
+    delivery: "received",
+    local_send_id: null,
+    server_ids: ["live-2"],
+    server_time_ms: 2_000,
+    received_at_ms: 2_100,
+  };
+  const olderCatchup: MessageProjection = {
+    ...newerLive,
+    id: 8,
+    text: "missed while away",
+    server_ids: ["missed-1"],
+    server_time_ms: 1_000,
+    received_at_ms: 2_200,
+  };
+  const localNotice: MessageProjection = {
+    ...newerLive,
+    id: 10,
+    text: "reconnecting",
+    kind: { notice: { type: "info" } },
+    authorship: "own",
+    server_ids: [],
+    server_time_ms: null,
+    received_at_ms: 3_000,
+  };
+
+  expect(newestCommittedMessageId([newerLive, olderCatchup, localNotice])).toBe(
+    9,
+  );
+});
 
 it("keeps the dwell armed across equal read-state snapshots", () => {
   const [snapshot, setSnapshot] = createSignal({
