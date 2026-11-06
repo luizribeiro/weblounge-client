@@ -126,6 +126,8 @@ test.describe("typing indicators", () => {
 
       if (mobile) {
         await sender.typingConfirmed("weblounge", "active");
+        await expect(indicator).toContainText(`${sender.nickname} is typing…`);
+        await expectMobileTypingIndicatorVisible(indicator);
         const activeGeometry = await transcriptEdgeGeometry(incomingRow);
         expectTranscriptClear(activeGeometry, "active typing row");
         expectStableTypingGeometry(emptyGeometry, activeGeometry);
@@ -200,6 +202,78 @@ test.describe("typing indicators", () => {
     }
   });
 });
+
+async function expectMobileTypingIndicatorVisible(
+  indicator: Locator,
+): Promise<void> {
+  await expect(indicator).toBeVisible();
+  const visibility = await indicator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const composer = element
+      .closest("[data-mobile-chat]")
+      ?.querySelector<HTMLElement>("[data-composer]");
+    const composerRect = composer?.getBoundingClientRect();
+    const clippedBy: string[] = [];
+    for (
+      let ancestor = element.parentElement;
+      ancestor !== null;
+      ancestor = ancestor.parentElement
+    ) {
+      const style = getComputedStyle(ancestor);
+      if (
+        !/(auto|clip|hidden|scroll)/u.test(
+          `${style.overflowX} ${style.overflowY}`,
+        )
+      )
+        continue;
+      const ancestorRect = ancestor.getBoundingClientRect();
+      if (
+        rect.left < ancestorRect.left ||
+        rect.right > ancestorRect.right ||
+        rect.top < ancestorRect.top ||
+        rect.bottom > ancestorRect.bottom
+      )
+        clippedBy.push(
+          ancestor.dataset.mobileChat === "true"
+            ? "mobile-chat"
+            : ancestor.tagName,
+        );
+    }
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const previousPointerEvents = element.style.pointerEvents;
+    element.style.pointerEvents = "auto";
+    const hit = document.elementFromPoint(centerX, centerY);
+    element.style.pointerEvents = previousPointerEvents;
+    return {
+      clippedBy,
+      composerTop: composerRect?.top,
+      covered: hit !== element && !element.contains(hit),
+      rect: {
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+      },
+      viewport: { height: innerHeight, width: innerWidth },
+    };
+  });
+  const measurement = JSON.stringify(visibility);
+  expect(visibility.clippedBy, measurement).toEqual([]);
+  expect(visibility.covered, measurement).toBe(false);
+  expect(visibility.rect.left, measurement).toBeGreaterThanOrEqual(0);
+  expect(visibility.rect.top, measurement).toBeGreaterThanOrEqual(0);
+  expect(visibility.rect.right, measurement).toBeLessThanOrEqual(
+    visibility.viewport.width,
+  );
+  expect(visibility.rect.bottom, measurement).toBeLessThanOrEqual(
+    visibility.viewport.height,
+  );
+  expect(visibility.composerTop, measurement).toBeDefined();
+  expect(visibility.rect.bottom, measurement).toBeLessThanOrEqual(
+    visibility.composerTop as number,
+  );
+}
 
 async function transcriptEdgeGeometry(
   row: Locator,

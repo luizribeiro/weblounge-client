@@ -583,6 +583,7 @@ export function MobileShell(props: MobileShellProps) {
             memberships={props.memberships}
             messages={props.messages}
             networks={props.networks}
+            typers={props.typers}
             notificationPromptVisible={props.notificationPromptVisible}
             onDismissNotificationPrompt={props.onDismissNotificationPrompt}
             onBack={requestBack}

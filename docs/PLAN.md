@@ -11,6 +11,10 @@ The single place a fresh session reads to know where the project stands. Update 
   dwells now share the push foreground authority; hiding proactively freezes the last visible row
   so deferred delivery still gains a boundary. Local-Ergo DM coverage retains `New` while hidden
   or scrolled up and rejects even a transient divider for focused arrivals in Chromium and WebKit.
+- [x] Project engine-owned typing state through the mobile shell instead of dropping it between
+  `MobileShell` and `MobileScreen`. Built-app local Ergo coverage now requires a peer's DM typing
+  indicator to be visible, unclipped, uncovered, inside the iPhone WebKit viewport and above the
+  composer before checking the transcript's permanent reserve.
 - [x] Match the transcript's permanent bottom reserve to the 24px typing overlay, so its opaque
   background cannot clip the newest message when empty, active, or after a send. Built-app local
   Ergo coverage measures a desktop channel and standalone iPhone WebKit DM without moving geometry.

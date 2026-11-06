@@ -82,6 +82,39 @@ it("opens a deep link above the chats list", () => {
   expect(screen.getByRole("region", { name: "Chats" })).toBeVisible();
 });
 
+it("projects the active buffer's typers into a deep-linked chat", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false }) as MediaQueryList),
+  );
+  history.replaceState(null, "", "/Local/mel");
+  render(() => (
+    <MobileShell
+      buffers={[buffer]}
+      composerNotice={undefined}
+      completion={undefined}
+      initialBufferId={buffer.id}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={() => {}}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSelectBuffer={() => {}}
+      onSend={async () => true}
+      typers={
+        new Map([
+          [buffer.id, [{ nick: "ana", nick_color_index: 3, paused: false }]],
+        ])
+      }
+    />
+  ));
+
+  expect(document.querySelector("[data-typing-indicator]")).toHaveTextContent(
+    "ana is typing…",
+  );
+});
+
 it("returns to chats and drops the route when the active buffer is removed", () => {
   vi.stubGlobal(
     "matchMedia",
