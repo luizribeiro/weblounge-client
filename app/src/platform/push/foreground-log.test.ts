@@ -4,6 +4,7 @@ import {
   type ForegroundLogEntry,
   ForegroundRecorder,
   type ForegroundSnapshot,
+  formatForegroundLog,
 } from "./foreground-log";
 
 const visible: ForegroundSnapshot = {
@@ -32,6 +33,24 @@ describe("foreground log ring", () => {
     unsubscribe();
     log.append(entry(4));
     expect(subscriber).toHaveBeenCalledTimes(3);
+  });
+
+  it("formats a privacy-safe newest-first copy with relative and absolute times", () => {
+    const first = entry(1_000);
+    const second = {
+      ...entry(1_250),
+      wallTimeMs: Date.UTC(2026, 10, 5, 12),
+      event: {
+        type: "lifecycle" as const,
+        kind: "blur" as const,
+        snapshot: { ...visible, hasFocus: false },
+      },
+    };
+
+    expect(formatForegroundLog([second, first])).toBe(
+      "-0.000s 2026-11-05T12:00:00.000Z mono=1250.0ms blur visibility=visible focus=false hidden=false navigator-standalone=absent display-standalone=false derived=true\n" +
+        "-0.250s 1970-01-01T00:00:01.000Z mono=1000.0ms foreground -> true visibility=visible focus=true hidden=false navigator-standalone=absent display-standalone=false derived=true",
+    );
   });
 });
 

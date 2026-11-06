@@ -1,6 +1,7 @@
 import "./viewport-debug.css";
 import { buildVersion } from "../build-version";
 import { deploymentConfigUnknownFields } from "../hosted/deployment-config";
+import { foregroundLog, formatForegroundLog } from "./push/foreground-log";
 
 export type DebugReading = readonly [label: string, value: string];
 
@@ -9,6 +10,9 @@ export interface DebugSection {
   readonly title: string;
   readonly read: () => readonly DebugReading[];
   readonly subscribe?: ((render: () => void) => () => void) | undefined;
+  readonly copy?:
+    | { readonly label: string; readonly read: () => string }
+    | undefined;
 }
 
 interface ActiveSection {
@@ -82,7 +86,14 @@ export function installDefaultDebug(
   return installDebugSection(browserWindow, {
     id: "default",
     title: "debug",
-    read: () => [],
+    read: () => [
+      ["foreground", formatForegroundLog(foregroundLog.newestFirst())],
+    ],
+    subscribe: (render) => foregroundLog.subscribe(render),
+    copy: {
+      label: "Copy",
+      read: () => formatForegroundLog(foregroundLog.newestFirst()),
+    },
   });
 }
 
@@ -120,7 +131,7 @@ function managerFor(browserWindow: Window): OverlayManager {
     overlay,
     sections: new Map(),
     render() {
-      overlay.textContent = [...manager.sections.values()]
+      const content = [...manager.sections.values()]
         .map(({ section }) =>
           [
             `[${section.title}]`,
@@ -133,6 +144,22 @@ function managerFor(browserWindow: Window): OverlayManager {
           ].join("\n"),
         )
         .join("\n\n");
+      const copy = [...manager.sections.values()]
+        .map(({ section }) => section.copy)
+        .find((candidate) => candidate !== undefined);
+      overlay.replaceChildren();
+      if (copy !== undefined) {
+        const button = browserWindow.document.createElement("button");
+        button.dataset.foregroundLogCopy = "true";
+        button.type = "button";
+        button.textContent = copy.label;
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          void browserWindow.navigator.clipboard?.writeText(copy.read());
+        });
+        overlay.append(button, "\n");
+      }
+      overlay.append(content);
     },
   };
   managers.set(browserWindow, manager);

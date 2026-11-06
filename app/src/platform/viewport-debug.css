@@ -22,6 +22,17 @@
   user-select: text;
 }
 
+[data-foreground-log-copy] {
+  background: var(--wl-color-panel-alt);
+  border: 1px solid var(--wl-color-panel-border);
+  border-radius: var(--wl-radius-control);
+  color: var(--wl-color-panel-fg);
+  font: inherit;
+  padding: 2px 4px;
+  pointer-events: auto;
+  user-select: none;
+}
+
 [data-viewport-debug-probe] {
   inset: 0 auto auto 0;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)

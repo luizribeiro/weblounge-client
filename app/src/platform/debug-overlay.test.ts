@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { decodeDeploymentConfig } from "../hosted/deployment-config";
 import {
   installDebugSection,
@@ -8,6 +8,7 @@ import {
   setNotificationDebugReading,
   setPushDebugSnapshot,
 } from "./debug-overlay";
+import { foregroundLog } from "./push/foreground-log";
 
 it("records the latest engine failure in debug diagnostics", () => {
   setEngineDebugReading(
@@ -33,6 +34,44 @@ it("records the latest engine failure in debug diagnostics", () => {
   stop();
   setEngineDebugReading(window, "engine.mark_read_failed", undefined);
   setEngineDebugReading(window, "engine.read_marker_invalid", undefined);
+});
+
+it("renders and copies the foreground activity log", () => {
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  foregroundLog.append({
+    monotonicMs: 12,
+    wallTimeMs: Date.UTC(2026, 10, 5, 12),
+    event: {
+      type: "lifecycle",
+      kind: "blur",
+      snapshot: {
+        visibility: "visible",
+        hasFocus: false,
+        hidden: false,
+        navigatorStandalone: true,
+        displayModeStandalone: true,
+        foreground: true,
+      },
+    },
+  });
+  const stop = installDefaultDebug(document.createElement("div"), window);
+
+  expect(document.querySelector("[data-debug-overlay]")).toHaveTextContent(
+    "blur visibility=visible focus=false",
+  );
+  const copy = document.querySelector<HTMLButtonElement>(
+    "[data-foreground-log-copy]",
+  );
+  copy?.click();
+  expect(writeText).toHaveBeenCalledWith(
+    expect.stringContaining("navigator-standalone=true"),
+  );
+  stop();
+  Reflect.deleteProperty(window.navigator, "clipboard");
 });
 
 it("includes ignored deployment fields in debug diagnostics", () => {

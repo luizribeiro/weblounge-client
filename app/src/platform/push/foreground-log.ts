@@ -155,6 +155,20 @@ export class ForegroundRecorder {
 
 export const foregroundLog = new ForegroundLog();
 
+export function formatForegroundLog(
+  entries: readonly ForegroundLogEntry[],
+): string {
+  const newest = entries[0]?.monotonicMs;
+  if (newest === undefined) return "No foreground activity recorded.";
+  return entries
+    .map((entry) => {
+      const relative = `-${((newest - entry.monotonicMs) / 1_000).toFixed(3)}s`;
+      const timestamp = new Date(entry.wallTimeMs).toISOString();
+      return `${relative} ${timestamp} mono=${entry.monotonicMs.toFixed(1)}ms ${formatEvent(entry.event)}`;
+    })
+    .join("\n");
+}
+
 export function readForegroundSnapshot(
   pageDocument: Document,
   browserNavigator: Navigator,
@@ -183,4 +197,28 @@ function matchesStandalone(browserWindow: Window): boolean {
   } catch {
     return false;
   }
+}
+
+function formatEvent(event: ForegroundLogEvent): string {
+  switch (event.type) {
+    case "lifecycle":
+      return `${event.kind} ${formatSnapshot(event.snapshot)}`;
+    case "transition":
+      return `foreground -> ${event.foreground} ${formatSnapshot(event.snapshot)}`;
+    case "lease":
+      return `lease ${event.action} ${event.result === "ok" || event.result === "sent" ? event.result : `error=${event.result}`}`;
+    case "lease_release_beacon":
+      return "lease release beacon sent";
+  }
+}
+
+function formatSnapshot(snapshot: ForegroundSnapshot): string {
+  return [
+    `visibility=${snapshot.visibility}`,
+    `focus=${snapshot.hasFocus}`,
+    `hidden=${snapshot.hidden}`,
+    `navigator-standalone=${snapshot.navigatorStandalone ?? "absent"}`,
+    `display-standalone=${snapshot.displayModeStandalone}`,
+    `derived=${snapshot.foreground}`,
+  ].join(" ");
 }
