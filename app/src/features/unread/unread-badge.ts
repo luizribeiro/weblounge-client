@@ -2,7 +2,7 @@ import type { BufferProjection } from "../../engine/protocol";
 import { t } from "../../strings";
 
 export interface UnreadBadge {
-  readonly count: number;
+  readonly count: string;
   readonly kind: "mention" | "unread";
   readonly label: string;
 }
@@ -12,11 +12,12 @@ export function unreadBadge(
 ): UnreadBadge | undefined {
   if (buffer.unread === 0) return undefined;
   const includesMentions = buffer.mentions > 0;
+  const count = buffer.unread > 99 ? "99+" : String(buffer.unread);
   return {
-    count: buffer.unread,
+    count,
     kind: includesMentions ? "mention" : "unread",
     label: t(includesMentions ? "sidebar.unread_mentions" : "sidebar.unread", {
-      count: String(buffer.unread),
+      count,
     }),
   };
 }
