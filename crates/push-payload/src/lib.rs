@@ -208,6 +208,18 @@ mod tests {
     }
 
     #[test]
+    fn preserves_server_time_verbatim() {
+        let time = "2026-11-06T12:09:38.376999999Z";
+        let line =
+            format!("@time={time};msgid=precision :mel!m@example.test PRIVMSG #lounge :hello");
+
+        assert!(matches!(
+            parse_push_payload(&line),
+            Ok(PushEvent::Message(ChatPayload { time: parsed, .. })) if parsed == time
+        ));
+    }
+
+    #[test]
     fn parses_control_events() {
         assert_eq!(
             parse_push_payload(":mel!m@example.test INVITE weblounge #secret"),

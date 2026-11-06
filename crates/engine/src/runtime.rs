@@ -7829,7 +7829,7 @@ async fn delay(duration: Duration) {
             "account": "alice",
             "target": "weblounge",
             "msgid": "pushed-direct",
-            "time": "2026-11-03T12:34:56.789Z",
+            "time": "2026-11-03T12:34:56.788Z",
             "text": "arrived while closed",
             "kind": "message",
         }))
@@ -9165,7 +9165,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn restored_push_defers_mark_read_until_history_reconciles_it() {
+    async fn restored_push_uses_authoritative_history_time_for_mark_read() {
         let caps = [
             "account-tag",
             "draft/read-marker",
@@ -9238,7 +9238,7 @@ async fn delay(duration: Duration) {
                 .await
                 .is_err()
         );
-        wire.server("@account=alice;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :alice!a@host PRIVMSG weblounge :arrived while closed")
+        wire.server("@account=alice;msgid=pushed-direct;time=2026-11-03T12:34:56.789742688Z :alice!a@host PRIVMSG weblounge :arrived while closed")
             .await;
         process_next_message(&mut events, &state, &outbound, &client).await;
 
