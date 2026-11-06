@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
 import {
   advanceEngineClock,
   installEngineClock,
@@ -7,6 +7,14 @@ import {
 import { IrcClient } from "./irc-client";
 
 const channel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
+
+interface TranscriptEdgeGeometry {
+  readonly composerTop: number;
+  readonly listBottom: number;
+  readonly messageBottom: number;
+  readonly typingBottom: number;
+  readonly typingTop: number;
+}
 
 test.describe("typing indicators", () => {
   test.skip(
@@ -68,6 +76,83 @@ test.describe("typing indicators", () => {
     }
   });
 
+  test("keeps the newest transcript line clear of the typing reserve", async ({
+    page,
+  }, testInfo) => {
+    const mobile = testInfo.project.name === "webkit-mobile-typing";
+    const typer = await IrcClient.connectIsolated(
+      mobile ? "typing-edge-mobile" : "typing-edge-desktop",
+      channel,
+    );
+    const sender = await IrcClient.connectIsolated(
+      mobile ? "typing-sender-mobile" : "typing-sender-desktop",
+      channel,
+    );
+    try {
+      const incoming = `typing edge incoming ${Date.now()}`;
+      await sender.privmsgConfirmed(channel, incoming);
+      await page.goto("/?irc-password=weblounge-test");
+      const mobileChats = page.locator("[data-mobile-chats]");
+      if (mobile) {
+        await expect(mobileChats).toBeVisible();
+        await typer.typingConfirmed(channel, "active");
+        await page.getByRole("button", { name: channel }).click();
+      }
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      if (mobile) await expect(page.locator("[data-motion]")).toHaveCount(0);
+      const indicator = mobile
+        ? page
+            .locator("[data-mobile-chat]")
+            .filter({
+              has: page.getByRole("heading", { name: channel }),
+            })
+            .locator("[data-typing-indicator]")
+        : page.locator("[data-typing-indicator]");
+
+      const incomingRow = page
+        .locator("[data-message-row]")
+        .filter({ has: page.getByText(incoming, { exact: true }) });
+      await expect(incomingRow).toBeVisible();
+
+      if (mobile) {
+        const activeGeometry = await transcriptEdgeGeometry(incomingRow);
+        expectTranscriptClear(activeGeometry, "active typing row");
+        await typer.typingConfirmed(channel, "done");
+        await expect(indicator).toHaveText("");
+        const emptyGeometry = await transcriptEdgeGeometry(incomingRow);
+        expectTranscriptClear(emptyGeometry, "empty typing row");
+        expectStableTypingGeometry(emptyGeometry, activeGeometry);
+      } else {
+        const emptyGeometry = await transcriptEdgeGeometry(incomingRow);
+        expectTranscriptClear(emptyGeometry, "empty typing row");
+        await typer.typingConfirmed(channel, "active");
+        await expect(indicator).toContainText(`${typer.nickname} is typing…`);
+        const activeGeometry = await transcriptEdgeGeometry(incomingRow);
+        expectTranscriptClear(activeGeometry, "active typing row");
+        expectStableTypingGeometry(emptyGeometry, activeGeometry);
+        await typer.typingConfirmed(channel, "done");
+        await expect(indicator).toHaveText("");
+      }
+      const sent = `typing edge sent ${Date.now()}`;
+      const composer = page.getByRole("textbox", {
+        name: `Message ${channel}`,
+      });
+      await composer.fill(sent);
+      await composer.press("Enter");
+      const sentRow = page
+        .locator('[data-message-row][data-delivery="confirmed"]')
+        .filter({ has: page.getByText(sent, { exact: true }) });
+      await expect(sentRow).toBeVisible();
+      expectTranscriptClear(
+        await transcriptEdgeGeometry(sentRow),
+        "after sending",
+      );
+    } finally {
+      sender.close();
+      typer.close();
+    }
+  });
+
   test("sends throttled active, paused, and done states", async ({ page }) => {
     const observer = await IrcClient.connect(
       "typing-observer",
@@ -108,3 +193,56 @@ test.describe("typing indicators", () => {
     }
   });
 });
+
+async function transcriptEdgeGeometry(
+  row: Locator,
+): Promise<TranscriptEdgeGeometry> {
+  return row.evaluate((message) => {
+    const list = message.closest<HTMLElement>("[data-message-list]");
+    const surface = list?.parentElement;
+    const typing = surface?.querySelector<HTMLElement>(
+      "[data-typing-indicator]",
+    );
+    const composer =
+      surface?.parentElement?.querySelector<HTMLElement>("[data-composer]");
+    if (list === null || typing === null || composer === null)
+      throw new Error("conversation edge geometry is incomplete");
+    const listRect = list.getBoundingClientRect();
+    const messageRect = message.getBoundingClientRect();
+    const typingRect = typing.getBoundingClientRect();
+    const composerRect = composer.getBoundingClientRect();
+    return {
+      composerTop: composerRect.top,
+      listBottom: listRect.bottom,
+      messageBottom: messageRect.bottom,
+      typingBottom: typingRect.bottom,
+      typingTop: typingRect.top,
+    };
+  });
+}
+
+function expectTranscriptClear(
+  geometry: TranscriptEdgeGeometry,
+  state: string,
+): void {
+  const measurement = `${state}: ${JSON.stringify(geometry)}`;
+  expect(geometry.messageBottom, measurement).toBeLessThanOrEqual(
+    geometry.typingTop,
+  );
+  expect(geometry.typingBottom, measurement).toBeLessThanOrEqual(
+    geometry.composerTop,
+  );
+}
+
+function expectStableTypingGeometry(
+  empty: TranscriptEdgeGeometry,
+  active: TranscriptEdgeGeometry,
+): void {
+  expect(
+    Math.abs(active.messageBottom - empty.messageBottom),
+  ).toBeLessThanOrEqual(1);
+  expect(Math.abs(active.listBottom - empty.listBottom)).toBeLessThanOrEqual(1);
+  expect(Math.abs(active.composerTop - empty.composerTop)).toBeLessThanOrEqual(
+    1,
+  );
+}

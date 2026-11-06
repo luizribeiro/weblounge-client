@@ -11,6 +11,9 @@ The single place a fresh session reads to know where the project stands. Update 
   dwells now share the push foreground authority; hiding proactively freezes the last visible row
   so deferred delivery still gains a boundary. Local-Ergo DM coverage retains `New` while hidden
   or scrolled up and rejects even a transient divider for focused arrivals in Chromium and WebKit.
+- [x] Match the transcript's permanent bottom reserve to the 24px typing overlay, so its opaque
+  background cannot clip the newest message when empty, active, or after a send. Built-app local
+  Ergo coverage measures the edge on desktop Chromium and iPhone WebKit without moving geometry.
 - [x] Keep the Chromium push fixture's CDP delivery session attached for each page lifetime, so a
   successful `deliverPushMessage` acknowledgement cannot be followed by detach discarding the
   queued event before the service worker receives it. The cold pushed-history journey stays green

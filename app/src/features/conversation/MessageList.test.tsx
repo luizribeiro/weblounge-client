@@ -382,7 +382,7 @@ it("remeasures rows after fonts finish loading", async () => {
   expect(translateY(secondMessage()?.style.transform ?? "")).not.toBe(
     initialPosition,
   );
-  expect(translateY(secondMessage()?.style.transform ?? "")).toBe(656);
+  expect(translateY(secondMessage()?.style.transform ?? "")).toBe(654);
 });
 
 it("anchors visible content when an overscanned row above it grows", async () => {

@@ -157,6 +157,17 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-typing",
+      grep: /keeps the newest transcript line clear of the typing reserve/u,
+      testMatch: "**/typing.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "webkit-conversation",
+      testMatch: ["**/composer-anchor.spec.ts", "**/transcript-paint.spec.ts"],
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-shimmer",
       testMatch: [
         "**/conversation-title-shimmer.spec.ts",

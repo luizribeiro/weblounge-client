@@ -25,7 +25,7 @@
   color: var(--wl-color-muted);
   display: flex;
   font-size: var(--wl-font-section-size);
-  height: 24px;
+  height: var(--wl-typing-slot-height);
   inset-inline: 0;
   margin: 0;
   overflow: hidden;

@@ -35,7 +35,7 @@
 
 :global(#root[data-keyboard-motion] [data-message-list]) {
   padding-block-end: calc(
-    22px +
+    var(--wl-typing-slot-height) +
     var(--wl-keyboard-inset) +
     var(--wl-keyboard-composer-height)
   );
@@ -45,7 +45,11 @@
   translate: 0
     calc(
       -1 *
-      (var(--wl-keyboard-inset) + var(--wl-keyboard-composer-height) - 22px)
+      (
+        var(--wl-keyboard-inset) +
+        var(--wl-keyboard-composer-height) -
+        var(--wl-typing-slot-height)
+      )
     );
 }
 

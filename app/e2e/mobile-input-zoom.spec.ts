@@ -558,7 +558,7 @@ test.describe("mobile text field zoom", () => {
         expect(
           Math.abs(audit.newestGap),
           JSON.stringify(audit),
-        ).toBeLessThanOrEqual(22.1);
+        ).toBeLessThanOrEqual(24.1);
         expect(await screenshotPixelVariance(page, screenshot)).toBeGreaterThan(
           1,
         );

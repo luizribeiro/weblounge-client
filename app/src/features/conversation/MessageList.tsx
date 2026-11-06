@@ -89,6 +89,7 @@ type NoticeMessage = MessageProjection & {
 };
 
 const liveEdgeTolerance = 2;
+const typingSlotHeight = 24;
 
 export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
@@ -417,7 +418,10 @@ export function MessageList(props: MessageListProps) {
   });
 
   return (
-    <div class={styles.surface}>
+    <div
+      class={styles.surface}
+      style={{ "--wl-typing-slot-height": `${typingSlotHeight}px` }}
+    >
       {/* biome-ignore lint/a11y/useSemanticElements: the scroll owner wraps the semantic row layer */}
       <div
         aria-label={t("messages.label")}
@@ -946,7 +950,7 @@ function formatNoticeTime(milliseconds: number): string {
   }).format(milliseconds);
 }
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
-  return Math.max(0, viewportHeight - contentHeight - 22);
+  return Math.max(0, viewportHeight - contentHeight - typingSlotHeight);
 }
 
 function membershipArrow(
