@@ -124,6 +124,7 @@ describe("relay client", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(null, { status: 204 }));
     const sendBeacon = vi.fn<Navigator["sendBeacon"]>(() => true);
+    const onBeaconSent = vi.fn();
     const client = new RelayClient("https://push.example.test", fetchRelay);
     const device = { id: "device/1", secret: "device-secret" };
 
@@ -132,7 +133,7 @@ describe("relay client", () => {
       value: null,
     });
     await expect(
-      client.releaseLease(device, "tab-1", sendBeacon),
+      client.releaseLease(device, "tab-1", sendBeacon, onBeaconSent),
     ).resolves.toEqual({ ok: true, value: null });
 
     expect(fetchRelay).toHaveBeenCalledWith(
@@ -151,6 +152,7 @@ describe("relay client", () => {
     );
     expect(body).toBeInstanceOf(URLSearchParams);
     expect(String(body)).toBe("secret=device-secret&tab_id=tab-1");
+    expect(onBeaconSent).toHaveBeenCalledOnce();
   });
 
   it("updates and deletes devices and drains exact dead endpoints", async () => {

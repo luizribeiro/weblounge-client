@@ -1,4 +1,4 @@
-import type { RelayDevice, RelayResult } from "./relay-client";
+import type { RelayDevice, RelayFailure, RelayResult } from "./relay-client";
 
 const heartbeatMilliseconds = 30_000;
 const tabIdStorageKey = "weblounge-push-tab-id";
@@ -30,6 +30,12 @@ interface ForegroundLeaseOptions {
   readonly tabId?: string;
   readonly setTimer?: typeof window.setTimeout;
   readonly clearTimer?: typeof window.clearTimeout;
+  readonly onAction?:
+    | ((
+        action: "acquire" | "renew",
+        result: "sent" | "ok" | RelayFailure["kind"],
+      ) => void)
+    | undefined;
 }
 
 export class ForegroundLease {
@@ -38,8 +44,10 @@ export class ForegroundLease {
   readonly #tabId: string;
   readonly #setTimer: typeof window.setTimeout;
   readonly #clearTimer: typeof window.clearTimeout;
+  readonly #onAction: NonNullable<ForegroundLeaseOptions["onAction"]>;
   #device: RelayDevice | undefined;
   #foreground = false;
+  #acquired = false;
   #disposed = false;
   #generation = 0;
   #timer: number | undefined;
@@ -50,6 +58,7 @@ export class ForegroundLease {
     this.#tabId = options.tabId ?? crypto.randomUUID();
     this.#setTimer = options.setTimer ?? window.setTimeout.bind(window);
     this.#clearTimer = options.clearTimer ?? window.clearTimeout.bind(window);
+    this.#onAction = options.onAction ?? (() => {});
   }
 
   setDevice(device: RelayDevice): void {
@@ -57,6 +66,7 @@ export class ForegroundLease {
     const previous = this.#device;
     this.#device = device;
     if (previous?.id === device.id && previous.secret === device.secret) return;
+    this.#acquired = false;
     if (previous !== undefined && this.#foreground) {
       void this.#release(previous, this.#tabId);
     }
@@ -66,6 +76,7 @@ export class ForegroundLease {
   setForeground(foreground: boolean): void {
     if (this.#disposed || foreground === this.#foreground) return;
     this.#foreground = foreground;
+    if (!foreground) this.#acquired = false;
     this.#generation += 1;
     this.#clearHeartbeat();
     const device = this.#device;
@@ -76,6 +87,7 @@ export class ForegroundLease {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#acquired = false;
     this.#generation += 1;
     this.#clearHeartbeat();
     if (this.#foreground && this.#device !== undefined) {
@@ -87,19 +99,34 @@ export class ForegroundLease {
     const device = this.#device;
     if (!this.#foreground || device === undefined) return;
     const generation = ++this.#generation;
-    void this.#renew(device, this.#tabId).finally(() => {
-      if (
-        this.#disposed ||
-        !this.#foreground ||
-        generation !== this.#generation
-      ) {
-        return;
-      }
-      this.#timer = this.#setTimer(
-        () => this.#startRenewal(),
-        heartbeatMilliseconds,
-      );
-    });
+    const action = this.#acquired ? "renew" : "acquire";
+    this.#onAction(action, "sent");
+    void this.#renew(device, this.#tabId)
+      .then((result) => {
+        this.#onAction(action, result.ok ? "ok" : result.error.kind);
+        if (
+          result.ok &&
+          !this.#disposed &&
+          this.#foreground &&
+          generation === this.#generation
+        ) {
+          this.#acquired = true;
+        }
+      })
+      .catch(() => this.#onAction(action, "unavailable"))
+      .finally(() => {
+        if (
+          this.#disposed ||
+          !this.#foreground ||
+          generation !== this.#generation
+        ) {
+          return;
+        }
+        this.#timer = this.#setTimer(
+          () => this.#startRenewal(),
+          heartbeatMilliseconds,
+        );
+      });
   }
 
   #clearHeartbeat(): void {

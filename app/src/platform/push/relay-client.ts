@@ -160,6 +160,7 @@ export class RelayClient {
     sendBeacon:
       | Navigator["sendBeacon"]
       | undefined = navigator.sendBeacon?.bind(navigator),
+    onBeaconSent: (() => void) | undefined = undefined,
   ): Promise<RelayResult<null>> {
     const path = `/v1/devices/${encodeURIComponent(device.id)}/lease/release`;
     if (sendBeacon !== undefined) {
@@ -168,6 +169,7 @@ export class RelayClient {
         tab_id: tabId,
       });
       if (sendBeacon(`${this.origin}${path}`, body)) {
+        onBeaconSent?.();
         return Promise.resolve({ ok: true, value: null });
       }
     }

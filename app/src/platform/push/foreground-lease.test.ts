@@ -21,22 +21,58 @@ it("keeps one lease identity across a tab reload", () => {
 it("renews only while foreground and releases immediately on hide", async () => {
   const renew = vi.fn(() => accepted);
   const release = vi.fn(() => accepted);
+  const onAction = vi.fn();
   const lease = new ForegroundLease({
     renew,
     release,
     tabId: "tab-1",
+    onAction,
   });
 
   lease.setDevice(device);
   lease.setForeground(true);
   await vi.advanceTimersByTimeAsync(30_000);
   expect(renew).toHaveBeenCalledTimes(2);
+  expect(onAction.mock.calls).toEqual([
+    ["acquire", "sent"],
+    ["acquire", "ok"],
+    ["renew", "sent"],
+    ["renew", "ok"],
+  ]);
 
   lease.setForeground(false);
   expect(release).toHaveBeenCalledWith(device, "tab-1");
   await vi.advanceTimersByTimeAsync(60_000);
   expect(renew).toHaveBeenCalledTimes(2);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("reports a renewal failure without exposing its payload", async () => {
+  const renew = vi
+    .fn<ForegroundLeaseOptions["renew"]>()
+    .mockResolvedValueOnce({ ok: true, value: null })
+    .mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "unavailable" },
+    });
+  const onAction = vi.fn();
+  const lease = new ForegroundLease({
+    renew,
+    release: vi.fn(() => accepted),
+    tabId: "tab-1",
+    onAction,
+  });
+
+  lease.setDevice(device);
+  lease.setForeground(true);
+  await vi.advanceTimersByTimeAsync(30_000);
+
+  expect(onAction.mock.calls).toEqual([
+    ["acquire", "sent"],
+    ["acquire", "ok"],
+    ["renew", "sent"],
+    ["renew", "unavailable"],
+  ]);
 });
 
 it("does not leave a heartbeat after an in-flight renewal is hidden", async () => {
