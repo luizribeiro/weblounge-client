@@ -42,6 +42,66 @@ test.describe("mobile shell against local Ergo", () => {
     await expect(debugOverlay).toHaveCount(0);
   });
 
+  test("shows foreground lifecycle events in default debug diagnostics", async ({
+    page,
+  }) => {
+    await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    const composer = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+
+    await page.evaluate(() => {
+      const state = {
+        focused: true,
+        hidden: false,
+        visibility: "visible" as DocumentVisibilityState,
+      };
+      Object.defineProperties(document, {
+        hasFocus: { configurable: true, value: () => state.focused },
+        hidden: { configurable: true, get: () => state.hidden },
+        visibilityState: {
+          configurable: true,
+          get: () => state.visibility,
+        },
+      });
+      state.focused = false;
+      window.dispatchEvent(new Event("blur"));
+      state.hidden = true;
+      state.visibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+      state.focused = true;
+      state.hidden = false;
+      state.visibility = "visible";
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await composer.fill("/debug");
+    await composer.press("Enter");
+    const debugOverlay = page.locator("[data-debug-overlay]");
+    await expect(debugOverlay).toBeVisible();
+    await expect(debugOverlay).toContainText(
+      "focus visibility=visible focus=true hidden=false",
+    );
+    await expect(debugOverlay).toContainText(
+      "visibilitychange visibility=hidden focus=false hidden=true",
+    );
+    await expect(debugOverlay).toContainText(
+      "blur visibility=visible focus=false hidden=false",
+    );
+    await expect(
+      debugOverlay.getByRole("button", { name: "Copy" }),
+    ).toBeVisible();
+
+    const contents = (await debugOverlay.textContent()) ?? "";
+    expect(contents.indexOf("focus visibility=visible")).toBeLessThan(
+      contents.indexOf("visibilitychange visibility=hidden"),
+    );
+    expect(contents.indexOf("visibilitychange visibility=hidden")).toBeLessThan(
+      contents.indexOf("blur visibility=visible"),
+    );
+  });
+
   test("confirms typed quit before mobile execution", async ({ page }) => {
     await page.goto("/?irc-password=weblounge-test");
     await page.getByRole("button", { name: "#weblounge-test" }).click();

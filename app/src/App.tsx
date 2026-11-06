@@ -67,6 +67,11 @@ import {
   ForegroundLease,
   foregroundLeaseTabId,
 } from "./platform/push/foreground-lease";
+import {
+  ForegroundRecorder,
+  foregroundLog,
+  readForegroundSnapshot,
+} from "./platform/push/foreground-log";
 import { pageIsForeground } from "./platform/push/foreground-state";
 import {
   decodeOpenRouteMessage,
@@ -206,6 +211,9 @@ export function App(props: AppProps) {
   let loadedPromptConfig: string | undefined;
   let foregroundLease: ForegroundLease | undefined;
   let appIsForeground = false;
+  const foregroundRecorder = new ForegroundRecorder(foregroundLog, () =>
+    readForegroundSnapshot(document, navigator, window),
+  );
   const pendingPushEvents: EngineClientMessage[] = [];
   const knownPushRequirements = new Map<number, EngineClientMessage>();
   let appRoot: HTMLElement | undefined;
@@ -414,6 +422,7 @@ export function App(props: AppProps) {
   });
 
   onMount(() => {
+    const stopForegroundRecorder = foregroundRecorder.install(document, window);
     const removeContextMenuHandler = installContextMenuHandler(document);
     const unregisterContextSurface =
       appRoot === undefined
@@ -763,6 +772,7 @@ export function App(props: AppProps) {
       publishUpdateReady();
     });
     const setAppForeground = (foreground: boolean) => {
+      foregroundRecorder.recordForegroundTransition(foreground);
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
@@ -851,6 +861,7 @@ export function App(props: AppProps) {
       clearStartupWaits();
       unregisterContextSurface();
       removeContextMenuHandler();
+      stopForegroundRecorder();
       document.removeEventListener("visibilitychange", updateVisibility);
       window.removeEventListener("focus", updateVisibility);
       window.removeEventListener("blur", updateVisibility);
@@ -936,8 +947,13 @@ export function App(props: AppProps) {
     const devices = new EnginePushDeviceStore(mountedClient);
     const lease = new ForegroundLease({
       renew: (device, tabId) => relay.renewLease(device, tabId),
-      release: (device, tabId) => relay.releaseLease(device, tabId),
+      release: (device, tabId) =>
+        relay.releaseLease(device, tabId, undefined, () =>
+          foregroundRecorder.recordReleaseBeacon(),
+        ),
       tabId: foregroundLeaseTabId(),
+      onAction: (action, result) =>
+        foregroundRecorder.recordLease(action, result),
     });
     lease.setForeground(appIsForeground);
     const storedDevice = await devices

@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Expose a privacy-safe, in-memory foreground and push-lease event log in `/debug`, including
+  iOS standalone inputs, acted-on foreground transitions, typed lease results and copyable wall and
+  monotonic timestamps. Unit coverage bounds the 200-entry ring and drives fake lifecycle events;
+  local-Ergo Playwright observes blur, visibility and focus entries in newest-first order.
 - [x] Keep the prototype-height typing indicator over the transcript's reserved bottom padding,
   so it stays outside composer geometry without adding 24px to mobile live-edge and keyboard-motion
   gaps. Composer-anchor fixtures no longer contribute `an`-matching speakers to the shared

@@ -774,6 +774,12 @@ section includes the same secret-free per-network summary. A real papo wire test
 `Failed(InvalidParameters)`, and the hosted browser journey renders that failure after observing
 the route move through probing and active.
 
+The default `/debug` view also exposes an in-memory 200-entry foreground log for real-device
+diagnosis. It records wall and monotonic timestamps, lifecycle signals, focus, visibility,
+standalone inputs, the derived foreground decision and acted-on transitions. Lease entries contain
+only acquire or renewal results and successful beacon sends. The newest-first plain-text list is
+copyable and never contains routes, devices, networks, conversations, people or message content.
+
 ### Web Push urgency policy implementation (2026-11-04)
 
 Active Web Push routes accept RFC 8030's `very-low`, `low`, `normal`, and `high` urgency values,
