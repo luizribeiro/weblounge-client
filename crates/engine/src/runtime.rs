@@ -9379,8 +9379,10 @@ async fn delay(duration: Duration) {
         let (state, outbound, mut receiver) = harness(client.clone());
         process_event(&state, &outbound, &client, 1, joined);
         _ = collect(&mut receiver);
-        wire.server("@time=2026-10-27T12:00:00.377Z;msgid=one :alice!a@host PRIVMSG #room :hello")
-            .await;
+        wire.server(
+            "@time=2026-10-27T12:00:00.377742688Z;msgid=one :alice!a@host PRIVMSG #room :hello",
+        )
+        .await;
         let message = next_matching(&mut events, |event| {
             matches!(event, papo::Event::Message(_))
         })
