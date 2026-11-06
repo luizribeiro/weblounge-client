@@ -2,6 +2,11 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Make CI-loaded WebKit fixtures observe settled state instead of the first visible virtual
+  row: concurrent keyboard traffic now ends with an ordered IRC barrier, transcript gestures and
+  hit tests require three identical animation-frame geometry snapshots, and startup recovery closes
+  its timed-out intercepted request before retrying. Stressed repetitions and all four affected
+  WebKit mobile projects stay green.
 - [x] Match CI regressions to the normal-flow typing row: WebKit transcript checks now require
   visible text rather than fractional clipped padding, keyboard motion distinguishes padding-box
   contact from content overlap, and slow-buffer hydration permits its concurrent marker query while
