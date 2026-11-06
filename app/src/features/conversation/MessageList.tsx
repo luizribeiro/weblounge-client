@@ -19,6 +19,7 @@ import type {
   MessageProjection,
   NoticeKind,
 } from "../../engine/protocol";
+import { keyboardMotionTranscriptRevealEvent } from "../../platform/keyboard-motion";
 import { pageIsForeground } from "../../platform/push/foreground-state";
 import {
   type AppGeometryChange,
@@ -339,6 +340,10 @@ export function MessageList(props: MessageListProps) {
     const anchorComposerGeometry = () => {
       syncViewportRect?.();
     };
+    const settleKeyboardMotionTranscript = () => {
+      remeasure();
+      if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+    };
     const cancelComposerScroll = () => {
       if (logicallyAtLiveEdge) virtualizer.cancelScroll();
     };
@@ -380,6 +385,10 @@ export function MessageList(props: MessageListProps) {
       composerGeometryWillChangeEvent,
       cancelComposerScroll,
     );
+    list?.addEventListener(
+      keyboardMotionTranscriptRevealEvent,
+      settleKeyboardMotionTranscript,
+    );
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
     document.addEventListener("visibilitychange", updateForeground);
     window.addEventListener("focus", updateForeground);
@@ -394,6 +403,10 @@ export function MessageList(props: MessageListProps) {
       composerOwner?.removeEventListener(
         composerGeometryWillChangeEvent,
         cancelComposerScroll,
+      );
+      list?.removeEventListener(
+        keyboardMotionTranscriptRevealEvent,
+        settleKeyboardMotionTranscript,
       );
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
       document.removeEventListener("visibilitychange", updateForeground);

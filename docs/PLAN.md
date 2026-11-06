@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Remeasure the live virtual transcript before an opening keyboard snapshot reveals it. WebKit
+  can defer virtual-row placement after the one-step mobile layout commit; the frozen animation
+  stayed correct while its replacement retained stale, overlapping transforms. The handoff now
+  settles every rendered row and the live edge before the existing two-frame snapshot teardown.
 - [x] Keep a locally read restored-push DM clear while its exact server marker remains deferred.
   Cached-frame hydration now clears the visible badge immediately, and the row-wise snapshot merge
   updates only that cached badge until authoritative history replaces the rest of the row.

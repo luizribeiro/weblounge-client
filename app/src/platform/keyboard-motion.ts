@@ -6,6 +6,8 @@ import {
 } from "./viewport-geometry";
 
 export const keyboardMotionEnabled = false;
+export const keyboardMotionTranscriptRevealEvent =
+  "weblounge:keyboard-motion-transcript-reveal";
 
 const durationMilliseconds = 400;
 const correctionMilliseconds = 100;
@@ -172,6 +174,9 @@ export function observeKeyboardMotion(
         () => {
           if (openingLayout !== layout) return;
           root.dataset.keyboardMotion = "open";
+          snapshot.transcript.dispatchEvent(
+            new Event(keyboardMotionTranscriptRevealEvent, { bubbles: true }),
+          );
           browserWindow.requestAnimationFrame(() => {
             browserWindow.requestAnimationFrame(() => {
               if (openingLayout !== layout) return;

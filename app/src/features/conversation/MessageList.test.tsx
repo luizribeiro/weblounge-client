@@ -5,6 +5,7 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import { keyboardMotionTranscriptRevealEvent } from "../../platform/keyboard-motion";
 import { composerGeometryChangeEvent } from "../composer/geometry";
 import { MessageList, type MessageListController } from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
@@ -354,6 +355,39 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
     500,
   );
   expect(list.scrollHeight - list.scrollTop - list.clientHeight).toBe(0);
+});
+
+it("remeasures live rows before a keyboard snapshot reveals them", async () => {
+  let firstHeight = 28;
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      if (!this.matches("li[data-index]")) return 0;
+      return this.dataset.rowKey === "message-1" ? firstHeight : 28;
+    },
+  );
+  const { container } = render(() => (
+    <MessageList messages={[message, { ...message, id: 2 }]} />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const rowStart = (key: string) => {
+    const row = container.querySelector<HTMLLIElement>(
+      `li[data-row-key="${key}"]`,
+    );
+    if (row === null) throw new Error(`${key} is missing`);
+    return translateY(row.style.transform);
+  };
+  expect(rowStart("message-2") - rowStart("message-1")).toBe(28);
+
+  firstHeight = 80;
+  container
+    .querySelector<HTMLElement>("[data-message-motion-layer]")
+    ?.dispatchEvent(
+      new Event(keyboardMotionTranscriptRevealEvent, { bubbles: true }),
+    );
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(rowStart("message-2") - rowStart("message-1")).toBe(80);
 });
 
 it("preserves fractional row measurements without transcript reserve", async () => {

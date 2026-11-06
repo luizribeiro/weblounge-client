@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { observeKeyboardMotion } from "./keyboard-motion";
+import {
+  keyboardMotionTranscriptRevealEvent,
+  observeKeyboardMotion,
+} from "./keyboard-motion";
 import {
   keyboardLayoutCommitEvent,
   keyboardLayoutWillCommitEvent,
@@ -48,9 +51,15 @@ describe("keyboard motion", () => {
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
+    const reveal = vi.fn();
+    fixture.transcript.addEventListener(
+      keyboardMotionTranscriptRevealEvent,
+      reveal,
+    );
     fixture.animations[1]?.finish();
     await Promise.resolve();
     expect(fixture.root.dataset.keyboardMotion).toBe("open");
+    expect(reveal).toHaveBeenCalledOnce();
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
@@ -262,6 +271,7 @@ function motionFixture() {
     animations,
     composerAnimate,
     screen,
+    transcript,
     didClose() {
       window.dispatchEvent(
         new CustomEvent(keyboardLayoutCommitEvent, {
