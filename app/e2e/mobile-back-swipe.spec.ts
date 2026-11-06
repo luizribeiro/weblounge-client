@@ -215,7 +215,11 @@ test("mobile back reveals chat rows without repainting them", async ({
     expect(clip.height).toBeGreaterThan(0);
     const resting = await page.screenshot({ clip });
 
-    await openChat(page);
+    await uncoveredRow.click();
+    await expect(
+      page.getByRole("heading", { name: `swipe-fill-10-${suffix}` }),
+    ).toBeVisible();
+    await expect(page.locator("[data-motion]")).toHaveCount(0);
     await drag(page, 76, 220);
     await expect(page.locator('[data-motion="dragging"]')).toHaveCount(1);
     const chatLeft = await page

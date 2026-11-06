@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep mobile back-swipe repaint coverage deterministic with activity-sorted Chats by opening
+  the visible filled DM whose pixels it captures, instead of letting automation scroll the inactive
+  channel into view behind the pushed screen.
 - [x] Sort mobile Chats across channels and direct messages by newest activity for every filter and
   search, preserving engine order for ties and inactive rows. Cached and live projections share the
   same ordering path, desktop order stays unchanged, and a pressed row holds position until release.
