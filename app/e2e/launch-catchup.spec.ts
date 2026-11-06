@@ -44,7 +44,8 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     ),
   );
   try {
-    for (const channel of channels.slice(1)) await writer.join(channel);
+    await keeper.joinAll(channels.filter((channel) => channel !== channels[1]));
+    await writer.joinAll(channels.slice(1));
     const channelInitial = await Promise.all(
       channels.map((channel, index) =>
         writer.privmsgConfirmed(channel, `cached channel ${index} ${suffix}`),
@@ -59,6 +60,12 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     const changedDirectText = `changed direct ${suffix}`;
     await writer.privmsgConfirmed(channels[0], changedChannelText);
     await bots[0]?.privmsgConfirmed(account, changedDirectText);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    const unchangedDirect = bots.at(-1);
+    if (unchangedDirect === undefined)
+      throw new Error("direct fixture is missing");
 
     await page.goto("/config.json");
     await seedSnapshot(page, baseURL, [
@@ -82,30 +89,16 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     url.searchParams.set("irc-password", password);
     url.searchParams.set("irc-account", account);
     url.searchParams.set("irc-nickname", account);
-    for (const channel of channels.slice(1))
-      url.searchParams.append("irc-autojoin", channel);
+    const forwarderUrl = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
+    if (forwarderUrl === undefined)
+      throw new Error("socket forwarder URL is missing");
+    await fetch(`${forwarderUrl}/drop`, { method: "POST" });
     await page.goto(url.href);
 
-    const unchangedDirect = bots.at(-1);
-    if (unchangedDirect === undefined)
-      throw new Error("direct fixture is missing");
     const targetRow = bufferRow(page, unchangedDirect.nickname);
     await expect(targetRow).toBeVisible();
-    await page.waitForFunction(() =>
-      (
-        Reflect.get(globalThis, "launchCatchupEvents") as Array<{
-          state?: unknown;
-        }>
-      ).some((entry) => entry.state === "online"),
-    );
-    await page.evaluate(() =>
-      Reflect.set(
-        globalThis,
-        "launchCatchupOpenedAt",
-        performance.timeOrigin + performance.now(),
-      ),
-    );
     await targetRow.click();
+    await fetch(`${forwarderUrl}/restore`, { method: "POST" });
     await expect(
       page.getByText(`cached direct ${directCount - 1} ${suffix}`, {
         exact: true,
@@ -147,9 +140,16 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     );
 
     const measured = await page.evaluate(() => ({
-      openedAt: Reflect.get(globalThis, "launchCatchupOpenedAt") as number,
+      onlineAt: (
+        Reflect.get(globalThis, "launchCatchupEvents") as Array<{
+          at: number;
+          state?: unknown;
+        }>
+      ).find((entry) => entry.state === "online")?.at,
       wire: Reflect.get(globalThis, "launchCatchupWire") as WireTrace[],
     }));
+    if (measured.onlineAt === undefined)
+      throw new Error("online transition is missing");
     const histories = measured.wire.filter(
       (entry) =>
         entry.direction === "sent" && entry.line.includes(" CHATHISTORY "),
@@ -166,19 +166,28 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
       (entry) => entry.direction === "sent" && entry.line.includes(" WHO "),
     );
     const replies = historyReplyLatencies(measured.wire);
+    const openedRequest = histories.find((entry) =>
+      entry.line.includes(`CHATHISTORY LATEST ${unchangedDirect.nickname} `),
+    );
     const openedReply = replies.find((reply) =>
       reply.request.includes(`CHATHISTORY LATEST ${unchangedDirect.nickname} `),
     );
+    expect(openedRequest).toBeDefined();
     expect(openedReply).toBeDefined();
-    if (openedReply === undefined)
-      throw new Error("opened history reply is missing");
-    expect(openedReply.receivedAt - measured.openedAt).toBeLessThan(450);
-    expect(replies.filter((reply) => reply.latency >= 450)).toEqual([]);
-    expect(histories.length).toBeGreaterThan(0);
-    expect(histories.length).toBeLessThanOrEqual(16);
-    expect(markerQueries.length).toBeLessThanOrEqual(16);
-    expect(monitorCommands.length).toBeLessThanOrEqual(1);
-    expect(whoCommands.length).toBeLessThanOrEqual(4);
+    if (openedRequest === undefined || openedReply === undefined)
+      throw new Error("opened history request or reply is missing");
+    expect(openedRequest.at - measured.onlineAt).toBeLessThan(500);
+    expect(openedReply.receivedAt - measured.onlineAt).toBeLessThan(500);
+    expect(openedReply.latency).toBeLessThan(500);
+    expect(
+      replies
+        .filter((reply) => reply.latency >= 500)
+        .every((reply) => reply.receivedAt >= openedReply.receivedAt),
+    ).toBe(true);
+    expect(histories).toHaveLength(4);
+    expect(markerQueries).toHaveLength(2);
+    expect(monitorCommands).toHaveLength(0);
+    expect(whoCommands).toHaveLength(0);
   } finally {
     keeper.close();
     writer.close();
@@ -312,7 +321,10 @@ async function captureLaunchWire(page: Page): Promise<void> {
           network !== null &&
           "state" in network
         )
-          events.push({ state: network.state });
+          events.push({
+            at: performance.timeOrigin + performance.now(),
+            state: network.state,
+          });
         if (typeof listener === "function") listener.call(this, event);
         else listener.handleEvent(event);
       };

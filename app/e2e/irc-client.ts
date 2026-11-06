@@ -173,6 +173,16 @@ export class IrcClient {
     );
   }
 
+  async joinAll(channels: readonly string[]): Promise<void> {
+    if (channels.length === 0) return;
+    this.send(`JOIN ${channels.join(",")}`);
+    for (const channel of channels)
+      await this.waitFor(
+        `JOIN confirmation for ${channel}`,
+        (line) => line.includes("!") && line.includes(` JOIN ${channel}`),
+      );
+  }
+
   privmsg(channel: string, text: string): void {
     this.send(`PRIVMSG ${channel} :${text}`);
   }
