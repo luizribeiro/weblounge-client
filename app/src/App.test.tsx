@@ -1504,7 +1504,7 @@ it("reopens a hidden failed DM from its typed notice", async () => {
   expect(screen.getByText("Sending…")).toBeVisible();
 });
 
-it("keeps a visible live-edge read after selection changes, tolerating a rejected marker", async () => {
+it("clears a cached live-edge read before selection changes and tolerates a rejected marker", async () => {
   vi.useFakeTimers();
   vi.stubGlobal(
     "IntersectionObserver",
@@ -1546,20 +1546,22 @@ it("keeps a visible live-edge read after selection changes, tolerating a rejecte
       state: "online",
     },
   });
+  const room = {
+    id: 2,
+    network_id: 1,
+    sync_state: "synced" as const,
+    kind: "channel" as const,
+    title: "#room",
+    draft_key: "test:#room",
+    topic: null,
+    unread: 1,
+    mentions: 0,
+    read_through: null,
+  };
   client.emit({
-    type: "buffer_added",
-    buffer: {
-      id: 2,
-      network_id: 1,
-      sync_state: "synced" as const,
-      kind: "channel",
-      title: "#room",
-      ...{ draft_key: "test:#room" },
-      topic: null,
-      unread: 1,
-      mentions: 0,
-      read_through: null,
-    },
+    type: "chat_list_snapshot_loaded",
+    network_id: 1,
+    buffers: [{ ...room, cached: true }],
   });
   client.emit({
     type: "messages_appended",
@@ -1606,20 +1608,28 @@ it("keeps a visible live-edge read after selection changes, tolerating a rejecte
     id: expect.any(String),
     request: { type: "mark_read", buffer_id: 2, through: 9 },
   });
+  expect(document.querySelector('[data-buffer-id="2"]')).toHaveAttribute(
+    "data-unread",
+    "0",
+  );
   client.emit({
-    type: "buffer_added",
-    buffer: {
-      id: 3,
-      network_id: 1,
-      sync_state: "synced" as const,
-      kind: "channel",
-      title: "#elsewhere",
-      draft_key: "test:#elsewhere",
-      topic: null,
-      unread: 0,
-      mentions: 0,
-      read_through: null,
-    },
+    type: "chat_list_live",
+    network_id: 1,
+    buffers: [
+      { ...room, unread: 0 },
+      {
+        id: 3,
+        network_id: 1,
+        sync_state: "synced" as const,
+        kind: "channel",
+        title: "#elsewhere",
+        draft_key: "test:#elsewhere",
+        topic: null,
+        unread: 0,
+        mentions: 0,
+        read_through: null,
+      },
+    ],
   });
   fireEvent.click(screen.getByRole("button", { name: "#elsewhere" }));
   expect(client.requests).not.toContainEqual(

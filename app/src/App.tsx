@@ -1332,6 +1332,15 @@ export function App(props: AppProps) {
           typers={typers()}
           memberWindows={memberWindows()}
           onMarkRead={(bufferId, through) => {
+            if (cachedChatListActive()) {
+              setBuffers((current) =>
+                current.map((buffer) =>
+                  buffer.id === bufferId
+                    ? { ...buffer, unread: 0, mentions: 0 }
+                    : buffer,
+                ),
+              );
+            }
             if (client === undefined) return;
             void client
               .send({

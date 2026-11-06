@@ -625,11 +625,15 @@ impl NetworkModel {
                     return snapshot_row(buffer);
                 }
                 let conversation = snapshot_conversation(buffer)?;
-                previous
+                let mut row = previous
                     .rows
                     .iter()
                     .find(|row| row.conversation == conversation)
-                    .cloned()
+                    .cloned()?;
+                if buffer.deferred_read.is_some() {
+                    row.badge = snapshot_badge(buffer);
+                }
+                Some(row)
             })
             .collect();
         ChatListSnapshot::new(fingerprint, rows)
@@ -2708,18 +2712,7 @@ fn advance_cursor(buffer: &mut BufferState, cursor: Option<HistoryCursor>) {
 
 fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
     let conversation = snapshot_conversation(buffer)?;
-    let badge = if buffer.projection.mentions > 0 {
-        SnapshotBadge::Mentions {
-            count: buffer.projection.unread,
-            mentions: buffer.projection.mentions,
-        }
-    } else if buffer.projection.unread > 0 {
-        SnapshotBadge::Unread {
-            count: buffer.projection.unread,
-        }
-    } else {
-        SnapshotBadge::None
-    };
+    let badge = snapshot_badge(buffer);
     Some(SnapshotRow {
         conversation,
         title: buffer.projection.title.clone(),
@@ -2736,6 +2729,21 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
             .and_then(papo::PeerKey::as_verified_str)
             .map(str::to_owned),
     })
+}
+
+fn snapshot_badge(buffer: &BufferState) -> SnapshotBadge {
+    if buffer.projection.mentions > 0 {
+        SnapshotBadge::Mentions {
+            count: buffer.projection.unread,
+            mentions: buffer.projection.mentions,
+        }
+    } else if buffer.projection.unread > 0 {
+        SnapshotBadge::Unread {
+            count: buffer.projection.unread,
+        }
+    } else {
+        SnapshotBadge::None
+    }
 }
 
 fn snapshot_conversation(buffer: &BufferState) -> Option<SnapshotConversation> {
@@ -5036,6 +5044,66 @@ mod tests {
             row.title == "Alice live" && row.badge == SnapshotBadge::None && row.preview.is_none()
         }));
         assert!(merged.rows.iter().all(|row| row.title != "bob"));
+    }
+
+    #[test]
+    fn deferred_push_read_clears_only_the_cached_snapshot_badge() {
+        let (mut model, state) = model(10);
+        let cached = SnapshotRow {
+            conversation: SnapshotConversation::Direct {
+                key: "alice".into(),
+            },
+            title: "Alice cached".into(),
+            last_activity_ms: Some(100),
+            badge: SnapshotBadge::Mentions {
+                count: 1,
+                mentions: 1,
+            },
+            preview: Some("cached preview".into()),
+            peer_pin: None,
+        };
+        let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
+        model.restore_chat_list(previous.clone());
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "weblounge",
+            "msgid": "pushed-direct",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        let restored = model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, message_id) = restored
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("pushed row is restored");
+        let ReadPreparation::LocalOnly(advance) =
+            model.request_mark_read(buffer_id, message_id, true)
+        else {
+            panic!("provisional push defers its server read")
+        };
+        model.apply_read_time(buffer_id, advance.time);
+
+        let merged = model.merge_chat_list_snapshot("network".into(), &previous);
+
+        assert_eq!(
+            merged.rows,
+            vec![SnapshotRow {
+                badge: SnapshotBadge::None,
+                ..cached
+            }]
+        );
+        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(message_id));
     }
 
     #[test]

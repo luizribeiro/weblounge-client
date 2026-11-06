@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep a locally read restored-push DM clear while its exact server marker remains deferred.
+  Cached-frame hydration now clears the visible badge immediately, and the row-wise snapshot merge
+  updates only that cached badge until authoritative history replaces the rest of the row.
 - [x] Flush a complete pending chat-list snapshot when the page is hidden instead of leaving its
   first write behind the 750ms foreground throttle. An iPhone WebKit journey restores an unread DM
   among several channel histories, reads it, backgrounds immediately after hydration, and proves
