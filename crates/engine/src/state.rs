@@ -2190,6 +2190,7 @@ impl NetworkModel {
             incoming.direct_key.clone(),
             incoming.direct.clone(),
         );
+        let newly_created = initially_added.is_some();
         let verified_sender = incoming
             .peer_key
             .as_ref()
@@ -2204,7 +2205,6 @@ impl NetworkModel {
         let cursor = incoming
             .server_time_ms
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
-        let origin = incoming.origin;
         let message = Self::project_incoming(
             self.allocate_message_id(),
             &incoming,
@@ -2225,11 +2225,8 @@ impl NetworkModel {
         {
             record.provisional_identity = Some(provisional_identity);
         }
-        if let Some(buffer) = self.buffers.get_mut(&buffer_id)
-            && !(origin == TimelineOrigin::History
-                && matches!(buffer.history, HistoryState::LoadingOlder { .. }))
-        {
-            advance_cursor(buffer, cursor);
+        if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
+            advance_incoming_cursor(buffer, &incoming, cursor, newly_created);
         }
         let (unread, mentions, added) = {
             let Some(buffer) = self.buffers.get(&buffer_id) else {
@@ -2655,6 +2652,33 @@ fn promote_cached_buffer(buffer: &mut BufferState) {
     buffer.projection.read_through = None;
     buffer.projection.read_at_ms = None;
     buffer.read_at_ms = None;
+}
+
+fn advance_incoming_cursor(
+    buffer: &mut BufferState,
+    incoming: &Incoming,
+    cursor: Option<HistoryCursor>,
+    newly_created: bool,
+) {
+    if incoming.origin == TimelineOrigin::History
+        && matches!(buffer.history, HistoryState::LoadingOlder { .. })
+    {
+        return;
+    }
+    if newly_created
+        && matches!(incoming.conversation, NameKey::Direct(_))
+        && incoming.origin == TimelineOrigin::Live
+        && let Some(cursor) = cursor.as_ref()
+    {
+        set_history_state(
+            buffer,
+            HistoryState::Ready {
+                oldest: Some(cursor.reference()),
+                at_start: false,
+            },
+        );
+    }
+    advance_cursor(buffer, cursor);
 }
 
 fn advance_cursor(buffer: &mut BufferState, cursor: Option<HistoryCursor>) {
@@ -4940,6 +4964,24 @@ mod tests {
             None,
         );
         assert!(!model.chat_list_complete());
+    }
+
+    #[test]
+    fn first_live_direct_completes_its_current_chat_list_row() {
+        let (mut model, state) = model(10);
+        model.set_connection(crate::NetworkConnectionState::Online, None);
+
+        model.receive_incoming(
+            direct_incoming(&state, "alice", "live first contact", 1_000),
+            &state,
+        );
+
+        assert!(model.chat_list_complete());
+        let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        assert!(matches!(
+            model.request_history(buffer_id),
+            Some(HistoryFetch::Before { .. })
+        ));
     }
 
     #[test]

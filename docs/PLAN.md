@@ -22,6 +22,11 @@ The single place a fresh session reads to know where the project stands. Update 
   visible in the transcript. TARGETS and cached activity remain provisional only until history
   loads; local notices, reactions and typing cannot create phantom row times. Built-app local-Ergo
   coverage reproduces reaction-only TARGETS activity in desktop Chromium and iPhone WebKit.
+- [x] Keep startup chat-list snapshots writable after a brand-new live direct arrives by treating
+  its authoritative live cursor as a complete current row while retaining `BEFORE` paging for older
+  history. A fresh-Ergo desktop Chromium and iPhone WebKit relaunch journey covers an empty channel,
+  reply-tagged direct traffic, closed-app unread, server `MARKREAD` verification, and exact cached
+  and final-live row convergence.
 - [x] Keep the permanent typing reserve effective under the production CSP with one CSS Module
   value exported at build time to transcript geometry, so mount timing and missing computed styles
   cannot erase it. Preserve WebKit's fractional row measurements, and treat a swipe-completed

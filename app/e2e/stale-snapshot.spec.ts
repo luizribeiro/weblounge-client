@@ -41,7 +41,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           preview: snapshotPreview,
         });
 
+      const quit = bot.waitForNextQuit("weblounge");
       await current.close();
+      await quit;
       readerContext = await browser.newContext({ baseURL });
       const reader = await readerContext.newPage();
       await useDedicatedWorker(reader);
@@ -54,14 +56,15 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expectRead(bufferRow(reader, channel), channel);
 
       current = await context.newPage();
-      await useDedicatedWorker(current);
-      await recordCachedRow(current, channel);
-      await current.goto(startUrl(channel));
+      await openSnapshotInspector(current);
       await expect
-        .poll(() => cachedRow(current))
+        .poll(() => snapshotRow(current, channel))
         .toMatchObject({
-          label: `${channel}, 1 unread`,
+          badge: { kind: "unread", count: 1 },
+          preview: snapshotPreview,
         });
+      await useDedicatedWorker(current);
+      await current.goto(startUrl(channel));
       await expectRead(bufferRow(current, channel), channel);
       await expect
         .poll(() => snapshotRow(current, channel))
@@ -150,6 +153,122 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       bot.close();
     }
   });
+
+  test("persists a read channel and the final live rows across relaunch", async ({
+    context,
+    page,
+  }) => {
+    const suffix = Date.now().toString(36);
+    const channel = `#badge-relaunch-${suffix}`;
+    const emptyChannel = `#badge-empty-${suffix}`;
+    const bot = await IrcClient.connect(
+      `badge-bot-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    const markerReader = await IrcClient.connect(
+      "weblounge",
+      "weblounge",
+      "weblounge-test",
+      channel,
+    );
+    const titles = [bot.nickname, channel, emptyChannel];
+    let current = page;
+    try {
+      await useDedicatedWorker(current);
+      await current.goto(startUrl(channel, emptyChannel));
+      await expect(bufferRow(current, channel)).toBeVisible();
+      await expect(bufferRow(current, emptyChannel)).toBeVisible();
+
+      const directFirst = await bot.privmsgConfirmed(
+        "weblounge",
+        `initial direct ${suffix}`,
+      );
+      const directFirstId = messageTag(directFirst, "msgid");
+      const directReply = await bot.privmsgReplyConfirmed(
+        "weblounge",
+        `reply-tagged direct ${suffix}`,
+        directFirstId,
+      );
+      const directReplyId = messageTag(directReply, "msgid");
+      await expectUnreadCount(
+        bufferRow(current, bot.nickname),
+        bot.nickname,
+        2,
+      );
+      await expect
+        .poll(() => snapshotRow(current, bot.nickname))
+        .toMatchObject({
+          badge: { kind: "mentions", count: 2, mentions: 2 },
+        });
+
+      await current.close();
+      const closedDirect = await bot.privmsgReplyConfirmed(
+        "weblounge",
+        `closed-app reply-tagged direct ${suffix}`,
+        directReplyId,
+      );
+      await markerReader.markRead(
+        bot.nickname,
+        messageTag(closedDirect, "time"),
+      );
+      const unreadLines = await Promise.all(
+        [1, 2, 3].map((index) =>
+          bot.privmsgConfirmed(channel, `closed-app unread ${index} ${suffix}`),
+        ),
+      );
+      const newestUnreadTime = messageTag(unreadLines.at(-1), "time");
+
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await observeMarkReadRequests(current);
+      await recordCachedRows(current, titles);
+      await current.goto(startUrl(channel, emptyChannel));
+      await expect
+        .poll(() => cachedRows(current))
+        .toEqual([
+          { label: `${bot.nickname}, 2 unread, including mentions` },
+          { label: channel },
+          { label: emptyChannel },
+        ]);
+      await expectUnreadCount(bufferRow(current, channel), channel, 3);
+      await expectRead(bufferRow(current, bot.nickname), bot.nickname);
+
+      await bufferRow(current, channel).click();
+      await expect(
+        current.getByRole("heading", { name: channel }),
+      ).toBeVisible();
+      await expect(
+        current.getByText(`closed-app unread 3 ${suffix}`, { exact: true }),
+      ).toBeVisible();
+      await expect.poll(() => markReadRequestCount(current)).toBeGreaterThan(0);
+      await leaveConversation(current, channel);
+      await expectRead(bufferRow(current, channel), channel);
+      await expect
+        .poll(() => markerReader.readMarker(channel))
+        .toBe(newestUnreadTime);
+
+      await expectRead(bufferRow(current, bot.nickname), bot.nickname);
+      const finalRows = await visibleChatRows(current);
+      await expect
+        .poll(() => snapshotRows(current, titles))
+        .toEqual(await visibleRows(current, titles));
+
+      await current.close();
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await recordCachedChatRows(current, titles);
+      await current.goto(startUrl(channel, emptyChannel));
+      await expect.poll(() => cachedChatRows(current)).toEqual(finalRows);
+      await expectRead(bufferRow(current, channel), channel);
+      await expectRead(bufferRow(current, bot.nickname), bot.nickname);
+    } finally {
+      if (!current.isClosed()) await current.close();
+      markerReader.close();
+      bot.close();
+    }
+  });
 });
 
 async function openChannel(page: Page, channel: string): Promise<void> {
@@ -164,6 +283,13 @@ async function openChannel(page: Page, channel: string): Promise<void> {
   await composer.fill(`/join ${channel}`);
   await composer.press("Enter");
   await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+}
+
+async function openSnapshotInspector(page: Page): Promise<void> {
+  await page.route("**/__snapshot-inspector", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
+  );
+  await page.goto("/__snapshot-inspector");
 }
 
 async function openConfiguredChannel(
@@ -193,7 +319,15 @@ async function leaveConversation(page: Page, channel: string): Promise<void> {
 }
 
 function bufferRow(page: Page, channel: string) {
-  return page.locator("[data-buffer-id]").filter({ hasText: channel }).first();
+  return page
+    .locator("[data-buffer-id]")
+    .and(
+      page.getByRole("button", {
+        includeHidden: true,
+        name: new RegExp(`^${escapeRegex(channel)}(?:,|$)`, "u"),
+      }),
+    )
+    .first();
 }
 
 async function expectUnread(
@@ -210,8 +344,10 @@ async function expectRead(
   await expect(row).toHaveAttribute("aria-label", channel);
 }
 
-function startUrl(channel: string): string {
-  return `/?irc-password=weblounge-test&irc-autojoin=${encodeURIComponent(channel)}`;
+function startUrl(...channels: string[]): string {
+  const params = new URLSearchParams({ "irc-password": "weblounge-test" });
+  for (const channel of channels) params.append("irc-autojoin", channel);
+  return `/?${params.toString()}`;
 }
 
 async function snapshotRow(page: Page, channel: string): Promise<unknown> {
@@ -248,6 +384,33 @@ async function snapshotRow(page: Page, channel: string): Promise<unknown> {
   }
 }
 
+async function snapshotRows(
+  page: Page,
+  titles: readonly string[],
+): Promise<readonly { label: string }[] | undefined> {
+  const rows = await Promise.all(
+    titles.map((title) => snapshotRow(page, title)),
+  );
+  if (rows.some((row) => row === undefined)) return undefined;
+  return rows.map((row, index) => ({
+    label: snapshotLabel(titles[index] ?? "", row),
+  }));
+}
+
+function snapshotLabel(title: string, value: unknown): string {
+  if (typeof value !== "object" || value === null || !("badge" in value))
+    throw new Error(`Snapshot row missing badge for ${title}`);
+  const badge = value.badge;
+  if (typeof badge !== "object" || badge === null || !("kind" in badge))
+    throw new Error(`Snapshot row has an invalid badge for ${title}`);
+  if (badge.kind === "none") return title;
+  if (!("count" in badge) || typeof badge.count !== "number")
+    throw new Error(`Snapshot row has an invalid count for ${title}`);
+  return badge.kind === "mentions"
+    ? `${title}, ${badge.count} unread, including mentions`
+    : `${title}, ${badge.count} unread`;
+}
+
 async function recordCachedRow(page: Page, channel: string): Promise<void> {
   await page.addInitScript((title) => {
     Reflect.set(globalThis, "staleSnapshotCachedRow", undefined);
@@ -268,6 +431,167 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
 
 function cachedRow(page: Page): Promise<unknown> {
   return page.evaluate(() => Reflect.get(globalThis, "staleSnapshotCachedRow"));
+}
+
+async function recordCachedRows(
+  page: Page,
+  titles: readonly string[],
+): Promise<void> {
+  await page.addInitScript((expectedTitles) => {
+    Reflect.set(globalThis, "badgePersistCachedRows", undefined);
+    new MutationObserver(() => {
+      if (Reflect.get(globalThis, "badgePersistCachedRows") !== undefined)
+        return;
+      const root = document.querySelector("[data-chat-list-hydrating]");
+      if (root === null) return;
+      const rows = [...root.querySelectorAll<HTMLElement>("[data-buffer-id]")];
+      const captured = expectedTitles.map((title) => {
+        const row = rows.find((candidate) =>
+          candidate.getAttribute("aria-label")?.startsWith(title),
+        );
+        return row === undefined
+          ? undefined
+          : { label: row.getAttribute("aria-label") ?? "" };
+      });
+      if (captured.every((row) => row !== undefined))
+        Reflect.set(globalThis, "badgePersistCachedRows", captured);
+    }).observe(document, { childList: true, subtree: true });
+  }, titles);
+}
+
+function cachedRows(
+  page: Page,
+): Promise<readonly { label: string }[] | undefined> {
+  return page.evaluate(() => Reflect.get(globalThis, "badgePersistCachedRows"));
+}
+
+async function visibleRows(
+  page: Page,
+  titles: readonly string[],
+): Promise<readonly { label: string }[]> {
+  return Promise.all(
+    titles.map(async (title) => ({
+      label: (await bufferRow(page, title).getAttribute("aria-label")) ?? "",
+    })),
+  );
+}
+
+async function recordCachedChatRows(
+  page: Page,
+  requiredTitles: readonly string[],
+): Promise<void> {
+  await page.addInitScript((titles) => {
+    Reflect.set(globalThis, "badgePersistCachedChatRows", undefined);
+    new MutationObserver(() => {
+      if (Reflect.get(globalThis, "badgePersistCachedChatRows") !== undefined)
+        return;
+      const root = document.querySelector("[data-chat-list-hydrating]");
+      if (root === null) return;
+      const rows = [...root.querySelectorAll<HTMLElement>("[data-buffer-id]")];
+      if (
+        !titles.every((title) =>
+          rows.some((row) => row.getAttribute("aria-label")?.startsWith(title)),
+        )
+      )
+        return;
+      Reflect.set(
+        globalThis,
+        "badgePersistCachedChatRows",
+        rows.map((row) => ({
+          label: row.getAttribute("aria-label") ?? "",
+          text: row.textContent ?? "",
+        })),
+      );
+    }).observe(document, { childList: true, subtree: true });
+  }, requiredTitles);
+}
+
+function cachedChatRows(
+  page: Page,
+): Promise<readonly { label: string; text: string }[] | undefined> {
+  return page.evaluate(() =>
+    Reflect.get(globalThis, "badgePersistCachedChatRows"),
+  );
+}
+
+async function visibleChatRows(
+  page: Page,
+): Promise<readonly { label: string; text: string }[]> {
+  return page.locator("[data-buffer-id]").evaluateAll((rows) =>
+    rows.map((row) => ({
+      label: row.getAttribute("aria-label") ?? "",
+      text: row.textContent ?? "",
+    })),
+  );
+}
+
+async function expectUnreadCount(
+  row: ReturnType<typeof bufferRow>,
+  title: string,
+  count: number,
+): Promise<void> {
+  await expect(row).toHaveAttribute(
+    "aria-label",
+    new RegExp(`^${escapeRegex(title)}, ${count} unread`, "u"),
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function messageTag(line: string | undefined, tag: string): string {
+  const value = new RegExp(`(?:^@|;)${tag}=([^; ]+)`, "u").exec(
+    line ?? "",
+  )?.[1];
+  if (value === undefined) throw new Error(`IRC line missing ${tag}: ${line}`);
+  return value;
+}
+
+async function observeMarkReadRequests(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.assign(window, { badgePersistMarkReadRequests: 0 });
+    const observe = (message: unknown) => {
+      if (
+        typeof message !== "object" ||
+        message === null ||
+        !("type" in message) ||
+        message.type !== "request" ||
+        !("payload" in message) ||
+        typeof message.payload !== "object" ||
+        message.payload === null ||
+        !("request" in message.payload) ||
+        typeof message.payload.request !== "object" ||
+        message.payload.request === null ||
+        !("type" in message.payload.request) ||
+        message.payload.request.type !== "mark_read"
+      )
+        return;
+      const state = window as Window & {
+        badgePersistMarkReadRequests: number;
+      };
+      state.badgePersistMarkReadRequests += 1;
+    };
+    const wrap = (prototype: {
+      postMessage: (...arguments_: unknown[]) => unknown;
+    }) => {
+      const postMessage = prototype.postMessage;
+      prototype.postMessage = function (...arguments_: unknown[]) {
+        observe(arguments_[0]);
+        return Reflect.apply(postMessage, this, arguments_);
+      };
+    };
+    wrap(MessagePort.prototype as unknown as Parameters<typeof wrap>[0]);
+    wrap(Worker.prototype as unknown as Parameters<typeof wrap>[0]);
+  });
+}
+
+function markReadRequestCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      (window as Window & { badgePersistMarkReadRequests: number })
+        .badgePersistMarkReadRequests,
+  );
 }
 
 async function transcriptOrders(
