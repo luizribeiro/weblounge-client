@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
@@ -5,6 +6,14 @@ import { createNotifier, type ToastNotice } from "./notices";
 import { Toast } from "./Toast";
 
 afterEach(() => vi.useRealTimers());
+
+it("stays above the composer and permanent typing slot", () => {
+  const css = readFileSync("src/ui/Toast.module.css", "utf8");
+
+  expect(css).toMatch(
+    /\.surface \{[^}]*bottom: calc\(var\(--wl-safe-bottom\) \+ 96px\);/u,
+  );
+});
 
 it("dismisses the latest notice after six seconds", async () => {
   vi.useFakeTimers();

@@ -56,12 +56,13 @@ export class IrcClient {
       line.includes(" CAP * LS "),
     );
     client.send(
-      "CAP REQ :batch draft/multiline echo-message message-tags sasl server-time",
+      "CAP REQ :account-tag batch draft/multiline echo-message message-tags sasl server-time",
     );
     await client.waitFor(
       "requested capability acknowledgement",
       (line) =>
         line.includes(" CAP * ACK ") &&
+        line.includes("account-tag") &&
         line.includes("batch") &&
         line.includes("draft/multiline") &&
         line.includes("message-tags") &&
@@ -169,8 +170,10 @@ export class IrcClient {
 
   async privmsgConfirmed(channel: string, text: string): Promise<string> {
     this.privmsg(channel, text);
-    return this.waitFor(`echoed PRIVMSG to ${channel}`, (line) =>
-      line.includes(` PRIVMSG ${channel} :${text}`),
+    return this.waitFor(
+      `echoed PRIVMSG to ${channel}`,
+      (line) =>
+        lineTargets(line, "PRIVMSG", channel) && line.endsWith(` :${text}`),
     );
   }
 
@@ -258,9 +261,9 @@ export class IrcClient {
   async typingConfirmed(
     target: string,
     state: "active" | "paused" | "done",
-  ): Promise<void> {
+  ): Promise<string> {
     this.send(`@+typing=${state} TAGMSG ${target}`);
-    await this.waitFor(`echoed ${state} typing state to ${target}`, (line) =>
+    return this.waitFor(`echoed ${state} typing state to ${target}`, (line) =>
       isTypingLine(line, target, state, this.#nickname),
     );
   }
@@ -424,8 +427,13 @@ function isTypingLine(
       ? /(?:^|;|@)\+typing=(?:active|paused|done)(?:;| )/u.test(line)
       : line.includes(`+typing=${state}`)) &&
     line.includes(`:${nickname}!`) &&
-    line.includes(` TAGMSG ${target}`)
+    lineTargets(line, "TAGMSG", target)
   );
+}
+
+function lineTargets(line: string, command: string, target: string): boolean {
+  const actual = new RegExp(` ${command} (\\S+)`, "u").exec(line)?.[1];
+  return actual?.toLowerCase() === target.toLowerCase();
 }
 
 async function connectedSocket(): Promise<Socket> {

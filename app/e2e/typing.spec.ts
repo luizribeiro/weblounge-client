@@ -91,12 +91,41 @@ test.describe("typing indicators", () => {
     );
     try {
       const incoming = `typing edge incoming ${Date.now()}`;
-      if (mobile) await emulateStandalone(page);
-      else await sender.privmsgConfirmed(channel, incoming);
+      if (mobile) {
+        await emulateStandalone(page);
+        await installEngineClock(page);
+      } else await sender.privmsgConfirmed(channel, incoming);
       await page.goto("/?irc-password=weblounge-test");
       if (mobile) {
         await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-        await sender.privmsgConfirmed("weblounge", incoming);
+        await page.getByRole("button", { name: channel, exact: true }).click();
+        await expect(
+          page.getByRole("heading", { name: channel }),
+        ).toBeVisible();
+        const channelComposer = page.getByRole("textbox", {
+          name: `Message ${channel}`,
+        });
+        const verifiedOpening = `verified typing thread ${Date.now()}`;
+        await channelComposer.fill(
+          `/query ${sender.nickname} ${verifiedOpening}`,
+        );
+        await channelComposer.press("Enter");
+        await sender.waitForPrivmsg(
+          sender.nickname,
+          verifiedOpening,
+          "weblounge",
+        );
+        await expect(
+          page.getByRole("heading", { name: sender.nickname }),
+        ).toBeVisible();
+        await page.getByRole("button", { name: "Back to chats" }).click();
+        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+        await expect(page.locator("[data-motion]")).toHaveCount(0);
+        const echoedIncoming = await sender.privmsgConfirmed(
+          "weblounge",
+          incoming,
+        );
+        expectServerTags(echoedIncoming, sender.nickname);
         await page
           .getByRole("button", {
             name: new RegExp(`^${sender.nickname}, 1 unread`, "u"),
@@ -125,14 +154,41 @@ test.describe("typing indicators", () => {
       expectTranscriptClear(emptyGeometry, "empty typing row");
 
       if (mobile) {
-        await sender.typingConfirmed("weblounge", "active");
+        await page.getByRole("button", { name: "Back to chats" }).click();
+        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+        await expect(page.locator("[data-motion]")).toHaveCount(0);
+        await startEngineClock(page);
+        const firstActive = await sender.typingConfirmed("weblounge", "active");
+        expectServerTags(firstActive, sender.nickname);
+        await advanceEngineClock(page, 3_000);
+        const refreshedActive = await sender.typingConfirmed(
+          "weblounge",
+          "active",
+        );
+        expectServerTags(refreshedActive, sender.nickname);
+        await page
+          .getByRole("button", {
+            name: new RegExp(`^${sender.nickname}(?:,|$)`, "u"),
+          })
+          .click();
+        await expect(
+          page.getByRole("heading", { name: sender.nickname }),
+        ).toBeVisible();
+        await expect(page.locator("[data-motion]")).toHaveCount(0);
         await expect(indicator).toContainText(`${sender.nickname} is typing…`);
         await expectMobileTypingIndicatorVisible(indicator);
         const activeGeometry = await transcriptEdgeGeometry(incomingRow);
         expectTranscriptClear(activeGeometry, "active typing row");
         expectStableTypingGeometry(emptyGeometry, activeGeometry);
-        await sender.typingConfirmed("weblounge", "done");
+        const done = await sender.typingConfirmed("weblounge", "done");
+        expectServerTags(done, sender.nickname);
         await expect(indicator).toHaveText("");
+        const reply = `typing edge reply ${Date.now()}`;
+        const echoedReply = await sender.privmsgConfirmed("weblounge", reply);
+        expectServerTags(echoedReply, sender.nickname);
+        await expect(
+          conversationRoot.getByText(reply, { exact: true }),
+        ).toBeVisible();
       } else {
         await typer.typingConfirmed(channel, "active");
         await expect(indicator).toContainText(`${typer.nickname} is typing…`);
@@ -203,6 +259,25 @@ test.describe("typing indicators", () => {
   });
 });
 
+function expectServerTags(line: string, account: string): void {
+  const tagPrefix = line.split(" ", 1)[0] ?? "";
+  const tags = new Map(
+    tagPrefix
+      .replace(/^@/u, "")
+      .split(";")
+      .map((tag) => {
+        const separator = tag.indexOf("=");
+        return separator === -1
+          ? [tag, ""]
+          : [tag.slice(0, separator), tag.slice(separator + 1)];
+      }),
+  );
+  expect(tags.get("account"), line).toBe(account);
+  expect(tags.get("time"), line).toMatch(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u,
+  );
+}
+
 async function expectMobileTypingIndicatorVisible(
   indicator: Locator,
 ): Promise<void> {
@@ -249,6 +324,14 @@ async function expectMobileTypingIndicatorVisible(
       clippedBy,
       composerTop: composerRect?.top,
       covered: hit !== element && !element.contains(hit),
+      hit:
+        hit instanceof HTMLElement
+          ? {
+              className: hit.className,
+              data: { ...hit.dataset },
+              tagName: hit.tagName,
+            }
+          : null,
       rect: {
         bottom: rect.bottom,
         left: rect.left,

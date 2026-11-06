@@ -1,5 +1,5 @@
 .surface {
-  bottom: calc(var(--wl-safe-bottom) + 72px);
+  bottom: calc(var(--wl-safe-bottom) + 96px);
   display: flex;
   justify-content: center;
   left: 50%;
