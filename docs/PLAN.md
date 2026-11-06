@@ -2,6 +2,13 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Preserve fractional WebKit row measurements while rounding the virtual transcript's scroll
+  extent up to the next device-independent pixel. Integer `scrollTop` can now reach far enough for
+  long-history, command, appended and New-divider rows to end at or above the permanent typing
+  reserve; hit-test diagnostics identify the actual covering element if text clearance regresses.
+- [x] Drive nickname-originated back-swipe continuations through the stable mobile shell after
+  reacquiring a virtualized tap target. Row replacement can no longer strand synthetic move or
+  release events on a detached node, while the compatibility click still has to be consumed.
 - [x] Put the permanent typing reserve inside virtual transcript geometry so initial end-scroll,
   append follow, live-edge detection and anchoring all stop above the empty overlay. Desktop
   Chromium and iPhone WebKit now keep long-history `/version`, received, sent and New-divider
