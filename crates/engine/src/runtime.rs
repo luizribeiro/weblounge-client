@@ -1663,7 +1663,8 @@ impl Runtime {
                     return;
                 };
                 let snapshot = running.client.state();
-                let (buffer_id, mut output) = running.model.open_direct(nick, direct, &snapshot);
+                let (buffer_id, mut output) =
+                    open_direct_with_typing(&mut running.model, nick, direct, &snapshot);
                 if degraded {
                     output.push(EngineToUi::notice(
                         EngineMessageKey::DirectPresenceUnavailable,
@@ -3550,11 +3551,32 @@ fn process_papo_event(
 fn typing_snapshot_events(model: &NetworkModel, state: &papo::State) -> Vec<EngineToUi> {
     model
         .conversation_buffers()
-        .filter_map(|(buffer_id, conversation)| {
-            let typers = typing_projection(state, &conversation);
-            (!typers.is_empty()).then_some(EngineToUi::TypingChanged { buffer_id, typers })
-        })
+        .filter_map(|(_, conversation)| typing_snapshot_event(model, state, &conversation))
         .collect()
+}
+
+fn open_direct_with_typing(
+    model: &mut NetworkModel,
+    nick: papo::Nick,
+    direct: DirectAvailability,
+    state: &papo::State,
+) -> (BufferId, Vec<EngineToUi>) {
+    let conversation = papo::Conversation::Private(nick.clone());
+    let (buffer_id, mut output) = model.open_direct(nick, direct, state);
+    output.extend(typing_snapshot_event(model, state, &conversation));
+    (buffer_id, output)
+}
+
+fn typing_snapshot_event(
+    model: &NetworkModel,
+    state: &papo::State,
+    conversation: &papo::Conversation,
+) -> Option<EngineToUi> {
+    let event = typing_changed_event(model, state, conversation)?;
+    let EngineToUi::TypingChanged { typers, .. } = &event else {
+        unreachable!("typing_changed_event returned another event kind")
+    };
+    (!typers.is_empty()).then_some(event)
 }
 
 fn typing_changed_event(
@@ -5720,6 +5742,73 @@ async fn delay(duration: Duration) {
         process_event(&state, &outbound, &client, 1, done);
         assert!(collect(&mut receiver).iter().any(|event| matches!(event,
             EngineToUi::TypingChanged { typers, .. } if typers.is_empty()
+        )));
+    }
+
+    #[tokio::test]
+    async fn direct_open_projects_typing_received_before_the_buffer_exists() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "WebLounge"));
+        wire.register(&["account-tag", "message-tags", "server-time"])
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        enable_test_monitor(&mut events, &mut wire, 100).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .set_connection(crate::NetworkConnectionState::Online, None);
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        wire.server(
+            "@account=alice-account;time=2026-11-06T12:34:56.789Z;+typing=active :Alice!u@host TAGMSG weblounge",
+        )
+        .await;
+        let active = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::TypingChanged(_))
+        })
+        .await;
+        process_event(&state, &runtime.outbound, &client, 1, active);
+        assert!(collect(&mut receiver).is_empty());
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "open-alice".into(),
+                    request: EngineRequest::OpenDirect {
+                        network_id: NetworkId(1),
+                        nick: "alice".into(),
+                    },
+                })
+                .is_empty()
+        );
+        assert_eq!(wire.next_sent().await, "MONITOR + alice");
+        assert_eq!(wire.next_sent().await, "WHO alice %na");
+        wire.server(":offline.test 354 WebLounge alice alice-account")
+            .await;
+        wire.server(":offline.test 315 WebLounge alice :End of WHO list")
+            .await;
+
+        let mut output = Vec::new();
+        loop {
+            let event = receiver.recv().await.expect("direct capture completes");
+            let complete = matches!(event, EngineToUi::CommandResult { .. });
+            output.push(event);
+            if complete {
+                break;
+            }
+        }
+        assert!(output.iter().any(|event| matches!(event,
+            EngineToUi::TypingChanged { typers, .. }
+                if typers.len() == 1 && typers[0].nick == "Alice" && !typers[0].paused
         )));
     }
 
