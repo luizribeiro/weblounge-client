@@ -26,6 +26,10 @@ The single place a fresh session reads to know where the project stands. Update 
   truncating sub-microsecond platform drift into the preceding millisecond. Papo-wire coverage marks
   a `.377` message at exactly `.377`; fresh-Ergo Chromium and iPhone WebKit coverage observes the
   marker from a second client before navigation, then proves the badge stays clear after live relaunch.
+- [x] Retain a locally cleared push-row read after the user leaves its conversation or the
+  connection drops. Once history verifies that exact msgid, send the authoritative server-time
+  marker even while another conversation is selected; a local-Ergo WebKit journey holds history
+  offline, verifies the marker from a second client, and relaunches with zero unread.
 - [x] Reconcile a provisional pushed row with its authoritative history copy by `msgid` even when
   their server-time tags straddle a millisecond. The push parser and worker retain the pushed tag
   verbatim; history replaces that time on the same engine row, and only the authoritative time can

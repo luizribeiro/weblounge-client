@@ -234,7 +234,6 @@ export function App(props: AppProps) {
   let revealingStartup = false;
   const [cachedChatListActive, setCachedChatListActive] = createSignal(false);
   let initialNavigationResolved = false;
-  let lastMarkedBufferId: number | undefined;
   let pushedMessagesNetworkId: number | undefined;
   let startupCap: number | undefined;
   let startupSettleFrame: number | undefined;
@@ -1326,7 +1325,6 @@ export function App(props: AppProps) {
           memberWindows={memberWindows()}
           onMarkRead={(bufferId, through) => {
             if (client === undefined) return;
-            lastMarkedBufferId = bufferId;
             void client
               .send({
                 id: crypto.randomUUID(),
@@ -1344,22 +1342,6 @@ export function App(props: AppProps) {
               .catch(() => undefined);
           }}
           onSelectBuffer={(bufferId) => {
-            if (
-              client !== undefined &&
-              lastMarkedBufferId !== undefined &&
-              lastMarkedBufferId !== bufferId
-            ) {
-              void client
-                .send({
-                  id: crypto.randomUUID(),
-                  request: {
-                    type: "cancel_deferred_read",
-                    buffer_id: lastMarkedBufferId,
-                  },
-                })
-                .catch(() => undefined);
-              lastMarkedBufferId = undefined;
-            }
             const path = pathForBuffer(bufferId);
             if (path !== undefined) writeLastViewedPath(path);
           }}

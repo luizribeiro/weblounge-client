@@ -1,5 +1,6 @@
 import { createConnection } from "node:net";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
@@ -250,6 +251,106 @@ test.describe("connection resilience against local Ergo", () => {
       await expect(transcriptRow(page, gapChannel)).toHaveCount(1);
     } finally {
       if (dropped) await controlForwarder("restore");
+      bot.close();
+    }
+  });
+
+  test("keeps a read push row after leaving until history verifies it", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    const suffix = Date.now().toString(36);
+    const pushedChannel = `#pushed-read-${suffix}`;
+    const text = `read before history ${suffix}`;
+    const appUrl = `/?irc-password=weblounge-test&irc-autojoin=${encodeURIComponent(pushedChannel)}`;
+    const bot = await IrcClient.connect(
+      `push${suffix.slice(-6)}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      pushedChannel,
+    );
+    const leaveBot = await connectBot("leave");
+    let markerReader: IrcClient | undefined;
+    let dropped = false;
+    try {
+      await installWorkerControl(page);
+      await page.goto("/manifest.webmanifest");
+      await controlForwarder("drop");
+      dropped = true;
+      const identity = messageIdentity(
+        await bot.privmsgConfirmed(pushedChannel, text),
+      );
+      await seedPushedMessage(page, {
+        sender: bot.nickname,
+        target: pushedChannel,
+        text,
+        ...identity,
+      });
+      const leaveText = `other pushed row ${suffix}`;
+      await seedPushedMessage(page, {
+        sender: leaveBot.nickname,
+        target: "weblounge",
+        text: leaveText,
+        ...messageIdentity(
+          await leaveBot.privmsgConfirmed("weblounge", leaveText),
+        ),
+      });
+      markerReader = await IrcClient.connect(
+        `reader${suffix.slice(-6)}`,
+        "weblounge",
+        "weblounge-test",
+        pushedChannel,
+      );
+
+      await page.goto(appUrl);
+      const pushedRow = page.locator(`[data-buffer-id]`).filter({
+        has: page.getByText(pushedChannel, { exact: true }),
+      });
+      await expect(pushedRow).toBeVisible();
+      await pushedRow.click();
+      await expect(transcriptRow(page, text)).toHaveCount(1);
+      if (isMobile(testInfo.project.name)) {
+        await expect(pushedRow).toHaveAttribute("aria-label", pushedChannel);
+        await page.getByRole("button", { name: "Back to chats" }).click();
+        await expect(
+          page.getByRole("button", { name: pushedChannel, exact: true }),
+        ).toBeVisible();
+      } else {
+        await expect(pushedRow).toHaveAttribute("data-unread", "0");
+      }
+      await page
+        .locator(`[data-buffer-id]`)
+        .filter({ has: page.getByText(leaveBot.nickname, { exact: true }) })
+        .click();
+
+      await controlForwarder("restore");
+      dropped = false;
+      await expectOnline(page, testInfo.project.name);
+      await expect
+        .poll(() => markerReader?.readMarker(pushedChannel))
+        .toBe(identity.time);
+
+      await page.goto(appUrl);
+      if (!isMobile(testInfo.project.name))
+        await expectOnline(page, testInfo.project.name);
+      const relaunchedRow = page.locator(`[data-buffer-id]`).filter({
+        has: page.getByText(pushedChannel, { exact: true }),
+      });
+      if (isMobile(testInfo.project.name)) {
+        await expect(relaunchedRow).toHaveAttribute(
+          "aria-label",
+          pushedChannel,
+        );
+      } else {
+        await expect(relaunchedRow).toHaveAttribute("data-unread", "0");
+      }
+    } finally {
+      if (dropped) await controlForwarder("restore");
+      markerReader?.close();
+      leaveBot.close();
       bot.close();
     }
   });
@@ -584,6 +685,68 @@ async function controlForwarder(action: "drop" | "restore"): Promise<void> {
   if (base === undefined) throw new Error("socket forwarder is unavailable");
   const response = await fetch(`${base}/${action}`, { method: "POST" });
   if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
+}
+
+function messageIdentity(line: string): {
+  readonly msgid: string;
+  readonly time: string;
+} {
+  const tags = new Map(
+    line
+      .slice(1, line.indexOf(" "))
+      .split(";")
+      .map((tag) => {
+        const separator = tag.indexOf("=");
+        return [tag.slice(0, separator), tag.slice(separator + 1)] as const;
+      }),
+  );
+  const msgid = tags.get("msgid");
+  const time = tags.get("time");
+  if (msgid === undefined || time === undefined)
+    throw new Error(`message has no server identity: ${line}`);
+  return { msgid, time };
+}
+
+async function seedPushedMessage(
+  page: Page,
+  message: {
+    readonly msgid: string;
+    readonly sender: string;
+    readonly target: string;
+    readonly text: string;
+    readonly time: string;
+  },
+): Promise<void> {
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(async (value, pushed) => {
+      await new Promise<void>((resolve, reject) => {
+        const encoder = new TextEncoder();
+        const transaction = value.transaction("cache", "readwrite");
+        transaction.objectStore("cache").put(
+          encoder.encode(
+            JSON.stringify({
+              schema: 1,
+              network_label: "Local Ergo",
+              nickname: "weblounge",
+              sender: pushed.sender,
+              target: pushed.target,
+              msgid: pushed.msgid,
+              time: pushed.time,
+              text: pushed.text,
+              kind: "message",
+            }),
+          ),
+          encoder.encode(`pushed-message\0Local Ergo\0${pushed.msgid}`),
+        );
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }, message);
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 async function installWorkerControl(page: Page): Promise<void> {

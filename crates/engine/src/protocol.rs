@@ -919,11 +919,6 @@ pub enum EngineRequest {
         /// Latest fully visible committed row.
         through: MessageId,
     },
-    /// Drop a provisional server marker after its buffer stops being viewed.
-    CancelDeferredRead {
-        /// Buffer whose deferred marker no longer represents an active view.
-        buffer_id: BufferId,
-    },
     /// Advance every conversation through its latest committed row.
     MarkAllRead,
     /// Fetch the latest history page the first time a buffer is opened.

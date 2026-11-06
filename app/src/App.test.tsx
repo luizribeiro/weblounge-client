@@ -1499,7 +1499,7 @@ it("reopens a hidden failed DM from its typed notice", async () => {
   expect(screen.getByText("Sending…")).toBeVisible();
 });
 
-it("marks a visible live-edge buffer read only after a focused 500ms dwell, tolerating a rejected marker", async () => {
+it("keeps a visible live-edge read after selection changes, tolerating a rejected marker", async () => {
   vi.useFakeTimers();
   vi.stubGlobal(
     "IntersectionObserver",
@@ -1617,10 +1617,11 @@ it("marks a visible live-edge buffer read only after a focused 500ms dwell, tole
     },
   });
   fireEvent.click(screen.getByRole("button", { name: "#elsewhere" }));
-  expect(client.requests).toContainEqual({
-    id: expect.any(String),
-    request: { type: "cancel_deferred_read", buffer_id: 2 },
-  });
+  expect(client.requests).not.toContainEqual(
+    expect.objectContaining({
+      request: expect.objectContaining({ type: "cancel_deferred_read" }),
+    }),
+  );
 
   vi.useRealTimers();
 });

@@ -426,9 +426,6 @@ impl Runtime {
             EngineRequest::MarkRead { buffer_id, through } => {
                 self.mark_read(envelope.id, buffer_id, through)
             }
-            EngineRequest::CancelDeferredRead { buffer_id } => {
-                self.cancel_deferred_read(envelope.id, buffer_id)
-            }
             EngineRequest::MarkAllRead => self.mark_all_read(envelope.id),
             EngineRequest::LoadHistory { buffer_id } => self.load_history(envelope.id, buffer_id),
             EngineRequest::RequestMembers {
@@ -1860,7 +1857,6 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        running.model.select_read_buffer(buffer_id);
         let server_backed = running.read_markers_server_backed();
         let preparation = match running
             .model
@@ -1915,13 +1911,6 @@ impl Runtime {
             );
         }
         output
-    }
-
-    fn cancel_deferred_read(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
-        if let Some(running) = lock(&self.state).network.as_mut() {
-            running.model.cancel_deferred_read(buffer_id);
-        }
-        vec![EngineToUi::CommandResult { id: command_id }]
     }
 
     fn load_history(&self, command_id: String, buffer_id: BufferId) -> Vec<EngineToUi> {
@@ -3765,7 +3754,6 @@ fn process_disconnect(
     output: &mut Vec<EngineToUi>,
 ) -> bool {
     running.model.invalidate_direct_handles();
-    running.model.clear_deferred_reads();
     running.flushing_reads = false;
     let mut retained = VecDeque::new();
     for queued in running.pending_sends.drain(..) {

@@ -202,11 +202,7 @@ buffer_id: BufferId,
 /**
  * Latest fully visible committed row.
  */
-through: MessageId, } | { "type": "cancel_deferred_read",
-/**
- * Buffer whose deferred marker no longer represents an active view.
- */
-buffer_id: BufferId, } | { "type": "mark_all_read" } | { "type": "load_history",
+through: MessageId, } | { "type": "mark_all_read" } | { "type": "load_history",
 /**
  * Conversation buffer to hydrate.
  */
