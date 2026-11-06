@@ -33,6 +33,22 @@ beforeEach(() => {
       this.dispatchEvent(new Event("scroll"));
     },
   });
+  const nativeGetComputedStyle = window.getComputedStyle.bind(window);
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
+    const style = nativeGetComputedStyle(element, pseudo);
+    if (!(element instanceof HTMLElement) || !element.dataset.messageList)
+      return style;
+    return new Proxy(style, {
+      get(target, property) {
+        if (property !== "getPropertyValue")
+          return Reflect.get(target, property, target);
+        return (name: string) =>
+          name === "--wl-typing-slot-height"
+            ? "24px"
+            : target.getPropertyValue(name);
+      },
+    });
+  });
 });
 
 afterEach(() => {
@@ -69,9 +85,12 @@ const message: MessageProjection = {
 };
 
 it("renders highlight, nick colour, and failed delivery presentation", () => {
-  render(() => <MessageList messages={[message]} />);
+  const { container } = render(() => <MessageList messages={[message]} />);
 
   const row = screen.getByText("hello weblounge").closest("[data-message-row]");
+  expect(
+    container.querySelector("[data-message-list]")?.parentElement,
+  ).not.toHaveAttribute("style");
   expect(row).toHaveAttribute("data-delivery", "failed");
   expect(row?.className).toContain("highlighted");
   expect(screen.getByText("alice")).toHaveStyle({
@@ -351,6 +370,30 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
     500,
   );
   expect(list.scrollHeight - list.scrollTop - list.clientHeight).toBe(0);
+});
+
+it("preserves fractional row measurements at the typing reserve", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  const { container } = render(() => <MessageList messages={[message]} />);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const row = container.querySelector<HTMLLIElement>("li[data-index]");
+  const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
+  if (row === null || spacer === null)
+    throw new Error("message row is missing");
+
+  for (const observer of observers) observer.flushTarget(row, 19.25);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(spacer.style.height).toBe("47.25px");
 });
 
 it("remeasures rows after fonts finish loading", async () => {

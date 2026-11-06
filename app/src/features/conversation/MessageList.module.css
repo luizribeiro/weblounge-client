@@ -1,4 +1,6 @@
 .surface {
+  --wl-typing-slot-height: 24px;
+
   min-height: 0;
   overflow: clip;
   position: relative;
