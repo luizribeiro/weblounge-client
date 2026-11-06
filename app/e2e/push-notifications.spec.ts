@@ -1,4 +1,10 @@
-import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import {
+  type BrowserContext,
+  type CDPSession,
+  expect,
+  type Page,
+  test,
+} from "@playwright/test";
 import {
   closeEngineDatabase,
   ENGINE_DATABASE_NAME,
@@ -1257,9 +1263,43 @@ async function deliverPushes(
   page: Page,
   data: readonly string[],
 ): Promise<void> {
+  const { registrationId, session } = await pushDeliveryTarget(context, page);
+  await Promise.all(
+    data.map((payload) =>
+      session.send("ServiceWorker.deliverPushMessage", {
+        origin: new URL(page.url()).origin,
+        registrationId,
+        data: payload,
+      }),
+    ),
+  );
+}
+
+// Chromium can acknowledge delivery before the worker receives it. Detaching here
+// discards the queued event.
+const pushDeliveryTargets = new WeakMap<
+  Page,
+  Promise<{ readonly registrationId: string; readonly session: CDPSession }>
+>();
+
+function pushDeliveryTarget(
+  context: BrowserContext,
+  page: Page,
+): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
+  const existing = pushDeliveryTargets.get(page);
+  if (existing !== undefined) return existing;
+  const created = createPushDeliveryTarget(context, page);
+  pushDeliveryTargets.set(page, created);
+  return created;
+}
+
+async function createPushDeliveryTarget(
+  context: BrowserContext,
+  page: Page,
+): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
   const session = await context.newCDPSession(page);
   const { targetInfo } = await session.send("Target.getTargetInfo");
-  const registration = new Promise<string>((resolve) => {
+  const registrationId = new Promise<string>((resolve) => {
     session.on("ServiceWorker.workerVersionUpdated", ({ versions }) => {
       const current = versions.find(
         (candidate) =>
@@ -1270,17 +1310,7 @@ async function deliverPushes(
     });
   });
   await session.send("ServiceWorker.enable");
-  const registrationId = await registration;
-  await Promise.all(
-    data.map((payload) =>
-      session.send("ServiceWorker.deliverPushMessage", {
-        origin: new URL(page.url()).origin,
-        registrationId,
-        data: payload,
-      }),
-    ),
-  );
-  await session.detach();
+  return { registrationId: await registrationId, session };
 }
 
 async function seedRouteAndEncrypt(

@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep the Chromium push fixture's CDP delivery session attached for each page lifetime, so a
+  successful `deliverPushMessage` acknowledgement cannot be followed by detach discarding the
+  queued event before the service worker receives it. The cold pushed-history journey stays green
+  across 100 two-worker repetitions under the pressure that reproduced the loss.
 - [x] Keep mobile back-swipe repaint coverage deterministic with activity-sorted Chats by opening
   the visible filled DM whose pixels it captures, instead of letting automation scroll the inactive
   channel into view behind the pushed screen.
