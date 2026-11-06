@@ -149,6 +149,7 @@ function managerFor(browserWindow: Window): OverlayManager {
         .find((candidate) => candidate !== undefined);
       overlay.replaceChildren();
       if (copy !== undefined) {
+        overlay.removeAttribute("aria-hidden");
         const button = browserWindow.document.createElement("button");
         button.dataset.foregroundLogCopy = "true";
         button.type = "button";
@@ -158,7 +159,7 @@ function managerFor(browserWindow: Window): OverlayManager {
           void browserWindow.navigator.clipboard?.writeText(copy.read());
         });
         overlay.append(button, "\n");
-      }
+      } else overlay.setAttribute("aria-hidden", "true");
       overlay.append(content);
     },
   };

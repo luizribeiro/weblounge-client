@@ -66,6 +66,9 @@ it("renders and copies the foreground activity log", () => {
   const copy = document.querySelector<HTMLButtonElement>(
     "[data-foreground-log-copy]",
   );
+  expect(copy?.closest("[data-debug-overlay]")).not.toHaveAttribute(
+    "aria-hidden",
+  );
   copy?.click();
   expect(writeText).toHaveBeenCalledWith(
     expect.stringContaining("navigator-standalone=true"),
