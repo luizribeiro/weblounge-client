@@ -3138,6 +3138,7 @@ fn spawn_read_marker_fetch(
                 .apply_server_read_marker(&target.conversation(), read_until)
         };
         send_events(&outbound, events);
+        update_chat_list(&state, &outbound, instance);
     });
 }
 
@@ -4888,7 +4889,7 @@ mod tests {
         join_request_events, lock, next_connection_state, permanent_mark_read_error,
         person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
         schedule_snapshot_write_after, spawn_history_fetch, spawn_online_direct_resolution,
-        spawn_read_marker_fetch, state_limit_events, utf16_len,
+        spawn_read_marker_fetch, state_limit_events, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -8021,6 +8022,51 @@ async fn delay(duration: Duration) {
         (state, outbound, receiver)
     }
 
+    fn complete_alice_chat_list(
+        state: &Arc<Mutex<RuntimeState>>,
+        client: &papo::Client,
+    ) -> HistoryTarget {
+        let nick = client
+            .state()
+            .name_rules()
+            .expect("registration established name rules")
+            .nick("alice");
+        let conversation = papo::Conversation::Private(nick.clone());
+        let mut state = lock(state);
+        let running = state.network.as_mut().expect("network remains active");
+        running
+            .model
+            .set_connection(NetworkConnectionState::Online, None);
+        let buffer_id = running
+            .model
+            .buffer_id_for_target(&SendTarget::Direct {
+                nick: nick.clone(),
+                recipient: None,
+                pin: None,
+            })
+            .expect("direct buffer exists");
+        assert!(running.model.request_history(buffer_id).is_some());
+        assert!(
+            running
+                .model
+                .finish_history(&conversation, None, None, 1, true)
+                .is_some()
+        );
+        running.chat_list.recent_directs_ready = true;
+        running.chat_list.fingerprint = "network".into();
+        HistoryTarget::Direct(nick)
+    }
+
+    async fn stored_snapshot_badge(state: &Arc<Mutex<RuntimeState>>) -> SnapshotBadge {
+        let storage = lock(state).storage.clone();
+        let snapshot = read(storage.as_ref())
+            .await
+            .expect("read snapshot")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
+            .expect("stored snapshot");
+        snapshot.rows[0].badge.clone()
+    }
+
     async fn enable_test_monitor(
         events: &mut papo::Events,
         wire: &mut papo_testing::Wire,
@@ -9183,8 +9229,8 @@ async fn delay(duration: Duration) {
         );
     }
 
-    #[tokio::test]
-    async fn initial_direct_read_marker_fetch_clears_restored_badges() {
+    #[tokio::test(start_paused = true)]
+    async fn initial_direct_read_marker_fetch_clears_restored_badges_and_snapshot() {
         let caps = [
             "draft/read-marker",
             "labeled-response",
@@ -9217,13 +9263,19 @@ async fn delay(duration: Duration) {
             }
         )));
 
-        let target = crate::state::HistoryTarget::Direct(
-            client
-                .state()
-                .name_rules()
-                .expect("registration established name rules")
-                .nick("alice"),
+        let target = complete_alice_chat_list(&state, &client);
+        update_chat_list(&state, &outbound, 1);
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(750)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            stored_snapshot_badge(&state).await,
+            SnapshotBadge::Mentions {
+                count: 1,
+                mentions: 1
+            }
         );
+
         spawn_read_marker_fetch(Arc::clone(&state), outbound, client, 1, target);
         let request = wire.next_sent().await;
         let label = request_label(&request);
@@ -9247,6 +9299,9 @@ async fn delay(duration: Duration) {
         })
         .await;
         assert!(cleared.is_ok());
+        tokio::time::advance(Duration::from_millis(750)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(stored_snapshot_badge(&state).await, SnapshotBadge::None);
     }
 
     #[tokio::test]

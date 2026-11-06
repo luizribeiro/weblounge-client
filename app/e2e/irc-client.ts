@@ -197,6 +197,20 @@ export class IrcClient {
     );
   }
 
+  async waitForNextJoin(target: string, nickname: string): Promise<void> {
+    const matches = (line: string) =>
+      line.includes(`:${nickname}!`) && line.includes(` JOIN ${target}`);
+    this.#discardLines(matches);
+    await this.waitFor(`${nickname} to rejoin ${target}`, matches);
+  }
+
+  async waitForNextQuit(nickname: string): Promise<void> {
+    const matches = (line: string) =>
+      line.includes(`:${nickname}!`) && line.includes(" QUIT ");
+    this.#discardLines(matches);
+    await this.waitFor(`${nickname} to disconnect`, matches);
+  }
+
   async markRead(target: string, timestamp: string): Promise<void> {
     this.send(`MARKREAD ${target} timestamp=${timestamp}`);
     await this.waitFor(`MARKREAD confirmation for ${target}`, (line) =>

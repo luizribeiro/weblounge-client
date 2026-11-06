@@ -207,6 +207,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-stale-snapshot",
+      testMatch: "**/stale-snapshot.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "webkit-mobile-new-divider",
       testMatch: "**/new-divider-focused.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
