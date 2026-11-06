@@ -52,6 +52,7 @@ interface MessageListProps {
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readAtMs?: number | null | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
+  readonly onLoadOlder?: (() => void) | undefined;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
@@ -100,6 +101,7 @@ export function MessageList(props: MessageListProps) {
   let boundaryFrozen = hasUnreadAfter(props.messages, initialReadAt);
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
+  let olderPageArmed = true;
   let scrollFrozenReadAt: number | undefined;
   const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
@@ -302,6 +304,7 @@ export function MessageList(props: MessageListProps) {
       setFrozenReadAt(props.readAtMs ?? null);
       boundaryFrozen = false;
       renderedCount = 0;
+      olderPageArmed = true;
       setUnseen(0);
       setLiveEdge(true);
       virtualizer.scrollToEnd();
@@ -424,6 +427,12 @@ export function MessageList(props: MessageListProps) {
         onScroll={(event) => {
           if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
+          if (element.scrollTop <= liveEdgeTolerance) {
+            if (olderPageArmed) props.onLoadOlder?.();
+            olderPageArmed = false;
+          } else {
+            olderPageArmed = true;
+          }
           deferScrollLiveEdge(
             element.scrollHeight - element.scrollTop - element.clientHeight <=
               liveEdgeTolerance,
