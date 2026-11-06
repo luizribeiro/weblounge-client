@@ -594,11 +594,20 @@ function expectTranscriptClear(
 ): void {
   const measurement = `${state}: ${JSON.stringify(geometry)}`;
   const check = soft ? expect.soft : expect;
+  check(geometry.listBottom, measurement).toBeLessThanOrEqual(
+    geometry.typingTop,
+  );
   check(
-    Math.abs(geometry.listBottom - geometry.typingTop),
+    geometry.typingTop - geometry.listBottom,
     measurement,
   ).toBeLessThanOrEqual(1);
-  check(geometry.messageBottom, measurement).toBeLessThanOrEqual(
+  check(geometry.lastTextLineBottom, measurement).toBeDefined();
+  // WebKit can place the row's padding box a fractional pixel beyond the
+  // scroller, where overflow clips it; the rendered text must stay inside.
+  check(geometry.lastTextLineBottom as number, measurement).toBeLessThanOrEqual(
+    geometry.listBottom,
+  );
+  check(geometry.lastTextLineBottom as number, measurement).toBeLessThanOrEqual(
     geometry.typingTop,
   );
   check(geometry.hitLastTextLine, measurement).toBe(true);
