@@ -42,22 +42,47 @@ loading and boundary state is reported by `history_state_changed` at the transcr
 making the conversation title shimmer. `LoadingLatest`, reconnect `CatchingUp`, and
 `CatchingUpLatest` project `Syncing` because the live edge is not yet known to be current.
 
-After every `Connected` following the first, each ready channel and direct conversation requests
-`Client::history(target).after(newest)`. Non-terminal pages advance the retained cursor and request
-the next page until the server reports the end or returns an empty page. Catch-up is capped at 500
-items per buffer; crossing the cap inserts a transcript gap notice and merges one `LATEST` page so
-the live edge is still current. `CHATHISTORY TARGETS` also starts `AFTER` for a ready direct when its
-reported latest server time is newer than the retained cursor. All pages use the same msgid dedupe
-as live delivery.
+Launch and reconnect begin with one `Client::recent_conversations` (`CHATHISTORY TARGETS`) query
+from the last completed sync boundary through the connection's current time. A restored snapshot
+supplies that boundary and each row's newest and read positions; an in-memory reconnect uses the
+previous connection boundary. With neither, the first launch scans the bounded recent-direct
+window. The query is the only eager conversation discovery request.
+
+TARGETS results are diffed against the known channel and direct rows before per-buffer work starts:
+
+- a cached target absent from the result keeps its snapshot name, preview, badge and time as the
+  authoritative list row, and sends no history or marker request;
+- a changed target requests one `AFTER` page from its cached read position when available, so the
+  page can rebuild its unread projection, or from its cached newest position otherwise, so the
+  page can extend the cached projection; and
+- a target without a cached row is added only together with a bounded initial page. Joined channels
+  come from connection state and direct targets come from TARGETS, so a cold launch still produces
+  a complete row for every visible conversation.
+
+The selected buffer's `LATEST` request remains driven by opening the conversation and is queued
+before background TARGETS reconciliation. Opening an unchanged cached row later performs that same
+on-demand `LATEST`; reaching the transcript top remains the only way to request older pages. A
+changed buffer's single `AFTER` page is also enough to update its list row, but it does not make an
+unopened transcript a durable cache. If the server says more entries exist beyond that page, the
+engine stops instead of paging eagerly, treats the count as capped, and the shells render counts of
+100 or more as `99+`. Opening that buffer then requests its newest page and leaves a gap rather than
+claiming the retained page is complete.
+
+All pages use the same msgid dedupe as live delivery. TARGETS reconciliation records its upper time
+as the next connection boundary only after the response has been applied. A failed TARGETS query
+retains cached rows and leaves the list transient rather than declaring a possibly incomplete live
+list.
 
 History events are sorted before delivery to the UI and merged through the engine's existing msgid
 deduplication. The UI may retain more rendered rows than the engine window; cursor ownership stays
 in the engine and never depends on a retained row.
 
-When read markers are supported, creation or restoration of a channel or direct buffer schedules
-`Client::fetch_read_marker` for its typed papo conversation. The result is applied to the buffer's
-projection after history merges; live `ReadMarkerChanged` events use the same path. A marker only
-moves forward. Without server support, `MarkRead` advances the local marker.
+When read markers are supported, a changed direct without a pushed marker schedules
+`Client::fetch_read_marker`; unchanged directs retain the snapshot projection and do not query.
+Channels do not fetch a marker during launch or reconnect because Ergo pushes their marker while
+joining. An explicitly opened cold buffer may fetch its marker with the on-demand latest page.
+Fetched and live `ReadMarkerChanged` events use the same path and a marker only moves forward.
+Without server support, `MarkRead` advances the local marker.
 
 Visible conversation instances remain the source of read intent. A foreground instance at the
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that
@@ -104,8 +129,9 @@ notification policy, or background push delivery.
 ## Testing
 
 - Pure engine tests cover empty/non-empty terminal pages, cursor survival across bounded eviction,
-  directional latest/older requests, the title sync mapping, and the badge/highlight matrix for
-  direct messages and channels with and without a nick match.
+  directional latest/older requests, TARGETS diff decisions for unchanged, changed and uncached
+  rows, the one-page cap, the title sync mapping, and the badge/highlight matrix for direct messages
+  and channels with and without a nick match.
   UI derivation tests cover no unread, unread with and without mentions, DMs, and counts above 99.
 - Scripted papo transcripts page through more than 1,000 same-time messages and assert every msgid
   is delivered once in chronological order. Reconnect transcripts cover ready direct messages,
@@ -115,7 +141,9 @@ notification policy, or background push delivery.
   marker until authoritative history reconciles the row; a refused marker is diagnostic-only and
   retries after bounded backoff.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
-  configured limits.
+  configured limits. A stock-fakelag launch with seven channels, nine direct conversations and a
+  cached snapshot stays within CHATHISTORY and MARKREAD budgets, proves the selected buffer's reply
+  precedes any delayed reply, and checks changed and unchanged list projections.
 - Production-profile Playwright reconnects after own multiline and bot split/multiline sends,
   asserting exact text, authorship, sender, server-time ordering, and a stable live-edge viewport
   on every animation frame during the first second after history appears.
@@ -133,5 +161,5 @@ notification policy, or background push delivery.
 
 ## Out of scope
 
-Persistent local timelines and cursors, offline read-marker queues, search, around-message jumps,
-and unread counts for rows outside the fetched window are later work.
+Persistent local timelines, offline read-marker queues, search, around-message jumps, and exact
+unread counts beyond the one-page launch cap are later work.

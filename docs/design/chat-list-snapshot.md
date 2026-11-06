@@ -16,8 +16,9 @@ The engine stores one versioned `ChatListSnapshot` record in the device-local `C
 approved `KvBackend`. On the web that space is the `cache` object store in the single IndexedDB
 database reached through `idb`; native backends use the same typed layer.
 
-The record contains a schema version, the configured-network identity fingerprint, and ordered
-rows. A row's durable conversation identity is one of:
+The record contains a schema version, the configured-network identity fingerprint, the upper
+server time of the last completed TARGETS reconciliation, and ordered rows. A row's durable
+conversation identity is one of:
 
 ```text
 channel = configured network identity + Channel::key()
@@ -36,13 +37,15 @@ protect sends to that nick, but it is not the thread key. Each row contains only
   severity treatment; and
 - an optional, single-line latest-message preview, already truncated by the UI's visible excerpt
   rule (currently 80 characters plus an ellipsis). Direct-message previews are included under the
-  same bound.
+  same bound;
+- an optional newest history cursor (server time and msgid when the server supplied one); and
+- the optional server read-marker time used to rebuild unread state for a changed row.
 
-There is no transient `BufferId`, message timestamp beyond that single row activity value, topic,
-membership, read marker, message identifier, message body beyond the truncated preview,
-conversation transcript, or paging cursor. The record is not a history cache. Mobile Chats is the
-required consumer; desktop may render the same rows in its sidebar only if that reuses this record
-and the existing row geometry without a second schema.
+There is no transient `BufferId`, topic, membership, message body beyond the truncated preview, or
+conversation transcript. The two cursor fields are synchronization metadata, not paging state for
+the cached transcript: they can request one launch delta or detect an unchanged row, but cannot
+page older content. Mobile Chats is the required consumer; desktop may render the same rows in its
+sidebar only if that reuses this record and the existing row geometry without a second schema.
 
 ## Write, read, and replacement
 
@@ -60,11 +63,14 @@ to start an already-pending rewrite before the browser can suspend its worker. A
 does not create a write when no update is pending.
 
 At launch the engine reads and validates the record before live synchronization completes. A valid
-record renders through the normal chat-list geometry. There is no “Connecting…” or “Reconnecting…”
-copy and no full-screen connection state. While the engine is connecting, reconnecting, or
-hydrating the snapshot, the weblounge logo in the mobile Chats header or desktop sidebar carries a
-subtle token-driven shimmer. It is still when ready; reduced motion replaces animation with a
-gentle static dim.
+record renders through the normal chat-list geometry. After connection, one TARGETS query compares
+its results with the stored cursors. Rows absent from the result remain authoritative without a
+request; changed rows replace their cached projection after one bounded delta page. The first
+complete reconciled list replaces the cached record in one batch. There is no “Connecting…” or
+“Reconnecting…” copy and no full-screen connection state. While the engine is connecting,
+reconnecting, or reconciling the snapshot, the weblounge logo in the mobile Chats header or desktop
+sidebar carries a subtle token-driven shimmer. It is still when ready; reduced motion replaces
+animation with a gentle static dim.
 
 Cached rows are interactive through their durable identities. Selecting one navigates immediately
 and opens the normal conversation shell. Until its live target and history resolve, the transcript
@@ -75,7 +81,7 @@ the existing send path in order once the network connects and the target is send
 not own a second queue. Queued sends remain visible as pending transcript rows; the composer does
 not add connection-state copy or change the conversation width.
 
-Selecting a cached direct conversation also requests its latest history. A request made before
+Selecting any cached conversation requests its latest history. A request made before
 registration is queued in the engine and starts after `Connected`; it does not depend on the
 30-day recent-target list or fresh traffic creating the live buffer. Starting that request promotes
 the row from snapshot state, discards its cached preview and badge projection, and lets fetched
@@ -83,18 +89,18 @@ history plus the server read marker rebuild unread state. An empty successful pa
 that promotion. The transcript has no separate cached-state mark-read control: automatic live-edge
 dwell begins after live history paints and uses the normal server-sync path.
 
-The engine's first complete live chat-list snapshot replaces the cached record in the UI in one
-batch. The per-row persistence merge is internal and never exposes a mixed cached/live list to the
-UI. A selected cached identity rebinds to its live buffer when present, and the quiet state gives
-way to live history. A channel absent because it was left on another device is removed with its
-route; desktop selects the preceding live buffer and mobile returns to Chats. The client never
-silently rejoins or retargets it. Any queued send to that departed identity still finishes against
-its original target and cannot reopen the buffer.
+The engine's first complete reconciled chat-list snapshot replaces the cached record in the UI in
+one batch. The per-row persistence merge is internal and never exposes a mixed cached/live list to
+the UI. A selected cached identity rebinds to its live buffer when present, and the quiet state gives
+way to live history. A cached channel absent from joined connection state is removed with its route;
+desktop selects the preceding live buffer and mobile returns to Chats. The client never silently
+rejoins or retargets it. Any queued send to that departed identity still finishes against its
+original target and cannot reopen the buffer.
 
-The cached values are otherwise never used as live unread state, notifications, history, or
-protocol identity proof. Matching cached and live fixtures retain the same row boxes, so the swap
-has no blank frame or layout shift; real changes may update content and ordering only at that
-wholesale boundary.
+An unchanged cached row is authoritative only for the chat-list projection. Cached values are never
+used for notifications, transcript history, or protocol identity proof. Matching cached and live
+fixtures retain the same row boxes, so the swap has no blank frame or layout shift; real changes
+may update content and ordering only at that wholesale boundary.
 
 ## Splash, invalidation, and privacy
 
@@ -126,10 +132,11 @@ evicted at any time, and must never be required for a correct cold launch.
 
 ## Testing
 
-- Serialization and engine tests cover the exact bounded shape, DM preview truncation, atomic
-  whole-record writes, row activity round-tripping into the live ordering field, preserved row
-  order and rendered times, channel and nick keys scoped by network identity, throttling with an
-  injected clock, authoritative-row replacement, and preservation of unresolved cached rows.
+- Serialization and engine tests cover the exact bounded shape, cursor and completed-sync-boundary
+  round trips, DM preview truncation, atomic whole-record writes, row activity round-tripping into
+  the live ordering field, preserved row order and rendered times, channel and nick keys scoped by
+  network identity, throttling with an injected clock, authoritative-row replacement, and
+  preservation of unresolved cached rows.
 - Validation tests ignore corrupt, unknown-version, and wrong-network records; sign-out clears the
   record and a following launch cannot paint it.
 - A Chromium and WebKit Playwright filmstrip starts with a seeded cache and delayed engine. Its
