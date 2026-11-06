@@ -6,6 +6,10 @@ The single place a fresh session reads to know where the project stands. Update 
   visible text rather than fractional clipped padding, keyboard motion distinguishes padding-box
   contact from content overlap, and slow-buffer hydration permits its concurrent marker query while
   still rejecting history, identity, or marker-write work queued ahead of the opened conversation.
+- [x] Keep visible spaces around coloured nicknames in the fixed-height typing row by rendering
+  its wording as one clipped inline sentence instead of separate anonymous flex items. Real-Ergo
+  Chromium and iPhone WebKit coverage measures the painted gaps for one and two typers while
+  retaining long-name truncation and the several-people fallback.
 - [x] Put the permanent 24px typing row back in normal flow between the transcript scroller and
   composer. The scroller now ends at the row instead of extending under an overlay, so virtual
   geometry no longer owns a typing reserve or rounds fractional measurements to reach it; built-app

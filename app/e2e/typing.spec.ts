@@ -83,6 +83,65 @@ test.describe("typing indicators", () => {
     }
   });
 
+  test("renders spaces in the typing row for one and two typers", async ({
+    page,
+  }, testInfo) => {
+    const mobile = testInfo.project.name === "webkit-mobile-typing";
+    const suffix = mobile ? "mobile" : "desktop";
+    const first = await IrcClient.connectIsolated(
+      `typing-space-alexandria-${suffix}`,
+      channel,
+    );
+    const second = await IrcClient.connectIsolated(
+      `typing-space-bartholomew-${suffix}`,
+      channel,
+    );
+    const third = await IrcClient.connectIsolated(
+      `typing-space-cordelia-${suffix}`,
+      channel,
+    );
+    try {
+      if (mobile) await emulateStandalone(page);
+      await page.goto("/?irc-password=weblounge-test");
+      if (mobile) {
+        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+        await page.getByRole("button", { name: channel, exact: true }).click();
+      }
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      const indicator = page.locator("[data-typing-indicator]");
+
+      await first.typingConfirmed(channel, "active");
+      await expect(indicator).toContainText(`${first.nickname} is typing…`);
+      const singleSpacing = await visibleTypingSpaces(indicator);
+
+      await second.typingConfirmed(channel, "active");
+      await expect(indicator).toContainText(
+        `${first.nickname} and ${second.nickname} are typing…`,
+      );
+      const pairSpacing = await visibleTypingSpaces(indicator);
+      const truncation = await typingTruncation(indicator);
+
+      await third.typingConfirmed(channel, "active");
+      await expect(indicator).toHaveText("several people are typing…");
+      await expect(indicator.locator("[data-typing-nick]")).toHaveCount(0);
+
+      expect.soft(singleSpacing, "space before 'is typing'").toEqual([1]);
+      expect
+        .soft(pairSpacing, "spaces around 'and' and before 'are typing'")
+        .toEqual([1, 1, 1]);
+      expect(truncation).toMatchObject({
+        clippedWithinRow: true,
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+      });
+      if (mobile) expect(truncation.hasOverflow).toBe(true);
+    } finally {
+      first.close();
+      second.close();
+      third.close();
+    }
+  });
+
   test("keeps the newest transcript line clear of the typing row", async ({
     page,
   }, testInfo) => {
@@ -409,6 +468,75 @@ test.describe("typing indicators", () => {
     }
   });
 });
+
+async function visibleTypingSpaces(indicator: Locator): Promise<number[]> {
+  return indicator.evaluate((root) => {
+    const nicks = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-typing-nick]"),
+    );
+    const wordRect = (word: string): DOMRect => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (
+        let node = walker.nextNode();
+        node !== null;
+        node = walker.nextNode()
+      ) {
+        if (node.parentElement?.closest("[data-typing-nick]")) continue;
+        const offset = node.textContent?.indexOf(word) ?? -1;
+        if (offset < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.setEnd(node, offset + word.length);
+        return range.getBoundingClientRect();
+      }
+      throw new Error(`Typing word not found: ${word}`);
+    };
+    const hasGap = (gap: number): number => Number(gap > 1);
+
+    if (nicks.length === 1) {
+      return [
+        hasGap(
+          wordRect("is typing").left - nicks[0].getBoundingClientRect().right,
+        ),
+      ];
+    }
+    if (nicks.length === 2) {
+      const firstNick = nicks[0].getBoundingClientRect();
+      const conjunction = wordRect("and");
+      const secondNick = nicks[1].getBoundingClientRect();
+      const predicate = wordRect("are typing");
+      return [
+        hasGap(conjunction.left - firstNick.right),
+        hasGap(secondNick.left - conjunction.right),
+        hasGap(predicate.left - secondNick.right),
+      ];
+    }
+    throw new Error(
+      `Expected one or two typing nicks, received ${nicks.length}`,
+    );
+  });
+}
+
+async function typingTruncation(indicator: Locator): Promise<{
+  readonly clippedWithinRow: boolean;
+  readonly hasOverflow: boolean;
+  readonly overflow: string;
+  readonly whiteSpace: string;
+}> {
+  return indicator.evaluate((root) => {
+    const sentence = root.querySelector<HTMLElement>("[data-typing-text]");
+    if (sentence === null) throw new Error("Typing sentence is missing");
+    const rowRect = root.getBoundingClientRect();
+    const sentenceRect = sentence.getBoundingClientRect();
+    const style = getComputedStyle(sentence);
+    return {
+      clippedWithinRow: sentenceRect.right <= rowRect.right + 1,
+      hasOverflow: sentence.scrollWidth > sentence.clientWidth,
+      overflow: style.overflowX,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+}
 
 function expectServerTags(line: string, account: string): void {
   const tagPrefix = line.split(" ", 1)[0] ?? "";

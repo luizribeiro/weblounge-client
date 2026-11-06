@@ -31,7 +31,13 @@
   white-space: nowrap;
 }
 
-.typing span {
+.typingText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.typing [data-typing-nick] {
   font-weight: 600;
 }
 
