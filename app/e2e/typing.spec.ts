@@ -294,6 +294,78 @@ test.describe("typing indicators", () => {
     }
   });
 
+  test("keeps unread rows clear of the typing reserve when opening at New", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "webkit-mobile-typing",
+      "covers the iPhone channel-opening path",
+    );
+    const suffix = Date.now().toString(36);
+    const unreadChannel = `#typing-unread-${suffix}`;
+    const sender = await IrcClient.connect(
+      `typing-unread-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      unreadChannel,
+    );
+    try {
+      await emulateStandalone(page);
+      await page.goto("/?irc-password=weblounge-test");
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
+      const defaultComposer = page.getByRole("textbox", {
+        name: "Message #weblounge-test",
+      });
+      await defaultComposer.fill(`/join ${unreadChannel}`);
+      await defaultComposer.press("Enter");
+      await expect(
+        page.getByRole("heading", { name: unreadChannel }),
+      ).toBeVisible();
+      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+
+      for (let index = 0; index < 12; index += 1)
+        await sender.privmsgConfirmed(
+          unreadChannel,
+          `typing unread history ${suffix} ${index} ${"wrapped history ".repeat(20)}`,
+        );
+      const historyEnd = `typing unread history end ${suffix}`;
+      await sender.privmsgConfirmed(unreadChannel, historyEnd);
+      await expect(page.getByText(historyEnd, { exact: true })).toBeVisible();
+
+      const row = page
+        .locator("[data-buffer-id]")
+        .filter({ hasText: unreadChannel })
+        .first();
+      await expect(row).toHaveAttribute("aria-label", unreadChannel);
+      await page.getByRole("button", { name: "Back to chats" }).click();
+      await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+
+      const unread = Array.from(
+        { length: 3 },
+        (_, index) => `typing unread ${suffix} ${index + 1}`,
+      );
+      for (const text of unread)
+        await sender.privmsgConfirmed(unreadChannel, text);
+      await expect(row).toHaveAttribute(
+        "aria-label",
+        `${unreadChannel}, 3 unread`,
+      );
+      await row.click();
+
+      const root = page.locator("[data-mobile-chat]").filter({
+        has: page.getByRole("heading", { name: unreadChannel }),
+      });
+      await expect(root.locator("[data-new-line]")).toBeVisible();
+      await expectNewestRowClear(
+        root,
+        unread.at(-1) ?? "",
+        "after opening at New",
+      );
+    } finally {
+      sender.close();
+    }
+  });
+
   test("sends throttled active, paused, and done states", async ({ page }) => {
     const observer = await IrcClient.connect(
       "typing-observer",
