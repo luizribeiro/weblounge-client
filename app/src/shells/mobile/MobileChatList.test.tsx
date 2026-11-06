@@ -180,16 +180,16 @@ it("keeps row elements when buffer projections are replaced", () => {
   expect(screen.getByLabelText("1 unread")).toBeVisible();
 });
 
-it("keeps direct order and rendered times across the cached-to-live swap", () => {
-  const times = [1_700_000_300_000, 1_700_000_200_000] as const;
+it("keeps recent mixed order and rendered times across cached-to-live swap", () => {
+  const times = [1_700_000_200_000, 1_700_000_300_000] as const;
   const cached: BufferProjection[] = [
     {
       ...base,
       id: 3,
-      kind: "direct",
-      title: "alice",
+      kind: "channel",
+      title: "#garden",
       cached: true,
-      cached_preview: "newest",
+      cached_preview: "#garden: middle",
       last_activity_ms: times[0],
     },
     {
@@ -198,7 +198,7 @@ it("keeps direct order and rendered times across the cached-to-live swap", () =>
       kind: "direct",
       title: "carol",
       cached: true,
-      cached_preview: "middle",
+      cached_preview: "newest",
       last_activity_ms: times[1],
     },
   ];
@@ -211,7 +211,7 @@ it("keeps direct order and rendered times across the cached-to-live swap", () =>
       last_message: {
         id: index + 1,
         author: buffer.title,
-        text: index === 0 ? "newest" : "middle",
+        text: index === 0 ? "middle" : "newest",
         kind: "text",
         bot: false,
         mode_symbol: null,
@@ -251,7 +251,44 @@ it("keeps direct order and rendered times across the cached-to-live swap", () =>
   setCurrent(live);
 
   expect(visibleRows()).toEqual(cachedRows);
-  expect(visibleRows().map((row) => row.title)).toEqual(["alice", "carol"]);
+  expect(visibleRows().map((row) => row.title)).toEqual(["carol", "#garden"]);
+});
+
+it("defers activity reordering while a row is pressed", () => {
+  const [current, setCurrent] = createSignal<readonly BufferProjection[]>([
+    { ...base, id: 2, kind: "channel", title: "#garden", last_activity_ms: 1 },
+    { ...base, id: 3, kind: "direct", title: "mel", last_activity_ms: 2 },
+  ]);
+  render(() => (
+    <MobileChatList
+      buffers={current()}
+      filter="all"
+      networks={[]}
+      onFilter={() => {}}
+      onOpen={() => {}}
+      onQuery={() => {}}
+      onScroll={() => {}}
+      query=""
+      restoreScroll={() => 0}
+      restoreVersion={() => 0}
+    />
+  ));
+  const visibleTitles = () =>
+    [...document.querySelectorAll<HTMLElement>("[data-buffer-id]")].map(
+      (row) => row.ariaLabel,
+    );
+
+  fireEvent.pointerDown(screen.getByRole("button", { name: "mel" }), {
+    isPrimary: true,
+  });
+  setCurrent([
+    { ...base, id: 2, kind: "channel", title: "#garden", last_activity_ms: 3 },
+    { ...base, id: 3, kind: "direct", title: "mel", last_activity_ms: 2 },
+  ]);
+  expect(visibleTitles()).toEqual(["mel", "#garden"]);
+
+  fireEvent.pointerUp(window, { isPrimary: true });
+  expect(visibleTitles()).toEqual(["#garden", "mel"]);
 });
 
 it("restores the retained chat list after returning from a conversation", async () => {

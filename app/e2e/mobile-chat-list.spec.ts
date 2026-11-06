@@ -68,7 +68,65 @@ test.describe("mobile chat list against local Ergo", () => {
       bot.close();
     }
   });
+
+  test("moves the most recently active chat to the top", async ({ page }) => {
+    const suffix = Date.now().toString(36).slice(-6);
+    const channel = `#recent-${suffix}`;
+    const nick = `recent-${suffix}`;
+    let bot: IrcClient | undefined;
+    try {
+      await page.goto("/?irc-password=weblounge-test");
+      await page.getByRole("button", { name: "#weblounge-test" }).click();
+      const composer = page.getByRole("textbox", {
+        name: "Message #weblounge-test",
+      });
+      await composer.fill(`/join ${channel}`);
+      await composer.press("Enter");
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+
+      bot = await IrcClient.connect(
+        nick,
+        "weblounge-bot",
+        "weblounge-bot-test",
+        channel,
+      );
+      await page.getByRole("button", { name: "Back to chats" }).click();
+      bot.privmsg("weblounge", "direct activity first");
+      await expect(page.getByText("direct activity first")).toBeVisible();
+      await expectChatOrder(page.locator("[data-buffer-id]"), [nick, channel]);
+
+      bot.privmsg(channel, "channel activity second");
+      await expect(
+        page.getByText("channel activity second", { exact: true }),
+      ).toBeVisible();
+      await expectChatOrder(page.locator("[data-buffer-id]"), [channel, nick]);
+    } finally {
+      bot?.close();
+    }
+  });
 });
+
+async function expectChatOrder(
+  rows: Locator,
+  expected: readonly string[],
+): Promise<void> {
+  await expect
+    .poll(async () =>
+      rows.evaluateAll(
+        (elements, titles) =>
+          elements.flatMap((element) => {
+            const label = element.getAttribute("aria-label") ?? "";
+            const title = titles.find(
+              (candidate) =>
+                label === candidate || label.startsWith(`${candidate},`),
+            );
+            return title === undefined ? [] : [title];
+          }),
+        expected,
+      ),
+    )
+    .toEqual(expected);
+}
 
 async function setThreeDigitBadge(row: Locator): Promise<void> {
   await row.locator("[data-badge-kind]").evaluate((badge) => {

@@ -19,17 +19,33 @@ export function filterChats(
   query: string,
 ): BufferProjection[] {
   const search = query.trim().toLocaleLowerCase();
-  return buffers.filter((buffer) => {
-    if (buffer.kind === "server") return false;
-    if (filter === "channels" && buffer.kind !== "channel") return false;
-    if (filter === "direct" && buffer.kind !== "direct") return false;
-    if (filter === "unread" && buffer.unread === 0 && buffer.mentions === 0)
-      return false;
-    if (search === "") return true;
-    const message = buffer.last_message;
-    return [buffer.title, message?.author, message?.text]
-      .filter((part) => part !== undefined)
-      .some((part) => part.toLocaleLowerCase().includes(search));
+  return sortChatsByActivity(
+    buffers.filter((buffer) => {
+      if (buffer.kind === "server") return false;
+      if (filter === "channels" && buffer.kind !== "channel") return false;
+      if (filter === "direct" && buffer.kind !== "direct") return false;
+      if (filter === "unread" && buffer.unread === 0 && buffer.mentions === 0)
+        return false;
+      if (search === "") return true;
+      const message = buffer.last_message;
+      return [buffer.title, message?.author, message?.text]
+        .filter((part) => part !== undefined)
+        .some((part) => part.toLocaleLowerCase().includes(search));
+    }),
+  );
+}
+
+export function sortChatsByActivity(
+  buffers: readonly BufferProjection[],
+): BufferProjection[] {
+  return [...buffers].sort((first, second) => {
+    const firstActivity = first.last_activity_ms;
+    const secondActivity = second.last_activity_ms;
+    if (firstActivity === undefined) {
+      return secondActivity === undefined ? 0 : 1;
+    }
+    if (secondActivity === undefined) return -1;
+    return secondActivity - firstActivity;
   });
 }
 

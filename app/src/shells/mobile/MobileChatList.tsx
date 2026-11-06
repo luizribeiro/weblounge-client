@@ -2,6 +2,7 @@ import {
   type Accessor,
   createEffect,
   createMemo,
+  createSignal,
   For,
   onCleanup,
   Show,
@@ -63,6 +64,7 @@ export function MobileChatList(props: MobileChatListProps) {
   let scrollTopBeforeOpen = 0;
   let restoreFrame: number | undefined;
   let releaseFrame: number | undefined;
+  const [rowPressed, setRowPressed] = createSignal(false);
   const cancelScrollRestore = () => {
     if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame);
     if (releaseFrame !== undefined) cancelAnimationFrame(releaseFrame);
@@ -90,7 +92,16 @@ export function MobileChatList(props: MobileChatListProps) {
   const chatsById = createMemo(
     () => new Map(chats().map((buffer) => [buffer.id, buffer])),
   );
-  const chatIds = createMemo(() => [...chatsById().keys()]);
+  const latestChatIds = createMemo(() => [...chatsById().keys()]);
+  const chatIds = createMemo<readonly number[]>((visible = []) =>
+    rowPressed() ? visible : latestChatIds(),
+  );
+  const releasePressedRow = () => setRowPressed(false);
+  const pressRow = (event: PointerEvent) => {
+    if (event.isPrimary !== false) setRowPressed(true);
+  };
+  window.addEventListener("pointerup", releasePressedRow);
+  window.addEventListener("pointercancel", releasePressedRow);
   const connection = () =>
     connectionPresentation(props.networks, props.hydrating);
   const progress = createConnectionProgress(() => connection().progressing, {
@@ -124,6 +135,8 @@ export function MobileChatList(props: MobileChatListProps) {
     list?.removeEventListener("keydown", markScrollKeyIntent);
     list?.removeEventListener("pointermove", markPointerScrollIntent);
     list?.removeEventListener("wheel", markWheelScrollIntent);
+    window.removeEventListener("pointerup", releasePressedRow);
+    window.removeEventListener("pointercancel", releasePressedRow);
   });
   return (
     <section
@@ -256,6 +269,7 @@ export function MobileChatList(props: MobileChatListProps) {
                       userScrollSequence = false;
                       props.onOpen(current().id, scrollTopBeforeOpen);
                     }}
+                    onPressStart={pressRow}
                   />
                 )}
               </Show>
