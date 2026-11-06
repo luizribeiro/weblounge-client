@@ -304,6 +304,10 @@ test("mobile back swipe starts on selectable transcript content", async ({
     await expectAligned(page);
 
     await openChat(page);
+    await waitForStableGeometry(
+      page.locator("[data-message-list]"),
+      "[data-message-row]",
+    );
     const fastMessagePoint = await visiblePoint(message);
     await panOverTranscript(page, 5, fastMessagePoint.y, 80, 80);
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
