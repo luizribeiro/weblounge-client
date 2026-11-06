@@ -832,6 +832,8 @@ pub enum EngineRequest {
         /// Browser connectivity hint; papo remains authoritative for the socket.
         online: bool,
     },
+    /// Start a pending chat-list snapshot write before the page can be suspended.
+    FlushChatListSnapshot,
     /// Record whether the browser has installed a newer app shell for the next launch.
     SetUpdateReady {
         /// Whether a waiting service worker is ready to activate after this session closes.

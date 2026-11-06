@@ -10,7 +10,7 @@ use std::rc::Rc;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use wasm_bindgen::{JsCast, JsValue};
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     BufferId, CompletionCandidate, CompletionTrigger, ConnectionFailureReason, EngineMessageKey,
@@ -240,6 +240,8 @@ struct SnapshotWriter {
     generation: u64,
     active: bool,
     pending: Option<ChatListSnapshot>,
+    flush: Option<oneshot::Sender<()>>,
+    flush_requested: bool,
 }
 
 #[derive(Clone)]
@@ -378,6 +380,10 @@ impl Runtime {
             EngineRequest::Reconnect { network_id } => self.reconnect(envelope.id, network_id),
             EngineRequest::SetDeviceOnline { network_id, online } => {
                 self.set_device_online(envelope.id, network_id, online)
+            }
+            EngineRequest::FlushChatListSnapshot => {
+                flush_snapshot_write(&lock(&self.state).snapshot_writer);
+                vec![EngineToUi::CommandResult { id: envelope.id }]
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
             EngineRequest::LoadNotificationPromptDismissal => {
@@ -4319,14 +4325,28 @@ fn schedule_snapshot_write(
 fn begin_snapshot_write(
     writer: &Arc<Mutex<SnapshotWriter>>,
     snapshot: ChatListSnapshot,
-) -> Option<u64> {
+) -> Option<(u64, oneshot::Receiver<()>)> {
     let mut writer = lock(writer);
     writer.pending = Some(snapshot);
     if writer.active {
         return None;
     }
     writer.active = true;
-    Some(writer.generation)
+    let (flush, receiver) = oneshot::channel();
+    writer.flush = Some(flush);
+    Some((writer.generation, receiver))
+}
+
+fn flush_snapshot_write(writer: &Arc<Mutex<SnapshotWriter>>) {
+    let mut writer = lock(writer);
+    if !writer.active {
+        return;
+    }
+    if let Some(flush) = writer.flush.take() {
+        let _ = flush.send(());
+    } else {
+        writer.flush_requested = true;
+    }
 }
 
 fn cancel_snapshot_writes(writer: &Arc<Mutex<SnapshotWriter>>) {
@@ -4334,6 +4354,42 @@ fn cancel_snapshot_writes(writer: &Arc<Mutex<SnapshotWriter>>) {
     writer.generation = writer.generation.wrapping_add(1);
     writer.active = false;
     writer.pending = None;
+    writer.flush = None;
+    writer.flush_requested = false;
+}
+
+enum SnapshotInterval {
+    Immediate,
+    Wait(oneshot::Receiver<()>),
+}
+
+fn next_snapshot_interval(
+    writer: &Arc<Mutex<SnapshotWriter>>,
+    generation: u64,
+) -> Option<SnapshotInterval> {
+    let mut writer = lock(writer);
+    if writer.generation != generation {
+        return None;
+    }
+    if writer.pending.is_none() {
+        writer.active = false;
+        writer.flush = None;
+        writer.flush_requested = false;
+        return None;
+    }
+    if std::mem::take(&mut writer.flush_requested) {
+        return Some(SnapshotInterval::Immediate);
+    }
+    let (flush, receiver) = oneshot::channel();
+    writer.flush = Some(flush);
+    Some(SnapshotInterval::Wait(receiver))
+}
+
+async fn wait_for_snapshot_interval(flush: oneshot::Receiver<()>) {
+    tokio::select! {
+        () = delay(Duration::from_millis(750)) => {}
+        _ = flush => {}
+    }
 }
 
 async fn write_snapshot_intervals(
@@ -4347,6 +4403,7 @@ async fn write_snapshot_intervals(
             if writer.generation != generation {
                 return;
             }
+            writer.flush = None;
             let Some(snapshot) = writer.pending.take() else {
                 writer.active = false;
                 return;
@@ -4354,21 +4411,11 @@ async fn write_snapshot_intervals(
             snapshot
         };
         let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
-        let pending = {
-            let mut writer = lock(&writer);
-            if writer.generation != generation {
-                return;
-            }
-            let pending = writer.pending.is_some();
-            if !pending {
-                writer.active = false;
-            }
-            pending
-        };
-        if !pending {
-            return;
+        match next_snapshot_interval(&writer, generation) {
+            Some(SnapshotInterval::Immediate) => {}
+            Some(SnapshotInterval::Wait(flush)) => wait_for_snapshot_interval(flush).await,
+            None => return,
         }
-        delay(Duration::from_millis(750)).await;
     }
 }
 
@@ -4400,11 +4447,14 @@ fn schedule_snapshot_write_after(
     snapshot: ChatListSnapshot,
     delay: impl std::future::Future<Output = ()> + 'static,
 ) {
-    let Some(generation) = begin_snapshot_write(&writer, snapshot) else {
+    let Some((generation, flush)) = begin_snapshot_write(&writer, snapshot) else {
         return;
     };
     spawn_task(async move {
-        delay.await;
+        tokio::select! {
+            () = delay => {}
+            _ = flush => {}
+        }
         write_snapshot_intervals(storage, writer, generation).await;
     });
 }
@@ -4416,11 +4466,14 @@ fn schedule_snapshot_write_after(
     snapshot: ChatListSnapshot,
     delay: impl std::future::Future<Output = ()> + Send + 'static,
 ) {
-    let Some(generation) = begin_snapshot_write(&writer, snapshot) else {
+    let Some((generation, flush)) = begin_snapshot_write(&writer, snapshot) else {
         return;
     };
     spawn_task(async move {
-        delay.await;
+        tokio::select! {
+            () = delay => {}
+            _ = flush => {}
+        }
         write_snapshot_intervals(storage, writer, generation).await;
     });
 }
@@ -4930,10 +4983,11 @@ mod tests {
         HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL, PushRegistration,
         READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork, Runtime, RuntimeState,
         attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
-        join_request_events, lock, next_connection_state, permanent_mark_read_error,
-        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
-        schedule_snapshot_write_after, spawn_history_fetch, spawn_online_direct_resolution,
-        spawn_read_marker_fetch, state_limit_events, update_chat_list, utf16_len,
+        flush_snapshot_write, join_request_events, lock, next_connection_state,
+        permanent_mark_read_error, person_candidates, process_event, process_history,
+        queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
+        spawn_online_direct_resolution, spawn_read_marker_fetch, state_limit_events,
+        update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -5041,6 +5095,42 @@ async fn delay(duration: Duration) {
             .expect("throttled rewrite");
         assert_eq!(ChatListSnapshot::decode(&stored, "network"), Some(second));
         assert!(second_tick.send(()).is_err());
+    }
+
+    #[tokio::test]
+    async fn snapshot_flush_wakes_a_pending_throttled_write() {
+        let storage = Arc::new(MemoryKv::default());
+        let writer = Arc::default();
+        let snapshot = ChatListSnapshot::new("network".into(), Vec::new());
+        let (_clock, pending) = oneshot::channel::<()>();
+        schedule_snapshot_write_after(
+            Arc::clone(&storage),
+            Arc::clone(&writer),
+            snapshot.clone(),
+            async move {
+                let _ = pending.await;
+            },
+        );
+        tokio::task::yield_now().await;
+        assert_eq!(read(storage.as_ref()).await.expect("read"), None);
+
+        flush_snapshot_write(&writer);
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if read(storage.as_ref()).await.expect("read").is_some() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("lifecycle flush writes without the throttle delay");
+        let stored = read(storage.as_ref())
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+        assert_eq!(stored, Some(snapshot));
     }
 
     #[test]
