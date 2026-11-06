@@ -27,6 +27,9 @@ interface WasmModule {
 type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
 
 let sharedRuntime: EngineWorkerRuntime | undefined;
+const historyWireTestPorts = new Set<WorkerHostPort>();
+
+installHistoryWireTestTrace();
 
 export function attachEnginePort(port: WorkerHostPort): void {
   sharedRuntime ??= new EngineWorkerRuntime(loadEngine);
@@ -47,8 +50,16 @@ export class EngineWorkerRuntime {
     this.#ports.add(port);
     let pending = Promise.resolve();
     port.addEventListener("message", (event) => {
+      if (
+        __HISTORY_WIRE_TEST_ENABLED__ &&
+        isHistoryWireTestSubscription(event.data)
+      ) {
+        historyWireTestPorts.add(port);
+        return;
+      }
       if (isHostDetach(event.data)) {
         this.#ports.delete(port);
+        historyWireTestPorts.delete(port);
         if (this.#activePort === port) this.#activePort = this.#lastPort();
         return;
       }
@@ -225,4 +236,61 @@ function isWasmModule(value: unknown): value is WasmModule {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isHistoryWireTestSubscription(value: unknown): boolean {
+  return isRecord(value) && value.type === "history_wire_test_trace_subscribe";
+}
+
+function installHistoryWireTestTrace(): void {
+  if (!__HISTORY_WIRE_TEST_ENABLED__) return;
+  const NativeWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = class extends NativeWebSocket {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      this.addEventListener("message", (event) => {
+        const at = performance.timeOrigin + performance.now();
+        void traceHistoryWireValue("received", at, event.data);
+      });
+    }
+
+    override send(
+      data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>,
+    ) {
+      const at = performance.timeOrigin + performance.now();
+      void traceHistoryWireValue("sent", at, data);
+      super.send(data);
+    }
+  };
+}
+
+async function traceHistoryWireValue(
+  direction: "received" | "sent",
+  at: number,
+  value: unknown,
+): Promise<void> {
+  const text = await wireText(value);
+  if (text === undefined) return;
+  for (const line of text.split("\r\n")) {
+    if (!/(?:^| )(?:CHATHISTORY|MARKREAD|WHO|BATCH) /u.test(line)) continue;
+    for (const port of historyWireTestPorts)
+      port.postMessage({
+        type: "history_wire_test_trace",
+        at,
+        direction,
+        line,
+      });
+  }
+}
+
+async function wireText(value: unknown): Promise<string | undefined> {
+  if (typeof value === "string") return value;
+  if (value instanceof Blob) return value.text();
+  if (value instanceof ArrayBuffer)
+    return new TextDecoder().decode(new Uint8Array(value));
+  if (ArrayBuffer.isView(value))
+    return new TextDecoder().decode(
+      new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+    );
+  return undefined;
 }
