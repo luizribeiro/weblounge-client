@@ -44,11 +44,12 @@ or tag-denied targets produce no user-facing error and typing is never queued fo
 Outgoing typing is on whenever the target supports it and has no user-facing off switch.
 
 The UI owns only draft text, rendering, and edit observation. Both shells render one permanently
-reserved line immediately above the composer, matching the prototype's 24px slot, so appearing or
-clearing cannot move the transcript or composer. The line has `aria-live="polite"` and
-`aria-atomic="true"`; equal text is not replaced on active refreshes. There is no typing animation,
-so hidden pages have no decorative timer or animation to pause. Engine expiry and connection state
-continue while hidden as required by the brief.
+reserved 24px line inside the composer, above the text field, where the prototype puts its typing
+slot. Appearing or clearing therefore cannot move the transcript or resize the composer. The
+transcript runs straight down to the composer, which draws no dividing line. The line has
+`aria-live="polite"` and `aria-atomic="true"`; equal text is not replaced on active refreshes. There
+is no typing animation, so hidden pages have no decorative timer or animation to pause. Engine
+expiry and connection state continue while hidden as required by the brief.
 
 ## Out of scope
 
@@ -60,10 +61,12 @@ treated as delivery-critical. WebLounge does not provide a typing-privacy settin
 Pure engine tests use a fake clock to cover independent per-buffer active, refresh, paused, done,
 send, command, and expiry transitions. Papo wire tests at the engine boundary cover incoming
 active/paused/done, message clearing, self suppression, multiple typers, and expiry projection.
-Component tests cover wording, nick colours, the stable reserved slot, polite live semantics, and
-unchanged text on refresh.
+Component tests cover wording, nick colours, the line's place inside the composer, polite live
+semantics, and unchanged text on refresh.
 
 Playwright drives the built app against local Ergo with a second IRC client. It covers direct and
 channel indicators; done, message, and clock-driven expiry clearing; outgoing throttled active and
-done-on-send. The touched desktop/mobile specs and `nativeFeelAudit`, including idle and hidden
-checks, remain green.
+done-on-send. On desktop Chromium and iPhone WebKit it checks that the newest row meets the
+composer's top edge, the line sits inside the composer above the field, and starting or stopping
+typing moves neither the transcript nor the composer. The touched desktop/mobile specs and
+`nativeFeelAudit`, including idle and hidden checks, remain green.
