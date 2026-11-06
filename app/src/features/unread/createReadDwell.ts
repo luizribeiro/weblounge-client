@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, onCleanup } from "solid-js";
+import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import type { MessageProjection } from "../../engine/protocol";
 
 interface ReadDwellOptions {
@@ -11,11 +11,39 @@ interface ReadDwellOptions {
 }
 
 export function createReadDwell(options: ReadDwellOptions): void {
+  const [eligibleBufferId, setEligibleBufferId] = createSignal<number>();
+  const [dwelledBufferId, setDwelledBufferId] = createSignal<number>();
+  let dwellTimer: number | undefined;
+  const clearDwellTimer = () => {
+    if (dwellTimer !== undefined) window.clearTimeout(dwellTimer);
+    dwellTimer = undefined;
+  };
+
+  createEffect(() => {
+    const bufferId = options.bufferId();
+    clearDwellTimer();
+    setDwelledBufferId(undefined);
+    setEligibleBufferId(undefined);
+    if (
+      bufferId === undefined ||
+      !options.atLiveEdge() ||
+      !options.foreground()
+    ) {
+      return;
+    }
+    setEligibleBufferId(bufferId);
+    onCleanup(() => {
+      if (eligibleBufferId() === bufferId) setEligibleBufferId(undefined);
+      clearDwellTimer();
+    });
+  });
+
   createEffect(() => {
     const bufferId = options.bufferId();
     const messageId = options.newestCommittedMessageId();
     if (
       bufferId === undefined ||
+      eligibleBufferId() !== bufferId ||
       options.unread() === 0 ||
       messageId === undefined ||
       !options.atLiveEdge() ||
@@ -23,11 +51,15 @@ export function createReadDwell(options: ReadDwellOptions): void {
     ) {
       return;
     }
-    const timeout = window.setTimeout(
-      () => options.onMarkRead(bufferId, messageId),
-      500,
-    );
-    onCleanup(() => window.clearTimeout(timeout));
+    if (dwelledBufferId() === bufferId) {
+      options.onMarkRead(bufferId, messageId);
+      return;
+    }
+    if (dwellTimer !== undefined) return;
+    dwellTimer = window.setTimeout(() => {
+      dwellTimer = undefined;
+      if (eligibleBufferId() === bufferId) setDwelledBufferId(bufferId);
+    }, 500);
   });
 }
 

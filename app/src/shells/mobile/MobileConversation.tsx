@@ -69,6 +69,7 @@ export interface MobileConversationProps {
     | ((bufferId: number, localSendId: number) => void)
     | undefined;
   readonly onSend: (bufferId: number, text: string) => Promise<boolean>;
+  readonly visible?: boolean | undefined;
 }
 
 export function MobileConversation(props: MobileConversationProps) {
@@ -92,7 +93,7 @@ export function MobileConversation(props: MobileConversationProps) {
   createReadDwell({
     atLiveEdge,
     bufferId,
-    foreground,
+    foreground: () => foreground() && props.visible !== false,
     newestCommittedMessageId: newestMessageId,
     onMarkRead: (currentBufferId, through) =>
       props.onMarkRead(currentBufferId, through),

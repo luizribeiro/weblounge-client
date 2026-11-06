@@ -166,6 +166,7 @@ export function MobileScreen(props: MobileScreenProps) {
           showConnectionError={!props.retained}
           onRetry={props.onRetry}
           onSend={props.onSend}
+          visible={!props.inactive && !props.retained}
         />
       ) : null}
     </div>

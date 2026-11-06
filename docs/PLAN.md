@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep the 500ms read dwell attached to continuous foreground live-edge visibility instead of
+  restarting it for every committed row. A local-Ergo regression interleaves four bots' messages,
+  NOTICE, multiline and typing traffic at one-second per-bot intervals on desktop Chromium and
+  iPhone WebKit, then reconnects after reload to prove the server marker retained the cleared badge.
 - [x] Keep the Chromium push fixture's CDP delivery session attached for each page lifetime, so a
   successful `deliverPushMessage` acknowledgement cannot be followed by detach discarding the
   queued event before the service worker receives it. The cold pushed-history journey stays green

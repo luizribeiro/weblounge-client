@@ -111,6 +111,43 @@ it("keeps the dwell across equal buffer and message replacements", () => {
   expect(markRead).toHaveBeenCalledWith(2, 8);
 });
 
+it("cancels the dwell when the conversation becomes inactive", () => {
+  const [visible, setVisible] = createSignal(true);
+  const [snapshot, setSnapshot] = createSignal({
+    buffer,
+    messages: [message] as readonly MessageProjection[],
+  });
+  const markRead = vi.fn();
+  render(() => (
+    <MobileConversation
+      buffer={snapshot().buffer}
+      memberships={[]}
+      messages={snapshot().messages}
+      onBack={() => {}}
+      onLoadHistory={() => {}}
+      onMarkRead={markRead}
+      onOpenMembers={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+      visible={visible()}
+    />
+  ));
+
+  vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenCalledOnce();
+  setVisible(false);
+  setSnapshot({
+    buffer: { ...buffer, unread: 2 },
+    messages: [message, { ...message, id: 9 }],
+  });
+  vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenCalledOnce();
+  setVisible(true);
+  vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenLastCalledWith(2, 9);
+  expect(markRead).toHaveBeenCalledTimes(2);
+});
+
 it("waits for both visibility and window focus before starting the dwell", () => {
   visibility = "hidden";
   focused = false;

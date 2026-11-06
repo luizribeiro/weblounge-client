@@ -174,6 +174,13 @@ export class IrcClient {
     );
   }
 
+  async noticeConfirmed(channel: string, text: string): Promise<string> {
+    this.send(`NOTICE ${channel} :${text}`);
+    return this.waitFor(`echoed NOTICE to ${channel}`, (line) =>
+      line.includes(` NOTICE ${channel} :${text}`),
+    );
+  }
+
   async waitForPrivmsg(
     target: string,
     text: string,

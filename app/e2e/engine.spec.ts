@@ -817,15 +817,14 @@ test.describe("local Ergo user flow", () => {
       );
       await firstTab.bringToFront();
       await firstTab.keyboard.press("End");
-      bot.privmsg("#weblounge-test", `read sync ${Date.now()}`);
+      const incoming = `read sync ${Date.now()}`;
+      bot.privmsg("#weblounge-test", incoming);
       const secondActive = secondTab.locator(
         '[data-buffer-id][aria-current="page"]',
       );
-      await expect
-        .poll(async () =>
-          Number(await secondActive.getAttribute("data-unread")),
-        )
-        .toBeGreaterThan(0);
+      await expect(
+        secondTab.getByText(incoming, { exact: true }),
+      ).toBeAttached();
       await expect(secondActive).toHaveAttribute("data-unread", "0", {
         timeout: 3_000,
       });

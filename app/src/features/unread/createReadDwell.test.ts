@@ -34,7 +34,7 @@ it("keeps the dwell armed across equal read-state snapshots", () => {
   expect(markRead).toHaveBeenCalledWith(2, 8);
 });
 
-it("restarts the dwell for a newer committed message", () => {
+it("keeps the dwell across a newer committed message", () => {
   const [messageId, setMessageId] = createSignal(8);
   const markRead = vi.fn();
 
@@ -52,10 +52,36 @@ it("restarts the dwell for a newer committed message", () => {
 
   vi.advanceTimersByTime(300);
   setMessageId(9);
-  vi.advanceTimersByTime(499);
+  vi.advanceTimersByTime(199);
   expect(markRead).not.toHaveBeenCalled();
   vi.advanceTimersByTime(1);
   expect(markRead).toHaveBeenCalledWith(2, 9);
+});
+
+it("marks later arrivals immediately while the dwell remains qualified", () => {
+  const [messageId, setMessageId] = createSignal(8);
+  const [unread, setUnread] = createSignal(1);
+  const markRead = vi.fn();
+
+  render(() => {
+    createReadDwell({
+      atLiveEdge: () => true,
+      bufferId: () => 2,
+      foreground: () => true,
+      newestCommittedMessageId: messageId,
+      onMarkRead: markRead,
+      unread,
+    });
+    return undefined;
+  });
+
+  vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenLastCalledWith(2, 8);
+  setUnread(0);
+  setMessageId(9);
+  setUnread(1);
+  expect(markRead).toHaveBeenLastCalledWith(2, 9);
+  expect(markRead).toHaveBeenCalledTimes(2);
 });
 
 it("cancels the dwell when the conversation stops qualifying", () => {

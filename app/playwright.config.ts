@@ -191,6 +191,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-mobile-bots-unread",
+      testMatch: "**/bots-unread.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
       name: "android-mobile-history",
       testMatch: "**/mobile-history.spec.ts",
       use: { ...devices["Pixel 7"], browserName: "chromium" },
