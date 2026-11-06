@@ -133,11 +133,12 @@ stricter: unread and mention badges are suppressed only when the buffer appears 
 rendered, visible pane. A leaf hidden by explicit zoom or automatic narrow-window presentation does
 not suppress badges.
 
-A read marker advances only when at least one instance is rendered, the document/window is
-foreground and focused, and that instance is at its live-edge sentinel for 500ms. The coordinator
-sends `MarkRead` through the latest fully committed visible event. Pending sends do not count. For
-duplicate panes, any qualifying instance is sufficient. Without read sync, the same rule advances
-only the local read position.
+A read marker advances only when at least one instance is rendered, the shared platform authority
+reports the page foreground, and that instance is at its live-edge sentinel for 500ms. Foreground
+means visible and focused except that a visible iOS standalone PWA remains foreground when WebKit
+reports false focus. The coordinator sends `MarkRead` through the latest fully committed visible
+event. Pending sends do not count. For duplicate panes, any qualifying instance is sufficient.
+Without read sync, the same rule advances only the local read position.
 
 Opening or focusing alone never marks read. Hiding/zooming the pane, leaving the live edge, or
 losing window focus cancels the dwell. Thus a mention in a zoom-hidden pane both badges and remains

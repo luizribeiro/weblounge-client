@@ -73,6 +73,13 @@ accent badge; a buffer with one or more mentions uses the mention-badge colours 
 total unread count. DMs therefore always use the mention treatment. The count and an accessible “N
 unread, including mentions” label keep severity from being colour-only.
 
+The unread `New` boundary uses the same platform foreground authority as the read dwell and push
+lease. While the open conversation is at its live edge, an arrival advances the provisional
+boundary past itself so the line does not flash while the 500ms dwell catches up. A hidden page, a
+different open conversation, or an instance away from its live edge freezes the boundary at the
+current marker. A visible iOS standalone PWA is foreground even when WebKit reports false focus;
+`pageIsForeground` is the single definition for all of these decisions.
+
 ## Boundaries
 
 This subsystem owns history request state, page cursors, history merge delivery, marker fetch/send,
@@ -102,6 +109,9 @@ notification policy, or background push delivery.
 - Desktop and iPhone WebKit route the app through a controllable TCP forwarder, silently strand the
   browser socket, deliver channel and direct messages to the always-on account, foreground the app,
   and assert both opened conversations catch up without reload.
+- Desktop Chromium and iPhone WebKit open a direct conversation against local Ergo and deliver a
+  live message at the focused live edge, while hidden, and while scrolled up. The focused arrival
+  never mounts a `New` boundary before or after the read dwell; both away cases retain one.
 - Playwright uses two independent browser contexts signed in to the same account: reading at the
   live edge in one clears the unread and mention indicators in the other. Native-feel idle and
   hidden-tab audits remain green. A direct message without a nick match keeps its red total-unread
