@@ -27,6 +27,9 @@ Unit and engine tests are not enough: twice a task passed every check while the 
 Every UI task must also keep the Playwright `nativeFeelAudit` and its idle/hidden checks green.
 Tests wait for conditions, never for time: no fixed sleeps, retries, `test.slow()` or raised timeouts to make a test pass. A flaky test is a bug to root-cause. The `test-wait-policy` hook enforces this; the only exemption is a wait that measures a fixed window, marked `// wait-ok: <why>`.
 
+## Waiting on long jobs
+Every model call re-sends the whole session, so polling and big outputs burn quota even when cached. Block on a long job (Playwright, nix builds, CI) with one wait of up to 45 minutes instead of checking it repeatedly. Don't print large logs or JSON into the session: filter to the failing test, the error and a few lines of context (`tail`, `grep`, `--reporter=line`). Report when something changes, not while waiting.
+
 ## Commits
 - One commit = one idea. If the message needs "and", split it.
 - Commit after each small unit (a function with its tests, a single doc, a single fix). Aim for < ~5 files and < ~100 changed lines per commit (design docs may be longer, but one doc per commit).
