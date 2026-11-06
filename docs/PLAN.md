@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Sort mobile Chats across channels and direct messages by newest activity for every filter and
+  search, preserving engine order for ties and inactive rows. Cached and live projections share the
+  same ordering path, desktop order stays unchanged, and a pressed row holds position until release.
+  Local-Ergo coverage proves a DM rises first and a later channel message moves its channel above it.
 - [x] Expose a privacy-safe, in-memory foreground and push-lease event log in `/debug`, including
   iOS standalone inputs, acted-on foreground transitions, typed lease results and copyable wall and
   monotonic timestamps. Unit coverage bounds the 200-entry ring and drives fake lifecycle events;
