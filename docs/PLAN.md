@@ -6,6 +6,11 @@ The single place a fresh session reads to know where the project stands. Update 
   restarting it for every committed row. A local-Ergo regression interleaves four bots' messages,
   NOTICE, multiline and typing traffic at one-second per-bot intervals on desktop Chromium and
   iPhone WebKit, then reconnects after reload to prove the server marker retained the cleared badge.
+- [x] Keep the unread `New` boundary out of a conversation being read at its live edge, including
+  visible iOS standalone PWAs whose WebKit focus signal is false. Divider placement and both read
+  dwells now share the push foreground authority; hiding proactively freezes the last visible row
+  so deferred delivery still gains a boundary. Local-Ergo DM coverage retains `New` while hidden
+  or scrolled up and rejects even a transient divider for focused arrivals in Chromium and WebKit.
 - [x] Keep the Chromium push fixture's CDP delivery session attached for each page lifetime, so a
   successful `deliverPushMessage` acknowledgement cannot be followed by detach discarding the
   queued event before the service worker receives it. The cold pushed-history journey stays green
