@@ -158,7 +158,7 @@ export default defineConfig({
     },
     {
       name: "webkit-mobile-typing",
-      grep: /keeps the newest transcript line clear of the typing reserve/u,
+      grep: /typing reserve/u,
       testMatch: "**/typing.spec.ts",
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },

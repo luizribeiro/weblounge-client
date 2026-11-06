@@ -46,6 +46,11 @@ describe("keyboard motion", () => {
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
+    expect(
+      fixture.root
+        .querySelector("[data-keyboard-transcript-snapshot]")
+        ?.getAttribute("data-keyboard-transcript-snapshot"),
+    ).toBe("opening");
     fixture.animations[1]?.finish();
     await Promise.resolve();
     expect(fixture.root.dataset.keyboardMotion).toBe("open");
@@ -103,7 +108,9 @@ describe("keyboard motion", () => {
     );
     expect(fixture.transcriptAnimate).toHaveBeenCalledOnce();
     expect(
-      fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
+      fixture.root.querySelector(
+        '[data-keyboard-transcript-snapshot="closing"]',
+      ),
     ).not.toBeNull();
     fixture.animations[2]?.finish();
     await Promise.resolve();

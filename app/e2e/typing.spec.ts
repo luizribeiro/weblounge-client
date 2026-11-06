@@ -11,7 +11,10 @@ const channel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 interface TranscriptEdgeGeometry {
   readonly composerTop: number;
+  readonly hitLastTextLine: boolean;
   readonly listBottom: number;
+  readonly listClientHeight: number;
+  readonly listScrollHeight: number;
   readonly messageBottom: number;
   readonly typingBottom: number;
   readonly typingTop: number;
@@ -136,6 +139,7 @@ test.describe("typing indicators", () => {
       await expect(
         page.getByRole("heading", { name: conversation }),
       ).toBeVisible();
+      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
       if (mobile) await expect(page.locator("[data-motion]")).toHaveCount(0);
       const conversationRoot = mobile
         ? page.locator("[data-mobile-chat]").filter({
@@ -215,6 +219,78 @@ test.describe("typing indicators", () => {
     } finally {
       sender.close();
       typer.close();
+    }
+  });
+
+  test("keeps a long transcript clear of the typing reserve", async ({
+    page,
+  }, testInfo) => {
+    const mobile = testInfo.project.name === "webkit-mobile-typing";
+    const suffix = `${mobile ? "m" : "d"}${Date.now().toString().slice(-6)}`;
+    const sender = await IrcClient.connect(
+      `typing-long-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    try {
+      for (let index = 0; index < 12; index += 1)
+        await sender.privmsgConfirmed(
+          channel,
+          `typing long seed ${suffix} ${index} ${"wrapped history ".repeat(20)}`,
+        );
+      const opening = `typing long opening ${suffix}`;
+      await sender.privmsgConfirmed(channel, opening);
+
+      if (mobile) await emulateStandalone(page);
+      await page.goto("/?irc-password=weblounge-test");
+      if (mobile) {
+        await expect(page.locator("[data-mobile-chats]")).toBeVisible();
+        await page
+          .getByRole("button", {
+            name: new RegExp(`^${channel}(?:,|$)`, "u"),
+          })
+          .click();
+      }
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
+
+      const root = mobile
+        ? page.locator("[data-mobile-chat]").filter({
+            has: page.getByRole("heading", { name: channel }),
+          })
+        : page.locator("[data-app-root]");
+      const composer = root.getByRole("textbox", {
+        name: `Message ${channel}`,
+      });
+
+      await expectNewestRowClear(root, opening, "after opening long history");
+
+      const version = await page.evaluate(() => window.weblounge.version);
+      await composer.fill("/version");
+      await composer.press("Enter");
+      await expectNewestRowClear(root, version, "after /version");
+
+      const incoming = `typing long incoming ${suffix}`;
+      await sender.privmsgConfirmed(channel, incoming);
+      await expectNewestRowClear(root, incoming, "after incoming message");
+
+      const sent = `typing long sent ${suffix}`;
+      await composer.fill(sent);
+      await composer.press("Enter");
+      const sentRow = root
+        .locator('[data-message-row][data-delivery="confirmed"]')
+        .filter({ has: page.getByText(sent, { exact: true }) });
+      await expect(sentRow).toBeVisible();
+      const sentGeometry = await transcriptEdgeGeometry(sentRow);
+      expectLongTranscript(sentGeometry, "after sending in long history");
+      expectTranscriptClear(
+        sentGeometry,
+        "after sending in long history",
+        true,
+      );
+    } finally {
+      sender.close();
     }
   });
 
@@ -380,9 +456,40 @@ async function transcriptEdgeGeometry(
           const messageRect = message.getBoundingClientRect();
           const typingRect = typing.getBoundingClientRect();
           const composerRect = composer.getBoundingClientRect();
+          const selectable =
+            message.querySelector<HTMLElement>("[data-selectable]");
+          const walker =
+            selectable === null
+              ? undefined
+              : document.createTreeWalker(selectable, NodeFilter.SHOW_TEXT);
+          let textNode: Text | undefined;
+          for (
+            let node = walker?.nextNode();
+            node !== null && node !== undefined;
+            node = walker?.nextNode()
+          ) {
+            if (node.textContent?.trim() !== "") textNode = node as Text;
+          }
+          const range = textNode === undefined ? undefined : new Range();
+          range?.selectNodeContents(textNode);
+          const lineRect = [...(range?.getClientRects() ?? [])]
+            .filter((rect) => rect.width > 0 && rect.height > 0)
+            .at(-1);
+          const hit =
+            lineRect === undefined
+              ? null
+              : document.elementFromPoint(
+                  lineRect.left + Math.min(lineRect.width / 2, 4),
+                  lineRect.bottom - 1,
+                );
           return {
             composerTop: composerRect.top,
+            hitLastTextLine:
+              hit instanceof Element &&
+              hit.closest("[data-message-row]") === message,
             listBottom: listRect.bottom,
+            listClientHeight: list.clientHeight,
+            listScrollHeight: list.scrollHeight,
             messageBottom: messageRect.bottom,
             typingBottom: typingRect.bottom,
             typingTop: typingRect.top,
@@ -400,14 +507,39 @@ async function transcriptEdgeGeometry(
 function expectTranscriptClear(
   geometry: TranscriptEdgeGeometry,
   state: string,
+  soft = false,
 ): void {
   const measurement = `${state}: ${JSON.stringify(geometry)}`;
-  expect(geometry.messageBottom, measurement).toBeLessThanOrEqual(
+  const check = soft ? expect.soft : expect;
+  check(geometry.messageBottom, measurement).toBeLessThanOrEqual(
     geometry.typingTop,
   );
-  expect(geometry.typingBottom, measurement).toBeLessThanOrEqual(
+  check(geometry.hitLastTextLine, measurement).toBe(true);
+  check(geometry.typingBottom, measurement).toBeLessThanOrEqual(
     geometry.composerTop,
   );
+}
+
+async function expectNewestRowClear(
+  root: Locator,
+  text: string,
+  state: string,
+): Promise<void> {
+  const row = root.locator("[data-message-row]", { hasText: text });
+  await expect(row).toBeVisible();
+  const geometry = await transcriptEdgeGeometry(row);
+  expectLongTranscript(geometry, state);
+  expectTranscriptClear(geometry, state, true);
+}
+
+function expectLongTranscript(
+  geometry: TranscriptEdgeGeometry,
+  state: string,
+): void {
+  expect(
+    geometry.listScrollHeight,
+    `${state}: ${JSON.stringify(geometry)}`,
+  ).toBeGreaterThan(geometry.listClientHeight);
 }
 
 function expectStableTypingGeometry(

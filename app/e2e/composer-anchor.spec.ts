@@ -11,6 +11,7 @@ interface AnchorFrame {
   readonly composerTop: number;
   readonly listBottom: number;
   readonly top: number;
+  readonly typingTop: number;
 }
 
 interface AnchorRecording {
@@ -119,9 +120,7 @@ async function expectLiveEdgePinned(
   const frames = await finishAnchorRecording(page);
   expect(frames.length).toBeGreaterThan(1);
   expect(
-    frames.every(
-      ({ bottom, listBottom }) => Math.abs(bottom - listBottom) <= 1,
-    ),
+    frames.every(({ bottom, typingTop }) => Math.abs(bottom - typingTop) <= 1),
     JSON.stringify(frames),
   ).toBe(true);
   const first = frames[0];
@@ -163,6 +162,10 @@ async function startAnchorRecording(
     if (list === null) throw new Error("message list is missing");
     const composer = document.querySelector<HTMLElement>("[data-composer]");
     if (composer === null) throw new Error("composer is missing");
+    const typing = document.querySelector<HTMLElement>(
+      "[data-typing-indicator]",
+    );
+    if (typing === null) throw new Error("typing indicator is missing");
     const rows = [...list.querySelectorAll<HTMLElement>("[data-message-row]")];
     const listTop = list.getBoundingClientRect().top;
     const message =
@@ -198,6 +201,7 @@ async function startAnchorRecording(
         composerTop: composer.getBoundingClientRect().top,
         listBottom: list.getBoundingClientRect().bottom,
         top: rect.top,
+        typingTop: typing.getBoundingClientRect().top,
       });
       if (!recording.done) requestAnimationFrame(sample);
     };

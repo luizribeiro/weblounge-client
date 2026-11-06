@@ -1154,7 +1154,10 @@ async function sampleKeyboardTransition(
           ),
         ];
         const rowRects = rows.map((row) => row.getBoundingClientRect());
-        const newest = rowRects.at(-1);
+        const newest = rows
+          .at(-1)
+          ?.querySelector<HTMLElement>("[data-message-row]")
+          ?.getBoundingClientRect();
         frames.push({
           animationTime:
             typeof animationTime === "number" ? animationTime : undefined,
@@ -1565,19 +1568,22 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   expect(frames.at(-1)?.animations).toBe(0);
   const headerTop = frames[0]?.headerTop ?? 0;
   const scrollerTop = frames[0]?.scrollerTop ?? 0;
+  expect(Math.abs((frames[0]?.newestGap ?? 0) - 24)).toBeLessThanOrEqual(1);
   expect(
-    frames.every(
-      (frame) =>
-        frame.visibleRows > 0 &&
-        frame.desktopGridRows === 0 &&
-        frame.overlappingRows <= 2 &&
-        Math.abs(frame.headerTop - headerTop) <= 0.5 &&
-        Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
-        Math.abs(frame.rootTop) <= 0.5 &&
-        Math.abs(frame.offsetTop) <= 0.5 &&
-        Math.abs(frame.scrollY) <= 0.5 &&
-        (!frame.composerVisible || Math.abs(frame.newestGap) <= 22),
-    ),
+    frames
+      .slice(1)
+      .every(
+        (frame) =>
+          frame.visibleRows > 0 &&
+          frame.desktopGridRows === 0 &&
+          frame.overlappingRows <= 2 &&
+          Math.abs(frame.headerTop - headerTop) <= 0.5 &&
+          Math.abs(frame.scrollerTop - scrollerTop) <= 0.5 &&
+          Math.abs(frame.rootTop) <= 0.5 &&
+          Math.abs(frame.offsetTop) <= 0.5 &&
+          Math.abs(frame.scrollY) <= 0.5 &&
+          (!frame.composerVisible || Math.abs(frame.newestGap) <= 22),
+      ),
     JSON.stringify(frames),
   ).toBe(true);
   expect(frames[0]?.liveEdgeGap).toBeLessThanOrEqual(22);
@@ -1658,6 +1664,6 @@ function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
   ).toBe(true);
   expect(frames.at(-1)?.animations).toBe(0);
   expect(frames.at(-1)?.composerVisible).toBe(true);
-  expect(Math.abs(frames.at(-1)?.newestGap ?? 0)).toBeLessThanOrEqual(8);
+  expect(Math.abs((frames.at(-1)?.newestGap ?? 0) - 24)).toBeLessThanOrEqual(1);
   expect(frames.at(-1)?.overlappingRows).toBe(0);
 }

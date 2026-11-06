@@ -356,7 +356,7 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
   expect(list.scrollHeight - list.scrollTop - list.clientHeight).toBe(0);
 });
 
-it("preserves fractional row measurements at the typing reserve", async () => {
+it("includes the typing reserve without rounding fractional rows", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(
     "ResizeObserver",
@@ -377,7 +377,7 @@ it("preserves fractional row measurements at the typing reserve", async () => {
   for (const observer of observers) observer.flushTarget(row, 19.25);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(spacer.style.height).toBe("47.25px");
+  expect(spacer.style.height).toBe("71.25px");
 });
 
 it("remeasures rows after fonts finish loading", async () => {

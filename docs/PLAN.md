@@ -2,6 +2,11 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Put the permanent typing reserve inside virtual transcript geometry so initial end-scroll,
+  append follow, live-edge detection and anchoring all stop above the empty overlay. Desktop
+  Chromium and iPhone WebKit now keep long-history `/version`, received and sent rows visible and
+  hit-testable without manual scrolling, while short transcripts and keyboard motion count the
+  CSS-exported 24px reserve exactly once.
 - [x] Keep the permanent typing reserve effective under the production CSP with one CSS Module
   value exported at build time to transcript geometry, so mount timing and missing computed styles
   cannot erase it. Preserve WebKit's fractional row measurements, and treat a swipe-completed

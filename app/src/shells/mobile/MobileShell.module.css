@@ -35,12 +35,15 @@
 
 :global(#root[data-keyboard-motion] [data-message-list]) {
   padding-block-end: calc(
-    var(--wl-typing-slot-height) +
     var(--wl-keyboard-inset) +
     var(--wl-keyboard-composer-height)
   );
 }
 
+/*
+ * Keyboard motion already compensated for the overlay; virtual end geometry
+ * needs the same compensation while the indicator stays below the keyboard.
+ */
 :global(#root[data-keyboard-motion] [data-message-motion-layer]) {
   translate: 0
     calc(
@@ -48,9 +51,18 @@
       (
         var(--wl-keyboard-inset) +
         var(--wl-keyboard-composer-height) -
+        var(--wl-typing-slot-height) -
         var(--wl-typing-slot-height)
       )
     );
+}
+
+:global(
+  #root[data-keyboard-motion]
+    [data-keyboard-transcript-snapshot="opening"]
+    [data-keyboard-transcript-snapshot-layer]
+) {
+  translate: 0 var(--wl-typing-slot-height);
 }
 
 :global(#root[data-keyboard-motion] [data-composer]) {

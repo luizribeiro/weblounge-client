@@ -255,6 +255,7 @@ export function MessageList(props: MessageListProps) {
     },
     anchorTo: "end",
     followOnAppend: true,
+    paddingEnd: typingSlotHeight,
     scrollEndThreshold: liveEdgeTolerance,
     // The sentinel can report before the virtualizer has seen a scroll that
     // reached the end. Arrival can therefore come from either source, while
@@ -951,7 +952,7 @@ function formatNoticeTime(milliseconds: number): string {
   }).format(milliseconds);
 }
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
-  return Math.max(0, viewportHeight - contentHeight - typingSlotHeight);
+  return Math.max(0, viewportHeight - contentHeight);
 }
 
 function measureRowElement(

@@ -101,6 +101,7 @@ export function observeKeyboardMotion(
         snapshot: createTranscriptSnapshot(
           surfaces.transcript,
           surfaces.screen,
+          "opening",
         ),
       };
       openingLayout = layout;
@@ -193,6 +194,7 @@ export function observeKeyboardMotion(
     const transcriptSnapshot = createTranscriptSnapshot(
       snapshot.transcript,
       snapshot.screen,
+      "closing",
     );
     const animation = snapshot.composer.animate(
       [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
@@ -341,6 +343,7 @@ function motionTiming(browserWindow: Window): {
 function createTranscriptSnapshot(
   transcript: HTMLElement,
   screen: HTMLElement,
+  phase: "closing" | "opening",
 ): HTMLElement {
   const list = transcript.closest<HTMLElement>("[data-message-list]");
   const listRect =
@@ -362,7 +365,7 @@ function createTranscriptSnapshot(
     snapshot.className = list.className;
     snapshot.dataset.presentation = list.dataset.presentation;
   }
-  snapshot.dataset.keyboardTranscriptSnapshot = "true";
+  snapshot.dataset.keyboardTranscriptSnapshot = phase;
   snapshot.style.bottom = "0";
   snapshot.style.left = `${listRect.left - screenRect.left}px`;
   snapshot.style.overflow = "clip";

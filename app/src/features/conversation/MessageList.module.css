@@ -1,8 +1,10 @@
 @value typingSlotHeight: 24px;
 
-.surface {
+:global(:root) {
   --wl-typing-slot-height: typingSlotHeight;
+}
 
+.surface {
   min-height: 0;
   overflow: clip;
   position: relative;
@@ -13,7 +15,7 @@
   overflow: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
-  padding: 12px 0 var(--wl-typing-slot-height);
+  padding: 12px 0 0;
   position: relative;
   touch-action: pan-y;
 }
