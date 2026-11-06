@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Flush a complete pending chat-list snapshot when the page is hidden instead of leaving its
+  first write behind the 750ms foreground throttle. An iPhone WebKit journey restores an unread DM
+  among several channel histories, reads it, backgrounds immediately after hydration, and proves
+  the next launch's cached frame is already clear.
 - [x] Make CI-loaded WebKit fixtures observe settled state instead of the first visible virtual
   row: concurrent keyboard traffic now ends with an ordered IRC barrier, transcript gestures and
   hit tests require three identical animation-frame geometry snapshots, and startup recovery closes

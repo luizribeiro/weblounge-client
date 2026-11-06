@@ -50,7 +50,10 @@ Changes to the projected chat-list fields schedule a trailing, throttled rewrite
 record. The engine may write only after it has an online, complete list: buffer discovery and
 latest-message hydration have finished for the relevant networks. Reaching the startup time cap,
 reconnecting, or holding a partial/error projection never overwrites the last complete record.
-Repeated changes coalesce, and the one-record commit is atomic.
+Repeated changes coalesce, and the one-record commit is atomic. When the page becomes hidden or
+fires `pagehide`, it asks the engine to start an already-pending rewrite immediately, before the
+browser can suspend its worker. This does not bypass the complete-list gate or create a write when
+no complete projection is pending.
 
 At launch the engine reads and validates the record before live synchronization completes. A valid
 record renders through the normal chat-list geometry. There is no “Connecting…” or “Reconnecting…”

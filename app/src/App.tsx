@@ -791,6 +791,14 @@ export function App(props: AppProps) {
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
+      if (!foreground) {
+        void mountedClient
+          .send({
+            id: crypto.randomUUID(),
+            request: { type: "flush_chat_list_snapshot" },
+          })
+          .catch(() => undefined);
+      }
       if (foreground) {
         void consumeOpenRoute();
         syncEnginePushState();

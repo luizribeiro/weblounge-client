@@ -273,6 +273,80 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       bot.close();
     }
   });
+
+  test("flushes a cleared cached DM before a background relaunch", async ({
+    baseURL,
+    context,
+    page,
+  }) => {
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const suffix = Date.now().toString(36).slice(-6);
+    const channels = Array.from(
+      { length: 4 },
+      (_, index) => `#cache-${index}-${suffix}`,
+    );
+    const firstChannel = channels[0];
+    if (firstChannel === undefined) throw new Error("first channel is missing");
+    const bot = await IrcClient.connect(
+      `cache-bot-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      firstChannel,
+    );
+    const directText = `cached direct ${suffix}`;
+    let current = page;
+    try {
+      await current.goto("/config.json");
+      await seedUnreadDirectSnapshot(
+        current,
+        baseURL,
+        bot.nickname,
+        directText,
+        channels,
+      );
+      await useDedicatedWorker(current);
+      await recordCachedRow(current, bot.nickname);
+      const joined = bot.waitForNextJoin(firstChannel, "weblounge");
+      await current.goto(startUrl(...channels));
+      await expect
+        .poll(() => cachedRow(current))
+        .toMatchObject({
+          label: `${bot.nickname}, 1 unread, including mentions`,
+        });
+      await joined;
+      await bot.privmsgConfirmed("weblounge", directText);
+
+      await bufferRow(current, bot.nickname).click();
+      await expect(
+        current.getByRole("heading", { name: bot.nickname }),
+      ).toBeVisible();
+      await expect(
+        current
+          .getByRole("list", { name: "Messages" })
+          .getByText(directText, { exact: true }),
+      ).toBeVisible();
+      await expectRead(bufferRow(current, bot.nickname), bot.nickname);
+
+      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
+        "data-chat-list-hydrating",
+        "true",
+      );
+      await backgroundPage(current);
+      await current.close();
+
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await recordCachedRow(current, bot.nickname);
+      await current.goto(startUrl(...channels));
+      await expect
+        .poll(() => cachedRow(current))
+        .toMatchObject({ label: bot.nickname });
+    } finally {
+      if (!current.isClosed()) await current.close();
+      bot.close();
+    }
+  });
 });
 
 async function openChannel(page: Page, channel: string): Promise<void> {
@@ -435,6 +509,70 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
 
 function cachedRow(page: Page): Promise<unknown> {
   return page.evaluate(() => Reflect.get(globalThis, "staleSnapshotCachedRow"));
+}
+
+async function seedUnreadDirectSnapshot(
+  page: Page,
+  baseURL: string,
+  nick: string,
+  preview: string,
+  channels: readonly string[],
+): Promise<void> {
+  const endpoint = new URL("/socket", baseURL);
+  endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+  const fingerprint = `${"Local Ergo".length}:Local Ergo${endpoint.href.length}:${endpoint.href}`;
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(
+      async (value, record) => {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = value.transaction("cache", "readwrite");
+          transaction
+            .objectStore("cache")
+            .put(
+              new TextEncoder().encode(JSON.stringify(record)),
+              new TextEncoder().encode("chat-list-snapshot"),
+            );
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      },
+      {
+        schema: 4,
+        fingerprint,
+        rows: [
+          {
+            conversation: { kind: "direct", key: nick },
+            title: nick,
+            last_activity_ms: 1_800_000_000_000,
+            badge: { kind: "mentions", count: 1, mentions: 1 },
+            preview,
+          },
+          ...channels.map((channel, index) => ({
+            conversation: { kind: "channel", key: channel },
+            title: channel,
+            last_activity_ms: 1_799_999_999_999 - index,
+            badge: { kind: "none" },
+            preview: `cached ${channel}`,
+          })),
+        ],
+      },
+    );
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}
+
+async function backgroundPage(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    Object.defineProperties(document, {
+      hidden: { configurable: true, get: () => true },
+      visibilityState: { configurable: true, get: () => "hidden" },
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new PageTransitionEvent("pagehide"));
+  });
 }
 
 async function recordCachedRows(

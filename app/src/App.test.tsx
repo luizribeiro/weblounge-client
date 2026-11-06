@@ -165,6 +165,11 @@ it("reports document visibility to the engine", () => {
   document.dispatchEvent(new Event("visibilitychange"));
 
   expect(client.visibility).toEqual(["visible", "hidden", "visible", "hidden"]);
+  expect(
+    client.requests.filter(
+      ({ request }) => request.type === "flush_chat_list_snapshot",
+    ),
+  ).toHaveLength(2);
   hidden.mockRestore();
   focused.mockRestore();
 });
