@@ -46,14 +46,17 @@ and the existing row geometry without a second schema.
 
 ## Write, read, and replacement
 
-Changes to the projected chat-list fields schedule a trailing, throttled rewrite of the whole
-record. The engine may write only after it has an online, complete list: buffer discovery and
-latest-message hydration have finished for the relevant networks. Reaching the startup time cap,
-reconnecting, or holding a partial/error projection never overwrites the last complete record.
-Repeated changes coalesce, and the one-record commit is atomic. When the page becomes hidden or
-fires `pagehide`, it asks the engine to start an already-pending rewrite immediately, before the
-browser can suspend its worker. This does not bypass the complete-list gate or create a write when
-no complete projection is pending.
+Every projected chat-list update schedules a trailing, throttled rewrite. The rewritten record is
+assembled per row: a row whose latest history has loaded uses its current projection, including a
+cleared badge, while a row that is still queued, loading, or failed keeps its previous cached row.
+A new unresolved row is omitted until it becomes authoritative, and a row known to be unavailable
+is removed. This lets one slow buffer retain its safe cached values without blocking authoritative
+changes from every other buffer.
+
+The merge happens in engine memory before the rewrite; storage still receives one ordered record
+in one atomic commit. Repeated changes coalesce. When the page becomes hidden or fires `pagehide`,
+it asks the engine to start an already-pending rewrite immediately, before the browser can suspend
+its worker. A lifecycle flush does not create a write when no update is pending.
 
 At launch the engine reads and validates the record before live synchronization completes. A valid
 record renders through the normal chat-list geometry. There is no “Connecting…” or “Reconnecting…”
@@ -80,11 +83,12 @@ that promotion. The transcript has no separate cached-state mark-read control: a
 dwell begins after live history paints and uses the normal server-sync path.
 
 The engine's first complete live chat-list snapshot replaces the cached record in the UI in one
-batch. Cached and live rows are never merged or diffed. A selected cached identity rebinds to its
-live buffer when present, and the quiet state gives way to live history. A channel absent because
-it was left on another device is removed with its route; desktop selects the preceding live buffer
-and mobile returns to Chats. The client never silently rejoins or retargets it. Any queued send to
-that departed identity still finishes against its original target and cannot reopen the buffer.
+batch. The per-row persistence merge is internal and never exposes a mixed cached/live list to the
+UI. A selected cached identity rebinds to its live buffer when present, and the quiet state gives
+way to live history. A channel absent because it was left on another device is removed with its
+route; desktop selects the preceding live buffer and mobile returns to Chats. The client never
+silently rejoins or retargets it. Any queued send to that departed identity still finishes against
+its original target and cannot reopen the buffer.
 
 The cached values are otherwise never used as live unread state, notifications, history, or
 protocol identity proof. Matching cached and live fixtures retain the same row boxes, so the swap
@@ -124,7 +128,7 @@ evicted at any time, and must never be required for a correct cold launch.
 - Serialization and engine tests cover the exact bounded shape, DM preview truncation, atomic
   whole-record writes, row activity round-tripping into the live ordering field, preserved row
   order and rendered times, channel and nick keys scoped by network identity, throttling with an
-  injected clock, and refusal to write partial, capped, or offline projections.
+  injected clock, authoritative-row replacement, and preservation of unresolved cached rows.
 - Validation tests ignore corrupt, unknown-version, and wrong-network records; sign-out clears the
   record and a following launch cannot paint it.
 - A Chromium and WebKit Playwright filmstrip starts with a seeded cache and delayed engine. Its
@@ -139,6 +143,9 @@ evicted at any time, and must never be required for a correct cold launch.
   transcript-covering mark-read control.
 - A seeded row omitted from the first complete live list remains open as not available, offers a
   working route back to Chats, and never sends its queued message to another target.
+- A built-app relaunch begins with a cached unread DM, clears it while another buffer is still
+  hydrating, backgrounds immediately, and proves the next cached frame has the cleared DM without
+  provisional changes to the unresolved row.
 - Transient recovery shows no status text or strip. Actionable failure shows the single shared strip
   on Chats and conversation screens, tints the logo, and clears both when resolved.
 - The existing no-cache startup, splash geometry, live-ready cap, native-feel idle, and hidden-tab
@@ -150,5 +157,5 @@ This slice makes cached discovery and navigation useful and reuses reconnect-saf
 and deferred read intent. Later offline work adds bounded cached conversation tails, durable send
 and mark-read queues that survive worker or app termination, retry/conflict policy, target-pin
 verification while disconnected, retention and eviction, and production offline journeys. None of
-that broader storage or history work, incremental list reconciliation, or cross-device cache sync
-is part of this design.
+that broader storage or history work, incremental UI list reconciliation, or cross-device cache
+sync is part of this design.
