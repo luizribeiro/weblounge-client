@@ -544,7 +544,17 @@ async function swipeFromNickname(
   nickname: import("@playwright/test").Locator,
 ): Promise<boolean> {
   return nickname.evaluate((target) => {
-    const bounds = target.getBoundingClientRect();
+    const label = target.getAttribute("aria-label");
+    const currentTarget = target.isConnected
+      ? target
+      : [...document.querySelectorAll("button")].find(
+          (button) => button.getAttribute("aria-label") === label,
+        );
+    if (currentTarget === undefined)
+      throw new Error("nickname touch target is missing");
+    const shell = document.querySelector("[data-mobile-shell]");
+    if (shell === null) throw new Error("mobile shell is missing");
+    const bounds = currentTarget.getBoundingClientRect();
     const startX = bounds.left + bounds.width / 2;
     const clientY = bounds.top + bounds.height / 2;
     const points = [
@@ -553,7 +563,12 @@ async function swipeFromNickname(
       [Math.min(startX + 120, 320), 1_040],
       [401, 1_080],
     ] as const;
-    const pointer = (type: string, clientX: number, timeStamp: number) => {
+    const pointer = (
+      receiver: Element,
+      type: string,
+      clientX: number,
+      timeStamp: number,
+    ) => {
       const event = new PointerEvent(type, {
         bubbles: true,
         cancelable: true,
@@ -564,15 +579,15 @@ async function swipeFromNickname(
         pointerType: "touch",
       });
       Object.defineProperty(event, "timeStamp", { value: timeStamp });
-      target.dispatchEvent(event);
+      receiver.dispatchEvent(event);
     };
-    pointer("pointerdown", points[0][0], points[0][1]);
+    pointer(currentTarget, "pointerdown", points[0][0], points[0][1]);
     for (const [clientX, timeStamp] of points.slice(1))
-      pointer("pointermove", clientX, timeStamp);
+      pointer(shell, "pointermove", clientX, timeStamp);
     const last = points.at(-1) ?? points[0];
-    pointer("pointerup", last[0], last[1]);
-    if (!target.isConnected) return true;
-    return !target.dispatchEvent(
+    pointer(shell, "pointerup", last[0], last[1]);
+    if (!currentTarget.isConnected) return true;
+    return !currentTarget.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
   });
