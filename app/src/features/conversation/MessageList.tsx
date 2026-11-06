@@ -480,7 +480,9 @@ export function MessageList(props: MessageListProps) {
           <li
             aria-hidden="true"
             class={styles.spacer}
-            style={{ height: `${virtualizer.getTotalSize()}px` }}
+            style={{
+              height: `${scrollGeometrySize(virtualizer.getTotalSize())}px`,
+            }}
           />
           <li
             aria-hidden="true"
@@ -953,6 +955,10 @@ function formatNoticeTime(milliseconds: number): string {
 }
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight);
+}
+
+function scrollGeometrySize(contentHeight: number): number {
+  return Math.ceil(contentHeight);
 }
 
 function measureRowElement(

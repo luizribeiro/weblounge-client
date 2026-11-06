@@ -11,7 +11,10 @@ const channel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
 interface TranscriptEdgeGeometry {
   readonly composerTop: number;
+  readonly hitElement: string | undefined;
   readonly hitLastTextLine: boolean;
+  readonly hitMessageText: string | undefined;
+  readonly lastTextLineBottom: number | undefined;
   readonly listBottom: number;
   readonly listClientHeight: number;
   readonly listScrollHeight: number;
@@ -556,9 +559,17 @@ async function transcriptEdgeGeometry(
                 );
           return {
             composerTop: composerRect.top,
+            hitElement:
+              hit instanceof Element ? hit.tagName.toLowerCase() : undefined,
             hitLastTextLine:
               hit instanceof Element &&
               hit.closest("[data-message-row]") === message,
+            hitMessageText:
+              hit instanceof Element
+                ? hit.closest<HTMLElement>("[data-message-row]")?.dataset
+                    .messageText
+                : undefined,
+            lastTextLineBottom: lineRect?.bottom,
             listBottom: listRect.bottom,
             listClientHeight: list.clientHeight,
             listScrollHeight: list.scrollHeight,
