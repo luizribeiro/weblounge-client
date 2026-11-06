@@ -29,6 +29,20 @@ type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
 let sharedRuntime: EngineWorkerRuntime | undefined;
 const historyWireTestPorts = new Set<WorkerHostPort>();
 let historyWireTestInstalled = false;
+let historyWireTestHoldBefore = false;
+let historyWireTestBeforeTarget: string | undefined;
+let historyWireNativeSend:
+  | ((
+      this: WebSocket,
+      data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>,
+    ) => void)
+  | undefined;
+let heldHistoryBefore:
+  | {
+      readonly socket: WebSocket;
+      readonly data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
+    }
+  | undefined;
 
 export function attachEnginePort(port: WorkerHostPort): void {
   sharedRuntime ??= new EngineWorkerRuntime(loadEngine);
@@ -54,10 +68,21 @@ export class EngineWorkerRuntime {
         isHistoryWireTestSubscription(event.data)
       ) {
         historyWireTestPorts.add(port);
+        historyWireTestHoldBefore ||= event.data.hold_before === true;
+        if (typeof event.data.before_target === "string")
+          historyWireTestBeforeTarget = event.data.before_target;
         if (!historyWireTestInstalled) {
           historyWireTestInstalled = true;
           installHistoryWireTestTrace();
         }
+        return;
+      }
+      if (
+        __HISTORY_WIRE_TEST_ENABLED__ &&
+        isRecord(event.data) &&
+        event.data.type === "history_wire_test_release_before"
+      ) {
+        releaseHeldHistoryBefore();
         return;
       }
       if (isHostDetach(event.data)) {
@@ -241,13 +266,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isHistoryWireTestSubscription(value: unknown): boolean {
+function isHistoryWireTestSubscription(
+  value: unknown,
+): value is Record<string, unknown> {
   return isRecord(value) && value.type === "history_wire_test_trace_subscribe";
 }
 
 function installHistoryWireTestTrace(): void {
   if (!__HISTORY_WIRE_TEST_ENABLED__) return;
   const NativeWebSocket = globalThis.WebSocket;
+  historyWireNativeSend = NativeWebSocket.prototype.send;
   globalThis.WebSocket = class extends NativeWebSocket {
     constructor(url: string | URL, protocols?: string | string[]) {
       super(url, protocols);
@@ -261,10 +289,47 @@ function installHistoryWireTestTrace(): void {
       data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>,
     ) {
       const at = performance.timeOrigin + performance.now();
+      const text = wireTextSync(data);
+      if (
+        historyWireTestHoldBefore &&
+        heldHistoryBefore === undefined &&
+        text?.includes(
+          `CHATHISTORY BEFORE ${historyWireTestBeforeTarget ?? ""}`,
+        ) === true
+      ) {
+        heldHistoryBefore = { socket: this, data };
+        for (const port of historyWireTestPorts)
+          port.postMessage({
+            type: "history_wire_test_before_held",
+            at,
+            line: text,
+          });
+        return;
+      }
       void traceHistoryWireValue("sent", at, data);
       super.send(data);
     }
   };
+}
+
+function releaseHeldHistoryBefore(): void {
+  const held = heldHistoryBefore;
+  if (held === undefined) return;
+  heldHistoryBefore = undefined;
+  const at = performance.timeOrigin + performance.now();
+  void traceHistoryWireValue("sent", at, held.data);
+  historyWireNativeSend?.call(held.socket, held.data);
+}
+
+function wireTextSync(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value instanceof ArrayBuffer)
+    return new TextDecoder().decode(new Uint8Array(value));
+  if (ArrayBuffer.isView(value))
+    return new TextDecoder().decode(
+      new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+    );
+  return undefined;
 }
 
 async function traceHistoryWireValue(

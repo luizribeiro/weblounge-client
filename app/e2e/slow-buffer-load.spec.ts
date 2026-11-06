@@ -178,6 +178,161 @@ test("settles the opened conversation without waiting for background history", a
   }
 });
 
+test("opens ready history without a title shimmer or eager older page", async ({
+  baseURL,
+  page,
+}) => {
+  const suffix = Date.now().toString(36).slice(-5);
+  const account = `warm-user-${suffix}`;
+  const password = `test-${account}`;
+  const channel = `#warm-${suffix}`;
+  const keeper = await IrcClient.connectIsolated(account, channel);
+  const bots = await Promise.all(
+    Array.from({ length: 10 }, (_, index) =>
+      IrcClient.connectIsolated(`warm${index}-${suffix}`, channel),
+    ),
+  );
+  await captureHistoryWire(page, channel);
+  try {
+    for (let index = 0; index < 120; index += bots.length)
+      await Promise.all(
+        bots.map((bot, offset) =>
+          bot.privmsgConfirmed(
+            channel,
+            `warm history ${index + offset} ${"page ".repeat(12)}`,
+          ),
+        ),
+      );
+    await page.goto("/config.json");
+    await seedSnapshot(page, baseURL, ["#weblounge-test", channel]);
+    await recordTitleTimeline(page, channel);
+    const url = new URL("/Local%20Ergo/weblounge-test", baseURL);
+    url.searchParams.set("irc-password", password);
+    url.searchParams.set("irc-account", account);
+    url.searchParams.set("irc-nickname", account);
+    url.searchParams.append("irc-autojoin", channel);
+    await page.goto(url.href);
+
+    const row = page.getByRole("button", { name: channel });
+    await expect(row).toBeVisible();
+    await page.waitForFunction((targetTitle) => {
+      const timeline = Reflect.get(globalThis, "slowBufferProjectionTimeline");
+      return (
+        Array.isArray(timeline) &&
+        timeline.some(
+          (entry) =>
+            typeof entry === "object" &&
+            entry !== null &&
+            "event" in entry &&
+            typeof entry.event === "object" &&
+            entry.event !== null &&
+            "buffer" in entry.event &&
+            typeof entry.event.buffer === "object" &&
+            entry.event.buffer !== null &&
+            "title" in entry.event.buffer &&
+            entry.event.buffer.title === targetTitle &&
+            "sync_state" in entry.event.buffer &&
+            entry.event.buffer.sync_state === "synced",
+        )
+      );
+    }, channel);
+    await page.evaluate(() =>
+      Reflect.set(globalThis, "slowBufferOpenedAt", performance.now()),
+    );
+    await row.click();
+
+    const list = page.locator("[data-message-list]");
+    await expect(list).toBeVisible();
+    await expect(page.getByText(/warm history 119/u)).toBeVisible();
+    await expect
+      .poll(() =>
+        list.evaluate((element) => element.scrollHeight - element.clientHeight),
+      )
+      .toBeGreaterThan(100);
+    await list.dispatchEvent("wheel", { deltaY: -800 });
+    await list.evaluate((element) => {
+      Reflect.set(globalThis, "slowBufferScrolledAt", performance.now());
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => Reflect.get(globalThis, "slowBufferHeldBefore") !== undefined,
+        ),
+      )
+      .toBe(true);
+
+    const measured = await page.evaluate(() => ({
+      held: Reflect.get(globalThis, "slowBufferHeldBefore") as WireTrace,
+      openedAt: Reflect.get(globalThis, "slowBufferOpenedAt") as number,
+      phases: Reflect.get(globalThis, "slowBufferTitleTimeline") as Array<{
+        at: number;
+        phase: string | null;
+      }>,
+      scrolledAt: Reflect.get(globalThis, "slowBufferScrolledAt") as number,
+      timeOrigin: performance.timeOrigin,
+      wire: Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[],
+    }));
+    expect(measured.held.at).toBeGreaterThanOrEqual(
+      measured.timeOrigin + measured.scrolledAt,
+    );
+    expect(
+      measured.wire.some(
+        (entry) =>
+          entry.direction === "sent" &&
+          entry.at < measured.timeOrigin + measured.scrolledAt &&
+          entry.line.includes(`CHATHISTORY BEFORE ${channel} `),
+      ),
+    ).toBe(false);
+    expect(
+      measured.phases.some(
+        (entry) => entry.at >= measured.openedAt && entry.phase === "loading",
+      ),
+    ).toBe(false);
+
+    await page.evaluate(() => {
+      const release = Reflect.get(globalThis, "slowBufferReleaseBefore");
+      if (typeof release !== "function")
+        throw new Error("history gate missing");
+      release();
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (target) =>
+            (
+              Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[]
+            ).some(
+              (entry) =>
+                entry.direction === "sent" &&
+                entry.line.includes(`CHATHISTORY BEFORE ${target} `),
+            ),
+          channel,
+        ),
+      )
+      .toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (target) =>
+            (
+              Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[]
+            ).some(
+              (entry) =>
+                entry.direction === "received" &&
+                entry.line.includes(`chathistory ${target}`),
+            ),
+          channel,
+        ),
+      )
+      .toBe(true);
+  } finally {
+    keeper.close();
+    for (const bot of bots) bot.close();
+  }
+});
+
 interface WireTrace {
   readonly at: number;
   readonly direction: "received" | "sent";
@@ -244,20 +399,29 @@ async function seedSnapshot(
   }
 }
 
-async function captureHistoryWire(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function captureHistoryWire(
+  page: Page,
+  beforeTarget?: string,
+): Promise<void> {
+  await page.addInitScript((heldBeforeTarget) => {
     Reflect.deleteProperty(globalThis, "SharedWorker");
     const timeline: unknown[] = [];
     const projections: unknown[] = [];
     const subscribedWorkers = new WeakSet<Worker>();
     Reflect.set(globalThis, "slowBufferWireTimeline", timeline);
     Reflect.set(globalThis, "slowBufferProjectionTimeline", projections);
+    let subscribedWorker: Worker | undefined;
     const postMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (message, options) {
       if (!subscribedWorkers.has(this)) {
         subscribedWorkers.add(this);
+        subscribedWorker = this;
         Reflect.apply(postMessage, this, [
-          { type: "history_wire_test_trace_subscribe" },
+          {
+            type: "history_wire_test_trace_subscribe",
+            hold_before: heldBeforeTarget !== undefined,
+            before_target: heldBeforeTarget,
+          },
         ]);
       }
       Reflect.apply(postMessage, this, [message, options]);
@@ -287,6 +451,15 @@ async function captureHistoryWire(page: Page): Promise<void> {
           typeof event.data === "object" &&
           event.data !== null &&
           "type" in event.data &&
+          event.data.type === "history_wire_test_before_held"
+        ) {
+          Reflect.set(globalThis, "slowBufferHeldBefore", event.data);
+          return;
+        }
+        if (
+          typeof event.data === "object" &&
+          event.data !== null &&
+          "type" in event.data &&
           (event.data.type === "buffer_updated" ||
             event.data.type === "network_state_changed")
         )
@@ -296,7 +469,12 @@ async function captureHistoryWire(page: Page): Promise<void> {
       };
       addListener.call(this, type, wrapped, options);
     };
-  });
+    Reflect.set(globalThis, "slowBufferReleaseBefore", () => {
+      subscribedWorker?.postMessage({
+        type: "history_wire_test_release_before",
+      });
+    });
+  }, beforeTarget);
 }
 
 async function recordTitleTimeline(page: Page, title: string): Promise<void> {
