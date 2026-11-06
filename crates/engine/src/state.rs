@@ -3076,27 +3076,8 @@ fn order_key(record: &TimelineRecord) -> (i64, i64, u64) {
 
 pub(crate) fn time_millis(time: SystemTime) -> i64 {
     match time.duration_since(UNIX_EPOCH) {
-        Ok(duration) => i64::try_from(duration_millis(duration, cfg!(target_arch = "wasm32")))
-            .unwrap_or(i64::MAX),
-        Err(error) => -i64::try_from(duration_millis(
-            error.duration(),
-            cfg!(target_arch = "wasm32"),
-        ))
-        .unwrap_or(i64::MAX),
-    }
-}
-
-fn duration_millis(duration: Duration, snap_platform_drift: bool) -> u128 {
-    const NANOS_PER_MILLI: u32 = 1_000_000;
-    const PLATFORM_DRIFT_TOLERANCE_NANOS: u32 = 1_000;
-    let millis = duration.as_millis();
-    let nanos_after_millisecond = duration.subsec_nanos() % NANOS_PER_MILLI;
-    if snap_platform_drift
-        && nanos_after_millisecond >= NANOS_PER_MILLI - PLATFORM_DRIFT_TOLERANCE_NANOS
-    {
-        millis.saturating_add(1)
-    } else {
-        millis
+        Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
+        Err(error) => -i64::try_from(error.duration().as_millis()).unwrap_or(i64::MAX),
     }
 }
 
@@ -3109,7 +3090,7 @@ mod tests {
     use super::{
         DirectKey, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey, NetworkModel,
         PendingTargetState, ReadPreparation, SendTarget, TimelineOrigin, collapse_blank_lines,
-        derive_read_projection, draft_key, duration_millis, nick_color_index, time_millis,
+        derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -4427,21 +4408,6 @@ mod tests {
 
         assert!(messages[0].received_at_ms >= before);
         assert!(messages[0].received_at_ms <= after);
-    }
-
-    #[test]
-    fn time_millis_recovers_a_millisecond_from_submicrosecond_platform_drift() {
-        let second = 1_762_430_978;
-        let time = UNIX_EPOCH + Duration::new(second, 376_999_900);
-
-        assert_eq!(
-            duration_millis(time.duration_since(UNIX_EPOCH).expect("after epoch"), true),
-            1_762_430_978_377
-        );
-        assert_eq!(
-            duration_millis(Duration::new(second, 377_742_688), true),
-            1_762_430_978_377
-        );
     }
 
     #[test]
