@@ -10503,6 +10503,15 @@ async fn delay(duration: Duration) {
         let request = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
         let label = request_label(&request);
         assert!(request.contains("CHATHISTORY AFTER #room msgid=live-1"));
+        wire.server(
+            "@time=2026-10-15T12:00:02.000Z;msgid=live-2 :alice!a@host PRIVMSG #room :newer live arrival",
+        )
+        .await;
+        let live = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(message) if message.text == "newer live arrival")
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, live);
         send_history_page(
             &mut wire,
             label,
@@ -10519,7 +10528,7 @@ async fn delay(duration: Duration) {
         process_history(&state, &outbound, &client, 1, page);
         let final_request = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
         let final_label = request_label(&final_request);
-        assert!(final_request.contains("CHATHISTORY AFTER #room msgid=missed-1"));
+        assert!(final_request.contains("CHATHISTORY AFTER #room msgid=live-2"));
         send_history_page(&mut wire, final_label, &[]).await;
         let appended = collect(&mut receiver)
             .into_iter()
@@ -10531,7 +10540,7 @@ async fn delay(duration: Duration) {
             .map(|message| message.text)
             .collect::<Vec<_>>();
 
-        assert_eq!(appended, ["missed while away"]);
+        assert_eq!(appended, ["newer live arrival", "missed while away"]);
     }
 
     #[tokio::test]
