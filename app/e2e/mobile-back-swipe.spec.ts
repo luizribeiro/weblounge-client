@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { emulateStandalone } from "./mobile-platform";
 import {
@@ -274,19 +274,14 @@ test("mobile back swipe starts on selectable transcript content", async ({
     );
     await expect(message).toHaveCSS("user-select", "text");
 
-    const messagePoint = await message.evaluate((element) => {
-      const bounds = element.getBoundingClientRect();
-      return {
-        x: Math.min(bounds.right - 1, bounds.left + 2),
-        y: bounds.top + bounds.height / 2,
-      };
-    });
+    const messagePoint = await visiblePoint(message);
     await panOverTranscript(page, messagePoint.x, messagePoint.y, 401, 600);
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
     await expectAligned(page);
 
     await openChat(page);
-    await panOverTranscript(page, 5, messagePoint.y, 80, 500);
+    const reopenedMessagePoint = await visiblePoint(message);
+    await panOverTranscript(page, 5, reopenedMessagePoint.y, 80, 500);
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
     await expect(page.locator("[data-motion]")).toHaveCount(0);
     await expectAligned(page);
@@ -300,7 +295,8 @@ test("mobile back swipe starts on selectable transcript content", async ({
     await expectAligned(page);
 
     await openChat(page);
-    await panOverTranscript(page, 5, messagePoint.y, 80, 80);
+    const fastMessagePoint = await visiblePoint(message);
+    await panOverTranscript(page, 5, fastMessagePoint.y, 80, 80);
     await expect(page.locator("[data-mobile-chats]")).toBeVisible();
     await expectAligned(page);
   } finally {
@@ -490,6 +486,25 @@ async function panOverTranscript(
     },
     { clientY, duration, endX, startX },
   );
+}
+
+async function visiblePoint(
+  locator: Locator,
+): Promise<{ readonly x: number; readonly y: number }> {
+  await expect(locator).toBeInViewport();
+  return locator.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const left = Math.max(0, bounds.left);
+    const right = Math.min(innerWidth, bounds.right);
+    const top = Math.max(0, bounds.top);
+    const bottom = Math.min(innerHeight, bounds.bottom);
+    if (right <= left || bottom <= top)
+      throw new Error("swipe target is outside the viewport");
+    return {
+      x: Math.min(right - 1, left + 2),
+      y: top + (bottom - top) / 2,
+    };
+  });
 }
 
 async function panThroughCaptureLoss(
