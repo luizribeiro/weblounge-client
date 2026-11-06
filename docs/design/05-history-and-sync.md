@@ -34,6 +34,14 @@ non-empty `BEFORE` page always advances to another requestable cursor. Only an e
 sets `at_start`; page length and a server end hint do not. An empty initial page is terminal because
 it establishes that the conversation has no available entries.
 
+Opening a conversation requests the `Latest` edge only when that edge is still unknown. The
+request is a no-op for `Ready`, so opening an already-loaded buffer never turns its retained oldest
+cursor into an implicit `BEFORE` page. Reaching the transcript top through user scroll intent sends
+the separate `Older` request. `LoadingOlder` keeps the buffer's projected sync state `Synced`; its
+loading and boundary state is reported by `history_state_changed` at the transcript edge instead of
+making the conversation title shimmer. `LoadingLatest`, reconnect `CatchingUp`, and
+`CatchingUpLatest` project `Syncing` because the live edge is not yet known to be current.
+
 After every `Connected` following the first, each ready channel and direct conversation requests
 `Client::history(target).after(newest)`. Non-terminal pages advance the retained cursor and request
 the next page until the server reports the end or returns an empty page. Catch-up is capped at 500
@@ -96,7 +104,8 @@ notification policy, or background push delivery.
 ## Testing
 
 - Pure engine tests cover empty/non-empty terminal pages, cursor survival across bounded eviction,
-  and the badge/highlight matrix for direct messages and channels with and without a nick match.
+  directional latest/older requests, the title sync mapping, and the badge/highlight matrix for
+  direct messages and channels with and without a nick match.
   UI derivation tests cover no unread, unread with and without mentions, DMs, and counts above 99.
 - Scripted papo transcripts page through more than 1,000 same-time messages and assert every msgid
   is delivered once in chronological order. Reconnect transcripts cover ready direct messages,
