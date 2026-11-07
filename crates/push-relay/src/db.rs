@@ -8,6 +8,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use tokio::sync::Semaphore;
 
 use crate::{Error, Result};
 
@@ -20,6 +21,7 @@ const MAX_HELD_PUSHES_PER_ACCOUNT: u32 = 100;
 const DEAD_ENDPOINT_BATCH_SIZE: u32 = 5;
 const SCHEMA_VERSION: u32 = 5;
 const PROBING_ROUTE_TTL_SECONDS: i64 = 5 * 60;
+const MAX_CONCURRENT_DATABASE_TASKS: usize = 8;
 
 #[derive(Clone, Debug)]
 pub(crate) struct WebPushTarget {
@@ -102,6 +104,7 @@ pub(crate) struct TestDeviceState {
 #[derive(Clone, Debug)]
 pub struct Database {
     path: Arc<PathBuf>,
+    tasks: Arc<Semaphore>,
 }
 
 impl Database {
@@ -113,29 +116,50 @@ impl Database {
     pub async fn open(path: PathBuf) -> Result<Self> {
         let database = Self {
             path: Arc::new(path),
+            tasks: Arc::new(Semaphore::new(MAX_CONCURRENT_DATABASE_TASKS)),
         };
         let schema_path = Arc::clone(&database.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            secure_database_file(&schema_path)?;
-            let connection = connect(&schema_path)?;
-            let journal_mode = connection.query_row("PRAGMA journal_mode = WAL", [], |row| {
-                row.get::<_, String>(0)
-            })?;
-            if journal_mode != "wal" {
-                return Err(Error::Config("SQLite WAL mode is unavailable".to_owned()));
-            }
-            let schema_version =
-                connection.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?;
-            migrate_schema(&connection, schema_version)?;
-            Ok(())
-        })
-        .await??;
+        database
+            .spawn(move || -> Result<()> {
+                secure_database_file(&schema_path)?;
+                let connection = connect(&schema_path)?;
+                let journal_mode =
+                    connection.query_row("PRAGMA journal_mode = WAL", [], |row| {
+                        row.get::<_, String>(0)
+                    })?;
+                if journal_mode != "wal" {
+                    return Err(Error::Config("SQLite WAL mode is unavailable".to_owned()));
+                }
+                let schema_version =
+                    connection
+                        .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?;
+                migrate_schema(&connection, schema_version)?;
+                Ok(())
+            })
+            .await??;
         Ok(database)
+    }
+
+    async fn spawn<T, F>(&self, operation: F) -> Result<Result<T>>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T> + Send + 'static,
+    {
+        let permit = Arc::clone(&self.tasks)
+            .acquire_owned()
+            .await
+            .map_err(|_| Error::Config("database task limiter closed unexpectedly".to_owned()))?;
+        let result = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            operation()
+        })
+        .await?;
+        Ok(result)
     }
 
     pub(crate) async fn health(&self) -> Result<Vec<DuplicateActiveRoutes>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Vec<DuplicateActiveRoutes>> {
+        self.spawn(move || -> Result<Vec<DuplicateActiveRoutes>> {
             let connection = connect(&path)?;
             let mut statement = connection.prepare(
                 "SELECT device_id, COUNT(*) FROM routes
@@ -159,7 +183,7 @@ impl Database {
     #[cfg(feature = "push-e2e")]
     pub(crate) async fn test_device_states(&self) -> Result<Vec<TestDeviceState>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Vec<TestDeviceState>> {
+        self.spawn(move || -> Result<Vec<TestDeviceState>> {
             let connection = connect(&path)?;
             let mut statement = connection.prepare(
                 "SELECT devices.id,
@@ -193,7 +217,7 @@ impl Database {
     #[cfg(feature = "push-e2e")]
     pub(crate) async fn test_expire_leases(&self) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             connect(&path)?.execute("UPDATE leases SET expires_at = 0", [])?;
             Ok(())
         })
@@ -211,7 +235,7 @@ impl Database {
         };
         let stored = credentials.clone();
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -250,7 +274,7 @@ impl Database {
         target: WebPushTarget,
     ) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -268,7 +292,7 @@ impl Database {
 
     pub(crate) async fn delete_device(&self, device_id: String, secret: String) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -289,7 +313,7 @@ impl Database {
     ) -> Result<RouteCredentials> {
         let new_route_id = random_token()?;
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<RouteCredentials> {
+        self.spawn(move || -> Result<RouteCredentials> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -343,7 +367,7 @@ impl Database {
         secret: String,
     ) -> Result<Vec<String>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+        self.spawn(move || -> Result<Vec<String>> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -395,7 +419,7 @@ impl Database {
 
     pub(crate) async fn delete_route(&self, route_id: String, secret: String) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -411,7 +435,7 @@ impl Database {
 
     pub(crate) async fn route(&self, route_id: String) -> Result<Route> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Route> {
+        self.spawn(move || -> Result<Route> {
             let mut connection = connect(&path)?;
             let now = unix_seconds();
             let mut stored = load_route(&connection, &route_id)?;
@@ -435,7 +459,7 @@ impl Database {
 
     pub(crate) async fn mark_device_dead(&self, device_id: String) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -453,7 +477,7 @@ impl Database {
         home_vapid: Vec<u8>,
     ) -> Result<Vec<String>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+        self.spawn(move || -> Result<Vec<String>> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -486,7 +510,7 @@ impl Database {
         route_ids: Vec<String>,
     ) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -514,7 +538,7 @@ impl Database {
         expires_at: i64,
     ) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -540,7 +564,7 @@ impl Database {
         tab_id: String,
     ) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             let connection = connect(&path)?;
             authenticate_device(&connection, &device_id, &secret)?;
             connection.execute(
@@ -562,7 +586,7 @@ impl Database {
         now: i64,
     ) -> Result<bool> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<bool> {
+        self.spawn(move || -> Result<bool> {
             let mut connection = connect(&path)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -608,7 +632,7 @@ impl Database {
 
     pub(crate) async fn next_held(&self, now: i64) -> Result<Option<HeldPush>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Option<HeldPush>> {
+        self.spawn(move || -> Result<Option<HeldPush>> {
             let connection = connect(&path)?;
             connection.execute("DELETE FROM leases WHERE expires_at <= ?1", [now])?;
             connection.execute(
@@ -665,7 +689,7 @@ impl Database {
 
     pub(crate) async fn delete_held(&self, id: i64) -> Result<()> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        self.spawn(move || -> Result<()> {
             connect(&path)?.execute("DELETE FROM held_pushes WHERE id = ?1", [id])?;
             Ok(())
         })
@@ -674,7 +698,7 @@ impl Database {
 
     pub(crate) async fn next_held_deadline(&self, now: i64) -> Result<Option<i64>> {
         let path = Arc::clone(&self.path);
-        tokio::task::spawn_blocking(move || -> Result<Option<i64>> {
+        self.spawn(move || -> Result<Option<i64>> {
             connect(&path)?
                 .query_row(
                     "SELECT MIN(
@@ -1158,7 +1182,14 @@ fn unix_seconds() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Database, MAX_DEVICES_PER_ACCOUNT, MAX_ROUTES_PER_DEVICE, WebPushTarget};
+    use std::{sync::Arc, task::Poll};
+
+    use futures::{pin_mut, poll};
+
+    use super::{
+        Database, MAX_CONCURRENT_DATABASE_TASKS, MAX_DEVICES_PER_ACCOUNT, MAX_ROUTES_PER_DEVICE,
+        WebPushTarget,
+    };
     use crate::Error;
 
     fn target(index: u32) -> WebPushTarget {
@@ -1167,6 +1198,35 @@ mod tests {
             p256dh: "key".to_owned(),
             auth: "auth".to_owned(),
         }
+    }
+
+    #[tokio::test]
+    async fn bounds_concurrent_blocking_database_tasks() {
+        let temporary = tempfile::tempdir().expect("temporary state");
+        let database = Database::open(temporary.path().join("relay.sqlite3"))
+            .await
+            .expect("database");
+        let permits = (0..MAX_CONCURRENT_DATABASE_TASKS)
+            .map(|_| {
+                Arc::clone(&database.tasks)
+                    .try_acquire_owned()
+                    .expect("configured database task permit")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            Arc::clone(&database.tasks).try_acquire_owned().is_err(),
+            "database task limiter admitted an extra operation"
+        );
+
+        let operation = database.spawn(|| Ok(()));
+        pin_mut!(operation);
+        assert!(matches!(poll!(operation.as_mut()), Poll::Pending));
+
+        drop(permits);
+        operation
+            .await
+            .expect("database task")
+            .expect("database operation");
     }
 
     #[tokio::test]
