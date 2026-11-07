@@ -25,10 +25,14 @@ The single place a fresh session reads to know where the project stands. Update 
   `Retry-After`, while permanent recovery and leases remain immediate. Page-lifecycle ownership
   handoff covers suspension and crashes without holding the lock across synchronization work. Two
   tabs, visibility flips and a no-CORS 429 stay within the device-API request budget measured below.
-- [x] Prove a recurring one-unread bot DM is the failed snapshot-commit path, not a lost or
-  undershot read marker. Firefox now drives a real bot direct through an aborted cache write,
-  verifies Ergo stores `MARKREAD` at the newest message's exact server time, and relaunches a fresh
-  SharedWorker from the retried zero-unread snapshot.
+- [x] Reproduce the louro one-unread DM as a stale papo target after hosted reconnect. Firefox now
+  keeps the SharedWorker conversation open while Luiz sends, the bot replies within three seconds,
+  and the read dwell resolves that reply through the replacement client before a clear reload.
+  Ergo's marker must advance from the own-send time to the exact reply time, with no
+  `engine.mark_read_failed` diagnostic.
+- [x] Cover a newly read DM across a failed snapshot commit independently of server read delivery.
+  Firefox verifies the exact server marker, retries the cleared projection, and relaunches a fresh
+  SharedWorker from the zero-unread snapshot.
 - [x] Retain the latest chat-list snapshot across transient storage transaction failures.
   The writer now reports a failed cache commit and retries the coalesced authoritative projection,
   so a Firefox SharedWorker relaunch cannot restore stale unread badges after the live list cleared

@@ -204,8 +204,8 @@ export class IrcClient {
     target: string,
     text: string,
     nickname: string,
-  ): Promise<void> {
-    await this.waitFor(
+  ): Promise<string> {
+    return this.waitFor(
       `PRIVMSG from ${nickname} to ${target}`,
       (line) =>
         line.includes(`:${nickname}!`) &&

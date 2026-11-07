@@ -489,6 +489,7 @@ pkgs.testers.runNixOSTest {
         WEBLOUNGE_E2E_IRC_API_TOKEN=weblounge-push-e2e-api &&
       cd app && node node_modules/@playwright/test/cli.js test \
         --project=chromium-push-full \
+        --project=firefox-bot-reply-read-full \
         --project=firefox-push-controls-full \
         --project=webkit-push-badge-full \
         --workers=1 ${grepArgument}

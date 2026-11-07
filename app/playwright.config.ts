@@ -43,6 +43,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-bot-reply-read-full",
+      grep: /marks a bot reply read after sending in a reconnected SharedWorker DM/,
+      testMatch: "**/push-full-chain.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "webkit-push-badge-full",
       grep: /corrects a stale Apple badge when the app opens/,
       testMatch: "**/push-full-chain.spec.ts",
@@ -83,7 +89,7 @@ export default defineConfig({
     },
     {
       name: "firefox-stale-snapshot",
-      grep: /overwrites stale SharedWorker badges before relaunch|keeps a read bot DM clear after a failed Firefox snapshot commit/,
+      grep: /overwrites stale SharedWorker badges before relaunch|keeps a newly read DM clear after a failed Firefox snapshot commit/,
       testMatch: "**/stale-snapshot.spec.ts",
       use: { browserName: "firefox" },
     },
