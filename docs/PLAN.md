@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Release a held history request through the worker that reported the hold, not whichever
+  test worker subscribed most recently. The wire fixture now survives an unrelated worker opening
+  and closing between hold and release, and verifies the acknowledgement's instance and port.
 - [x] Keep the relay synchronization gate finite when an injected or platform wait resolves before
   its clock reaches the requested deadline. A waiter now sleeps once per observed deadline and
   sleeps again only when another transient failure extends that deadline; frozen-clock and

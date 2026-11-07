@@ -33,6 +33,16 @@ export async function captureHistoryWire(
 ): Promise<void> {
   await page.addInitScript((settings) => {
     Reflect.deleteProperty(globalThis, "SharedWorker");
+    const NativeWorker = Worker;
+    let workerScript: string | URL | undefined;
+    let workerOptions: WorkerOptions | undefined;
+    globalThis.Worker = class extends NativeWorker {
+      constructor(scriptURL: string | URL, options?: WorkerOptions) {
+        super(scriptURL, options);
+        workerScript ??= scriptURL;
+        workerOptions ??= options;
+      }
+    };
     const timeline: unknown[] = [];
     const projections: unknown[] = [];
     const heldLatest: unknown[] = [];
@@ -40,12 +50,12 @@ export async function captureHistoryWire(
     Reflect.set(globalThis, "historyWireTimeline", timeline);
     Reflect.set(globalThis, "historyProjectionTimeline", projections);
     Reflect.set(globalThis, "historyHeldLatest", heldLatest);
-    let subscribedWorker: Worker | undefined;
+    let beforeHoldingWorker: Worker | undefined;
+    let latestHoldingWorker: Worker | undefined;
     const postMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (message, workerOptions) {
       if (!subscribedWorkers.has(this)) {
         subscribedWorkers.add(this);
-        subscribedWorker = this;
         Reflect.apply(postMessage, this, [
           {
             type: "history_wire_test_trace_subscribe",
@@ -97,6 +107,7 @@ export async function captureHistoryWire(
           "type" in event.data &&
           event.data.type === "history_wire_test_before_held"
         ) {
+          beforeHoldingWorker = this;
           Reflect.set(globalThis, "historyHeldBefore", event.data);
           timeline.push({
             at: event.data.at,
@@ -114,6 +125,7 @@ export async function captureHistoryWire(
           "type" in event.data &&
           event.data.type === "history_wire_test_latest_held"
         ) {
+          latestHoldingWorker = this;
           heldLatest.push(event.data);
           return;
         }
@@ -131,16 +143,33 @@ export async function captureHistoryWire(
       addListener.call(this, type, wrapped, listenerOptions);
     };
     Reflect.set(globalThis, "releaseHeldHistoryBefore", () => {
-      subscribedWorker?.postMessage({
+      beforeHoldingWorker?.postMessage({
         type: "history_wire_test_release_before",
       });
     });
     Reflect.set(globalThis, "releaseHeldHistoryLatest", () => {
-      subscribedWorker?.postMessage({
+      latestHoldingWorker?.postMessage({
         type: "history_wire_test_release_latest",
       });
     });
+    Reflect.set(globalThis, "closeUnrelatedHistoryWireWorker", () => {
+      if (workerScript === undefined) throw new Error("engine worker missing");
+      const worker = new Worker(workerScript, workerOptions);
+      worker.postMessage({ type: "history_wire_test_trace_subscribe" });
+      worker.terminate();
+    });
   }, options);
+}
+
+export async function closeUnrelatedHistoryWireWorker(
+  page: Page,
+): Promise<void> {
+  await page.evaluate(() => {
+    const close = Reflect.get(globalThis, "closeUnrelatedHistoryWireWorker");
+    if (typeof close !== "function")
+      throw new Error("history worker interference missing");
+    close();
+  });
 }
 
 export function heldLatestHistoryCount(page: Page): Promise<number> {

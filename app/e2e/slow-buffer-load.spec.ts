@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import {
   captureHistoryWire,
+  closeUnrelatedHistoryWireWorker,
   heldLatestHistoryCount,
   type ProjectionTrace,
   releaseHeldLatestHistory,
@@ -270,6 +271,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
         ),
       )
       .toBe(true);
+    await closeUnrelatedHistoryWireWorker(page);
 
     const measured = await page.evaluate(() => ({
       held: Reflect.get(globalThis, "historyHeldBefore") as WireTrace,
@@ -317,7 +319,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
               entry.direction === "sent" &&
               entry.line.includes(`CHATHISTORY BEFORE ${target} `),
           );
-          const held = timeline.some(
+          const held = timeline.find(
             (entry) =>
               entry.line === "before_held" &&
               typeof entry.instance_id === "string" &&
@@ -327,8 +329,8 @@ test("opens ready history without a title shimmer or eager older page", async ({
             (entry) =>
               entry.line === "before_release_received" &&
               entry.held === true &&
-              typeof entry.instance_id === "string" &&
-              typeof entry.port_id === "string",
+              entry.instance_id === held?.instance_id &&
+              entry.port_id === held?.port_id,
           );
           if (sent && held && released) return "sent";
           return JSON.stringify({
