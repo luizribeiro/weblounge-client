@@ -729,7 +729,8 @@ async fn deliver_held_pushes(state: AppState) {
                             error.warn_if_internal();
                         }
                     }
-                    Err(_) => {
+                    Err(error) => {
+                        error.warn_if_internal();
                         tokio::select! {
                             () = tokio::time::sleep(Duration::from_secs(1)) => {}
                             () = notified => {}
