@@ -174,7 +174,16 @@ export function MessageList(props: MessageListProps) {
   const endTouchScrollIntent = (event: TouchEvent) => {
     if (event.touches.length === 0) userScrollIntent.endTouch();
   };
-  const markWheelScrollIntent = () => userScrollIntent.beginDiscrete();
+  const requestOlderAtTop = () => {
+    if (!olderPageArmed) return;
+    props.onLoadOlder?.();
+    olderPageArmed = false;
+  };
+  const markWheelScrollIntent = (event: WheelEvent) => {
+    userScrollIntent.beginDiscrete();
+    if (event.deltaY < 0 && (list?.scrollTop ?? Infinity) <= liveEdgeTolerance)
+      requestOlderAtTop();
+  };
   const markScrollKeyIntent = (event: KeyboardEvent) => {
     if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
   };
@@ -441,8 +450,7 @@ export function MessageList(props: MessageListProps) {
           if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
           if (element.scrollTop <= liveEdgeTolerance) {
-            if (olderPageArmed) props.onLoadOlder?.();
-            olderPageArmed = false;
+            requestOlderAtTop();
           } else {
             olderPageArmed = true;
           }

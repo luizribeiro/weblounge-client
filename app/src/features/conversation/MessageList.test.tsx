@@ -903,6 +903,24 @@ it("loads older history only when the user reaches the top", () => {
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
 });
 
+it("loads older history when an upward wheel cannot move past the top", () => {
+  const onLoadOlder = vi.fn();
+  const { container } = render(() => (
+    <MessageList messages={[message]} onLoadOlder={onLoadOlder} />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 100 },
+    scrollHeight: { configurable: true, value: 500 },
+  });
+  list.scrollTop = 0;
+
+  fireEvent.wheel(list, { deltaY: -100 });
+
+  expect(onLoadOlder).toHaveBeenCalledOnce();
+});
+
 it("defers live-edge geometry until after the scroll handler", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const messages = Array.from({ length: 3 }, (_, index) => ({

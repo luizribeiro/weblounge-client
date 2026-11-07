@@ -249,12 +249,11 @@ test("opens ready history without a title shimmer or eager older page", async ({
         list.evaluate((element) => element.scrollHeight - element.clientHeight),
       )
       .toBeGreaterThan(100);
-    await list.dispatchEvent("wheel", { deltaY: -800 });
-    await list.evaluate((element) => {
-      Reflect.set(globalThis, "slowBufferScrolledAt", performance.now());
-      element.scrollTop = 0;
-      element.dispatchEvent(new Event("scroll"));
-    });
+    await list.hover();
+    await page.evaluate(() =>
+      Reflect.set(globalThis, "slowBufferScrolledAt", performance.now()),
+    );
+    await page.mouse.wheel(0, -10_000);
     await expect
       .poll(() =>
         page.evaluate(

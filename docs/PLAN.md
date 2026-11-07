@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Request older Ready history from upward wheel intent even when the transcript is already at
+  the top and the browser cannot emit another scroll event. The regression now drives Chromium's
+  real wheel default action instead of splitting synthetic input and programmatic scrolling across
+  browser round trips, while retaining the no-eager-page and no-title-shimmer checks.
 - [x] Keep concurrent unknown push routes at 404 under SQLite write contention. Route lookup no
   longer takes an immediate write transaction merely to expire unrelated probes; only an expired
   matched probe enters the retirement transaction. Relay database work is bounded below the
