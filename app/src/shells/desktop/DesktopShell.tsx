@@ -314,7 +314,6 @@ export function DesktopShell(props: DesktopShellProps) {
     if (
       buffer === undefined ||
       buffer.kind === "server" ||
-      (buffer.cached && buffer.kind !== "direct") ||
       buffer.available === false ||
       requestedHistory.has(buffer.id)
     ) {

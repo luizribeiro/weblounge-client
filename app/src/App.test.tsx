@@ -534,7 +534,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
     "data-chat-list-hydrating",
     "true",
   );
-  expect(client.requests).not.toContainEqual(
+  expect(client.requests).toContainEqual(
     expect.objectContaining({
       request: { type: "load_history", buffer_id: 2, direction: "latest" },
     }),

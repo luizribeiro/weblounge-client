@@ -135,6 +135,28 @@ it("resolves a cached direct through normal history", () => {
   expect(document.querySelector("[data-message-list]")).not.toBeNull();
 });
 
+it("resolves a cached channel through normal history", () => {
+  const loadHistory = vi.fn();
+  render(() => (
+    <DesktopShell
+      activeBufferId={2}
+      buffers={[{ ...channel, cached: true, unread: 2 }]}
+      composerNotice={undefined}
+      completion={undefined}
+      focusRequest={undefined}
+      memberships={new Map()}
+      messages={new Map()}
+      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      onLoadHistory={loadHistory}
+      onMarkRead={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(loadHistory).toHaveBeenCalledWith(2, "latest");
+});
+
 it("toggles the channel member panel and routes direct messages", () => {
   const openDirect = vi.fn();
   const requestMembers = vi.fn();

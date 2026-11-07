@@ -106,12 +106,7 @@ export function MobileConversation(props: MobileConversationProps) {
 
   let historyRequested = false;
   createEffect(() => {
-    if (
-      historyRequested ||
-      (props.buffer.cached === true && props.buffer.kind !== "direct") ||
-      props.buffer.available === false
-    )
-      return;
+    if (historyRequested || props.buffer.available === false) return;
     historyRequested = true;
     props.onLoadHistory(props.buffer.id, "latest");
   });

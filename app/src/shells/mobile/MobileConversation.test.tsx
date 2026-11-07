@@ -238,6 +238,30 @@ it("resolves a cached direct through normal history", () => {
   expect(document.querySelector("[data-message-list]")).not.toBeNull();
 });
 
+it("resolves a cached channel through normal history", () => {
+  const loadHistory = vi.fn();
+  render(() => (
+    <MobileConversation
+      buffer={{
+        ...buffer,
+        cached: true,
+        kind: "channel",
+        title: "#room",
+      }}
+      memberships={[]}
+      messages={[]}
+      onBack={() => {}}
+      onLoadHistory={loadHistory}
+      onMarkRead={() => {}}
+      onOpenMembers={() => {}}
+      onRequestCompletion={() => {}}
+      onSend={async () => true}
+    />
+  ));
+
+  expect(loadHistory).toHaveBeenCalledWith(2, "latest");
+});
+
 it("shows an identity mismatch, blocks sending, and routes both decisions", () => {
   const trust = vi.fn();
   const defer = vi.fn();
