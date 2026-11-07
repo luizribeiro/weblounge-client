@@ -708,6 +708,12 @@ async function expectRead(
   await expect(row).toHaveAttribute("aria-label", channel);
 }
 
+function startUrl(...channels: string[]): string {
+  const params = new URLSearchParams({ "irc-password": "weblounge-test" });
+  for (const channel of channels) params.append("irc-autojoin", channel);
+  return `/?${params.toString()}`;
+}
+
 function startUrlForAccount(
   account: string,
   password: string,
