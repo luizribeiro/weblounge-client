@@ -3321,7 +3321,7 @@ fn spawn_target_reconciliation(
                     .unwrap_or(SystemTime::UNIX_EPOCH)
             });
         let Ok(recent) = client.recent_conversations(since, until).await else {
-            send_recent_directs_ready(&state, &outbound, instance, network_id);
+            fallback_target_reconciliation(&state, &outbound, &client, instance, network_id);
             return;
         };
         let complete = recent.len() < RECENT_TARGET_LIMIT;
@@ -3333,6 +3333,40 @@ fn spawn_target_reconciliation(
             &state, &outbound, &client, instance, network_id, recent, complete,
         );
     });
+}
+
+fn fallback_target_reconciliation(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    network_id: NetworkId,
+) {
+    let history_available = client.state().supports(papo::Feature::History);
+    let (fetches, buffers) = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
+            return;
+        };
+        let fetches = running.model.fallback_target_history(history_available);
+        let buffers = (!fetches.is_empty()).then(|| running.model.buffers_event());
+        (fetches, buffers)
+    };
+    send_events(outbound, buffers.into_iter().collect());
+    send_recent_directs_ready(state, outbound, instance, network_id);
+    for fetch in fetches {
+        spawn_history_fetch(
+            Arc::clone(state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+            fetch,
+        );
+    }
 }
 
 fn restore_target_rows(
@@ -5125,9 +5159,10 @@ mod tests {
         attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
         flush_snapshot_write, join_request_events, lock, next_connection_state,
         permanent_mark_read_error, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
-        spawn_online_direct_resolution, spawn_read_marker_fetch, state_limit_events,
-        target_sync_boundary, update_chat_list, utf16_len,
+        queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write_after,
+        spawn_history_fetch, spawn_online_direct_resolution, spawn_read_marker_fetch,
+        spawn_target_reconciliation, state_limit_events, target_sync_boundary, update_chat_list,
+        utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -5135,7 +5170,8 @@ mod tests {
         MessageId, NetworkConnectionState, NetworkId, NetworkProjection, PushState,
         SaslCredentials,
         chat_list_snapshot::{
-            ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotRow, read,
+            ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotCursor, SnapshotRow,
+            read,
         },
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         pushed_messages::PushedMessage,
@@ -8342,6 +8378,37 @@ async fn delay(duration: Duration) {
         (state, outbound, receiver)
     }
 
+    fn restore_cached_room(state: &Arc<Mutex<RuntimeState>>) {
+        let mut state = lock(state);
+        let running = state.network.as_mut().expect("network remains active");
+        running.model.restore_chat_list(
+            ChatListSnapshot::new(
+                "network".into(),
+                vec![SnapshotRow {
+                    conversation: SnapshotConversation::Channel {
+                        key: "#room".into(),
+                    },
+                    title: "#room".into(),
+                    last_activity_ms: Some(100),
+                    badge: SnapshotBadge::Unread { count: 1 },
+                    preview: Some("cached".into()),
+                    newest: Some(SnapshotCursor {
+                        msgid: Some("cached".into()),
+                        server_time_ms: 100,
+                    }),
+                    read_at_ms: None,
+                    peer_pin: None,
+                }],
+            )
+            .with_synced_through_ms(Some(100)),
+        );
+        running
+            .model
+            .set_connection(NetworkConnectionState::Online, None);
+        running.chat_list.fingerprint = "network".into();
+        running.chat_list.restored_from_cache = true;
+    }
+
     fn complete_alice_chat_list(
         state: &Arc<Mutex<RuntimeState>>,
         client: &papo::Client,
@@ -8868,6 +8935,84 @@ async fn delay(duration: Duration) {
         ));
 
         drain.abort();
+    }
+
+    #[tokio::test]
+    async fn target_refusal_falls_back_to_cached_latest_history() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_for_history(&mut wire).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        restore_cached_room(&state);
+
+        spawn_target_reconciliation(Arc::clone(&state), outbound, client.clone(), 1);
+        let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        wire.server(format!(
+            "@label={} :offline.test FAIL CHATHISTORY INVALID_PARAMS * :targets refused",
+            request_label(&targets)
+        ))
+        .await;
+        let latest = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room ").await;
+        send_history_page(&mut wire, request_label(&latest), &[]).await;
+    }
+
+    #[tokio::test]
+    async fn unsupported_targets_leave_cached_rows_complete() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_with_caps(&mut wire, "batch labeled-response").await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        restore_cached_room(&state);
+
+        spawn_target_reconciliation(Arc::clone(&state), outbound, client, 1);
+        loop {
+            if matches!(
+                receiver.recv().await,
+                Some(EngineToUi::RecentDirectsReady { .. })
+            ) {
+                break;
+            }
+        }
+
+        let state = lock(&state);
+        let running = state.network.as_ref().expect("network remains active");
+        assert!(running.model.chat_list_complete());
+        assert!(running.model.last_sync().is_some());
+    }
+
+    #[tokio::test]
+    async fn restored_target_rows_hold_the_boundary_until_delta_completion() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        register_for_history(&mut wire).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        restore_cached_room(&state);
+        let channel = papo_testing::channel(client.state().casemapping(), "#room");
+
+        restore_target_rows(
+            &state,
+            &outbound,
+            &client,
+            1,
+            NetworkId(1),
+            vec![(
+                papo::Conversation::Channel(channel),
+                UNIX_EPOCH + Duration::from_millis(300),
+            )],
+            true,
+        );
+
+        let after = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
+        assert_eq!(
+            lock(&state)
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .model
+                .last_sync(),
+            Some(UNIX_EPOCH + Duration::from_millis(100))
+        );
+        send_history_page(&mut wire, request_label(&after), &[]).await;
     }
 
     #[tokio::test]

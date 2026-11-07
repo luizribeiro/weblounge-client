@@ -1556,6 +1556,46 @@ impl NetworkModel {
             .collect::<Vec<_>>()
     }
 
+    pub(crate) fn fallback_target_history(&mut self, history_available: bool) -> Vec<HistoryFetch> {
+        self.finish_target_sync(None);
+        if !history_available {
+            return Vec::new();
+        }
+        let planned = self
+            .buffer_order
+            .iter()
+            .filter_map(|buffer_id| {
+                let buffer = self.buffers.get(buffer_id)?;
+                let target = buffer.key.clone().map(HistoryTarget::from_key)?;
+                let fetch = match &buffer.history {
+                    HistoryState::Unrequested | HistoryState::QueuedLatest => {
+                        Some(HistoryFetch::Latest(target))
+                    }
+                    HistoryState::Ready { .. } => match buffer.newest.clone() {
+                        Some(newest) => Some(HistoryFetch::After { target, newest }),
+                        None => Some(HistoryFetch::Latest(target)),
+                    },
+                    HistoryState::RefreshCapped => Some(HistoryFetch::Latest(target)),
+                    HistoryState::LoadingLatest
+                    | HistoryState::LoadingOlder { .. }
+                    | HistoryState::Refreshing { .. } => None,
+                }?;
+                Some((*buffer_id, fetch, buffer.projection.cached == Some(true)))
+            })
+            .collect::<Vec<_>>();
+        for (buffer_id, fetch, keep_cached) in &planned {
+            let Some(buffer) = self.buffers.get_mut(buffer_id) else {
+                continue;
+            };
+            if *keep_cached && matches!(fetch, HistoryFetch::Latest(_)) {
+                set_history_state(buffer, HistoryState::LoadingLatest);
+            } else {
+                begin_target_fetch(buffer, fetch);
+            }
+        }
+        planned.into_iter().map(|(_, fetch, _)| fetch).collect()
+    }
+
     pub(crate) fn promote_cached_for_history(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         if buffer.projection.cached != Some(true) {
@@ -1622,6 +1662,9 @@ impl NetworkModel {
                 Some(item_count == 0)
             }
             HistoryState::LoadingLatest => {
+                if buffer.projection.cached == Some(true) {
+                    promote_cached_buffer(buffer);
+                }
                 buffer.history = HistoryState::Ready {
                     oldest,
                     at_start: item_count == 0,
@@ -3939,6 +3982,59 @@ mod tests {
             Some(UNIX_EPOCH + Duration::from_millis(100))
         );
         assert!(model.pending_target_sync.is_none());
+    }
+
+    #[test]
+    fn target_failure_falls_back_to_cached_latest_without_stranding_the_list() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#room".into(),
+                },
+                title: "#room".into(),
+                last_activity_ms: Some(100),
+                badge: SnapshotBadge::Unread { count: 1 },
+                preview: Some("cached".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("cached".into()),
+                    server_time_ms: 100,
+                }),
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        model.set_connection(crate::NetworkConnectionState::Online, None);
+        let fetches = model.fallback_target_history(true);
+        let channel = channel_name(&state, "#room");
+        let buffer_id = model.names[&NameKey::Channel(channel)];
+
+        assert!(matches!(fetches.as_slice(), [HistoryFetch::Latest(_)]));
+        assert_eq!(model.buffers[&buffer_id].projection.cached, Some(true));
+        model
+            .fail_history(&fetches[0])
+            .expect("fallback latest fails");
+        assert!(model.chat_list_complete());
+        assert_eq!(
+            model.buffers[&buffer_id]
+                .projection
+                .cached_preview
+                .as_deref(),
+            Some("cached")
+        );
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 1);
+    }
+
+    #[test]
+    fn unsupported_targets_keep_cached_rows_authoritative() {
+        let (mut model, _) = model(10);
+        model.set_connection(crate::NetworkConnectionState::Online, None);
+
+        let fetches = model.fallback_target_history(false);
+
+        assert!(fetches.is_empty());
+        assert!(model.chat_list_complete());
     }
 
     #[test]
