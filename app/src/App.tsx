@@ -79,10 +79,15 @@ import {
 } from "./platform/push/open-route-message";
 import { consumePendingOpenRoute } from "./platform/push/pending-open-route";
 import { buildPushDebugSnapshot } from "./platform/push/push-debug";
+import type { PushSynchronizerOptions } from "./platform/push/push-sync";
 import {
   type PushRouteDiagnostic,
   PushSynchronizer,
 } from "./platform/push/push-sync";
+import { PushSyncOwner } from "./platform/push/push-sync-owner";
+import {
+  decodePushSyncMessage,
+} from "./platform/push/push-sync-channel";
 import { RelayClient } from "./platform/push/relay-client";
 import { IndexedDbPushRouteStore } from "./platform/push/route-store";
 import { ensurePushSubscription } from "./platform/push/subscription";
@@ -121,6 +126,11 @@ function isPushSubscriptionChange(value: unknown): boolean {
     value.type === "push_subscription_change"
   );
 }
+
+type PushSyncEvent = Extract<
+  EngineClientMessage,
+  { readonly type: "push_route_required" | "push_state_changed" }
+>;
 
 interface AppProps {
   beforeReveal?: () => Promise<void>;
@@ -202,6 +212,8 @@ export function App(props: AppProps) {
   const [initialBufferId, setInitialBufferId] = createSignal<number>();
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
+  let pushOwner: PushSyncOwner | undefined;
+  let pushChannel: BroadcastChannel | undefined;
   let pushStartup: Promise<void> | undefined;
   let pushStartupKey: string | undefined;
   let pushRefresh: Promise<void> | undefined;
@@ -214,8 +226,15 @@ export function App(props: AppProps) {
   const foregroundRecorder = new ForegroundRecorder(foregroundLog, () =>
     readForegroundSnapshot(document, navigator, window),
   );
-  const pendingPushEvents: EngineClientMessage[] = [];
-  const knownPushRequirements = new Map<number, EngineClientMessage>();
+  const knownPushRequirements = new Map<number, PushSyncEvent>();
+  const knownPushStates = new Map<number, PushSyncEvent>();
+  const rememberPushSyncEvent = (event: PushSyncEvent) => {
+    if (event.type === "push_route_required") {
+      knownPushRequirements.set(event.network_id, event);
+    } else {
+      knownPushStates.set(event.network_id, event);
+    }
+  };
   let appRoot: HTMLElement | undefined;
   let latestCompletionRequest: string | undefined;
   let restartingHostedAuthorization = false;
@@ -481,20 +500,13 @@ export function App(props: AppProps) {
           );
     const unsubscribe = mountedClient.subscribe((message) => {
       if (message.type === "push_route_required") {
-        knownPushRequirements.set(message.network_id, message);
+        rememberPushSyncEvent(message);
       }
       if (message.type === "push_state_changed") {
+        rememberPushSyncEvent(message);
         setEnginePushStates((current) =>
           new Map(current).set(message.network_id, message.state),
         );
-      }
-      if (
-        pushSynchronizer === undefined &&
-        props.pushConfig !== undefined &&
-        (message.type === "push_route_required" ||
-          message.type === "push_state_changed")
-      ) {
-        pendingPushEvents.push(message);
       }
       if (message.type === "hosted_token_required") {
         void refreshHostedToken(message.network_id);
@@ -899,6 +911,8 @@ export function App(props: AppProps) {
       unsubscribe();
       unsubscribeUpdateReady();
       foregroundLease?.dispose();
+      pushOwner?.dispose();
+      pushChannel?.close();
       pushSynchronizer?.dispose();
       void mountedClient.close();
     });
@@ -913,8 +927,12 @@ export function App(props: AppProps) {
     const key = pushConfigKey(config);
     if (pushStartupKey !== key) {
       pushSetupGeneration += 1;
+      pushOwner?.dispose();
+      pushChannel?.close();
       pushSynchronizer?.dispose();
       foregroundLease?.dispose();
+      pushOwner = undefined;
+      pushChannel = undefined;
       pushSynchronizer = undefined;
       foregroundLease = undefined;
       pushStartup = undefined;
@@ -931,7 +949,7 @@ export function App(props: AppProps) {
     pushStartup = attempt;
     try {
       await attempt;
-      if (pushSynchronizer === undefined && pushStartup === attempt) {
+      if (pushOwner === undefined && pushStartup === attempt) {
         pushStartup = undefined;
       }
     } catch (error: unknown) {
@@ -992,7 +1010,11 @@ export function App(props: AppProps) {
         secret: storedDevice.secret,
       });
     }
-    const synchronizer = new PushSynchronizer({
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? undefined
+        : new BroadcastChannel(`weblounge-push-sync:${config.relay}`);
+    const synchronizerOptions: PushSynchronizerOptions = {
       engine: mountedClient,
       relay,
       relayOrigin: config.relay,
@@ -1021,31 +1043,59 @@ export function App(props: AppProps) {
         }
       },
       onAuthorizationRequired: () => void restartHostedAuthorization("revoked"),
-      onDeviceReady: (device) => lease.setDevice(device),
-      onRouteDiagnostic: (diagnostic) =>
+      onDeviceReady: (device) => {
+        lease.setDevice(device);
+        channel?.postMessage({ kind: "device", device });
+      },
+      onRouteDiagnostic: (diagnostic) => {
         setRelayPushStates((current) =>
           new Map(current).set(diagnostic.networkId, diagnostic),
-        ),
-    });
+        );
+        channel?.postMessage({ kind: "diagnostic", value: diagnostic });
+      },
+    };
     foregroundLease = lease;
-    pushSynchronizer = synchronizer;
-    const queuedEvents = pendingPushEvents.splice(0);
-    const queuedRequirements = new Set(
-      queuedEvents
-        .filter((event) => event.type === "push_route_required")
-        .map((event) => event.network_id),
+    pushChannel = channel;
+    channel?.addEventListener("message", (event: MessageEvent<unknown>) => {
+      const message = decodePushSyncMessage(event.data);
+      if (message === undefined) return;
+      if (message.kind === "device") {
+        lease.setDevice(message.device);
+      } else if (message.kind === "diagnostic") {
+        setRelayPushStates((current) =>
+          new Map(current).set(message.value.networkId, message.value),
+        );
+      } else if (message.kind === "refresh") {
+        void pushSynchronizer?.refreshTarget(message.target);
+      } else {
+        void pushSynchronizer?.signOut();
+      }
+    });
+    const owner = new PushSyncOwner(
+      `weblounge-push-sync:${config.relay}`,
+      async () => {
+        if (disposed || generation !== pushSetupGeneration) return () => {};
+        const synchronizer = new PushSynchronizer(synchronizerOptions);
+        pushSynchronizer = synchronizer;
+        for (const event of knownPushRequirements.values()) {
+          synchronizer.handle(event);
+        }
+        await synchronizer.settled();
+        for (const event of knownPushStates.values()) {
+          synchronizer.handle(event);
+        }
+        await synchronizer.refreshTarget(subscription.target);
+        if (disposed || generation !== pushSetupGeneration) {
+          synchronizer.dispose();
+          return () => {};
+        }
+        return () => {
+          synchronizer.dispose();
+          if (pushSynchronizer === synchronizer) pushSynchronizer = undefined;
+        };
+      },
     );
-    for (const [networkId, event] of knownPushRequirements) {
-      if (queuedRequirements.has(networkId)) continue;
-      synchronizer.handle(event);
-    }
-    for (const event of queuedEvents) synchronizer.handle(event);
-    await synchronizer.refreshTarget(subscription.target);
-    if (disposed || generation !== pushSetupGeneration) {
-      synchronizer.dispose();
-      lease.dispose();
-      return;
-    }
+    pushOwner = owner;
   }
 
   function refreshConfiguredPush(mountedClient: EngineClient): Promise<void> {
@@ -1059,7 +1109,7 @@ export function App(props: AppProps) {
     const config = props.pushConfig;
     if (config === undefined || !engineStarted()) return;
     const key = pushConfigKey(config);
-    if (pushSynchronizer === undefined || pushStartupKey !== key) {
+    if (pushOwner === undefined || pushStartupKey !== key) {
       await startConfiguredPush(mountedClient);
       return;
     }
@@ -1075,7 +1125,14 @@ export function App(props: AppProps) {
       config.relay_vapid,
     );
     if (subscription.status === "ready" && pushStartupKey === key) {
-      await pushSynchronizer?.refreshTarget(subscription.target);
+      if (pushSynchronizer !== undefined) {
+        await pushSynchronizer.refreshTarget(subscription.target);
+      } else {
+        pushChannel?.postMessage({
+          kind: "refresh",
+          target: subscription.target,
+        });
+      }
     }
   }
 
@@ -1113,7 +1170,11 @@ export function App(props: AppProps) {
         : t("hosted.session_expired"),
     );
     if (reason !== "worker_restarted") {
-      await pushSynchronizer?.signOut().catch(() => undefined);
+      if (pushSynchronizer !== undefined) {
+        await pushSynchronizer.signOut().catch(() => undefined);
+      } else {
+        pushChannel?.postMessage({ kind: "sign_out" });
+      }
     }
     const network = networks()[0];
     if (network !== undefined && client !== undefined) {
@@ -1860,6 +1921,10 @@ function sameTypers(
       );
     })
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function upsert<T extends { id: number }>(current: T[], value: T): T[] {

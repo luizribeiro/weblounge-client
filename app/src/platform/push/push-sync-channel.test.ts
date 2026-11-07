@@ -1,24 +1,22 @@
 import { expect, it } from "vitest";
 import { decodePushSyncMessage } from "./push-sync-channel";
 
-it("accepts typed cross-tab push events", () => {
+it("accepts typed cross-tab subscription refreshes", () => {
   expect(
     decodePushSyncMessage({
-      kind: "event",
-      event: {
-        type: "push_route_required",
-        network_id: 7,
-        vapid: "home-vapid",
-        previous_route_id: null,
+      kind: "refresh",
+      target: {
+        endpoint: "https://push.example.test/subscription",
+        p256dh: "browser-key",
+        auth: "browser-auth",
       },
     }),
   ).toEqual({
-    kind: "event",
-    event: {
-      type: "push_route_required",
-      network_id: 7,
-      vapid: "home-vapid",
-      previous_route_id: null,
+    kind: "refresh",
+    target: {
+      endpoint: "https://push.example.test/subscription",
+      p256dh: "browser-key",
+      auth: "browser-auth",
     },
   });
 });
