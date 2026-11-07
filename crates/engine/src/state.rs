@@ -1853,27 +1853,8 @@ impl NetworkModel {
                 || time_millis(latest),
                 |current| current.max(time_millis(latest)),
             ));
-            match &fetch {
-                Some(HistoryFetch::Latest(_)) => {
-                    if buffer.projection.cached == Some(true) {
-                        promote_cached_buffer(buffer);
-                    }
-                    set_history_state(buffer, HistoryState::LoadingLatest);
-                }
-                Some(HistoryFetch::After { .. }) => {
-                    if buffer.projection.cached == Some(true) && buffer.read_at_ms.is_some() {
-                        buffer.cached_unread_base = 0;
-                        buffer.cached_mentions_base = 0;
-                        derive_read_projection(buffer);
-                    }
-                    let (oldest, at_start) = match &buffer.history {
-                        HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
-                        HistoryState::Unrequested | HistoryState::QueuedLatest => (None, false),
-                        _ => unreachable!("after fetch starts from idle history"),
-                    };
-                    set_history_state(buffer, HistoryState::Refreshing { oldest, at_start });
-                }
-                Some(HistoryFetch::Before { .. }) | None => {}
+            if let Some(fetch) = &fetch {
+                begin_target_fetch(buffer, fetch);
             }
             if should_resolve {
                 buffer.direct = Some(DirectAvailability::Resolving);
@@ -1922,32 +1903,15 @@ impl NetworkModel {
                     newest: buffer.newest.clone()?,
                 })
             }
+            HistoryState::Ready { .. } if buffer.newest.is_none() => {
+                Some(HistoryFetch::Latest(target))
+            }
             _ => None,
         };
         if let Some(fetch) = &fetch {
             let buffer = self.buffers.get_mut(&buffer_id)?;
-            match fetch {
-                HistoryFetch::Latest(_) => {
-                    if buffer.projection.cached == Some(true) {
-                        promote_cached_buffer(buffer);
-                    }
-                    set_history_state(buffer, HistoryState::LoadingLatest);
-                }
-                HistoryFetch::After { .. } => {
-                    if buffer.projection.cached == Some(true) && buffer.read_at_ms.is_some() {
-                        buffer.cached_unread_base = 0;
-                        buffer.cached_mentions_base = 0;
-                        derive_read_projection(buffer);
-                    }
-                    let (oldest, at_start) = match &buffer.history {
-                        HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
-                        _ => (None, false),
-                    };
-                    set_history_state(buffer, HistoryState::Refreshing { oldest, at_start });
-                }
-                HistoryFetch::Before { .. } => {}
-            }
             buffer.provisional_activity_ms = Some(time_millis(latest));
+            begin_target_fetch(buffer, fetch);
         }
         fetch
     }
@@ -2776,6 +2740,31 @@ fn promote_cached_buffer(buffer: &mut BufferState) {
     buffer.projection.read_through = None;
     buffer.cached_unread_base = 0;
     buffer.cached_mentions_base = 0;
+}
+
+fn begin_target_fetch(buffer: &mut BufferState, fetch: &HistoryFetch) {
+    match fetch {
+        HistoryFetch::Latest(_) => {
+            if buffer.projection.cached == Some(true) {
+                promote_cached_buffer(buffer);
+            }
+            set_history_state(buffer, HistoryState::LoadingLatest);
+        }
+        HistoryFetch::After { .. } => {
+            if buffer.projection.cached == Some(true) && buffer.read_at_ms.is_some() {
+                buffer.cached_unread_base = 0;
+                buffer.cached_mentions_base = 0;
+                derive_read_projection(buffer);
+            }
+            let (oldest, at_start) = match &buffer.history {
+                HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
+                HistoryState::Unrequested | HistoryState::QueuedLatest => (None, false),
+                _ => unreachable!("after fetch starts from idle history"),
+            };
+            set_history_state(buffer, HistoryState::Refreshing { oldest, at_start });
+        }
+        HistoryFetch::Before { .. } => {}
+    }
 }
 
 fn advance_incoming_cursor(
@@ -3925,6 +3914,28 @@ mod tests {
             buffer.projection.read_through,
             Some(buffer.timeline[1].projection.id)
         );
+    }
+
+    #[test]
+    fn targets_loads_latest_for_an_empty_ready_channel() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        model.buffers.get_mut(&buffer_id).expect("channel").history = HistoryState::Ready {
+            oldest: None,
+            at_start: true,
+        };
+
+        let fetch = model.restore_channel(&channel, UNIX_EPOCH + Duration::from_millis(200));
+
+        assert!(matches!(
+            fetch,
+            Some(HistoryFetch::Latest(HistoryTarget::Channel(_)))
+        ));
+        assert!(matches!(
+            model.buffers[&buffer_id].history,
+            HistoryState::LoadingLatest
+        ));
     }
 
     #[test]
