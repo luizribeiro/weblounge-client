@@ -645,7 +645,10 @@ async function expectErgoStopped(): Promise<void> {
 
 async function ergoApiIsReady(): Promise<boolean> {
   try {
-    await fetch("http://127.0.0.1:8089/");
+    const registrationApi =
+      process.env.WEBLOUNGE_E2E_IRC_API ??
+      "http://127.0.0.1:8089/v1/saregister";
+    await fetch(new URL("/", registrationApi));
     return true;
   } catch {
     return false;
@@ -654,7 +657,10 @@ async function ergoApiIsReady(): Promise<boolean> {
 
 async function ircPortIsReady(): Promise<boolean> {
   return new Promise((resolve) => {
-    const socket = createConnection({ host: "127.0.0.1", port: 6667 });
+    const socket = createConnection({
+      host: process.env.WEBLOUNGE_E2E_IRC_HOST ?? "127.0.0.1",
+      port: Number(process.env.WEBLOUNGE_E2E_IRC_PORT ?? 6667),
+    });
     socket.once("connect", () => {
       socket.end();
       resolve(true);
