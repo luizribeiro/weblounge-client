@@ -567,6 +567,18 @@ creates one relay device. Route creation, replacement, activation and deletion a
 per network so tabs sharing the engine cannot create competing relay routes. Cache storage may
 still fall back to memory, but Durable fails closed when IndexedDB is unavailable.
 
+One page context owns device and route synchronization at a time through a long-held Web Lock. Each
+tab observes the shared worker's route state, but only the elected owner's synchronizer acts on its
+local event stream. Subscription refreshes received by another tab cross a same-origin
+`BroadcastChannel` to that owner; device readiness and redacted route diagnostics cross back. A
+closing owner releases the lock for the next tab. Foreground leases remain deliberately per-tab and
+retain their immediate focus and visibility transitions. The route record durably remembers the
+browser target it last reconciled and successful relay activation, so a new owner skips unchanged
+`PUT /target` and `PUT /routes/:id/active` calls. Every failed relay fetch, including an opaque
+failure, gates later fetches with capped exponential jitter; a readable `Retry-After` is a lower
+bound. Failed lease renewals use the same backoff, while successful leases keep the 30-second
+heartbeat.
+
 The page owns `weblounge-push-v2`, with one route record keyed by pinned home VAPID key. A bounded,
 failure-tolerant service-worker update wait precedes push setup. The page and current worker create
 the new database directly, then copy routes and badge state by opening deployed `weblounge-push`
