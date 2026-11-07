@@ -1,4 +1,4 @@
-import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import {
   captureHistoryWire,
@@ -16,7 +16,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
 
   test("persists a fetched server marker before the next launch", async ({
     baseURL,
-    browser,
     context,
     page,
   }) => {
@@ -26,7 +25,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     const channel = `#snapshot-marker-${suffix}`;
     const appAccount = `marker-user-${suffix}`;
     const appPassword = `test-${appAccount}`;
-    const preview = `stale marker preview ${suffix}`;
+    const readFirst = `read marker first ${suffix}`;
+    const readThrough = `read marker boundary ${suffix}`;
+    const preview = `unread marker preview ${suffix}`;
     const keeper = await IrcClient.connectIsolated(appAccount, channel);
     await keeper.setAlwaysOn(true);
     keeper.close();
@@ -39,7 +40,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     );
     const snapshotPreview = `${bot.nickname}: ${preview}`;
     let current = page;
-    let readerContext: BrowserContext | undefined;
     try {
       await useDedicatedWorker(current);
       await current.goto(startUrlForAccount(appAccount, appPassword, channel));
@@ -48,27 +48,47 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         current.getByRole("heading", { name: channel }),
       ).toBeVisible();
       await leaveConversation(current, channel);
+      const history = [
+        {
+          text: readFirst,
+          line: await bot.privmsgConfirmed(channel, readFirst),
+        },
+      ];
+      const boundaryLine = await bot.privmsgConfirmed(channel, readThrough);
+      history.push({ text: readThrough, line: boundaryLine });
+      const boundaryTime = messageTag(boundaryLine, "time");
+      for (let index = 0; index < 20; index += 1) {
+        const text = `marker candidate ${index} ${suffix}`;
+        const line = await bot.privmsgConfirmed(channel, text);
+        history.push({ text, line });
+        if (Date.parse(messageTag(line, "time")) > Date.parse(boundaryTime))
+          break;
+      }
       const previewLine = await bot.privmsgConfirmed(channel, preview);
-      const previewTime = messageTag(previewLine, "time");
-      await expectUnread(bufferRow(current, channel), channel);
+      history.push({ text: preview, line: previewLine });
+      const lastRead = history.findLast(
+        ({ line }) =>
+          Date.parse(messageTag(line, "time")) <= Date.parse(boundaryTime),
+      );
+      const firstUnread = history.find(
+        ({ line }) =>
+          Date.parse(messageTag(line, "time")) > Date.parse(boundaryTime),
+      );
+      if (lastRead === undefined || firstUnread === undefined)
+        throw new Error("server time did not advance beyond the marker");
+      await expectUnreadCount(
+        bufferRow(current, channel),
+        channel,
+        history.length,
+      );
       await expect
         .poll(() => snapshotRow(current, channel))
         .toMatchObject({
-          badge: { kind: "unread", count: 1 },
+          badge: { kind: "unread", count: history.length },
           preview: snapshotPreview,
         });
 
       await current.close();
-      readerContext = await browser.newContext({ baseURL });
-      const reader = await readerContext.newPage();
-      await useDedicatedWorker(reader);
-      await reader.goto(startUrlForAccount(appAccount, appPassword, channel));
-      await bufferRow(reader, channel).click();
-      await expect(
-        reader.getByRole("heading", { name: channel }),
-      ).toBeVisible();
-      await expect(reader.getByText(preview, { exact: true })).toBeVisible();
-      await expectRead(bufferRow(reader, channel), channel);
       const markerReader = await IrcClient.connect(
         appAccount,
         appAccount,
@@ -76,22 +96,21 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         channel,
       );
       try {
+        await markerReader.markRead(channel, boundaryTime);
         await expect
           .poll(() => markerReader.readMarker(channel))
-          .toBe(previewTime);
+          .toBe(boundaryTime);
       } finally {
         markerReader.close();
         await markerReader.waitForDisconnect();
       }
-      await readerContext.close();
-      readerContext = undefined;
 
       current = await context.newPage();
       await openSnapshotInspector(current);
       await expect
         .poll(() => snapshotRow(current, channel))
         .toMatchObject({
-          badge: { kind: "unread", count: 1 },
+          badge: { kind: "unread", count: history.length },
           preview: snapshotPreview,
         });
       await captureHistoryWire(current);
@@ -103,14 +122,22 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           expect.objectContaining({
             direction: "received",
             line: expect.stringContaining(
-              ` MARKREAD ${channel} timestamp=${previewTime}`,
+              ` MARKREAD ${channel} timestamp=${boundaryTime}`,
             ),
           }),
         );
-      await expectRead(bufferRow(current, channel), channel);
+      await bufferRow(current, channel).click();
+      await expect(
+        current.getByText(lastRead.text, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        current.getByText(firstUnread.text, { exact: true }),
+      ).toBeVisible();
+      await expect(current.getByText(preview, { exact: true })).toBeVisible();
+      await expectNewDividerBetween(current, lastRead.text, firstUnread.text);
       await expect
         .poll(() => snapshotRow(current, channel))
-        .toMatchObject({ badge: { kind: "none" }, preview: snapshotPreview });
+        .toMatchObject({ preview: snapshotPreview });
 
       await current.close();
       current = await context.newPage();
@@ -128,7 +155,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           .toMatchObject({ text: expect.stringContaining(preview) });
     } finally {
       if (!current.isClosed()) await current.close();
-      await readerContext?.close();
       bot.close();
     }
   });
@@ -675,13 +701,6 @@ function bufferRow(page: Page, channel: string) {
     .first();
 }
 
-async function expectUnread(
-  row: ReturnType<typeof bufferRow>,
-  channel: string,
-): Promise<void> {
-  await expect(row).toHaveAttribute("aria-label", `${channel}, 1 unread`);
-}
-
 async function expectRead(
   row: ReturnType<typeof bufferRow>,
   channel: string,
@@ -1101,6 +1120,22 @@ async function expectUnreadCount(
   await expect(row).toHaveAttribute(
     "aria-label",
     new RegExp(`^${escapeRegex(title)}, ${count} unread`, "u"),
+  );
+}
+
+async function expectNewDividerBetween(
+  page: Page,
+  before: string,
+  after: string,
+): Promise<void> {
+  const index = (locator: Locator) =>
+    locator.evaluate((element) => Number(element.closest("li")?.dataset.index));
+  const divider = await index(page.locator("[data-new-line]"));
+  expect(divider).toBe(
+    (await index(page.getByText(before, { exact: true }))) + 1,
+  );
+  expect(divider).toBe(
+    (await index(page.getByText(after, { exact: true }))) - 1,
   );
 }
 

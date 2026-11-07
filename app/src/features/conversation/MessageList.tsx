@@ -99,7 +99,9 @@ export function MessageList(props: MessageListProps) {
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadAt = props.readAtMs ?? null;
-  let boundaryFrozen = hasUnreadAfter(props.messages, initialReadAt);
+  let boundaryFrozen =
+    hasUnreadAfter(props.messages, initialReadAt) ||
+    (initialReadAt !== null && props.messages.length === 0);
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
@@ -312,7 +314,10 @@ export function MessageList(props: MessageListProps) {
     if (props.bufferId !== currentBuffer) {
       currentBuffer = props.bufferId;
       setFrozenReadAt(props.readAtMs ?? null);
-      boundaryFrozen = false;
+      boundaryFrozen =
+        props.readAtMs !== null &&
+        props.readAtMs !== undefined &&
+        props.messages.length === 0;
       renderedCount = 0;
       olderPageArmed = true;
       setUnseen(0);

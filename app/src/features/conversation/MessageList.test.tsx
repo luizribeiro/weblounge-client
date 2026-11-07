@@ -745,6 +745,26 @@ it("keeps the New boundary frozen while the live marker advances", async () => {
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("keeps a server marker while an opening history page arrives", async () => {
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>(
+    [],
+  );
+  const { container } = render(() => (
+    <MessageList bufferId={2} messages={messages()} readAtMs={1} />
+  ));
+
+  setMessages([
+    message,
+    { ...message, id: 2, text: "unread history", received_at_ms: 2 },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "unread history",
+  );
+});
+
 it("hides the New boundary when the read marker row is unknown", async () => {
   const { container } = render(() => (
     <MessageList
