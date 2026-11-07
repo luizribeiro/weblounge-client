@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Restore a cached DM's writable snapshot row when live traffic follows TARGETS declaring the
+  cached row vanished. The live message now establishes the current authoritative edge even for an
+  existing buffer, so a local read can persist its cleared badge while other rows still hydrate.
 - [x] Make the cross-device Apple MARKREAD fixture wait for the reading IRC session's push route
   before asserting relay drops. Ergo excludes that session's originating endpoint, so the stable
   production result is one dropped control for the other Apple route, not a race-dependent two.
