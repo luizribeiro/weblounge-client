@@ -671,7 +671,7 @@ impl NetworkModel {
                     .iter()
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
-                if buffer.deferred_read.is_some() || buffer.read_at_ms != row.read_at_ms {
+                if buffer.deferred_read.is_none() && buffer.read_at_ms != row.read_at_ms {
                     row.badge = snapshot_badge(buffer);
                     row.read_at_ms = buffer.read_at_ms;
                 }
@@ -5542,7 +5542,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_push_read_clears_only_the_cached_snapshot_badge() {
+    fn deferred_push_read_does_not_persist_until_history_verifies_it() {
         let (mut model, state) = model(10);
         let cached = SnapshotRow {
             conversation: SnapshotConversation::Direct {
@@ -5589,19 +5589,11 @@ mod tests {
         else {
             panic!("provisional push defers its server read")
         };
-        let read_at_ms = time_millis(advance.time);
         model.apply_read_time(buffer_id, advance.time);
 
         let merged = model.merge_chat_list_snapshot("network".into(), &previous);
 
-        assert_eq!(
-            merged.rows,
-            vec![SnapshotRow {
-                badge: SnapshotBadge::None,
-                read_at_ms: Some(read_at_ms),
-                ..cached
-            }]
-        );
+        assert_eq!(merged.rows, vec![cached]);
         assert_eq!(model.buffers[&buffer_id].deferred_read, Some(message_id));
     }
 
