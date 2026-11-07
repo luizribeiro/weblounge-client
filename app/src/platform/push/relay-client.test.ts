@@ -136,7 +136,7 @@ describe("relay client", () => {
     });
     const device = { id: "device-1", secret: "secret" };
 
-    await expect(client.renewLease(device, "tab-1")).resolves.toEqual({
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
       ok: false,
       error: { kind: "unavailable" },
     });
@@ -175,24 +175,76 @@ describe("relay client", () => {
   it("rechecks a synchronization gate after every wait", async () => {
     let now = 0;
     const waits: number[] = [];
+    const sleepers: Array<ReturnType<typeof deferred<void>>> = [];
+    let nextWait = deferred<void>();
     const fetchRelay = vi
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new TypeError("opaque network failure"))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValue(new Response(null, { status: 204 }));
     const client = new RelayClient("https://push.example.test", fetchRelay, {
       random: () => 0,
       now: () => now,
       wait: async (delay) => {
         waits.push(delay);
-        now += waits.length === 1 ? delay / 2 : delay;
+        const sleeper = deferred<void>();
+        sleepers.push(sleeper);
+        nextWait.resolve();
+        await sleeper.promise;
       },
     });
     const device = { id: "device-1", secret: "secret" };
 
     await client.updateTarget(device, target);
-    await client.deleteDevice(device);
+    const firstWaitStarted = nextWait.promise;
+    const firstWaiter = client.deleteDevice(device);
+    await firstWaitStarted;
+    nextWait = deferred<void>();
+    const laterWaitStarted = nextWait.promise;
+    const laterFailure = client.deleteRoute(device, "route-1");
+    await laterWaitStarted;
+    nextWait = deferred<void>();
 
-    expect(waits).toEqual([500, 250]);
+    now = 500;
+    sleepers[1]?.resolve();
+    await expect(laterFailure).resolves.toEqual({
+      ok: false,
+      error: { kind: "unavailable" },
+    });
+
+    const extendedWaitStarted = nextWait.promise;
+    sleepers[0]?.resolve();
+    await extendedWaitStarted;
+    expect(waits).toEqual([500, 500, 1_000]);
+
+    now = 1_500;
+    sleepers[2]?.resolve();
+    await expect(firstWaiter).resolves.toEqual({ ok: true, value: null });
+  });
+
+  it("does not re-sleep an unchanged gate when the clock is frozen", async () => {
+    const waits: number[] = [];
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("opaque network failure"))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      random: () => 0,
+      now: () => 0,
+      wait: async (delay) => {
+        waits.push(delay);
+      },
+    });
+    const device = { id: "device-1", secret: "secret" };
+
+    await client.updateTarget(device, target);
+    await expect(client.deleteDevice(device)).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+
+    expect(waits).toEqual([500]);
+    expect(fetchRelay).toHaveBeenCalledTimes(2);
   });
 
   it("does not gate later fetches after a permanent client failure", async () => {
@@ -410,3 +462,14 @@ describe("relay client", () => {
     );
   });
 });
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value?: T) => void;
+} {
+  let resolve: (value?: T) => void = () => {};
+  const promise = new Promise<T>((fulfill) => {
+    resolve = (value) => fulfill(value as T);
+  });
+  return { promise, resolve };
+}

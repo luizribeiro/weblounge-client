@@ -215,13 +215,7 @@ export class RelayClient {
     gated = true,
     keepalive = false,
   ): Promise<RelayResult<T>> {
-    if (gated) {
-      let delay = this.#notBefore - this.#now();
-      while (delay > 0) {
-        await this.#wait(delay);
-        delay = this.#notBefore - this.#now();
-      }
-    }
+    if (gated) await this.#waitForGate();
     let response: Response;
     try {
       response = await this.fetchRelay.call(
@@ -261,6 +255,17 @@ export class RelayClient {
         : this.#failed({ kind: "unavailable" }, gated);
     } catch {
       return this.#failed({ kind: "unavailable" }, gated);
+    }
+  }
+
+  async #waitForGate(): Promise<void> {
+    let notBefore = this.#notBefore;
+    let delay = notBefore - this.#now();
+    while (delay > 0) {
+      await this.#wait(delay);
+      if (this.#notBefore <= notBefore) return;
+      notBefore = this.#notBefore;
+      delay = notBefore - this.#now();
     }
   }
 
@@ -309,6 +314,7 @@ function retryAfterMilliseconds(
   if (/^\d+$/.test(value)) {
     return Math.min(10 * 60_000, Number(value) * 1_000);
   }
+  if (/^[+-]?\d+(?:\.\d+)?$/.test(value)) return undefined;
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return undefined;
   return Math.min(10 * 60_000, Math.max(0, timestamp - now));

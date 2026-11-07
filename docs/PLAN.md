@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep the relay synchronization gate finite when an injected or platform wait resolves before
+  its clock reaches the requested deadline. A waiter now sleeps once per observed deadline and
+  sleeps again only when another transient failure extends that deadline; frozen-clock and
+  concurrent-extension coverage retain backoff without an unbounded microtask loop.
 - [x] Hold one unrelated latest-history request at the wire in cached-list hydration journeys,
   so the opened conversation and partial snapshot assertions prove their concurrency contract
   without depending on Ergo fakelag. The shared fixture releases the request only after the
