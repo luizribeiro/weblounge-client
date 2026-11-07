@@ -23,6 +23,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Replace a cached direct's provisional edge when authoritative live traffic arrives. Lazy
+  TARGETS launch could retain a migrated future cursor and its cached mention base after the live
+  message was read, so partial snapshot hydration rewrote the stale badge; live delivery now owns
+  the current row, cursor and unread projection before local read persistence.
 - [x] Make the opening unread-divider regression exercise the focused live edge, and cover switching
   to a buffer whose server marker arrives before its opening history page.
 - [x] Let the launch regression hold one exact delta request while retaining the shared history

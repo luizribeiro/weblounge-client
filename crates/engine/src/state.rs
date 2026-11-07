@@ -2930,8 +2930,12 @@ fn advance_incoming_cursor(
     if matches!(buffer.history, HistoryState::Unrequested)
         && matches!(incoming.conversation, NameKey::Direct(_))
         && incoming.origin == TimelineOrigin::Live
-        && let Some(cursor) = cursor.as_ref()
+        && let Some(cursor) = cursor
     {
+        if buffer.projection.cached == Some(true) {
+            promote_cached_buffer(buffer);
+            derive_read_projection(buffer);
+        }
         set_history_state(
             buffer,
             HistoryState::Ready {
@@ -2939,6 +2943,8 @@ fn advance_incoming_cursor(
                 at_start: false,
             },
         );
+        buffer.newest = Some(cursor);
+        return;
     }
     advance_cursor(buffer, cursor);
 }
@@ -5826,6 +5832,58 @@ mod tests {
                 }
                 && row.badge == SnapshotBadge::None
         }));
+    }
+
+    #[test]
+    fn live_direct_replaces_a_stale_cached_edge_before_local_read() {
+        let (mut model, state) = model(10);
+        let previous = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "alice".into(),
+                last_activity_ms: Some(2_000),
+                badge: SnapshotBadge::Mentions {
+                    count: 1,
+                    mentions: 1,
+                },
+                preview: Some("stale cached direct".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: None,
+                    server_time_ms: 2_000,
+                }),
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        );
+        model.restore_chat_list(previous.clone());
+
+        model.receive_incoming(
+            direct_incoming(&state, "alice", "authoritative live direct", 1_000),
+            &state,
+        );
+        let alice = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        let buffer = &model.buffers[&alice];
+        assert_eq!(buffer.projection.unread, 1);
+        assert_eq!(
+            buffer.newest.as_ref().map(super::HistoryCursor::snapshot),
+            Some(SnapshotCursor {
+                msgid: Some("alice-1000".into()),
+                server_time_ms: 1_000,
+            })
+        );
+        let through = buffer.timeline.last().expect("live direct").projection.id;
+        let ReadPreparation::Ready(advance) = model.request_mark_read(alice, through, true) else {
+            panic!("live direct read is authoritative")
+        };
+        model.apply_read_time(alice, advance.time);
+
+        let merged = model.merge_chat_list_snapshot("network".into(), &previous);
+        assert_eq!(merged.rows.len(), 1);
+        assert_eq!(merged.rows[0].badge, SnapshotBadge::None);
+        assert_eq!(merged.rows[0].read_at_ms, Some(1_000));
     }
 
     #[test]
