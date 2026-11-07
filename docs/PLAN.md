@@ -23,6 +23,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Make the opening unread-divider regression exercise the focused live edge, and cover switching
+  to a buffer whose server marker arrives before its opening history page.
 - [x] Let the launch regression hold one exact delta request while retaining the shared history
   gate's immutable payload and worker diagnostics, so killing the page mid-delta exercises the
   durable TARGETS boundary instead of relying on timing.

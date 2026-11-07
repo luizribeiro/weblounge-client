@@ -766,6 +766,38 @@ it("keeps a server marker while an opening history page arrives", async () => {
   );
 });
 
+it("keeps a server marker when a buffer switch receives history", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const [view, setView] = createSignal<{
+    readonly bufferId: number;
+    readonly messages: readonly MessageProjection[];
+    readonly readAtMs: number;
+  }>({ bufferId: 2, messages: [message], readAtMs: 1 });
+  const { container } = render(() => (
+    <MessageList
+      bufferId={view().bufferId}
+      messages={view().messages}
+      readAtMs={view().readAtMs}
+    />
+  ));
+
+  setView({ bufferId: 3, messages: [], readAtMs: 1 });
+  setView({
+    bufferId: 3,
+    messages: [
+      message,
+      { ...message, id: 2, text: "unread history", received_at_ms: 2 },
+    ],
+    readAtMs: 1,
+  });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "unread history",
+  );
+});
+
 it("hides the New boundary when the read marker row is unknown", async () => {
   const { container } = render(() => (
     <MessageList
