@@ -42,6 +42,7 @@ type RuntimeStorage = Arc<MemoryKv>;
 const DEFAULT_WINDOW_LIMIT: usize = 500;
 const HISTORY_PAGE_SIZE: usize = 100;
 const RECENT_DIRECT_LIMIT: usize = 100;
+const RECENT_TARGET_LIMIT: usize = 1_000;
 const RECENT_DIRECT_WINDOW: Duration = Duration::from_hours(30 * 24);
 const COMPLETION_LIMIT: usize = 100;
 const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
@@ -3323,12 +3324,13 @@ fn spawn_target_reconciliation(
             send_recent_directs_ready(&state, &outbound, instance, network_id);
             return;
         };
+        let complete = recent.len() < RECENT_TARGET_LIMIT;
         let recent = recent
             .into_iter()
             .map(|recent| (recent.conversation, recent.latest_server_time))
             .collect();
         restore_target_rows(
-            &state, &outbound, &client, instance, network_id, recent, until,
+            &state, &outbound, &client, instance, network_id, recent, complete,
         );
     });
 }
@@ -3340,9 +3342,11 @@ fn restore_target_rows(
     instance: u64,
     network_id: NetworkId,
     recent: Vec<(papo::Conversation, SystemTime)>,
-    until: SystemTime,
+    complete: bool,
 ) {
     let snapshot = client.state();
+    let target_count = recent.len();
+    let latest_observed = recent.iter().map(|(_, latest)| *latest).max();
     let mut channel_fetches = Vec::new();
     let mut directs = recent
         .into_iter()
@@ -3371,6 +3375,8 @@ fn restore_target_rows(
     });
     let mut seen = HashSet::new();
     directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
+    let covered_through =
+        target_sync_boundary(complete, target_count, directs.len(), latest_observed);
     directs.truncate(RECENT_DIRECT_LIMIT);
     let mut output = Vec::new();
     let mut fetches = channel_fetches;
@@ -3396,7 +3402,7 @@ fn restore_target_rows(
     else {
         return;
     };
-    running.model.finish_target_sync(until);
+    running.model.finish_target_sync(covered_through);
     output.push(running.model.buffers_event());
     drop(runtime);
     drop(snapshot);
@@ -3411,6 +3417,17 @@ fn restore_target_rows(
             fetch,
         );
     }
+}
+
+fn target_sync_boundary(
+    complete: bool,
+    target_count: usize,
+    direct_count: usize,
+    latest_observed: Option<SystemTime>,
+) -> Option<SystemTime> {
+    (complete && target_count < RECENT_TARGET_LIMIT && direct_count <= RECENT_DIRECT_LIMIT)
+        .then_some(latest_observed)
+        .flatten()
 }
 
 fn running_network_id(state: &Arc<Mutex<RuntimeState>>, instance: u64) -> Option<NetworkId> {
@@ -5110,7 +5127,7 @@ mod tests {
         permanent_mark_read_error, person_candidates, process_event, process_history,
         queue_read_advance, read_retry_delay, schedule_snapshot_write_after, spawn_history_fetch,
         spawn_online_direct_resolution, spawn_read_marker_fetch, state_limit_events,
-        update_chat_list, utf16_len,
+        target_sync_boundary, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -5142,6 +5159,19 @@ async fn delay(duration: Duration) {
 
         assert!(production.contains(native_delay));
         assert!(!wasm_reachable.contains("tokio::time"));
+    }
+
+    #[test]
+    fn target_boundary_uses_observed_server_time_only_for_complete_results() {
+        let observed = UNIX_EPOCH + Duration::from_secs(200);
+
+        assert_eq!(
+            target_sync_boundary(true, 2, 1, Some(observed)),
+            Some(observed)
+        );
+        assert_eq!(target_sync_boundary(true, 1_000, 1, Some(observed)), None);
+        assert_eq!(target_sync_boundary(true, 101, 101, Some(observed)), None);
+        assert_eq!(target_sync_boundary(true, 0, 0, None), None);
     }
 
     fn runtime_state(network: RunningNetwork) -> RuntimeState {

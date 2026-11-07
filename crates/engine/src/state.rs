@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -97,6 +97,13 @@ struct BufferState {
     cached_mentions_base: u64,
     history: HistoryState,
     newest: Option<HistoryCursor>,
+}
+
+#[derive(Debug)]
+struct PendingTargetSync {
+    through: SystemTime,
+    unresolved: HashSet<NameKey>,
+    failed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -334,6 +341,7 @@ pub(crate) struct NetworkModel {
     recent_commands: VecDeque<String>,
     last_sync: Option<SystemTime>,
     targets_synced: bool,
+    pending_target_sync: Option<PendingTargetSync>,
     #[cfg(test)]
     name_rebuilds: usize,
 }
@@ -406,6 +414,7 @@ impl NetworkModel {
             recent_commands: VecDeque::new(),
             last_sync: None,
             targets_synced: false,
+            pending_target_sync: None,
             #[cfg(test)]
             name_rebuilds: 0,
         }
@@ -571,11 +580,61 @@ impl NetworkModel {
 
     pub(crate) fn begin_target_sync(&mut self) {
         self.targets_synced = false;
+        self.pending_target_sync = None;
     }
 
-    pub(crate) fn finish_target_sync(&mut self, until: SystemTime) {
-        self.last_sync = Some(until);
+    pub(crate) fn finish_target_sync(&mut self, until: Option<SystemTime>) {
         self.targets_synced = true;
+        let Some(until) = until else {
+            return;
+        };
+        let unresolved = self
+            .buffers
+            .values()
+            .filter(|buffer| {
+                matches!(
+                    buffer.history,
+                    HistoryState::LoadingLatest | HistoryState::Refreshing { .. }
+                )
+            })
+            .filter_map(|buffer| buffer.key.clone())
+            .collect::<HashSet<_>>();
+        if unresolved.is_empty() {
+            self.advance_target_sync(until);
+        } else {
+            self.pending_target_sync = Some(PendingTargetSync {
+                through: until,
+                unresolved,
+                failed: false,
+            });
+        }
+    }
+
+    fn settle_target_history(&mut self, key: &NameKey, succeeded: bool) {
+        let Some(sync) = self.pending_target_sync.as_mut() else {
+            return;
+        };
+        if !sync.unresolved.remove(key) {
+            return;
+        }
+        sync.failed |= !succeeded;
+        if !sync.unresolved.is_empty() {
+            return;
+        }
+        let sync = self
+            .pending_target_sync
+            .take()
+            .expect("pending target sync");
+        if !sync.failed {
+            self.advance_target_sync(sync.through);
+        }
+    }
+
+    fn advance_target_sync(&mut self, through: SystemTime) {
+        self.last_sync = Some(
+            self.last_sync
+                .map_or(through, |current| current.max(through)),
+        );
     }
 
     pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
@@ -1588,11 +1647,13 @@ impl NetworkModel {
         };
         buffer.projection.sync_state = buffer.history.sync_state();
         derive_chat_projection(buffer);
-        Some(HistoryCompletion {
+        let completion = HistoryCompletion {
             buffer_id,
             at_start,
             gap,
-        })
+        };
+        self.settle_target_history(&key, true);
+        Some(completion)
     }
 
     pub(crate) fn fail_history(&mut self, fetch: &HistoryFetch) -> Option<BufferId> {
@@ -1617,6 +1678,7 @@ impl NetworkModel {
             | HistoryState::RefreshCapped => return None,
         };
         set_history_state(buffer, history);
+        self.settle_target_history(&target.name_key(), false);
         Some(buffer_id)
     }
 
@@ -3802,6 +3864,81 @@ mod tests {
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
         assert!(matches!(buffer.history, HistoryState::Refreshing { .. }));
         assert_eq!(buffer.projection.unread, 1);
+    }
+
+    #[test]
+    fn target_sync_boundary_waits_for_changed_history() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(
+            ChatListSnapshot::new(
+                "network".into(),
+                vec![SnapshotRow {
+                    conversation: SnapshotConversation::Channel {
+                        key: "#room".into(),
+                    },
+                    title: "#room".into(),
+                    last_activity_ms: Some(100),
+                    badge: SnapshotBadge::Unread { count: 1 },
+                    preview: Some("cached".into()),
+                    newest: Some(SnapshotCursor {
+                        msgid: Some("cached".into()),
+                        server_time_ms: 100,
+                    }),
+                    read_at_ms: None,
+                    peer_pin: None,
+                }],
+            )
+            .with_synced_through_ms(Some(100)),
+        );
+        let channel = channel_name(&state, "#room");
+        let fetch = model
+            .restore_channel(&channel, UNIX_EPOCH + Duration::from_millis(300))
+            .expect("changed channel starts a delta");
+
+        model.finish_target_sync(Some(UNIX_EPOCH + Duration::from_millis(300)));
+
+        assert_eq!(
+            model.last_sync(),
+            Some(UNIX_EPOCH + Duration::from_millis(100))
+        );
+        assert_eq!(
+            model
+                .merge_chat_list_snapshot(
+                    "network".into(),
+                    &ChatListSnapshot::new("network".into(), Vec::new())
+                )
+                .synced_through_ms,
+            Some(100)
+        );
+        let HistoryFetch::After { target, .. } = fetch else {
+            panic!("changed cached channel uses AFTER")
+        };
+        model
+            .finish_history(&target.conversation(), None, None, 1, true)
+            .expect("delta finishes");
+        assert_eq!(
+            model.last_sync(),
+            Some(UNIX_EPOCH + Duration::from_millis(300))
+        );
+    }
+
+    #[test]
+    fn failed_target_delta_does_not_advance_the_sync_boundary() {
+        let (mut model, state) = model(10);
+        model.last_sync = Some(UNIX_EPOCH + Duration::from_millis(100));
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        model.buffers.get_mut(&buffer_id).expect("channel").history = HistoryState::LoadingLatest;
+        model.finish_target_sync(Some(UNIX_EPOCH + Duration::from_millis(300)));
+        let fetch = HistoryFetch::Latest(HistoryTarget::Channel(channel));
+
+        model.fail_history(&fetch).expect("delta fails");
+
+        assert_eq!(
+            model.last_sync(),
+            Some(UNIX_EPOCH + Duration::from_millis(100))
+        );
+        assert!(model.pending_target_sync.is_none());
     }
 
     #[test]
