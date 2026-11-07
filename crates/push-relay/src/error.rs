@@ -1,8 +1,9 @@
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use rusqlite::ffi::ErrorCode;
 use serde_json::json;
 
 /// Errors produced while configuring or serving the relay.
@@ -81,6 +82,7 @@ impl Error {
             | Self::Http(_)
             | Self::Crypto(_) => StatusCode::BAD_GATEWAY,
             Self::DeliveryUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Database(error) if database_is_busy(error) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Config(_) | Self::Io(_) | Self::Database(_) | Self::DatabaseTask(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -112,6 +114,7 @@ impl Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status = self.status();
+        let retry_database = matches!(&self, Self::Database(error) if database_is_busy(error));
         let message = match status {
             StatusCode::UNAUTHORIZED => "unauthorized",
             StatusCode::NOT_FOUND => "not found",
@@ -122,6 +125,35 @@ impl IntoResponse for Error {
             StatusCode::BAD_GATEWAY | StatusCode::SERVICE_UNAVAILABLE => "upstream unavailable",
             _ => "internal error",
         };
-        (status, Json(json!({ "error": message }))).into_response()
+        let mut response = (status, Json(json!({ "error": message }))).into_response();
+        if retry_database {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        }
+        response
+    }
+}
+
+fn database_is_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+    use axum::{http::StatusCode, response::IntoResponse as _};
+
+    #[test]
+    fn busy_database_errors_are_retryable() {
+        let sqlite = rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY);
+        let response =
+            Error::Database(rusqlite::Error::SqliteFailure(sqlite, None)).into_response();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()["Retry-After"], "1");
     }
 }
