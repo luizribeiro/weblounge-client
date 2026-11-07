@@ -225,6 +225,8 @@ test("opens ready history without a title shimmer or eager older page", async ({
 
     const row = page.getByRole("button", { name: channel });
     await expect(row).toBeVisible();
+    await row.click();
+    await expect(page.getByText(/warm history 119/u)).toBeVisible();
     await page.waitForFunction((targetTitle) => {
       const timeline = Reflect.get(globalThis, "historyProjectionTimeline");
       return (
@@ -246,6 +248,10 @@ test("opens ready history without a title shimmer or eager older page", async ({
         )
       );
     }, channel);
+    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await expect(
+      page.getByRole("heading", { name: "#weblounge-test" }),
+    ).toBeVisible();
     await page.evaluate(() =>
       Reflect.set(globalThis, "slowBufferOpenedAt", performance.now()),
     );
@@ -253,7 +259,6 @@ test("opens ready history without a title shimmer or eager older page", async ({
 
     const list = page.locator("[data-message-list]");
     await expect(list).toBeVisible();
-    await expect(page.getByText(/warm history 119/u)).toBeVisible();
     await expect
       .poll(() =>
         list.evaluate((element) => element.scrollHeight - element.clientHeight),
