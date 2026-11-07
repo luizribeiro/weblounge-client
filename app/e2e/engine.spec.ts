@@ -89,8 +89,22 @@ test.describe("local Ergo user flow", () => {
       { length: 8 },
       (_, index) => `#cap-${suffix}-${index}`,
     );
+    const channelButton = (index: number) => {
+      const channel = channels[index];
+      if (channel === undefined) throw new Error("test channel missing");
+      return page.getByRole("button", { name: channel.slice(1) });
+    };
     const composer = page.getByRole("textbox", { name: "Message" });
-    await composer.fill(`/join ${channels.join(",")}`);
+    await composer.fill(`/join ${channels.slice(0, 4).join(",")}`);
+    await composer.press("Enter");
+    await expect(channelButton(3)).toBeVisible();
+    await composer.fill(`/join ${channels.slice(4, 6).join(",")}`);
+    await composer.press("Enter");
+    await expect(channelButton(5)).toBeVisible();
+    await composer.fill(`/join ${channels.slice(6, 7).join(",")}`);
+    await composer.press("Enter");
+    await expect(channelButton(6)).toBeVisible();
+    await composer.fill(`/join ${channels.slice(7).join(",")}`);
     await composer.press("Enter");
 
     await expect(page.getByRole("note")).toHaveText(
