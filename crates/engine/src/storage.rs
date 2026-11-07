@@ -144,6 +144,8 @@ pub trait KvBackend {
 #[derive(Debug, Default)]
 pub struct MemoryKv {
     rows: Mutex<MemoryRows>,
+    #[cfg(test)]
+    commit_failures: Mutex<usize>,
 }
 
 type MemoryRows = BTreeMap<(Space, Vec<u8>), Vec<u8>>;
@@ -181,6 +183,14 @@ impl KvBackend for MemoryKv {
     }
 
     async fn commit(&self, space: Space, operations: Vec<Operation>) -> Result<(), StorageError> {
+        #[cfg(test)]
+        {
+            let mut failures = lock(&self.commit_failures);
+            if *failures > 0 {
+                *failures -= 1;
+                return Err(StorageError::Transaction("injected commit failure".into()));
+            }
+        }
         let mut next = lock(&self.rows).clone();
         for operation in operations {
             match operation {
@@ -202,6 +212,13 @@ impl KvBackend for MemoryKv {
     async fn clear(&self, space: Space) -> Result<(), StorageError> {
         lock(&self.rows).retain(|(row_space, _), _| *row_space != space);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl MemoryKv {
+    pub(crate) fn fail_next_commit(&self) {
+        *lock(&self.commit_failures) += 1;
     }
 }
 

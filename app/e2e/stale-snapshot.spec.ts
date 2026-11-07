@@ -96,6 +96,99 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("overwrites stale SharedWorker badges before relaunch", async ({
+    baseURL,
+    browserName,
+    context,
+    page,
+  }) => {
+    test.skip(browserName !== "firefox", "covers the reported Firefox failure");
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const suffix = Date.now().toString(36);
+    const channel = "#weblounge-test";
+    const preview = `stale Firefox preview ${suffix}`;
+    const bot = await IrcClient.connect(
+      `firefox-cache-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    const markerReader = await IrcClient.connect(
+      "weblounge",
+      "weblounge",
+      "weblounge-test",
+      channel,
+    );
+    let current = page;
+    let forwarderDropped = false;
+    try {
+      const latest = await bot.privmsgConfirmed("weblounge", preview);
+      await markerReader.markRead(bot.nickname, messageTag(latest, "time"));
+      await current.goto("/config.json");
+      await seedUnreadDirectSnapshot(
+        current,
+        baseURL,
+        bot.nickname,
+        preview,
+        [],
+        [],
+        417,
+      );
+      await expect
+        .poll(() => snapshotRow(current, bot.nickname))
+        .toMatchObject({
+          badge: { kind: "mentions", count: 417, mentions: 417 },
+        });
+      await installStorageWriteFailureControl(current);
+      await recordCachedRow(current, bot.nickname);
+      await controlForwarder("drop");
+      forwarderDropped = true;
+      await current.goto(startUrl());
+      await expect(bufferRow(current, bot.nickname)).toHaveAttribute(
+        "data-unread",
+        "417",
+      );
+      await expect
+        .poll(() => cachedRow(current))
+        .toMatchObject({
+          unread: "417",
+        });
+      await setStorageWritesFailing(current, true);
+      await controlForwarder("restore");
+      forwarderDropped = false;
+      await expectRead(bufferRow(current, bot.nickname), bot.nickname);
+      await expect(bufferRow(current, bot.nickname)).toHaveAttribute(
+        "data-unread",
+        "0",
+      );
+      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
+        "data-chat-list-hydrating",
+        "true",
+      );
+
+      await setStorageWritesFailing(current, false);
+      await backgroundPage(current);
+      await expect
+        .poll(() => snapshotRow(current, bot.nickname))
+        .toMatchObject({ badge: { kind: "none" } });
+      await current.close();
+
+      current = await context.newPage();
+      await useFreshSharedWorker(current);
+      await recordCachedRow(current, bot.nickname);
+      await current.goto(startUrl());
+      await expect
+        .poll(() => cachedRow(current))
+        .toMatchObject({ unread: "0" });
+    } finally {
+      if (forwarderDropped) await controlForwarder("restore");
+      if (!current.isClosed()) await current.close();
+      markerReader.close();
+      bot.close();
+    }
+  });
+
   test("keeps a newer live preview when catch-up finishes behind it", async ({
     context,
     page,
@@ -544,17 +637,23 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
   await page.addInitScript((title) => {
     Reflect.set(globalThis, "staleSnapshotCachedRow", undefined);
     new MutationObserver(() => {
-      if (Reflect.get(globalThis, "staleSnapshotCachedRow") !== undefined)
-        return;
+      const root = document.querySelector("[data-chat-list-hydrating]");
+      if (root === null) return;
       const row = [
-        ...document.querySelectorAll<HTMLElement>("[data-buffer-id]"),
+        ...root.querySelectorAll<HTMLElement>("[data-buffer-id]"),
       ].find((candidate) => candidate.textContent?.includes(title));
       if (row !== undefined)
         Reflect.set(globalThis, "staleSnapshotCachedRow", {
           label: row.getAttribute("aria-label"),
           text: row.textContent ?? "",
+          unread: row.getAttribute("data-unread"),
         });
-    }).observe(document, { childList: true, subtree: true });
+    }).observe(document, {
+      attributeFilter: ["aria-label", "data-chat-list-hydrating"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
   }, channel);
 }
 
@@ -569,6 +668,7 @@ async function seedUnreadDirectSnapshot(
   preview: string,
   channels: readonly string[],
   backgroundDirects: readonly string[],
+  count = 1,
 ): Promise<void> {
   const endpoint = new URL("/socket", baseURL);
   endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
@@ -598,7 +698,7 @@ async function seedUnreadDirectSnapshot(
             conversation: { kind: "direct", key: nick },
             title: nick,
             last_activity_ms: 1_800_000_000_000,
-            badge: { kind: "mentions", count: 1, mentions: 1 },
+            badge: { kind: "mentions", count, mentions: count },
             preview,
           },
           ...backgroundDirects.map((backgroundNick, index) => ({
@@ -633,6 +733,71 @@ async function backgroundPage(page: Page): Promise<void> {
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new PageTransitionEvent("pagehide"));
   });
+}
+
+async function controlForwarder(action: "drop" | "restore"): Promise<void> {
+  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
+  if (base === undefined) throw new Error("socket forwarder is unavailable");
+  const response = await fetch(`${base}/${action}`, { method: "POST" });
+  if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
+}
+
+async function useFreshSharedWorker(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeSharedWorker = globalThis.SharedWorker;
+    class RelaunchedSharedWorker extends NativeSharedWorker {
+      constructor(scriptURL: string | URL, options?: string | WorkerOptions) {
+        const suffix = crypto.randomUUID();
+        super(
+          scriptURL,
+          typeof options === "string"
+            ? `${options}-${suffix}`
+            : { ...options, name: `${options?.name ?? "worker"}-${suffix}` },
+        );
+      }
+    }
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: RelaunchedSharedWorker,
+    });
+  });
+}
+
+async function installStorageWriteFailureControl(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeSharedWorker = globalThis.SharedWorker;
+    class StorageFailureSharedWorker extends NativeSharedWorker {
+      constructor(scriptURL: string | URL, options?: string | WorkerOptions) {
+        super(scriptURL, options);
+        Reflect.set(
+          globalThis,
+          "staleSnapshotSetWriteFailure",
+          (failing: boolean) => {
+            this.port.postMessage({
+              type: "storage_write_test_set_failure",
+              failing,
+            });
+          },
+        );
+      }
+    }
+    Object.defineProperty(globalThis, "SharedWorker", {
+      configurable: true,
+      value: StorageFailureSharedWorker,
+    });
+  });
+}
+
+async function setStorageWritesFailing(
+  page: Page,
+  failing: boolean,
+): Promise<void> {
+  await page.evaluate((shouldFail) => {
+    const setFailure = Reflect.get(globalThis, "staleSnapshotSetWriteFailure");
+    if (typeof setFailure !== "function")
+      throw new Error("storage write failure control is unavailable");
+    setFailure(shouldFail);
+  }, failing);
 }
 
 async function recordCachedRows(

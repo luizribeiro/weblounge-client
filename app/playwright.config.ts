@@ -82,6 +82,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-stale-snapshot",
+      grep: /overwrites stale SharedWorker badges before relaunch/,
+      testMatch: "**/stale-snapshot.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "firefox-shimmer",
       testMatch: [
         "**/conversation-title-shimmer.spec.ts",

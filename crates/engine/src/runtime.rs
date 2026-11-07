@@ -48,6 +48,7 @@ const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const READ_RETRY_INITIAL: Duration = Duration::from_secs(1);
 const READ_RETRY_MAX: Duration = Duration::from_secs(60);
 const READ_RETRY_ATTEMPTS: u8 = 5;
+const SNAPSHOT_WRITE_RETRY_ATTEMPTS: u8 = 5;
 const MARK_READ_DIAGNOSTIC_ID: &str = "mark-read";
 const PUSH_REFRESH_INTERVAL: Duration = Duration::from_hours(24);
 
@@ -4444,6 +4445,7 @@ async fn write_snapshot_intervals(
     writer: Arc<Mutex<SnapshotWriter>>,
     generation: u64,
 ) {
+    let mut failures = 0_u8;
     loop {
         let snapshot = {
             let mut writer = lock(&writer);
@@ -4457,7 +4459,25 @@ async fn write_snapshot_intervals(
             };
             snapshot
         };
-        let _ = chat_list_snapshot::write(storage.as_ref(), &snapshot).await;
+        match chat_list_snapshot::write(storage.as_ref(), &snapshot).await {
+            Ok(()) => failures = 0,
+            Err(error) => {
+                failures = failures.saturating_add(1);
+                engine_log(&format!(
+                    "{}: {error}",
+                    EngineMessageKey::StorageUnavailable.as_str()
+                ));
+                if failures <= SNAPSHOT_WRITE_RETRY_ATTEMPTS {
+                    let mut writer = lock(&writer);
+                    if writer.generation != generation {
+                        return;
+                    }
+                    if writer.pending.is_none() {
+                        writer.pending = Some(snapshot);
+                    }
+                }
+            }
+        }
         match next_snapshot_interval(&writer, generation) {
             Some(SnapshotInterval::Immediate) => {}
             Some(SnapshotInterval::Wait(flush)) => wait_for_snapshot_interval(flush).await,
@@ -5173,6 +5193,35 @@ async fn delay(duration: Duration) {
         })
         .await
         .expect("lifecycle flush writes without the throttle delay");
+        let stored = read(storage.as_ref())
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+        assert_eq!(stored, Some(snapshot));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn snapshot_writer_retries_a_failed_commit() {
+        let storage = Arc::new(MemoryKv::default());
+        let writer = Arc::default();
+        let snapshot = ChatListSnapshot::new("network".into(), Vec::new());
+        let (tick, clock) = oneshot::channel();
+        storage.fail_next_commit();
+        schedule_snapshot_write_after(
+            Arc::clone(&storage),
+            Arc::clone(&writer),
+            snapshot.clone(),
+            async move {
+                let _ = clock.await;
+            },
+        );
+
+        let _ = tick.send(());
+        tokio::task::yield_now().await;
+        assert_eq!(read(storage.as_ref()).await.expect("read"), None);
+
+        tokio::time::advance(Duration::from_millis(750)).await;
+        tokio::task::yield_now().await;
         let stored = read(storage.as_ref())
             .await
             .expect("read")

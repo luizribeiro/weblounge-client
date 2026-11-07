@@ -32,6 +32,8 @@ let historyWireTestInstalled = false;
 let historyWireTestHoldBefore = false;
 let historyWireTestBeforeTarget: string | undefined;
 let historyWireTestLatestExcept: string | undefined;
+let storageWriteTestFailing = false;
+let storageWriteTestInstalled = false;
 let historyWireNativeSend:
   | ((
       this: WebSocket,
@@ -70,6 +72,16 @@ export class EngineWorkerRuntime {
     this.#ports.add(port);
     let pending = Promise.resolve();
     port.addEventListener("message", (event) => {
+      if (
+        __STORAGE_WRITE_TEST_ENABLED__ &&
+        isRecord(event.data) &&
+        event.data.type === "storage_write_test_set_failure" &&
+        typeof event.data.failing === "boolean"
+      ) {
+        storageWriteTestFailing = event.data.failing;
+        installStorageWriteTestFailure();
+        return;
+      }
       if (
         __HISTORY_WIRE_TEST_ENABLED__ &&
         isHistoryWireTestSubscription(event.data)
@@ -342,6 +354,19 @@ function installHistoryWireTestTrace(): void {
       void traceHistoryWireValue("sent", at, data);
       super.send(data);
     }
+  };
+}
+
+function installStorageWriteTestFailure(): void {
+  if (storageWriteTestInstalled) return;
+  storageWriteTestInstalled = true;
+  const nativeCommit = IDBTransaction.prototype.commit;
+  IDBTransaction.prototype.commit = function () {
+    if (storageWriteTestFailing && this.mode === "readwrite") {
+      this.abort();
+      return;
+    }
+    nativeCommit.call(this);
   };
 }
 
