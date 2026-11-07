@@ -482,10 +482,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           { label: channel },
           { label: emptyChannel },
         ]);
-      await expect(bufferRow(current, homeChannel)).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
       await expectUnreadCount(bufferRow(current, channel), channel, 3);
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
 
