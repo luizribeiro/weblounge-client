@@ -17,9 +17,10 @@ The single place a fresh session reads to know where the project stands. Update 
   logged once at warn with its safe Display text.
 - [x] Bound cross-tab push synchronization without delaying the designed per-tab foreground
   leases. One Web Lock owner now reconciles the shared device and routes; unchanged targets and
-  activations are idempotent; every failed relay fetch uses capped jittered backoff and readable
-  `Retry-After`. Two tabs, visibility flips and a no-CORS 429 now make 17 device-API requests in a
-  startup-plus-one-minute window instead of 28 on main, while lease transitions remain immediate.
+  activations are idempotent; transient relay failures use capped jittered backoff and readable
+  `Retry-After`, while permanent recovery and leases remain immediate. Visible-owner lifecycle
+  handoff covers suspension and crashes without holding the lock across synchronization work. Two
+  tabs, visibility flips and a no-CORS 429 stay within the device-API request budget measured below.
 - [x] Restore a cached DM's writable snapshot row when live traffic follows TARGETS declaring the
   cached row vanished. The live message now establishes the current authoritative edge even for an
   existing buffer, so a local read can persist its cleared badge while other rows still hydrate.
