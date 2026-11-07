@@ -110,6 +110,11 @@ test.describe("local Ergo user flow", () => {
     await expect(page.getByRole("note")).toHaveText(
       "You're in the maximum number of channels for this server.",
     );
+    for (const [index, channel] of channels.slice(0, 7).entries()) {
+      await composer.fill(`/part ${channel}`);
+      await composer.press("Enter");
+      await expect(channelButton(index)).toHaveCount(0);
+    }
   });
 
   test("keeps an ordinary incoming DM row unhighlighted", async ({ page }) => {
