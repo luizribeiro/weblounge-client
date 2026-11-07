@@ -86,7 +86,7 @@ test.describe("local Ergo user flow", () => {
     ).toBeVisible();
     const suffix = Date.now().toString(36);
     const channels = Array.from(
-      { length: 4 },
+      { length: 8 },
       (_, index) => `#cap-${suffix}-${index}`,
     );
     const composer = page.getByRole("textbox", { name: "Message" });

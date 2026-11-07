@@ -23,7 +23,7 @@ let
       .accounts.login-throttling.enabled = false |
       .accounts.nick-reservation.force-nick-equals-account = false |
       .accounts.multiclient.always-on = "opt-in" |
-      .channels.max-channels-per-client = 4 |
+      .channels.max-channels-per-client = 8 |
       .history.enabled = true |
       .history.persistent.enabled = false |
       .languages.enabled = false |
