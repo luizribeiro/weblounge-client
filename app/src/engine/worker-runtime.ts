@@ -28,6 +28,7 @@ type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
 
 let sharedRuntime: EngineWorkerRuntime | undefined;
 const historyWireTestPorts = new Set<WorkerHostPort>();
+const storageWriteTestPorts = new Set<WorkerHostPort>();
 let historyWireTestInstalled = false;
 let historyWireTestHoldBefore = false;
 let historyWireTestBeforeTarget: string | undefined;
@@ -78,6 +79,7 @@ export class EngineWorkerRuntime {
         event.data.type === "storage_write_test_set_failure" &&
         typeof event.data.failing === "boolean"
       ) {
+        storageWriteTestPorts.add(port);
         storageWriteTestFailing = event.data.failing;
         installStorageWriteTestFailure();
         return;
@@ -117,6 +119,7 @@ export class EngineWorkerRuntime {
       if (isHostDetach(event.data)) {
         this.#ports.delete(port);
         historyWireTestPorts.delete(port);
+        storageWriteTestPorts.delete(port);
         if (this.#activePort === port) this.#activePort = this.#lastPort();
         return;
       }
@@ -364,6 +367,8 @@ function installStorageWriteTestFailure(): void {
   IDBTransaction.prototype.commit = function () {
     if (storageWriteTestFailing && this.mode === "readwrite") {
       this.abort();
+      for (const port of storageWriteTestPorts)
+        port.postMessage({ type: "storage_write_test_aborted" });
       return;
     }
     nativeCommit.call(this);

@@ -83,7 +83,7 @@ export default defineConfig({
     },
     {
       name: "firefox-stale-snapshot",
-      grep: /overwrites stale SharedWorker badges before relaunch/,
+      grep: /overwrites stale SharedWorker badges before relaunch|keeps a read bot DM clear after a failed Firefox snapshot commit/,
       testMatch: "**/stale-snapshot.spec.ts",
       use: { browserName: "firefox" },
     },

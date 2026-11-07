@@ -189,6 +189,81 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("keeps a read bot DM clear after a failed Firefox snapshot commit", async ({
+    browserName,
+    context,
+    page,
+  }) => {
+    test.skip(browserName !== "firefox", "covers the reported Firefox failure");
+    const suffix = Date.now().toString(36);
+    const channel = "#weblounge-test";
+    const text = `louro direct ${suffix}`;
+    const bot = await IrcClient.connect(
+      `louro-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    const markerReader = await IrcClient.connect(
+      "weblounge",
+      "weblounge",
+      "weblounge-test",
+      channel,
+    );
+    let current = page;
+    try {
+      await installStorageWriteFailureControl(current);
+      await observeMarkReadRequests(current);
+      await current.goto(startUrl());
+      const latest = await bot.privmsgConfirmed("weblounge", text);
+      const latestTime = messageTag(latest, "time");
+      const row = bufferRow(current, bot.nickname);
+      await expectUnreadCount(row, bot.nickname, 1);
+      await expect
+        .poll(() => snapshotRow(current, bot.nickname))
+        .toMatchObject({ badge: { kind: "mentions", count: 1, mentions: 1 } });
+
+      await setStorageWritesFailing(current, true);
+      await row.click();
+      await expect(
+        current.getByRole("heading", { name: bot.nickname }),
+      ).toBeVisible();
+      await expect(current.getByText(text, { exact: true })).toBeVisible();
+      await expectRead(row, bot.nickname);
+      await expect.poll(() => markReadRequestCount(current)).toBeGreaterThan(0);
+      await expect
+        .poll(() => storageWriteAbortCount(current))
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => markerReader.readMarker(bot.nickname))
+        .toBe(latestTime);
+
+      const abortsBeforeFlush = await storageWriteAbortCount(current);
+      await backgroundPage(current);
+      await expect
+        .poll(() => storageWriteAbortCount(current))
+        .toBeGreaterThan(abortsBeforeFlush);
+      await setStorageWritesFailing(current, false);
+      await backgroundPage(current);
+      await expect
+        .poll(() => snapshotRow(current, bot.nickname))
+        .toMatchObject({ badge: { kind: "none" } });
+      await current.close();
+
+      current = await context.newPage();
+      await useFreshSharedWorker(current);
+      await recordCachedRow(current, bot.nickname);
+      await current.goto(startUrl());
+      await expect
+        .poll(() => cachedRow(current))
+        .toMatchObject({ unread: "0" });
+    } finally {
+      if (!current.isClosed()) await current.close();
+      markerReader.close();
+      bot.close();
+    }
+  });
+
   test("keeps a newer live preview when catch-up finishes behind it", async ({
     context,
     page,
@@ -769,6 +844,24 @@ async function installStorageWriteFailureControl(page: Page): Promise<void> {
     class StorageFailureSharedWorker extends NativeSharedWorker {
       constructor(scriptURL: string | URL, options?: string | WorkerOptions) {
         super(scriptURL, options);
+        this.port.addEventListener("message", (event) => {
+          if (
+            typeof event.data === "object" &&
+            event.data !== null &&
+            "type" in event.data &&
+            event.data.type === "storage_write_test_aborted"
+          ) {
+            const count = Reflect.get(
+              globalThis,
+              "staleSnapshotWriteAbortCount",
+            );
+            Reflect.set(
+              globalThis,
+              "staleSnapshotWriteAbortCount",
+              typeof count === "number" ? count + 1 : 1,
+            );
+          }
+        });
         Reflect.set(
           globalThis,
           "staleSnapshotSetWriteFailure",
@@ -785,6 +878,13 @@ async function installStorageWriteFailureControl(page: Page): Promise<void> {
       configurable: true,
       value: StorageFailureSharedWorker,
     });
+  });
+}
+
+function storageWriteAbortCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const count = Reflect.get(globalThis, "staleSnapshotWriteAbortCount");
+    return typeof count === "number" ? count : 0;
   });
 }
 
