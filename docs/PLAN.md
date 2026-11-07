@@ -63,6 +63,13 @@ The single place a fresh session reads to know where the project stands. Update 
   settles every rendered row and the live edge before the existing two-frame snapshot teardown. A
   component fixture withholds ResizeObserver delivery through teardown and proves the covered live
   rows are overlapping before the handoff remeasures them.
+- [x] Replace launch and reconnect's eager per-buffer history sweep with one `CHATHISTORY TARGETS`
+  diff against the persisted sync boundary. Unchanged cached rows remain authoritative without
+  network work; changed rows fetch one capped page after their exact cursor, opened cached channels
+  fetch Latest on demand, and direct identity and marker queries stay limited to opened or changed
+  DMs. A stock-fakelag Ergo journey with seven channels and nine DMs cuts launch history commands
+  from 17 to 4 with no `MONITOR` or `WHO`, while Chromium and iPhone WebKit verify selected-buffer
+  priority, cached previews, badges, pushed channel markers, and cold launch.
 - [x] Keep a locally read restored-push DM clear while its exact server marker remains deferred.
   Cached-frame hydration now clears the visible badge immediately, and the row-wise snapshot merge
   updates only that cached badge until authoritative history replaces the rest of the row.
