@@ -137,7 +137,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expectNewDividerBetween(current, lastRead.text, firstUnread.text);
       await expect
         .poll(() => snapshotRow(current, channel))
-        .toMatchObject({ preview: snapshotPreview });
+        .toMatchObject({ badge: { kind: "none" }, preview: snapshotPreview });
 
       await current.close();
       current = await context.newPage();
@@ -1089,13 +1089,16 @@ async function expectNewDividerBetween(
 ): Promise<void> {
   const index = (locator: Locator) =>
     locator.evaluate((element) => Number(element.closest("li")?.dataset.index));
-  const divider = await index(page.locator("[data-new-line]"));
-  expect(divider).toBe(
-    (await index(page.getByText(before, { exact: true }))) + 1,
-  );
-  expect(divider).toBe(
-    (await index(page.getByText(after, { exact: true }))) - 1,
-  );
+  await expect
+    .poll(async () => {
+      const [divider, beforeIndex, afterIndex] = await Promise.all([
+        index(page.locator("[data-new-line]")),
+        index(page.getByText(before, { exact: true })),
+        index(page.getByText(after, { exact: true })),
+      ]);
+      return [divider - beforeIndex, afterIndex - divider];
+    })
+    .toEqual([1, 1]);
 }
 
 function escapeRegex(value: string): string {
