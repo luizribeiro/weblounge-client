@@ -109,12 +109,22 @@ impl Error {
             Self::TargetRefused(_) => "target",
         }
     }
+
+    pub(crate) fn warn_if_internal(&self) {
+        if matches!(
+            self,
+            Self::Config(_) | Self::Io(_) | Self::Database(_) | Self::DatabaseTask(_)
+        ) {
+            tracing::warn!(error = %self, "internal relay error");
+        }
+    }
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status = self.status();
         let retry_database = matches!(&self, Self::Database(error) if database_is_busy(error));
+        self.warn_if_internal();
         let message = match status {
             StatusCode::UNAUTHORIZED => "unauthorized",
             StatusCode::NOT_FOUND => "not found",

@@ -312,6 +312,14 @@ impl Harness {
             .expect("seed legacy active route");
     }
 
+    fn remove_routes_table(&self) {
+        let connection = rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+            .expect("relay database");
+        connection
+            .execute("DROP TABLE routes", [])
+            .expect("remove routes table");
+    }
+
     fn expire_all_leases(&self) {
         let connection = rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
             .expect("relay database");
@@ -516,6 +524,19 @@ async fn run_logged_lifecycle() -> LoggedLifecycle {
             .await,
         StatusCode::NOT_FOUND
     );
+    harness.remove_routes_table();
+    assert_eq!(
+        call_bytes(
+            &harness.app,
+            Method::POST,
+            "/v1/r/internal-error",
+            None,
+            Vec::new(),
+            &[],
+        )
+        .await,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
     LoggedLifecycle {
         device,
         route,
@@ -606,9 +627,16 @@ fn assert_safe_lifecycle_logs(output: &str, lifecycle: &LoggedLifecycle) {
         "reason=\"pin\"",
         "reason=\"jwt\"",
         "reason=\"size\"",
+        "internal relay error",
+        "database operation failed: no such table: routes",
     ] {
         assert!(output.contains(event), "missing {event:?} in {output}");
     }
+    assert_eq!(
+        output.matches("internal relay error").count(),
+        1,
+        "{output}"
+    );
     for value in [
         lifecycle.device["secret"].as_str().expect("device secret"),
         lifecycle.device["id"].as_str().expect("device id"),
