@@ -712,7 +712,9 @@ async fn deliver_held_pushes(state: AppState) {
                     .await;
                 match outcome {
                     Ok(PushOutcome::Accepted) => {
-                        let _ = state.database.delete_held(held.id).await;
+                        if let Err(error) = state.database.delete_held(held.id).await {
+                            error.warn_if_internal();
+                        }
                     }
                     Ok(PushOutcome::Dead) => {
                         tracing::info!(
@@ -720,8 +722,12 @@ async fn deliver_held_pushes(state: AppState) {
                             device = %device_prefix,
                             "route dead"
                         );
-                        let _ = state.database.mark_device_dead(held.device_id).await;
-                        let _ = state.database.delete_held(held.id).await;
+                        if let Err(error) = state.database.mark_device_dead(held.device_id).await {
+                            error.warn_if_internal();
+                        }
+                        if let Err(error) = state.database.delete_held(held.id).await {
+                            error.warn_if_internal();
+                        }
                     }
                     Err(_) => {
                         tokio::select! {
@@ -733,7 +739,8 @@ async fn deliver_held_pushes(state: AppState) {
                 continue;
             }
             Ok(None) => {}
-            Err(_) => {
+            Err(error) => {
+                error.warn_if_internal();
                 tokio::select! {
                     () = tokio::time::sleep(Duration::from_secs(1)) => {}
                     () = notified => {}
@@ -750,7 +757,10 @@ async fn deliver_held_pushes(state: AppState) {
                 }
             }
             Ok(None) => notified.await,
-            Err(_) => tokio::time::sleep(Duration::from_secs(1)).await,
+            Err(error) => {
+                error.warn_if_internal();
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
         }
     }
 }

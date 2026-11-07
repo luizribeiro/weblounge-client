@@ -2,6 +2,11 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep concurrent unknown push routes at 404 under SQLite write contention. Route lookup no
+  longer takes an immediate write transaction merely to expire unrelated probes; only an expired
+  matched probe enters the retirement transaction. Relay database work is bounded below the
+  service task limit, busy/locked responses return retryable 503s, and every internal failure is
+  logged once at warn with its safe Display text.
 - [x] Restore a cached DM's writable snapshot row when live traffic follows TARGETS declaring the
   cached row vanished. The live message now establishes the current authoritative edge even for an
   existing buffer, so a local read can persist its cleared badge while other rows still hydrate.

@@ -16,7 +16,7 @@ async fn main() -> ExitCode {
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("push relay failed: {error}");
+            tracing::warn!(error = %error, "push relay failed");
             ExitCode::FAILURE
         }
     }
