@@ -29,6 +29,7 @@ type WebSocketData = string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
 
 let sharedRuntime: EngineWorkerRuntime | undefined;
 const historyWireTestPorts = new Set<WorkerHostPort>();
+const historyWireTestBacklog: unknown[] = [];
 const storageWriteTestPorts = new Set<WorkerHostPort>();
 const historyWireTestPortIds = new WeakMap<WorkerHostPort, string>();
 let historyWireTestInstalled = false;
@@ -57,6 +58,11 @@ let heldHistoryLatest:
       readonly data: WebSocketData;
     }
   | undefined;
+
+if (__HISTORY_WIRE_TEST_ENABLED__) {
+  historyWireTestInstalled = true;
+  installHistoryWireTestTrace();
+}
 
 export function attachEnginePort(port: WorkerHostPort): void {
   sharedRuntime ??= new EngineWorkerRuntime(loadEngine);
@@ -95,6 +101,8 @@ export class EngineWorkerRuntime {
         const instanceId = historyWireTestWorkerInstanceId();
         const portId = historyWireTestPortId(port);
         historyWireTestPorts.add(port);
+        for (const entry of historyWireTestBacklog) port.postMessage(entry);
+        historyWireTestBacklog.length = 0;
         port.postMessage({
           type: "history_wire_test_control",
           at: historyWireTestNow(),
@@ -492,15 +500,15 @@ async function traceHistoryWireValue(
   const text = await wireText(value);
   if (text === undefined) return;
   for (const line of text.split("\r\n")) {
-    if (!/(?:^| )(?:CHATHISTORY|MARKREAD|MONITOR|WHO|BATCH) /u.test(line))
-      continue;
-    for (const port of historyWireTestPorts)
-      port.postMessage({
-        type: "history_wire_test_trace",
-        at,
-        direction,
-        line,
-      });
+    if (line.length === 0) continue;
+    const entry = {
+      type: "history_wire_test_trace",
+      at,
+      direction,
+      line,
+    };
+    if (historyWireTestPorts.size === 0) historyWireTestBacklog.push(entry);
+    else for (const port of historyWireTestPorts) port.postMessage(entry);
   }
 }
 

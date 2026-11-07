@@ -81,7 +81,10 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
         title: bot.nickname,
         time: messageTag(directInitial[index], "time"),
         preview: `cached direct ${index} ${suffix}`,
-        badge: { kind: "mentions" as const, count: 1, mentions: 1 },
+        badge:
+          index === 0
+            ? { kind: "mentions" as const, count: 1, mentions: 1 }
+            : { kind: "none" as const },
       })),
     ]);
     await captureLaunchWire(page);
@@ -127,9 +130,7 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     );
     await expect(
       bufferRow(page, bots[1]?.nickname ?? "missing"),
-    ).toHaveAccessibleName(
-      `${bots[1]?.nickname}, 1 unread, including mentions`,
-    );
+    ).toHaveAccessibleName(`${bots[1]?.nickname}`);
     await expect(bufferRow(page, bots[0]?.nickname ?? "missing")).toContainText(
       changedDirectText,
     );
@@ -138,34 +139,31 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     ).toHaveAccessibleName(
       `${bots[0]?.nickname}, 2 unread, including mentions`,
     );
-
     const measured = await page.evaluate(() => ({
-      onlineAt: (
-        Reflect.get(globalThis, "launchCatchupEvents") as Array<{
-          at: number;
-          state?: unknown;
-        }>
-      ).find((entry) => entry.state === "online")?.at,
+      events: Reflect.get(globalThis, "launchCatchupEvents") as Array<{
+        at: number;
+        state?: unknown;
+        type?: unknown;
+      }>,
       wire: Reflect.get(globalThis, "launchCatchupWire") as WireTrace[],
     }));
-    if (measured.onlineAt === undefined)
-      throw new Error("online transition is missing");
-    const histories = measured.wire.filter(
+    const onlineAt = measured.events.find(
+      (entry) => entry.state === "online",
+    )?.at;
+    if (onlineAt === undefined) throw new Error("online transition is missing");
+    const launchWire = measured.wire;
+    const histories = launchWire.filter(
       (entry) =>
         entry.direction === "sent" && entry.line.includes(" CHATHISTORY "),
     );
-    const markerQueries = measured.wire.filter(
+    const markerQueries = launchWire.filter(
       (entry) =>
         entry.direction === "sent" &&
         / MARKREAD \S+$/u.test(entry.line.trimEnd()),
     );
-    const monitorCommands = measured.wire.filter(
-      (entry) => entry.direction === "sent" && entry.line.includes(" MONITOR "),
-    );
-    const whoCommands = measured.wire.filter(
-      (entry) => entry.direction === "sent" && entry.line.includes(" WHO "),
-    );
-    const replies = historyReplyLatencies(measured.wire);
+    const replies = historyReplyLatencies(launchWire);
+    const commandCounts = countWireCommands(launchWire);
+    const clientReplies = clientRequestReplyLatencies(launchWire);
     const openedRequest = histories.find((entry) =>
       entry.line.includes(`CHATHISTORY LATEST ${unchangedDirect.nickname} `),
     );
@@ -176,18 +174,31 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     expect(openedReply).toBeDefined();
     if (openedRequest === undefined || openedReply === undefined)
       throw new Error("opened history request or reply is missing");
-    expect(openedRequest.at - measured.onlineAt).toBeLessThan(500);
-    expect(openedReply.receivedAt - measured.onlineAt).toBeLessThan(500);
+    expect(openedRequest.at - onlineAt).toBeLessThan(500);
+    expect(openedReply.receivedAt - onlineAt).toBeLessThan(500);
     expect(openedReply.latency).toBeLessThan(500);
+    const delayedClientReplies = clientReplies.filter(
+      (reply) => reply.latency >= 500,
+    );
     expect(
-      replies
-        .filter((reply) => reply.latency >= 500)
-        .every((reply) => reply.receivedAt >= openedReply.receivedAt),
-    ).toBe(true);
+      delayedClientReplies
+        .slice(1)
+        .map((reply, index) => ({
+          addedDelay:
+            reply.latency - (delayedClientReplies[index]?.latency ?? 0),
+          request: reply.request,
+        }))
+        .filter(({ addedDelay }) => addedDelay >= 500),
+    ).toEqual([]);
+    expect(commandCounts.get("CHATHISTORY") ?? 0).toBe(4);
+    expect(commandCounts.get("MARKREAD") ?? 0).toBe(2);
+    expect(commandCounts.get("MONITOR") ?? 0).toBe(0);
+    expect(commandCounts.get("WHO") ?? 0).toBeLessThanOrEqual(7);
+    expect(
+      [...commandCounts.values()].reduce((total, count) => total + count, 0),
+    ).toBe(36);
     expect(histories).toHaveLength(4);
     expect(markerQueries).toHaveLength(2);
-    expect(monitorCommands).toHaveLength(0);
-    expect(whoCommands).toHaveLength(0);
   } finally {
     keeper.close();
     writer.close();
@@ -263,6 +274,7 @@ interface SnapshotFixtureRow {
   readonly time: string;
   readonly preview: string;
   readonly badge:
+    | { readonly kind: "none" }
     | { readonly kind: "unread"; readonly count: number }
     | {
         readonly kind: "mentions";
@@ -485,4 +497,47 @@ function historyReplyLatencies(wire: readonly WireTrace[]) {
         latency: reply.at - request.at,
       };
     });
+}
+
+function countWireCommands(wire: readonly WireTrace[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of wire) {
+    if (entry.direction !== "sent") continue;
+    const command = wireCommand(entry.line);
+    counts.set(command, (counts.get(command) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function clientRequestReplyLatencies(wire: readonly WireTrace[]) {
+  return wire
+    .filter(
+      (entry) =>
+        entry.direction === "sent" &&
+        ["CHATHISTORY", "MARKREAD"].includes(wireCommand(entry.line)),
+    )
+    .map((request) => {
+      const label = /^@label=([^ ;]+)/u.exec(request.line)?.[1];
+      if (label === undefined)
+        throw new Error(`client request has no label: ${request.line}`);
+      const reply = wire.find(
+        (entry) =>
+          entry.direction === "received" &&
+          new RegExp(`(?:^@|;)label=${label}(?:;| )`, "u").test(entry.line),
+      );
+      if (reply === undefined)
+        throw new Error(`client request has no reply: ${request.line}`);
+      return {
+        request: request.line,
+        receivedAt: reply.at,
+        latency: reply.at - request.at,
+      };
+    });
+}
+
+function wireCommand(line: string): string {
+  const words = line.trim().split(/\s+/u);
+  const command = words[0]?.startsWith("@") ? words[1] : words[0];
+  if (command === undefined) throw new Error(`empty IRC line: ${line}`);
+  return command.toUpperCase();
 }

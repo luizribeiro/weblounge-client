@@ -2,6 +2,22 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+## Known limits
+
+- The 16-buffer stock-fakelag launch now sends 36 commands instead of 81, but the changed channel
+  and DM history replies still arrive about 1.5 seconds after their requests. They wait behind
+  papo's post-JOIN burst of seven `NAMES`, seven `MODE`, and seven `WHO` commands. Removing that
+  delay requires papo to drop redundant `NAMES` after `JOIN` and resolve channel peers with lazy
+  `WHO`. Once that lands, restore this zero-fakelag-queue assertion to the launch test:
+
+  ```ts
+  expect(
+    historyReplyLatencies(wire).filter(({ latency }) => latency >= 500),
+  ).toEqual([]);
+  ```
+
+## Progress
+
 - [x] Keep held history-wire commands immutable across delayed release. The E2E gate now snapshots
   WASM-backed WebSocket views before engine memory reuse, while a test-only worker heartbeat, page
   errors, and page/worker release checkpoints make future constrained-run failures decisive.
