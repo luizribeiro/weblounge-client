@@ -189,7 +189,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
-  test("keeps a read bot DM clear after a failed Firefox snapshot commit", async ({
+  test("keeps a newly read DM clear after a failed Firefox snapshot commit", async ({
     browserName,
     context,
     page,
@@ -197,9 +197,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     test.skip(browserName !== "firefox", "covers the reported Firefox failure");
     const suffix = Date.now().toString(36);
     const channel = "#weblounge-test";
-    const text = `louro direct ${suffix}`;
+    const text = `snapshot direct ${suffix}`;
     const bot = await IrcClient.connect(
-      `louro-${suffix}`,
+      `snapshot-read-${suffix}`,
       "weblounge-bot",
       "weblounge-bot-test",
       channel,
