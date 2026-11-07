@@ -312,6 +312,14 @@ impl Harness {
             .expect("seed legacy active route");
     }
 
+    fn expire_all_leases(&self) {
+        let connection = rusqlite::Connection::open(self.temporary.path().join("relay.sqlite3"))
+            .expect("relay database");
+        connection
+            .execute("UPDATE leases SET expires_at = 0", [])
+            .expect("expire leases");
+    }
+
     async fn renew_lease(&self, device: &Value, tab_id: &str) {
         let response = call_json(
             &self.app,
@@ -1417,7 +1425,7 @@ async fn urgency_policy_filters_silent_controls_by_push_service() {
 
 #[tokio::test]
 async fn account_lease_holds_another_device_push_until_expiry() {
-    let harness = Harness::with_lease_ttl(Duration::from_millis(250)).await;
+    let harness = Harness::new().await;
     let active_device = harness.create_device().await;
     let receiving_device = harness.create_device().await;
     let home = SecretKey::random(&mut OsRng);
@@ -1431,6 +1439,10 @@ async fn account_lease_holds_another_device_push_until_expiry() {
     );
     assert!(harness.deliveries.lock().expect("deliveries").is_empty());
 
+    harness.expire_all_leases();
+    harness
+        .release_lease(&active_device, "delivery-wakeup")
+        .await;
     harness.wait_for_deliveries(1).await;
     assert_eq!(
         harness.deliveries.lock().expect("deliveries")[0].1,
