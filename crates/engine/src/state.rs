@@ -2943,8 +2943,9 @@ fn derive_read_projection(buffer: &mut BufferState) {
 }
 
 fn derive_chat_projection(buffer: &mut BufferState) {
-    buffer.projection.last_message =
-        latest_real_message(buffer).map(|record| record.projection.clone());
+    buffer.projection.last_message = (!matches!(buffer.history, HistoryState::RefreshCapped))
+        .then(|| latest_real_message(buffer).map(|record| record.projection.clone()))
+        .flatten();
     buffer.projection.last_activity_ms = chat_activity_time(buffer);
 }
 
@@ -2960,6 +2961,11 @@ fn latest_real_message(buffer: &BufferState) -> Option<&TimelineRecord> {
 }
 
 fn chat_activity_time(buffer: &BufferState) -> Option<i64> {
+    if matches!(buffer.history, HistoryState::RefreshCapped) {
+        return buffer.provisional_activity_ms.or_else(|| {
+            latest_real_message(buffer).map(|record| message_time(&record.projection))
+        });
+    }
     latest_real_message(buffer)
         .map(|record| message_time(&record.projection))
         .or_else(|| {
@@ -3988,6 +3994,59 @@ mod tests {
             model.request_history(buffer_id, crate::HistoryDirection::Latest),
             Some(HistoryFetch::Latest(HistoryTarget::Direct(_)))
         ));
+    }
+
+    #[test]
+    fn capped_refresh_keeps_target_activity_without_a_stale_preview() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#room".into(),
+                },
+                title: "#room".into(),
+                last_activity_ms: Some(100),
+                badge: SnapshotBadge::Unread { count: 1 },
+                preview: Some("cached".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("cached".into()),
+                    server_time_ms: 100,
+                }),
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let channel = channel_name(&state, "#room");
+        let fetch = model
+            .restore_channel(&channel, UNIX_EPOCH + Duration::from_millis(300))
+            .expect("changed channel refreshes after its cached cursor");
+        assert!(matches!(fetch, HistoryFetch::After { .. }));
+        model.receive_incoming(
+            incoming(
+                &state,
+                "oldest pending page",
+                Some("pending-1"),
+                Some(200),
+                200,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        model
+            .finish_history(
+                &papo::Conversation::Channel(channel.clone()),
+                None,
+                None,
+                100,
+                false,
+            )
+            .expect("capped refresh finishes");
+
+        let buffer = &model.buffers[&model.names[&NameKey::Channel(channel)]];
+        assert!(matches!(buffer.history, HistoryState::RefreshCapped));
+        assert_eq!(buffer.projection.last_activity_ms, Some(300));
+        assert!(buffer.projection.last_message.is_none());
     }
 
     #[test]
