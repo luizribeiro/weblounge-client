@@ -2774,8 +2774,6 @@ fn promote_cached_buffer(buffer: &mut BufferState) {
     buffer.projection.unread = 0;
     buffer.projection.mentions = 0;
     buffer.projection.read_through = None;
-    buffer.projection.read_at_ms = None;
-    buffer.read_at_ms = None;
     buffer.cached_unread_base = 0;
     buffer.cached_mentions_base = 0;
 }
@@ -3866,6 +3864,67 @@ mod tests {
         let buffer = &model.buffers[&model.names[&NameKey::Channel(channel)]];
         assert_eq!(buffer.projection.cached, None);
         assert!(matches!(buffer.history, HistoryState::LoadingLatest));
+    }
+
+    #[test]
+    fn cached_channel_latest_preserves_the_join_read_marker() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#room".into(),
+                },
+                title: "#room".into(),
+                last_activity_ms: Some(300),
+                badge: SnapshotBadge::Unread { count: 1 },
+                preview: Some("newest".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("newest".into()),
+                    server_time_ms: 300,
+                }),
+                read_at_ms: Some(200),
+                peer_pin: None,
+            }],
+        ));
+        let buffer_id = model.names[&NameKey::Channel(channel.clone())];
+        let fetch = model
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("opening the cached channel requests latest history");
+        assert!(matches!(
+            fetch,
+            HistoryFetch::Latest(HistoryTarget::Channel(_))
+        ));
+
+        model.promote_cached_for_history(buffer_id);
+        for (text, msgid, time) in [
+            ("before", "before", 100),
+            ("through", "through", 200),
+            ("after", "after", 300),
+        ] {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(msgid),
+                    Some(time),
+                    time,
+                    TimelineOrigin::History,
+                ),
+                &state,
+            );
+        }
+        model
+            .finish_history(&papo::Conversation::Channel(channel), None, None, 3, true)
+            .expect("latest history finishes");
+
+        let buffer = &model.buffers[&buffer_id];
+        assert_eq!(buffer.projection.unread, 1);
+        assert_eq!(
+            buffer.projection.read_through,
+            Some(buffer.timeline[1].projection.id)
+        );
     }
 
     #[test]
