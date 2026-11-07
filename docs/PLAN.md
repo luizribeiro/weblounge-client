@@ -23,6 +23,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep an opened snapshot channel provisional until joined state proves its route live. Cached
+  promotion no longer lets reconnect flush a queued send before TARGETS; a channel omitted by a
+  successful reconciliation becomes the selected unavailable fallback and fails that send with the
+  specific departed-conversation notice, while TARGETS fallback retains cached rows.
 - [x] Replace a cached direct's provisional edge when authoritative live traffic arrives. Lazy
   TARGETS launch could retain a migrated future cursor and its cached mention base after the live
   message was read, so partial snapshot hydration rewrote the stale badge; live delivery now owns

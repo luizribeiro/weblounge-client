@@ -3374,7 +3374,7 @@ fn fallback_target_reconciliation(
         (fetches, buffers)
     };
     send_events(outbound, buffers.into_iter().collect());
-    send_recent_directs_ready(state, outbound, instance, network_id);
+    send_recent_directs_ready(state, outbound, instance, network_id, false);
     for fetch in fetches {
         spawn_history_fetch(
             Arc::clone(state),
@@ -3448,7 +3448,7 @@ fn restore_target_rows(
     drop(runtime);
     drop(snapshot);
     send_events(outbound, output);
-    send_recent_directs_ready(state, outbound, instance, network_id);
+    send_recent_directs_ready(state, outbound, instance, network_id, true);
     for target in marker_targets {
         spawn_read_marker_fetch(
             Arc::clone(state),
@@ -3525,6 +3525,7 @@ fn send_recent_directs_ready(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
     network_id: NetworkId,
+    mark_vanished: bool,
 ) {
     let client = {
         let mut state = lock(state);
@@ -3536,7 +3537,9 @@ fn send_recent_directs_ready(
             return;
         };
         running.chat_list.recent_directs_ready = true;
-        running.model.mark_vanished_cached_rows();
+        if mark_vanished {
+            running.model.mark_vanished_cached_rows();
+        }
         if !running.pending_sends.is_empty() && !running.flushing_sends {
             running.flushing_sends = true;
             Some(running.client.clone())

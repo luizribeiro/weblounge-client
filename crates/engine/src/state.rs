@@ -82,6 +82,7 @@ enum StateError {
 #[derive(Clone, Debug)]
 struct BufferState {
     projection: BufferProjection,
+    restored_from_snapshot: bool,
     provisional_activity_ms: Option<i64>,
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
@@ -373,6 +374,7 @@ impl NetworkModel {
                 last_activity_ms: None,
                 cached_preview: None,
             },
+            restored_from_snapshot: false,
             provisional_activity_ms: None,
             key: None,
             direct_key: None,
@@ -541,6 +543,7 @@ impl NetworkModel {
             };
             let projection = self.add_buffer(key, kind, None, None, None);
             if let Some(buffer) = self.buffers.get_mut(&projection.id) {
+                buffer.restored_from_snapshot = true;
                 buffer.projection.title = row.title;
                 buffer.projection.cached = Some(true);
                 buffer.projection.cached_preview = row.preview;
@@ -646,13 +649,9 @@ impl NetworkModel {
 
     pub(crate) fn mark_vanished_cached_rows(&mut self) {
         for buffer in self.buffers.values_mut() {
-            if buffer.projection.cached == Some(true)
+            if buffer.restored_from_snapshot
                 && buffer.projection.kind == BufferKind::Channel
                 && buffer.projection.channel_status != Some(ChannelStatus::Joined)
-                && !matches!(
-                    buffer.history,
-                    HistoryState::QueuedLatest | HistoryState::LoadingLatest
-                )
             {
                 buffer.projection.cached = None;
                 buffer.projection.available = Some(false);
@@ -773,6 +772,7 @@ impl NetworkModel {
             let key = NameKey::Channel(channel);
             if let Some(id) = self.names.get(&key).copied() {
                 if let Some(buffer) = self.buffers.get_mut(&id) {
+                    buffer.restored_from_snapshot = false;
                     let title = key.title();
                     if buffer.projection.topic != topic
                         || buffer.projection.channel_status != Some(ChannelStatus::Joined)
@@ -1206,7 +1206,9 @@ impl NetworkModel {
         if buffer.projection.available == Some(false) {
             return PendingTargetState::Gone;
         }
-        if buffer.projection.cached == Some(true) {
+        if buffer.projection.cached == Some(true)
+            || (buffer.restored_from_snapshot && buffer.projection.kind == BufferKind::Channel)
+        {
             return PendingTargetState::Waiting;
         }
         match (&buffer.key, &buffer.direct) {
@@ -2737,6 +2739,7 @@ impl NetworkModel {
             id,
             BufferState {
                 projection: projection.clone(),
+                restored_from_snapshot: false,
                 provisional_activity_ms: None,
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
@@ -5617,6 +5620,49 @@ mod tests {
         assert!(matches!(
             model.prepare_live_send(&mut pending),
             PendingTargetState::Waiting
+        ));
+    }
+
+    #[test]
+    fn opened_cached_channel_still_vanishes_when_targets_omit_it() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#gone".into(),
+                },
+                title: "#gone".into(),
+                last_activity_ms: Some(1_000),
+                badge: SnapshotBadge::Unread { count: 1 },
+                preview: Some("cached".into()),
+                newest: None,
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#gone"))];
+        let (mut pending, _) = model
+            .begin_send(buffer_id, "queued".into(), &state)
+            .expect("cached channel accepts an optimistic send");
+
+        assert!(model.queue_latest_history(buffer_id));
+        assert!(matches!(
+            model.connected_history().as_slice(),
+            [HistoryFetch::Latest(_)]
+        ));
+        assert_eq!(model.buffers[&buffer_id].projection.cached, None);
+        assert!(matches!(
+            model.prepare_live_send(&mut pending),
+            PendingTargetState::Waiting
+        ));
+
+        model.mark_vanished_cached_rows();
+
+        assert_eq!(model.buffers[&buffer_id].projection.available, Some(false));
+        assert!(matches!(
+            model.prepare_live_send(&mut pending),
+            PendingTargetState::Gone
         ));
     }
 
