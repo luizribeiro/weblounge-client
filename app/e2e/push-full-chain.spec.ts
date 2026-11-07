@@ -239,15 +239,18 @@ test.describe("full unmocked push lifecycle", () => {
       await expect.poll(() => storedAppBadge(page)).toBe(badgeBefore + 1);
 
       const droppedBefore = await normalPushesDropped();
-      await other.goto("/");
+      await other.goto("/?debug=push");
       await expect(connectionHeading(other)).toBeVisible();
+      await expect(other.locator("[data-debug-overlay]")).toContainText(
+        "engine=Registered",
+      );
       await other
         .getByRole("complementary", { name: "Channel list" })
         .getByRole("button", {
           name: new RegExp(`^${bot.nickname},`, "u"),
         })
         .click();
-      await expect.poll(() => normalPushesDropped()).toBe(droppedBefore + 2);
+      await expect.poll(() => normalPushesDropped()).toBe(droppedBefore + 1);
       expect((await records()).length).toBe(receiverCursor);
       await expect.poll(() => notifications(other)).toEqual([]);
       await expect

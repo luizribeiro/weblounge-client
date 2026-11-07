@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Make the cross-device Apple MARKREAD fixture wait for the reading IRC session's push route
+  before asserting relay drops. Ergo excludes that session's originating endpoint, so the stable
+  production result is one dropped control for the other Apple route, not a race-dependent two.
 - [x] Remeasure the live virtual transcript before an opening keyboard snapshot reveals it. WebKit
   can defer virtual-row placement after the one-step mobile layout commit; the frozen animation
   stayed correct while its replacement retained stale, overlapping transforms. The handoff now
