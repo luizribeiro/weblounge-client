@@ -4,6 +4,7 @@ import {
   distanceFromBottom,
   scrollAwayFromLiveEdge,
 } from "./message-list-scroll";
+import { waitForStableGeometry } from "./stable-geometry";
 import { expectTranscriptHitTarget } from "./transcript-paint";
 
 interface AnchorFrame {
@@ -48,31 +49,45 @@ for (const shell of [
     });
     const page = await context.newPage();
     const suffix = `${shell.name}-${Date.now().toString(36)}`;
+    const channel = `#resize-${suffix}`;
     const bot = await IrcClient.connect(
-      `resize-${shell.name}`,
+      `resize-${suffix}`,
       "weblounge-bot",
       "weblounge-bot-test",
-      "#weblounge-test",
+      channel,
     );
     try {
       for (let index = 0; index < 10; index += 1)
         bot.privmsg(
-          "#weblounge-test",
+          channel,
           `composer anchor ${suffix} ${index} ${"wrapped transcript text ".repeat(14)}`,
         );
       const lastSeed = `composer anchor last ${suffix}`;
-      await bot.privmsgConfirmed("#weblounge-test", lastSeed);
+      await bot.privmsgConfirmed(channel, lastSeed);
 
       await page.goto("/?irc-password=weblounge-test");
       if (shell.touch)
         await page.getByRole("button", { name: "#weblounge-test" }).click();
+      const launchComposer = page.getByRole("textbox", {
+        name: "Message #weblounge-test",
+      });
+      await launchComposer.fill(`/join ${channel}`);
+      await launchComposer.press("Enter");
+      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
       await expect(page.getByText(lastSeed, { exact: true })).toBeVisible();
       await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 
-      const list = page.locator("[data-message-list]");
+      const list = shell.touch
+        ? page
+            .locator("[data-mobile-chat]")
+            .filter({ has: page.getByRole("heading", { name: channel }) })
+            .locator("[data-message-list]")
+        : page.locator("[data-message-list]");
       const composer = page.getByRole("textbox", {
-        name: "Message #weblounge-test",
+        name: `Message ${channel}`,
       });
+      await list.press("End");
+      await waitForStableGeometry(list, "[data-message-row]");
       await list.press("End");
       await expect.poll(() => distanceFromBottom(list)).toBeLessThanOrEqual(2);
       await composer.fill("first line");
@@ -94,6 +109,7 @@ for (const shell of [
         input: shell.touch ? "touch" : "wheel",
       });
       await expect.poll(() => distanceFromBottom(list)).toBeGreaterThan(100);
+      await waitForStableGeometry(list, "[data-message-row]");
       await expectScrolledAnchorFixed(page, composer, () =>
         composer.press("Shift+Enter"),
       );

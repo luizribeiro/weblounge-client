@@ -1,5 +1,6 @@
 import { devices, expect, type Locator, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { waitForStableGeometry } from "./stable-geometry";
 import {
   expectTranscriptHitTarget,
   expectTranscriptPixelVariance,
@@ -100,14 +101,18 @@ async function scrollTo(
   list: Locator,
   position: "middle" | "top",
 ): Promise<void> {
-  const target = await list.evaluate((element, nextPosition) => {
-    const next =
-      nextPosition === "top"
-        ? 0
-        : (element.scrollHeight - element.clientHeight) / 2;
-    element.scrollTop = next;
-    return next;
-  }, position);
+  const setPosition = () =>
+    list.evaluate((element, nextPosition) => {
+      const next =
+        nextPosition === "top"
+          ? 0
+          : (element.scrollHeight - element.clientHeight) / 2;
+      element.scrollTop = next;
+      return next;
+    }, position);
+  await setPosition();
+  await waitForStableGeometry(list, "[data-message-row]");
+  const target = await setPosition();
   await expect
     .poll(() =>
       list.evaluate(

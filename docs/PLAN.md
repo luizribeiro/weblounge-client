@@ -27,6 +27,10 @@ The single place a fresh session reads to know where the project stands. Update 
   promotion no longer lets reconnect flush a queued send before TARGETS; a channel omitted by a
   successful reconciliation becomes the selected unavailable fallback and fails that send with the
   specific departed-conversation notice, while TARGETS fallback retains cached rows.
+- [x] Isolate composer anchoring from other workers' membership traffic and settle open-triggered
+  WebKit transcript rows before asserting exact geometry. Lazy history can reveal a new virtual
+  window under load, so the paint test positions again after it measures and the composer test
+  records only settled rows in its own channel.
 - [x] Isolate the member-panel resubscription fixture from two-worker activity on the shared
   launch channel. Its exact member counts now belong to two per-test channels while retaining the
   channel-switch subscription assertions that caught the CI failure.
