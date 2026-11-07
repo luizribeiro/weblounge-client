@@ -2114,11 +2114,30 @@ fn spawn_read_flush(
                 };
                 advance
             };
+            let Some(target) = lock(&state)
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .and_then(|running| {
+                    running
+                        .model
+                        .read_target(advance.buffer_id, &client.state())
+                })
+            else {
+                engine_log(EngineMessageKey::StateInconsistent.as_str());
+                let _ = outbound.send(EngineToUi::Diagnostic {
+                    command_id: MARK_READ_DIAGNOSTIC_ID.into(),
+                    message: EngineMessageKey::StateInconsistent.as_str().into(),
+                });
+                continue;
+            };
             let mut retry = ReadRetryState::default();
             loop {
-                let result = match advance.target.clone() {
-                    SendTarget::Channel(channel) => client.mark_read(channel, advance.time).await,
-                    SendTarget::Direct { nick, .. } => client.mark_read(nick, advance.time).await,
+                let result = match target.clone() {
+                    HistoryTarget::Channel(channel) => {
+                        client.mark_read(channel, advance.time).await
+                    }
+                    HistoryTarget::Direct(nick) => client.mark_read(nick, advance.time).await,
                 };
                 match result {
                     Ok(_) => {
@@ -9287,6 +9306,90 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn queued_mark_read_resolves_the_replacement_clients_target() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (first, mut first_events, mut first_wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        first_wire.register(&caps).await;
+        _ = next_matching(&mut first_events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        first_wire.server(":weblounge!u@host JOIN #room").await;
+        let joined = next_matching(&mut first_events, |event| {
+            matches!(event, papo::Event::Joined(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(first.clone());
+        process_event(&state, &outbound, &first, 1, joined);
+        _ = collect(&mut receiver);
+        first_wire
+            .server("@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG #room :hello")
+            .await;
+        process_next_message(&mut first_events, &state, &outbound, &first).await;
+        let appended = collect(&mut receiver);
+        let (buffer_id, message_id) = appended
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("live message is projected");
+        set_harness_device_online(&state, false);
+        _ = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        }
+        .request(EngineRequestEnvelope {
+            id: "mark-before-replacement".into(),
+            request: EngineRequest::MarkRead {
+                buffer_id,
+                through: message_id,
+            },
+        });
+
+        let (replacement, mut replacement_events, mut replacement_wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        replacement_wire.register(&caps).await;
+        let connected = next_matching(&mut replacement_events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.client = replacement.clone();
+            running.instance = 2;
+            running.device_online = true;
+            running.flushing_reads = false;
+        }
+        _ = collect(&mut receiver);
+        process_event(&state, &outbound, &replacement, 2, connected);
+
+        let request = loop {
+            tokio::select! {
+                request = replacement_wire.next_sent() => break request,
+                event = receiver.recv() => {
+                    assert!(!matches!(
+                        event,
+                        Some(EngineToUi::Diagnostic { message, .. })
+                            if message == EngineMessageKey::MarkReadFailed.as_str()
+                    ));
+                }
+            }
+        };
+        assert!(request.ends_with("MARKREAD #room timestamp=2026-10-27T12:00:00.000Z"));
+    }
+
+    #[tokio::test]
     async fn restored_push_uses_authoritative_history_time_for_mark_read() {
         let caps = [
             "account-tag",
@@ -9379,7 +9482,6 @@ async fn delay(duration: Duration) {
         let mut pending = VecDeque::new();
         let advance = ReadAdvance {
             buffer_id: BufferId(1),
-            target: SendTarget::Channel(papo_testing::channel(papo::Casemapping::Ascii, "#room")),
             time: UNIX_EPOCH + Duration::from_secs(20),
         };
         queue_read_advance(&mut pending, advance.clone());

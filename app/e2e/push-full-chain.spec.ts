@@ -4,6 +4,7 @@ import {
   type Browser,
   type BrowserContext,
   type CDPSession,
+  type ConsoleMessage,
   expect,
   type JSHandle,
   type Page,
@@ -105,6 +106,58 @@ test.describe("full unmocked push lifecycle", () => {
     await expectOneRoutePerDevice(1);
     await expect.poll(() => audit.pushSubscriptionEndpoints()).toHaveLength(1);
     await second.close();
+  });
+
+  test("sends an offline read through the fresh hosted client", async () => {
+    const readBot = await IrcClient.connectIsolated(
+      `read-reconnect-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    const markReadFailures: string[] = [];
+    const recordMarkReadFailure = (message: ConsoleMessage) => {
+      if (message.text().includes("engine.mark_read_failed"))
+        markReadFailures.push(message.text());
+    };
+    page.on("console", recordMarkReadFailure);
+    try {
+      const direct = `read after reconnect ${randomUUID()}`;
+      const echoed = await readBot.privmsgConfirmed("weblounge", direct);
+      const row = page
+        .getByRole("complementary", { name: "Channel list" })
+        .getByRole("button", {
+          name: new RegExp(`^${readBot.nickname},`, "u"),
+        });
+      await expect(row).toHaveAttribute("data-unread", "1");
+
+      await context.setOffline(true);
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        0,
+      );
+      await row.click();
+      await expect(
+        page.getByRole("heading", { name: readBot.nickname }),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-buffer-id][aria-current="page"]'),
+      ).toHaveAttribute("data-unread", "0");
+
+      await context.setOffline(false);
+      await expect(page.locator('[data-network-state="online"]')).toHaveCount(
+        1,
+      );
+      await expect
+        .poll(() => audit.readMarker(readBot.nickname))
+        .toBe(serverTime(echoed));
+      await expectOneRoutePerDevice(1);
+      await expect
+        .poll(() => audit.pushSubscriptionEndpoints())
+        .toHaveLength(1);
+      expect(markReadFailures).toEqual([]);
+    } finally {
+      page.off("console", recordMarkReadFailure);
+      await context.setOffline(false);
+      readBot.close();
+    }
   });
 
   test("delivers one real DM and mention and recovers missing route keys", async () => {

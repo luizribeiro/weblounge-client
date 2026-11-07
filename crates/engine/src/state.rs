@@ -306,7 +306,6 @@ pub(crate) enum PendingTargetState {
 #[derive(Clone, Debug)]
 pub(crate) struct ReadAdvance {
     pub(crate) buffer_id: BufferId,
-    pub(crate) target: SendTarget,
     pub(crate) time: SystemTime,
 }
 
@@ -2192,6 +2191,24 @@ impl NetworkModel {
         self.apply_read_time(buffer_id, time)
     }
 
+    pub(crate) fn read_target(
+        &self,
+        buffer_id: BufferId,
+        state: &papo::State,
+    ) -> Option<HistoryTarget> {
+        let buffer = self.buffers.get(&buffer_id)?;
+        let rules = state.name_rules()?;
+        match buffer.projection.kind {
+            BufferKind::Channel => Some(HistoryTarget::Channel(
+                rules.channel(buffer.projection.title.clone()),
+            )),
+            BufferKind::Direct => Some(HistoryTarget::Direct(
+                rules.nick(buffer.projection.title.clone()),
+            )),
+            BufferKind::Server => None,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn buffer_id_for_target(&self, target: &SendTarget) -> Option<BufferId> {
         let key = target.name_key();
@@ -2890,16 +2907,9 @@ fn read_advance(
             && is_committed(&record.projection)
             && (allow_provisional || record.provisional_identity.is_none())
     })?;
+    buffer.key.as_ref()?;
     Some(ReadAdvance {
         buffer_id,
-        target: match buffer.key.clone()? {
-            NameKey::Channel(channel) => SendTarget::Channel(channel),
-            NameKey::Direct(nick) => SendTarget::Direct {
-                nick,
-                recipient: None,
-                pin: None,
-            },
-        },
         time: system_time_from_millis(message_time(&record.projection)),
     })
 }

@@ -25,6 +25,11 @@ The single place a fresh session reads to know where the project stands. Update 
   `Retry-After`, while permanent recovery and leases remain immediate. Page-lifecycle ownership
   handoff covers suspension and crashes without holding the lock across synchronization work. Two
   tabs, visibility flips and a no-CORS 429 stay within the device-API request budget measured below.
+- [x] Resolve every queued read target from the active papo client's name rules at flush time.
+  Hosted foreground recovery can replace the client while retaining an offline read; the queue now
+  keeps only stable buffer identity and time, so the fresh client produces the typed channel or nick
+  used for `MARKREAD`. A hosted SharedWorker journey reproduces the lost cross-client marker against
+  local Ergo and proves the server receives it without `engine.mark_read_failed`.
 - [x] Restore a cached DM's writable snapshot row when live traffic follows TARGETS declaring the
   cached row vanished. The live message now establishes the current authoritative edge even for an
   existing buffer, so a local read can persist its cleared badge while other rows still hydrate.
