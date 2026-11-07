@@ -307,19 +307,49 @@ test("opens ready history without a title shimmer or eager older page", async ({
     });
     await expect
       .poll(() =>
-        page.evaluate(
-          (target) =>
-            (
-              Reflect.get(globalThis, "historyWireTimeline") as WireTrace[]
-            ).some(
-              (entry) =>
-                entry.direction === "sent" &&
-                entry.line.includes(`CHATHISTORY BEFORE ${target} `),
-            ),
-          channel,
-        ),
+        page.evaluate((target) => {
+          const timeline = Reflect.get(
+            globalThis,
+            "historyWireTimeline",
+          ) as WireTrace[];
+          const sent = timeline.some(
+            (entry) =>
+              entry.direction === "sent" &&
+              entry.line.includes(`CHATHISTORY BEFORE ${target} `),
+          );
+          const held = timeline.some(
+            (entry) =>
+              entry.line === "before_held" &&
+              typeof entry.instance_id === "string" &&
+              typeof entry.port_id === "string",
+          );
+          const released = timeline.some(
+            (entry) =>
+              entry.line === "before_release_received" &&
+              entry.held === true &&
+              typeof entry.instance_id === "string" &&
+              typeof entry.port_id === "string",
+          );
+          if (sent && held && released) return "sent";
+          return JSON.stringify({
+            timeline: timeline.slice(-8).map((entry) => ({
+              at: entry.at,
+              direction: entry.direction,
+              event: entry.event,
+              held: entry.held,
+              instance_id: entry.instance_id,
+              line:
+                entry.direction === "control"
+                  ? entry.line
+                  : /(?:^| )(CHATHISTORY|MARKREAD|WHO|BATCH) /u.exec(
+                      entry.line,
+                    )?.[1],
+              port_id: entry.port_id,
+            })),
+          });
+        }, channel),
       )
-      .toBe(true);
+      .toBe("sent");
     await expect
       .poll(() =>
         page.evaluate(

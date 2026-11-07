@@ -2,8 +2,12 @@ import type { Page } from "@playwright/test";
 
 export interface WireTrace {
   readonly at: number;
-  readonly direction: "received" | "sent";
+  readonly direction: "control" | "received" | "sent";
+  readonly event?: string;
+  readonly held?: boolean;
+  readonly instance_id?: string;
   readonly line: string;
+  readonly port_id?: string;
 }
 
 export interface ProjectionTrace {
@@ -78,9 +82,30 @@ export async function captureHistoryWire(
           typeof event.data === "object" &&
           event.data !== null &&
           "type" in event.data &&
+          event.data.type === "history_wire_test_control"
+        ) {
+          timeline.push({
+            ...event.data,
+            direction: "control",
+            line: event.data.event,
+          });
+          return;
+        }
+        if (
+          typeof event.data === "object" &&
+          event.data !== null &&
+          "type" in event.data &&
           event.data.type === "history_wire_test_before_held"
         ) {
           Reflect.set(globalThis, "historyHeldBefore", event.data);
+          timeline.push({
+            at: event.data.at,
+            direction: "control",
+            event: "before_held",
+            instance_id: event.data.instance_id,
+            line: "before_held",
+            port_id: event.data.port_id,
+          });
           return;
         }
         if (

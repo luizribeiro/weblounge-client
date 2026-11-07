@@ -29,7 +29,9 @@ type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
 let sharedRuntime: EngineWorkerRuntime | undefined;
 const historyWireTestPorts = new Set<WorkerHostPort>();
 const storageWriteTestPorts = new Set<WorkerHostPort>();
+const historyWireTestPortIds = new WeakMap<WorkerHostPort, string>();
 let historyWireTestInstalled = false;
+let historyWireTestInstanceId: string | undefined;
 let historyWireTestHoldBefore = false;
 let historyWireTestBeforeTarget: string | undefined;
 let historyWireTestLatestExcept: string | undefined;
@@ -88,7 +90,16 @@ export class EngineWorkerRuntime {
         __HISTORY_WIRE_TEST_ENABLED__ &&
         isHistoryWireTestSubscription(event.data)
       ) {
+        const instanceId = historyWireTestWorkerInstanceId();
+        const portId = historyWireTestPortId(port);
         historyWireTestPorts.add(port);
+        port.postMessage({
+          type: "history_wire_test_control",
+          at: historyWireTestNow(),
+          event: "port_registered",
+          instance_id: instanceId,
+          port_id: portId,
+        });
         historyWireTestHoldBefore ||= event.data.hold_before === true;
         if (typeof event.data.before_target === "string")
           historyWireTestBeforeTarget = event.data.before_target;
@@ -105,6 +116,9 @@ export class EngineWorkerRuntime {
         isRecord(event.data) &&
         event.data.type === "history_wire_test_release_before"
       ) {
+        postHistoryWireTestControl(port, "before_release_received", {
+          held: heldHistoryBefore !== undefined,
+        });
         releaseHeldHistoryBefore();
         return;
       }
@@ -117,6 +131,8 @@ export class EngineWorkerRuntime {
         return;
       }
       if (isHostDetach(event.data)) {
+        if (__HISTORY_WIRE_TEST_ENABLED__)
+          postHistoryWireTestControl(port, "port_closed");
         this.#ports.delete(port);
         historyWireTestPorts.delete(port);
         storageWriteTestPorts.delete(port);
@@ -334,6 +350,8 @@ function installHistoryWireTestTrace(): void {
           port.postMessage({
             type: "history_wire_test_before_held",
             at,
+            instance_id: historyWireTestWorkerInstanceId(),
+            port_id: historyWireTestPortId(port),
             line: text,
           });
         return;
@@ -373,6 +391,38 @@ function installStorageWriteTestFailure(): void {
     }
     nativeCommit.call(this);
   };
+}
+
+function historyWireTestWorkerInstanceId(): string {
+  historyWireTestInstanceId ??= crypto.randomUUID();
+  return historyWireTestInstanceId;
+}
+
+function historyWireTestPortId(port: WorkerHostPort): string {
+  const existing = historyWireTestPortIds.get(port);
+  if (existing !== undefined) return existing;
+  const created = crypto.randomUUID();
+  historyWireTestPortIds.set(port, created);
+  return created;
+}
+
+function postHistoryWireTestControl(
+  port: WorkerHostPort,
+  event: "before_release_received" | "port_closed",
+  details: Readonly<Record<string, unknown>> = {},
+): void {
+  port.postMessage({
+    type: "history_wire_test_control",
+    at: historyWireTestNow(),
+    event,
+    instance_id: historyWireTestWorkerInstanceId(),
+    port_id: historyWireTestPortId(port),
+    ...details,
+  });
+}
+
+function historyWireTestNow(): number {
+  return performance.timeOrigin + performance.now();
 }
 
 function releaseHeldHistoryBefore(): void {

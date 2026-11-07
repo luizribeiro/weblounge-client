@@ -6,6 +6,9 @@ The single place a fresh session reads to know where the project stands. Update 
   its clock reaches the requested deadline. A waiter now sleeps once per observed deadline and
   sleeps again only when another transient failure extends that deadline; frozen-clock and
   concurrent-extension coverage retain backoff without an unbounded microtask loop.
+- [x] Make a missing released-history trace identify its test worker and port lifecycle. E2E-only
+  wire diagnostics now record worker-instance and port ids for registration, hold, release, and
+  close events, and a failed BEFORE assertion prints those events with the tail of its wire trace.
 - [x] Hold one unrelated latest-history request at the wire in cached-list hydration journeys,
   so the opened conversation and partial snapshot assertions prove their concurrency contract
   without depending on Ergo fakelag. The shared fixture releases the request only after the
