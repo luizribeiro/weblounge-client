@@ -1789,6 +1789,31 @@ async fn delivery_target_failures_map_to_503() {
 }
 
 #[tokio::test]
+async fn concurrent_unknown_routes_remain_readable_while_a_writer_is_held() {
+    let harness = Harness::new().await;
+    let mut connection = rusqlite::Connection::open(harness.temporary.path().join("relay.sqlite3"))
+        .expect("relay database");
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .expect("held write transaction");
+    let app = &harness.app;
+    let requests = (0..64).map(|index| async move {
+        let path = format!("/v1/r/unknown-{index}");
+        call_bytes(app, Method::POST, &path, None, Vec::new(), &[]).await
+    });
+
+    let statuses = futures::future::join_all(requests).await;
+    transaction.rollback().expect("release write transaction");
+
+    assert!(
+        statuses
+            .iter()
+            .all(|status| *status == StatusCode::NOT_FOUND),
+        "unknown routes returned {statuses:?}"
+    );
+}
+
+#[tokio::test]
 async fn oversized_home_body_is_413_before_route_handling() {
     let harness = Harness::new().await;
     let status = call_bytes(

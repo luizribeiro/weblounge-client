@@ -61,6 +61,15 @@ pub(crate) enum Route {
     },
 }
 
+struct StoredRoute {
+    state: String,
+    device_id: String,
+    account: String,
+    home_vapid: Vec<u8>,
+    target: WebPushTarget,
+    created_at: i64,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct HeldPush {
     pub id: i64,
@@ -404,49 +413,22 @@ impl Database {
         let path = Arc::clone(&self.path);
         tokio::task::spawn_blocking(move || -> Result<Route> {
             let mut connection = connect(&path)?;
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            expire_probing_routes(&transaction, unix_seconds())?;
-            let row = transaction
-                .query_row(
-                    "SELECT routes.state, routes.device_id, devices.account, routes.home_vapid,
-                            devices.endpoint, devices.p256dh, devices.auth
-                     FROM routes JOIN devices ON devices.id = routes.device_id
-                     WHERE routes.id = ?1",
-                    [&route_id],
-                    |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, String>(2)?,
-                            row.get::<_, Vec<u8>>(3)?,
-                            row.get::<_, String>(4)?,
-                            row.get::<_, String>(5)?,
-                            row.get::<_, String>(6)?,
-                        ))
-                    },
-                )
-                .optional()?;
-            let route = match row {
-                Some((state, _, _, _, _, _, _)) if state == "probing" => Ok(Route::Probing),
-                Some((state, device_id, account, home_vapid, endpoint, p256dh, auth))
-                    if state == "active" =>
-                {
-                    Ok(Route::Active {
-                        device_id,
-                        account,
-                        home_vapid,
-                        target: WebPushTarget {
-                            endpoint,
-                            p256dh,
-                            auth,
-                        },
-                    })
+            let now = unix_seconds();
+            let mut stored = load_route(&connection, &route_id)?;
+            if stored
+                .as_ref()
+                .is_some_and(|route| probing_route_expired(route, now))
+            {
+                let transaction =
+                    connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let expired = expire_probing_route(&transaction, &route_id, now)?;
+                transaction.commit()?;
+                if expired {
+                    return Err(Error::NotFound);
                 }
-                _ => Err(Error::NotFound),
-            };
-            transaction.commit()?;
-            route
+                stored = load_route(&connection, &route_id)?;
+            }
+            classify_route(stored)
         })
         .await?
     }
@@ -1000,6 +982,69 @@ fn retire_route(transaction: &rusqlite::Transaction<'_>, route_id: &str) -> Resu
         params![route_id, account, home_vapid],
     )?;
     Ok(())
+}
+
+fn load_route(connection: &Connection, route_id: &str) -> Result<Option<StoredRoute>> {
+    connection
+        .query_row(
+            "SELECT routes.state, routes.device_id, devices.account, routes.home_vapid,
+                    devices.endpoint, devices.p256dh, devices.auth, routes.created_at
+             FROM routes JOIN devices ON devices.id = routes.device_id
+             WHERE routes.id = ?1",
+            [route_id],
+            |row| {
+                Ok(StoredRoute {
+                    state: row.get(0)?,
+                    device_id: row.get(1)?,
+                    account: row.get(2)?,
+                    home_vapid: row.get(3)?,
+                    target: WebPushTarget {
+                        endpoint: row.get(4)?,
+                        p256dh: row.get(5)?,
+                        auth: row.get(6)?,
+                    },
+                    created_at: row.get(7)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn classify_route(stored: Option<StoredRoute>) -> Result<Route> {
+    match stored {
+        Some(route) if route.state == "probing" => Ok(Route::Probing),
+        Some(route) if route.state == "active" => Ok(Route::Active {
+            device_id: route.device_id,
+            account: route.account,
+            home_vapid: route.home_vapid,
+            target: route.target,
+        }),
+        _ => Err(Error::NotFound),
+    }
+}
+
+fn probing_route_expired(route: &StoredRoute, now: i64) -> bool {
+    route.state == "probing" && route.created_at <= now.saturating_sub(PROBING_ROUTE_TTL_SECONDS)
+}
+
+fn expire_probing_route(
+    transaction: &rusqlite::Transaction<'_>,
+    route_id: &str,
+    now: i64,
+) -> Result<bool> {
+    let expired = transaction.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM routes
+           WHERE id = ?1 AND state = 'probing' AND created_at <= ?2
+         )",
+        params![route_id, now.saturating_sub(PROBING_ROUTE_TTL_SECONDS)],
+        |row| row.get(0),
+    )?;
+    if expired {
+        retire_route(transaction, route_id)?;
+    }
+    Ok(expired)
 }
 
 fn expire_probing_routes(transaction: &rusqlite::Transaction<'_>, now: i64) -> Result<()> {
