@@ -23,6 +23,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now
+  reuse one route/dead-endpoint reconciliation, while a foreground Web Lock and shared heartbeat
+  deadline keep one device lease across brief blur, visibility and tab handoffs; only real freeze
+  or pagehide releases it. The cold-launch fixture falls from 13 device-API calls to 5, and its
+  scripted ten-minute two-tab session falls from 127 to 25 (21 lease heartbeats, no churn
+  releases). Relay preflights are cached for 600 seconds.
 - [x] Keep a restored channel push unread across a later reconnect JOIN floor until a real read
   position covers it. Its authoritative history copy retains that push evidence, so the foreground
   dwell closes the existing notification instead of leaving a zero-unread row with no read marker.
