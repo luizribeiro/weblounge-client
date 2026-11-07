@@ -56,6 +56,7 @@ struct DirectMismatch {
 struct TimelineRecord {
     projection: MessageProjection,
     counts_as_mention: bool,
+    restored_from_push: bool,
     send_text: Option<String>,
     sequence: u64,
     dedup: DedupReferences,
@@ -2476,14 +2477,15 @@ impl NetworkModel {
             return inconsistent_state_notice();
         };
         if let Some(provisional_identity) = incoming.provisional_identity.clone()
-            && let Some(record) = self.buffers.get_mut(&buffer_id).and_then(|buffer| {
-                buffer
-                    .timeline
-                    .iter_mut()
-                    .find(|record| record.projection.id == message.id)
-            })
+            && let Some(buffer) = self.buffers.get_mut(&buffer_id)
+            && let Some(record) = buffer
+                .timeline
+                .iter_mut()
+                .find(|record| record.projection.id == message.id)
         {
             record.provisional_identity = Some(provisional_identity);
+            record.restored_from_push = true;
+            derive_read_projection(buffer);
         }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             advance_incoming_cursor(buffer, &incoming, cursor);
@@ -2859,6 +2861,7 @@ impl NetworkModel {
         let record = TimelineRecord {
             projection,
             counts_as_mention,
+            restored_from_push: false,
             send_text,
             sequence: self.next_sequence,
             dedup,
@@ -3105,17 +3108,18 @@ fn derive_read_projection(buffer: &mut BufferState) {
             })
             .map(|record| record.projection.id)
     });
-    let unread_floor_ms = buffer
-        .read_at_ms
-        .into_iter()
-        .chain(buffer.local_unread_floor_ms)
-        .max();
     let (unread, mentions) = buffer
         .timeline
         .iter()
         .filter(|record| {
             record.projection.authorship != MessageAuthorship::Own
-                && unread_floor_ms.is_none_or(|floor| message_time(&record.projection) > floor)
+                && buffer
+                    .read_at_ms
+                    .is_none_or(|floor| message_time(&record.projection) > floor)
+                && (record.restored_from_push
+                    || buffer
+                        .local_unread_floor_ms
+                        .is_none_or(|floor| message_time(&record.projection) > floor))
         })
         .fold((0, 0), |(unread, mentions), record| {
             (unread + 1, mentions + u64::from(record.counts_as_mention))
@@ -5632,6 +5636,64 @@ mod tests {
         assert_eq!(
             (buffer.projection.unread, buffer.projection.mentions),
             (3, 1)
+        );
+    }
+
+    #[test]
+    fn pushed_channel_message_remains_unread_before_reconnect_join_floor() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        model.establish_channel_unread_floor(&channel, UNIX_EPOCH + Duration::from_millis(250));
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed-before-reconnect",
+            "time": "1970-01-01T00:00:00.200Z",
+            "text": "hello weblounge",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+
+        model.restore_pushed_messages(vec![pushed], &state);
+        assert_eq!(
+            (
+                model.buffers[&buffer_id].projection.unread,
+                model.buffers[&buffer_id].projection.mentions,
+            ),
+            (1, 1)
+        );
+
+        model.receive_incoming(
+            incoming(
+                &state,
+                "hello weblounge",
+                Some("pushed-before-reconnect"),
+                Some(200),
+                200,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        assert_eq!(
+            (
+                model.buffers[&buffer_id].projection.unread,
+                model.buffers[&buffer_id].projection.mentions,
+            ),
+            (1, 1)
+        );
+        assert_eq!(model.buffers[&buffer_id].timeline.len(), 1);
+
+        model.apply_read_time(buffer_id, UNIX_EPOCH + Duration::from_millis(200));
+        assert_eq!(
+            (
+                model.buffers[&buffer_id].projection.unread,
+                model.buffers[&buffer_id].projection.mentions,
+            ),
+            (0, 0)
         );
     }
 

@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep a restored channel push unread across a later reconnect JOIN floor until a real read
+  position covers it. Its authoritative history copy retains that push evidence, so the foreground
+  dwell closes the existing notification instead of leaving a zero-unread row with no read marker.
 - [x] Use an unmarked channel's own JOIN time as its local unread floor. A fresh account no longer
   turns pre-join history or old self-mentions into a launch badge, while an always-on account keeps
   post-join traffic unread and only current-nick matches add mention severity.

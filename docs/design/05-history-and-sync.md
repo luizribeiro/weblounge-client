@@ -97,7 +97,9 @@ server time becomes a device-local unread floor, without sending or persisting a
 only later rows contribute to the channel badge. This keeps retained history quiet for a new user
 while preserving unread traffic received by an always-on account after it joined. A real server
 marker remains the cross-device read position and takes precedence when it is newer. Direct
-conversations retain their existing policy because every unread DM has mention severity.
+conversations retain their existing policy because every unread DM has mention severity. A restored
+push is explicit unread evidence: it bypasses a later device-local JOIN floor, including after its
+authoritative history copy replaces the provisional row, but never bypasses a real read position.
 
 Visible conversation instances remain the source of read intent. A foreground instance at the
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that
