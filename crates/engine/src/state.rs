@@ -971,6 +971,21 @@ impl NetworkModel {
                     None,
                 )
             };
+            if let Some(buffer_id) = self.names.get(&conversation).copied()
+                && let Some(buffer) = self.buffers.get_mut(&buffer_id)
+                && buffer.projection.cached == Some(true)
+                && buffer.newest.as_ref().is_some_and(|newest| {
+                    newest.server_time() >= system_time_from_millis(server_time_ms)
+                })
+                && buffer
+                    .read_at_ms
+                    .is_none_or(|read_at| read_at < server_time_ms)
+            {
+                buffer.cached_unread_base = buffer.cached_unread_base.saturating_sub(1);
+                if direct || matches_highlight_rules(&message.text, state) {
+                    buffer.cached_mentions_base = buffer.cached_mentions_base.saturating_sub(1);
+                }
+            }
             events.extend(
                 self.receive_incoming(
                     Incoming {
@@ -5903,6 +5918,51 @@ mod tests {
 
         assert_eq!(merged.rows, vec![cached]);
         assert_eq!(model.buffers[&buffer_id].deferred_read, Some(message_id));
+    }
+
+    #[test]
+    fn pushed_message_covered_by_cached_cursor_is_not_counted_twice() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "alice".into(),
+                last_activity_ms: Some(1_793_709_296_789),
+                badge: SnapshotBadge::Mentions {
+                    count: 1,
+                    mentions: 1,
+                },
+                preview: Some("alice: arrived while closed".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("pushed-direct".into()),
+                    server_time_ms: 1_793_709_296_789,
+                }),
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "weblounge",
+            "msgid": "pushed-direct",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+
+        model.restore_pushed_messages(vec![pushed], &state);
+
+        let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
+        assert_eq!(model.buffers[&buffer_id].timeline.len(), 1);
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 1);
+        assert_eq!(model.buffers[&buffer_id].projection.mentions, 1);
     }
 
     #[test]
