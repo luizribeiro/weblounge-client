@@ -7,6 +7,7 @@ import {
   requestResult,
   transactionDone,
 } from "./push-database";
+import type { WebPushTarget } from "./subscription";
 
 export interface StoredPushRoute {
   readonly networkId: number;
@@ -19,6 +20,8 @@ export interface StoredPushRoute {
   readonly p256dh: string;
   readonly auth: string;
   readonly privateKey: CryptoKey;
+  readonly target?: WebPushTarget;
+  readonly active?: boolean;
   readonly needsReregistration?: boolean;
   readonly retiring?: boolean;
 }
@@ -184,5 +187,22 @@ function decodeRoute(value: unknown): StoredPushRoute {
     ...("retiring" in value && value.retiring === true
       ? { retiring: true }
       : {}),
+    ...("target" in value && isWebPushTarget(value.target)
+      ? { target: value.target }
+      : {}),
+    ...("active" in value && value.active === true ? { active: true } : {}),
   };
+}
+
+function isWebPushTarget(value: unknown): value is WebPushTarget {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "endpoint" in value &&
+    typeof value.endpoint === "string" &&
+    "p256dh" in value &&
+    typeof value.p256dh === "string" &&
+    "auth" in value &&
+    typeof value.auth === "string"
+  );
 }
