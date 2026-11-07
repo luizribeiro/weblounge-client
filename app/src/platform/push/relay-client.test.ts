@@ -119,6 +119,64 @@ describe("relay client", () => {
     expect(relayRetryDelay(4, 0, () => 1)).toBe(16_000);
   });
 
+  it("gates every later fetch after an opaque network failure", async () => {
+    let now = 0;
+    const waits: number[] = [];
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("opaque network failure"))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      random: () => 0,
+      now: () => now,
+      wait: async (delay) => {
+        waits.push(delay);
+        now += delay;
+      },
+    });
+    const device = { id: "device-1", secret: "secret" };
+
+    await expect(client.renewLease(device, "tab-1")).resolves.toEqual({
+      ok: false,
+      error: { kind: "unavailable" },
+    });
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+
+    expect(waits).toEqual([500]);
+  });
+
+  it("gates later fetches after a readable permanent failure", async () => {
+    let now = 0;
+    const waits: number[] = [];
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      random: () => 0,
+      now: () => now,
+      wait: async (delay) => {
+        waits.push(delay);
+        now += delay;
+      },
+    });
+    const device = { id: "device-1", secret: "secret" };
+
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
+      ok: false,
+      error: { kind: "invalid_request" },
+    });
+    await expect(client.deleteDevice(device)).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+
+    expect(waits).toEqual([500]);
+  });
+
   it("classifies network and malformed response failures as unavailable", async () => {
     const unreachable = new RelayClient(
       "https://push.example.test",

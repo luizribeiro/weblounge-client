@@ -919,7 +919,6 @@ async function exerciseNotificationPromptRegistration(
     .toEqual([
       "create:route-123456789",
       "ensure:route-123456789",
-      "ensure:route-123456789",
       "create:route-recovered-2",
       "ensure:route-recovered-2",
     ]);
@@ -972,6 +971,157 @@ async function exerciseNotificationPromptRegistration(
     )
     .toMatchObject({ userVisibleOnly: true });
 }
+
+test.describe("cross-tab push request budget", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("backs off a no-CORS 429 while tabs change visibility", async ({
+    baseURL,
+    browserName,
+    context,
+    page,
+  }) => {
+    test.skip(browserName !== "chromium");
+    if (baseURL === undefined) throw new Error("app base URL is missing");
+    const requests: string[] = [];
+    let failNextLease = false;
+    const cors = {
+      "Access-Control-Allow-Origin": new URL(baseURL).origin,
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
+    };
+    await context.route("https://push.weblounge.org/**", async (route) => {
+      const request = route.request();
+      if (request.method() === "OPTIONS") {
+        await route.fulfill({ status: 204, headers: cors });
+        return;
+      }
+      const path = new URL(request.url()).pathname;
+      requests.push(`${request.method()} ${path}`);
+      if (
+        failNextLease &&
+        request.method() === "POST" &&
+        path === "/v1/devices/device-budget/lease"
+      ) {
+        failNextLease = false;
+        await route.fulfill({ status: 429 });
+        return;
+      }
+      if (path === "/v1/devices") {
+        await route.fulfill({
+          status: 201,
+          headers: cors,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "device-budget",
+            secret: "device-budget-secret",
+          }),
+        });
+        return;
+      }
+      if (path === "/v1/devices/device-budget/routes") {
+        await route.fulfill({
+          status: 201,
+          headers: cors,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "route-budget",
+            endpoint: "https://push.weblounge.org/v1/r/route-budget",
+          }),
+        });
+        return;
+      }
+      if (path === "/v1/devices/device-budget/dead-endpoints") {
+        await route.fulfill({
+          status: 200,
+          headers: cors,
+          contentType: "application/json",
+          body: JSON.stringify({ endpoints: [] }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 204, headers: cors });
+    });
+
+    const preparePage = async (candidate: Page) => {
+      await installPushBudgetForegroundControl(candidate);
+      await installPushManagerStub(candidate);
+      await installFakeEngine(candidate);
+      await installFakeOAuth(candidate);
+      await candidate.addInitScript(() => {
+        Reflect.set(globalThis, "hostedPushEnabled", true);
+      });
+      await candidate.route("**/config.json", async (route) => {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify(pushHostedConfig(route.request().url())),
+        });
+      });
+      await candidate.route(
+        `${oauthIssuer}/oauth/session-token`,
+        async (route) => {
+          if (route.request().method() === "OPTIONS") {
+            await fulfillSessionPreflight(route, new URL(baseURL).origin);
+            return;
+          }
+          await fulfillSessionToken(route, baseURL, "push-session-token");
+        },
+      );
+    };
+
+    await preparePage(page);
+    await page.goto("/");
+    await expect
+      .poll(() => requests)
+      .toContain("POST /v1/devices/device-budget/lease");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            typeof Reflect.get(globalThis, "completePushRegistration") ===
+            "function",
+        ),
+      )
+      .toBe(true);
+    await emitPushRegistration(page);
+    await emitPushRegistration(page);
+
+    const second = await context.newPage();
+    await preparePage(second);
+    await second.goto("/");
+    await expect(second.locator("[data-initial-splash]")).toHaveCount(0);
+    await page.clock.install();
+    await second.clock.install();
+    await setPushBudgetForeground(page, false);
+    failNextLease = true;
+
+    for (let elapsed = 0; elapsed < 60_000; elapsed += 10_000) {
+      const foreground = elapsed % 20_000 === 0 ? page : second;
+      const background = foreground === page ? second : page;
+      await setPushBudgetForeground(background, false);
+      await setPushBudgetForeground(foreground, true);
+      await page.clock.fastForward(10_000);
+      await second.clock.fastForward(10_000);
+    }
+
+    await expect.poll(() => failNextLease).toBe(false);
+    expect(
+      requests.filter((value) => value === "POST /v1/devices"),
+    ).toHaveLength(1);
+    expect(
+      requests.filter(
+        (value) => value === "POST /v1/devices/device-budget/routes",
+      ),
+    ).toHaveLength(1);
+    expect(
+      requests.filter(
+        (value) => value === "PUT /v1/routes/route-budget/active",
+      ),
+    ).toHaveLength(1);
+    expect(requests.length, requests.join("\n")).toBeLessThanOrEqual(20);
+    await second.close();
+  });
+});
 
 test.describe("iOS stale app badge", () => {
   test.use({ ...iphone16Pro, serviceWorkers: "block" });
@@ -1866,6 +2016,52 @@ async function installPushManagerStub(
     },
     { initial: initialPermission, result: requestResult },
   );
+}
+
+async function installPushBudgetForegroundControl(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    let foreground = true;
+    Object.defineProperties(document, {
+      hasFocus: {
+        configurable: true,
+        value: () => foreground,
+      },
+      hidden: {
+        configurable: true,
+        get: () => !foreground,
+      },
+      visibilityState: {
+        configurable: true,
+        get: () => (foreground ? "visible" : "hidden"),
+      },
+    });
+    Reflect.set(globalThis, "setPushBudgetForeground", (value: boolean) => {
+      foreground = value;
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event(value ? "focus" : "blur"));
+    });
+  });
+}
+
+async function setPushBudgetForeground(
+  page: Page,
+  foreground: boolean,
+): Promise<void> {
+  await page.evaluate((value) => {
+    const setForeground = Reflect.get(globalThis, "setPushBudgetForeground");
+    if (typeof setForeground !== "function")
+      throw new Error("push budget foreground control is missing");
+    setForeground(value);
+  }, foreground);
+}
+
+async function emitPushRegistration(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const complete = Reflect.get(globalThis, "completePushRegistration");
+    if (typeof complete !== "function")
+      throw new Error("push registration release is missing");
+    complete();
+  });
 }
 
 async function installStandaloneDisplay(page: Page): Promise<void> {

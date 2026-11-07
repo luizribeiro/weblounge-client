@@ -31,11 +31,28 @@ export type RelayResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: RelayFailure };
 
+interface RelayClientOptions {
+  readonly random?: () => number;
+  readonly now?: () => number;
+  readonly wait?: (delayMs: number) => Promise<void>;
+}
+
 export class RelayClient {
+  readonly #random: () => number;
+  readonly #now: () => number;
+  readonly #wait: (delayMs: number) => Promise<void>;
+  #failureAttempts = 0;
+  #notBefore = 0;
+
   constructor(
     readonly origin: string,
     private readonly fetchRelay: typeof fetch = fetch,
-  ) {}
+    options: RelayClientOptions = {},
+  ) {
+    this.#random = options.random ?? Math.random;
+    this.#now = options.now ?? Date.now;
+    this.#wait = options.wait ?? browserWait;
+  }
 
   createDevice(
     sessionToken: string,
@@ -195,6 +212,10 @@ export class RelayClient {
     decode: (value: unknown) => value is T,
     keepalive = false,
   ): Promise<RelayResult<T>> {
+    if (!keepalive) {
+      const delay = this.#notBefore - this.#now();
+      if (delay > 0) await this.#wait(delay);
+    }
     let response: Response;
     try {
       response = await this.fetchRelay.call(
@@ -213,25 +234,41 @@ export class RelayClient {
         },
       );
     } catch {
-      return { ok: false, error: { kind: "unavailable" } };
+      return this.#failed({ kind: "unavailable" });
     }
-    if (!response.ok)
-      return {
-        ok: false,
-        error: failure(
+    if (!response.ok) {
+      return this.#failed(
+        failure(
           response.status,
           retryAfterMilliseconds(response.headers.get("Retry-After")),
         ),
-      };
+      );
+    }
+    this.#succeeded();
     if (response.status === 204) return { ok: true, value: null as T };
     try {
       const value: unknown = await response.json();
       return decode(value)
         ? { ok: true, value }
-        : { ok: false, error: { kind: "unavailable" } };
+        : this.#failed({ kind: "unavailable" });
     } catch {
-      return { ok: false, error: { kind: "unavailable" } };
+      return this.#failed({ kind: "unavailable" });
     }
+  }
+
+  #failed<T>(error: RelayFailure): RelayResult<T> {
+    const delay = relayRetryDelay(
+      this.#failureAttempts++,
+      error.retryAfterMs,
+      this.#random,
+    );
+    this.#notBefore = Math.max(this.#notBefore, this.#now() + delay);
+    return { ok: false, error };
+  }
+
+  #succeeded(): void {
+    this.#failureAttempts = 0;
+    this.#notBefore = 0;
   }
 }
 
@@ -262,6 +299,10 @@ function retryAfterMilliseconds(value: string | null): number | undefined {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return undefined;
   return Math.max(0, timestamp - Date.now());
+}
+
+function browserWait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
