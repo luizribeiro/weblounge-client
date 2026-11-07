@@ -6,35 +6,22 @@ import {
 } from "./relay-client";
 
 const heartbeatMilliseconds = 30_000;
-const tabIdStorageKey = "weblounge-push-tab-id";
-
-export function foregroundLeaseTabId(
-  storage: Pick<Storage, "getItem" | "setItem"> = sessionStorage,
-  create: () => string = () => crypto.randomUUID(),
-): string {
-  try {
-    const existing = storage.getItem(tabIdStorageKey);
-    if (existing !== null) return existing;
-    const created = create();
-    storage.setItem(tabIdStorageKey, created);
-    return created;
-  } catch {
-    return create();
-  }
-}
+const leaseId = "device";
+const renewalKey = "weblounge-push-lease-renewed";
 
 interface ForegroundLeaseOptions {
   readonly renew: (
     device: RelayDevice,
-    tabId: string,
+    leaseId: string,
   ) => Promise<RelayResult<null>>;
   readonly release: (
     device: RelayDevice,
-    tabId: string,
+    leaseId: string,
   ) => Promise<RelayResult<null>>;
-  readonly tabId?: string;
+  readonly storage?: Pick<Storage, "getItem" | "removeItem" | "setItem">;
   readonly setTimer?: typeof window.setTimeout;
   readonly clearTimer?: typeof window.clearTimeout;
+  readonly now?: () => number;
   readonly random?: () => number;
   readonly onAction?:
     | ((
@@ -47,13 +34,14 @@ interface ForegroundLeaseOptions {
 export class ForegroundLease {
   readonly #renew: ForegroundLeaseOptions["renew"];
   readonly #release: ForegroundLeaseOptions["release"];
-  readonly #tabId: string;
+  readonly #storage: NonNullable<ForegroundLeaseOptions["storage"]>;
   readonly #setTimer: typeof window.setTimeout;
   readonly #clearTimer: typeof window.clearTimeout;
+  readonly #now: () => number;
   readonly #random: () => number;
   readonly #onAction: NonNullable<ForegroundLeaseOptions["onAction"]>;
   #device: RelayDevice | undefined;
-  #foreground = false;
+  #active = false;
   #acquired = false;
   #disposed = false;
   #generation = 0;
@@ -63,9 +51,10 @@ export class ForegroundLease {
   constructor(options: ForegroundLeaseOptions) {
     this.#renew = options.renew;
     this.#release = options.release;
-    this.#tabId = options.tabId ?? crypto.randomUUID();
+    this.#storage = options.storage ?? localStorage;
     this.#setTimer = options.setTimer ?? window.setTimeout.bind(window);
     this.#clearTimer = options.clearTimer ?? window.clearTimeout.bind(window);
+    this.#now = options.now ?? Date.now;
     this.#random = options.random ?? Math.random;
     this.#onAction = options.onAction ?? (() => {});
   }
@@ -77,42 +66,64 @@ export class ForegroundLease {
     if (previous?.id === device.id && previous.secret === device.secret) return;
     this.#acquired = false;
     this.#failureAttempts = 0;
-    if (previous !== undefined && this.#foreground) {
-      void this.#release(previous, this.#tabId);
+    this.#generation += 1;
+    this.#clearHeartbeat();
+    if (previous !== undefined && this.#active) {
+      this.#forgetRenewal();
+      void this.#release(previous, leaseId);
     }
-    if (this.#foreground) this.#startRenewal();
+    if (this.#active) this.#resume();
   }
 
-  setForeground(foreground: boolean): void {
-    if (this.#disposed || foreground === this.#foreground) return;
-    this.#foreground = foreground;
-    if (!foreground) this.#acquired = false;
+  setActive(active: boolean): void {
+    if (this.#disposed || active === this.#active) return;
+    this.#active = active;
     this.#failureAttempts = 0;
     this.#generation += 1;
     this.#clearHeartbeat();
+    if (active) this.#resume();
+  }
+
+  release(): void {
+    if (!this.#active || this.#device === undefined) return;
     const device = this.#device;
-    if (foreground) this.#startRenewal();
-    else if (device !== undefined) void this.#release(device, this.#tabId);
+    this.#active = false;
+    this.#acquired = false;
+    this.#generation += 1;
+    this.#clearHeartbeat();
+    this.#forgetRenewal();
+    void this.#release(device, leaseId);
   }
 
   dispose(): void {
     if (this.#disposed) return;
+    this.release();
     this.#disposed = true;
-    this.#acquired = false;
-    this.#generation += 1;
-    this.#clearHeartbeat();
-    if (this.#foreground && this.#device !== undefined) {
-      void this.#release(this.#device, this.#tabId);
+  }
+
+  #resume(): void {
+    const device = this.#device;
+    if (!this.#active || device === undefined) return;
+    const remaining = this.#renewalRemaining();
+    if (remaining > 0) {
+      this.#acquired = true;
+      this.#timer = this.#setTimer(() => {
+        this.#timer = undefined;
+        this.#startRenewal();
+      }, remaining);
+      return;
     }
+    this.#startRenewal();
   }
 
   #startRenewal(): void {
     const device = this.#device;
-    if (!this.#foreground || device === undefined) return;
+    if (!this.#active || device === undefined) return;
     const generation = ++this.#generation;
     const action = this.#acquired ? "renew" : "acquire";
+    this.#rememberRenewal();
     this.#onAction(action, "sent");
-    void this.#renew(device, this.#tabId)
+    void this.#renew(device, leaseId)
       .catch(
         (): RelayResult<null> => ({
           ok: false,
@@ -131,21 +142,62 @@ export class ForegroundLease {
         if (
           result.ok &&
           !this.#disposed &&
-          this.#foreground &&
+          this.#active &&
           generation === this.#generation
         ) {
           this.#acquired = true;
           this.#failureAttempts = 0;
+        } else if (
+          !result.ok &&
+          !this.#disposed &&
+          this.#active &&
+          generation === this.#generation
+        ) {
+          this.#forgetRenewal();
         }
         if (
           this.#disposed ||
-          !this.#foreground ||
+          !this.#active ||
           generation !== this.#generation
         ) {
           return;
         }
-        this.#timer = this.#setTimer(() => this.#startRenewal(), retryDelay);
+        this.#timer = this.#setTimer(() => {
+          this.#timer = undefined;
+          this.#startRenewal();
+        }, retryDelay);
       });
+  }
+
+  #renewalRemaining(): number {
+    try {
+      const stored = this.#storage.getItem(renewalKey);
+      if (stored === null) return 0;
+      const renewedAt = Number(stored);
+      if (!Number.isFinite(renewedAt)) return 0;
+      return Math.min(
+        heartbeatMilliseconds,
+        Math.max(0, renewedAt + heartbeatMilliseconds - this.#now()),
+      );
+    } catch {
+      return 0;
+    }
+  }
+
+  #rememberRenewal(): void {
+    try {
+      this.#storage.setItem(renewalKey, String(this.#now()));
+    } catch {
+      return;
+    }
+  }
+
+  #forgetRenewal(): void {
+    try {
+      this.#storage.removeItem(renewalKey);
+    } catch {
+      return;
+    }
   }
 
   #clearHeartbeat(): void {

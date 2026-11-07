@@ -199,17 +199,20 @@ It never sees the sender, the target or the text.
 **Foreground lease (web targets only).** The device can't drop a Web Push, and neither can an
 iOS NSE in the background (fact 4), so duplicates are suppressed at the relay:
 
-- Each tab holds its own lease, keyed by a per-tab id; the relay keeps a set per device. An ordinary
-  browser tab holds its lease while it is visible **and** focused. An installed iOS home-screen app
-  uses visibility alone: iOS can report `document.hasFocus() === false` or emit `blur` while the app,
-  its current conversation and its keyboard remain on screen. Treating that signal as background
-  releases the lease and presents pushes for messages the person is already reading. Every lease
-  renews with `POST /v1/devices/:id/lease` every 30 s (TTL 75 s). The signal is the engine's existing
+- One foreground page holds the device's single lease through a Web Lock. An ordinary browser tab
+  is eligible while it is visible **and** focused. An installed iOS home-screen app uses visibility
+  alone: iOS can report `document.hasFocus() === false` or emit `blur` while the app, its current
+  conversation and its keyboard remain on screen. Every lease renews with
+  `POST /v1/devices/:id/lease` every 30 s (TTL 75 s). The signal is the engine's existing
   `setVisibility`, not a second lifecycle listener.
-- Release is `POST /v1/devices/:id/lease/release`, sent with `navigator.sendBeacon` (which can't
-  send PUT or DELETE) when the authoritative foreground signal changes to hidden and on `pagehide`.
-  Ordinary tabs also release on genuine focus loss; installed iOS apps do not release on `blur`.
-  iOS suspends JS soon after hiding, so the release often never arrives.
+- An ordinary focus or visibility loss retains the current owner for one 30-second heartbeat. A
+  return within that window changes nothing; after it, the next eligible page inherits the shared
+  renewal deadline without releasing the device lease. Brief blur/focus and tab switches therefore
+  create neither a release/acquire pair nor an extra renewal. If no page takes over, the lease
+  expires within its TTL.
+- A real `freeze` or `pagehide` explicitly releases the lease with
+  `POST /v1/devices/:id/lease/release` through `navigator.sendBeacon` (which can't send PUT or
+  DELETE). iOS suspends JS soon after hiding, so even that release can be missed.
 - While any lease is live, the relay **holds** user-visible pushes instead of dropping them. A
   renewal proves the page was alive and showed everything up to that moment, so it discards pushes
   held before it. When every lease expires without renewal, the relay delivers the held pushes. A
@@ -575,12 +578,14 @@ frozen, page-hidden or closing owner releases the lock, and a resumed tab reacqu
 reading its current browser subscription. A crashed browsing context loses its Web Lock, so a
 waiting tab takes over without cleanup from the old page. When BroadcastChannel is unavailable the
 tabs do not elect a single owner, preserving synchronization correctness at the cost of duplicate
-idempotent work. Foreground leases remain deliberately per-tab and retain their immediate focus and
-visibility transitions; lease traffic never waits behind or changes the synchronization gate. The
-route record durably remembers the browser target it last reconciled and successful relay
-activation, so a new owner skips unchanged `PUT /target` and `PUT /routes/:id/active` calls. Network
-failures, opaque failures, 429 and 5xx responses gate later synchronization fetches with capped
-exponential jitter; readable `Retry-After` is a lower bound capped at ten minutes. Permanent 4xx
+idempotent work. A separate foreground Web Lock elects the device's one lease renewer. Handoffs
+share only a non-secret last-renewal timestamp in local storage, keep the current relay lease, and
+explicitly release only for `freeze` or `pagehide`; lease traffic never waits behind or changes the
+synchronization gate. The route record durably remembers the browser target it last reconciled and
+successful relay activation, so a new owner skips unchanged `PUT /target` and
+`PUT /routes/:id/active` calls. Network failures, opaque failures, 429 and 5xx responses gate later
+synchronization fetches with capped exponential jitter; readable `Retry-After` is a lower bound
+capped at ten minutes. Permanent 4xx
 recovery remains immediate. Failed lease renewals use their own backoff, while successful leases
 keep the 30-second heartbeat.
 

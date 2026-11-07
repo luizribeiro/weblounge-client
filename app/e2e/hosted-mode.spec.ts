@@ -960,6 +960,7 @@ async function exerciseNotificationPromptRegistration(
         get: () => true,
       });
       document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("pagehide"));
     });
     await expect
       .poll(() => relayRequests)
@@ -975,7 +976,7 @@ async function exerciseNotificationPromptRegistration(
 test.describe("cross-tab push request budget", () => {
   test.use({ serviceWorkers: "block" });
 
-  test("reconciles repeated launch requirements once while tabs change visibility", async ({
+  test("holds one device lease through a ten-minute two-tab session", async ({
     baseURL,
     browserName,
     context,
@@ -984,27 +985,18 @@ test.describe("cross-tab push request budget", () => {
     test.skip(browserName !== "chromium");
     if (baseURL === undefined) throw new Error("app base URL is missing");
     const requests: string[] = [];
-    let failNextLease = false;
     const cors = {
       "Access-Control-Allow-Origin": new URL(baseURL).origin,
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
+      "Access-Control-Max-Age": "600",
     };
     await context.route("https://push.weblounge.org/**", async (route) => {
       const request = route.request();
-      if (request.method() === "OPTIONS") {
-        await route.fulfill({ status: 204, headers: cors });
-        return;
-      }
       const path = new URL(request.url()).pathname;
       requests.push(`${request.method()} ${path}`);
-      if (
-        failNextLease &&
-        request.method() === "POST" &&
-        path === "/v1/devices/device-budget/lease"
-      ) {
-        failNextLease = false;
-        await route.fulfill({ status: 429 });
+      if (request.method() === "OPTIONS") {
+        await route.fulfill({ status: 204, headers: cors });
         return;
       }
       if (path === "/v1/devices") {
@@ -1070,7 +1062,9 @@ test.describe("cross-tab push request budget", () => {
       );
     };
 
+    const clockStart = Date.now();
     await preparePage(page);
+    await page.clock.install({ time: clockStart });
     await page.goto("/");
     await expect
       .poll(() => requests)
@@ -1086,48 +1080,62 @@ test.describe("cross-tab push request budget", () => {
       .toBe(true);
     await emitPushRegistration(page);
     await emitPushRegistration(page);
+    await expect
+      .poll(() => requests)
+      .toContain("PUT /v1/routes/route-budget/active");
+    expect(requestCounts(requests)).toEqual({
+      actual: 5,
+      deadEndpoints: 1,
+      lease: 1,
+      options: 0,
+      release: 0,
+      routes: 1,
+    });
 
     const second = await context.newPage();
     await preparePage(second);
+    await second.clock.install({ time: clockStart });
     await second.goto("/");
     await expect(second.locator("[data-initial-splash]")).toHaveCount(0);
-    await page.clock.install();
-    await second.clock.install();
     await setPushBudgetForeground(page, false);
-    failNextLease = true;
 
-    for (let elapsed = 0; elapsed < 60_000; elapsed += 10_000) {
+    for (let elapsed = 0; elapsed < 600_000; elapsed += 10_000) {
       const foreground = elapsed % 20_000 === 0 ? page : second;
       const background = foreground === page ? second : page;
       await setPushBudgetForeground(background, false);
       await setPushBudgetForeground(foreground, true);
+      await foreground
+        .getByRole("button", {
+          name: elapsed % 40_000 === 0 ? "#ops" : "#lounge",
+        })
+        .click();
       await page.clock.fastForward(10_000);
-      await second.clock.fastForward(10_000);
     }
 
-    await expect.poll(() => failNextLease).toBe(false);
-    expect(
-      requests.filter((value) => value === "POST /v1/devices"),
-    ).toHaveLength(1);
-    expect(
-      requests.filter(
-        (value) => value === "POST /v1/devices/device-budget/routes",
-      ),
-    ).toHaveLength(1);
-    expect(
-      requests.filter(
-        (value) => value === "GET /v1/devices/device-budget/dead-endpoints",
-      ),
-    ).toHaveLength(1);
-    expect(
-      requests.filter(
-        (value) => value === "PUT /v1/routes/route-budget/active",
-      ),
-    ).toHaveLength(1);
-    expect(requests.length, requests.join("\n")).toBeLessThanOrEqual(20);
+    expect(requestCounts(requests), requests.join("\n")).toEqual({
+      actual: 25,
+      deadEndpoints: 1,
+      lease: 21,
+      options: 0,
+      release: 0,
+      routes: 1,
+    });
     await second.close();
   });
 });
+
+function requestCounts(requests: readonly string[]) {
+  const count = (request: string) =>
+    requests.filter((value) => value === request).length;
+  return {
+    actual: requests.filter((value) => !value.startsWith("OPTIONS ")).length,
+    deadEndpoints: count("GET /v1/devices/device-budget/dead-endpoints"),
+    lease: count("POST /v1/devices/device-budget/lease"),
+    options: requests.filter((value) => value.startsWith("OPTIONS ")).length,
+    release: count("POST /v1/devices/device-budget/lease/release"),
+    routes: count("POST /v1/devices/device-budget/routes"),
+  };
+}
 
 test.describe("iOS stale app badge", () => {
   test.use({ ...iphone16Pro, serviceWorkers: "block" });

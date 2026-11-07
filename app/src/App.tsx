@@ -63,10 +63,7 @@ import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
 import { syncAppPushState } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
-import {
-  ForegroundLease,
-  foregroundLeaseTabId,
-} from "./platform/push/foreground-lease";
+import { ForegroundLease } from "./platform/push/foreground-lease";
 import {
   ForegroundRecorder,
   foregroundLog,
@@ -132,6 +129,8 @@ type PushSyncEvent = Extract<
   EngineClientMessage,
   { readonly type: "push_route_required" | "push_state_changed" }
 >;
+
+const foregroundLeaseHandoffMilliseconds = 30_000;
 
 interface AppProps {
   beforeReveal?: () => Promise<void>;
@@ -214,6 +213,7 @@ export function App(props: AppProps) {
   let client: EngineClient | undefined;
   let pushSynchronizer: PushSynchronizer | undefined;
   let pushOwner: PushSyncOwner | undefined;
+  let pushLeaseOwner: PushSyncOwner | undefined;
   let pushChannel: BroadcastChannel | undefined;
   let pushStartup: Promise<void> | undefined;
   let pushStartupKey: string | undefined;
@@ -224,6 +224,7 @@ export function App(props: AppProps) {
   let notificationPromptReadDeadline: number | undefined;
   let loadedPromptConfig: string | undefined;
   let foregroundLease: ForegroundLease | undefined;
+  let foregroundLeaseHandoffTimer: number | undefined;
   let appIsForeground = false;
   const foregroundRecorder = new ForegroundRecorder(foregroundLog, () =>
     readForegroundSnapshot(document, navigator, window),
@@ -804,7 +805,18 @@ export function App(props: AppProps) {
       foregroundRecorder.recordForegroundTransition(foreground);
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
-      foregroundLease?.setForeground(foreground);
+      if (foreground) {
+        if (foregroundLeaseHandoffTimer !== undefined) {
+          window.clearTimeout(foregroundLeaseHandoffTimer);
+          foregroundLeaseHandoffTimer = undefined;
+        }
+        pushLeaseOwner?.setEligible(true);
+      } else if (foregroundLeaseHandoffTimer === undefined) {
+        foregroundLeaseHandoffTimer = window.setTimeout(() => {
+          foregroundLeaseHandoffTimer = undefined;
+          pushLeaseOwner?.setEligible(false);
+        }, foregroundLeaseHandoffMilliseconds);
+      }
       if (!foreground) {
         void mountedClient
           .send({
@@ -844,6 +856,12 @@ export function App(props: AppProps) {
       }
     };
     const suspendPushOwnership = () => {
+      if (foregroundLeaseHandoffTimer !== undefined) {
+        window.clearTimeout(foregroundLeaseHandoffTimer);
+        foregroundLeaseHandoffTimer = undefined;
+      }
+      foregroundLease?.release();
+      pushLeaseOwner?.setEligible(false);
       pushOwner?.setEligible(false);
       setAppForeground(false);
     };
@@ -900,6 +918,8 @@ export function App(props: AppProps) {
         window.clearTimeout(hostedFallbackTimer);
       if (notificationPromptReadDeadline !== undefined)
         window.clearTimeout(notificationPromptReadDeadline);
+      if (foregroundLeaseHandoffTimer !== undefined)
+        window.clearTimeout(foregroundLeaseHandoffTimer);
       setNotificationDebugReading(window, undefined);
       setPushDebugSnapshot(window, undefined);
       clearStartupWaits();
@@ -921,6 +941,8 @@ export function App(props: AppProps) {
       );
       unsubscribe();
       unsubscribeUpdateReady();
+      foregroundLease?.release();
+      pushLeaseOwner?.dispose();
       foregroundLease?.dispose();
       pushOwner?.dispose();
       pushChannel?.close();
@@ -938,11 +960,18 @@ export function App(props: AppProps) {
     const key = pushConfigKey(config);
     if (pushStartupKey !== key) {
       pushSetupGeneration += 1;
+      if (foregroundLeaseHandoffTimer !== undefined) {
+        window.clearTimeout(foregroundLeaseHandoffTimer);
+        foregroundLeaseHandoffTimer = undefined;
+      }
       pushOwner?.dispose();
+      foregroundLease?.release();
+      pushLeaseOwner?.dispose();
       pushChannel?.close();
       pushSynchronizer?.dispose();
       foregroundLease?.dispose();
       pushOwner = undefined;
+      pushLeaseOwner = undefined;
       pushChannel = undefined;
       pushSynchronizer = undefined;
       foregroundLease = undefined;
@@ -1005,11 +1034,9 @@ export function App(props: AppProps) {
         relay.releaseLease(device, tabId, undefined, () =>
           foregroundRecorder.recordReleaseBeacon(),
         ),
-      tabId: foregroundLeaseTabId(),
       onAction: (action, result) =>
         foregroundRecorder.recordLease(action, result),
     });
-    lease.setForeground(appIsForeground);
     const storedDevice = await devices
       .load(config.relay)
       .catch(() => undefined);
@@ -1068,6 +1095,16 @@ export function App(props: AppProps) {
       },
     };
     foregroundLease = lease;
+    const leaseOwner = new PushSyncOwner(
+      `weblounge-push-lease:${config.relay}`,
+      () => {
+        lease.setActive(true);
+        return () => lease.setActive(false);
+      },
+      navigator.locks,
+      appIsForeground,
+    );
+    pushLeaseOwner = leaseOwner;
     pushChannel = channel;
     channel?.addEventListener("message", (event: MessageEvent<unknown>) => {
       const message = decodePushSyncMessage(event.data);
