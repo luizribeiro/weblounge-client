@@ -172,6 +172,7 @@ export class RelayClient {
       "POST",
       { tab_id: tabId },
       isNull,
+      false,
     );
   }
 
@@ -200,6 +201,7 @@ export class RelayClient {
       "POST",
       { tab_id: tabId },
       isNull,
+      false,
       true,
     );
   }
@@ -210,11 +212,15 @@ export class RelayClient {
     method: "GET" | "POST" | "PUT" | "DELETE",
     body: Readonly<Record<string, unknown>> | undefined,
     decode: (value: unknown) => value is T,
+    gated = true,
     keepalive = false,
   ): Promise<RelayResult<T>> {
-    if (!keepalive) {
-      const delay = this.#notBefore - this.#now();
-      if (delay > 0) await this.#wait(delay);
+    if (gated) {
+      let delay = this.#notBefore - this.#now();
+      while (delay > 0) {
+        await this.#wait(delay);
+        delay = this.#notBefore - this.#now();
+      }
     }
     let response: Response;
     try {
@@ -234,29 +240,32 @@ export class RelayClient {
         },
       );
     } catch {
-      return this.#failed({ kind: "unavailable" });
+      return this.#failed({ kind: "unavailable" }, gated);
     }
     if (!response.ok) {
-      return this.#failed(
-        failure(
-          response.status,
-          retryAfterMilliseconds(response.headers.get("Retry-After")),
+      const error = failure(
+        response.status,
+        retryAfterMilliseconds(
+          response.headers.get("Retry-After"),
+          this.#now(),
         ),
       );
+      return this.#failed(error, gated && gatesLaterRequests(response.status));
     }
-    this.#succeeded();
+    if (gated) this.#succeeded();
     if (response.status === 204) return { ok: true, value: null as T };
     try {
       const value: unknown = await response.json();
       return decode(value)
         ? { ok: true, value }
-        : this.#failed({ kind: "unavailable" });
+        : this.#failed({ kind: "unavailable" }, gated);
     } catch {
-      return this.#failed({ kind: "unavailable" });
+      return this.#failed({ kind: "unavailable" }, gated);
     }
   }
 
-  #failed<T>(error: RelayFailure): RelayResult<T> {
+  #failed<T>(error: RelayFailure, gate: boolean): RelayResult<T> {
+    if (!gate) return { ok: false, error };
     const delay = relayRetryDelay(
       this.#failureAttempts++,
       error.retryAfterMs,
@@ -289,16 +298,24 @@ export function relayRetryDelay(
 ): number {
   const exponential = Math.min(5 * 60_000, 1_000 * 2 ** attempt);
   const jittered = exponential * (0.5 + random() * 0.5);
-  return Math.max(retryAfterMs, Math.round(jittered));
+  return Math.max(Math.min(10 * 60_000, retryAfterMs), Math.round(jittered));
 }
 
-function retryAfterMilliseconds(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+function retryAfterMilliseconds(
+  value: string | null,
+  now: number,
+): number | undefined {
+  if (value === null || value.trim().length === 0) return undefined;
+  if (/^\d+$/.test(value)) {
+    return Math.min(10 * 60_000, Number(value) * 1_000);
+  }
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return undefined;
-  return Math.max(0, timestamp - Date.now());
+  return Math.min(10 * 60_000, Math.max(0, timestamp - now));
+}
+
+function gatesLaterRequests(status: number): boolean {
+  return status === 429 || status >= 500;
 }
 
 function browserWait(delayMs: number): Promise<void> {

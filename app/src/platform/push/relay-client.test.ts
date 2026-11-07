@@ -148,7 +148,54 @@ describe("relay client", () => {
     expect(waits).toEqual([500]);
   });
 
-  it("gates later fetches after a readable permanent failure", async () => {
+  it("keeps lease traffic outside the synchronization gate", async () => {
+    let now = 0;
+    const waits: number[] = [];
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("opaque network failure"))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      random: () => 0,
+      now: () => now,
+      wait: async (delay) => {
+        waits.push(delay);
+        now += delay;
+      },
+    });
+    const device = { id: "device-1", secret: "secret" };
+
+    await client.updateTarget(device, target);
+    await client.renewLease(device, "tab-1");
+
+    expect(waits).toEqual([]);
+    expect(fetchRelay).toHaveBeenCalledTimes(2);
+  });
+
+  it("rechecks a synchronization gate after every wait", async () => {
+    let now = 0;
+    const waits: number[] = [];
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("opaque network failure"))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      random: () => 0,
+      now: () => now,
+      wait: async (delay) => {
+        waits.push(delay);
+        now += waits.length === 1 ? delay / 2 : delay;
+      },
+    });
+    const device = { id: "device-1", secret: "secret" };
+
+    await client.updateTarget(device, target);
+    await client.deleteDevice(device);
+
+    expect(waits).toEqual([500, 250]);
+  });
+
+  it("does not gate later fetches after a permanent client failure", async () => {
     let now = 0;
     const waits: number[] = [];
     const fetchRelay = vi
@@ -174,7 +221,52 @@ describe("relay client", () => {
       value: null,
     });
 
-    expect(waits).toEqual([500]);
+    expect(waits).toEqual([]);
+  });
+
+  it("parses bounded Retry-After values with the injected clock", async () => {
+    const now = Date.parse("2026-11-07T12:00:00Z");
+    const fetchRelay = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 429,
+          headers: { "Retry-After": "Sat, 07 Nov 2026 12:00:12 GMT" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 429, headers: { "Retry-After": "" } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 429, headers: { "Retry-After": "-1" } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 429,
+          headers: { "Retry-After": "86400" },
+        }),
+      );
+    const client = new RelayClient("https://push.example.test", fetchRelay, {
+      now: () => now,
+      random: () => 0,
+      wait: async () => {},
+    });
+    const device = { id: "device-1", secret: "secret" };
+
+    await expect(client.updateTarget(device, target)).resolves.toMatchObject({
+      error: { retryAfterMs: 12_000 },
+    });
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
+      ok: false,
+      error: { kind: "capacity" },
+    });
+    await expect(client.updateTarget(device, target)).resolves.toEqual({
+      ok: false,
+      error: { kind: "capacity" },
+    });
+    await expect(client.updateTarget(device, target)).resolves.toMatchObject({
+      error: { retryAfterMs: 10 * 60_000 },
+    });
   });
 
   it("classifies network and malformed response failures as unavailable", async () => {
