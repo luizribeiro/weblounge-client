@@ -75,6 +75,39 @@ it("reports a renewal failure without exposing its payload", async () => {
   ]);
 });
 
+it("backs failed renewals off with jitter and honours Retry-After", async () => {
+  const renew = vi
+    .fn<ForegroundLeaseOptions["renew"]>()
+    .mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "capacity", retryAfterMs: 4_000 },
+    })
+    .mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "unavailable" },
+    })
+    .mockResolvedValue({ ok: true, value: null });
+  const lease = new ForegroundLease({
+    renew,
+    release: vi.fn(() => accepted),
+    tabId: "tab-1",
+    random: () => 0,
+  });
+
+  lease.setDevice(device);
+  lease.setForeground(true);
+  await vi.advanceTimersByTimeAsync(3_999);
+  expect(renew).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(renew).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(999);
+  expect(renew).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(renew).toHaveBeenCalledTimes(3);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(renew).toHaveBeenCalledTimes(4);
+});
+
 it("does not leave a heartbeat after an in-flight renewal is hidden", async () => {
   let finishRenewal = () => {};
   const renewing = new Promise<
