@@ -641,7 +641,6 @@ impl NetworkModel {
             .collect();
         ChatListSnapshot::new(fingerprint, rows)
             .with_synced_through_ms(self.last_sync.map(time_millis))
-            .with_synced_through_ms(self.last_sync.map(time_millis))
     }
 
     pub(crate) fn merge_chat_list_snapshot(
@@ -672,8 +671,9 @@ impl NetworkModel {
                     .iter()
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
-                if buffer.deferred_read.is_some() {
+                if buffer.deferred_read.is_some() || buffer.read_at_ms != row.read_at_ms {
                     row.badge = snapshot_badge(buffer);
+                    row.read_at_ms = buffer.read_at_ms;
                 }
                 Some(row)
             })
@@ -1823,10 +1823,10 @@ impl NetworkModel {
                 HistoryState::Unrequested | HistoryState::QueuedLatest
                     if buffer.projection.cached == Some(true) =>
                 {
-                    Some(HistoryFetch::After {
-                        target,
-                        newest: cached_refresh_cursor(buffer)?,
-                    })
+                    match cached_refresh_cursor(buffer) {
+                        Some(newest) => Some(HistoryFetch::After { target, newest }),
+                        None => Some(HistoryFetch::Latest(target)),
+                    }
                 }
                 HistoryState::Unrequested | HistoryState::QueuedLatest => {
                     Some(HistoryFetch::Latest(target))
@@ -1855,6 +1855,9 @@ impl NetworkModel {
             ));
             match &fetch {
                 Some(HistoryFetch::Latest(_)) => {
+                    if buffer.projection.cached == Some(true) {
+                        promote_cached_buffer(buffer);
+                    }
                     set_history_state(buffer, HistoryState::LoadingLatest);
                 }
                 Some(HistoryFetch::After { .. }) => {
@@ -1903,10 +1906,10 @@ impl NetworkModel {
                 None
             }
             HistoryState::Unrequested if buffer.projection.cached == Some(true) => {
-                Some(HistoryFetch::After {
-                    target,
-                    newest: cached_refresh_cursor(buffer)?,
-                })
+                match cached_refresh_cursor(buffer) {
+                    Some(newest) => Some(HistoryFetch::After { target, newest }),
+                    None => Some(HistoryFetch::Latest(target)),
+                }
             }
             HistoryState::Ready { .. }
                 if buffer
@@ -1921,18 +1924,29 @@ impl NetworkModel {
             }
             _ => None,
         };
-        if let Some(HistoryFetch::After { .. }) = &fetch {
+        if let Some(fetch) = &fetch {
             let buffer = self.buffers.get_mut(&buffer_id)?;
-            if buffer.projection.cached == Some(true) && buffer.read_at_ms.is_some() {
-                buffer.cached_unread_base = 0;
-                buffer.cached_mentions_base = 0;
-                derive_read_projection(buffer);
+            match fetch {
+                HistoryFetch::Latest(_) => {
+                    if buffer.projection.cached == Some(true) {
+                        promote_cached_buffer(buffer);
+                    }
+                    set_history_state(buffer, HistoryState::LoadingLatest);
+                }
+                HistoryFetch::After { .. } => {
+                    if buffer.projection.cached == Some(true) && buffer.read_at_ms.is_some() {
+                        buffer.cached_unread_base = 0;
+                        buffer.cached_mentions_base = 0;
+                        derive_read_projection(buffer);
+                    }
+                    let (oldest, at_start) = match &buffer.history {
+                        HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
+                        _ => (None, false),
+                    };
+                    set_history_state(buffer, HistoryState::Refreshing { oldest, at_start });
+                }
+                HistoryFetch::Before { .. } => {}
             }
-            let (oldest, at_start) = match &buffer.history {
-                HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
-                _ => (None, false),
-            };
-            set_history_state(buffer, HistoryState::Refreshing { oldest, at_start });
             buffer.provisional_activity_ms = Some(time_millis(latest));
         }
         fetch
@@ -3798,6 +3812,63 @@ mod tests {
     }
 
     #[test]
+    fn targets_loads_latest_for_a_changed_cached_direct_without_a_cursor() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: None,
+                badge: SnapshotBadge::None,
+                preview: None,
+                newest: None,
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let nick = nick_name(&state, "alice");
+
+        let (fetch, _, _) =
+            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200), &state);
+
+        assert!(matches!(fetch, Some(HistoryFetch::Latest(_))));
+        let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
+        assert_eq!(buffer.projection.cached, None);
+        assert!(matches!(buffer.history, HistoryState::LoadingLatest));
+    }
+
+    #[test]
+    fn targets_loads_latest_for_a_changed_cached_channel_without_a_cursor() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Channel {
+                    key: "#room".into(),
+                },
+                title: "#room".into(),
+                last_activity_ms: None,
+                badge: SnapshotBadge::None,
+                preview: None,
+                newest: None,
+                read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let channel = channel_name(&state, "#room");
+
+        let fetch = model.restore_channel(&channel, UNIX_EPOCH + Duration::from_millis(200));
+
+        assert!(matches!(fetch, Some(HistoryFetch::Latest(_))));
+        let buffer = &model.buffers[&model.names[&NameKey::Channel(channel)]];
+        assert_eq!(buffer.projection.cached, None);
+        assert!(matches!(buffer.history, HistoryState::LoadingLatest));
+    }
+
+    #[test]
     fn changed_cached_direct_refreshes_once_from_read_position_and_caps() {
         let (mut model, state) = model(10);
         model.restore_chat_list(ChatListSnapshot::new(
@@ -5251,6 +5322,8 @@ mod tests {
                 mentions: 1,
             },
             preview: Some("cached direct".into()),
+            newest: None,
+            read_at_ms: None,
             peer_pin: None,
         };
         let unresolved = SnapshotRow {
@@ -5261,6 +5334,8 @@ mod tests {
             last_activity_ms: Some(100),
             badge: SnapshotBadge::Unread { count: 4 },
             preview: Some("cached channel".into()),
+            newest: None,
+            read_at_ms: None,
             peer_pin: None,
         };
         let cached =
@@ -5299,6 +5374,42 @@ mod tests {
                 }
                 && row.badge == SnapshotBadge::None
         }));
+    }
+
+    #[test]
+    fn pushed_read_marker_updates_an_unrequested_cached_snapshot_row() {
+        let (mut model, state) = model(10);
+        let cached = SnapshotRow {
+            conversation: SnapshotConversation::Channel {
+                key: "#room".into(),
+            },
+            title: "#room".into(),
+            last_activity_ms: Some(100),
+            badge: SnapshotBadge::Unread { count: 1 },
+            preview: Some("cached preview".into()),
+            newest: Some(SnapshotCursor {
+                msgid: Some("cached-newest".into()),
+                server_time_ms: 100,
+            }),
+            read_at_ms: None,
+            peer_pin: None,
+        };
+        let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
+        model.restore_chat_list(previous.clone());
+        let channel = channel_name(&state, "#room");
+        let buffer_id = model.names[&NameKey::Channel(channel)];
+
+        model.apply_read_time(buffer_id, UNIX_EPOCH + Duration::from_millis(100));
+        let merged = model.merge_chat_list_snapshot("network".into(), &previous);
+
+        assert_eq!(
+            merged.rows,
+            vec![SnapshotRow {
+                badge: SnapshotBadge::None,
+                read_at_ms: Some(100),
+                ..cached
+            }]
+        );
     }
 
     #[test]
@@ -5349,6 +5460,7 @@ mod tests {
         else {
             panic!("provisional push defers its server read")
         };
+        let read_at_ms = time_millis(advance.time);
         model.apply_read_time(buffer_id, advance.time);
 
         let merged = model.merge_chat_list_snapshot("network".into(), &previous);
@@ -5357,6 +5469,7 @@ mod tests {
             merged.rows,
             vec![SnapshotRow {
                 badge: SnapshotBadge::None,
+                read_at_ms: Some(read_at_ms),
                 ..cached
             }]
         );
