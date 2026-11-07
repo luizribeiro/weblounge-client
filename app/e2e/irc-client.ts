@@ -165,6 +165,14 @@ export class IrcClient {
     return this.#nickname;
   }
 
+  async join(channel: string): Promise<void> {
+    this.send(`JOIN ${channel}`);
+    await this.waitFor(
+      `JOIN confirmation for ${channel}`,
+      (line) => line.includes(`!`) && line.includes(` JOIN ${channel}`),
+    );
+  }
+
   privmsg(channel: string, text: string): void {
     this.send(`PRIVMSG ${channel} :${text}`);
   }

@@ -492,7 +492,8 @@ async function traceHistoryWireValue(
   const text = await wireText(value);
   if (text === undefined) return;
   for (const line of text.split("\r\n")) {
-    if (!/(?:^| )(?:CHATHISTORY|MARKREAD|WHO|BATCH) /u.test(line)) continue;
+    if (!/(?:^| )(?:CHATHISTORY|MARKREAD|MONITOR|WHO|BATCH) /u.test(line))
+      continue;
     for (const port of historyWireTestPorts)
       port.postMessage({
         type: "history_wire_test_trace",
