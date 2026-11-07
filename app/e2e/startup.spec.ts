@@ -488,19 +488,46 @@ test("reveals local Ergo rows with channel and direct previews", async ({
   const nick = `start${suffix}`;
   const channelPreview = `channel startup ${suffix}`;
   const directPreview = `direct startup ${suffix}`;
-  const bot = await IrcClient.connect(
-    nick,
-    "weblounge-bot",
-    "weblounge-bot-test",
-    "#weblounge-test",
-  );
+  const seedNicks = [`seed-a-${suffix}`, `seed-b-${suffix}`] as const;
+  const seedBots: IrcClient[] = [];
+  let bot: IrcClient | undefined;
   let keeper: Page | undefined;
   try {
+    for (const seedNick of seedNicks)
+      seedBots.push(
+        await IrcClient.connect(
+          seedNick,
+          "weblounge-bot",
+          "weblounge-bot-test",
+          "#weblounge-test",
+        ),
+      );
+    for (let index = 0; index < 50; index += 1) {
+      const mentioned =
+        index % 10 === 0
+          ? "weblounge"
+          : seedNicks[(index + 1) % seedNicks.length];
+      await seedBots[index % seedBots.length].privmsgConfirmed(
+        "#weblounge-test",
+        `earlier startup ${suffix} ${index} mentions ${mentioned}`,
+      );
+    }
+    for (const seedBot of seedBots) seedBot.close();
+    bot = await IrcClient.connect(
+      nick,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
     await page.goto("/?irc-password=weblounge-test");
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    const channelRow = page
+      .locator('[data-buffer-id][aria-label^="#weblounge-test"]')
+      .first();
+    await channelRow.click();
     await expect(
       page.locator('[data-mobile-chat][data-network-state="online"]'),
     ).toHaveCount(1);
+    await expect(channelRow).toHaveAttribute("aria-label", "#weblounge-test");
     await page.getByRole("button", { name: "Back to chats" }).click();
     await bot.privmsgConfirmed("#weblounge-test", channelPreview);
     await bot.privmsgConfirmed("weblounge", directPreview);
@@ -533,7 +560,8 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   } finally {
     await keeper?.close();
-    bot.close();
+    bot?.close();
+    for (const seedBot of seedBots) seedBot.close();
   }
 });
 

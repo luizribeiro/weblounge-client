@@ -94,6 +94,7 @@ struct BufferState {
     direct_pin: Option<papo::PeerKey>,
     direct_mismatch: Option<DirectMismatch>,
     read_at_ms: Option<i64>,
+    local_unread_floor_ms: Option<i64>,
     cached_unread_base: u64,
     cached_mentions_base: u64,
     history: HistoryState,
@@ -386,6 +387,7 @@ impl NetworkModel {
             direct_pin: None,
             direct_mismatch: None,
             read_at_ms: None,
+            local_unread_floor_ms: None,
             cached_unread_base: 0,
             cached_mentions_base: 0,
             history: HistoryState::Ready {
@@ -1681,6 +1683,12 @@ impl NetworkModel {
                 if buffer.projection.cached == Some(true) {
                     promote_cached_buffer(buffer);
                 }
+                if buffer.projection.kind == BufferKind::Channel
+                    && buffer.read_at_ms.is_none()
+                    && let Some(newest) = newest.as_ref()
+                {
+                    buffer.local_unread_floor_ms = Some(time_millis(newest.server_time()));
+                }
                 buffer.history = HistoryState::Ready {
                     oldest,
                     at_start: item_count == 0,
@@ -2752,6 +2760,7 @@ impl NetworkModel {
                 direct_pin: None,
                 direct_mismatch: None,
                 read_at_ms: None,
+                local_unread_floor_ms: None,
                 cached_unread_base: 0,
                 cached_mentions_base: 0,
                 history: HistoryState::Unrequested,
@@ -3085,14 +3094,17 @@ fn derive_read_projection(buffer: &mut BufferState) {
             })
             .map(|record| record.projection.id)
     });
+    let unread_floor_ms = buffer
+        .read_at_ms
+        .into_iter()
+        .chain(buffer.local_unread_floor_ms)
+        .max();
     let (unread, mentions) = buffer
         .timeline
         .iter()
         .filter(|record| {
             record.projection.authorship != MessageAuthorship::Own
-                && buffer
-                    .read_at_ms
-                    .is_none_or(|marker| message_time(&record.projection) > marker)
+                && unread_floor_ms.is_none_or(|floor| message_time(&record.projection) > floor)
         })
         .fold((0, 0), |(unread, mentions), record| {
             (unread + 1, mentions + u64::from(record.counts_as_mention))
@@ -3375,9 +3387,9 @@ mod tests {
     use papo_testing::{StateBuilder, wire};
 
     use super::{
-        DirectKey, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey, NetworkModel,
-        PendingTargetState, ReadPreparation, SendTarget, TimelineOrigin, collapse_blank_lines,
-        derive_read_projection, draft_key, nick_color_index, time_millis,
+        DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey,
+        NetworkModel, PendingTargetState, ReadPreparation, SendTarget, TimelineOrigin,
+        collapse_blank_lines, derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -5547,6 +5559,68 @@ mod tests {
         let id = *model.names.values().next().expect("buffer exists");
 
         assert_eq!(model.buffers[&id].projection.mentions, 1);
+    }
+
+    #[test]
+    fn unmarked_channel_history_is_a_baseline_for_later_unread() {
+        let (mut model, state) = model(10);
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        model
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("latest history starts");
+        for (text, time) in [("hello seed-a", 100), ("hello weblounge", 200)] {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(text),
+                    Some(time),
+                    time,
+                    TimelineOrigin::History,
+                ),
+                &state,
+            );
+        }
+        model
+            .finish_history(
+                &papo::Conversation::Channel(channel),
+                None,
+                Some(HistoryCursor::new(Some("history-latest".into()), 200)),
+                2,
+                true,
+            )
+            .expect("latest history finishes");
+
+        let buffer = &model.buffers[&buffer_id];
+        assert_eq!(
+            (buffer.projection.unread, buffer.projection.mentions),
+            (0, 0)
+        );
+        assert_eq!(buffer.read_at_ms, None);
+
+        for (text, msgid, time) in [
+            ("ordinary live row", "live-ordinary", 300),
+            ("hello seed-a", "live-other-nick", 400),
+            ("hello weblounge", "live-own-nick", 500),
+        ] {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(msgid),
+                    Some(time),
+                    time,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+        let buffer = &model.buffers[&buffer_id];
+        assert_eq!(
+            (buffer.projection.unread, buffer.projection.mentions),
+            (3, 1)
+        );
     }
 
     #[test]
