@@ -811,49 +811,8 @@ function cachedRow(page: Page): Promise<unknown> {
   return page.evaluate(() => Reflect.get(globalThis, "staleSnapshotCachedRow"));
 }
 
-async function captureHistoryWire(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Reflect.set(globalThis, "staleSnapshotHistoryWire", []);
-    const subscribed = new WeakSet<Worker>();
-    const postMessage = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (message, options) {
-      if (!subscribed.has(this)) {
-        subscribed.add(this);
-        Reflect.apply(postMessage, this, [
-          { type: "history_wire_test_trace_subscribe" },
-        ]);
-      }
-      Reflect.apply(postMessage, this, [message, options]);
-    };
-    const addListener = Worker.prototype.addEventListener;
-    Worker.prototype.addEventListener = function (
-      type: string,
-      listener: EventListenerOrEventListenerObject | null,
-      options?: boolean | AddEventListenerOptions,
-    ) {
-      if (type !== "message" || listener === null) {
-        addListener.call(this, type, listener, options);
-        return;
-      }
-      const wrapped: EventListener = (rawEvent) => {
-        const event = rawEvent as MessageEvent<Record<string, unknown>>;
-        if (event.data?.type === "history_wire_test_trace") {
-          const wire = Reflect.get(globalThis, "staleSnapshotHistoryWire");
-          if (Array.isArray(wire)) wire.push(event.data);
-          return;
-        }
-        if (typeof listener === "function") listener.call(this, event);
-        else listener.handleEvent(event);
-      };
-      addListener.call(this, type, wrapped, options);
-    };
-  });
-}
-
 function historyWire(page: Page): Promise<unknown> {
-  return page.evaluate(() =>
-    Reflect.get(globalThis, "staleSnapshotHistoryWire"),
-  );
+  return page.evaluate(() => Reflect.get(globalThis, "historyWireTimeline"));
 }
 
 async function seedUnreadDirectSnapshot(

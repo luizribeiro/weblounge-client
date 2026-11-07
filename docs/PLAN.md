@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Let the launch regression hold one exact delta request while retaining the shared history
+  gate's immutable payload and worker diagnostics, so killing the page mid-delta exercises the
+  durable TARGETS boundary instead of relying on timing.
 - [x] Keep held history-wire commands immutable across delayed release. The E2E gate now snapshots
   WASM-backed WebSocket views before engine memory reuse, while a test-only worker heartbeat, page
   errors, and page/worker release checkpoints make future constrained-run failures decisive.
@@ -89,8 +92,9 @@ The single place a fresh session reads to know where the project stands. Update 
   network work; changed rows fetch one capped page after their exact cursor, opened cached channels
   fetch Latest on demand, and direct identity and marker queries stay limited to opened or changed
   DMs with a nonzero cached badge. A stock-fakelag Ergo journey with seven channels and nine DMs
-  cuts launch history commands from 17 to 4 with no `MONITOR` and at most seven `WHO`, while Chromium and iPhone WebKit verify selected-buffer
-  priority, cached previews, badges, pushed channel markers, and cold launch.
+  cuts launch history commands from 17 to 4 with no `MONITOR` and at most seven `WHO`, while
+  Chromium and iPhone WebKit verify selected-buffer priority, cached previews, badges, pushed
+  channel markers, and cold launch.
 - [x] Keep a locally read restored-push DM clear while its exact server marker remains deferred.
   Cached-frame hydration now clears the visible badge immediately, and the row-wise snapshot merge
   updates only that cached badge until authoritative history replaces the rest of the row.

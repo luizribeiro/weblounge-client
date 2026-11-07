@@ -484,6 +484,7 @@ async function captureLaunchWire(
           wire.push(event.data);
           return;
         }
+        if (event.data?.type === "history_wire_test_control") return;
         if (event.data?.type === "history_wire_test_request_held") {
           Reflect.set(globalThis, "launchCatchupHeldRequest", event.data);
           return;
