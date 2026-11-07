@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Treat a channel's first bounded history page as the local unread baseline when the server has
+  no read marker. A fresh account no longer turns retained channel history or old self-mentions
+  into a launch badge; later rows still count, and only current-nick matches add mention severity.
 - [x] Keep an opened snapshot channel provisional until joined state proves its route live. Cached
   promotion no longer lets reconnect flush a queued send before TARGETS; a channel omitted by a
   successful reconciliation becomes the selected unavailable fallback and fails that send with the
