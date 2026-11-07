@@ -89,6 +89,8 @@ export class PushSynchronizer {
   readonly #currentRoutes = new Map<number, string>();
   readonly #retryAttempts = new Map<number, number>();
   readonly #cancelRetries = new Map<number, () => void>();
+  readonly #pendingActivations = new Set<string>();
+  readonly #activeRoutes = new Set<string>();
   readonly #legacyEndpoints = new Set<string>();
   #reconciledDeviceId: string | undefined;
   #reconciledTarget: WebPushTarget | undefined;
@@ -135,12 +137,21 @@ export class PushSynchronizer {
     if (message.type !== "push_state_changed") return;
     const pushState = message.state;
     if (pushState.status === "registered") {
-      if (this.#currentRoutes.get(message.network_id) !== pushState.route_id)
+      if (
+        this.#currentRoutes.get(message.network_id) !== pushState.route_id ||
+        this.#pendingActivations.has(pushState.route_id) ||
+        this.#activeRoutes.has(pushState.route_id)
+      )
         return;
       this.#retryAttempts.delete(message.network_id);
-      this.#enqueue(() =>
-        this.#activate(message.network_id, pushState.route_id),
-      );
+      this.#pendingActivations.add(pushState.route_id);
+      this.#enqueue(async () => {
+        try {
+          await this.#activate(message.network_id, pushState.route_id);
+        } finally {
+          this.#pendingActivations.delete(pushState.route_id);
+        }
+      });
       return;
     }
     if (pushState.status === "failed") {
@@ -365,11 +376,18 @@ export class PushSynchronizer {
       this.#routes.findRoute(routeId),
     ]);
     if (storedDevice === undefined || route === undefined) return;
+    if (route.active === true) {
+      this.#activeRoutes.add(routeId);
+      this.#publish(networkId, "active", routeId);
+      return;
+    }
     const activated = await this.#relay.activateRoute(
       asRelayDevice(storedDevice),
       routeId,
     );
     if (activated.ok) {
+      await this.#routes.put({ ...route, active: true });
+      this.#activeRoutes.add(routeId);
       this.#publish(networkId, "active", routeId);
       this.#retryAttempts.delete(networkId);
       return;

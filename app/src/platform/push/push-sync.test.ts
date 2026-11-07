@@ -273,6 +273,25 @@ describe("push state synchronization", () => {
     );
   });
 
+  it("deduplicates shared registration outcomes and remembers activation", async () => {
+    const current = fixture();
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+    const registered = {
+      type: "push_state_changed" as const,
+      network_id: 1,
+      state: { status: "registered" as const, route_id: "route-1" },
+    };
+
+    current.engine.emit(registered);
+    current.engine.emit(registered);
+    current.engine.emit(registered);
+    await current.synchronizer.settled();
+
+    expect(current.relay.activateRoute).toHaveBeenCalledOnce();
+    expect(current.routes.values.get("home-vapid")?.active).toBe(true);
+  });
+
   it("updates the stored target and reuses the home-keyed route", async () => {
     const current = fixture();
     current.devices.credentials = {
@@ -313,6 +332,27 @@ describe("push state synchronization", () => {
 
     expect(current.relay.updateTarget).not.toHaveBeenCalled();
     expect(current.relay.ensureRoute).toHaveBeenCalledOnce();
+  });
+
+  it("does not reactivate a route already active at the relay", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route({ target, active: true }));
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: { status: "registered", route_id: "route-1" },
+    });
+    await current.synchronizer.settled();
+
+    expect(current.relay.activateRoute).not.toHaveBeenCalled();
   });
 
   it("rotates a route whose worker keys failed", async () => {
