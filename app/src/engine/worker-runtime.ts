@@ -31,6 +31,7 @@ const historyWireTestPorts = new Set<WorkerHostPort>();
 const storageWriteTestPorts = new Set<WorkerHostPort>();
 const historyWireTestPortIds = new WeakMap<WorkerHostPort, string>();
 let historyWireTestInstalled = false;
+let historyWireTestHeartbeatInstalled = false;
 let historyWireTestInstanceId: string | undefined;
 let historyWireTestHoldBefore = false;
 let historyWireTestBeforeTarget: string | undefined;
@@ -109,6 +110,7 @@ export class EngineWorkerRuntime {
           historyWireTestInstalled = true;
           installHistoryWireTestTrace();
         }
+        installHistoryWireTestHeartbeat();
         return;
       }
       if (
@@ -378,6 +380,16 @@ function installHistoryWireTestTrace(): void {
   };
 }
 
+function installHistoryWireTestHeartbeat(): void {
+  if (!__HISTORY_WIRE_TEST_ENABLED__ || historyWireTestHeartbeatInstalled)
+    return;
+  historyWireTestHeartbeatInstalled = true;
+  setInterval(() => {
+    for (const port of historyWireTestPorts)
+      postHistoryWireTestControl(port, "heartbeat");
+  }, 100);
+}
+
 function installStorageWriteTestFailure(): void {
   if (storageWriteTestInstalled) return;
   storageWriteTestInstalled = true;
@@ -408,7 +420,7 @@ function historyWireTestPortId(port: WorkerHostPort): string {
 
 function postHistoryWireTestControl(
   port: WorkerHostPort,
-  event: "before_release_received" | "port_closed",
+  event: "before_release_received" | "heartbeat" | "port_closed",
   details: Readonly<Record<string, unknown>> = {},
 ): void {
   port.postMessage({

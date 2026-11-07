@@ -305,7 +305,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
       const release = Reflect.get(globalThis, "releaseHeldHistoryBefore");
       if (typeof release !== "function")
         throw new Error("history gate missing");
-      release();
+      Reflect.set(globalThis, "historyReleaseOutcome", release());
     });
     await expect
       .poll(() =>
@@ -333,21 +333,47 @@ test("opens ready history without a title shimmer or eager older page", async ({
               entry.port_id === held?.port_id,
           );
           if (sent && held && released) return "sent";
+          const heartbeats = timeline.filter(
+            (entry) => entry.event === "heartbeat",
+          );
+          const lastHeartbeat = heartbeats.at(-1);
           return JSON.stringify({
-            timeline: timeline.slice(-8).map((entry) => ({
-              at: entry.at,
-              direction: entry.direction,
-              event: entry.event,
-              held: entry.held,
-              instance_id: entry.instance_id,
-              line:
-                entry.direction === "control"
-                  ? entry.line
-                  : /(?:^| )(CHATHISTORY|MARKREAD|WHO|BATCH) /u.exec(
-                      entry.line,
-                    )?.[1],
-              port_id: entry.port_id,
-            })),
+            heartbeat: {
+              count: heartbeats.length,
+              last_at: lastHeartbeat?.at,
+              page_now: performance.timeOrigin + performance.now(),
+            },
+            page_errors: timeline
+              .filter((entry) => entry.event?.startsWith("page_"))
+              .map((entry) => ({ event: entry.event, line: entry.line })),
+            release: Reflect.get(globalThis, "historyReleaseOutcome"),
+            release_controls: timeline
+              .filter((entry) => entry.event?.startsWith("before_release"))
+              .map((entry) => ({
+                at: entry.at,
+                event: entry.event,
+                held: entry.held,
+                instance_id: entry.instance_id,
+                line: entry.line,
+                port_id: entry.port_id,
+              })),
+            timeline: timeline
+              .filter((entry) => entry.event !== "heartbeat")
+              .slice(-8)
+              .map((entry) => ({
+                at: entry.at,
+                direction: entry.direction,
+                event: entry.event,
+                held: entry.held,
+                instance_id: entry.instance_id,
+                line:
+                  entry.direction === "control"
+                    ? entry.line
+                    : /(?:^| )(CHATHISTORY|MARKREAD|WHO|BATCH) /u.exec(
+                        entry.line,
+                      )?.[1],
+                port_id: entry.port_id,
+              })),
           });
         }, channel),
       )

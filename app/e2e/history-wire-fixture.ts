@@ -51,7 +51,36 @@ export async function captureHistoryWire(
     Reflect.set(globalThis, "historyProjectionTimeline", projections);
     Reflect.set(globalThis, "historyHeldLatest", heldLatest);
     let beforeHoldingWorker: Worker | undefined;
+    let beforeHoldingIdentity:
+      | { readonly instance_id: string; readonly port_id: string }
+      | undefined;
     let latestHoldingWorker: Worker | undefined;
+    const pageControl = (
+      event: string,
+      line = event,
+      details: Readonly<Record<string, unknown>> = {},
+    ) => {
+      const entry = {
+        type: "history_wire_test_control",
+        at: performance.timeOrigin + performance.now(),
+        direction: "control",
+        event,
+        line,
+        ...details,
+      };
+      timeline.push(entry);
+      return entry;
+    };
+    globalThis.addEventListener("error", (event) => {
+      pageControl("page_error", event.message);
+    });
+    globalThis.addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason;
+      pageControl(
+        "page_unhandled_rejection",
+        reason instanceof Error ? reason.message : String(reason),
+      );
+    });
     const postMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (message, workerOptions) {
       if (!subscribedWorkers.has(this)) {
@@ -108,6 +137,10 @@ export async function captureHistoryWire(
           event.data.type === "history_wire_test_before_held"
         ) {
           beforeHoldingWorker = this;
+          beforeHoldingIdentity = {
+            instance_id: event.data.instance_id,
+            port_id: event.data.port_id,
+          };
           Reflect.set(globalThis, "historyHeldBefore", event.data);
           timeline.push({
             at: event.data.at,
@@ -143,9 +176,30 @@ export async function captureHistoryWire(
       addListener.call(this, type, wrapped, listenerOptions);
     };
     Reflect.set(globalThis, "releaseHeldHistoryBefore", () => {
-      beforeHoldingWorker?.postMessage({
-        type: "history_wire_test_release_before",
-      });
+      try {
+        if (beforeHoldingWorker === undefined)
+          throw new Error("holding history worker missing");
+        pageControl(
+          "before_release_posting",
+          "before_release_posting",
+          beforeHoldingIdentity,
+        );
+        beforeHoldingWorker.postMessage({
+          type: "history_wire_test_release_before",
+        });
+        return pageControl(
+          "before_release_posted",
+          "before_release_posted",
+          beforeHoldingIdentity,
+        );
+      } catch (error) {
+        pageControl(
+          "before_release_post_failed",
+          error instanceof Error ? error.message : String(error),
+          beforeHoldingIdentity,
+        );
+        throw error;
+      }
     });
     Reflect.set(globalThis, "releaseHeldHistoryLatest", () => {
       latestHoldingWorker?.postMessage({
