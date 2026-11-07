@@ -2,6 +2,10 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Hold one unrelated latest-history request at the wire in cached-list hydration journeys,
+  so the opened conversation and partial snapshot assertions prove their concurrency contract
+  without depending on Ergo fakelag. The shared fixture releases the request only after the
+  foreground assertions, while the existing older-page gate retains its behavior.
 - [x] Request older Ready history from upward wheel intent even when the transcript is already at
   the top and the browser cannot emit another scroll event. The regression now drives Chromium's
   real wheel default action instead of splitting synthetic input and programmatic scrolling across

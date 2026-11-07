@@ -1,5 +1,10 @@
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import {
+  captureHistoryWire,
+  heldLatestHistoryCount,
+  releaseHeldLatestHistory,
+} from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { useDedicatedWorker } from "./production-ergo";
 
@@ -321,6 +326,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         channels,
         backgroundBots.map((backgroundBot) => backgroundBot.nickname),
       );
+      await captureHistoryWire(current, { latestExcept: bot.nickname });
       await useDedicatedWorker(current);
       await observeMarkReadRequests(current);
       await recordCachedRow(current, bot.nickname);
@@ -348,6 +354,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       ).not.toHaveAttribute("data-connection-progress");
       await expect.poll(() => markReadRequestCount(current)).toBeGreaterThan(0);
 
+      await expect
+        .poll(() => heldLatestHistoryCount(current))
+        .toBeGreaterThan(0);
       await expect(current.locator("[data-app-root]")).toHaveAttribute(
         "data-chat-list-hydrating",
         "true",
@@ -356,6 +365,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => snapshotRow(current, bot.nickname))
         .toMatchObject({ badge: { kind: "none" } });
       await backgroundPage(current);
+      await releaseHeldLatestHistory(current);
       await current.close();
 
       current = await context.newPage();

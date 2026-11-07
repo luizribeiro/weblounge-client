@@ -31,6 +31,7 @@ const historyWireTestPorts = new Set<WorkerHostPort>();
 let historyWireTestInstalled = false;
 let historyWireTestHoldBefore = false;
 let historyWireTestBeforeTarget: string | undefined;
+let historyWireTestLatestExcept: string | undefined;
 let historyWireNativeSend:
   | ((
       this: WebSocket,
@@ -38,6 +39,12 @@ let historyWireNativeSend:
     ) => void)
   | undefined;
 let heldHistoryBefore:
+  | {
+      readonly socket: WebSocket;
+      readonly data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
+    }
+  | undefined;
+let heldHistoryLatest:
   | {
       readonly socket: WebSocket;
       readonly data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
@@ -71,6 +78,8 @@ export class EngineWorkerRuntime {
         historyWireTestHoldBefore ||= event.data.hold_before === true;
         if (typeof event.data.before_target === "string")
           historyWireTestBeforeTarget = event.data.before_target;
+        if (typeof event.data.latest_except === "string")
+          historyWireTestLatestExcept = event.data.latest_except;
         if (!historyWireTestInstalled) {
           historyWireTestInstalled = true;
           installHistoryWireTestTrace();
@@ -83,6 +92,14 @@ export class EngineWorkerRuntime {
         event.data.type === "history_wire_test_release_before"
       ) {
         releaseHeldHistoryBefore();
+        return;
+      }
+      if (
+        __HISTORY_WIRE_TEST_ENABLED__ &&
+        isRecord(event.data) &&
+        event.data.type === "history_wire_test_release_latest"
+      ) {
+        releaseHeldHistoryLatest();
         return;
       }
       if (isHostDetach(event.data)) {
@@ -306,6 +323,22 @@ function installHistoryWireTestTrace(): void {
           });
         return;
       }
+      const latestTarget = historyLatestTarget(text);
+      if (
+        historyWireTestLatestExcept !== undefined &&
+        heldHistoryLatest === undefined &&
+        latestTarget !== undefined &&
+        latestTarget !== historyWireTestLatestExcept
+      ) {
+        heldHistoryLatest = { socket: this, data };
+        for (const port of historyWireTestPorts)
+          port.postMessage({
+            type: "history_wire_test_latest_held",
+            at,
+            line: text,
+          });
+        return;
+      }
       void traceHistoryWireValue("sent", at, data);
       super.send(data);
     }
@@ -319,6 +352,20 @@ function releaseHeldHistoryBefore(): void {
   const at = performance.timeOrigin + performance.now();
   void traceHistoryWireValue("sent", at, held.data);
   historyWireNativeSend?.call(held.socket, held.data);
+}
+
+function releaseHeldHistoryLatest(): void {
+  const held = heldHistoryLatest;
+  if (held === undefined) return;
+  heldHistoryLatest = undefined;
+  const at = performance.timeOrigin + performance.now();
+  void traceHistoryWireValue("sent", at, held.data);
+  historyWireNativeSend?.call(held.socket, held.data);
+}
+
+function historyLatestTarget(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  return /(?:^| )CHATHISTORY LATEST (\S+) /u.exec(text)?.[1];
 }
 
 function wireTextSync(value: unknown): string | undefined {

@@ -1,5 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import {
+  captureHistoryWire,
+  heldLatestHistoryCount,
+  type ProjectionTrace,
+  releaseHeldLatestHistory,
+  type WireTrace,
+} from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 
 const directCount = 16;
@@ -15,7 +22,6 @@ test("settles the opened conversation without waiting for background history", a
   baseURL,
   page,
 }) => {
-  await captureHistoryWire(page);
   const suffix = Date.now().toString(36).slice(-5);
   const account = `slow-user-${suffix}`;
   const password = `test-${account}`;
@@ -41,6 +47,7 @@ test("settles the opened conversation without waiting for background history", a
     ]);
     const target = directNicks[0];
     if (target === undefined) throw new Error("direct target is missing");
+    await captureHistoryWire(page, { latestExcept: target });
     await recordTitleTimeline(page, target);
     const url = new URL("/", baseURL);
     url.searchParams.set("irc-password", password);
@@ -61,7 +68,7 @@ test("settles the opened conversation without waiting for background history", a
       page.getByText("direct history 0", { exact: true }),
     ).toBeVisible();
     await page.waitForFunction((targetTitle) => {
-      const timeline = Reflect.get(globalThis, "slowBufferProjectionTimeline");
+      const timeline = Reflect.get(globalThis, "historyProjectionTimeline");
       if (!Array.isArray(timeline)) return false;
       const syncing = timeline.findIndex(
         (entry) => projectedSyncState(entry, targetTitle) === "syncing",
@@ -100,7 +107,7 @@ test("settles the opened conversation without waiting for background history", a
         page.evaluate(() => {
           const timeline = Reflect.get(
             globalThis,
-            "slowBufferProjectionTimeline",
+            "historyProjectionTimeline",
           ) as ProjectionTrace[];
           return timeline.findLast(
             (entry) => entry.event.type === "network_state_changed",
@@ -109,6 +116,7 @@ test("settles the opened conversation without waiting for background history", a
       )
       .toBe("online");
     await expect(title).not.toHaveAttribute("data-connection-progress");
+    await expect.poll(() => heldLatestHistoryCount(page)).toBeGreaterThan(0);
     await expect(page.locator("[data-app-root]")).toHaveAttribute(
       "data-chat-list-hydrating",
       "true",
@@ -121,10 +129,10 @@ test("settles the opened conversation without waiting for background history", a
         at: number;
         phase: string | null;
       }>,
-      wire: Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[],
+      wire: Reflect.get(globalThis, "historyWireTimeline") as WireTrace[],
       projections: Reflect.get(
         globalThis,
-        "slowBufferProjectionTimeline",
+        "historyProjectionTimeline",
       ) as ProjectionTrace[],
     }));
 
@@ -172,6 +180,7 @@ test("settles the opened conversation without waiting for background history", a
         (entry) => entry.at >= synced.at && entry.phase === "loading",
       ),
     ).toBe(false);
+    await releaseHeldLatestHistory(page);
   } finally {
     keeper.close();
     for (const bot of bots) bot.close();
@@ -192,7 +201,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
       IrcClient.connectIsolated(`warm${index}-${suffix}`, channel),
     ),
   );
-  await captureHistoryWire(page, channel);
+  await captureHistoryWire(page, { beforeTarget: channel });
   try {
     for (let index = 0; index < 120; index += bots.length)
       await Promise.all(
@@ -216,7 +225,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
     const row = page.getByRole("button", { name: channel });
     await expect(row).toBeVisible();
     await page.waitForFunction((targetTitle) => {
-      const timeline = Reflect.get(globalThis, "slowBufferProjectionTimeline");
+      const timeline = Reflect.get(globalThis, "historyProjectionTimeline");
       return (
         Array.isArray(timeline) &&
         timeline.some(
@@ -257,13 +266,13 @@ test("opens ready history without a title shimmer or eager older page", async ({
     await expect
       .poll(() =>
         page.evaluate(
-          () => Reflect.get(globalThis, "slowBufferHeldBefore") !== undefined,
+          () => Reflect.get(globalThis, "historyHeldBefore") !== undefined,
         ),
       )
       .toBe(true);
 
     const measured = await page.evaluate(() => ({
-      held: Reflect.get(globalThis, "slowBufferHeldBefore") as WireTrace,
+      held: Reflect.get(globalThis, "historyHeldBefore") as WireTrace,
       openedAt: Reflect.get(globalThis, "slowBufferOpenedAt") as number,
       phases: Reflect.get(globalThis, "slowBufferTitleTimeline") as Array<{
         at: number;
@@ -271,7 +280,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
       }>,
       scrolledAt: Reflect.get(globalThis, "slowBufferScrolledAt") as number,
       timeOrigin: performance.timeOrigin,
-      wire: Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[],
+      wire: Reflect.get(globalThis, "historyWireTimeline") as WireTrace[],
     }));
     expect(measured.held.at).toBeGreaterThanOrEqual(
       measured.timeOrigin + measured.scrolledAt,
@@ -291,7 +300,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
     ).toBe(false);
 
     await page.evaluate(() => {
-      const release = Reflect.get(globalThis, "slowBufferReleaseBefore");
+      const release = Reflect.get(globalThis, "releaseHeldHistoryBefore");
       if (typeof release !== "function")
         throw new Error("history gate missing");
       release();
@@ -301,7 +310,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
         page.evaluate(
           (target) =>
             (
-              Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[]
+              Reflect.get(globalThis, "historyWireTimeline") as WireTrace[]
             ).some(
               (entry) =>
                 entry.direction === "sent" &&
@@ -316,7 +325,7 @@ test("opens ready history without a title shimmer or eager older page", async ({
         page.evaluate(
           (target) =>
             (
-              Reflect.get(globalThis, "slowBufferWireTimeline") as WireTrace[]
+              Reflect.get(globalThis, "historyWireTimeline") as WireTrace[]
             ).some(
               (entry) =>
                 entry.direction === "received" &&
@@ -331,26 +340,6 @@ test("opens ready history without a title shimmer or eager older page", async ({
     for (const bot of bots) bot.close();
   }
 });
-
-interface WireTrace {
-  readonly at: number;
-  readonly direction: "received" | "sent";
-  readonly line: string;
-}
-
-interface ProjectionTrace {
-  readonly at: number;
-  readonly event: {
-    readonly type?: string;
-    readonly buffer?: {
-      readonly sync_state?: string;
-      readonly title?: string;
-    };
-    readonly network?: {
-      readonly state?: unknown;
-    };
-  };
-}
 
 async function seedSnapshot(
   page: Page,
@@ -396,84 +385,6 @@ async function seedSnapshot(
   } finally {
     await closeEngineDatabase(database);
   }
-}
-
-async function captureHistoryWire(
-  page: Page,
-  beforeTarget?: string,
-): Promise<void> {
-  await page.addInitScript((heldBeforeTarget) => {
-    Reflect.deleteProperty(globalThis, "SharedWorker");
-    const timeline: unknown[] = [];
-    const projections: unknown[] = [];
-    const subscribedWorkers = new WeakSet<Worker>();
-    Reflect.set(globalThis, "slowBufferWireTimeline", timeline);
-    Reflect.set(globalThis, "slowBufferProjectionTimeline", projections);
-    let subscribedWorker: Worker | undefined;
-    const postMessage = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (message, options) {
-      if (!subscribedWorkers.has(this)) {
-        subscribedWorkers.add(this);
-        subscribedWorker = this;
-        Reflect.apply(postMessage, this, [
-          {
-            type: "history_wire_test_trace_subscribe",
-            hold_before: heldBeforeTarget !== undefined,
-            before_target: heldBeforeTarget,
-          },
-        ]);
-      }
-      Reflect.apply(postMessage, this, [message, options]);
-    };
-    const addListener = Worker.prototype.addEventListener;
-    Worker.prototype.addEventListener = function (
-      type: string,
-      listener: EventListenerOrEventListenerObject | null,
-      options?: boolean | AddEventListenerOptions,
-    ) {
-      if (type !== "message" || listener === null) {
-        addListener.call(this, type, listener, options);
-        return;
-      }
-      const wrapped: EventListener = (rawEvent) => {
-        const event = rawEvent as MessageEvent<unknown>;
-        if (
-          typeof event.data === "object" &&
-          event.data !== null &&
-          "type" in event.data &&
-          event.data.type === "history_wire_test_trace"
-        ) {
-          timeline.push(event.data);
-          return;
-        }
-        if (
-          typeof event.data === "object" &&
-          event.data !== null &&
-          "type" in event.data &&
-          event.data.type === "history_wire_test_before_held"
-        ) {
-          Reflect.set(globalThis, "slowBufferHeldBefore", event.data);
-          return;
-        }
-        if (
-          typeof event.data === "object" &&
-          event.data !== null &&
-          "type" in event.data &&
-          (event.data.type === "buffer_updated" ||
-            event.data.type === "network_state_changed")
-        )
-          projections.push({ at: performance.now(), event: event.data });
-        if (typeof listener === "function") listener.call(this, event);
-        else listener.handleEvent(event);
-      };
-      addListener.call(this, type, wrapped, options);
-    };
-    Reflect.set(globalThis, "slowBufferReleaseBefore", () => {
-      subscribedWorker?.postMessage({
-        type: "history_wire_test_release_before",
-      });
-    });
-  }, beforeTarget);
 }
 
 async function recordTitleTimeline(page: Page, title: string): Promise<void> {
