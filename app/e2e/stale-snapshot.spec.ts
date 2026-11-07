@@ -24,7 +24,13 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       throw new Error("Playwright base URL is missing");
     const suffix = Date.now().toString(36);
     const channel = `#snapshot-marker-${suffix}`;
+    const appAccount = `marker-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
     const preview = `stale marker preview ${suffix}`;
+    const keeper = await IrcClient.connectIsolated(appAccount, channel);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
     const bot = await IrcClient.connect(
       `snapshot-bot-${suffix}`,
       "weblounge-bot",
@@ -35,9 +41,15 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     let current = page;
     let readerContext: BrowserContext | undefined;
     try {
-      await openChannel(current, channel);
+      await useDedicatedWorker(current);
+      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await bufferRow(current, channel).click();
+      await expect(
+        current.getByRole("heading", { name: channel }),
+      ).toBeVisible();
       await leaveConversation(current, channel);
-      await bot.privmsgConfirmed(channel, preview);
+      const previewLine = await bot.privmsgConfirmed(channel, preview);
+      const previewTime = messageTag(previewLine, "time");
       await expectUnread(bufferRow(current, channel), channel);
       await expect
         .poll(() => snapshotRow(current, channel))
@@ -46,19 +58,33 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           preview: snapshotPreview,
         });
 
-      const quit = bot.waitForNextQuit("weblounge");
       await current.close();
-      await quit;
       readerContext = await browser.newContext({ baseURL });
       const reader = await readerContext.newPage();
       await useDedicatedWorker(reader);
-      await reader.goto(startUrl(channel));
+      await reader.goto(startUrlForAccount(appAccount, appPassword, channel));
       await bufferRow(reader, channel).click();
       await expect(
         reader.getByRole("heading", { name: channel }),
       ).toBeVisible();
       await expect(reader.getByText(preview, { exact: true })).toBeVisible();
       await expectRead(bufferRow(reader, channel), channel);
+      const markerReader = await IrcClient.connect(
+        appAccount,
+        appAccount,
+        appPassword,
+        channel,
+      );
+      try {
+        await expect
+          .poll(() => markerReader.readMarker(channel))
+          .toBe(previewTime);
+      } finally {
+        markerReader.close();
+        await markerReader.waitForDisconnect();
+      }
+      await readerContext.close();
+      readerContext = undefined;
 
       current = await context.newPage();
       await openSnapshotInspector(current);
@@ -68,8 +94,19 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           badge: { kind: "unread", count: 1 },
           preview: snapshotPreview,
         });
+      await captureHistoryWire(current);
       await useDedicatedWorker(current);
-      await current.goto(startUrl(channel));
+      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await expect
+        .poll(() => historyWire(current))
+        .toContainEqual(
+          expect.objectContaining({
+            direction: "received",
+            line: expect.stringContaining(
+              ` MARKREAD ${channel} timestamp=${previewTime}`,
+            ),
+          }),
+        );
       await expectRead(bufferRow(current, channel), channel);
       await expect
         .poll(() => snapshotRow(current, channel))
@@ -79,7 +116,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedRow(current, channel);
-      await current.goto(startUrl(channel));
+      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({
@@ -270,6 +307,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
   }) => {
     const suffix = Date.now().toString(36);
     const channel = "#weblounge-test";
+    const appAccount = `preview-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
     const missed = `older catch-up preview ${suffix}`;
     const live = `newer live preview ${suffix}`;
     const bot = await IrcClient.connect(
@@ -278,20 +317,27 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       "weblounge-bot-test",
       channel,
     );
+    const keeper = await IrcClient.connectIsolated(appAccount, channel);
     let current = page;
     try {
+      await keeper.setAlwaysOn(true);
+      keeper.close();
+      await keeper.waitForDisconnect();
       await useDedicatedWorker(current);
-      await openConfiguredChannel(current, channel);
-      const quit = bot.waitForNextQuit("weblounge");
+      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await bufferRow(current, channel).click();
+      await expect(
+        current.getByRole("heading", { name: channel }),
+      ).toBeVisible();
       await current.close();
-      await quit;
       await bot.privmsgConfirmed(channel, missed);
 
-      const rejoined = bot.waitForNextJoin(channel, "weblounge");
       current = await context.newPage();
       await useDedicatedWorker(current);
-      await current.goto(startUrl(channel));
-      await rejoined;
+      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
+        "data-connection-progress",
+      );
       await bot.privmsgConfirmed(channel, live);
       await bufferRow(current, channel).click();
       await expect(
@@ -312,7 +358,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedRow(current, channel);
-      await current.goto(startUrl(channel));
+      await current.goto(startUrlForAccount(appAccount, appPassword, channel));
       await expect.poll(() => cachedRow(current)).not.toBeUndefined();
       if (isMobile(current))
         await expect
@@ -323,6 +369,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .toMatchObject({ preview: expect.stringContaining(live) });
     } finally {
       if (!current.isClosed()) await current.close();
+      keeper.close();
       bot.close();
     }
   });
@@ -334,6 +381,15 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     const suffix = Date.now().toString(36);
     const channel = `#badge-relaunch-${suffix}`;
     const emptyChannel = `#badge-empty-${suffix}`;
+    const homeChannel = "#weblounge-test";
+    const appAccount = `badge-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
+    const keeper = await IrcClient.connectIsolated(appAccount, channel);
+    await keeper.join(emptyChannel);
+    await keeper.join(homeChannel);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
     const bot = await IrcClient.connect(
       `badge-bot-${suffix}`,
       "weblounge-bot",
@@ -341,26 +397,38 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       channel,
     );
     const markerReader = await IrcClient.connect(
-      "weblounge",
-      "weblounge",
-      "weblounge-test",
+      appAccount,
+      appAccount,
+      appPassword,
       channel,
     );
     const titles = [bot.nickname, channel, emptyChannel];
     let current = page;
     try {
       await useDedicatedWorker(current);
-      await current.goto(startUrl(channel, emptyChannel));
+      await current.goto(
+        startUrlForAccount(
+          appAccount,
+          appPassword,
+          homeChannel,
+          channel,
+          emptyChannel,
+        ),
+      );
       await expect(bufferRow(current, channel)).toBeVisible();
       await expect(bufferRow(current, emptyChannel)).toBeVisible();
+      await bufferRow(current, homeChannel).click();
+      await expect(
+        current.getByRole("heading", { name: homeChannel }),
+      ).toBeVisible();
 
       const directFirst = await bot.privmsgConfirmed(
-        "weblounge",
+        appAccount,
         `initial direct ${suffix}`,
       );
       const directFirstId = messageTag(directFirst, "msgid");
       const directReply = await bot.privmsgReplyConfirmed(
-        "weblounge",
+        appAccount,
         `reply-tagged direct ${suffix}`,
         directFirstId,
       );
@@ -378,7 +446,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
 
       await current.close();
       const closedDirect = await bot.privmsgReplyConfirmed(
-        "weblounge",
+        appAccount,
         `closed-app reply-tagged direct ${suffix}`,
         directReplyId,
       );
@@ -392,12 +460,21 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         ),
       );
       const newestUnreadTime = messageTag(unreadLines.at(-1), "time");
+      await expect.poll(() => markerReader.readMarker(channel)).toBeUndefined();
 
       current = await context.newPage();
       await useDedicatedWorker(current);
       await observeMarkReadRequests(current);
       await recordCachedRows(current, titles);
-      await current.goto(startUrl(channel, emptyChannel));
+      await current.goto(
+        startUrlForAccount(
+          appAccount,
+          appPassword,
+          homeChannel,
+          channel,
+          emptyChannel,
+        ),
+      );
       await expect
         .poll(() => cachedRows(current))
         .toEqual([
@@ -405,6 +482,10 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           { label: channel },
           { label: emptyChannel },
         ]);
+      await expect(bufferRow(current, homeChannel)).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
       await expectUnreadCount(bufferRow(current, channel), channel, 3);
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
 
@@ -432,7 +513,15 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useDedicatedWorker(current);
       await recordCachedChatRows(current, titles);
-      await current.goto(startUrl(channel, emptyChannel));
+      await current.goto(
+        startUrlForAccount(
+          appAccount,
+          appPassword,
+          homeChannel,
+          channel,
+          emptyChannel,
+        ),
+      );
       await expect.poll(() => cachedChatRows(current)).toEqual(finalRows);
       await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
         "data-chat-list-hydrating",
@@ -442,6 +531,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
     } finally {
       if (!current.isClosed()) await current.close();
+      keeper.close();
       markerReader.close();
       bot.close();
     }
@@ -554,35 +644,11 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
   });
 });
 
-async function openChannel(page: Page, channel: string): Promise<void> {
-  await useDedicatedWorker(page);
-  await page.goto("/?irc-password=weblounge-test");
-  const mobile = await isMobile(page);
-  if (mobile)
-    await page.getByRole("button", { name: "#weblounge-test" }).click();
-  const composer = page.getByRole("textbox", {
-    name: mobile ? "Message #weblounge-test" : "Message",
-  });
-  await composer.fill(`/join ${channel}`);
-  await composer.press("Enter");
-  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
-}
-
 async function openSnapshotInspector(page: Page): Promise<void> {
   await page.route("**/__snapshot-inspector", (route) =>
     route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
   );
   await page.goto("/__snapshot-inspector");
-}
-
-async function openConfiguredChannel(
-  page: Page,
-  channel: string,
-): Promise<void> {
-  await useDedicatedWorker(page);
-  await page.goto("/?irc-password=weblounge-test");
-  await page.getByRole("button", { name: channel }).first().click();
-  await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 }
 
 function isMobile(page: Page): boolean {
@@ -625,12 +691,6 @@ async function expectRead(
   channel: string,
 ): Promise<void> {
   await expect(row).toHaveAttribute("aria-label", channel);
-}
-
-function startUrl(...channels: string[]): string {
-  const params = new URLSearchParams({ "irc-password": "weblounge-test" });
-  for (const channel of channels) params.append("irc-autojoin", channel);
-  return `/?${params.toString()}`;
 }
 
 function startUrlForAccount(
@@ -734,6 +794,51 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
 
 function cachedRow(page: Page): Promise<unknown> {
   return page.evaluate(() => Reflect.get(globalThis, "staleSnapshotCachedRow"));
+}
+
+async function captureHistoryWire(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "staleSnapshotHistoryWire", []);
+    const subscribed = new WeakSet<Worker>();
+    const postMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, options) {
+      if (!subscribed.has(this)) {
+        subscribed.add(this);
+        Reflect.apply(postMessage, this, [
+          { type: "history_wire_test_trace_subscribe" },
+        ]);
+      }
+      Reflect.apply(postMessage, this, [message, options]);
+    };
+    const addListener = Worker.prototype.addEventListener;
+    Worker.prototype.addEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type !== "message" || listener === null) {
+        addListener.call(this, type, listener, options);
+        return;
+      }
+      const wrapped: EventListener = (rawEvent) => {
+        const event = rawEvent as MessageEvent<Record<string, unknown>>;
+        if (event.data?.type === "history_wire_test_trace") {
+          const wire = Reflect.get(globalThis, "staleSnapshotHistoryWire");
+          if (Array.isArray(wire)) wire.push(event.data);
+          return;
+        }
+        if (typeof listener === "function") listener.call(this, event);
+        else listener.handleEvent(event);
+      };
+      addListener.call(this, type, wrapped, options);
+    };
+  });
+}
+
+function historyWire(page: Page): Promise<unknown> {
+  return page.evaluate(() =>
+    Reflect.get(globalThis, "staleSnapshotHistoryWire"),
+  );
 }
 
 async function seedUnreadDirectSnapshot(
