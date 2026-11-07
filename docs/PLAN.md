@@ -27,6 +27,9 @@ The single place a fresh session reads to know where the project stands. Update 
   promotion no longer lets reconnect flush a queued send before TARGETS; a channel omitted by a
   successful reconciliation becomes the selected unavailable fallback and fails that send with the
   specific departed-conversation notice, while TARGETS fallback retains cached rows.
+- [x] Isolate the member-panel resubscription fixture from two-worker activity on the shared
+  launch channel. Its exact member counts now belong to two per-test channels while retaining the
+  channel-switch subscription assertions that caught the CI failure.
 - [x] Replace a cached direct's provisional edge when authoritative live traffic arrives. Lazy
   TARGETS launch could retain a migrated future cursor and its cached mention base after the live
   message was read, so partial snapshot hydration rewrote the stale badge; live delivery now owns

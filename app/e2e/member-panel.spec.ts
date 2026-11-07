@@ -165,6 +165,7 @@ test.describe("desktop members against local Ergo", () => {
     page,
   }) => {
     const suffix = Date.now().toString().slice(-5);
+    const room = `#room-${suffix}`;
     const garden = `#members-${suffix}`;
     const roomNick = `room${suffix}`;
     const gardenNick = `garden${suffix}`;
@@ -173,7 +174,7 @@ test.describe("desktop members against local Ergo", () => {
       roomNick,
       "weblounge-bot",
       "weblounge-bot-test",
-      channel,
+      room,
     );
     const gardenBot = await IrcClient.connect(
       gardenNick,
@@ -195,13 +196,19 @@ test.describe("desktop members against local Ergo", () => {
       });
       await composer.fill(`/join ${garden}`);
       await composer.press("Enter");
+      await expect(page.getByRole("heading", { name: garden })).toBeVisible();
+      const gardenComposer = page.getByRole("textbox", {
+        name: `Message ${garden}`,
+      });
+      await gardenComposer.fill(`/join ${room}`);
+      await gardenComposer.press("Enter");
+      await expect(page.getByRole("heading", { name: room })).toBeVisible();
       const gardenButton = page.getByRole("button", { name: garden });
       await expect(gardenButton).toBeVisible();
-      await page.getByRole("button", { name: channel }).click();
 
       await page.getByRole("button", { name: "Toggle member list" }).click();
       const panel = page.locator("[data-member-buffer]").locator("..");
-      await expect(panel).toHaveAccessibleName(`Members of ${channel}`);
+      await expect(panel).toHaveAccessibleName(`Members of ${room}`);
       await expect(
         panel.getByRole("button", {
           name: `Open direct message with ${roomNick}`,
@@ -218,8 +225,8 @@ test.describe("desktop members against local Ergo", () => {
       await expect(panel.getByText("3", { exact: true })).toBeVisible();
       await expect(panel.getByText(roomNick, { exact: true })).toHaveCount(0);
 
-      await page.getByRole("button", { name: channel }).click();
-      await expect(panel).toHaveAccessibleName(`Members of ${channel}`);
+      await page.getByRole("button", { name: room }).click();
+      await expect(panel).toHaveAccessibleName(`Members of ${room}`);
       await expect(
         panel.getByRole("button", {
           name: `Open direct message with ${roomNick}`,
