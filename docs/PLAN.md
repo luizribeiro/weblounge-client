@@ -15,6 +15,11 @@ The single place a fresh session reads to know where the project stands. Update 
     historyReplyLatencies(wire).filter(({ latency }) => latency >= 500),
   ).toEqual([]);
   ```
+- A no-cache launch with seven channels and nine DMs sends 48 commands: `CAP` 3,
+  `AUTHENTICATE` 2, `NICK` 1, `USER` 1, `ISUPPORT` 1, `JOIN` 7, `NAMES` 7,
+  `CHATHISTORY` 17, and `MARKREAD` 9. Its 17 history commands exceed the default budget of 16 by
+  one because cold discovery needs one TARGETS query plus one initial page for each of 16 buffers.
+  The 30-day TARGETS discovery window can also omit older DMs on a first launch without a snapshot.
 
 ## Progress
 
@@ -83,8 +88,8 @@ The single place a fresh session reads to know where the project stands. Update 
   diff against the persisted sync boundary. Unchanged cached rows remain authoritative without
   network work; changed rows fetch one capped page after their exact cursor, opened cached channels
   fetch Latest on demand, and direct identity and marker queries stay limited to opened or changed
-  DMs. A stock-fakelag Ergo journey with seven channels and nine DMs cuts launch history commands
-  from 17 to 4 with no `MONITOR` or `WHO`, while Chromium and iPhone WebKit verify selected-buffer
+  DMs with a nonzero cached badge. A stock-fakelag Ergo journey with seven channels and nine DMs
+  cuts launch history commands from 17 to 4 with no `MONITOR` and at most seven `WHO`, while Chromium and iPhone WebKit verify selected-buffer
   priority, cached previews, badges, pushed channel markers, and cold launch.
 - [x] Keep a locally read restored-push DM clear while its exact server marker remains deferred.
   Cached-frame hydration now clears the visible badge immediately, and the row-wise snapshot merge

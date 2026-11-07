@@ -268,6 +268,94 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
   }
 });
 
+test("records the sixteen-buffer cold-launch wire budget", async ({
+  baseURL,
+  page,
+}) => {
+  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
+  const suffix = Date.now().toString(36).slice(-5);
+  const account = `cold-${suffix}`;
+  const password = `test-${account}`;
+  const channels = [
+    "#weblounge-test",
+    ...Array.from(
+      { length: channelCount - 1 },
+      (_, index) => `#cold-${index}-${suffix}`,
+    ),
+  ];
+  const keeper = await IrcClient.connectIsolated(account, channels[0]);
+  const writer = await IrcClient.connectIsolated(
+    `cold-w-${suffix}`,
+    channels[0],
+  );
+  const bots = await Promise.all(
+    Array.from({ length: directCount }, (_, index) =>
+      IrcClient.connectIsolated(`cold-d${index}-${suffix}`, channels[0]),
+    ),
+  );
+  try {
+    await keeper.joinAll(channels.slice(1));
+    await writer.joinAll(channels.slice(1));
+    await Promise.all(
+      channels.map((channel, index) =>
+        writer.privmsgConfirmed(channel, `cold channel ${index} ${suffix}`),
+      ),
+    );
+    await Promise.all(
+      bots.map((bot, index) =>
+        bot.privmsgConfirmed(account, `cold direct ${index} ${suffix}`),
+      ),
+    );
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+
+    await captureLaunchWire(page);
+    await page.goto(accountUrl(baseURL, account, password, ...channels));
+    await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
+      "data-chat-list-hydrating",
+      "true",
+    );
+    await expect(bufferRow(page, bots[0]?.nickname ?? "missing")).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (
+              Reflect.get(globalThis, "launchCatchupWire") as WireTrace[]
+            ).filter(
+              (entry) =>
+                entry.direction === "sent" &&
+                entry.line.includes(" CHATHISTORY "),
+            ).length,
+        ),
+      )
+      .toBe(17);
+    const wire = await page.evaluate(
+      () => Reflect.get(globalThis, "launchCatchupWire") as WireTrace[],
+    );
+    const counts = Object.fromEntries(countWireCommands(wire));
+    expect(counts).toEqual({
+      AUTHENTICATE: 2,
+      CAP: 3,
+      CHATHISTORY: 17,
+      ISUPPORT: 1,
+      JOIN: 7,
+      MARKREAD: 9,
+      NAMES: 7,
+      NICK: 1,
+      USER: 1,
+    });
+    expect(
+      Object.values(counts).reduce((total, count) => total + count, 0),
+    ).toBe(48);
+  } finally {
+    keeper.close();
+    writer.close();
+    for (const bot of bots) bot.close();
+  }
+});
+
 interface SnapshotFixtureRow {
   readonly kind: "channel" | "direct";
   readonly title: string;
@@ -428,13 +516,14 @@ function accountUrl(
   baseURL: string,
   account: string,
   password: string,
-  channel: string,
+  ...channels: string[]
 ): string {
   const url = new URL("/", baseURL);
   url.searchParams.set("irc-password", password);
   url.searchParams.set("irc-account", account);
   url.searchParams.set("irc-nickname", account);
-  url.searchParams.append("irc-autojoin", channel);
+  for (const channel of channels)
+    url.searchParams.append("irc-autojoin", channel);
   return url.href;
 }
 

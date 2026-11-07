@@ -16,11 +16,12 @@ Each buffer owns a history state separate from its bounded timeline:
 ```rust
 enum HistoryState {
     Unrequested,
+    QueuedLatest,
     LoadingLatest,
     Ready { oldest: Option<papo::HistoryReference>, at_start: bool },
     LoadingOlder { oldest: papo::HistoryReference },
-    CatchingUp { oldest: Option<papo::HistoryReference>, at_start: bool, fetched: usize },
-    CatchingUpLatest { oldest: Option<papo::HistoryReference>, at_start: bool },
+    Refreshing { oldest: Option<papo::HistoryReference>, at_start: bool },
+    RefreshCapped,
 }
 ```
 
@@ -40,7 +41,7 @@ cursor into an implicit `BEFORE` page. Reaching the transcript top through user 
 the separate `Older` request. `LoadingOlder` keeps the buffer's projected sync state `Synced`; its
 loading and boundary state is reported by `history_state_changed` at the transcript edge instead of
 making the conversation title shimmer. `LoadingLatest`, reconnect `CatchingUp`, and
-`CatchingUpLatest` project `Syncing` because the live edge is not yet known to be current.
+`Refreshing` project `Syncing` because the live edge is not yet known to be current.
 
 Launch and reconnect begin with one `Client::recent_conversations` (`CHATHISTORY TARGETS`) query
 from the last completed sync boundary through the connection's current time. A restored snapshot
@@ -68,17 +69,24 @@ engine stops instead of paging eagerly, treats the count as capped, and the shel
 100 or more as `99+`. Opening that buffer then requests its newest page and leaves a gap rather than
 claiming the retained page is complete.
 
-All pages use the same msgid dedupe as live delivery. TARGETS reconciliation records its upper time
-as the next connection boundary only after the response has been applied. A failed TARGETS query
-retains cached rows and leaves the list transient rather than declaring a possibly incomplete live
-list.
+All pages use the same msgid dedupe as live delivery. TARGETS reconciliation records the greatest
+server time observed in the response as the next connection boundary only after every scheduled
+delta page succeeds. Killing the engine, losing the socket, or failing a delta therefore retains
+the previous boundary. A failed or unsupported TARGETS query falls back to the eager bounded
+per-row path so cached rows cannot shimmer forever.
+
+The first no-snapshot query covers only the preceding 30 days. An older DM that has no fresh
+activity can therefore be absent on a new device until new traffic makes it recent. Papo caps a
+TARGETS result at 1,000 entries and the engine caps restored direct rows at 100. Either cap makes
+the result incomplete, so the engine does not advance the durable boundary and retries from the
+previous boundary next time.
 
 History events are sorted before delivery to the UI and merged through the engine's existing msgid
 deduplication. The UI may retain more rendered rows than the engine window; cursor ownership stays
 in the engine and never depends on a retained row.
 
-When read markers are supported, a changed direct without a pushed marker schedules
-`Client::fetch_read_marker`; unchanged directs retain the snapshot projection and do not query.
+When read markers are supported, every cached direct with a nonzero badge schedules
+`Client::fetch_read_marker`; zero-badge unchanged directs retain the snapshot projection and do not query.
 Channels do not fetch a marker during launch or reconnect because Ergo pushes their marker while
 joining. An explicitly opened cold buffer may fetch its marker with the on-demand latest page.
 Fetched and live `ReadMarkerChanged` events use the same path and a marker only moves forward.
@@ -142,8 +150,10 @@ notification policy, or background push delivery.
   retries after bounded backoff.
 - The production-shaped Ergo integration repeats the long paging scenario against the server's
   configured limits. A stock-fakelag launch with seven channels, nine direct conversations and a
-  cached snapshot stays within CHATHISTORY and MARKREAD budgets, proves the selected buffer's reply
-  precedes any delayed reply, and checks changed and unchanged list projections.
+  cached snapshot sends exactly 36 commands (`CHATHISTORY` 4, `MARKREAD` 2, `MONITOR` 0 and at most
+  seven `WHO`), proves client reconciliation requests do not add fakelag quanta behind one another,
+  and checks changed and unchanged list projections. The equivalent cold launch sends 48 commands;
+  its TARGETS plus 16 initial pages total 17 CHATHISTORY commands, one above the default budget.
 - Production-profile Playwright reconnects after own multiline and bot split/multiline sends,
   asserting exact text, authorship, sender, server-time ordering, and a stable live-edge viewport
   on every animation frame during the first second after history appears.
