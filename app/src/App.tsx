@@ -90,7 +90,10 @@ import {
 } from "./platform/push/push-sync-channel";
 import { RelayClient } from "./platform/push/relay-client";
 import { IndexedDbPushRouteStore } from "./platform/push/route-store";
-import { ensurePushSubscription } from "./platform/push/subscription";
+import {
+  ensurePushSubscription,
+  type WebPushTarget,
+} from "./platform/push/subscription";
 import {
   onServiceWorkerUpdateReady,
   serviceWorkerUpdateIsReady,
@@ -217,6 +220,7 @@ export function App(props: AppProps) {
   let pushStartup: Promise<void> | undefined;
   let pushStartupKey: string | undefined;
   let pushRefresh: Promise<void> | undefined;
+  let pushTarget: WebPushTarget | undefined;
   let pushSetupGeneration = 0;
   let notificationPromptLoadId: string | undefined;
   let notificationPromptReadDeadline: number | undefined;
@@ -803,6 +807,7 @@ export function App(props: AppProps) {
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
+      if (!foreground) pushOwner?.setEligible(false);
       if (!foreground) {
         void mountedClient
           .send({
@@ -815,7 +820,9 @@ export function App(props: AppProps) {
         void consumeOpenRoute();
         syncEnginePushState();
         reconnectNetworks();
-        void refreshConfiguredPush(mountedClient);
+        void refreshConfiguredPush(mountedClient).finally(() => {
+          if (appIsForeground) pushOwner?.setEligible(true);
+        });
       }
     };
     const updateVisibility = () => {
@@ -840,6 +847,7 @@ export function App(props: AppProps) {
       }
     };
     const handlePageHide = () => setAppForeground(false);
+    const handlePageFreeze = () => setAppForeground(false);
     const updateConnectivity = () => {
       for (const network of networks()) {
         void mountedClient
@@ -858,6 +866,8 @@ export function App(props: AppProps) {
     window.addEventListener("focus", updateVisibility);
     window.addEventListener("blur", updateVisibility);
     window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("freeze", handlePageFreeze);
+    document.addEventListener("resume", updateVisibility);
     window.addEventListener("online", updateConnectivity);
     window.addEventListener("offline", updateConnectivity);
     window.addEventListener("pageshow", handlePageShow);
@@ -901,6 +911,8 @@ export function App(props: AppProps) {
       window.removeEventListener("focus", updateVisibility);
       window.removeEventListener("blur", updateVisibility);
       window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("freeze", handlePageFreeze);
+      document.removeEventListener("resume", updateVisibility);
       window.removeEventListener("online", updateConnectivity);
       window.removeEventListener("offline", updateConnectivity);
       window.removeEventListener("pageshow", handlePageShow);
@@ -936,6 +948,7 @@ export function App(props: AppProps) {
       pushSynchronizer = undefined;
       foregroundLease = undefined;
       pushStartup = undefined;
+      pushTarget = undefined;
       pushStartupKey = key;
     }
     if (pushStartup !== undefined) return pushStartup;
@@ -984,6 +997,7 @@ export function App(props: AppProps) {
       generation !== pushSetupGeneration
     )
       return;
+    pushTarget = subscription.target;
     const relay = new RelayClient(config.relay);
     const devices = new EnginePushDeviceStore(mountedClient);
     const lease = new ForegroundLease({
@@ -1066,6 +1080,7 @@ export function App(props: AppProps) {
           new Map(current).set(message.value.networkId, message.value),
         );
       } else if (message.kind === "refresh") {
+        pushTarget = message.target;
         void pushSynchronizer?.refreshTarget(message.target);
       } else {
         void pushSynchronizer?.signOut();
@@ -1073,27 +1088,29 @@ export function App(props: AppProps) {
     });
     const owner = new PushSyncOwner(
       `weblounge-push-sync:${config.relay}`,
-      async () => {
+      () => {
         if (disposed || generation !== pushSetupGeneration) return () => {};
-        const synchronizer = new PushSynchronizer(synchronizerOptions);
+        const target = pushTarget;
+        if (target === undefined) return () => {};
+        const synchronizer = new PushSynchronizer({
+          ...synchronizerOptions,
+          target,
+        });
         pushSynchronizer = synchronizer;
         for (const event of knownPushRequirements.values()) {
           synchronizer.handle(event);
         }
-        await synchronizer.settled();
         for (const event of knownPushStates.values()) {
           synchronizer.handle(event);
         }
-        await synchronizer.refreshTarget(subscription.target);
-        if (disposed || generation !== pushSetupGeneration) {
-          synchronizer.dispose();
-          return () => {};
-        }
+        void synchronizer.refreshTarget(target);
         return () => {
           synchronizer.dispose();
           if (pushSynchronizer === synchronizer) pushSynchronizer = undefined;
         };
       },
+      channel === undefined ? null : navigator.locks,
+      appIsForeground,
     );
     pushOwner = owner;
   }
@@ -1125,13 +1142,13 @@ export function App(props: AppProps) {
       config.relay_vapid,
     );
     if (subscription.status === "ready" && pushStartupKey === key) {
+      pushTarget = subscription.target;
+      pushChannel?.postMessage({
+        kind: "refresh",
+        target: subscription.target,
+      });
       if (pushSynchronizer !== undefined) {
         await pushSynchronizer.refreshTarget(subscription.target);
-      } else {
-        pushChannel?.postMessage({
-          kind: "refresh",
-          target: subscription.target,
-        });
       }
     }
   }
