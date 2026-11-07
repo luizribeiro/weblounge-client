@@ -975,7 +975,7 @@ async function exerciseNotificationPromptRegistration(
 test.describe("cross-tab push request budget", () => {
   test.use({ serviceWorkers: "block" });
 
-  test("backs off a no-CORS 429 while tabs change visibility", async ({
+  test("reconciles repeated launch requirements once while tabs change visibility", async ({
     baseURL,
     browserName,
     context,
@@ -1050,6 +1050,7 @@ test.describe("cross-tab push request budget", () => {
       await installFakeOAuth(candidate);
       await candidate.addInitScript(() => {
         Reflect.set(globalThis, "hostedPushEnabled", true);
+        Reflect.set(globalThis, "hostedPushRequirementCount", 5);
       });
       await candidate.route("**/config.json", async (route) => {
         await route.fulfill({
@@ -1111,6 +1112,11 @@ test.describe("cross-tab push request budget", () => {
     expect(
       requests.filter(
         (value) => value === "POST /v1/devices/device-budget/routes",
+      ),
+    ).toHaveLength(1);
+    expect(
+      requests.filter(
+        (value) => value === "GET /v1/devices/device-budget/dead-endpoints",
       ),
     ).toHaveLength(1);
     expect(
@@ -1640,6 +1646,7 @@ async function installFakeEngine(
     Reflect.set(globalThis, "hostedEngineRequests", []);
     Reflect.set(globalThis, "hostedStartupSequence", []);
     Reflect.set(globalThis, "pushRegistrationSequence", []);
+    let emittedPushRequirementBurst = false;
     let pushDevice: {
       relay: string;
       device_id: string;
@@ -1796,6 +1803,23 @@ async function installFakeEngine(
               },
             });
           });
+          if (!emittedPushRequirementBurst) {
+            emittedPushRequirementBurst = true;
+            const configuredCount = Reflect.get(
+              globalThis,
+              "hostedPushRequirementCount",
+            );
+            const requirementCount =
+              typeof configuredCount === "number" ? configuredCount : 1;
+            for (let index = 1; index < requirementCount; index += 1) {
+              this.emit({
+                type: "push_route_required",
+                network_id: 1,
+                vapid: "home-vapid",
+                previous_route_id: null,
+              });
+            }
+          }
         }
         if (request?.type === "unregister_push_route") {
           const sequence = Reflect.get(globalThis, "pushRegistrationSequence");

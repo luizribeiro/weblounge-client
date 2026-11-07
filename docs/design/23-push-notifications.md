@@ -600,11 +600,13 @@ On each eligible connection the engine emits one `PushRouteRequired` to the acti
 buffers it until setup is ready, upserts the browser target, calls the relay's idempotent
 `ensureRoute(home_vapid, my_route_id?)`, drains dead endpoints, and sends one
 `EnsurePush { route, unregister }`. Only `PushState::Registered` activates the probing route.
-Reconnect reuses the relay-owned route, while a changed home or relay VAPID key starts convergence
-for the new key. Activation failure is retried; a dead route rotates. `invalid_parameters` rotates
-once per connection, `registration_limit` drains dead endpoints and retries once, temporary errors
-keep the current route and back off, and `web_push_forbidden` deletes the route and remains visibly
-off. Relay 410 clears the dead device and re-upserts; 401 enters hosted reauthorization.
+Repeated requirements in the same page ownership epoch resend that reconciled route to the engine
+without repeating relay route or dead-endpoint calls. Reconnect reuses the relay-owned route, while
+a changed home or relay VAPID key starts convergence for the new key. Activation failure is retried;
+a dead route rotates. `invalid_parameters` rotates once per connection, `registration_limit` drains
+dead endpoints and retries once, temporary errors keep the current route and back off, and
+`web_push_forbidden` deletes the route and remains visibly off. Relay 410 clears the dead device and
+re-upserts; 401 enters hosted reauthorization.
 
 The relay owns reconciliation and retires every duplicate live route for the same device and home.
 Its dead-endpoint drain returns at most five endpoints for the requested home VAPID key. The page

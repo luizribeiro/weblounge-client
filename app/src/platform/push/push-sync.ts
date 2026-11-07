@@ -267,6 +267,20 @@ export class PushSynchronizer {
       return;
     }
     const device = deviceResult.value;
+    const reconciledRouteId = this.#currentRoutes.get(networkId);
+    const reconciledRoute =
+      reconciledRouteId === undefined
+        ? undefined
+        : await this.#routes.findRoute(reconciledRouteId);
+    if (
+      !rotate &&
+      reconciledRoute?.vapid === home &&
+      reconciledRoute.deviceId === device.id &&
+      reconciledRoute.needsReregistration !== true
+    ) {
+      await this.#sendEnsure(networkId, reconciledRoute, []);
+      return;
+    }
     const legacyRoutes = await this.#legacyRoutes(device);
     const stored = await this.#routes.get(home);
     const current =

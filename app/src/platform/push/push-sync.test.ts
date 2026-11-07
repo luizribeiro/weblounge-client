@@ -278,6 +278,28 @@ describe("push state synchronization", () => {
     );
   });
 
+  it("reuses one relay reconciliation for repeated connection requirements", async () => {
+    const current = fixture();
+
+    for (let index = 0; index < 5; index += 1) {
+      requireRoute(current.engine);
+    }
+    await current.synchronizer.settled();
+
+    expect(current.relay.createDevice).toHaveBeenCalledOnce();
+    expect(current.relay.ensureRoute).toHaveBeenCalledOnce();
+    expect(current.relay.takeDeadEndpoints).toHaveBeenCalledOnce();
+    expect(current.engine.requests).toHaveLength(5);
+    expect(current.engine.requests.map(({ request }) => request)).toEqual(
+      Array.from({ length: 5 }, () =>
+        expect.objectContaining({
+          type: "ensure_push",
+          route: expect.objectContaining({ route_id: "route-1" }),
+        }),
+      ),
+    );
+  });
+
   it("deduplicates shared registration outcomes and remembers activation", async () => {
     const current = fixture();
     requireRoute(current.engine);
