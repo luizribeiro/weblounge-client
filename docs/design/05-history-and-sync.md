@@ -92,11 +92,12 @@ joining. An explicitly opened cold buffer may fetch its marker with the on-deman
 Fetched and live `ReadMarkerChanged` events use the same path and a marker only moves forward.
 Without server support, `MarkRead` advances the local marker.
 
-An unset channel marker does not make retained server history unread. The newest row in the first
-bounded `LATEST` page becomes a device-local unread floor, without sending or persisting a server
-marker; only later rows contribute to the channel badge. A real server marker remains the
-cross-device read position and takes precedence when it is newer. Direct conversations retain their
-existing policy because every unread DM has mention severity.
+An unset channel marker does not make history from before the account joined unread. The own JOIN's
+server time becomes a device-local unread floor, without sending or persisting a server marker;
+only later rows contribute to the channel badge. This keeps retained history quiet for a new user
+while preserving unread traffic received by an always-on account after it joined. A real server
+marker remains the cross-device read position and takes precedence when it is newer. Direct
+conversations retain their existing policy because every unread DM has mention severity.
 
 Visible conversation instances remain the source of read intent. A foreground instance at the
 live edge for the signed-off 500ms dwell sends the latest committed row. The engine translates that

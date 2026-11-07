@@ -1683,12 +1683,6 @@ impl NetworkModel {
                 if buffer.projection.cached == Some(true) {
                     promote_cached_buffer(buffer);
                 }
-                if buffer.projection.kind == BufferKind::Channel
-                    && buffer.read_at_ms.is_none()
-                    && let Some(newest) = newest.as_ref()
-                {
-                    buffer.local_unread_floor_ms = Some(time_millis(newest.server_time()));
-                }
                 buffer.history = HistoryState::Ready {
                     oldest,
                     at_start: item_count == 0,
@@ -2384,6 +2378,23 @@ impl NetworkModel {
                 buffer: buffer.projection.clone(),
             },
         ]
+    }
+
+    pub(crate) fn establish_channel_unread_floor(
+        &mut self,
+        channel: &papo::ChannelName,
+        joined_at: SystemTime,
+    ) {
+        let Some(buffer_id) = self.names.get(&NameKey::Channel(channel.clone())) else {
+            return;
+        };
+        let Some(buffer) = self.buffers.get_mut(buffer_id) else {
+            return;
+        };
+        if buffer.read_at_ms.is_none() && buffer.local_unread_floor_ms.is_none() {
+            buffer.local_unread_floor_ms = Some(time_millis(joined_at));
+            derive_read_projection(buffer);
+        }
     }
 
     pub(crate) fn apply_server_read_marker(
@@ -5566,6 +5577,7 @@ mod tests {
         let (mut model, state) = model(10);
         let channel = channel_name(&state, "#room");
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        model.establish_channel_unread_floor(&channel, UNIX_EPOCH + Duration::from_millis(250));
         model
             .request_history(buffer_id, crate::HistoryDirection::Latest)
             .expect("latest history starts");

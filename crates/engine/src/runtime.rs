@@ -4250,12 +4250,18 @@ fn process_join(
 ) -> Vec<HistoryTarget> {
     output.extend(model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
-        if let Some(papo::ReadMarker::ReadUntil(read_until)) = snapshot.read_marker(&joined.channel)
-        {
-            output.extend(model.apply_server_read_marker(
-                &papo::Conversation::Channel(joined.channel.clone()),
-                Some(read_until),
-            ));
+        match snapshot.read_marker(&joined.channel) {
+            Some(papo::ReadMarker::ReadUntil(read_until)) => {
+                output.extend(model.apply_server_read_marker(
+                    &papo::Conversation::Channel(joined.channel.clone()),
+                    Some(read_until),
+                ));
+            }
+            Some(papo::ReadMarker::Unset) => model.establish_channel_unread_floor(
+                &joined.channel,
+                joined.server_time.unwrap_or(joined.received_at),
+            ),
+            _ => {}
         }
         let target = model.request_latest_channel(&joined.channel);
         if let Some(buffer_id) = model.buffer_id_for_channel(&joined.channel)
