@@ -4148,6 +4148,13 @@ fn process_join(
 ) -> Vec<HistoryTarget> {
     output.extend(model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
+        if let Some(papo::ReadMarker::ReadUntil(read_until)) = snapshot.read_marker(&joined.channel)
+        {
+            output.extend(model.apply_server_read_marker(
+                &papo::Conversation::Channel(joined.channel.clone()),
+                Some(read_until),
+            ));
+        }
         let target = model.request_latest_channel(&joined.channel);
         if let Some(buffer_id) = model.buffer_id_for_channel(&joined.channel)
             && target.is_some()
@@ -10004,6 +10011,41 @@ async fn delay(duration: Duration) {
             .model
             .apply_server_read_marker(&conversation, Some(older));
         assert!(output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn join_applies_a_marker_pushed_before_the_channel_buffer_exists() {
+        let caps = ["draft/read-marker", "message-tags", "server-time"];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+
+        wire.server(":offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.000Z")
+            .await;
+        let marker = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ReadMarkerChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, marker);
+        _ = collect(&mut receiver);
+
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        process_event(&state, &outbound, &client, 1, joined);
+
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::ReadMarkerMoved {
+                buffer_id: BufferId(2),
+                ..
+            }
+        )));
     }
 
     #[tokio::test]
