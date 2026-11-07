@@ -1726,10 +1726,14 @@ async function installFakeEngine(
           }
         }
         if (request?.type === "load_push_device") {
+          const storedPushDevice = localStorage.getItem("e2e.push-device");
           this.emit({
             type: "push_device_loaded",
             command_id: id,
-            credentials: pushDevice,
+            credentials:
+              storedPushDevice === null
+                ? pushDevice
+                : JSON.parse(storedPushDevice),
           });
         }
         if (request?.type === "load_notification_prompt_dismissal") {
@@ -1756,8 +1760,12 @@ async function installFakeEngine(
         }
         if (request?.type === "store_push_device") {
           pushDevice = request.credentials ?? null;
+          localStorage.setItem("e2e.push-device", JSON.stringify(pushDevice));
         }
-        if (request?.type === "clear_push_device") pushDevice = null;
+        if (request?.type === "clear_push_device") {
+          pushDevice = null;
+          localStorage.removeItem("e2e.push-device");
+        }
         if (request?.type === "ensure_push") {
           const requests = Reflect.get(globalThis, "hostedEngineRequests");
           if (Array.isArray(requests)) requests.push(request);

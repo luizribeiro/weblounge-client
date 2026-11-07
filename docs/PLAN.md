@@ -18,7 +18,7 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Bound cross-tab push synchronization without delaying the designed per-tab foreground
   leases. One Web Lock owner now reconciles the shared device and routes; unchanged targets and
   activations are idempotent; transient relay failures use capped jittered backoff and readable
-  `Retry-After`, while permanent recovery and leases remain immediate. Visible-owner lifecycle
+  `Retry-After`, while permanent recovery and leases remain immediate. Page-lifecycle ownership
   handoff covers suspension and crashes without holding the lock across synchronization work. Two
   tabs, visibility flips and a no-CORS 429 stay within the device-API request budget measured below.
 - [x] Restore a cached DM's writable snapshot row when live traffic follows TARGETS declaring the

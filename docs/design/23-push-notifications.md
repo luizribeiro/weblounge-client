@@ -571,8 +571,8 @@ One page context owns device and route synchronization at a time through a long-
 tab observes the shared worker's route state, but only the elected owner's synchronizer acts on its
 local event stream. Subscription refreshes received by another tab cross a same-origin
 `BroadcastChannel` to that owner; device readiness and redacted route diagnostics cross back. A
-hidden, frozen, page-hidden or closing owner releases the lock, and a foreground tab reacquires only
-after reading its current browser subscription. A crashed browsing context loses its Web Lock, so a
+frozen, page-hidden or closing owner releases the lock, and a resumed tab reacquires only after
+reading its current browser subscription. A crashed browsing context loses its Web Lock, so a
 waiting tab takes over without cleanup from the old page. When BroadcastChannel is unavailable the
 tabs do not elect a single owner, preserving synchronization correctness at the cost of duplicate
 idempotent work. Foreground leases remain deliberately per-tab and retain their immediate focus and

@@ -84,10 +84,8 @@ import {
   type PushRouteDiagnostic,
   PushSynchronizer,
 } from "./platform/push/push-sync";
+import { decodePushSyncMessage } from "./platform/push/push-sync-channel";
 import { PushSyncOwner } from "./platform/push/push-sync-owner";
-import {
-  decodePushSyncMessage,
-} from "./platform/push/push-sync-channel";
 import { RelayClient } from "./platform/push/relay-client";
 import { IndexedDbPushRouteStore } from "./platform/push/route-store";
 import {
@@ -807,7 +805,6 @@ export function App(props: AppProps) {
       appIsForeground = foreground;
       mountedClient.setVisibility(foreground ? "visible" : "hidden");
       foregroundLease?.setForeground(foreground);
-      if (!foreground) pushOwner?.setEligible(false);
       if (!foreground) {
         void mountedClient
           .send({
@@ -846,8 +843,10 @@ export function App(props: AppProps) {
         updateVisibility();
       }
     };
-    const handlePageHide = () => setAppForeground(false);
-    const handlePageFreeze = () => setAppForeground(false);
+    const suspendPushOwnership = () => {
+      pushOwner?.setEligible(false);
+      setAppForeground(false);
+    };
     const updateConnectivity = () => {
       for (const network of networks()) {
         void mountedClient
@@ -865,8 +864,8 @@ export function App(props: AppProps) {
     document.addEventListener("visibilitychange", updateVisibility);
     window.addEventListener("focus", updateVisibility);
     window.addEventListener("blur", updateVisibility);
-    window.addEventListener("pagehide", handlePageHide);
-    document.addEventListener("freeze", handlePageFreeze);
+    window.addEventListener("pagehide", suspendPushOwnership);
+    document.addEventListener("freeze", suspendPushOwnership);
     document.addEventListener("resume", updateVisibility);
     window.addEventListener("online", updateConnectivity);
     window.addEventListener("offline", updateConnectivity);
@@ -910,8 +909,8 @@ export function App(props: AppProps) {
       document.removeEventListener("visibilitychange", updateVisibility);
       window.removeEventListener("focus", updateVisibility);
       window.removeEventListener("blur", updateVisibility);
-      window.removeEventListener("pagehide", handlePageHide);
-      document.removeEventListener("freeze", handlePageFreeze);
+      window.removeEventListener("pagehide", suspendPushOwnership);
+      document.removeEventListener("freeze", suspendPushOwnership);
       document.removeEventListener("resume", updateVisibility);
       window.removeEventListener("online", updateConnectivity);
       window.removeEventListener("offline", updateConnectivity);
@@ -1110,7 +1109,6 @@ export function App(props: AppProps) {
         };
       },
       channel === undefined ? null : navigator.locks,
-      appIsForeground,
     );
     pushOwner = owner;
   }
@@ -1938,10 +1936,6 @@ function sameTypers(
       );
     })
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function upsert<T extends { id: number }>(current: T[], value: T): T[] {
