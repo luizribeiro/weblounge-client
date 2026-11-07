@@ -3172,6 +3172,16 @@ fn spawn_history_fetch(
             target,
         );
     }
+    spawn_history_page(state, outbound, client, instance, fetch);
+}
+
+fn spawn_history_page(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    fetch: HistoryFetch,
+) {
     spawn_task(async move {
         if let Ok(page) = fetch_history(&client, fetch.clone()).await {
             process_history(&state, &outbound, &client, instance, page);
@@ -3223,7 +3233,7 @@ fn spawn_read_marker_fetch(
         let Ok(read_until) = read_until else {
             return;
         };
-        let events = {
+        let (events, recount) = {
             let mut state = lock(&state);
             let Some(running) = state
                 .network
@@ -3232,12 +3242,19 @@ fn spawn_read_marker_fetch(
             else {
                 return;
             };
-            running
+            let events = running
                 .model
-                .apply_server_read_marker(&target.conversation(), read_until)
+                .apply_server_read_marker(&target.conversation(), read_until);
+            let recount = running
+                .model
+                .request_cached_marker_recount(&target.conversation());
+            (events, recount)
         };
         send_events(&outbound, events);
         update_chat_list(&state, &outbound, instance);
+        if let Some(fetch) = recount {
+            spawn_history_page(state, outbound, client, instance, fetch);
+        }
     });
 }
 
@@ -3414,6 +3431,7 @@ fn restore_target_rows(
     directs.truncate(RECENT_DIRECT_LIMIT);
     let mut output = Vec::new();
     let mut fetches = channel_fetches;
+    let mut marker_targets = Vec::new();
     for (nick, latest) in directs {
         let restored = lock(state)
             .network
@@ -3425,6 +3443,15 @@ fn restore_target_rows(
         };
         if let Some(buffer) = added {
             output.push(EngineToUi::BufferAdded { buffer });
+        }
+        if fetch.is_none()
+            && lock(state)
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .is_some_and(|running| running.model.cached_direct_needs_marker(&nick))
+        {
+            marker_targets.push(HistoryTarget::Direct(nick));
         }
         fetches.extend(fetch);
     }
@@ -3442,6 +3469,15 @@ fn restore_target_rows(
     drop(snapshot);
     send_events(outbound, output);
     send_recent_directs_ready(state, outbound, instance, network_id);
+    for target in marker_targets {
+        spawn_read_marker_fetch(
+            Arc::clone(state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+            target,
+        );
+    }
     for fetch in fetches {
         spawn_history_fetch(
             Arc::clone(state),
@@ -9013,6 +9049,69 @@ async fn delay(duration: Duration) {
             Some(UNIX_EPOCH + Duration::from_millis(100))
         );
         send_history_page(&mut wire, request_label(&after), &[]).await;
+    }
+
+    #[tokio::test]
+    async fn unchanged_unread_direct_queries_only_its_marker() {
+        let caps = [
+            "batch",
+            "draft/chathistory",
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        {
+            let mut state = lock(&state);
+            state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model
+                .restore_chat_list(ChatListSnapshot::new(
+                    "network".into(),
+                    vec![SnapshotRow {
+                        conversation: SnapshotConversation::Direct {
+                            key: "alice".into(),
+                        },
+                        title: "alice".into(),
+                        last_activity_ms: Some(100),
+                        badge: SnapshotBadge::Mentions {
+                            count: 3,
+                            mentions: 3,
+                        },
+                        preview: Some("cached".into()),
+                        newest: Some(SnapshotCursor {
+                            msgid: Some("cached".into()),
+                            server_time_ms: 100,
+                        }),
+                        read_at_ms: None,
+                        peer_pin: None,
+                    }],
+                ));
+        }
+        let nick = papo_testing::nick(client.state().casemapping(), "alice");
+
+        restore_target_rows(
+            &state,
+            &outbound,
+            &client,
+            1,
+            NetworkId(1),
+            vec![(
+                papo::Conversation::Private(nick),
+                UNIX_EPOCH + Duration::from_millis(100),
+            )],
+            true,
+        );
+
+        let marker = wire.next_sent().await;
+        assert!(marker.ends_with("MARKREAD alice"));
+        assert!(!marker.contains("CHATHISTORY"));
     }
 
     #[tokio::test]

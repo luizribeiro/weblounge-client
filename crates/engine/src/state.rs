@@ -1689,7 +1689,7 @@ impl NetworkModel {
             | HistoryState::RefreshCapped => return None,
         };
         buffer.projection.sync_state = buffer.history.sync_state();
-        derive_chat_projection(buffer);
+        derive_read_projection(buffer);
         let completion = HistoryCompletion {
             buffer_id,
             at_start,
@@ -2024,6 +2024,38 @@ impl NetworkModel {
     pub(crate) fn direct(&self, nick: &papo::Nick) -> Option<DirectAvailability> {
         let buffer_id = self.names.get(&NameKey::Direct(nick.clone()))?;
         self.buffers.get(buffer_id)?.direct.clone()
+    }
+
+    pub(crate) fn cached_direct_needs_marker(&self, nick: &papo::Nick) -> bool {
+        self.names
+            .get(&NameKey::Direct(nick.clone()))
+            .and_then(|buffer_id| self.buffers.get(buffer_id))
+            .is_some_and(|buffer| {
+                buffer.projection.cached == Some(true) && buffer.projection.unread > 0
+            })
+    }
+
+    pub(crate) fn request_cached_marker_recount(
+        &mut self,
+        conversation: &papo::Conversation,
+    ) -> Option<HistoryFetch> {
+        let papo::Conversation::Private(nick) = conversation else {
+            return None;
+        };
+        let buffer_id = self.names.get(&NameKey::Direct(nick.clone())).copied()?;
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        if buffer.projection.cached != Some(true)
+            || buffer.cached_unread_base == 0
+            || !matches!(buffer.history, HistoryState::Unrequested)
+            || buffer
+                .read_at_ms
+                .zip(buffer.newest.as_ref())
+                .is_none_or(|(read_at, newest)| read_at >= time_millis(newest.server_time()))
+        {
+            return None;
+        }
+        set_history_state(buffer, HistoryState::LoadingLatest);
+        Some(HistoryFetch::Latest(HistoryTarget::Direct(nick.clone())))
     }
 
     pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> EngineMessageKey {
@@ -3862,13 +3894,65 @@ mod tests {
 
         assert!(fetch.is_none());
         assert!(added.is_none());
-        let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
+        let buffer = &model.buffers[&model.names[&NameKey::Direct(nick.clone())]];
         assert_eq!(buffer.projection.unread, 3);
         assert_eq!(
             buffer.projection.cached_preview.as_deref(),
             Some("cached preview")
         );
         assert!(matches!(buffer.history, HistoryState::Unrequested));
+        assert!(model.cached_direct_needs_marker(&nick));
+    }
+
+    #[test]
+    fn partial_cached_direct_marker_recounts_latest_history() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(300),
+                badge: SnapshotBadge::Mentions {
+                    count: 3,
+                    mentions: 3,
+                },
+                preview: Some("newest".into()),
+                newest: Some(SnapshotCursor {
+                    msgid: Some("newest".into()),
+                    server_time_ms: 300,
+                }),
+                read_at_ms: Some(100),
+                peer_pin: None,
+            }],
+        ));
+        let nick = nick_name(&state, "alice");
+        let conversation = papo::Conversation::Private(nick.clone());
+
+        model
+            .apply_server_read_marker(&conversation, Some(UNIX_EPOCH + Duration::from_millis(200)));
+        let fetch = model
+            .request_cached_marker_recount(&conversation)
+            .expect("partial marker needs message times");
+        assert!(matches!(
+            fetch,
+            HistoryFetch::Latest(HistoryTarget::Direct(_))
+        ));
+        for time in [100, 200, 300] {
+            model.receive_incoming(
+                direct_incoming(&state, "alice", &format!("line {time}"), time),
+                &state,
+            );
+        }
+        model
+            .finish_history(&conversation, None, None, 3, true)
+            .expect("marker recount finishes");
+
+        let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
+        assert_eq!(buffer.projection.unread, 1);
+        assert_eq!(buffer.projection.mentions, 1);
     }
 
     #[test]
