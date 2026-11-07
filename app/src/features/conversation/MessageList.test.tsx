@@ -746,6 +746,7 @@ it("keeps the New boundary frozen while the live marker advances", async () => {
 });
 
 it("keeps a server marker while an opening history page arrives", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>(
     [],
   );
