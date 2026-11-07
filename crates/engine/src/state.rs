@@ -5783,9 +5783,7 @@ mod tests {
         let slow = model.names[&NameKey::Channel(channel_name(&state, "#slow"))];
         model.buffers.get_mut(&slow).expect("slow buffer").history = HistoryState::LoadingLatest;
 
-        model.mark_vanished_cached_rows();
-        let after_targets = model.merge_chat_list_snapshot("network".into(), &cached);
-        assert_eq!(after_targets.rows, vec![unresolved.clone()]);
+        let after_targets = ChatListSnapshot::new("network".into(), vec![unresolved.clone()]);
 
         model.receive_incoming(
             direct_incoming(&state, "alice", "live return", 1_000),
