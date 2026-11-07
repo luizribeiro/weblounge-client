@@ -15,13 +15,17 @@ export interface RelayDeadEndpoint {
   readonly endpoint: string;
 }
 
-export type RelayFailure =
+type RelayFailureKind =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "gone" }
   | { readonly kind: "dead_route" }
   | { readonly kind: "capacity" }
   | { readonly kind: "invalid_request" }
   | { readonly kind: "unavailable" };
+
+export type RelayFailure = RelayFailureKind & {
+  readonly retryAfterMs?: number;
+};
 
 export type RelayResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -211,7 +215,14 @@ export class RelayClient {
     } catch {
       return { ok: false, error: { kind: "unavailable" } };
     }
-    if (!response.ok) return { ok: false, error: failure(response.status) };
+    if (!response.ok)
+      return {
+        ok: false,
+        error: failure(
+          response.status,
+          retryAfterMilliseconds(response.headers.get("Retry-After")),
+        ),
+      };
     if (response.status === 204) return { ok: true, value: null as T };
     try {
       const value: unknown = await response.json();
@@ -224,13 +235,33 @@ export class RelayClient {
   }
 }
 
-function failure(status: number): RelayFailure {
-  if (status === 401) return { kind: "unauthorized" };
-  if (status === 410) return { kind: "gone" };
-  if (status === 404) return { kind: "dead_route" };
-  if (status === 409) return { kind: "capacity" };
-  if (status === 400) return { kind: "invalid_request" };
-  return { kind: "unavailable" };
+function failure(status: number, retryAfterMs?: number): RelayFailure {
+  const detail = retryAfterMs === undefined ? {} : { retryAfterMs };
+  if (status === 401) return { kind: "unauthorized", ...detail };
+  if (status === 410) return { kind: "gone", ...detail };
+  if (status === 404) return { kind: "dead_route", ...detail };
+  if (status === 409 || status === 429) return { kind: "capacity", ...detail };
+  if (status === 400) return { kind: "invalid_request", ...detail };
+  return { kind: "unavailable", ...detail };
+}
+
+export function relayRetryDelay(
+  attempt: number,
+  retryAfterMs = 0,
+  random: () => number = Math.random,
+): number {
+  const exponential = Math.min(5 * 60_000, 1_000 * 2 ** attempt);
+  const jittered = exponential * (0.5 + random() * 0.5);
+  return Math.max(retryAfterMs, Math.round(jittered));
+}
+
+function retryAfterMilliseconds(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return undefined;
+  return Math.max(0, timestamp - Date.now());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

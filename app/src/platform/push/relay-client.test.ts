@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { RelayClient } from "./relay-client";
+import { RelayClient, relayRetryDelay } from "./relay-client";
 
 const target = {
   endpoint: "https://fcm.googleapis.com/fcm/send/subscription",
@@ -83,6 +83,7 @@ describe("relay client", () => {
     [404, "dead_route"],
     [410, "gone"],
     [409, "capacity"],
+    [429, "capacity"],
     [400, "invalid_request"],
     [503, "unavailable"],
   ] as const)("returns a typed %s failure", async (status, kind) => {
@@ -93,6 +94,29 @@ describe("relay client", () => {
     await expect(
       client.deleteRoute({ id: "device-1", secret: "secret" }, "route-1"),
     ).resolves.toEqual({ ok: false, error: { kind } });
+  });
+
+  it("reads Retry-After without weakening exponential jitter", async () => {
+    const client = new RelayClient(
+      "https://push.example.test",
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 429,
+            headers: { "Retry-After": "12" },
+          }),
+      ),
+    );
+
+    await expect(
+      client.renewLease({ id: "device-1", secret: "secret" }, "tab-1"),
+    ).resolves.toEqual({
+      ok: false,
+      error: { kind: "capacity", retryAfterMs: 12_000 },
+    });
+    expect(relayRetryDelay(0, 0, () => 0)).toBe(500);
+    expect(relayRetryDelay(4, 12_000, () => 0)).toBe(12_000);
+    expect(relayRetryDelay(4, 0, () => 1)).toBe(16_000);
   });
 
   it("classifies network and malformed response failures as unavailable", async () => {
