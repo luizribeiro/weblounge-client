@@ -536,7 +536,8 @@ The process contract for `weblounge-server` is:
 - call `--concierge-url` / `PUSH_RELAY_CONCIERGE_URL` as Basic client `push-relay`; and
 - allow browser calls to the device and route APIs only from the comma-separated exact HTTP(S)
   origins in `--allowed-origins` / `PUSH_RELAY_ALLOWED_ORIGINS` (empty by default); CORS permits
-  `Authorization` and `Content-Type` without credentials and never applies to `/v1/r/:route`; and
+  `Authorization` and `Content-Type` without credentials, caches successful preflights for 600
+  seconds, and never applies to `/v1/r/:route`; and
 - use `https://push.weblounge.org` as the default VAPID audience and route origin, overridable with
   `--origin` / `PUSH_RELAY_ORIGIN` for tests or another deployment.
 

@@ -698,6 +698,10 @@ async fn allowed_client_preflight_reflects_the_origin_and_api_contract() {
         response.headers().get(header::ACCESS_CONTROL_ALLOW_HEADERS),
         Some(&HeaderValue::from_static("authorization,content-type"))
     );
+    assert_eq!(
+        response.headers().get(header::ACCESS_CONTROL_MAX_AGE),
+        Some(&HeaderValue::from_static("600"))
+    );
     let methods = response
         .headers()
         .get(header::ACCESS_CONTROL_ALLOW_METHODS)

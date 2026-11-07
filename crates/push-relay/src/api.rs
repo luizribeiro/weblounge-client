@@ -131,6 +131,7 @@ fn client_cors(allowed_origins: &[Url]) -> CorsLayer {
         .allow_origin(AllowOrigin::list(origins))
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .max_age(Duration::from_secs(600))
 }
 
 async fn health(State(state): State<AppState>) -> Result<Response> {
