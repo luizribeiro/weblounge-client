@@ -195,6 +195,68 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
   }
 });
 
+test("relaunch catches up a delta interrupted before its page arrives", async ({
+  baseURL,
+  context,
+  page,
+}) => {
+  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
+  const suffix = Date.now().toString(36).slice(-5);
+  const account = `delta-${suffix}`;
+  const password = `test-${account}`;
+  const channel = `#delta-${suffix}`;
+  const keeper = await IrcClient.connectIsolated(account, channel);
+  const writer = await IrcClient.connectIsolated(`delta-w-${suffix}`, channel);
+  let current = page;
+  try {
+    const initialText = `cached delta ${suffix}`;
+    const initial = await writer.privmsgConfirmed(channel, initialText);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    await current.goto("/config.json");
+    await seedSnapshot(current, baseURL, [
+      {
+        kind: "channel",
+        title: channel,
+        time: messageTag(initial, "time"),
+        preview: `${writer.nickname}: ${initialText}`,
+        badge: { kind: "unread", count: 1 },
+      },
+    ]);
+    const changedText = `changed delta ${suffix}`;
+    await writer.privmsgConfirmed(channel, changedText);
+    await captureLaunchWire(current, `CHATHISTORY AFTER ${channel} `);
+    await current.goto(accountUrl(baseURL, account, password, channel));
+    await expect
+      .poll(() =>
+        current.evaluate(
+          () =>
+            Reflect.get(globalThis, "launchCatchupHeldRequest") !== undefined,
+        ),
+      )
+      .toBe(true);
+    await expect.poll(() => snapshotSchema(current)).toBe(5);
+
+    await current.close();
+    current = await context.newPage();
+    await captureLaunchWire(current);
+    await current.goto(accountUrl(baseURL, account, password, channel));
+    await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
+      "data-chat-list-hydrating",
+      "true",
+    );
+    await expect(bufferRow(current, channel)).toContainText(changedText);
+    await expect(bufferRow(current, channel)).toHaveAccessibleName(
+      `${channel}, 2 unread`,
+    );
+  } finally {
+    if (!current.isClosed()) await current.close();
+    keeper.close();
+    writer.close();
+  }
+});
+
 interface SnapshotFixtureRow {
   readonly kind: "channel" | "direct";
   readonly title: string;
@@ -280,20 +342,28 @@ async function seedSnapshot(
   }
 }
 
-async function captureLaunchWire(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function captureLaunchWire(
+  page: Page,
+  heldRequest?: string,
+): Promise<void> {
+  await page.addInitScript((request) => {
     Reflect.deleteProperty(globalThis, "SharedWorker");
     const wire: unknown[] = [];
     const events: unknown[] = [];
     Reflect.set(globalThis, "launchCatchupWire", wire);
     Reflect.set(globalThis, "launchCatchupEvents", events);
     const subscribed = new WeakSet<Worker>();
+    let subscribedWorker: Worker | undefined;
     const postMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (message, options) {
       if (!subscribed.has(this)) {
         subscribed.add(this);
+        subscribedWorker = this;
         Reflect.apply(postMessage, this, [
-          { type: "history_wire_test_trace_subscribe" },
+          {
+            type: "history_wire_test_trace_subscribe",
+            hold_request: request,
+          },
         ]);
       }
       Reflect.apply(postMessage, this, [message, options]);
@@ -314,6 +384,10 @@ async function captureLaunchWire(page: Page): Promise<void> {
           wire.push(event.data);
           return;
         }
+        if (event.data?.type === "history_wire_test_request_held") {
+          Reflect.set(globalThis, "launchCatchupHeldRequest", event.data);
+          return;
+        }
         const network = event.data?.network;
         if (
           event.data?.type === "network_state_changed" &&
@@ -330,7 +404,60 @@ async function captureLaunchWire(page: Page): Promise<void> {
       };
       addListener.call(this, type, wrapped, options);
     };
-  });
+    Reflect.set(globalThis, "launchCatchupReleaseRequest", () => {
+      subscribedWorker?.postMessage({
+        type: "history_wire_test_release_request",
+      });
+    });
+  }, heldRequest);
+}
+
+function accountUrl(
+  baseURL: string,
+  account: string,
+  password: string,
+  channel: string,
+): string {
+  const url = new URL("/", baseURL);
+  url.searchParams.set("irc-password", password);
+  url.searchParams.set("irc-account", account);
+  url.searchParams.set("irc-nickname", account);
+  url.searchParams.append("irc-autojoin", channel);
+  return url.href;
+}
+
+async function snapshotSchema(page: Page): Promise<number | undefined> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(
+      (value) =>
+        new Promise<number | undefined>((resolve, reject) => {
+          const request = value
+            .transaction("cache", "readonly")
+            .objectStore("cache")
+            .get(new TextEncoder().encode("chat-list-snapshot"));
+          request.onsuccess = () => {
+            const bytes = request.result as Uint8Array | undefined;
+            if (bytes === undefined) {
+              resolve(undefined);
+              return;
+            }
+            const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+            resolve(
+              typeof parsed === "object" &&
+                parsed !== null &&
+                "schema" in parsed &&
+                typeof parsed.schema === "number"
+                ? parsed.schema
+                : undefined,
+            );
+          };
+          request.onerror = () => reject(request.error);
+        }),
+    );
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 function historyReplyLatencies(wire: readonly WireTrace[]) {
