@@ -20,6 +20,11 @@ const target = {
   p256dh: "browser-key",
   auth: "browser-auth",
 };
+const rotatedTarget = {
+  endpoint: "https://fcm.googleapis.com/fcm/send/rotated",
+  p256dh: "rotated-browser-key",
+  auth: "rotated-browser-auth",
+};
 
 class FakeEngine implements EngineClient {
   readonly requests: EngineRequestEnvelope[] = [];
@@ -317,6 +322,38 @@ describe("push state synchronization", () => {
     expect(current.routes.values.get("home-vapid")?.target).toEqual(target);
   });
 
+  it("stamps only the target confirmed by the relay", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route());
+    let confirmFirstUpdate = () => {};
+    current.relay.updateTarget.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          confirmFirstUpdate = () => resolve({ ok: true, value: null });
+        }),
+    );
+
+    requireRoute(current.engine);
+    await vi.waitFor(() =>
+      expect(current.relay.updateTarget).toHaveBeenCalledOnce(),
+    );
+    const refreshed = current.synchronizer.refreshTarget(rotatedTarget);
+    confirmFirstUpdate();
+    await refreshed;
+
+    expect(
+      current.relay.updateTarget.mock.calls.map(([, value]) => value),
+    ).toEqual([target, rotatedTarget]);
+    expect(current.routes.values.get("home-vapid")?.target).toEqual(
+      rotatedTarget,
+    );
+  });
+
   it("skips an unchanged target across home and foreground reconciliation", async () => {
     const current = fixture();
     current.devices.credentials = {
@@ -353,6 +390,62 @@ describe("push state synchronization", () => {
     await current.synchronizer.settled();
 
     expect(current.relay.activateRoute).not.toHaveBeenCalled();
+  });
+
+  it("rotates a cached active route when the relay reports it dead", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route({ target, active: true }));
+    current.relay.ensureRoute.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "dead_route" },
+    });
+    current.relay.ensureRoute.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        id: "route-2",
+        endpoint: `${relayOrigin}/v1/r/route-2`,
+      },
+    });
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.relay.ensureRoute).toHaveBeenNthCalledWith(
+      2,
+      { id: "device-1", secret: "device-secret" },
+      "home-vapid",
+      undefined,
+    );
+    expect(current.routes.values.get("home-vapid")?.active).toBeUndefined();
+  });
+
+  it("recreates a cached device when route validation reports it gone", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route({ target, active: true }));
+    current.relay.ensureRoute.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "gone" },
+    });
+    current.relay.createDevice.mockResolvedValueOnce({
+      ok: true,
+      value: { id: "device-2", secret: "device-2-secret" },
+    });
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.relay.createDevice).toHaveBeenCalledOnce();
+    expect(current.routes.values.get("home-vapid")?.active).toBeUndefined();
   });
 
   it("rotates a route whose worker keys failed", async () => {
@@ -481,6 +574,31 @@ describe("push state synchronization", () => {
     expect(current.routes.values.get("home-vapid")?.routeId).toBe("route-1");
     expect(current.relay.deleteRoute).not.toHaveBeenCalled();
     expect(current.retries).toHaveLength(1);
+  });
+
+  it("invalidates cached activation when registration needs recovery", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route({ target, active: true }));
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    current.engine.emit({
+      type: "push_state_changed",
+      network_id: 1,
+      state: {
+        status: "failed",
+        route_id: "route-1",
+        reason: "connection",
+      },
+    });
+    await current.synchronizer.settled();
+
+    expect(current.routes.values.get("home-vapid")?.active).toBeUndefined();
   });
 
   it("backs an opaque target failure off before device reconciliation", async () => {

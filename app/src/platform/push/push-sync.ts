@@ -282,6 +282,10 @@ export class PushSynchronizer {
       rotate ? undefined : current?.routeId,
     );
     if (!ensured.ok) {
+      if (ensured.error.kind === "dead_route") {
+        await this.#ensureHome(networkId, true);
+        return;
+      }
       if (ensured.error.kind === "gone") {
         await this.#devices.clear(this.#relayOrigin);
         await this.#ensureHome(networkId, rotate);
@@ -310,7 +314,7 @@ export class PushSynchronizer {
             await this.#generateRouteKeys(),
             ensured.value,
             device.id,
-            this.#target,
+            this.#reconciledTarget ?? this.#target,
           );
     await this.#routes.put(route);
     for (const legacy of legacyRoutes) {
@@ -427,6 +431,11 @@ export class PushSynchronizer {
     const home = this.#homes.get(networkId);
     const route = await this.#routes.findRoute(failedRouteId);
     if (home === undefined || route === undefined) return;
+    if (route.active === true) {
+      const { active: _active, ...probingRoute } = route;
+      await this.#routes.put(probingRoute);
+      this.#activeRoutes.delete(route.routeId);
+    }
     const recovery = this.#recoveries.get(networkId) ?? {
       invalidRotations: 0,
       limitRetries: 0,
@@ -482,18 +491,19 @@ export class PushSynchronizer {
 
   async #ensureDevice(): Promise<RelayResult<RelayDevice>> {
     return this.#exclusive("weblounge-push-device", async () => {
+      const target = this.#target;
       const stored = await this.#devices.load(this.#relayOrigin);
       if (stored !== undefined) {
         const device = asRelayDevice(stored);
-        if (await this.#targetIsCurrent(device)) {
+        if (await this.#targetIsCurrent(device, target)) {
           this.#onDeviceReady(device);
           return { ok: true, value: device };
         }
-        const updated = await this.#relay.updateTarget(device, this.#target);
+        const updated = await this.#relay.updateTarget(device, target);
         if (updated.ok) {
           this.#reconciledDeviceId = device.id;
-          this.#reconciledTarget = this.#target;
-          await this.#storeCurrentTarget(device);
+          this.#reconciledTarget = target;
+          await this.#storeCurrentTarget(device, target);
           this.#onDeviceReady(device);
           return { ok: true, value: device };
         }
@@ -507,10 +517,7 @@ export class PushSynchronizer {
         this.#reconciledTarget = undefined;
       }
       const sessionToken = await this.#acquireSessionToken();
-      const created = await this.#relay.createDevice(
-        sessionToken,
-        this.#target,
-      );
+      const created = await this.#relay.createDevice(sessionToken, target);
       if (!created.ok) {
         if (created.error.kind === "unauthorized") {
           this.#onAuthorizationRequired();
@@ -523,37 +530,43 @@ export class PushSynchronizer {
         secret: created.value.secret,
       });
       this.#reconciledDeviceId = created.value.id;
-      this.#reconciledTarget = this.#target;
+      this.#reconciledTarget = target;
       this.#onDeviceReady(created.value);
       return created;
     });
   }
 
-  async #targetIsCurrent(device: RelayDevice): Promise<boolean> {
+  async #targetIsCurrent(
+    device: RelayDevice,
+    target: WebPushTarget,
+  ): Promise<boolean> {
     if (
       this.#reconciledDeviceId === device.id &&
-      sameTarget(this.#reconciledTarget, this.#target)
+      sameTarget(this.#reconciledTarget, target)
     ) {
       return true;
     }
     const routes = await this.#routes.all();
     const current = routes.some(
       (route) =>
-        route.deviceId === device.id && sameTarget(route.target, this.#target),
+        route.deviceId === device.id && sameTarget(route.target, target),
     );
     if (current) {
       this.#reconciledDeviceId = device.id;
-      this.#reconciledTarget = this.#target;
+      this.#reconciledTarget = target;
     }
     return current;
   }
 
-  async #storeCurrentTarget(device: RelayDevice): Promise<void> {
+  async #storeCurrentTarget(
+    device: RelayDevice,
+    target: WebPushTarget,
+  ): Promise<void> {
     const routes = await this.#routes.all();
     await Promise.all(
       routes
         .filter((route) => route.deviceId === device.id)
-        .map((route) => this.#routes.put({ ...route, target: this.#target })),
+        .map((route) => this.#routes.put({ ...route, target })),
     );
   }
 
