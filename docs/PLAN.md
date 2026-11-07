@@ -2,6 +2,9 @@
 
 The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
 
+- [x] Keep held history-wire commands immutable across delayed release. The E2E gate now snapshots
+  WASM-backed WebSocket views before engine memory reuse, while a test-only worker heartbeat, page
+  errors, and page/worker release checkpoints make future constrained-run failures decisive.
 - [x] Release a held history request through the worker that reported the hold, not whichever
   test worker subscribed most recently. The wire fixture now survives an unrelated worker opening
   and closing between hold and release, and verifies the acknowledgement's instance and port.

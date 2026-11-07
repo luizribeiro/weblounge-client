@@ -1,5 +1,20 @@
 import { expect, it, vi } from "vitest";
-import { EngineWorkerRuntime, type WorkerHostPort } from "./worker-runtime";
+import {
+  EngineWorkerRuntime,
+  snapshotHistoryWireData,
+  type WorkerHostPort,
+} from "./worker-runtime";
+
+it("retains held wire bytes after the source memory changes", () => {
+  const memory = new Uint8Array([0, 1, 2, 3, 4]);
+  const held = snapshotHistoryWireData(new Uint8Array(memory.buffer, 1, 3));
+
+  memory.fill(9);
+
+  if (!(held instanceof Uint8Array))
+    throw new Error("held wire bytes were not copied");
+  expect([...held]).toEqual([1, 2, 3]);
+});
 
 it("broadcasts optimistic state to every shared port", async () => {
   const first = new FakePort();

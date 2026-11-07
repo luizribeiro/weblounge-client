@@ -25,6 +25,7 @@ interface WasmModule {
 }
 
 type EngineLoader = (onEvent: (encoded: string) => void) => Promise<WasmEngine>;
+type WebSocketData = string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
 
 let sharedRuntime: EngineWorkerRuntime | undefined;
 const historyWireTestPorts = new Set<WorkerHostPort>();
@@ -47,13 +48,13 @@ let historyWireNativeSend:
 let heldHistoryBefore:
   | {
       readonly socket: WebSocket;
-      readonly data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
+      readonly data: WebSocketData;
     }
   | undefined;
 let heldHistoryLatest:
   | {
       readonly socket: WebSocket;
-      readonly data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
+      readonly data: WebSocketData;
     }
   | undefined;
 
@@ -347,7 +348,10 @@ function installHistoryWireTestTrace(): void {
           `CHATHISTORY BEFORE ${historyWireTestBeforeTarget ?? ""}`,
         ) === true
       ) {
-        heldHistoryBefore = { socket: this, data };
+        heldHistoryBefore = {
+          socket: this,
+          data: snapshotHistoryWireData(data),
+        };
         for (const port of historyWireTestPorts)
           port.postMessage({
             type: "history_wire_test_before_held",
@@ -365,7 +369,10 @@ function installHistoryWireTestTrace(): void {
         latestTarget !== undefined &&
         latestTarget !== historyWireTestLatestExcept
       ) {
-        heldHistoryLatest = { socket: this, data };
+        heldHistoryLatest = {
+          socket: this,
+          data: snapshotHistoryWireData(data),
+        };
         for (const port of historyWireTestPorts)
           port.postMessage({
             type: "history_wire_test_latest_held",
@@ -469,6 +476,12 @@ function wireTextSync(value: unknown): string | undefined {
       new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
     );
   return undefined;
+}
+
+export function snapshotHistoryWireData(data: WebSocketData): WebSocketData {
+  if (typeof data === "string" || data instanceof Blob) return data;
+  if (data instanceof ArrayBuffer) return data.slice(0);
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
 }
 
 async function traceHistoryWireValue(
