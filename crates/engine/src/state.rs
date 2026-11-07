@@ -739,7 +739,6 @@ impl NetworkModel {
             .collect();
         ChatListSnapshot::new(fingerprint, rows)
             .with_synced_through_ms(self.last_sync.map(time_millis))
-            .with_synced_through_ms(self.last_sync.map(time_millis))
     }
 
     fn ordered_buffers(&self) -> Vec<BufferProjection> {
@@ -1900,7 +1899,6 @@ impl NetworkModel {
         &mut self,
         nick: &papo::Nick,
         latest: SystemTime,
-        _state: &papo::State,
     ) -> (
         Option<HistoryFetch>,
         Option<BufferId>,
@@ -3859,7 +3857,6 @@ mod tests {
             model.restore_direct(
                 &nick,
                 std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
-                &state,
             );
         }
 
@@ -3890,7 +3887,7 @@ mod tests {
         let nick = nick_name(&state, "alice");
 
         let (fetch, _, added) =
-            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(100), &state);
+            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(100));
 
         assert!(fetch.is_none());
         assert!(added.is_none());
@@ -3978,8 +3975,7 @@ mod tests {
         ));
         let nick = nick_name(&state, "alice");
 
-        let (fetch, _, _) =
-            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200), &state);
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200));
 
         assert!(matches!(
             fetch,
@@ -4141,8 +4137,7 @@ mod tests {
         ));
         let nick = nick_name(&state, "alice");
 
-        let (fetch, _, _) =
-            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200), &state);
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200));
 
         assert!(matches!(fetch, Some(HistoryFetch::Latest(_))));
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
@@ -4286,8 +4281,7 @@ mod tests {
             }],
         ));
         let nick = nick_name(&state, "alice");
-        let (fetch, _, _) =
-            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(300), &state);
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(300));
         let buffer_id = model.names[&NameKey::Direct(nick.clone())];
 
         assert!(matches!(
@@ -4381,8 +4375,7 @@ mod tests {
             at_start: false,
         };
 
-        let (fetch, _, _) =
-            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200), &state);
+        let (fetch, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200));
 
         assert!(matches!(
             fetch,

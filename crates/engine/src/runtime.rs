@@ -3429,32 +3429,12 @@ fn restore_target_rows(
     let covered_through =
         target_sync_boundary(complete, target_count, directs.len(), latest_observed);
     directs.truncate(RECENT_DIRECT_LIMIT);
-    let mut output = Vec::new();
-    let mut fetches = channel_fetches;
-    let mut marker_targets = Vec::new();
-    for (nick, latest) in directs {
-        let restored = lock(state)
-            .network
-            .as_mut()
-            .filter(|running| running.instance == instance)
-            .map(|running| running.model.restore_direct(&nick, latest, &snapshot));
-        let Some((fetch, _buffer_id, added)) = restored else {
-            return;
-        };
-        if let Some(buffer) = added {
-            output.push(EngineToUi::BufferAdded { buffer });
-        }
-        if fetch.is_none()
-            && lock(state)
-                .network
-                .as_ref()
-                .filter(|running| running.instance == instance)
-                .is_some_and(|running| running.model.cached_direct_needs_marker(&nick))
-        {
-            marker_targets.push(HistoryTarget::Direct(nick));
-        }
-        fetches.extend(fetch);
-    }
+    let Some((mut output, direct_fetches, marker_targets)) =
+        restore_direct_target_rows(state, instance, directs)
+    else {
+        return;
+    };
+    channel_fetches.extend(direct_fetches);
     let mut runtime = lock(state);
     let Some(running) = runtime
         .network
@@ -3478,7 +3458,7 @@ fn restore_target_rows(
             target,
         );
     }
-    for fetch in fetches {
+    for fetch in channel_fetches {
         spawn_history_fetch(
             Arc::clone(state),
             outbound.clone(),
@@ -3487,6 +3467,38 @@ fn restore_target_rows(
             fetch,
         );
     }
+}
+
+fn restore_direct_target_rows(
+    state: &Arc<Mutex<RuntimeState>>,
+    instance: u64,
+    directs: Vec<(papo::Nick, SystemTime)>,
+) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>, Vec<HistoryTarget>)> {
+    let mut output = Vec::new();
+    let mut fetches = Vec::new();
+    let mut marker_targets = Vec::new();
+    for (nick, latest) in directs {
+        let restored = lock(state)
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+            .map(|running| running.model.restore_direct(&nick, latest));
+        let (fetch, _buffer_id, added) = restored?;
+        if let Some(buffer) = added {
+            output.push(EngineToUi::BufferAdded { buffer });
+        }
+        if fetch.is_none()
+            && lock(state)
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .is_some_and(|running| running.model.cached_direct_needs_marker(&nick))
+        {
+            marker_targets.push(HistoryTarget::Direct(nick));
+        }
+        fetches.extend(fetch);
+    }
+    Some((output, fetches, marker_targets))
 }
 
 fn target_sync_boundary(
@@ -8506,6 +8518,34 @@ async fn delay(duration: Duration) {
             .clone()
     }
 
+    async fn assert_stored_snapshot_contains(
+        state: &Arc<Mutex<RuntimeState>>,
+        expected: &SnapshotRow,
+    ) {
+        let storage = lock(state).storage.clone();
+        let snapshot = read(storage.as_ref())
+            .await
+            .expect("read snapshot")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
+            .expect("stored snapshot");
+        assert!(snapshot.rows.contains(expected));
+    }
+
+    fn take_buffer_snapshot_texts(
+        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
+    ) -> Vec<String> {
+        collect(receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferSnapshot { messages, .. } => Some(messages),
+                _ => None,
+            })
+            .expect("interleaved catch-up replaces the visible timeline")
+            .into_iter()
+            .map(|message| message.text)
+            .collect()
+    }
+
     async fn enable_test_monitor(
         events: &mut papo::Events,
         wire: &mut papo_testing::Wire,
@@ -9920,7 +9960,6 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test(start_paused = true)]
-    #[allow(clippy::too_many_lines)]
     async fn read_marker_persists_while_another_snapshot_row_is_unresolved() {
         let caps = [
             "draft/read-marker",
@@ -10022,13 +10061,7 @@ async fn delay(duration: Duration) {
         tokio::task::yield_now().await;
         assert_eq!(stored_snapshot_badge(&state).await, SnapshotBadge::None);
 
-        let storage = lock(&state).storage.clone();
-        let snapshot = read(storage.as_ref())
-            .await
-            .expect("read snapshot")
-            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
-            .expect("stored snapshot");
-        assert!(snapshot.rows.contains(&unresolved));
+        assert_stored_snapshot_contains(&state, &unresolved).await;
     }
 
     #[tokio::test]
@@ -11260,7 +11293,6 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    #[allow(clippy::too_many_lines)]
     async fn engine_catchup_pages_and_deduplicates_live_overlap() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge").autojoin(["#room"]));
@@ -11347,16 +11379,7 @@ async fn delay(duration: Duration) {
             .expect("catch-up task completes")
             .expect("catch-up page succeeds");
         process_history(&state, &outbound, &client, 1, page);
-        let merged = collect(&mut receiver)
-            .into_iter()
-            .find_map(|event| match event {
-                EngineToUi::BufferSnapshot { messages, .. } => Some(messages),
-                _ => None,
-            })
-            .expect("interleaved catch-up replaces the visible timeline")
-            .into_iter()
-            .map(|message| message.text)
-            .collect::<Vec<_>>();
+        let merged = take_buffer_snapshot_texts(&mut receiver);
 
         assert_eq!(
             merged,
