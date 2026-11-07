@@ -164,6 +164,7 @@ function fixture() {
   const diagnostics = vi.fn();
   const authorizationRequired = vi.fn();
   const retries: Array<() => void> = [];
+  const retryDelays: number[] = [];
   const synchronizer = new PushSynchronizer({
     engine,
     relay,
@@ -181,10 +182,12 @@ function fixture() {
       privateKey: {} as CryptoKey,
     }),
     exclusive: async (_name, work) => work(),
-    retry: (work) => {
+    retry: (work, delay) => {
       retries.push(work);
+      retryDelays.push(delay);
       return () => {};
     },
+    random: () => 0,
   });
   return {
     authorizationRequired,
@@ -194,6 +197,7 @@ function fixture() {
     engine,
     relay,
     retries,
+    retryDelays,
     routes,
     synchronizer,
   };
@@ -291,6 +295,24 @@ describe("push state synchronization", () => {
       "route-1",
     );
     expect(current.routes.values.size).toBe(1);
+    expect(current.routes.values.get("home-vapid")?.target).toEqual(target);
+  });
+
+  it("skips an unchanged target across home and foreground reconciliation", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route({ target }));
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+    await current.synchronizer.refreshTarget(target);
+
+    expect(current.relay.updateTarget).not.toHaveBeenCalled();
+    expect(current.relay.ensureRoute).toHaveBeenCalledOnce();
   });
 
   it("rotates a route whose worker keys failed", async () => {
@@ -419,6 +441,27 @@ describe("push state synchronization", () => {
     expect(current.routes.values.get("home-vapid")?.routeId).toBe("route-1");
     expect(current.relay.deleteRoute).not.toHaveBeenCalled();
     expect(current.retries).toHaveLength(1);
+  });
+
+  it("backs an opaque target failure off before device reconciliation", async () => {
+    const current = fixture();
+    current.devices.credentials = {
+      relay: relayOrigin,
+      device_id: "device-1",
+      secret: "device-secret",
+    };
+    current.routes.values.set("home-vapid", route());
+    current.relay.updateTarget.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "capacity", retryAfterMs: 12_000 },
+    });
+
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
+
+    expect(current.retries).toHaveLength(1);
+    expect(current.retryDelays).toEqual([12_000]);
+    expect(current.relay.ensureRoute).not.toHaveBeenCalled();
   });
 
   it("keeps an active route when the engine briefly reports unsupported", async () => {

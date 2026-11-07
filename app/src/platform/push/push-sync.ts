@@ -10,6 +10,7 @@ import type {
   RelayFailure,
   RelayResult,
 } from "./relay-client";
+import { relayRetryDelay } from "./relay-client";
 import {
   createRouteKeys,
   type PushRouteStore,
@@ -30,7 +31,7 @@ type RelayApi = Pick<
   | "updateTarget"
 >;
 
-interface PushSynchronizerOptions {
+export interface PushSynchronizerOptions {
   readonly engine: EngineClient;
   readonly relay: RelayApi;
   readonly relayOrigin: string;
@@ -45,6 +46,7 @@ interface PushSynchronizerOptions {
   readonly generateRouteKeys?: () => Promise<RouteKeys>;
   readonly exclusive?: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly retry?: (work: () => void, delayMs: number) => () => void;
+  readonly random?: () => number;
 }
 
 export type PushRelayRouteState = "none" | "probing" | "active" | "dead";
@@ -80,6 +82,7 @@ export class PushSynchronizer {
   readonly #generateRouteKeys: () => Promise<RouteKeys>;
   readonly #exclusive: <T>(name: string, work: () => Promise<T>) => Promise<T>;
   readonly #retry: (work: () => void, delayMs: number) => () => void;
+  readonly #random: () => number;
   readonly #unsubscribe: () => void;
   readonly #recoveries = new Map<number, ConnectRecovery>();
   readonly #homes = new Map<number, string>();
@@ -87,6 +90,8 @@ export class PushSynchronizer {
   readonly #retryAttempts = new Map<number, number>();
   readonly #cancelRetries = new Map<number, () => void>();
   readonly #legacyEndpoints = new Set<string>();
+  #reconciledDeviceId: string | undefined;
+  #reconciledTarget: WebPushTarget | undefined;
   #target: WebPushTarget;
   #pending: Promise<void> = Promise.resolve();
   #disposed = false;
@@ -106,6 +111,7 @@ export class PushSynchronizer {
     this.#generateRouteKeys = options.generateRouteKeys ?? createRouteKeys;
     this.#exclusive = options.exclusive ?? withExclusiveLock;
     this.#retry = options.retry ?? browserRetry;
+    this.#random = options.random ?? Math.random;
     this.#unsubscribe = this.#engine.subscribe((message) =>
       this.handle(message),
     );
@@ -169,11 +175,13 @@ export class PushSynchronizer {
     this.#target = target;
     this.#enqueue(async () => {
       const device = await this.#ensureDevice();
-      if (!device.ok) return;
-      for (const [networkId, home] of this.#homes) {
-        await this.#withHomeLock(home, () =>
-          this.#ensureHome(networkId, false),
-        );
+      if (!device.ok) {
+        if (temporaryRelayFailure(device.error)) {
+          for (const networkId of this.#homes.keys()) {
+            this.#scheduleRetry(networkId, undefined, device.error);
+          }
+        }
+        return;
       }
     });
     await this.settled();
@@ -242,6 +250,9 @@ export class PushSynchronizer {
         undefined,
         relayError("device", deviceResult.error),
       );
+      if (temporaryRelayFailure(deviceResult.error)) {
+        this.#scheduleRetry(networkId, undefined, deviceResult.error);
+      }
       return;
     }
     const device = deviceResult.value;
@@ -274,7 +285,8 @@ export class PushSynchronizer {
         current?.routeId,
         relayError("ensure", ensured.error),
       );
-      if (temporaryRelayFailure(ensured.error)) this.#scheduleRetry(networkId);
+      if (temporaryRelayFailure(ensured.error))
+        this.#scheduleRetry(networkId, undefined, ensured.error);
       return;
     }
     const route =
@@ -287,6 +299,7 @@ export class PushSynchronizer {
             await this.#generateRouteKeys(),
             ensured.value,
             device.id,
+            this.#target,
           );
     await this.#routes.put(route);
     for (const legacy of legacyRoutes) {
@@ -302,13 +315,17 @@ export class PushSynchronizer {
     if (!dead.ok && dead.error.kind === "unauthorized") {
       this.#onAuthorizationRequired();
     }
+    if (!dead.ok && temporaryRelayFailure(dead.error)) {
+      this.#scheduleRetry(networkId, undefined, dead.error);
+    }
     const unregister = new Set(this.#legacyEndpoints);
     if (dead.ok) {
       for (const endpoint of dead.value) unregister.add(endpoint.endpoint);
     }
     if (await this.#sendEnsure(networkId, route, [...unregister])) {
       this.#legacyEndpoints.clear();
-      if (dead.ok) await this.#acknowledgeDead(device, home, dead.value);
+      if (dead.ok)
+        await this.#acknowledgeDead(networkId, device, home, dead.value);
     }
   }
 
@@ -375,7 +392,11 @@ export class PushSynchronizer {
     } else if (activated.error.kind === "unauthorized") {
       this.#onAuthorizationRequired();
     } else if (temporaryRelayFailure(activated.error)) {
-      this.#scheduleRetry(networkId, () => this.#activate(networkId, routeId));
+      this.#scheduleRetry(
+        networkId,
+        () => this.#activate(networkId, routeId),
+        activated.error,
+      );
     }
   }
 
@@ -415,11 +436,15 @@ export class PushSynchronizer {
       if (!dead.ok && dead.error.kind === "unauthorized") {
         this.#onAuthorizationRequired();
       }
+      if (!dead.ok && temporaryRelayFailure(dead.error)) {
+        this.#scheduleRetry(networkId, undefined, dead.error);
+      }
       const endpoints = dead.ok
         ? dead.value.map((endpoint) => endpoint.endpoint)
         : [];
       if (await this.#sendEnsure(networkId, route, endpoints)) {
-        if (dead.ok) await this.#acknowledgeDead(relayDevice, home, dead.value);
+        if (dead.ok)
+          await this.#acknowledgeDead(networkId, relayDevice, home, dead.value);
       }
       return;
     }
@@ -442,8 +467,15 @@ export class PushSynchronizer {
       const stored = await this.#devices.load(this.#relayOrigin);
       if (stored !== undefined) {
         const device = asRelayDevice(stored);
+        if (await this.#targetIsCurrent(device)) {
+          this.#onDeviceReady(device);
+          return { ok: true, value: device };
+        }
         const updated = await this.#relay.updateTarget(device, this.#target);
         if (updated.ok) {
+          this.#reconciledDeviceId = device.id;
+          this.#reconciledTarget = this.#target;
+          await this.#storeCurrentTarget(device);
           this.#onDeviceReady(device);
           return { ok: true, value: device };
         }
@@ -453,6 +485,8 @@ export class PushSynchronizer {
         }
         if (updated.error.kind !== "gone") return updated;
         await this.#devices.clear(this.#relayOrigin);
+        this.#reconciledDeviceId = undefined;
+        this.#reconciledTarget = undefined;
       }
       const sessionToken = await this.#acquireSessionToken();
       const created = await this.#relay.createDevice(
@@ -470,9 +504,39 @@ export class PushSynchronizer {
         device_id: created.value.id,
         secret: created.value.secret,
       });
+      this.#reconciledDeviceId = created.value.id;
+      this.#reconciledTarget = this.#target;
       this.#onDeviceReady(created.value);
       return created;
     });
+  }
+
+  async #targetIsCurrent(device: RelayDevice): Promise<boolean> {
+    if (
+      this.#reconciledDeviceId === device.id &&
+      sameTarget(this.#reconciledTarget, this.#target)
+    ) {
+      return true;
+    }
+    const routes = await this.#routes.all();
+    const current = routes.some(
+      (route) =>
+        route.deviceId === device.id && sameTarget(route.target, this.#target),
+    );
+    if (current) {
+      this.#reconciledDeviceId = device.id;
+      this.#reconciledTarget = this.#target;
+    }
+    return current;
+  }
+
+  async #storeCurrentTarget(device: RelayDevice): Promise<void> {
+    const routes = await this.#routes.all();
+    await Promise.all(
+      routes
+        .filter((route) => route.deviceId === device.id)
+        .map((route) => this.#routes.put({ ...route, target: this.#target })),
+    );
   }
 
   async #legacyRoutes(
@@ -493,6 +557,7 @@ export class PushSynchronizer {
   }
 
   async #acknowledgeDead(
+    networkId: number,
     device: RelayDevice,
     home: string,
     endpoints: readonly RelayDeadEndpoint[],
@@ -508,6 +573,9 @@ export class PushSynchronizer {
     }
     if (!acknowledged.ok && acknowledged.error.kind === "gone") {
       await this.#devices.clear(this.#relayOrigin);
+    }
+    if (!acknowledged.ok && temporaryRelayFailure(acknowledged.error)) {
+      this.#scheduleRetry(networkId, undefined, acknowledged.error);
     }
   }
 
@@ -526,7 +594,11 @@ export class PushSynchronizer {
     });
   }
 
-  #scheduleRetry(networkId: number, work?: () => Promise<void>): void {
+  #scheduleRetry(
+    networkId: number,
+    work?: () => Promise<void>,
+    failure?: RelayFailure,
+  ): void {
     this.#cancelRetry(networkId);
     const attempt = this.#retryAttempts.get(networkId) ?? 0;
     this.#retryAttempts.set(networkId, attempt + 1);
@@ -545,7 +617,7 @@ export class PushSynchronizer {
             }),
         );
       },
-      Math.min(5 * 60_000, 1_000 * 2 ** attempt),
+      relayRetryDelay(attempt, failure?.retryAfterMs, this.#random),
     );
     this.#cancelRetries.set(networkId, cancel);
   }
@@ -577,6 +649,7 @@ function storedRoute(
   keys: RouteKeys,
   route: { readonly id: string; readonly endpoint: string },
   deviceId: string,
+  target: WebPushTarget,
 ): StoredPushRoute {
   return {
     networkId,
@@ -588,7 +661,20 @@ function storedRoute(
     p256dh: keys.p256dh,
     auth: keys.auth,
     privateKey: keys.privateKey,
+    target,
   };
+}
+
+function sameTarget(
+  current: WebPushTarget | undefined,
+  next: WebPushTarget,
+): boolean {
+  return (
+    current !== undefined &&
+    current.endpoint === next.endpoint &&
+    current.p256dh === next.p256dh &&
+    current.auth === next.auth
+  );
 }
 
 function temporaryRelayFailure(failure: RelayFailure): boolean {
