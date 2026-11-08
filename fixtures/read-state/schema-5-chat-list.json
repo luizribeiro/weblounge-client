@@ -1,0 +1,17 @@
+{
+  "schema": 5,
+  "fingerprint": "network",
+  "cursor_ms": 400,
+  "rows": [
+    {
+      "conversation": { "kind": "direct", "key": "alice" },
+      "title": "Alice",
+      "last_activity_ms": 300,
+      "badge": { "kind": "mentions", "count": 3, "mentions": 3 },
+      "preview": "alice: three unread messages",
+      "newest": { "msgid": "alice-300", "server_time_ms": 300 },
+      "read_at_ms": 100,
+      "peer_pin": "papo-peer-v1;scope=server%3Aexample;account=alice"
+    }
+  ]
+}

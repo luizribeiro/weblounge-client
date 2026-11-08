@@ -3324,7 +3324,7 @@ fn spawn_read_marker_fetch(
         let Ok(read_until) = read_until else {
             return;
         };
-        let (events, recount) = {
+        let events = {
             let mut state = lock(&state);
             let Some(running) = state
                 .network
@@ -3333,19 +3333,12 @@ fn spawn_read_marker_fetch(
             else {
                 return;
             };
-            let events = running
+            running
                 .model
-                .apply_server_read_marker(&target.conversation(), read_until);
-            let recount = running
-                .model
-                .request_cached_marker_recount(&target.conversation());
-            (events, recount)
+                .apply_server_read_marker(&target.conversation(), read_until)
         };
         send_events(&outbound, events);
         update_chat_list(&state, &outbound, instance);
-        if let Some(fetch) = recount {
-            spawn_history_page(state, outbound, client, instance, fetch);
-        }
     });
 }
 
@@ -3518,8 +3511,7 @@ fn restore_target_rows(
     directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
     let covered_through = target_sync_boundary(complete, target_count, directs.len(), upper_bound);
     directs.truncate(RECENT_DIRECT_LIMIT);
-    let Some((mut output, direct_fetches, marker_targets)) =
-        restore_direct_target_rows(state, instance, directs)
+    let Some((mut output, direct_fetches)) = restore_direct_target_rows(state, instance, directs)
     else {
         return;
     };
@@ -3539,15 +3531,6 @@ fn restore_target_rows(
     drop(snapshot);
     send_events(outbound, output);
     send_recent_directs_ready(state, outbound, instance, network_id, true);
-    for target in marker_targets {
-        spawn_read_marker_fetch(
-            Arc::clone(state),
-            outbound.clone(),
-            client.clone(),
-            instance,
-            target,
-        );
-    }
     for fetch in channel_fetches {
         spawn_history_fetch(
             Arc::clone(state),
@@ -3563,10 +3546,9 @@ fn restore_direct_target_rows(
     state: &Arc<Mutex<RuntimeState>>,
     instance: u64,
     directs: Vec<(papo::Nick, SystemTime)>,
-) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>, Vec<HistoryTarget>)> {
+) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>)> {
     let mut output = Vec::new();
     let mut fetches = Vec::new();
-    let mut marker_targets = Vec::new();
     for (nick, latest) in directs {
         let restored = lock(state)
             .network
@@ -3577,18 +3559,9 @@ fn restore_direct_target_rows(
         if let Some(buffer) = added {
             output.push(EngineToUi::BufferAdded { buffer });
         }
-        if fetch.is_none()
-            && lock(state)
-                .network
-                .as_ref()
-                .filter(|running| running.instance == instance)
-                .is_some_and(|running| running.model.cached_direct_needs_marker(&nick))
-        {
-            marker_targets.push(HistoryTarget::Direct(nick));
-        }
         fetches.extend(fetch);
     }
-    Some((output, fetches, marker_targets))
+    Some((output, fetches))
 }
 
 fn target_sync_boundary(
@@ -5320,17 +5293,29 @@ mod tests {
         MessageId, NetworkConnectionState, NetworkId, NetworkProjection, PushState,
         SaslCredentials,
         chat_list_snapshot::{
-            ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotCursor, SnapshotRow,
-            read,
+            ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, read,
         },
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         pushed_messages::PushedMessage,
+        read_model::{MessageStub, ServerTimeMs},
         state::{
             DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
             ReadAdvance, SendTarget,
         },
         storage::{KvBackend, MemoryKv, Operation, Space},
     };
+
+    fn snapshot_stubs(count: usize, mentions: usize, latest: i64) -> Vec<MessageStub> {
+        (0..count)
+            .map(|index| MessageStub {
+                msgid: format!("snapshot-{latest}-{index}"),
+                time: ServerTimeMs::new(
+                    latest - i64::try_from(count - index - 1).expect("small fixture"),
+                ),
+                mention: index < mentions,
+            })
+            .collect()
+    }
 
     #[test]
     fn wasm_reachable_runtime_uses_the_platform_delay() {
@@ -5406,7 +5391,8 @@ async fn delay(duration: Duration) {
                 },
                 title: "#room".into(),
                 last_activity_ms: None,
-                badge: SnapshotBadge::None,
+                stubs: Vec::new(),
+                gap_until: None,
                 preview: None,
                 newest: None,
                 read_at_ms: None,
@@ -5678,7 +5664,8 @@ async fn delay(duration: Duration) {
                 },
                 title: "#lounge".into(),
                 last_activity_ms: None,
-                badge: SnapshotBadge::Unread { count: 1 },
+                stubs: snapshot_stubs(1, 0, 1),
+                gap_until: None,
                 preview: Some("cached before credentials".into()),
                 newest: None,
                 read_at_ms: None,
@@ -7931,7 +7918,8 @@ async fn delay(duration: Duration) {
                     },
                     title: "#room".into(),
                     last_activity_ms: None,
-                    badge: SnapshotBadge::None,
+                    stubs: Vec::new(),
+                    gap_until: None,
                     preview: None,
                     newest: None,
                     read_at_ms: None,
@@ -8551,7 +8539,8 @@ async fn delay(duration: Duration) {
                     },
                     title: "#room".into(),
                     last_activity_ms: Some(100),
-                    badge: SnapshotBadge::Unread { count: 1 },
+                    stubs: snapshot_stubs(1, 0, 100),
+                    gap_until: None,
                     preview: Some("cached".into()),
                     newest: Some(SnapshotCursor {
                         msgid: Some("cached".into()),
@@ -8610,14 +8599,14 @@ async fn delay(duration: Duration) {
         HistoryTarget::Direct(nick)
     }
 
-    async fn stored_snapshot_badge(state: &Arc<Mutex<RuntimeState>>) -> SnapshotBadge {
+    async fn stored_snapshot_counts(state: &Arc<Mutex<RuntimeState>>) -> (usize, usize) {
         let storage = lock(state).storage.clone();
         let snapshot = read(storage.as_ref())
             .await
             .expect("read snapshot")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
             .expect("stored snapshot");
-        snapshot
+        let row = snapshot
             .rows
             .iter()
             .find(|row| {
@@ -8626,9 +8615,11 @@ async fn delay(duration: Duration) {
                         key: "alice".into(),
                     }
             })
-            .expect("alice snapshot row")
-            .badge
-            .clone()
+            .expect("alice snapshot row");
+        (
+            row.stubs.len(),
+            row.stubs.iter().filter(|stub| stub.mention).count(),
+        )
     }
 
     async fn assert_stored_snapshot_contains(
@@ -9205,7 +9196,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn unchanged_unread_direct_queries_its_marker_and_leaves_its_send_target_lazy() {
+    async fn unchanged_direct_keeps_its_restored_count_and_send_target_lazy() {
         let caps = [
             "batch",
             "draft/chathistory",
@@ -9233,10 +9224,8 @@ async fn delay(duration: Duration) {
                         },
                         title: "alice".into(),
                         last_activity_ms: Some(100),
-                        badge: SnapshotBadge::Mentions {
-                            count: 3,
-                            mentions: 3,
-                        },
+                        stubs: snapshot_stubs(3, 3, 100),
+                        gap_until: None,
                         preview: Some("cached".into()),
                         newest: Some(SnapshotCursor {
                             msgid: Some("cached".into()),
@@ -9262,9 +9251,6 @@ async fn delay(duration: Duration) {
             UNIX_EPOCH + Duration::from_millis(100),
         );
 
-        let marker = wire.next_sent().await;
-        assert!(marker.ends_with("MARKREAD alice"), "{marker}");
-        assert!(!marker.contains("CHATHISTORY"));
         let mut state = lock(&state);
         let model = &mut state
             .network
@@ -9275,6 +9261,16 @@ async fn delay(duration: Duration) {
             model.direct(&nick),
             Some(DirectAvailability::Pending)
         ));
+        let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
+            panic!("buffer projection event expected")
+        };
+        assert_eq!(
+            buffers
+                .iter()
+                .find(|buffer| buffer.title == "alice")
+                .map(|buffer| (buffer.unread, buffer.mentions)),
+            Some((3, 3))
+        );
         assert!(model.begin_direct_resolution(&nick).is_some());
         assert!(matches!(
             model.direct(&nick),
@@ -10251,7 +10247,8 @@ async fn delay(duration: Duration) {
             },
             title: "#slow cached".into(),
             last_activity_ms: Some(1_700_000_000_000),
-            badge: SnapshotBadge::Unread { count: 4 },
+            stubs: snapshot_stubs(4, 0, 1_700_000_000_000),
+            gap_until: None,
             preview: Some("cached slow preview".into()),
             newest: None,
             read_at_ms: None,
@@ -10278,13 +10275,7 @@ async fn delay(duration: Duration) {
         tokio::task::yield_now().await;
         tokio::time::advance(Duration::from_millis(750)).await;
         tokio::task::yield_now().await;
-        assert_eq!(
-            stored_snapshot_badge(&state).await,
-            SnapshotBadge::Mentions {
-                count: 1,
-                mentions: 1
-            }
-        );
+        assert_eq!(stored_snapshot_counts(&state).await, (1, 1));
 
         spawn_read_marker_fetch(Arc::clone(&state), outbound, client, 1, target);
         let request = wire.next_sent().await;
@@ -10311,7 +10302,7 @@ async fn delay(duration: Duration) {
         assert!(cleared.is_ok());
         tokio::time::advance(Duration::from_millis(750)).await;
         tokio::task::yield_now().await;
-        assert_eq!(stored_snapshot_badge(&state).await, SnapshotBadge::None);
+        assert_eq!(stored_snapshot_counts(&state).await, (0, 0));
 
         assert_stored_snapshot_contains(&state, &unresolved).await;
     }

@@ -10,11 +10,13 @@ use crate::{
     MessageAuthorship, MessageDelivery, MessageId, MessageKind, MessageProjection,
     NetworkConnectionState, NetworkId, NetworkProjection, NoticeAction, NoticeKind, NoticeTone,
     chat_list_snapshot::{
-        ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotCursor, SnapshotRow,
-        truncate_preview,
+        ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, truncate_preview,
     },
     name_key::NameKey,
     pushed_messages::{PushedMessage, PushedMessageKind},
+    read_model::{
+        MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,9 +95,7 @@ struct BufferState {
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
     direct_mismatch: Option<DirectMismatch>,
-    read_at_ms: Option<i64>,
-    cached_unread_base: u64,
-    cached_mentions_base: u64,
+    read_facts: ReadFacts,
     history: HistoryState,
     newest: Option<HistoryCursor>,
 }
@@ -389,9 +389,7 @@ impl NetworkModel {
             direct: None,
             direct_pin: None,
             direct_mismatch: None,
-            read_at_ms: None,
-            cached_unread_base: 0,
-            cached_mentions_base: 0,
+            read_facts: ReadFacts::default(),
             history: HistoryState::Ready {
                 oldest: None,
                 at_start: true,
@@ -537,7 +535,7 @@ impl NetworkModel {
     }
 
     pub(crate) fn restore_chat_list(&mut self, snapshot: ChatListSnapshot) {
-        self.cursor = snapshot.cursor_ms.map(system_time_from_millis);
+        let cursor = snapshot.cursor_ms.map(system_time_from_millis);
         for row in snapshot.rows {
             let key = match row.conversation {
                 SnapshotConversation::Channel { key } => {
@@ -563,17 +561,15 @@ impl NetworkModel {
                         row.last_activity_ms
                             .map(|time| HistoryCursor::new(None, time))
                     });
-                buffer.read_at_ms = row.read_at_ms;
-                match row.badge {
-                    SnapshotBadge::None => {}
-                    SnapshotBadge::Unread { count } => buffer.projection.unread = count,
-                    SnapshotBadge::Mentions { count, mentions } => {
-                        buffer.projection.unread = count;
-                        buffer.projection.mentions = mentions;
-                    }
+                if let Some(mark) = row.read_at_ms {
+                    buffer.read_facts.merge_mark(ServerTimeMs::new(mark));
                 }
-                buffer.cached_unread_base = buffer.projection.unread;
-                buffer.cached_mentions_base = buffer.projection.mentions;
+                for stub in row.stubs {
+                    buffer.read_facts.merge_stub(stub);
+                }
+                if let Some(gap_until) = row.gap_until {
+                    buffer.read_facts.merge_gap_until(gap_until);
+                }
                 if buffer.projection.kind == BufferKind::Channel {
                     buffer.projection.channel_status = None;
                 }
@@ -582,6 +578,7 @@ impl NetworkModel {
                 derive_read_projection(buffer);
             }
         }
+        self.cursor = cursor;
         self.sort_buffer_order();
     }
 
@@ -766,9 +763,8 @@ impl NetworkModel {
                     .iter()
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
-                if buffer.deferred_read.is_none() && buffer.read_at_ms != row.read_at_ms {
-                    row.badge = snapshot_badge(buffer);
-                    row.read_at_ms = buffer.read_at_ms;
+                if buffer.deferred_read.is_none() {
+                    copy_read_facts_to_snapshot(buffer, &mut row);
                 }
                 Some(row)
             })
@@ -1007,21 +1003,6 @@ impl NetworkModel {
                     None,
                 )
             };
-            if let Some(buffer_id) = self.names.get(&conversation).copied()
-                && let Some(buffer) = self.buffers.get_mut(&buffer_id)
-                && buffer.projection.cached == Some(true)
-                && buffer.newest.as_ref().is_some_and(|newest| {
-                    newest.server_time() >= system_time_from_millis(server_time_ms)
-                })
-                && buffer
-                    .read_at_ms
-                    .is_none_or(|read_at| read_at < server_time_ms)
-            {
-                buffer.cached_unread_base = buffer.cached_unread_base.saturating_sub(1);
-                if direct || matches_highlight_rules(&message.text, state) {
-                    buffer.cached_mentions_base = buffer.cached_mentions_base.saturating_sub(1);
-                }
-            }
             events.extend(
                 self.receive_incoming(
                     Incoming {
@@ -1751,6 +1732,9 @@ impl NetworkModel {
             | HistoryState::Ready { .. }
             | HistoryState::RefreshCapped => return None,
         };
+        if gap && let Some(oldest_unread) = buffer.read_facts.stubs().first() {
+            buffer.read_facts.merge_gap_until(oldest_unread.time);
+        }
         buffer.projection.sync_state = buffer.history.sync_state();
         derive_read_projection(buffer);
         let completion = HistoryCompletion {
@@ -2088,38 +2072,6 @@ impl NetworkModel {
         self.buffers.get(buffer_id)?.direct.clone()
     }
 
-    pub(crate) fn cached_direct_needs_marker(&self, nick: &papo::Nick) -> bool {
-        self.names
-            .get(&NameKey::Direct(nick.clone()))
-            .and_then(|buffer_id| self.buffers.get(buffer_id))
-            .is_some_and(|buffer| {
-                buffer.projection.cached == Some(true) && buffer.projection.unread > 0
-            })
-    }
-
-    pub(crate) fn request_cached_marker_recount(
-        &mut self,
-        conversation: &papo::Conversation,
-    ) -> Option<HistoryFetch> {
-        let papo::Conversation::Private(nick) = conversation else {
-            return None;
-        };
-        let buffer_id = self.names.get(&NameKey::Direct(nick.clone())).copied()?;
-        let buffer = self.buffers.get_mut(&buffer_id)?;
-        if buffer.projection.cached != Some(true)
-            || buffer.cached_unread_base == 0
-            || !matches!(buffer.history, HistoryState::Unrequested)
-            || buffer
-                .read_at_ms
-                .zip(buffer.newest.as_ref())
-                .is_none_or(|(read_at, newest)| read_at >= time_millis(newest.server_time()))
-        {
-            return None;
-        }
-        set_history_state(buffer, HistoryState::LoadingLatest);
-        Some(HistoryFetch::Latest(HistoryTarget::Direct(nick.clone())))
-    }
-
     pub(crate) fn send_rejection_key(&self, buffer_id: BufferId) -> EngineMessageKey {
         let buffer = self.buffers.get(&buffer_id);
         if buffer
@@ -2394,20 +2346,13 @@ impl NetworkModel {
             return inconsistent_state_notice();
         };
         if buffer
-            .read_at_ms
-            .is_some_and(|current| current >= read_at_ms)
+            .read_facts
+            .mark()
+            .is_some_and(|current| current.value() >= read_at_ms)
         {
             return Vec::new();
         }
-        buffer.read_at_ms = Some(read_at_ms);
-        if buffer
-            .newest
-            .as_ref()
-            .is_some_and(|newest| newest.server_time() <= time)
-        {
-            buffer.cached_unread_base = 0;
-            buffer.cached_mentions_base = 0;
-        }
+        buffer.read_facts.merge_mark(ServerTimeMs::new(read_at_ms));
         derive_read_projection(buffer);
         vec![
             EngineToUi::UnreadChanged {
@@ -2688,6 +2633,11 @@ impl NetworkModel {
         record.counts_as_mention = message.authorship != MessageAuthorship::Own
             && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
         record.provisional_identity = None;
+        buffer.read_facts.replace_stub(MessageStub {
+            msgid: msgid.to_owned(),
+            time: ServerTimeMs::new(message_time(&message)),
+            mention: record.counts_as_mention,
+        });
         buffer.timeline.sort_by_key(order_key);
         derive_read_projection(buffer);
         let buffer = buffer.projection.clone();
@@ -2857,6 +2807,10 @@ impl NetworkModel {
             last_activity_ms: None,
             cached_preview: None,
         };
+        let mut read_facts = ReadFacts::default();
+        if let Some(seed_mark_ms) = seed_mark_ms {
+            read_facts.merge_mark(ServerTimeMs::new(seed_mark_ms));
+        }
         self.buffers.insert(
             id,
             BufferState {
@@ -2873,9 +2827,7 @@ impl NetworkModel {
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
                 direct_pin: None,
                 direct_mismatch: None,
-                read_at_ms: seed_mark_ms,
-                cached_unread_base: 0,
-                cached_mentions_base: 0,
+                read_facts,
                 history: HistoryState::Unrequested,
                 newest: None,
             },
@@ -2958,6 +2910,7 @@ impl NetworkModel {
         };
         let counts_as_mention = projection.authorship != MessageAuthorship::Own
             && (buffer.projection.kind == BufferKind::Direct || projection.highlighted);
+        let stub = message_stub(&projection, counts_as_mention);
         let record = TimelineRecord {
             projection,
             counts_as_mention,
@@ -2974,11 +2927,9 @@ impl NetworkModel {
         buffer.timeline.push(record);
         buffer.timeline.sort_by_key(order_key);
         if let Some(read_at) = own_read_at {
-            buffer.read_at_ms = Some(
-                buffer
-                    .read_at_ms
-                    .map_or(read_at, |current| current.max(read_at)),
-            );
+            buffer.read_facts.merge_mark(ServerTimeMs::new(read_at));
+        } else if let Some(stub) = stub {
+            buffer.read_facts.merge_stub(stub);
         }
         let excess = buffer.timeline.len().saturating_sub(self.window_limit);
         let evicted = buffer.timeline.drain(..excess).collect::<Vec<_>>();
@@ -3013,8 +2964,6 @@ fn promote_cached_buffer(buffer: &mut BufferState) {
     buffer.projection.unread = 0;
     buffer.projection.mentions = 0;
     buffer.projection.read_through = None;
-    buffer.cached_unread_base = 0;
-    buffer.cached_mentions_base = 0;
 }
 
 fn begin_target_fetch(buffer: &mut BufferState, fetch: &HistoryFetch) {
@@ -3026,11 +2975,6 @@ fn begin_target_fetch(buffer: &mut BufferState, fetch: &HistoryFetch) {
             set_history_state(buffer, HistoryState::LoadingLatest);
         }
         HistoryFetch::After { .. } => {
-            if buffer.projection.cached == Some(true) && buffer.read_at_ms.is_some() {
-                buffer.cached_unread_base = 0;
-                buffer.cached_mentions_base = 0;
-                derive_read_projection(buffer);
-            }
             let (oldest, at_start) = match &buffer.history {
                 HistoryState::Ready { oldest, at_start } => (oldest.clone(), *at_start),
                 HistoryState::Unrequested | HistoryState::QueuedLatest => (None, false),
@@ -3089,26 +3033,27 @@ fn advance_cursor(buffer: &mut BufferState, cursor: Option<HistoryCursor>) {
 
 fn cached_refresh_cursor(buffer: &BufferState) -> Option<HistoryCursor> {
     buffer
-        .read_at_ms
-        .map(|read_at_ms| HistoryCursor::new(None, read_at_ms))
+        .read_facts
+        .mark()
+        .map(|mark| HistoryCursor::new(None, mark.value()))
         .or_else(|| buffer.newest.clone())
 }
 
 fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
     let conversation = snapshot_conversation(buffer)?;
-    let badge = snapshot_badge(buffer);
     Some(SnapshotRow {
         conversation,
         title: buffer.projection.title.clone(),
         last_activity_ms: chat_activity_time(buffer),
-        badge,
         preview: buffer
             .projection
             .last_message
             .as_ref()
             .map(|message| snapshot_preview(&buffer.projection, message)),
         newest: buffer.newest.as_ref().map(HistoryCursor::snapshot),
-        read_at_ms: buffer.read_at_ms,
+        read_at_ms: buffer.read_facts.mark().map(ServerTimeMs::value),
+        stubs: buffer.read_facts.stubs().to_vec(),
+        gap_until: buffer.read_facts.gap_until(),
         peer_pin: buffer
             .direct_pin
             .as_ref()
@@ -3117,19 +3062,10 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
     })
 }
 
-fn snapshot_badge(buffer: &BufferState) -> SnapshotBadge {
-    if buffer.projection.mentions > 0 {
-        SnapshotBadge::Mentions {
-            count: buffer.projection.unread,
-            mentions: buffer.projection.mentions,
-        }
-    } else if buffer.projection.unread > 0 {
-        SnapshotBadge::Unread {
-            count: buffer.projection.unread,
-        }
-    } else {
-        SnapshotBadge::None
-    }
+fn copy_read_facts_to_snapshot(buffer: &BufferState, row: &mut SnapshotRow) {
+    row.read_at_ms = buffer.read_facts.mark().map(ServerTimeMs::value);
+    row.stubs = buffer.read_facts.stubs().to_vec();
+    row.gap_until = buffer.read_facts.gap_until();
 }
 
 fn snapshot_conversation(buffer: &BufferState) -> Option<SnapshotConversation> {
@@ -3195,9 +3131,10 @@ fn confirmed_text(kind: &MessageKind, text: &str) -> String {
 }
 
 fn derive_read_projection(buffer: &mut BufferState) {
-    buffer.projection.read_at_ms = buffer.read_at_ms;
+    let mark = buffer.read_facts.mark().map(ServerTimeMs::value);
+    buffer.projection.read_at_ms = mark;
     derive_chat_projection(buffer);
-    buffer.projection.read_through = buffer.read_at_ms.and_then(|marker| {
+    buffer.projection.read_through = mark.and_then(|marker| {
         buffer
             .timeline
             .iter()
@@ -3207,20 +3144,26 @@ fn derive_read_projection(buffer: &mut BufferState) {
             })
             .map(|record| record.projection.id)
     });
-    let (unread, mentions) = buffer
-        .timeline
-        .iter()
-        .filter(|record| {
-            record.projection.authorship != MessageAuthorship::Own
-                && buffer
-                    .read_at_ms
-                    .is_none_or(|floor| message_time(&record.projection) > floor)
-        })
-        .fold((0, 0), |(unread, mentions), record| {
-            (unread + 1, mentions + u64::from(record.counts_as_mention))
-        });
-    buffer.projection.unread = buffer.cached_unread_base.saturating_add(unread);
-    buffer.projection.mentions = buffer.cached_mentions_base.saturating_add(mentions);
+    let unread = unread_count(&buffer.read_facts);
+    buffer.projection.unread = if has_unread_gap(&buffer.read_facts) {
+        u64::try_from(unread.max(100)).unwrap_or(u64::MAX)
+    } else {
+        u64::try_from(unread).unwrap_or(u64::MAX)
+    };
+    buffer.projection.mentions =
+        u64::try_from(mention_count(&buffer.read_facts, false)).unwrap_or(u64::MAX);
+}
+
+fn message_stub(message: &MessageProjection, mention: bool) -> Option<MessageStub> {
+    (message.authorship != MessageAuthorship::Own && is_committed(message)).then(|| MessageStub {
+        msgid: message
+            .server_ids
+            .first()
+            .cloned()
+            .unwrap_or_else(|| format!("local:{}", message.id.0)),
+        time: ServerTimeMs::new(message_time(message)),
+        mention,
+    })
 }
 
 fn derive_chat_projection(buffer: &mut BufferState) {
@@ -3504,10 +3447,9 @@ mod tests {
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
         MembershipProjection, MessageAuthorship, NetworkConnectionState, NetworkId,
-        chat_list_snapshot::{
-            ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotCursor, SnapshotRow,
-        },
+        chat_list_snapshot::{ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow},
         pushed_messages::PushedMessage,
+        read_model::{MessageStub, ServerTimeMs},
     };
 
     fn secure_wire_builder() -> papo::Builder {
@@ -3679,6 +3621,18 @@ mod tests {
             NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), limit),
             StateBuilder::new("weblounge").connected(true).build(),
         )
+    }
+
+    fn snapshot_stubs(count: usize, mentions: usize, latest: i64) -> Vec<MessageStub> {
+        (0..count)
+            .map(|index| MessageStub {
+                msgid: format!("snapshot-{latest}-{index}"),
+                time: ServerTimeMs::new(
+                    latest - i64::try_from(count - index - 1).expect("small fixture"),
+                ),
+                mention: index < mentions,
+            })
+            .collect()
     }
 
     #[test]
@@ -3885,7 +3839,10 @@ mod tests {
             nick_draft_key
         );
         assert_eq!(
-            model.buffers[&buffer_id].read_at_ms,
+            model.buffers[&buffer_id]
+                .read_facts
+                .mark()
+                .map(ServerTimeMs::value),
             Some(time_millis(read_at))
         );
         assert_eq!(direct_buffer_count(model), 1);
@@ -4010,7 +3967,52 @@ mod tests {
     }
 
     #[test]
-    fn targets_keeps_an_unchanged_cached_direct_authoritative_without_a_fetch() {
+    fn schema_five_migration_refetches_only_after_the_conversation_changes() {
+        let snapshot = ChatListSnapshot::decode(
+            include_bytes!("../../../fixtures/read-state/schema-5-chat-list.json"),
+            "network",
+        )
+        .expect("schema 5 fixture migrates");
+        let (mut model, state) = model(10);
+        model.restore_chat_list(snapshot);
+        let nick = nick_name(&state, "alice");
+
+        let (unchanged, _, _) =
+            model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(300));
+        assert!(unchanged.is_none());
+        let buffer_id = model.names[&NameKey::Direct(nick.clone())];
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 0);
+
+        let (changed, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(400));
+        assert!(matches!(
+            changed,
+            Some(HistoryFetch::After { ref newest, .. })
+                if newest.reference()
+                    == papo::HistoryReference::from(UNIX_EPOCH + Duration::from_millis(100))
+        ));
+        for time in [200, 300, 400] {
+            model.receive_incoming(
+                direct_incoming(&state, "alice", &format!("line {time}"), time),
+                &state,
+            );
+        }
+        model
+            .finish_history(
+                &papo::Conversation::Private(nick.clone()),
+                None,
+                Some(HistoryCursor::new(Some("alice-400".into()), 400)),
+                3,
+                true,
+            )
+            .expect("changed conversation rebuild finishes");
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 3);
+
+        let (settled, _, _) = model.restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(400));
+        assert!(settled.is_none());
+    }
+
+    #[test]
+    fn unchanged_conversation_restores_its_unread_facts_without_a_fetch() {
         let (mut model, state) = model(10);
         model.restore_chat_list(ChatListSnapshot::new(
             "network".into(),
@@ -4020,10 +4022,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(100),
-                badge: SnapshotBadge::Mentions {
-                    count: 3,
-                    mentions: 3,
-                },
+                stubs: snapshot_stubs(3, 3, 100),
+                gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
@@ -4044,11 +4044,10 @@ mod tests {
             Some("cached preview")
         );
         assert!(matches!(buffer.history, HistoryState::Unrequested));
-        assert!(model.cached_direct_needs_marker(&nick));
     }
 
     #[test]
-    fn partial_cached_direct_marker_recounts_latest_history() {
+    fn newer_server_marker_prunes_restored_unread_facts() {
         let (mut model, state) = model(10);
         model.restore_chat_list(ChatListSnapshot::new(
             "network".into(),
@@ -4058,10 +4057,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(300),
-                badge: SnapshotBadge::Mentions {
-                    count: 3,
-                    mentions: 3,
-                },
+                stubs: snapshot_stubs(3, 3, 300),
+                gap_until: None,
                 preview: Some("newest".into()),
                 newest: Some(SnapshotCursor {
                     msgid: Some("newest".into()),
@@ -4075,24 +4072,7 @@ mod tests {
         let conversation = papo::Conversation::Private(nick.clone());
 
         model
-            .apply_server_read_marker(&conversation, Some(UNIX_EPOCH + Duration::from_millis(200)));
-        let fetch = model
-            .request_cached_marker_recount(&conversation)
-            .expect("partial marker needs message times");
-        assert!(matches!(
-            fetch,
-            HistoryFetch::Latest(HistoryTarget::Direct(_))
-        ));
-        for time in [100, 200, 300] {
-            model.receive_incoming(
-                direct_incoming(&state, "alice", &format!("line {time}"), time),
-                &state,
-            );
-        }
-        model
-            .finish_history(&conversation, None, None, 3, true)
-            .expect("marker recount finishes");
-
+            .apply_server_read_marker(&conversation, Some(UNIX_EPOCH + Duration::from_millis(299)));
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
         assert_eq!(buffer.projection.unread, 1);
         assert_eq!(buffer.projection.mentions, 1);
@@ -4109,10 +4089,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(100),
-                badge: SnapshotBadge::Mentions {
-                    count: 1,
-                    mentions: 1,
-                },
+                stubs: snapshot_stubs(1, 1, 100),
+                gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
@@ -4147,7 +4125,8 @@ mod tests {
                     },
                     title: "#room".into(),
                     last_activity_ms: Some(100),
-                    badge: SnapshotBadge::Unread { count: 1 },
+                    stubs: snapshot_stubs(1, 0, 100),
+                    gap_until: None,
                     preview: Some("cached".into()),
                     newest: Some(SnapshotCursor {
                         msgid: Some("cached".into()),
@@ -4225,7 +4204,8 @@ mod tests {
                 },
                 title: "#room".into(),
                 last_activity_ms: Some(100),
-                badge: SnapshotBadge::Unread { count: 1 },
+                stubs: snapshot_stubs(1, 0, 100),
+                gap_until: None,
                 preview: Some("cached".into()),
                 newest: Some(SnapshotCursor {
                     msgid: Some("cached".into()),
@@ -4278,7 +4258,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: None,
-                badge: SnapshotBadge::None,
+                stubs: Vec::new(),
+                gap_until: None,
                 preview: None,
                 newest: None,
                 read_at_ms: None,
@@ -4306,7 +4287,8 @@ mod tests {
                 },
                 title: "#room".into(),
                 last_activity_ms: None,
-                badge: SnapshotBadge::None,
+                stubs: Vec::new(),
+                gap_until: None,
                 preview: None,
                 newest: None,
                 read_at_ms: None,
@@ -4335,7 +4317,12 @@ mod tests {
                 },
                 title: "#room".into(),
                 last_activity_ms: Some(300),
-                badge: SnapshotBadge::Unread { count: 1 },
+                stubs: vec![MessageStub {
+                    msgid: "after".into(),
+                    time: ServerTimeMs::new(300),
+                    mention: false,
+                }],
+                gap_until: None,
                 preview: Some("newest".into()),
                 newest: Some(SnapshotCursor {
                     msgid: Some("newest".into()),
@@ -4417,10 +4404,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(200),
-                badge: SnapshotBadge::Mentions {
-                    count: 100,
-                    mentions: 100,
-                },
+                stubs: snapshot_stubs(100, 100, 200),
+                gap_until: None,
                 preview: Some("cached preview".into()),
                 newest: Some(SnapshotCursor {
                     msgid: Some("cached-newest".into()),
@@ -4441,7 +4426,7 @@ mod tests {
                     UNIX_EPOCH + Duration::from_millis(50)
                 )
         ));
-        assert_eq!(model.buffers[&buffer_id].projection.unread, 0);
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 100);
 
         let completion = model
             .finish_history(&papo::Conversation::Private(nick), None, None, 100, false)
@@ -4468,7 +4453,8 @@ mod tests {
                 },
                 title: "#room".into(),
                 last_activity_ms: Some(100),
-                badge: SnapshotBadge::Unread { count: 1 },
+                stubs: snapshot_stubs(1, 0, 100),
+                gap_until: None,
                 preview: Some("cached".into()),
                 newest: Some(SnapshotCursor {
                     msgid: Some("cached".into()),
@@ -5114,10 +5100,10 @@ mod tests {
     }
 
     #[test]
-    fn bounded_window_evicts_oldest_rows() {
-        let (mut model, state) = model(2);
+    fn unread_count_survives_timeline_eviction_and_relaunch() {
+        let (mut live, state) = model(2);
         for (index, text) in ["one", "two", "three"].into_iter().enumerate() {
-            model.receive_incoming(
+            live.receive_incoming(
                 incoming(
                     &state,
                     text,
@@ -5130,7 +5116,29 @@ mod tests {
             );
         }
 
-        assert_eq!(timeline(&model), ["two", "three"]);
+        assert_eq!(timeline(&live), ["two", "three"]);
+        let buffer = live
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.kind == BufferKind::Channel)
+            .expect("channel buffer");
+        assert_eq!(
+            (buffer.projection.unread, buffer.projection.mentions),
+            (3, 0)
+        );
+
+        let snapshot = live.chat_list_snapshot("network".into());
+        let (mut relaunched, _) = model(2);
+        relaunched.restore_chat_list(snapshot);
+        let restored = relaunched
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.kind == BufferKind::Channel)
+            .expect("restored channel");
+        assert_eq!(
+            (restored.projection.unread, restored.projection.mentions),
+            (3, 0)
+        );
     }
 
     #[test]
@@ -5697,7 +5705,10 @@ mod tests {
             buffer.projection.read_through,
             Some(buffer.timeline[1].projection.id)
         );
-        assert_eq!(buffer.projection.read_at_ms, buffer.read_at_ms);
+        assert_eq!(
+            buffer.projection.read_at_ms,
+            buffer.read_facts.mark().map(ServerTimeMs::value)
+        );
     }
 
     #[test]
@@ -5751,7 +5762,7 @@ mod tests {
             (buffer.projection.unread, buffer.projection.mentions),
             (0, 0)
         );
-        assert_eq!(buffer.read_at_ms, Some(249));
+        assert_eq!(buffer.read_facts.mark(), Some(ServerTimeMs::new(249)));
 
         for (text, msgid, time) in [
             ("ordinary live row", "live-ordinary", 300),
@@ -5901,7 +5912,7 @@ mod tests {
             .expect("offline delta finishes");
 
         let buffer = &relaunched.buffers[&buffer_id];
-        assert_eq!(buffer.read_at_ms, Some(249));
+        assert_eq!(buffer.read_facts.mark(), Some(ServerTimeMs::new(249)));
         assert_eq!(buffer.projection.unread, 1);
     }
 
@@ -5953,7 +5964,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(1_000),
-                badge: SnapshotBadge::Unread { count: 1 },
+                stubs: snapshot_stubs(1, 0, 1_000),
+                gap_until: None,
                 preview: Some("hello".into()),
                 newest: None,
                 read_at_ms: None,
@@ -5990,7 +6002,8 @@ mod tests {
                 },
                 title: "#gone".into(),
                 last_activity_ms: Some(1_000),
-                badge: SnapshotBadge::Unread { count: 1 },
+                stubs: snapshot_stubs(1, 0, 1_000),
+                gap_until: None,
                 preview: Some("cached".into()),
                 newest: None,
                 read_at_ms: None,
@@ -6033,10 +6046,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: Some(1_000),
-                badge: SnapshotBadge::Mentions {
-                    count: 3,
-                    mentions: 3,
-                },
+                stubs: snapshot_stubs(3, 3, 1_000),
+                gap_until: None,
                 preview: Some("stale preview".into()),
                 newest: None,
                 read_at_ms: None,
@@ -6091,7 +6102,8 @@ mod tests {
                 },
                 title: "Alice".into(),
                 last_activity_ms: None,
-                badge: SnapshotBadge::None,
+                stubs: Vec::new(),
+                gap_until: None,
                 preview: None,
                 newest: None,
                 read_at_ms: None,
@@ -6116,7 +6128,8 @@ mod tests {
             },
             title: "#slow cached".into(),
             last_activity_ms: Some(100),
-            badge: SnapshotBadge::Unread { count: 4 },
+            stubs: snapshot_stubs(4, 0, 100),
+            gap_until: None,
             preview: Some("cached channel preview".into()),
             newest: None,
             read_at_ms: None,
@@ -6132,10 +6145,8 @@ mod tests {
                     },
                     title: "Alice cached".into(),
                     last_activity_ms: Some(200),
-                    badge: SnapshotBadge::Mentions {
-                        count: 2,
-                        mentions: 2,
-                    },
+                    stubs: snapshot_stubs(2, 2, 200),
+                    gap_until: None,
                     preview: Some("cached direct preview".into()),
                     newest: None,
                     read_at_ms: None,
@@ -6165,7 +6176,7 @@ mod tests {
         assert_eq!(merged.rows.len(), 2);
         assert!(merged.rows.contains(&unresolved));
         assert!(merged.rows.iter().any(|row| {
-            row.title == "Alice live" && row.badge == SnapshotBadge::None && row.preview.is_none()
+            row.title == "Alice live" && row.stubs.len() == 2 && row.preview.is_none()
         }));
         assert!(merged.rows.iter().all(|row| row.title != "bob"));
     }
@@ -6179,10 +6190,8 @@ mod tests {
             },
             title: "alice".into(),
             last_activity_ms: Some(200),
-            badge: SnapshotBadge::Mentions {
-                count: 1,
-                mentions: 1,
-            },
+            stubs: snapshot_stubs(1, 1, 200),
+            gap_until: None,
             preview: Some("cached direct".into()),
             newest: None,
             read_at_ms: None,
@@ -6194,7 +6203,8 @@ mod tests {
             },
             title: "#slow".into(),
             last_activity_ms: Some(100),
-            badge: SnapshotBadge::Unread { count: 4 },
+            stubs: snapshot_stubs(4, 0, 100),
+            gap_until: None,
             preview: Some("cached channel".into()),
             newest: None,
             read_at_ms: None,
@@ -6232,7 +6242,7 @@ mod tests {
                 == SnapshotConversation::Direct {
                     key: "alice".into(),
                 }
-                && row.badge == SnapshotBadge::None
+                && row.stubs.is_empty()
         }));
     }
 
@@ -6247,10 +6257,8 @@ mod tests {
                 },
                 title: "alice".into(),
                 last_activity_ms: Some(2_000),
-                badge: SnapshotBadge::Mentions {
-                    count: 1,
-                    mentions: 1,
-                },
+                stubs: Vec::new(),
+                gap_until: None,
                 preview: Some("stale cached direct".into()),
                 newest: Some(SnapshotCursor {
                     msgid: None,
@@ -6284,7 +6292,7 @@ mod tests {
 
         let merged = model.merge_chat_list_snapshot("network".into(), &previous);
         assert_eq!(merged.rows.len(), 1);
-        assert_eq!(merged.rows[0].badge, SnapshotBadge::None);
+        assert!(merged.rows[0].stubs.is_empty());
         assert_eq!(merged.rows[0].read_at_ms, Some(1_000));
     }
 
@@ -6297,7 +6305,8 @@ mod tests {
             },
             title: "#room".into(),
             last_activity_ms: Some(100),
-            badge: SnapshotBadge::Unread { count: 1 },
+            stubs: snapshot_stubs(1, 0, 100),
+            gap_until: None,
             preview: Some("cached preview".into()),
             newest: Some(SnapshotCursor {
                 msgid: Some("cached-newest".into()),
@@ -6317,7 +6326,8 @@ mod tests {
         assert_eq!(
             merged.rows,
             vec![SnapshotRow {
-                badge: SnapshotBadge::None,
+                stubs: Vec::new(),
+                gap_until: None,
                 read_at_ms: Some(100),
                 ..cached
             }]
@@ -6333,10 +6343,8 @@ mod tests {
             },
             title: "Alice cached".into(),
             last_activity_ms: Some(100),
-            badge: SnapshotBadge::Mentions {
-                count: 1,
-                mentions: 1,
-            },
+            stubs: snapshot_stubs(1, 1, 100),
+            gap_until: None,
             preview: Some("cached preview".into()),
             newest: None,
             read_at_ms: None,
@@ -6391,10 +6399,12 @@ mod tests {
                 },
                 title: "alice".into(),
                 last_activity_ms: Some(1_793_709_296_789),
-                badge: SnapshotBadge::Mentions {
-                    count: 1,
-                    mentions: 1,
-                },
+                stubs: vec![MessageStub {
+                    msgid: "pushed-direct".into(),
+                    time: ServerTimeMs::new(1_793_709_296_789),
+                    mention: true,
+                }],
+                gap_until: None,
                 preview: Some("alice: arrived while closed".into()),
                 newest: Some(SnapshotCursor {
                     msgid: Some("pushed-direct".into()),

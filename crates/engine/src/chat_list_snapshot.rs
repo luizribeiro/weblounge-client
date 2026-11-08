@@ -1,11 +1,15 @@
-use crate::storage::{KvBackend, Operation, Space, StorageError};
+use crate::{
+    read_model::{MessageStub, ServerTimeMs},
+    storage::{KvBackend, Operation, Space, StorageError},
+};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SNAPSHOT_KEY: &[u8] = b"chat-list-snapshot";
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 const ACCOUNT_KEY_SCHEMA: u32 = 2;
 const COUNTLESS_BADGE_SCHEMA: u32 = 3;
 const ACTIVITY_CURSOR_SCHEMA: u32 = 4;
+const SAVED_BADGE_SCHEMA: u32 = 5;
 pub(crate) const PREVIEW_LIMIT: usize = 80;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -41,7 +45,10 @@ impl ChatListSnapshot {
         let schema = u32::try_from(value.get("schema")?.as_u64()?).ok()?;
         if matches!(
             schema,
-            ACCOUNT_KEY_SCHEMA | COUNTLESS_BADGE_SCHEMA | ACTIVITY_CURSOR_SCHEMA
+            ACCOUNT_KEY_SCHEMA
+                | COUNTLESS_BADGE_SCHEMA
+                | ACTIVITY_CURSOR_SCHEMA
+                | SAVED_BADGE_SCHEMA
         ) {
             value["schema"] = SCHEMA_VERSION.into();
             for row in value.get_mut("rows")?.as_array_mut()? {
@@ -58,15 +65,19 @@ impl ChatListSnapshot {
                         badge.insert("mentions".into(), mentions);
                     }
                 }
-                if let Some(server_time_ms) = row
-                    .get("last_activity_ms")
-                    .and_then(serde_json::Value::as_i64)
+                if row.get("newest").is_none()
+                    && let Some(server_time_ms) = row
+                        .get("last_activity_ms")
+                        .and_then(serde_json::Value::as_i64)
                 {
                     row.as_object_mut()?.insert(
                         "newest".into(),
                         serde_json::json!({ "server_time_ms": server_time_ms }),
                     );
                 }
+                row.as_object_mut()?.remove("stubs");
+                row.as_object_mut()?.remove("gap_until");
+                row.as_object_mut()?.remove("badge");
             }
         }
         let snapshot = serde_json::from_value::<Self>(value).ok()?;
@@ -83,12 +94,15 @@ pub(crate) struct SnapshotRow {
     pub(crate) conversation: SnapshotConversation,
     pub(crate) title: String,
     pub(crate) last_activity_ms: Option<i64>,
-    pub(crate) badge: SnapshotBadge,
     pub(crate) preview: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) newest: Option<SnapshotCursor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) read_at_ms: Option<i64>,
+    #[serde(default)]
+    pub(crate) stubs: Vec<MessageStub>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) gap_until: Option<ServerTimeMs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) peer_pin: Option<String>,
 }
@@ -105,14 +119,6 @@ pub(crate) struct SnapshotCursor {
 pub(crate) enum SnapshotConversation {
     Channel { key: String },
     Direct { key: String },
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum SnapshotBadge {
-    None,
-    Unread { count: u64 },
-    Mentions { count: u64, mentions: u64 },
 }
 
 pub(crate) fn fingerprint(label: &str, endpoint: &str) -> String {
@@ -156,9 +162,10 @@ pub(crate) async fn clear<B: KvBackend>(backend: &B) -> Result<(), StorageError>
 #[cfg(test)]
 mod tests {
     use super::{
-        ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotCursor, SnapshotRow, clear,
-        fingerprint, read, truncate_preview, write,
+        ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, clear, fingerprint,
+        read, truncate_preview, write,
     };
+    use crate::read_model::{MessageStub, ServerTimeMs};
     use crate::storage::MemoryKv;
 
     fn snapshot() -> ChatListSnapshot {
@@ -171,13 +178,18 @@ mod tests {
                     },
                     title: "#Rust".into(),
                     last_activity_ms: Some(1_700_000_000_000),
-                    badge: SnapshotBadge::Unread { count: 7 },
                     preview: Some("mel: hello".into()),
                     newest: Some(SnapshotCursor {
                         msgid: Some("newest-1".into()),
                         server_time_ms: 1_700_000_000_000,
                     }),
                     read_at_ms: Some(1_699_999_999_000),
+                    stubs: vec![MessageStub {
+                        msgid: "newest-1".into(),
+                        time: ServerTimeMs::new(1_700_000_000_000),
+                        mention: false,
+                    }],
+                    gap_until: None,
                     peer_pin: None,
                 },
                 SnapshotRow {
@@ -186,13 +198,15 @@ mod tests {
                     },
                     title: "Alice".into(),
                     last_activity_ms: Some(1_700_000_000_001),
-                    badge: SnapshotBadge::Mentions {
-                        count: 5,
-                        mentions: 3,
-                    },
                     preview: Some(truncate_preview(&"é".repeat(81))),
                     newest: None,
                     read_at_ms: None,
+                    stubs: vec![MessageStub {
+                        msgid: "alice-1".into(),
+                        time: ServerTimeMs::new(1_700_000_000_001),
+                        mention: true,
+                    }],
+                    gap_until: Some(ServerTimeMs::new(1_700_000_000_000)),
                     peer_pin: Some("papo-peer-v1;scope=server%3Aexample;account=alice".into()),
                 },
             ],
@@ -206,15 +220,16 @@ mod tests {
         let encoded = snapshot.encode().expect("encode");
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
 
-        assert_eq!(value["schema"], 5);
+        assert_eq!(value["schema"], 6);
         assert_eq!(value["cursor_ms"], 1_700_000_000_100_i64);
         assert!(value.get("synced_through_ms").is_none());
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
         assert_eq!(value["rows"][0]["newest"]["msgid"], "newest-1");
         assert_eq!(value["rows"][0]["read_at_ms"], 1_699_999_999_000_i64);
-        assert_eq!(value["rows"][0]["badge"]["count"], 7);
-        assert_eq!(value["rows"][1]["badge"]["count"], 5);
-        assert_eq!(value["rows"][1]["badge"]["mentions"], 3);
+        assert_eq!(value["rows"][0]["stubs"][0]["msgid"], "newest-1");
+        assert_eq!(value["rows"][1]["stubs"][0]["mention"], true);
+        assert_eq!(value["rows"][1]["gap_until"], 1_700_000_000_000_i64);
+        assert!(value["rows"][0].get("badge").is_none());
         assert_eq!(
             value["rows"][1]["preview"]
                 .as_str()
@@ -276,35 +291,25 @@ mod tests {
             .as_object_mut()
             .expect("snapshot")
             .remove("cursor_ms");
+        legacy["rows"][0]["badge"] = serde_json::json!({ "kind": "unread" });
+        legacy["rows"][1]["badge"] = serde_json::json!({ "kind": "mentions", "count": 3 });
         for row in legacy["rows"].as_array_mut().expect("rows") {
-            let badge = row["badge"].as_object_mut().expect("badge");
-            if badge["kind"] == "unread" {
-                badge.remove("count");
-            } else if badge["kind"] == "mentions" {
-                badge.remove("mentions");
-                badge.insert("count".into(), 3.into());
-            }
+            row.as_object_mut().expect("row").remove("stubs");
+            row.as_object_mut().expect("row").remove("gap_until");
         }
 
         let migrated =
             ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected)
                 .expect("schema 2 migrates");
 
-        assert_eq!(migrated.schema, 5);
+        assert_eq!(migrated.schema, 6);
         assert_eq!(migrated.cursor_ms, None);
         assert!(migrated.rows.iter().all(|row| row.peer_pin.is_none()));
-        assert_eq!(migrated.rows[0].badge, SnapshotBadge::Unread { count: 1 });
-        assert_eq!(
-            migrated.rows[1].badge,
-            SnapshotBadge::Mentions {
-                count: 3,
-                mentions: 3,
-            }
-        );
+        assert!(migrated.rows.iter().all(|row| row.stubs.is_empty()));
     }
 
     #[test]
-    fn countless_badge_schema_migrates_to_visible_counts() {
+    fn countless_badge_schema_discards_saved_counts() {
         let snapshot = snapshot();
         let expected = fingerprint("Lounge", "wss://irc.example");
         let mut legacy: serde_json::Value =
@@ -316,19 +321,41 @@ mod tests {
             .remove("cursor_ms");
         legacy["rows"][0]["badge"] = serde_json::json!({ "kind": "unread" });
         legacy["rows"][1]["badge"] = serde_json::json!({ "kind": "mentions", "count": 3 });
+        for row in legacy["rows"].as_array_mut().expect("rows") {
+            row.as_object_mut().expect("row").remove("stubs");
+            row.as_object_mut().expect("row").remove("gap_until");
+        }
 
         let migrated =
             ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected)
                 .expect("schema 3 migrates");
 
-        assert_eq!(migrated.rows[0].badge, SnapshotBadge::Unread { count: 1 });
+        assert!(migrated.rows.iter().all(|row| row.stubs.is_empty()));
+    }
+
+    #[test]
+    fn schema_five_fixture_discards_counts_and_preserves_sync_facts() {
+        let bytes = include_bytes!("../../../fixtures/read-state/schema-5-chat-list.json");
+
+        let migrated = ChatListSnapshot::decode(bytes, "network").expect("schema 5 migrates");
+        let row = &migrated.rows[0];
+        let encoded: serde_json::Value =
+            serde_json::from_slice(&migrated.encode().expect("encode migrated snapshot"))
+                .expect("json");
+
+        assert_eq!(migrated.schema, 6);
+        assert_eq!(migrated.cursor_ms, Some(400));
+        assert_eq!(row.read_at_ms, Some(100));
         assert_eq!(
-            migrated.rows[1].badge,
-            SnapshotBadge::Mentions {
-                count: 3,
-                mentions: 3,
-            }
+            row.newest,
+            Some(SnapshotCursor {
+                msgid: Some("alice-300".into()),
+                server_time_ms: 300,
+            })
         );
+        assert!(row.stubs.is_empty());
+        assert_eq!(row.gap_until, None);
+        assert!(encoded["rows"][0].get("badge").is_none());
     }
 
     #[tokio::test]
