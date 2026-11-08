@@ -47,7 +47,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Land read-state migration steps 2–3. One persisted network cursor now bounds TARGETS, advances
   only after each delta commits, and resumes from the same boundary after relaunch. New conversation
   rows inherit that cursor as their persisted local mark, so pre-follow history stays read while
-  later offline traffic is unread. This replaces the temporary JOIN-time floor and pushed-row
+  later offline traffic is unread. The seed uses the cursor's preceding millisecond as an exclusive
+  boundary, preventing a row-creating message at the cursor's millisecond from being swallowed;
+  real read marks remain inclusive. This replaces the temporary JOIN-time floor and pushed-row
   provenance exception; production push, launch/catch-up, relaunch, and native-feel journeys cover
   the resulting New-divider and badge behavior.
 - [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now

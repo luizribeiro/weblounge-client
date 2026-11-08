@@ -41,9 +41,11 @@ the service worker a second writer of engine rows, made every TARGETS bump visib
 more stubs than the badge can display, and did not define how an own send moves the divider.
 
 Both missed the network sync cursor as the correct "what this device has already received" anchor,
-and neither restricted own-message advances to server-time-tagged echoes. Timestamp ties at the
-mark are read because IRC markers have millisecond precision. The service-worker snapshot must also
-carry server CASEMAPPING so every context constructs the same conversation key.
+and neither restricted own-message advances to server-time-tagged echoes. Timestamp ties at a real
+read mark are read because IRC markers have millisecond precision. A seed is an exclusive ingestion
+boundary, so its preceding-millisecond representation keeps traffic received at the cursor's exact
+millisecond unread. The service-worker snapshot must also carry server CASEMAPPING so every context
+constructs the same conversation key.
 
 ## 2. Stored facts
 
@@ -80,8 +82,13 @@ When a device starts tracking a conversation by creating its row—the first JOI
 TARGETS sighting, or a rejoin after PART deleted the old row—it applies:
 
 ```text
-mark := max(mark, network.cursor_at_that_moment)
+mark := max(mark, predecessor(network.cursor_at_that_moment))
 ```
+
+`predecessor` is the preceding representable server-time millisecond. It encodes the seed as an
+exclusive boundary while preserving the strict `message.time > mark` rule: a distinct message
+ingested at the cursor's millisecond remains unread, while a real read mark at that millisecond is
+inclusive.
 
 On the very first connection, the cursor is "now". The seed replaces `local_unread_floor_ms`,
 `restored_from_push` and the provenance-based floor bypass:
@@ -185,7 +192,8 @@ network cursor only after all scheduled deltas settle.
 | Partial remote read inside a gap | Remaining known stubs count and the badge stays `99+` while the mark precedes `gap_until`. |
 | Concurrent tab writers | Maximum and union merges converge. |
 | Network without read-marker support | Pending remains unset; the local mark and all derivations behave identically. |
-| Message tied with the mark at millisecond precision | It is read; this is an IRC protocol limit. |
+| Message tied with a real mark at millisecond precision | It is read; this is an IRC protocol limit. |
+| Message tied with the cursor-derived seed | It is unread because the device ingested it after taking the seed. |
 
 ## 7. Boundaries and migration
 

@@ -9323,6 +9323,56 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn same_millisecond_direct_stays_unread_when_it_creates_its_row() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["message-tags", "server-time"]).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let message_time = UNIX_EPOCH + Duration::from_millis(1_000);
+        {
+            let mut state = lock(&state);
+            let model = &mut state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model;
+            let earlier = message_time - Duration::from_millis(1);
+            model.begin_target_sync(earlier);
+            model.finish_target_sync(Some(earlier));
+            model.set_connection(NetworkConnectionState::Online, None);
+        }
+        let time = papo_proto::time::format(message_time).expect("message time formats");
+
+        wire.server(format!(
+            "@msgid=channel-live;time={time} :Bob!b@host PRIVMSG #room :channel live"
+        ))
+        .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        wire.server(format!(
+            "@msgid=direct-live;time={time} :Alice!a@host PRIVMSG weblounge :direct live"
+        ))
+        .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+
+        let output = collect(&mut receiver);
+        let direct = output
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferAdded { buffer } if buffer.title == "Alice" => Some(buffer.id),
+                _ => None,
+            })
+            .expect("direct message creates its row");
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                buffer_id,
+                unread: 1,
+                mentions: 1,
+            } if *buffer_id == direct
+        )));
+    }
+
+    #[tokio::test]
     async fn second_connected_catches_up_a_ready_direct_after_its_newest_msgid() {
         let (client, events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));

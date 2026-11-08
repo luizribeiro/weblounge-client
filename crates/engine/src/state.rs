@@ -590,7 +590,10 @@ impl NetworkModel {
     }
 
     fn seed_mark_ms(&self) -> Option<i64> {
-        self.cursor.max(self.seed_cursor).map(time_millis)
+        self.cursor
+            .max(self.seed_cursor)
+            .map(time_millis)
+            .map(|cursor| cursor.saturating_sub(1))
     }
 
     pub(crate) fn begin_target_sync(&mut self, now: SystemTime) {
@@ -5748,7 +5751,7 @@ mod tests {
             (buffer.projection.unread, buffer.projection.mentions),
             (0, 0)
         );
-        assert_eq!(buffer.read_at_ms, Some(250));
+        assert_eq!(buffer.read_at_ms, Some(249));
 
         for (text, msgid, time) in [
             ("ordinary live row", "live-ordinary", 300),
@@ -5866,7 +5869,7 @@ mod tests {
         first.finish_target_sync(Some(UNIX_EPOCH + Duration::from_millis(300)));
 
         let snapshot = first.chat_list_snapshot("network".into());
-        assert_eq!(snapshot.rows[0].read_at_ms, Some(250));
+        assert_eq!(snapshot.rows[0].read_at_ms, Some(249));
         assert_eq!(snapshot.cursor_ms, Some(300));
 
         let mut relaunched = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 10);
@@ -5898,7 +5901,7 @@ mod tests {
             .expect("offline delta finishes");
 
         let buffer = &relaunched.buffers[&buffer_id];
-        assert_eq!(buffer.read_at_ms, Some(250));
+        assert_eq!(buffer.read_at_ms, Some(249));
         assert_eq!(buffer.projection.unread, 1);
     }
 
