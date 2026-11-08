@@ -48,6 +48,7 @@ import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
+  readonly dwelled?: boolean | undefined;
   readonly foreground?: boolean | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
@@ -345,6 +346,16 @@ export function MessageList(props: MessageListProps) {
     }
     observedOwnTime = ownTime;
     observedPeerTime = peerTime;
+    if (dividerMark() === null && marker !== null) {
+      setDividerMark(marker);
+      dividerTracksMark = !openingBoundaryPending(
+        props.messages,
+        marker,
+        props.syncState,
+      );
+      watchedThrough = undefined;
+      return;
+    }
     const reading =
       props.foreground !== false &&
       publishedAtLiveEdge() &&
@@ -353,6 +364,13 @@ export function MessageList(props: MessageListProps) {
       if (dividerTracksMark) setDividerMark(maximumMark(dividerMark(), marker));
       dividerTracksMark = false;
       watchedThrough = undefined;
+      return;
+    }
+    if (props.dwelled === false) {
+      if (hasUnreadAfter(props.messages, dividerMark())) {
+        dividerTracksMark = false;
+        watchedThrough = undefined;
+      }
       return;
     }
     if (

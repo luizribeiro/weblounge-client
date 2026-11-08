@@ -771,6 +771,58 @@ it("keeps a server marker while an opening history page arrives", async () => {
   );
 });
 
+it("keeps a server marker when unread opening history streams later", async () => {
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    message,
+  ]);
+  const { container } = render(() => (
+    <MessageList
+      bufferId={2}
+      dwelled={false}
+      foreground
+      messages={messages()}
+      readAtMs={1}
+      syncState="synced"
+    />
+  ));
+
+  setMessages([
+    ...messages(),
+    { ...message, id: 2, text: "streamed history", received_at_ms: 2 },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "streamed history",
+  );
+});
+
+it("freezes a server marker fetched after opening history arrives", async () => {
+  const [readAtMs, setReadAtMs] = createSignal<number | null>(null);
+  const { container } = render(() => (
+    <MessageList
+      bufferId={2}
+      dwelled={false}
+      foreground
+      messages={[
+        message,
+        { ...message, id: 2, text: "unread history", received_at_ms: 2 },
+      ]}
+      readAtMs={readAtMs()}
+      syncState="syncing"
+    />
+  ));
+
+  setReadAtMs(1);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const newLine = container.querySelector("[data-new-line]");
+  expect(newLine?.closest("li")?.nextElementSibling).toHaveTextContent(
+    "unread history",
+  );
+});
+
 it("does not freeze a cursor seed before a pending buffer's first live row", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>(

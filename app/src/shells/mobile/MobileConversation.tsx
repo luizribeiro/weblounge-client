@@ -79,7 +79,7 @@ export function MobileConversation(props: MobileConversationProps) {
   const newestMessageId = createMemo(() =>
     newestCommittedMessageId(props.messages),
   );
-  createReadDwell({
+  const readDwelled = createReadDwell({
     atLiveEdge,
     bufferId,
     foreground: () => props.foreground !== false,
@@ -187,6 +187,7 @@ export function MobileConversation(props: MobileConversationProps) {
           />
           <MessageList
             bufferId={props.buffer.id}
+            dwelled={readDwelled()}
             messages={props.messages}
             foreground={props.foreground !== false}
             memberships={props.memberships}

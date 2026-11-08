@@ -288,7 +288,7 @@ export function DesktopShell(props: DesktopShellProps) {
     }
   });
 
-  createReadDwell({
+  const readDwelled = createReadDwell({
     atLiveEdge,
     bufferId: activeBufferId,
     foreground: () => props.foreground !== false,
@@ -398,6 +398,7 @@ export function DesktopShell(props: DesktopShellProps) {
               )}
               <MessageList
                 bufferId={activeBuffer()?.id}
+                dwelled={readDwelled()}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
                 foreground={props.foreground !== false}
                 memberships={
