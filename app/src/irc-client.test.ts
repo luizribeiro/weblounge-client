@@ -5,7 +5,7 @@ describe("IRC test client nickname claims", () => {
   it("retries only after the conflicting holder departs", async () => {
     const lines = [
       ":ergo.test 433 always-on-control weblounge :Nickname is already in use",
-      ":weblounge!~u@example.test QUIT :connection closed",
+      "@time=2026-11-08T17:09:07.986Z;account=weblounge;msgid=departure :weblounge!~u@example.test QUIT :connection closed",
       ":always-on-control!~u@example.test NICK :weblounge",
     ];
     const events: string[] = [];
@@ -27,7 +27,7 @@ describe("IRC test client nickname claims", () => {
     expect(events).toEqual([
       "send NICK weblounge",
       "receive :ergo.test 433 always-on-control weblounge :Nickname is already in use",
-      "receive :weblounge!~u@example.test QUIT :connection closed",
+      "receive @time=2026-11-08T17:09:07.986Z;account=weblounge;msgid=departure :weblounge!~u@example.test QUIT :connection closed",
       "send NICK weblounge",
       "receive :always-on-control!~u@example.test NICK :weblounge",
     ]);

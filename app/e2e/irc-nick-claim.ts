@@ -30,7 +30,7 @@ function isNickConflict(line: string, nickname: string): boolean {
 }
 
 function isNickDeparture(line: string, nickname: string): boolean {
-  const source = /^:([^! ]+)!/u.exec(line)?.[1];
+  const source = /^(?:@\S+ )?:([^! ]+)!/u.exec(line)?.[1];
   return (
     source?.toLowerCase() === nickname.toLowerCase() &&
     (line.includes(" QUIT ") || line.includes(" NICK "))

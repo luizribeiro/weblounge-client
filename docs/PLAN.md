@@ -24,6 +24,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Recognize tagged IRC departures while the resilience harness claims the always-on nickname.
+  Ergo attaches server-time, account and msgid tags to the holder's QUIT, so the harness now accepts
+  the tagged source prefix and retries its NICK only after that observed departure.
 - [x] Land read-state migration step 7. Snapshot persistence now queues only changed conversation
   rows and explicit PART removals, starts each write immediately, and merges every row inside its
   storage transaction. Concurrent tabs and late replaced-client writes can no longer lower marks or
