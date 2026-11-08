@@ -12,7 +12,6 @@ const base = {
   topic: null,
   unread: 0,
   mentions: 0,
-  read_through: null,
 };
 const buffers: BufferProjection[] = [
   { ...base, id: 2, kind: "channel", title: "#garden" },
@@ -93,14 +92,15 @@ it("updates chat filters and search through accessible controls", () => {
   expect(open).toHaveBeenCalledWith(3, 37);
 });
 
-it("uses only the logo for hydration progress and one strip for failures", () => {
+it("uses only the logo for connection progress and one strip for failures", () => {
   const retry = vi.fn();
   const { container, unmount } = render(() => (
     <MobileChatList
       buffers={buffers}
       filter="all"
-      hydrating
-      networks={[{ id: 1, label: "Local", nickname: "me", state: "online" }]}
+      networks={[
+        { id: 1, label: "Local", nickname: "me", state: "connecting" },
+      ]}
       onFilter={() => {}}
       onOpen={() => {}}
       onQuery={() => {}}
@@ -180,7 +180,7 @@ it("keeps row elements when buffer projections are replaced", () => {
   expect(screen.getByLabelText("1 unread")).toBeVisible();
 });
 
-it("keeps recent mixed order and rendered times across cached-to-live swap", () => {
+it("keeps recent mixed order and rendered times across projection updates", () => {
   const times = [1_700_000_200_000, 1_700_000_300_000] as const;
   const cached: BufferProjection[] = [
     {
@@ -188,8 +188,7 @@ it("keeps recent mixed order and rendered times across cached-to-live swap", () 
       id: 3,
       kind: "channel",
       title: "#garden",
-      cached: true,
-      cached_preview: "#garden: middle",
+      preview: "#garden: middle",
       last_activity_ms: times[0],
     },
     {
@@ -197,17 +196,14 @@ it("keeps recent mixed order and rendered times across cached-to-live swap", () 
       id: 4,
       kind: "direct",
       title: "carol",
-      cached: true,
-      cached_preview: "newest",
+      preview: "newest",
       last_activity_ms: times[1],
     },
   ];
   const live: BufferProjection[] = cached.map((buffer, index) => {
-    const { cached_preview: _, ...liveBuffer } = buffer;
     const activity = buffer.last_activity_ms ?? 0;
     return {
-      ...liveBuffer,
-      cached: false,
+      ...buffer,
       last_message: {
         id: index + 1,
         author: buffer.title,

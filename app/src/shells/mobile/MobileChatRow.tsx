@@ -7,8 +7,6 @@ import { formatTime } from "../../ui/format-time";
 import { Line } from "../../ui/Line";
 import styles from "./MobileChatRow.module.css";
 
-const previewLength = 80;
-
 interface MobileChatRowProps {
   readonly buffer: BufferProjection;
   readonly networkLabel?: string | undefined;
@@ -26,8 +24,7 @@ export function MobileChatRow(props: MobileChatRowProps) {
     props.buffer.last_activity_ms ??
     message()?.server_time_ms ??
     message()?.received_at_ms;
-  const visiblePreview = () =>
-    props.buffer.cached_preview ?? preview(props.buffer);
+  const visiblePreview = () => props.buffer.preview ?? "";
   return (
     <button
       aria-label={
@@ -40,7 +37,6 @@ export function MobileChatRow(props: MobileChatRowProps) {
       }
       class={styles.row}
       data-buffer-id={props.buffer.id}
-      data-cached={props.buffer.cached || undefined}
       onClick={props.onOpen}
       onPointerDown={props.onPressStart}
       type="button"
@@ -92,30 +88,6 @@ export function MobileChatRow(props: MobileChatRowProps) {
       )}
     </button>
   );
-}
-
-function preview(buffer: BufferProjection): string {
-  const message = buffer.last_message;
-  if (message === undefined) return "";
-  const text = excerpt(message.text);
-  if (buffer.kind === "direct" && message.authorship === "own") {
-    return t("mobile.preview.own", { text });
-  }
-  if (buffer.kind === "direct" && message.author === buffer.title) {
-    return message.kind === "action"
-      ? t("mobile.preview.direct_action", { text })
-      : text;
-  }
-  return message.kind === "action"
-    ? t("mobile.preview.action", { author: message.author, text })
-    : t("mobile.preview.message", { author: message.author, text });
-}
-
-function excerpt(text: string): string {
-  const characters = [...text];
-  return characters.length > previewLength
-    ? `${characters.slice(0, previewLength).join("")}…`
-    : text;
 }
 
 function dateTime(milliseconds = 0): string {

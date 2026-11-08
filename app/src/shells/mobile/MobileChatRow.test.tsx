@@ -34,8 +34,8 @@ function buffer(overrides: Partial<BufferProjection> = {}): BufferProjection {
     topic: null,
     unread: 3,
     mentions: 1,
-    read_through: null,
     last_message: lastMessage,
+    preview: "mel: See you there",
     ...overrides,
   };
 }
@@ -62,9 +62,8 @@ it("renders preview, non-default network, time, and mention badge", () => {
 it("renders cached activity without a live message", () => {
   const activity = lastMessage.server_time_ms ?? lastMessage.received_at_ms;
   const { last_message: _, ...cachedBuffer } = buffer({
-    cached: true,
     last_activity_ms: activity,
-    cached_preview: "mel: See you there",
+    preview: "mel: See you there",
   });
   render(() => (
     <MobileChatRow buffer={cachedBuffer} onOpen={vi.fn()} previews={true} />
@@ -135,7 +134,11 @@ it("uses the same locale time in chat previews and message rows", () => {
 });
 
 it("omits the peer name from direct previews and labels own messages", () => {
-  const direct = buffer({ kind: "direct", title: "mel" });
+  const direct = buffer({
+    kind: "direct",
+    title: "mel",
+    preview: "See you there",
+  });
   const { unmount } = render(() => (
     <MobileChatRow
       buffer={direct}
@@ -153,6 +156,7 @@ it("omits the peer name from direct previews and labels own messages", () => {
       buffer={{
         ...direct,
         last_message: { ...lastMessage, author: "me", authorship: "own" },
+        preview: "You: See you there",
       }}
       onOpen={vi.fn()}
       onPressStart={() => {}}
@@ -173,6 +177,7 @@ it("keeps a long message's full text unique to the conversation", () => {
           kind: "direct",
           title: "mel",
           last_message: message,
+          preview: `${[...text].slice(0, 80).join("")}…`,
         })}
         onOpen={vi.fn()}
         onPressStart={() => {}}
