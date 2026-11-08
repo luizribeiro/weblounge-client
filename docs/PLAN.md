@@ -4,9 +4,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Known limits
 
-- Read-state migration step 5 remains blocked on papo exposing a bounded `LATEST` history API.
-  Step 6 is complete independently; do not emulate the missing protocol operation in the client.
-- The 16-buffer stock-fakelag launch now sends 36 commands instead of 81, but the two changed-buffer
+- The 16-buffer stock-fakelag launch stays within its 36-command ceiling (36 measured), but the two
+  changed-buffer
   history replies still arrive about 1.5 seconds after their requests. They wait behind
   papo's post-JOIN burst of seven `NAMES`, seven `MODE`, and seven `WHO` commands. Removing that
   delay requires papo to drop redundant `NAMES` after `JOIN` and resolve channel peers with lazy
@@ -25,6 +24,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Land read-state migration step 5 on papo's bounded `LATEST` API. Catch-up keeps the newest
+  100 messages after a cursor, treats only `page.end` as proof of completeness, persists the oldest
+  returned edge for a bounded gap, and projects that gap as `99+` while retaining the newest preview.
+  TARGETS reconciliation follows goguma by fetching markers for changed DMs and every DM with
+  retained unread facts. The 16-buffer launch remains under 36 commands, preserves unqueued client
+  requests, and makes a cached conversation interactive within a 500 ms ceiling while offline.
 - [x] Make Chromium push injection wait for service-worker delivery. The shared E2E helper now
   keeps one controller-bound CDP session and waits for a test-build-only receipt emitted after the
   push event's `waitUntil` work settles, so constrained runs cannot inspect notifications before
@@ -1051,7 +1056,8 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
 
 ## External dependencies
 
-- **papo:** papo 0.1 pinned at `1f87c93`. Persistable TLS-host-scoped peer identity pins,
+- **papo:** papo 0.1 pinned at `40c6722`. Bounded newest-page history after a cursor,
+  persistable TLS-host-scoped peer identity pins,
   per-send `direct_pinned` verification, post-registration SASL account-state hardening, explicit
   display spelling and folded storage keys, split-send reconciliation, exact live
   and nested-history multiline concatenation, server name rules, lag diagnostics,
