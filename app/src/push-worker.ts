@@ -27,6 +27,8 @@ import {
 } from "./platform/push/push-delivery-coordinator";
 import {
   createPushDeliveryTrace,
+  flushDeferredPushDeliveryLog,
+  type PushDeliveryEnvironment,
   type PushDeliveryTrace,
 } from "./platform/push/push-delivery-log";
 import type { PushPresentationState } from "./platform/push/push-delivery-state";
@@ -107,6 +109,7 @@ interface WorkerScope {
 }
 
 interface WindowClient {
+  readonly visibilityState?: string;
   focus(): Promise<WindowClient>;
   navigate(url: string): Promise<WindowClient | null>;
   postMessage(message: unknown): void;
@@ -208,7 +211,10 @@ const pushDeliveries = new PushDeliveryCoordinator<
     input.trace.measure("state_commit", () => commitPushDelivery(commit)),
   reportError: reportPushError,
   retryPrepare: (error) => error instanceof DatabaseTimeoutError,
-  complete: (input, completion) => input.trace.complete(completion),
+  complete: async (input, completion) => {
+    input.trace.setEnvironment(await pushDeliveryEnvironment());
+    await input.trace.complete(completion);
+  },
 });
 
 worker.importScripts("/push-payload.js");
@@ -220,11 +226,14 @@ worker.addEventListener("install", (event) => {
 });
 
 worker.addEventListener("activate", (event) => {
-  (event as WorkerEvent).waitUntil(activateWorker());
+  (event as WorkerEvent).waitUntil(
+    Promise.all([activateWorker(), flushDeliveryDiagnostics()]),
+  );
 });
 
 worker.addEventListener("message", (event) => {
   const message = event as WorkerEvent & MessageEvent;
+  message.waitUntil(flushDeliveryDiagnostics());
   const data: unknown = message.data;
   if (__PUSH_DELIVERY_TEST_ENABLED__ && isPushDeliveryTestGateRelease(data)) {
     const release = pushDeliveryTestGateReleases.get(data.id);
@@ -286,7 +295,7 @@ worker.addEventListener("message", (event) => {
 });
 
 worker.addEventListener("fetch", (event) => {
-  const fetchEvent = event as Event & {
+  const fetchEvent = event as WorkerEvent & {
     readonly request: Request;
     respondWith(response: Promise<Response>): void;
   };
@@ -296,6 +305,7 @@ worker.addEventListener("fetch", (event) => {
   if (url.origin !== worker.location.origin || url.pathname === "/config.json")
     return;
   if (request.mode === "navigate") {
+    fetchEvent.waitUntil(flushDeliveryDiagnostics());
     fetchEvent.respondWith(
       url.searchParams.has(emergencyReloadParameter)
         ? fetch(request, { cache: "reload" })
@@ -327,7 +337,33 @@ worker.addEventListener("notificationclick", (event) => {
   const click = event as WorkerNotificationEvent;
   click.preventDefault();
   click.waitUntil(routeNotificationClick(worker.clients, click.notification));
+  click.waitUntil(flushDeliveryDiagnostics());
 });
+
+async function flushDeliveryDiagnostics(): Promise<void> {
+  await flushDeferredPushDeliveryLog().catch(() => undefined);
+}
+
+async function pushDeliveryEnvironment(): Promise<PushDeliveryEnvironment> {
+  let visibility: "hidden" | "visible" | undefined;
+  try {
+    const clients = await worker.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    const states = clients.map(({ visibilityState }) => visibilityState);
+    if (states.includes("visible")) visibility = "visible";
+    else if (states.includes("hidden")) visibility = "hidden";
+  } catch {
+    visibility = undefined;
+  }
+  return {
+    ...(typeof navigator === "object" && "locks" in navigator
+      ? { locksAvailable: true as const }
+      : {}),
+    ...(visibility === undefined ? {} : { visibility }),
+  };
+}
 
 async function precacheShell(): Promise<void> {
   const cache = await caches.open(shellCache);

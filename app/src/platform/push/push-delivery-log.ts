@@ -15,10 +15,13 @@ export type PushDeliveryOutcome =
 export type PushDeliveryStage =
   | "envelope_decode"
   | "database_open"
+  | "database_transaction"
   | "route_lookup"
   | "key_lookup"
   | "decrypt"
+  | "parser_cache_lookup"
   | "parser_load"
+  | "parser_wasm_load"
   | "parse"
   | "notification_show"
   | "fallback_dismiss"
@@ -29,6 +32,11 @@ export interface PushDeliveryCompletion {
   readonly outcome: PushDeliveryOutcome;
   readonly fallbackDeadlineFired: boolean;
   readonly elapsedMs: number;
+}
+
+export interface PushDeliveryEnvironment {
+  readonly locksAvailable?: true;
+  readonly visibility?: "hidden" | "visible";
 }
 
 interface PushDeliveryStageTiming {
@@ -49,7 +57,10 @@ export interface PushDeliveryLogEntry {
   readonly outcome: PushDeliveryOutcome;
   readonly fallbackDeadlineFired: boolean;
   readonly elapsedMs: number;
+  readonly deferred: boolean;
   readonly stages: readonly PushDeliveryStageTiming[];
+  readonly locksAvailable?: true;
+  readonly visibility?: "hidden" | "visible";
   readonly failure?: PushDeliveryFailure;
 }
 
@@ -71,10 +82,13 @@ const outcomes = new Set<PushDeliveryOutcome>([
 const stages = new Set<PushDeliveryStage>([
   "envelope_decode",
   "database_open",
+  "database_transaction",
   "route_lookup",
   "key_lookup",
   "decrypt",
+  "parser_cache_lookup",
   "parser_load",
+  "parser_wasm_load",
   "parse",
   "notification_show",
   "fallback_dismiss",
@@ -83,27 +97,39 @@ const stages = new Set<PushDeliveryStage>([
 ]);
 const safeErrorNames = new Set([
   "AbortError",
+  "CompileError",
+  "ConstraintError",
   "DataError",
   "DatabaseTimeoutError",
   "Error",
   "InvalidAccessError",
+  "InvalidStateError",
+  "LinkError",
   "NetworkError",
   "NotFoundError",
+  "NotReadableError",
   "OperationError",
   "QuotaExceededError",
+  "ReadOnlyError",
+  "RuntimeError",
   "SecurityError",
   "SyntaxError",
   "TimeoutError",
+  "TransactionInactiveError",
   "TypeError",
   "UnknownError",
+  "VersionError",
 ]);
 const failureReasons: Readonly<Record<PushDeliveryStage, string>> = {
   envelope_decode: "invalid_envelope",
   database_open: "push_database_unavailable",
+  database_transaction: "push_database_transaction_failed",
   route_lookup: "route_unavailable",
   key_lookup: "route_key_unavailable",
   decrypt: "decrypt_failed",
+  parser_cache_lookup: "parser_cache_unavailable",
   parser_load: "parser_unavailable",
+  parser_wasm_load: "parser_wasm_load_failed",
   parse: "payload_parse_failed",
   notification_show: "notification_show_failed",
   fallback_dismiss: "fallback_dismiss_failed",
@@ -121,6 +147,7 @@ export class PushDeliveryTrace {
     | { readonly stage: PushDeliveryStage; readonly error: unknown }
     | undefined;
   #failure: PushDeliveryFailure | undefined;
+  #environment: PushDeliveryEnvironment = {};
 
   constructor(
     version: string,
@@ -141,7 +168,7 @@ export class PushDeliveryTrace {
     try {
       return await work();
     } catch (error: unknown) {
-      this.#candidate = { stage, error };
+      if (this.#candidate?.error !== error) this.#candidate = { stage, error };
       throw error;
     } finally {
       const elapsed = this.#clocks.monotonicNow() - started;
@@ -165,6 +192,10 @@ export class PushDeliveryTrace {
     };
   }
 
+  setEnvironment(environment: PushDeliveryEnvironment): void {
+    this.#environment = environment;
+  }
+
   complete(completion: PushDeliveryCompletion): Promise<void> {
     return this.#write({
       schema: 1,
@@ -173,10 +204,12 @@ export class PushDeliveryTrace {
       outcome: completion.outcome,
       fallbackDeadlineFired: completion.fallbackDeadlineFired,
       elapsedMs: milliseconds(completion.elapsedMs),
+      deferred: false,
       stages: [...this.#stageElapsed].map(([stage, elapsedMs]) => ({
         stage,
         elapsedMs: milliseconds(elapsedMs),
       })),
+      ...this.#environment,
       ...(this.#failure === undefined ? {} : { failure: this.#failure }),
     });
   }
@@ -193,9 +226,73 @@ export function createPushDeliveryTrace(
   return new PushDeliveryTrace(version, write, clocks);
 }
 
+type PersistPushDeliveryEntries = (
+  entries: readonly PushDeliveryLogEntry[],
+  factory: IDBFactory,
+) => Promise<void>;
+
+export class PushDeliveryLogWriter {
+  readonly #persist: PersistPushDeliveryEntries;
+  #pending: readonly PushDeliveryLogEntry[] = [];
+  #tail = Promise.resolve();
+
+  constructor(persist: PersistPushDeliveryEntries = persistPushDeliveryLog) {
+    this.#persist = persist;
+  }
+
+  append(
+    entry: PushDeliveryLogEntry,
+    factory: IDBFactory = indexedDB,
+  ): Promise<void> {
+    return this.#enqueue(async () => {
+      try {
+        await this.#persist(
+          [...this.#pending, { ...entry, deferred: false }],
+          factory,
+        );
+        this.#pending = [];
+      } catch (error: unknown) {
+        this.#pending = [...this.#pending, { ...entry, deferred: true }].slice(
+          -deliveryLogCapacity,
+        );
+        throw error;
+      }
+    });
+  }
+
+  flush(factory: IDBFactory = indexedDB): Promise<void> {
+    return this.#enqueue(async () => {
+      if (this.#pending.length === 0) return;
+      await this.#persist(this.#pending, factory);
+      this.#pending = [];
+    });
+  }
+
+  #enqueue(operation: () => Promise<void>): Promise<void> {
+    const current = this.#tail.then(operation);
+    this.#tail = current.catch(() => undefined);
+    return current;
+  }
+}
+
+const deliveryLogWriter = new PushDeliveryLogWriter();
+
 export async function appendPushDeliveryLog(
   entry: PushDeliveryLogEntry,
   factory: IDBFactory = indexedDB,
+): Promise<void> {
+  return deliveryLogWriter.append(entry, factory);
+}
+
+export async function flushDeferredPushDeliveryLog(
+  factory: IDBFactory = indexedDB,
+): Promise<void> {
+  return deliveryLogWriter.flush(factory);
+}
+
+async function persistPushDeliveryLog(
+  entries: readonly PushDeliveryLogEntry[],
+  factory: IDBFactory,
 ): Promise<void> {
   const started = Date.now();
   const database = await openPushDatabase(factory, deliveryLogDeadlineMs);
@@ -207,7 +304,10 @@ export async function appendPushDeliveryLog(
         await requestResult(store.get(deliveryLogKey), remaining(started)),
       ),
     ].reverse();
-    store.put([...current, entry].slice(-deliveryLogCapacity), deliveryLogKey);
+    store.put(
+      [...current, ...entries].slice(-deliveryLogCapacity),
+      deliveryLogKey,
+    );
     await transactionDone(transaction, remaining(started));
   } finally {
     database.close();
@@ -246,7 +346,8 @@ export function formatPushDeliveryLog(
         entry.failure === undefined
           ? ""
           : ` failure=${hyphenate(entry.failure.stage)}/${entry.failure.errorName}/${hyphenate(entry.failure.reason)}`;
-      return `${new Date(entry.atMs).toISOString()} v=${entry.version} outcome=${hyphenate(entry.outcome)} fallback=${entry.fallbackDeadlineFired} elapsed=${entry.elapsedMs}ms stages=${timing || "none"}${failure}`;
+      const environment = `${entry.locksAvailable === true ? " locks=available" : ""}${entry.visibility === undefined ? "" : ` visibility=${entry.visibility}`}`;
+      return `${new Date(entry.atMs).toISOString()} v=${entry.version} outcome=${hyphenate(entry.outcome)} fallback=${entry.fallbackDeadlineFired} elapsed=${entry.elapsedMs}ms deferred=${entry.deferred}${environment} stages=${timing || "none"}${failure}`;
     })
     .join("\n");
 }
@@ -279,6 +380,8 @@ function decodeEntry(value: unknown): PushDeliveryLogEntry | undefined {
     typeof value.fallbackDeadlineFired !== "boolean" ||
     !("elapsedMs" in value) ||
     !validNumber(value.elapsedMs) ||
+    !("deferred" in value) ||
+    typeof value.deferred !== "boolean" ||
     !("stages" in value) ||
     !Array.isArray(value.stages)
   ) {
@@ -304,7 +407,9 @@ function decodeEntry(value: unknown): PushDeliveryLogEntry | undefined {
     outcome: value.outcome,
     fallbackDeadlineFired: value.fallbackDeadlineFired,
     elapsedMs: value.elapsedMs,
+    deferred: value.deferred,
     stages: decodedStages,
+    ...decodeEnvironment(value),
     ...decodeFailure("failure" in value ? value.failure : undefined),
   };
 }
@@ -353,6 +458,17 @@ function isOutcome(value: unknown): value is PushDeliveryOutcome {
 
 function isStage(value: unknown): value is PushDeliveryStage {
   return typeof value === "string" && stages.has(value as PushDeliveryStage);
+}
+
+function decodeEnvironment(
+  value: Record<string, unknown>,
+): PushDeliveryEnvironment {
+  return {
+    ...(value.locksAvailable === true ? { locksAvailable: true as const } : {}),
+    ...(value.visibility === "hidden" || value.visibility === "visible"
+      ? { visibility: value.visibility }
+      : {}),
+  };
 }
 
 function validNumber(value: unknown): value is number {
