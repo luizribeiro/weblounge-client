@@ -565,6 +565,9 @@ impl NetworkModel {
                     buffer.read_facts.merge_mark(ServerTimeMs::new(mark));
                 }
                 for stub in row.stubs {
+                    self.next_message_id = self
+                        .next_message_id
+                        .max(next_message_id_after_stub(&stub.msgid));
                     buffer.read_facts.merge_stub(stub);
                 }
                 if let Some(gap_until) = row.gap_until {
@@ -3166,6 +3169,14 @@ fn message_stub(message: &MessageProjection, mention: bool) -> Option<MessageStu
     })
 }
 
+fn next_message_id_after_stub(msgid: &str) -> u64 {
+    msgid
+        .strip_prefix("local:")
+        .and_then(|value| value.parse::<u64>().ok())
+        .and_then(|value| value.checked_add(1))
+        .unwrap_or(1)
+}
+
 fn derive_chat_projection(buffer: &mut BufferState) {
     buffer.projection.last_message = (!matches!(buffer.history, HistoryState::RefreshCapped))
         .then(|| latest_real_message(buffer).map(|record| record.projection.clone()))
@@ -5139,6 +5150,44 @@ mod tests {
             (restored.projection.unread, restored.projection.mentions),
             (3, 0)
         );
+    }
+
+    #[test]
+    fn msgidless_stub_identity_remains_unique_after_relaunch() {
+        let (mut live, state) = model(10);
+        live.receive_incoming(
+            incoming(
+                &state,
+                "before relaunch",
+                None,
+                Some(1),
+                1,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let snapshot = live.chat_list_snapshot("network".into());
+        let (mut relaunched, _) = model(10);
+        relaunched.restore_chat_list(snapshot);
+
+        relaunched.receive_incoming(
+            incoming(
+                &state,
+                "after relaunch",
+                None,
+                Some(2),
+                2,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+
+        let buffer = relaunched
+            .buffers
+            .values()
+            .find(|buffer| buffer.projection.kind == BufferKind::Channel)
+            .expect("restored channel");
+        assert_eq!(buffer.projection.unread, 2);
     }
 
     #[test]
