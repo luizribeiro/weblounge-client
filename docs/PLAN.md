@@ -4,6 +4,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Known limits
 
+- The dwell, divider, and snapshot flush now share one foreground signal. The push lease still uses
+  its existing lifecycle wiring while the iOS push investigation is active; moving it onto the
+  shared signal is deferred to the push migration step.
 - The 16-buffer stock-fakelag launch stays within its 36-command ceiling (36 measured), but the two
   changed-buffer
   history replies still arrive about 1.5 seconds after their requests. They wait behind
@@ -36,6 +39,14 @@ The single place a fresh session reads to know where the project stands. Update 
   next push or unlocked app event. `/debug push` reads and copies the persisted lines inside an
   installed Home Screen app, and built-app coverage proves a real delivered push appears without its
   text, nick, channel or msgid.
+- [x] Land read-state migration step 9. One app foreground signal now treats a visible iOS
+  standalone app as foreground and drives snapshot flushes plus every mounted pane's divider and
+  500ms live-edge dwell. Pane dwells qualify independently, use only committed server times, and
+  send read commands through the greatest held message without exposing viewport state to the
+  engine. Each pane keeps one divider mark: watched arrivals stay behind it, leaving the reading
+  state freezes it, and an own committed echo resets it. The old component-local foreground
+  listeners and three-value divider boundary are gone; visible-pane badge suppression remains the
+  sidebar's set-based policy.
 - [x] Remove a deadline generic after a slow push is successfully classified as a silent
   `MARKREAD` or `PING`. The coordinator now waits for any in-flight fallback presentation, closes
   only that receipt's notification, and retains final generics for route, decryption and parse
