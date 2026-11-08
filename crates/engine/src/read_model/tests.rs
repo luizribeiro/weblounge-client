@@ -40,6 +40,16 @@ fn stub_union_is_order_independent_and_keeps_monotonic_fields() {
 }
 
 #[test]
+fn authoritative_stub_replaces_provisional_time_and_mention() {
+    let mut facts = ReadFacts::default();
+    facts.merge_stub(stub("message-1", 101, true));
+
+    facts.replace_stub(stub("message-1", 100, false));
+
+    assert_eq!(facts.stubs(), [stub("message-1", 100, false)]);
+}
+
+#[test]
 fn mark_prunes_covered_stubs_inclusively() {
     let mut facts = ReadFacts::default();
     facts.merge_stub(stub("before", 9, false));

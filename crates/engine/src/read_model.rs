@@ -105,6 +105,18 @@ impl ReadFacts {
         self.normalize_stubs();
     }
 
+    /// Replaces a provisional peer-message fact with its authoritative copy.
+    pub fn replace_stub(&mut self, stub: MessageStub) {
+        self.stubs.retain(|known| known.msgid != stub.msgid);
+        self.stubs.push(stub);
+        self.stubs.sort_unstable_by(|left, right| {
+            left.time
+                .cmp(&right.time)
+                .then_with(|| left.msgid.cmp(&right.msgid))
+        });
+        self.normalize_stubs();
+    }
+
     /// Merges another snapshot of the same conversation into this one.
     pub fn merge(&mut self, other: Self) {
         merge_max(&mut self.mark, other.mark);
