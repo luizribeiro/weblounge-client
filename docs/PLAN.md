@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Make always-on control nick claims survive the app disconnect race. A 433 now waits for the
+  previous holder's observed departure before sending NICK once more, and a scripted harness test
+  pins the failing 433, QUIT, confirmation ordering without a timed retry.
 - [x] Keep the transcript DOM unchanged when a page becomes hidden. Freezing the New-divider
   boundary now changes only its non-reactive state, so queued engine traffic still appears in one
   visible catch-up. The aggregate native-feel regression and a deterministic message-list fixture

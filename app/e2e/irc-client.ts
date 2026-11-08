@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
+import { claimNickname } from "./irc-nick-claim";
 
 const host = process.env.WEBLOUNGE_E2E_IRC_HOST ?? "127.0.0.1";
 const port = Number(process.env.WEBLOUNGE_E2E_IRC_PORT ?? 6667);
@@ -357,13 +358,11 @@ export class IrcClient {
 
   async nick(nickname: string): Promise<void> {
     const previous = this.#nickname;
-    this.send(`NICK ${nickname}`);
-    await this.waitFor(
-      `NICK confirmation for ${nickname}`,
-      (line) =>
-        line.includes(`:${previous}!`) &&
-        (line.includes(` NICK :${nickname}`) ||
-          line.includes(` NICK ${nickname}`)),
+    await claimNickname(
+      previous,
+      nickname,
+      (line) => this.send(line),
+      (description, predicate) => this.waitFor(description, predicate),
     );
     this.#nickname = nickname;
   }

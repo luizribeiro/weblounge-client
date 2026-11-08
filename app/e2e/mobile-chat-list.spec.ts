@@ -175,10 +175,11 @@ function serverTime(line: string): string {
 }
 
 async function setAppAlwaysOn(enabled: boolean): Promise<void> {
-  const control = await IrcClient.connectWithoutJoin(
+  const control = await IrcClient.connect(
     "weblounge",
     "weblounge",
     "weblounge-test",
+    "#weblounge-test",
   );
   try {
     if (control.nickname !== "weblounge") {
