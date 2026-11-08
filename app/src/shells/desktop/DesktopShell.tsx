@@ -288,7 +288,7 @@ export function DesktopShell(props: DesktopShellProps) {
     }
   });
 
-  const readDwelled = createReadDwell({
+  createReadDwell({
     atLiveEdge,
     bufferId: activeBufferId,
     foreground: () => props.foreground !== false,
@@ -398,7 +398,6 @@ export function DesktopShell(props: DesktopShellProps) {
               )}
               <MessageList
                 bufferId={activeBuffer()?.id}
-                dwelled={readDwelled()}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
                 foreground={props.foreground !== false}
                 memberships={
@@ -429,6 +428,7 @@ export function DesktopShell(props: DesktopShellProps) {
                     props.onRetry?.(buffer.id, localSendId);
                 }}
                 readAtMs={activeBuffer()?.read_at_ms}
+                unread={activeBuffer()?.unread}
                 syncState={activeBuffer()?.sync_state}
                 registerController={(controller) => {
                   messageListController = controller;

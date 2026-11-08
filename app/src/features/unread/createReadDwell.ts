@@ -10,7 +10,7 @@ interface ReadDwellOptions {
   readonly visible: Accessor<boolean>;
 }
 
-export function createReadDwell(options: ReadDwellOptions): Accessor<boolean> {
+export function createReadDwell(options: ReadDwellOptions): void {
   const [eligibleBufferId, setEligibleBufferId] = createSignal<number>();
   const [dwelledBufferId, setDwelledBufferId] = createSignal<number>();
   let dwellTimer: number | undefined;
@@ -62,11 +62,6 @@ export function createReadDwell(options: ReadDwellOptions): Accessor<boolean> {
       if (eligibleBufferId() === bufferId) setDwelledBufferId(bufferId);
     }, 500);
   });
-
-  return () => {
-    const bufferId = options.bufferId();
-    return bufferId !== undefined && dwelledBufferId() === bufferId;
-  };
 }
 
 export function newestCommittedMessageId(

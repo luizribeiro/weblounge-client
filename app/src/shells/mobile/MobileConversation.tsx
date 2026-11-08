@@ -79,7 +79,7 @@ export function MobileConversation(props: MobileConversationProps) {
   const newestMessageId = createMemo(() =>
     newestCommittedMessageId(props.messages),
   );
-  const readDwelled = createReadDwell({
+  createReadDwell({
     atLiveEdge,
     bufferId,
     foreground: () => props.foreground !== false,
@@ -187,7 +187,6 @@ export function MobileConversation(props: MobileConversationProps) {
           />
           <MessageList
             bufferId={props.buffer.id}
-            dwelled={readDwelled()}
             messages={props.messages}
             foreground={props.foreground !== false}
             memberships={props.memberships}
@@ -208,6 +207,7 @@ export function MobileConversation(props: MobileConversationProps) {
             presentation="mobile"
             readAtMs={props.buffer.read_at_ms}
             syncState={props.buffer.sync_state}
+            unread={props.buffer.unread}
             registerController={(controller) => {
               listController = controller;
             }}

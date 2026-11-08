@@ -772,22 +772,22 @@ it("keeps a server marker while an opening history page arrives", async () => {
 });
 
 it("keeps a server marker when unread opening history streams later", async () => {
-  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
-    message,
-  ]);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>(
+    [],
+  );
   const { container } = render(() => (
     <MessageList
       bufferId={2}
-      dwelled={false}
       foreground
       messages={messages()}
       readAtMs={1}
-      syncState="synced"
+      syncState="pending"
+      unread={1}
     />
   ));
 
   setMessages([
-    ...messages(),
+    message,
     { ...message, id: 2, text: "streamed history", received_at_ms: 2 },
   ]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -803,7 +803,6 @@ it("freezes a server marker fetched after opening history arrives", async () => 
   const { container } = render(() => (
     <MessageList
       bufferId={2}
-      dwelled={false}
       foreground
       messages={[
         message,
@@ -811,6 +810,7 @@ it("freezes a server marker fetched after opening history arrives", async () => 
       ]}
       readAtMs={readAtMs()}
       syncState="syncing"
+      unread={1}
     />
   ));
 

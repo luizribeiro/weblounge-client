@@ -48,13 +48,13 @@ import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
-  readonly dwelled?: boolean | undefined;
   readonly foreground?: boolean | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readAtMs?: number | null | undefined;
   readonly syncState?: BufferProjection["sync_state"] | undefined;
+  readonly unread?: number | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onLoadOlder?: (() => void) | undefined;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
@@ -109,6 +109,7 @@ export function MessageList(props: MessageListProps) {
     props.messages,
     initialReadAt,
     props.syncState,
+    props.unread,
   );
   let watchedThrough: number | undefined;
   let observedOwnTime = latestCommittedOwnTime(props.messages);
@@ -315,6 +316,7 @@ export function MessageList(props: MessageListProps) {
         props.messages,
         marker,
         props.syncState,
+        props.unread,
       );
       watchedThrough = undefined;
       observedOwnTime = latestCommittedOwnTime(props.messages);
@@ -328,7 +330,11 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const marker = props.readAtMs ?? null;
-    if (props.messages.length === 0 && props.syncState !== "syncing")
+    if (
+      props.messages.length === 0 &&
+      props.syncState !== "syncing" &&
+      (props.unread ?? 0) === 0
+    )
       dividerTracksMark = true;
     const ownTime = latestCommittedOwnTime(props.messages);
     const peerTime = latestPeerTime(props.messages);
@@ -352,6 +358,7 @@ export function MessageList(props: MessageListProps) {
         props.messages,
         marker,
         props.syncState,
+        props.unread,
       );
       watchedThrough = undefined;
       return;
@@ -364,13 +371,6 @@ export function MessageList(props: MessageListProps) {
       if (dividerTracksMark) setDividerMark(maximumMark(dividerMark(), marker));
       dividerTracksMark = false;
       watchedThrough = undefined;
-      return;
-    }
-    if (props.dwelled === false) {
-      if (hasUnreadAfter(props.messages, dividerMark())) {
-        dividerTracksMark = false;
-        watchedThrough = undefined;
-      }
       return;
     }
     if (
@@ -919,8 +919,10 @@ function openingBoundaryPending(
   messages: readonly MessageProjection[],
   readAtMs: number | null,
   syncState: BufferProjection["sync_state"] | undefined,
+  unread: number | undefined,
 ): boolean {
   return (
+    (unread ?? 0) > 0 ||
     hasUnreadAfter(messages, readAtMs) ||
     (readAtMs !== null && messages.length === 0 && syncState === "syncing")
   );
