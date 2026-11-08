@@ -3225,16 +3225,19 @@ fn spawn_history_fetch(
     fetch: HistoryFetch,
     marker_nick: Option<papo::Nick>,
 ) {
-    if let Some(nick) = marker_nick {
-        spawn_read_marker_fetch(
-            Arc::clone(&state),
-            outbound.clone(),
-            client.clone(),
-            instance,
-            HistoryTarget::Direct(nick),
-        );
-    }
-    spawn_history_page(state, outbound, client, instance, fetch);
+    spawn_task(async move {
+        if let Some(nick) = marker_nick {
+            fetch_and_apply_read_marker(
+                &state,
+                &outbound,
+                &client,
+                instance,
+                HistoryTarget::Direct(nick),
+            )
+            .await;
+        }
+        fetch_history_page(&state, &outbound, &client, instance, fetch).await;
+    });
 }
 
 fn spawn_history_page(
@@ -3245,36 +3248,46 @@ fn spawn_history_page(
     fetch: HistoryFetch,
 ) {
     spawn_task(async move {
-        if let Ok(page) = fetch_history(&client, fetch.clone()).await {
-            process_history(&state, &outbound, &client, instance, page);
-            return;
-        }
-        let buffer_id = {
-            let mut state = lock(&state);
-            state
-                .network
-                .as_mut()
-                .filter(|running| running.instance == instance)
-                .and_then(|running| running.model.fail_history(&fetch))
-        };
-        if let Some(buffer_id) = buffer_id {
-            let sync = lock(&state)
-                .network
-                .as_ref()
-                .filter(|running| running.instance == instance)
-                .and_then(|running| running.model.buffer_updated(buffer_id));
-            send_events(
-                &outbound,
-                sync.into_iter()
-                    .chain([EngineToUi::HistoryStateChanged {
-                        buffer_id,
-                        loading: false,
-                        at_start: false,
-                    }])
-                    .collect(),
-            );
-        }
+        fetch_history_page(&state, &outbound, &client, instance, fetch).await;
     });
+}
+
+async fn fetch_history_page(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    fetch: HistoryFetch,
+) {
+    if let Ok(page) = fetch_history(client, fetch.clone()).await {
+        process_history(state, outbound, client, instance, page);
+        return;
+    }
+    let buffer_id = {
+        let mut state = lock(state);
+        state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+            .and_then(|running| running.model.fail_history(&fetch))
+    };
+    if let Some(buffer_id) = buffer_id {
+        let sync = lock(state)
+            .network
+            .as_ref()
+            .filter(|running| running.instance == instance)
+            .and_then(|running| running.model.buffer_updated(buffer_id));
+        send_events(
+            outbound,
+            sync.into_iter()
+                .chain([EngineToUi::HistoryStateChanged {
+                    buffer_id,
+                    loading: false,
+                    at_start: false,
+                }])
+                .collect(),
+        );
+    }
 }
 
 fn spawn_read_marker_fetch(
@@ -3288,29 +3301,42 @@ fn spawn_read_marker_fetch(
         return;
     }
     spawn_task(async move {
-        let read_until = match target.clone() {
-            HistoryTarget::Channel(channel) => client.fetch_read_marker(channel).await,
-            HistoryTarget::Direct(nick) => client.fetch_read_marker(nick).await,
-        };
-        let Ok(read_until) = read_until else {
+        fetch_and_apply_read_marker(&state, &outbound, &client, instance, target).await;
+    });
+}
+
+async fn fetch_and_apply_read_marker(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    target: HistoryTarget,
+) {
+    if !client.state().supports(papo::Feature::ReadMarkers) {
+        return;
+    }
+    let read_until = match target.clone() {
+        HistoryTarget::Channel(channel) => client.fetch_read_marker(channel).await,
+        HistoryTarget::Direct(nick) => client.fetch_read_marker(nick).await,
+    };
+    let Ok(read_until) = read_until else {
+        return;
+    };
+    let events = {
+        let mut state = lock(state);
+        let Some(running) = state
+            .network
+            .as_mut()
+            .filter(|running| running.instance == instance)
+        else {
             return;
         };
-        let events = {
-            let mut state = lock(&state);
-            let Some(running) = state
-                .network
-                .as_mut()
-                .filter(|running| running.instance == instance)
-            else {
-                return;
-            };
-            running
-                .model
-                .apply_server_read_marker(&target.conversation(), read_until)
-        };
-        send_events(&outbound, events);
-        update_chat_list(&state, &outbound, instance);
-    });
+        running
+            .model
+            .apply_server_read_marker(&target.conversation(), read_until)
+    };
+    send_events(outbound, events);
+    update_chat_list(state, outbound, instance);
 }
 
 async fn fetch_history(
@@ -10167,6 +10193,74 @@ async fn delay(duration: Duration) {
             "@label={label} :offline.test MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"
         ))
         .await;
+    }
+
+    #[tokio::test]
+    async fn direct_marker_settles_before_launch_history_can_raise_its_badge() {
+        let caps = [
+            "batch",
+            "draft/chathistory",
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let nick = client
+            .state()
+            .name_rules()
+            .expect("registered client has name rules")
+            .nick("alice");
+        let (state, outbound, _receiver) = harness(client.clone());
+        let fetch = {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.model.restore_chat_list(ChatListSnapshot::new(
+                "network".into(),
+                vec![SnapshotRow {
+                    conversation: SnapshotConversation::Direct {
+                        key: "alice".into(),
+                    },
+                    title: "Alice".into(),
+                    last_activity_ms: Some(100),
+                    stubs: snapshot_stubs(1, 1, 100),
+                    gap_until: None,
+                    preview: Some("cached unread".into()),
+                    newest: Some(SnapshotCursor {
+                        msgid: Some("cached".into()),
+                        server_time_ms: 100,
+                    }),
+                    read_at_ms: Some(50),
+                    pending_read_at_ms: None,
+                    peer_pin: None,
+                }],
+            ));
+            running
+                .model
+                .restore_direct(&nick, UNIX_EPOCH + Duration::from_millis(200))
+                .0
+                .expect("newer target schedules catch-up")
+        };
+
+        spawn_history_fetch(Arc::clone(&state), outbound, client, 1, fetch, Some(nick));
+
+        let marker = wire.next_sent().await;
+        assert!(
+            marker.ends_with("MARKREAD alice"),
+            "unexpected request: {marker}"
+        );
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err(),
+            "history must wait until the marker projection settles"
+        );
     }
 
     #[test]
