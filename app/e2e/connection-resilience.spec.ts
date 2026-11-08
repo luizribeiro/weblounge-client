@@ -213,6 +213,43 @@ test.describe("connection resilience against local Ergo", () => {
     }
   });
 
+  test("reconciles a send when its first server echo is lost", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    await installNativeFeelInstrumentation(page);
+    await captureHistoryWire(page);
+    const bot = await connectBot("lost-echo");
+    try {
+      const composer = await openChannel(page, testInfo.project.name);
+      const text = `lost first echo ${Date.now()}`;
+      await dropIncomingContaining(text);
+
+      await composer.fill(text);
+      await composer.press("Enter");
+      await expect(messageRow(page, text, "optimistic")).toHaveCount(1);
+      await bot.waitForPrivmsg(channel, text, "weblounge");
+
+      await expectTransientConnectionPresentation(
+        page,
+        isMobile(testInfo.project.name),
+      );
+      await expectOnline(page, testInfo.project.name);
+      await expect.poll(() => sentWireLineCount(page, text)).toBe(1);
+      await expect(messageRow(page, text, "confirmed")).toHaveCount(1);
+      await expect(page.getByText(text, { exact: true })).toHaveCount(1);
+      await expect(
+        page.getByRole("button", { name: "Failed · Retry" }),
+      ).toHaveCount(0);
+      await expectShellToRemain(page, channel);
+    } finally {
+      bot.close();
+    }
+  });
+
   test("keeps the online wasm engine alive through a foreground probe", async ({
     page,
   }, testInfo) => {
@@ -762,6 +799,15 @@ async function controlForwarder(action: "drop" | "restore"): Promise<void> {
   if (base === undefined) throw new Error("socket forwarder is unavailable");
   const response = await fetch(`${base}/${action}`, { method: "POST" });
   if (!response.ok) throw new Error(`socket forwarder ${action} failed`);
+}
+
+async function dropIncomingContaining(text: string): Promise<void> {
+  const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
+  if (base === undefined) throw new Error("socket forwarder is unavailable");
+  const endpoint = new URL("/drop-incoming", base);
+  endpoint.searchParams.set("contains", text);
+  const response = await fetch(endpoint, { method: "POST" });
+  if (!response.ok) throw new Error("socket forwarder incoming drop failed");
 }
 
 function messageIdentity(line: string): {

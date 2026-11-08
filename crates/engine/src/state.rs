@@ -341,6 +341,7 @@ pub(crate) struct NetworkModel {
     directs: HashMap<DirectKey, BufferId>,
     msgids: HashMap<String, usize>,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
+    reconcilable_failed_sends: HashSet<LocalSendId>,
     recent_commands: VecDeque<String>,
     last_sync: Option<SystemTime>,
     targets_synced: bool,
@@ -416,6 +417,7 @@ impl NetworkModel {
             directs: HashMap::new(),
             msgids: HashMap::new(),
             fallbacks: HashMap::new(),
+            reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
             last_sync: None,
             targets_synced: false,
@@ -1327,6 +1329,8 @@ impl NetworkModel {
         pending: &PendingSend,
         sent: &papo::Sent,
     ) -> Option<Vec<EngineToUi>> {
+        self.reconcilable_failed_sends
+            .remove(&pending.local_send_id);
         let buffer = self.buffers.get_mut(&pending.buffer_id)?;
         let index = buffer
             .timeline
@@ -1416,6 +1420,8 @@ impl NetworkModel {
         pending: &PendingSend,
         message_key: EngineMessageKey,
     ) -> Vec<EngineToUi> {
+        self.reconcilable_failed_sends
+            .remove(&pending.local_send_id);
         if let Some(record) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
             buffer
                 .timeline
@@ -1455,7 +1461,9 @@ impl NetworkModel {
     }
 
     pub(crate) fn interrupt_send(&mut self, pending: &PendingSend) -> Vec<EngineToUi> {
-        self.fail_send(pending, EngineMessageKey::SendFailed)
+        let events = self.fail_send(pending, EngineMessageKey::SendFailed);
+        self.reconcilable_failed_sends.insert(pending.local_send_id);
+        events
     }
 
     pub(crate) fn retry_send(
@@ -1483,6 +1491,7 @@ impl NetworkModel {
             text,
             kind: message.projection.kind.clone(),
         };
+        self.reconcilable_failed_sends.remove(&local_send_id);
         Some((
             pending,
             EngineToUi::MessageRetrying {
@@ -2447,6 +2456,9 @@ impl NetworkModel {
         if let Some(events) = self.reconcile_pushed_message(&incoming, state) {
             return events;
         }
+        if let Some(events) = self.reconcile_failed_own_message(&incoming, state) {
+            return events;
+        }
         let Some(dedup) = self.deduplicate_incoming(&incoming) else {
             return Vec::new();
         };
@@ -2536,6 +2548,78 @@ impl NetworkModel {
             events.push(self.legacy_draft_migration(buffer_id, &account));
         }
         events
+    }
+
+    fn reconcile_failed_own_message(
+        &mut self,
+        incoming: &Incoming,
+        state: &papo::State,
+    ) -> Option<Vec<EngineToUi>> {
+        if incoming.authorship != MessageAuthorship::Own || incoming.origin == TimelineOrigin::Push
+        {
+            return None;
+        }
+        let buffer_id = self.names.get(&incoming.conversation).copied()?;
+        let text = collapse_blank_lines(incoming.text.clone());
+        let (index, message_id, local_send_id) = self.buffers[&buffer_id]
+            .timeline
+            .iter()
+            .enumerate()
+            .find_map(|(index, record)| {
+                let message = &record.projection;
+                if message.delivery == MessageDelivery::Failed
+                    && message.authorship == MessageAuthorship::Own
+                    && message.kind == incoming.kind
+                    && message.text == text
+                    && message
+                        .local_send_id
+                        .is_some_and(|id| self.reconcilable_failed_sends.contains(&id))
+                {
+                    Some((index, message.id, message.local_send_id?))
+                } else {
+                    None
+                }
+            })?;
+        let dedup = self.deduplicate_incoming(incoming)?;
+        self.reconcilable_failed_sends.remove(&local_send_id);
+        self.buffers.get_mut(&buffer_id)?.timeline.remove(index);
+        let verified_sender = incoming
+            .peer_key
+            .as_ref()
+            .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
+        let mut message =
+            Self::project_incoming(message_id, incoming, state, verified_sender, false);
+        message.delivery = MessageDelivery::Confirmed;
+        let order_changed = self.insert(buffer_id, message.clone(), None, dedup).ok()?;
+        let cursor = incoming
+            .server_time_ms
+            .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        advance_incoming_cursor(buffer, incoming, cursor);
+        let projection = buffer.projection.clone();
+        let mut events = vec![
+            EngineToUi::MessageConfirmed {
+                buffer_id,
+                local_send_id,
+                message,
+            },
+            EngineToUi::BufferUpdated {
+                buffer: projection.clone(),
+            },
+            EngineToUi::UnreadChanged {
+                buffer_id,
+                unread: projection.unread,
+                mentions: projection.mentions,
+            },
+            EngineToUi::ReadMarkerMoved {
+                buffer_id,
+                through: projection.read_through,
+            },
+        ];
+        if order_changed {
+            events.push(self.buffers_event());
+        }
+        Some(events)
     }
 
     fn reconcile_pushed_message(
@@ -5129,6 +5213,45 @@ mod tests {
                 target,
                 ..
             }] if *buffer_id == buffer.id && target == "#room"
+        ));
+    }
+
+    #[test]
+    fn own_history_reconciles_a_matching_failed_send() {
+        let (mut model, state) = model(10);
+        let key = NameKey::Channel(channel_name(&state, "#room"));
+        let buffer = model.add_buffer(key, crate::BufferKind::Channel, None, None, None);
+        let (pending, _) = model
+            .begin_send(buffer.id, "accepted before disconnect".into(), &state)
+            .expect("channel is sendable");
+        model.interrupt_send(&pending);
+        let mut authoritative = incoming(
+            &state,
+            "accepted before disconnect",
+            Some("server-id"),
+            Some(100),
+            100,
+            TimelineOrigin::History,
+        );
+        authoritative.author = "weblounge".into();
+        authoritative.authorship = MessageAuthorship::Own;
+
+        let events = model.receive_incoming(authoritative, &state);
+
+        let timeline = &model.buffers[&buffer.id].timeline;
+        assert_eq!(timeline.len(), 1);
+        assert_eq!(
+            timeline[0].projection.delivery,
+            crate::MessageDelivery::Confirmed
+        );
+        assert_eq!(timeline[0].projection.server_ids, ["server-id"]);
+        assert!(matches!(
+            events.first(),
+            Some(EngineToUi::MessageConfirmed {
+                buffer_id,
+                local_send_id,
+                ..
+            }) if *buffer_id == buffer.id && *local_send_id == pending.local_send_id
         ));
     }
 

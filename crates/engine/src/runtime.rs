@@ -2741,17 +2741,6 @@ fn confirm_send_with_read(
     (events, advance)
 }
 
-fn appended_read_advance(model: &NetworkModel, events: &[EngineToUi]) -> Option<ReadAdvance> {
-    let (buffer_id, through) = events.iter().find_map(|event| match event {
-        EngineToUi::MessagesAppended {
-            buffer_id,
-            messages,
-        } => messages.last().map(|message| (*buffer_id, message.id)),
-        _ => None,
-    })?;
-    model.prepare_mark_read(buffer_id, through)
-}
-
 fn receive_message(
     model: &mut NetworkModel,
     message: &papo::Message,
@@ -2761,7 +2750,7 @@ fn receive_message(
 ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
     let events = model.receive(message, history, state, direct);
     let own_advance = (message.authorship == papo::Authorship::Own)
-        .then(|| appended_read_advance(model, &events))
+        .then(|| received_read_advance(model, &events))
         .flatten();
     let mut advances = own_advance.into_iter().collect::<Vec<_>>();
     if !history
@@ -2771,6 +2760,20 @@ fn receive_message(
         advances.push(advance);
     }
     (events, advances)
+}
+
+fn received_read_advance(model: &NetworkModel, events: &[EngineToUi]) -> Option<ReadAdvance> {
+    let (buffer_id, through) = events.iter().find_map(|event| match event {
+        EngineToUi::MessagesAppended {
+            buffer_id,
+            messages,
+        } => messages.last().map(|message| (*buffer_id, message.id)),
+        EngineToUi::MessageConfirmed {
+            buffer_id, message, ..
+        } => Some((*buffer_id, message.id)),
+        _ => None,
+    })?;
+    model.prepare_mark_read(buffer_id, through)
 }
 
 fn message_event_buffer_id(events: &[EngineToUi]) -> Option<BufferId> {

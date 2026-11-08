@@ -18,7 +18,13 @@ const server = net.createServer((client) => {
     return;
   }
 
-  const connection = { client, upstream: undefined, silent: false };
+  const connection = {
+    client,
+    upstream: undefined,
+    silent: false,
+    dropIncomingContaining: undefined,
+    recentIncoming: Buffer.alloc(0),
+  };
   const upstream = net.connect(targetPort, "127.0.0.1");
   connection.upstream = upstream;
   connections.add(connection);
@@ -26,7 +32,21 @@ const server = net.createServer((client) => {
   client.on("data", (data) => {
     if (!connection.silent) connection.upstream?.write(data);
   });
-  upstream.on("data", (data) => client.write(data));
+  upstream.on("data", (data) => {
+    const target = connection.dropIncomingContaining;
+    if (target !== undefined) {
+      const candidate = Buffer.concat([connection.recentIncoming, data]);
+      if (candidate.includes(target)) {
+        connection.dropIncomingContaining = undefined;
+        closeConnection(connection);
+        return;
+      }
+      connection.recentIncoming = candidate.subarray(
+        Math.max(0, candidate.length - target.length + 1),
+      );
+    }
+    client.write(data);
+  });
   client.on("close", () => closeConnection(connection));
   client.on("error", () => closeConnection(connection));
   upstream.on("close", () => {
@@ -56,6 +76,21 @@ const control = http.createServer((request, response) => {
   if (request.method === "POST" && request.url === "/restore") {
     available = true;
     response.end("restored");
+    return;
+  }
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  if (request.method === "POST" && url.pathname === "/drop-incoming") {
+    const contains = url.searchParams.get("contains");
+    if (contains === null || contains.length === 0) {
+      response.writeHead(400).end("missing contains");
+      return;
+    }
+    const target = Buffer.from(contains);
+    for (const connection of connections) {
+      connection.dropIncomingContaining = target;
+      connection.recentIncoming = Buffer.alloc(0);
+    }
+    response.end("armed");
     return;
   }
   response.writeHead(404).end();
