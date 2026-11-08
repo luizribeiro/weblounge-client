@@ -241,7 +241,7 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
     ]);
     const changedText = `changed delta ${suffix}`;
     await writer.privmsgConfirmed(channel, changedText);
-    await captureLaunchWire(current, `CHATHISTORY AFTER ${channel} `);
+    await captureLaunchWire(current, `CHATHISTORY LATEST ${channel} `);
     await current.goto(accountUrl(baseURL, account, password, channel));
     await expect
       .poll(() =>
@@ -269,6 +269,97 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
     if (!current.isClosed()) await current.close();
     keeper.close();
     writer.close();
+  }
+});
+
+test("a bounded catch-up keeps the newest page and marks its unread gap", async ({
+  baseURL,
+  page,
+}) => {
+  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
+  const suffix = Date.now().toString(36).slice(-5);
+  const account = `gap-${suffix}`;
+  const password = `test-${account}`;
+  const channel = `#gap-${suffix}`;
+  const keeper = await IrcClient.connectIsolated(account, channel);
+  const writers = await Promise.all(
+    Array.from({ length: 17 }, (_, index) =>
+      IrcClient.connectIsolated(`gap-w${index}-${suffix}`, channel),
+    ),
+  );
+  const writer = writers[0];
+  if (writer === undefined) throw new Error("gap writer fixture is missing");
+  try {
+    const initialText = `cached gap ${suffix}`;
+    const initial = await writer.privmsgConfirmed(channel, initialText);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    await page.goto("/config.json");
+    await seedSnapshot(page, baseURL, [
+      {
+        kind: "channel",
+        title: channel,
+        time: messageTag(initial, "time"),
+        msgid: messageTag(initial, "msgid"),
+        preview: `${writer.nickname}: ${initialText}`,
+        badge: { kind: "unread", count: 1 },
+      },
+    ]);
+
+    await Promise.all(
+      writers.map(async (sender, senderIndex) => {
+        for (let index = 0; index < 5; index += 1)
+          sender.privmsg(
+            channel,
+            `bounded gap ${senderIndex}-${index} ${suffix}`,
+          );
+        await sender.privmsgConfirmed(
+          channel,
+          `bounded gap ${senderIndex}-5 ${suffix}`,
+        );
+      }),
+    );
+    const newestText = `bounded gap newest ${suffix}`;
+    await writer.privmsgConfirmed(channel, newestText);
+
+    await captureLaunchWire(page);
+    await page.goto(accountUrl(baseURL, account, password, channel));
+    await expect
+      .poll(() =>
+        page.evaluate((target) => {
+          const wire = Reflect.get(
+            globalThis,
+            "launchCatchupWire",
+          ) as WireTrace[];
+          return wire.find(
+            (entry) =>
+              entry.direction === "sent" &&
+              entry.line.includes(` CHATHISTORY `) &&
+              entry.line.includes(` ${target} `),
+          )?.line;
+        }, channel),
+      )
+      .toContain(` CHATHISTORY LATEST ${channel} `);
+    const row = bufferRow(page, channel);
+    await expect(row).toContainText(newestText);
+    await expect(row).toHaveAccessibleName(`${channel}, 99+ unread`);
+    await expect
+      .poll(() => snapshotNumber(page, channel, "gap_until"))
+      .not.toBeUndefined();
+    const wire = await page.evaluate(
+      () => Reflect.get(globalThis, "launchCatchupWire") as WireTrace[],
+    );
+    expect(
+      wire.some(
+        (entry) =>
+          entry.direction === "sent" &&
+          entry.line.includes(` CHATHISTORY LATEST ${channel} `),
+      ),
+    ).toBe(true);
+  } finally {
+    keeper.close();
+    for (const sender of writers) sender.close();
   }
 });
 
