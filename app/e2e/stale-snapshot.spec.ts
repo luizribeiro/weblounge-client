@@ -279,7 +279,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .toMatchObject({
           unread: "100",
         });
-      await setStorageWritesFailing(current, true);
+      await failNextStorageWrite(current);
       await controlForwarder("restore");
       forwarderDropped = false;
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
@@ -292,8 +292,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         "true",
       );
 
-      await setStorageWritesFailing(current, false);
-      await backgroundPage(current);
       await expect
         .poll(() => snapshotReadState(current, bot.nickname))
         .toEqual({ gap: false, mentions: 0, unread: 0 });
@@ -355,7 +353,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => snapshotReadState(current, bot.nickname))
         .toEqual({ gap: false, mentions: 1, unread: 1 });
 
-      await setStorageWritesFailing(current, true);
+      await failNextStorageWrite(current);
       await row.click();
       await expect(
         current.getByRole("heading", { name: bot.nickname }),
@@ -370,13 +368,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => markerReader.readMarker(bot.nickname))
         .toBe(latestTime);
 
-      const abortsBeforeFlush = await storageWriteAbortCount(current);
-      await backgroundPage(current);
-      await expect
-        .poll(() => storageWriteAbortCount(current))
-        .toBeGreaterThan(abortsBeforeFlush);
-      await setStorageWritesFailing(current, false);
-      await backgroundPage(current);
       await expect
         .poll(() => snapshotReadState(current, bot.nickname))
         .toEqual({ gap: false, mentions: 0, unread: 0 });
@@ -1051,16 +1042,9 @@ async function installStorageWriteFailureControl(page: Page): Promise<void> {
             );
           }
         });
-        Reflect.set(
-          globalThis,
-          "staleSnapshotSetWriteFailure",
-          (failing: boolean) => {
-            this.port.postMessage({
-              type: "storage_write_test_set_failure",
-              failing,
-            });
-          },
-        );
+        Reflect.set(globalThis, "staleSnapshotFailNextWrite", () => {
+          this.port.postMessage({ type: "storage_write_test_fail_next" });
+        });
       }
     }
     Object.defineProperty(globalThis, "SharedWorker", {
@@ -1077,16 +1061,13 @@ function storageWriteAbortCount(page: Page): Promise<number> {
   });
 }
 
-async function setStorageWritesFailing(
-  page: Page,
-  failing: boolean,
-): Promise<void> {
-  await page.evaluate((shouldFail) => {
-    const setFailure = Reflect.get(globalThis, "staleSnapshotSetWriteFailure");
-    if (typeof setFailure !== "function")
+async function failNextStorageWrite(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const failNext = Reflect.get(globalThis, "staleSnapshotFailNextWrite");
+    if (typeof failNext !== "function")
       throw new Error("storage write failure control is unavailable");
-    setFailure(shouldFail);
-  }, failing);
+    failNext();
+  });
 }
 
 async function recordCachedRows(

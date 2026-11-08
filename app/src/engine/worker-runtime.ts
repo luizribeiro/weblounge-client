@@ -39,7 +39,7 @@ let historyWireTestHoldBefore = false;
 let historyWireTestBeforeTarget: string | undefined;
 let historyWireTestLatestExcept: string | undefined;
 let historyWireTestHoldRequest: string | undefined;
-let storageWriteTestFailing = false;
+let storageWriteTestFailuresRemaining = 0;
 let storageWriteTestInstalled = false;
 let historyWireNativeSend:
   | ((
@@ -93,11 +93,10 @@ export class EngineWorkerRuntime {
       if (
         __STORAGE_WRITE_TEST_ENABLED__ &&
         isRecord(event.data) &&
-        event.data.type === "storage_write_test_set_failure" &&
-        typeof event.data.failing === "boolean"
+        event.data.type === "storage_write_test_fail_next"
       ) {
         storageWriteTestPorts.add(port);
-        storageWriteTestFailing = event.data.failing;
+        storageWriteTestFailuresRemaining += 1;
         installStorageWriteTestFailure();
         return;
       }
@@ -446,7 +445,8 @@ function installStorageWriteTestFailure(): void {
   storageWriteTestInstalled = true;
   const nativeCommit = IDBTransaction.prototype.commit;
   IDBTransaction.prototype.commit = function () {
-    if (storageWriteTestFailing && this.mode === "readwrite") {
+    if (storageWriteTestFailuresRemaining > 0 && this.mode === "readwrite") {
+      storageWriteTestFailuresRemaining -= 1;
       this.abort();
       for (const port of storageWriteTestPorts)
         port.postMessage({ type: "storage_write_test_aborted" });
