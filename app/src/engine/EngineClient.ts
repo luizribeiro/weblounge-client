@@ -1161,7 +1161,8 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     !(
       value.cached_preview === undefined ||
       typeof value.cached_preview === "string"
-    )
+    ) ||
+    !(value.preview === undefined || typeof value.preview === "string")
   ) {
     return undefined;
   }
@@ -1198,6 +1199,7 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ...(value.cached_preview === undefined
       ? {}
       : { cached_preview: value.cached_preview }),
+    ...(value.preview === undefined ? {} : { preview: value.preview }),
   };
 }
 

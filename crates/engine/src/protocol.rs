@@ -491,6 +491,10 @@ pub struct BufferProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cached_preview: Option<String>,
+    /// Already-formatted bounded conversation-list preview.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub preview: Option<String>,
 }
 
 /// Who authored a projected message relative to this client.

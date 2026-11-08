@@ -86,6 +86,7 @@ struct BufferState {
     projection: BufferProjection,
     restored_from_snapshot: bool,
     provisional_activity_ms: Option<i64>,
+    provisional_preview: Option<String>,
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
     timeline: Vec<TimelineRecord>,
@@ -370,9 +371,11 @@ impl NetworkModel {
                 last_message: None,
                 last_activity_ms: None,
                 cached_preview: None,
+                preview: None,
             },
             restored_from_snapshot: false,
             provisional_activity_ms: None,
+            provisional_preview: None,
             key: None,
             direct_key: None,
             timeline: Vec::new(),
@@ -545,6 +548,7 @@ impl NetworkModel {
                 buffer.projection.title = row.title;
                 buffer.projection.cached = Some(true);
                 buffer.projection.cached_preview = row.preview;
+                buffer.provisional_preview = buffer.projection.cached_preview.clone();
                 buffer.provisional_activity_ms = row.last_activity_ms;
                 buffer.newest = row
                     .newest
@@ -2893,6 +2897,7 @@ impl NetworkModel {
             last_message: None,
             last_activity_ms: None,
             cached_preview: None,
+            preview: None,
         };
         let mut read_facts = ReadFacts::default();
         if let Some(seed_mark_ms) = seed_mark_ms {
@@ -2904,6 +2909,7 @@ impl NetworkModel {
                 projection: projection.clone(),
                 restored_from_snapshot: false,
                 provisional_activity_ms: None,
+                provisional_preview: None,
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
                 timeline: Vec::new(),
@@ -3125,11 +3131,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
         conversation,
         title: buffer.projection.title.clone(),
         last_activity_ms: chat_activity_time(buffer),
-        preview: buffer
-            .projection
-            .last_message
-            .as_ref()
-            .map(|message| snapshot_preview(&buffer.projection, message)),
+        preview: buffer.projection.preview.clone(),
         newest: buffer.newest.as_ref().map(HistoryCursor::snapshot),
         read_at_ms: buffer.read_facts.mark().map(ServerTimeMs::value),
         pending_read_at_ms: buffer.read_facts.pending().map(ServerTimeMs::value),
@@ -3259,6 +3261,12 @@ fn next_message_id_after_stub(msgid: &str) -> u64 {
 fn derive_chat_projection(buffer: &mut BufferState) {
     buffer.projection.last_message =
         latest_real_message(buffer).map(|record| record.projection.clone());
+    buffer.projection.preview = buffer
+        .projection
+        .last_message
+        .as_ref()
+        .map(|message| snapshot_preview(&buffer.projection, message))
+        .or_else(|| buffer.provisional_preview.clone());
     buffer.projection.last_activity_ms = chat_activity_time(buffer);
 }
 
@@ -4128,6 +4136,7 @@ mod tests {
             buffer.projection.cached_preview.as_deref(),
             Some("cached preview")
         );
+        assert_eq!(buffer.projection.preview.as_deref(), Some("cached preview"));
         assert!(matches!(buffer.history, HistoryState::Unrequested));
     }
 

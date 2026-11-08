@@ -91,4 +91,8 @@ last_activity_ms?: number,
 /**
  * Already-formatted bounded preview used only by a cached launch row.
  */
-cached_preview?: string, };
+cached_preview?: string,
+/**
+ * Already-formatted bounded conversation-list preview.
+ */
+preview?: string, };
