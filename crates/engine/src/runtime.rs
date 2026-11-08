@@ -1976,7 +1976,9 @@ impl Runtime {
         let promoted = running.model.promote_cached_for_history(buffer_id);
         let sync = running.model.buffer_updated(buffer_id);
         let direct_resolution = running.model.begin_buffer_direct_resolution(buffer_id);
-        let marker_nick = direct_history_target(&fetch).cloned();
+        let marker_nick = direct_history_target(&fetch)
+            .filter(|nick| running.model.direct_with_stubs_needs_marker(nick))
+            .cloned();
         let client = running.client.clone();
         let instance = running.instance;
         spawn_history_fetch(
@@ -3030,7 +3032,15 @@ async fn drain_events(
             );
         }
         for fetch in history_fetches {
-            let marker_nick = direct_history_target(&fetch).cloned();
+            let marker_nick = direct_history_target(&fetch)
+                .filter(|nick| {
+                    lock(&state)
+                        .network
+                        .as_ref()
+                        .filter(|running| running.instance == instance)
+                        .is_some_and(|running| running.model.direct_with_stubs_needs_marker(nick))
+                })
+                .cloned();
             spawn_history_fetch(
                 Arc::clone(&state),
                 outbound.clone(),
@@ -3475,12 +3485,17 @@ fn restore_target_rows(
     directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
     let covered_through = target_sync_boundary(complete, target_count, directs.len(), upper_bound);
     directs.truncate(RECENT_DIRECT_LIMIT);
-    let Some((mut output, direct_fetches, marker_targets)) =
-        restore_direct_target_rows(state, instance, directs)
+    let Some((mut output, direct_fetches)) = restore_direct_target_rows(state, instance, directs)
     else {
         return;
     };
     channel_fetches.extend(direct_fetches);
+    let changed_direct_targets = channel_fetches
+        .iter()
+        .filter_map(direct_history_target)
+        .cloned()
+        .map(HistoryTarget::Direct)
+        .collect::<Vec<_>>();
     let mut runtime = lock(state);
     let Some(running) = runtime
         .network
@@ -3490,6 +3505,17 @@ fn restore_target_rows(
         return;
     };
     let network_id = running.model.id();
+    let mut seen_marker_targets = HashSet::new();
+    let marker_targets = running
+        .model
+        .direct_marker_targets()
+        .into_iter()
+        .chain(changed_direct_targets)
+        .filter(|target| match target {
+            HistoryTarget::Direct(nick) => seen_marker_targets.insert(nick.key().to_owned()),
+            HistoryTarget::Channel(_) => false,
+        })
+        .collect::<Vec<_>>();
     running.model.finish_target_sync(covered_through);
     output.push(running.model.buffers_event());
     drop(runtime);
@@ -3506,14 +3532,12 @@ fn restore_target_rows(
         );
     }
     for fetch in channel_fetches {
-        let marker_nick = direct_history_target(&fetch).cloned();
-        spawn_history_fetch(
+        spawn_history_page(
             Arc::clone(state),
             outbound.clone(),
             client.clone(),
             instance,
             fetch,
-            marker_nick,
         );
     }
 }
@@ -3522,10 +3546,9 @@ fn restore_direct_target_rows(
     state: &Arc<Mutex<RuntimeState>>,
     instance: u64,
     directs: Vec<(papo::Nick, SystemTime)>,
-) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>, Vec<HistoryTarget>)> {
+) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>)> {
     let mut output = Vec::new();
     let mut fetches = Vec::new();
-    let mut marker_targets = Vec::new();
     for (nick, latest) in directs {
         let restored = lock(state)
             .network
@@ -3536,18 +3559,9 @@ fn restore_direct_target_rows(
         if let Some(buffer) = added {
             output.push(EngineToUi::BufferAdded { buffer });
         }
-        if fetch.is_none()
-            && lock(state)
-                .network
-                .as_ref()
-                .filter(|running| running.instance == instance)
-                .is_some_and(|running| running.model.cached_direct_with_stubs_needs_marker(&nick))
-        {
-            marker_targets.push(HistoryTarget::Direct(nick));
-        }
         fetches.extend(fetch);
     }
-    Some((output, fetches, marker_targets))
+    Some((output, fetches))
 }
 
 fn target_sync_boundary(

@@ -2039,13 +2039,23 @@ impl NetworkModel {
         (fetch, should_resolve.then_some(buffer_id), added)
     }
 
-    pub(crate) fn cached_direct_with_stubs_needs_marker(&self, nick: &papo::Nick) -> bool {
+    pub(crate) fn direct_marker_targets(&self) -> Vec<HistoryTarget> {
+        self.buffer_order
+            .iter()
+            .filter_map(|buffer_id| self.buffers.get(buffer_id))
+            .filter(|buffer| !buffer.read_facts.stubs().is_empty())
+            .filter_map(|buffer| match buffer.key.clone()? {
+                NameKey::Direct(nick) => Some(HistoryTarget::Direct(nick)),
+                NameKey::Channel(_) => None,
+            })
+            .collect()
+    }
+
+    pub(crate) fn direct_with_stubs_needs_marker(&self, nick: &papo::Nick) -> bool {
         self.names
             .get(&NameKey::Direct(nick.clone()))
             .and_then(|buffer_id| self.buffers.get(buffer_id))
-            .is_some_and(|buffer| {
-                buffer.projection.cached == Some(true) && !buffer.read_facts.stubs().is_empty()
-            })
+            .is_some_and(|buffer| !buffer.read_facts.stubs().is_empty())
     }
 
     pub(crate) fn restore_channel(
@@ -4111,6 +4121,41 @@ mod tests {
             Some("cached preview")
         );
         assert!(matches!(buffer.history, HistoryState::Unrequested));
+    }
+
+    #[test]
+    fn ready_direct_with_stubs_still_needs_its_server_marker() {
+        let (mut model, state) = model(10);
+        model.restore_chat_list(ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(100),
+                stubs: snapshot_stubs(1, 1, 100),
+                gap_until: None,
+                preview: Some("cached preview".into()),
+                newest: None,
+                read_at_ms: None,
+                pending_read_at_ms: None,
+                peer_pin: None,
+            }],
+        ));
+        let nick = nick_name(&state, "alice");
+        let buffer_id = model.names[&NameKey::Direct(nick.clone())];
+        let buffer = model.buffers.get_mut(&buffer_id).expect("direct");
+        buffer.projection.cached = None;
+        buffer.history = HistoryState::Ready {
+            oldest: None,
+            at_start: false,
+        };
+
+        assert!(matches!(
+            model.direct_marker_targets().as_slice(),
+            [HistoryTarget::Direct(target)] if target.key() == nick.key()
+        ));
     }
 
     #[test]
