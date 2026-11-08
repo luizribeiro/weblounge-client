@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Include the repository's shared read-state fixtures in the filtered Rust source so Nix
+  clippy and cargo-test builds can compile the engine's golden tests from the same JSON file the
+  TypeScript mirror will consume.
 - [x] Define the accepted one-source read-state model in design 24 and land migration step 1 as an
   unwired pure Rust module. Per-conversation marks and gaps merge by maximum, peer stubs converge by
   msgid under a 100-entry cap, and count, mention, frozen-divider, in-app badge, OS badge and

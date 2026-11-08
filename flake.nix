@@ -70,6 +70,7 @@
             ./Cargo.lock
             ./Cargo.toml
             ./crates
+            ./fixtures/read-state
           ];
         };
         cargoArgs = {
