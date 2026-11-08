@@ -62,6 +62,7 @@ impl SnapshotChanges {
         })
     }
 
+    #[cfg(test)]
     fn initial(snapshot: &ChatListSnapshot) -> Self {
         let empty = ChatListSnapshot::new(snapshot.fingerprint.clone(), Vec::new());
         Self::between(&empty, snapshot, Vec::new()).unwrap_or(Self {
@@ -230,6 +231,7 @@ pub(crate) async fn read<B: KvBackend>(backend: &B) -> Result<Option<Vec<u8>>, S
     backend.get(Space::Cache, SNAPSHOT_KEY).await
 }
 
+#[cfg(test)]
 pub(crate) async fn write<B: KvBackend>(
     backend: &B,
     snapshot: &ChatListSnapshot,

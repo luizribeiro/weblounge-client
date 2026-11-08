@@ -17,7 +17,7 @@ use crate::{
     EngineRequest, EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId, NoticeKind, OfflineReason, PushFailure, PushState,
     PushUnsupportedReason, TypingProjection,
-    chat_list_snapshot::{self, ChatListSnapshot},
+    chat_list_snapshot::{self, ChatListSnapshot, SnapshotChanges},
     commands::{self, Command},
     notification_settings, push_device,
     pushed_messages::{self, PushedMessage},
@@ -248,7 +248,7 @@ struct InflightSendCancel {
 struct SnapshotWriter {
     generation: u64,
     active: bool,
-    pending: Option<ChatListSnapshot>,
+    pending: VecDeque<SnapshotChanges>,
     flush: Option<oneshot::Sender<()>>,
     flush_requested: bool,
 }
@@ -4561,7 +4561,7 @@ fn update_chat_list(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
 ) {
-    let (live_event, snapshot, storage, writer) = {
+    let (live_event, changes, storage, writer) = {
         let mut state = lock(state);
         let storage = state.storage.clone();
         let writer = Arc::clone(&state.snapshot_writer);
@@ -4577,35 +4577,42 @@ fn update_chat_list(
             (complete && !running.chat_list.live && running.chat_list.restored_from_cache)
                 .then(|| running.model.finish_cached_chat_list());
         running.chat_list.live |= complete;
-        let previous = running.chat_list.snapshot.get_or_insert_with(|| {
-            ChatListSnapshot::new(running.chat_list.fingerprint.clone(), Vec::new())
-        });
+        let previous = running
+            .chat_list
+            .snapshot
+            .get_or_insert_with(|| {
+                ChatListSnapshot::new(running.chat_list.fingerprint.clone(), Vec::new())
+            })
+            .clone();
         let snapshot = running
             .model
-            .merge_chat_list_snapshot(running.chat_list.fingerprint.clone(), previous);
-        running.chat_list.snapshot = Some(snapshot.clone());
-        (live_event, snapshot, storage, writer)
+            .merge_chat_list_snapshot(running.chat_list.fingerprint.clone(), &previous);
+        let changes = SnapshotChanges::between(&previous, &snapshot, Vec::new());
+        running.chat_list.snapshot = Some(snapshot);
+        (live_event, changes, storage, writer)
     };
     if let Some(event) = live_event {
         let _ = outbound.send(event);
     }
-    schedule_snapshot_write(storage, writer, snapshot);
+    if let Some(changes) = changes {
+        schedule_snapshot_write(storage, writer, changes);
+    }
 }
 
 fn schedule_snapshot_write(
     storage: RuntimeStorage,
     writer: Arc<Mutex<SnapshotWriter>>,
-    snapshot: ChatListSnapshot,
+    changes: SnapshotChanges,
 ) {
-    schedule_snapshot_write_after(storage, writer, snapshot, delay(Duration::from_millis(750)));
+    schedule_snapshot_write_after(storage, writer, changes, std::future::ready(()));
 }
 
 fn begin_snapshot_write(
     writer: &Arc<Mutex<SnapshotWriter>>,
-    snapshot: ChatListSnapshot,
+    changes: SnapshotChanges,
 ) -> Option<(u64, oneshot::Receiver<()>)> {
     let mut writer = lock(writer);
-    writer.pending = Some(snapshot);
+    writer.pending.push_back(changes);
     if writer.active {
         return None;
     }
@@ -4631,7 +4638,7 @@ fn cancel_snapshot_writes(writer: &Arc<Mutex<SnapshotWriter>>) {
     let mut writer = lock(writer);
     writer.generation = writer.generation.wrapping_add(1);
     writer.active = false;
-    writer.pending = None;
+    writer.pending.clear();
     writer.flush = None;
     writer.flush_requested = false;
 }
@@ -4649,7 +4656,7 @@ fn next_snapshot_interval(
     if writer.generation != generation {
         return None;
     }
-    if writer.pending.is_none() {
+    if writer.pending.is_empty() {
         writer.active = false;
         writer.flush = None;
         writer.flush_requested = false;
@@ -4677,19 +4684,19 @@ async fn write_snapshot_intervals(
 ) {
     let mut failures = 0_u8;
     loop {
-        let snapshot = {
+        let changes = {
             let mut writer = lock(&writer);
             if writer.generation != generation {
                 return;
             }
             writer.flush = None;
-            let Some(snapshot) = writer.pending.take() else {
+            let Some(changes) = writer.pending.pop_front() else {
                 writer.active = false;
                 return;
             };
-            snapshot
+            changes
         };
-        match chat_list_snapshot::write(storage.as_ref(), &snapshot).await {
+        match chat_list_snapshot::write_changes(storage.as_ref(), &changes).await {
             Ok(()) => failures = 0,
             Err(error) => {
                 failures = failures.saturating_add(1);
@@ -4702,9 +4709,7 @@ async fn write_snapshot_intervals(
                     if writer.generation != generation {
                         return;
                     }
-                    if writer.pending.is_none() {
-                        writer.pending = Some(snapshot);
-                    }
+                    writer.pending.push_front(changes);
                 }
             }
         }
@@ -4741,10 +4746,10 @@ async fn delay(duration: Duration) {
 fn schedule_snapshot_write_after(
     storage: RuntimeStorage,
     writer: Arc<Mutex<SnapshotWriter>>,
-    snapshot: ChatListSnapshot,
+    changes: SnapshotChanges,
     delay: impl std::future::Future<Output = ()> + 'static,
 ) {
-    let Some((generation, flush)) = begin_snapshot_write(&writer, snapshot) else {
+    let Some((generation, flush)) = begin_snapshot_write(&writer, changes) else {
         return;
     };
     spawn_task(async move {
@@ -4760,10 +4765,10 @@ fn schedule_snapshot_write_after(
 fn schedule_snapshot_write_after(
     storage: RuntimeStorage,
     writer: Arc<Mutex<SnapshotWriter>>,
-    snapshot: ChatListSnapshot,
+    changes: SnapshotChanges,
     delay: impl std::future::Future<Output = ()> + Send + 'static,
 ) {
-    let Some((generation, flush)) = begin_snapshot_write(&writer, snapshot) else {
+    let Some((generation, flush)) = begin_snapshot_write(&writer, changes) else {
         return;
     };
     spawn_task(async move {
@@ -5290,10 +5295,10 @@ mod tests {
         attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
         flush_snapshot_write, join_request_events, lock, next_connection_state,
         permanent_mark_read_error, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write_after,
-        spawn_history_fetch, spawn_online_direct_resolution, spawn_read_marker_fetch,
-        spawn_target_reconciliation, state_limit_events, target_sync_boundary, update_chat_list,
-        utf16_len,
+        queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write,
+        schedule_snapshot_write_after, spawn_history_fetch, spawn_online_direct_resolution,
+        spawn_read_marker_fetch, spawn_target_reconciliation, state_limit_events,
+        target_sync_boundary, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -5301,7 +5306,8 @@ mod tests {
         MessageId, NetworkConnectionState, NetworkId, NetworkProjection, PushState,
         SaslCredentials,
         chat_list_snapshot::{
-            ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, read,
+            ChatListSnapshot, SnapshotChanges, SnapshotConversation, SnapshotCursor, SnapshotRow,
+            read,
         },
         commands::{self, CommandPermission, CommandRequirement, CommandSpec, ConfirmPolicy},
         pushed_messages::PushedMessage,
@@ -5387,11 +5393,11 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn snapshot_rewrites_are_throttled_without_starving_the_injected_clock() {
+    async fn snapshot_writer_keeps_changes_queued_before_its_task_runs() {
         let storage = Arc::new(MemoryKv::default());
         let writer = Arc::default();
-        let first = ChatListSnapshot::new("network".into(), Vec::new());
-        let second = ChatListSnapshot::new(
+        let empty = ChatListSnapshot::new("network".into(), Vec::new());
+        let first = ChatListSnapshot::new(
             "network".into(),
             vec![SnapshotRow {
                 conversation: SnapshotConversation::Channel {
@@ -5408,33 +5414,51 @@ async fn delay(duration: Duration) {
                 peer_pin: None,
             }],
         );
-        let (first_tick, first_clock) = oneshot::channel();
-        let (second_tick, second_clock) = oneshot::channel();
-        schedule_snapshot_write_after(
-            Arc::clone(&storage),
-            Arc::clone(&writer),
-            first,
-            async move {
-                let _ = first_clock.await;
-            },
+        let second = ChatListSnapshot::new(
+            "network".into(),
+            vec![
+                first.rows[0].clone(),
+                SnapshotRow {
+                    conversation: SnapshotConversation::Direct {
+                        key: "alice".into(),
+                    },
+                    title: "Alice".into(),
+                    last_activity_ms: Some(100),
+                    stubs: Vec::new(),
+                    gap_until: None,
+                    preview: Some("hello".into()),
+                    newest: None,
+                    read_at_ms: None,
+                    pending_read_at_ms: None,
+                    peer_pin: None,
+                },
+            ],
         );
-        schedule_snapshot_write_after(
+        schedule_snapshot_write(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            second.clone(),
-            async move {
-                let _ = second_clock.await;
-            },
+            SnapshotChanges::between(&empty, &first, Vec::new()).expect("first row changed"),
+        );
+        schedule_snapshot_write(
+            Arc::clone(&storage),
+            Arc::clone(&writer),
+            SnapshotChanges::between(&first, &second, Vec::new()).expect("second row changed"),
         );
 
-        let _ = first_tick.send(());
-        tokio::task::yield_now().await;
-        let stored = read(storage.as_ref())
-            .await
-            .expect("read")
-            .expect("throttled rewrite");
-        assert_eq!(ChatListSnapshot::decode(&stored, "network"), Some(second));
-        assert!(second_tick.send(()).is_err());
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let stored = read(storage.as_ref())
+                    .await
+                    .expect("read")
+                    .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+                if stored == Some(second.clone()) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("both queued rows persist");
     }
 
     #[tokio::test]
@@ -5442,11 +5466,12 @@ async fn delay(duration: Duration) {
         let storage = Arc::new(MemoryKv::default());
         let writer = Arc::default();
         let snapshot = ChatListSnapshot::new("network".into(), Vec::new());
+        let changed = snapshot.clone().with_cursor_ms(Some(100));
         let (_clock, pending) = oneshot::channel::<()>();
         schedule_snapshot_write_after(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            snapshot.clone(),
+            SnapshotChanges::between(&snapshot, &changed, Vec::new()).expect("cursor changed"),
             async move {
                 let _ = pending.await;
             },
@@ -5470,7 +5495,7 @@ async fn delay(duration: Duration) {
             .await
             .expect("read")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
-        assert_eq!(stored, Some(snapshot));
+        assert_eq!(stored, Some(changed));
     }
 
     #[tokio::test(start_paused = true)]
@@ -5478,12 +5503,13 @@ async fn delay(duration: Duration) {
         let storage = Arc::new(MemoryKv::default());
         let writer = Arc::default();
         let snapshot = ChatListSnapshot::new("network".into(), Vec::new());
+        let changed = snapshot.clone().with_cursor_ms(Some(100));
         let (tick, clock) = oneshot::channel();
         storage.fail_next_commit();
         schedule_snapshot_write_after(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            snapshot.clone(),
+            SnapshotChanges::between(&snapshot, &changed, Vec::new()).expect("cursor changed"),
             async move {
                 let _ = clock.await;
             },
@@ -5499,7 +5525,7 @@ async fn delay(duration: Duration) {
             .await
             .expect("read")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
-        assert_eq!(stored, Some(snapshot));
+        assert_eq!(stored, Some(changed));
     }
 
     #[test]
@@ -8644,7 +8670,27 @@ async fn delay(duration: Duration) {
             .expect("read snapshot")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
             .expect("stored snapshot");
-        assert!(snapshot.rows.contains(expected));
+        assert!(
+            snapshot.rows.contains(expected),
+            "stored rows: {:#?}",
+            snapshot.rows
+        );
+    }
+
+    async fn restore_and_store_snapshot(
+        state: &Arc<Mutex<RuntimeState>>,
+        snapshot: &ChatListSnapshot,
+    ) {
+        let storage = {
+            let mut state = lock(state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.model.restore_chat_list(snapshot.clone());
+            running.chat_list.snapshot = Some(snapshot.clone());
+            Arc::clone(&state.storage)
+        };
+        crate::chat_list_snapshot::write(storage.as_ref(), snapshot)
+            .await
+            .expect("seed cache");
     }
 
     fn take_buffer_snapshot_texts(
@@ -10269,6 +10315,12 @@ async fn delay(duration: Duration) {
         })
         .await;
         let (state, outbound, mut receiver) = harness(client.clone());
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .chat_list
+            .fingerprint = "network".into();
         wire.server(
             "@time=2026-10-27T12:00:00.000Z;msgid=one :alice!a@host PRIVMSG weblounge :restored direct",
         )
@@ -10301,13 +10353,8 @@ async fn delay(duration: Duration) {
             pending_read_at_ms: None,
             peer_pin: None,
         };
-        {
-            let mut state = lock(&state);
-            let running = state.network.as_mut().expect("network remains active");
-            let snapshot = ChatListSnapshot::new("network".into(), vec![unresolved.clone()]);
-            running.model.restore_chat_list(snapshot.clone());
-            running.chat_list.snapshot = Some(snapshot);
-        }
+        let snapshot = ChatListSnapshot::new("network".into(), vec![unresolved.clone()]);
+        restore_and_store_snapshot(&state, &snapshot).await;
 
         let target = complete_alice_chat_list(&state, &client);
         assert!(
