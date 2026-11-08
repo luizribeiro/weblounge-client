@@ -1068,7 +1068,7 @@ async function installHistoryStallEngine(
               id: 1,
               label: "Local Ergo",
               nickname: "weblounge",
-              state: stableRows ? "online" : "connecting",
+              state: "connecting",
             },
           });
           this.emit({
@@ -1145,7 +1145,7 @@ async function installDelayedProjectionEngine(
               id: 1,
               label: "Local Ergo",
               nickname: "weblounge",
-              state: "connecting",
+              state: stableRows ? "online" : "connecting",
             },
           });
           this.emit({
