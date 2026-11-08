@@ -1068,7 +1068,7 @@ async function installHistoryStallEngine(
               id: 1,
               label: "Local Ergo",
               nickname: "weblounge",
-              state: "connecting",
+              state: stableRows ? "online" : "connecting",
             },
           });
           this.emit({
@@ -1163,15 +1163,16 @@ async function installDelayedProjectionEngine(
       close(): void {}
 
       releaseProjection(): void {
-        this.emit({
-          type: "network_state_changed",
-          network: {
-            id: 1,
-            label: "Local Ergo",
-            nickname: "weblounge",
-            state: "online",
-          },
-        });
+        if (!stableRows)
+          this.emit({
+            type: "network_state_changed",
+            network: {
+              id: 1,
+              label: "Local Ergo",
+              nickname: "weblounge",
+              state: "online",
+            },
+          });
         const buffers = stableRows
           ? [buffer(2, "#first", false), buffer(3, "#tapped", false)]
           : [buffer(2, "#restored", false)];
