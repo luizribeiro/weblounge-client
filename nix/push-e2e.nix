@@ -6,10 +6,14 @@
   previousApp,
   pushE2eHarness,
   pushRelayE2e,
+  repeatEach ? null,
 }:
 
 let
   grepArgument = pkgs.lib.optionalString (grep != null) "--grep ${pkgs.lib.escapeShellArg grep}";
+  repeatArgument = pkgs.lib.optionalString (
+    repeatEach != null
+  ) "--repeat-each=${toString repeatEach}";
   addresses = {
     ergo = "203.0.113.1";
     relay = "203.0.113.2";
@@ -492,7 +496,7 @@ pkgs.testers.runNixOSTest {
         --project=firefox-bot-reply-read-full \
         --project=firefox-push-controls-full \
         --project=webkit-push-badge-full \
-        --workers=1 ${grepArgument}
+        --workers=1 ${grepArgument} ${repeatArgument}
     """)
   '';
 }
