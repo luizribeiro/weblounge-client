@@ -233,6 +233,7 @@ export function MobileConversation(props: MobileConversationProps) {
             }
             presentation="mobile"
             readAtMs={props.buffer.read_at_ms}
+            syncState={props.buffer.sync_state}
             registerController={(controller) => {
               listController = controller;
             }}

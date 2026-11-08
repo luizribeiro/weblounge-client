@@ -15,6 +15,7 @@ import {
   Switch,
 } from "solid-js";
 import type {
+  BufferProjection,
   MembershipProjection,
   MessageProjection,
   NoticeKind,
@@ -52,6 +53,7 @@ interface MessageListProps {
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
   readonly readAtMs?: number | null | undefined;
+  readonly syncState?: BufferProjection["sync_state"] | undefined;
   readonly onLiveEdgeChange?: (atLiveEdge: boolean) => void;
   readonly onLoadOlder?: (() => void) | undefined;
   readonly onOpenChannel?: ((channel: string) => void) | undefined;
@@ -99,9 +101,11 @@ export function MessageList(props: MessageListProps) {
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadAt = props.readAtMs ?? null;
-  let boundaryFrozen =
-    hasUnreadAfter(props.messages, initialReadAt) ||
-    (initialReadAt !== null && props.messages.length === 0);
+  let boundaryFrozen = hasUnreadAfter(props.messages, initialReadAt);
+  let pendingEmptyBoundary =
+    initialReadAt !== null &&
+    props.messages.length === 0 &&
+    props.syncState === "syncing";
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
@@ -313,11 +317,13 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     if (props.bufferId !== currentBuffer) {
       currentBuffer = props.bufferId;
-      setFrozenReadAt(props.readAtMs ?? null);
-      boundaryFrozen =
-        props.readAtMs !== null &&
-        props.readAtMs !== undefined &&
-        props.messages.length === 0;
+      const marker = props.readAtMs ?? null;
+      setFrozenReadAt(marker);
+      boundaryFrozen = hasUnreadAfter(props.messages, marker);
+      pendingEmptyBoundary =
+        marker !== null &&
+        props.messages.length === 0 &&
+        props.syncState === "syncing";
       renderedCount = 0;
       olderPageArmed = true;
       setUnseen(0);
@@ -328,6 +334,16 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     const marker = props.readAtMs ?? null;
     const hasUnread = hasUnreadAfter(props.messages, marker);
+    if (props.messages.length === 0) {
+      pendingEmptyBoundary = marker !== null && props.syncState === "syncing";
+    } else if (pendingEmptyBoundary) {
+      pendingEmptyBoundary = false;
+      if (hasUnread) {
+        boundaryFrozen = true;
+        setFrozenReadAt(marker);
+        return;
+      }
+    }
     const away =
       !publishedAtLiveEdge() || !pageIsForeground(document, navigator);
     if (hasUnread && away) {

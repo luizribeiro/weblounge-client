@@ -440,6 +440,7 @@ export function DesktopShell(props: DesktopShellProps) {
                     props.onRetry?.(buffer.id, localSendId);
                 }}
                 readAtMs={activeBuffer()?.read_at_ms}
+                syncState={activeBuffer()?.sync_state}
                 registerController={(controller) => {
                   messageListController = controller;
                 }}

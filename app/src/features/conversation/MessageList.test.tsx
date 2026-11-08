@@ -751,7 +751,12 @@ it("keeps a server marker while an opening history page arrives", async () => {
     [],
   );
   const { container } = render(() => (
-    <MessageList bufferId={2} messages={messages()} readAtMs={1} />
+    <MessageList
+      bufferId={2}
+      messages={messages()}
+      readAtMs={1}
+      syncState="syncing"
+    />
   ));
 
   setMessages([
@@ -766,22 +771,94 @@ it("keeps a server marker while an opening history page arrives", async () => {
   );
 });
 
+it("does not freeze a cursor seed before a pending buffer's first live row", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>(
+    [],
+  );
+  const { container } = render(() => (
+    <MessageList
+      bufferId={2}
+      messages={messages()}
+      readAtMs={1}
+      syncState="pending"
+    />
+  ));
+
+  setMessages([
+    {
+      ...message,
+      authorship: "own",
+      delivery: "confirmed",
+      received_at_ms: 2,
+    },
+    {
+      ...message,
+      id: 2,
+      delivery: "received",
+      received_at_ms: 3,
+      text: "first live peer row",
+    },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-new-line]")).toBeNull();
+});
+
+it("does not freeze a live row after an empty history sync settles", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>(
+    [],
+  );
+  const [syncState, setSyncState] = createSignal<"syncing" | "synced">(
+    "syncing",
+  );
+  const { container } = render(() => (
+    <MessageList
+      bufferId={2}
+      messages={messages()}
+      readAtMs={1}
+      syncState={syncState()}
+    />
+  ));
+
+  setSyncState("synced");
+  setMessages([
+    {
+      ...message,
+      delivery: "received",
+      received_at_ms: 2,
+      text: "first row after empty history",
+    },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-new-line]")).toBeNull();
+});
+
 it("keeps a server marker when a buffer switch receives history", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const [view, setView] = createSignal<{
     readonly bufferId: number;
     readonly messages: readonly MessageProjection[];
     readonly readAtMs: number;
-  }>({ bufferId: 2, messages: [message], readAtMs: 1 });
+    readonly syncState: "pending" | "syncing";
+  }>({ bufferId: 2, messages: [message], readAtMs: 1, syncState: "pending" });
   const { container } = render(() => (
     <MessageList
       bufferId={view().bufferId}
       messages={view().messages}
       readAtMs={view().readAtMs}
+      syncState={view().syncState}
     />
   ));
 
-  setView({ bufferId: 3, messages: [], readAtMs: 1 });
+  setView({
+    bufferId: 3,
+    messages: [],
+    readAtMs: 1,
+    syncState: "syncing",
+  });
   setView({
     bufferId: 3,
     messages: [
@@ -789,6 +866,7 @@ it("keeps a server marker when a buffer switch receives history", async () => {
       { ...message, id: 2, text: "unread history", received_at_ms: 2 },
     ],
     readAtMs: 1,
+    syncState: "syncing",
   });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
