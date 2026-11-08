@@ -2019,6 +2019,15 @@ impl NetworkModel {
         (fetch, should_resolve.then_some(buffer_id), added)
     }
 
+    pub(crate) fn cached_direct_with_stubs_needs_marker(&self, nick: &papo::Nick) -> bool {
+        self.names
+            .get(&NameKey::Direct(nick.clone()))
+            .and_then(|buffer_id| self.buffers.get(buffer_id))
+            .is_some_and(|buffer| {
+                buffer.projection.cached == Some(true) && !buffer.read_facts.stubs().is_empty()
+            })
+    }
+
     pub(crate) fn restore_channel(
         &mut self,
         channel: &papo::ChannelName,

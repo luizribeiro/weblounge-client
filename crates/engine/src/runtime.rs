@@ -3511,7 +3511,8 @@ fn restore_target_rows(
     directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
     let covered_through = target_sync_boundary(complete, target_count, directs.len(), upper_bound);
     directs.truncate(RECENT_DIRECT_LIMIT);
-    let Some((mut output, direct_fetches)) = restore_direct_target_rows(state, instance, directs)
+    let Some((mut output, direct_fetches, marker_targets)) =
+        restore_direct_target_rows(state, instance, directs)
     else {
         return;
     };
@@ -3531,6 +3532,15 @@ fn restore_target_rows(
     drop(snapshot);
     send_events(outbound, output);
     send_recent_directs_ready(state, outbound, instance, network_id, true);
+    for target in marker_targets {
+        spawn_read_marker_fetch(
+            Arc::clone(state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+            target,
+        );
+    }
     for fetch in channel_fetches {
         spawn_history_fetch(
             Arc::clone(state),
@@ -3546,9 +3556,10 @@ fn restore_direct_target_rows(
     state: &Arc<Mutex<RuntimeState>>,
     instance: u64,
     directs: Vec<(papo::Nick, SystemTime)>,
-) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>)> {
+) -> Option<(Vec<EngineToUi>, Vec<HistoryFetch>, Vec<HistoryTarget>)> {
     let mut output = Vec::new();
     let mut fetches = Vec::new();
+    let mut marker_targets = Vec::new();
     for (nick, latest) in directs {
         let restored = lock(state)
             .network
@@ -3559,9 +3570,18 @@ fn restore_direct_target_rows(
         if let Some(buffer) = added {
             output.push(EngineToUi::BufferAdded { buffer });
         }
+        if fetch.is_none()
+            && lock(state)
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+                .is_some_and(|running| running.model.cached_direct_with_stubs_needs_marker(&nick))
+        {
+            marker_targets.push(HistoryTarget::Direct(nick));
+        }
         fetches.extend(fetch);
     }
-    Some((output, fetches))
+    Some((output, fetches, marker_targets))
 }
 
 fn target_sync_boundary(
@@ -9196,7 +9216,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn unchanged_direct_keeps_its_restored_count_and_send_target_lazy() {
+    async fn unchanged_direct_with_stubs_fetches_marker_and_clears_covered_push() {
         let caps = [
             "batch",
             "draft/chathistory",
@@ -9208,7 +9228,7 @@ async fn delay(duration: Duration) {
         let (client, _events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         wire.register(&caps).await;
-        let (state, outbound, _receiver) = harness(client.clone());
+        let (state, outbound, mut receiver) = harness(client.clone());
         {
             let mut state = lock(&state);
             state
@@ -9251,31 +9271,55 @@ async fn delay(duration: Duration) {
             UNIX_EPOCH + Duration::from_millis(100),
         );
 
-        let mut state = lock(&state);
-        let model = &mut state
-            .network
-            .as_mut()
-            .expect("network remains active")
-            .model;
-        assert!(matches!(
-            model.direct(&nick),
-            Some(DirectAvailability::Pending)
-        ));
-        let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
-            panic!("buffer projection event expected")
-        };
-        assert_eq!(
-            buffers
-                .iter()
-                .find(|buffer| buffer.title == "alice")
-                .map(|buffer| (buffer.unread, buffer.mentions)),
-            Some((3, 3))
-        );
-        assert!(model.begin_direct_resolution(&nick).is_some());
-        assert!(matches!(
-            model.direct(&nick),
-            Some(DirectAvailability::Resolving)
-        ));
+        let request = wire.next_sent().await;
+        assert!(request.ends_with("MARKREAD alice"));
+        {
+            let mut state = lock(&state);
+            let model = &mut state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .model;
+            assert!(matches!(
+                model.direct(&nick),
+                Some(DirectAvailability::Pending)
+            ));
+            let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
+                panic!("buffer projection event expected")
+            };
+            assert_eq!(
+                buffers
+                    .iter()
+                    .find(|buffer| buffer.title == "alice")
+                    .map(|buffer| (buffer.unread, buffer.mentions)),
+                Some((3, 3))
+            );
+            assert!(model.begin_direct_resolution(&nick).is_some());
+            assert!(matches!(
+                model.direct(&nick),
+                Some(DirectAvailability::Resolving)
+            ));
+        }
+
+        let label = request_label(&request);
+        let marker = papo_proto::time::format(UNIX_EPOCH + Duration::from_millis(100))
+            .expect("marker formats");
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD alice timestamp={marker}"
+        ))
+        .await;
+        loop {
+            let Some(event) = receiver.recv().await else {
+                panic!("engine event stream remains open")
+            };
+            if let EngineToUi::BufferUpdated { buffer } = event
+                && buffer.title == "alice"
+                && buffer.read_at_ms == Some(100)
+            {
+                assert_eq!((buffer.unread, buffer.mentions), (0, 0));
+                break;
+            }
+        }
     }
 
     async fn send_account_tagged_live_direct(
