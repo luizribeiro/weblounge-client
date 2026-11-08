@@ -103,7 +103,11 @@ test("stacks a long live message when the read boundary passes the previous one"
   await expectStackedTimeline(page);
   await expectMeasuredAwayFromEstimate(page, firstLongMessage);
 
-  await append(page, [secondLongMessage], firstLongId);
+  await append(page, [secondLongMessage], lastHistoryId);
+  await page.evaluate(
+    (readThrough) => window.messageListOverlap?.ownSend(readThrough),
+    firstLongId,
+  );
 
   await expectNewDividerAfter(page, firstLongId);
   await expect(messageRow(page, secondLongMessage)).toBeAttached();
@@ -119,7 +123,7 @@ test("restacks the new divider when the read boundary passes a measured long row
   await expectMeasuredAwayFromEstimate(page, firstLongMessage);
 
   await page.evaluate(
-    (readThrough) => window.messageListOverlap?.markRead(readThrough),
+    (readThrough) => window.messageListOverlap?.ownSend(readThrough),
     firstLongId,
   );
 

@@ -15,7 +15,7 @@ import { harnessHistoryLength, longNick } from "./timeline-fixtures";
 export interface MessageListOverlapHarness {
   readonly append: (texts: readonly string[], readThrough: number) => void;
   readonly estimate: (text: string, width: number) => number;
-  readonly markRead: (readThrough: number) => void;
+  readonly ownSend: (readThrough: number) => void;
 }
 
 declare global {
@@ -78,7 +78,19 @@ window.messageListOverlap = {
       width,
       currentMessageDensity(document.documentElement),
     ),
-  markRead: (readThrough) => setReadAtMs(markerTime(readThrough)),
+  ownSend: (readThrough) =>
+    batch(() => {
+      setMessages((current) => [
+        ...current,
+        {
+          ...harnessMessage(current.length + 1, "own divider advance"),
+          authorship: "own",
+          server_time_ms: markerTime(readThrough),
+          received_at_ms: markerTime(readThrough),
+        },
+      ]);
+      setReadAtMs(markerTime(readThrough));
+    }),
 };
 
 render(

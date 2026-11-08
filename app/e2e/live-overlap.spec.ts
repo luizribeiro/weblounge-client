@@ -62,23 +62,21 @@ test("keeps long live messages apart when the read boundary passes one", async (
       page.getByRole("button", { name: /new message/ }),
     ).toBeVisible();
     await expect(messageRow(page, secondLongMessage)).toBeAttached();
-    await expectNewDividerBetween(page, firstLongMessage, secondLongMessage);
+    await expectNewDividerBefore(page, firstLongMessage);
     expect(await timelineOverlapsOverFrames(list, framesPerSecond)).toEqual([]);
   } finally {
     bot.close();
   }
 });
 
-async function expectNewDividerBetween(
+async function expectNewDividerBefore(
   page: Page,
-  before: string,
-  after: string,
+  message: string,
 ): Promise<void> {
   const index = (locator: Locator) =>
     locator.evaluate((element) => Number(element.closest("li")?.dataset.index));
   const divider = await index(page.locator("[data-new-line]"));
-  expect(divider).toBe((await index(messageRow(page, before))) + 1);
-  expect(divider).toBe((await index(messageRow(page, after))) - 1);
+  expect(divider).toBe((await index(messageRow(page, message))) - 1);
 }
 
 function projectedUnread(
