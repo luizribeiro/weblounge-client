@@ -35,8 +35,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Bound optimistic sends across restored routes and socket replacement. TARGETS now leaves an
   unresolved snapshot DM pending so opening or sending starts its direct-recipient resolution;
   foreground reconnect cancels an in-flight papo request before replacing either local or hosted
-  clients; a definitely unsent attempt becomes a
-  visible failure with Retry instead of remaining Sending. When the server accepted a message but
+  clients; production Ergo metadata confirms the stuck PRIVMSG never arrived before the iPhone
+  foregrounded onto a new hosted connection, so that interrupted attempt becomes a visible failure
+  with Retry instead of remaining Sending. The hosted token handoff cannot start until that failure
+  settles. When the server accepted a message but
   its echo was lost, reconnect history reconciles the matching failed row by server msgid without
   replaying or duplicating it. Local-Ergo iPhone WebKit covers all three paths.
 - [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now

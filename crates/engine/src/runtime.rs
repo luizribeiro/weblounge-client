@@ -11120,6 +11120,110 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn hosted_replacement_fails_an_inflight_send_before_requesting_a_token() {
+        let caps = ["echo-message", "labeled-response", "message-tags"];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, connected);
+        process_event(&state, &outbound, &client, 1, joined);
+        let buffer_id = collect(&mut receiver)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferAdded { buffer } => Some(buffer.id),
+                _ => None,
+            })
+            .expect("join adds the room buffer");
+        {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running.authentication_kind = AuthenticationKind::HostedOAuth;
+            running.hosted_reconnect = Some(HostedReconnectConfig {
+                endpoint: "wss://beta.weblounge.org/socket".into(),
+                nickname: "weblounge".into(),
+                autojoin: vec!["#room".into()],
+            });
+        }
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        runtime.request(EngineRequestEnvelope {
+            id: "send".into(),
+            request: EngineRequest::SendMessage {
+                buffer_id,
+                text: "stuck before foreground".into(),
+            },
+        });
+        assert_eq!(
+            next_sent_containing(&mut wire, "PRIVMSG #room").await,
+            "@label=0 PRIVMSG #room :stuck before foreground"
+        );
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .set_connection(
+                NetworkConnectionState::Failed {
+                    reason: ConnectionFailureReason::Transport,
+                    message_key: EngineMessageKey::ConnectionFailed,
+                },
+                None,
+            );
+
+        let reconnecting = runtime.request(EngineRequestEnvelope {
+            id: "foreground".into(),
+            request: EngineRequest::Reconnect {
+                network_id: NetworkId(1),
+            },
+        });
+        assert!(matches!(
+            reconnecting.as_slice(),
+            [EngineToUi::NetworkStateChanged { .. }]
+        ));
+        let mut output = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !output.iter().any(
+                |event| matches!(event, EngineToUi::CommandResult { id } if id == "foreground"),
+            ) {
+                output.push(receiver.recv().await.expect("runtime remains active"));
+            }
+        })
+        .await
+        .expect("hosted replacement settles");
+
+        let failed = output
+            .iter()
+            .position(|event| matches!(event, EngineToUi::MessageFailed { .. }))
+            .expect("the interrupted send becomes retryable");
+        let token = output
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    EngineToUi::HostedTokenRequired {
+                        network_id: NetworkId(1)
+                    }
+                )
+            })
+            .expect("hosted replacement requests a fresh token");
+        assert!(
+            failed < token,
+            "the old send must settle before client replacement"
+        );
+    }
+
+    #[tokio::test]
     async fn direct_send_during_reconnect_waits_for_a_fresh_handle() {
         let (client, mut events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
