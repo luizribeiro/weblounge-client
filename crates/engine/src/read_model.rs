@@ -180,108 +180,163 @@ fn union_stubs(stubs: impl IntoIterator<Item = MessageStub>) -> Vec<MessageStub>
     stubs
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{
-        MAX_STUBS, MessageStub, ReadFacts, ServerTimeMs, SetOnceMerge, merge_max, merge_set_once,
-    };
-
-    fn stub(msgid: impl Into<String>, time: i64, mention: bool) -> MessageStub {
-        MessageStub {
-            msgid: msgid.into(),
-            time: ServerTimeMs::new(time),
-            mention,
-        }
-    }
-
-    #[test]
-    fn maximum_merge_never_moves_backwards() {
-        let mut value = Some(ServerTimeMs::new(20));
-
-        merge_max(&mut value, Some(ServerTimeMs::new(10)));
-        merge_max(&mut value, Some(ServerTimeMs::new(30)));
-
-        assert_eq!(value, Some(ServerTimeMs::new(30)));
-    }
-
-    #[test]
-    fn stub_union_is_order_independent_and_keeps_monotonic_fields() {
-        let push = stub("message-1", 100, true);
-        let history = stub("message-1", 101, false);
-        let mut push_first = ReadFacts::default();
-        let mut history_first = ReadFacts::default();
-
-        push_first.merge_stub(push.clone());
-        push_first.merge_stub(history.clone());
-        history_first.merge_stub(history);
-        history_first.merge_stub(push);
-
-        assert_eq!(push_first, history_first);
-        assert_eq!(push_first.stubs(), [stub("message-1", 101, true)]);
-    }
-
-    #[test]
-    fn mark_prunes_covered_stubs_inclusively() {
-        let mut facts = ReadFacts::default();
-        facts.merge_stub(stub("before", 9, false));
-        facts.merge_stub(stub("tie", 10, false));
-        facts.merge_stub(stub("after", 11, false));
-
-        facts.merge_mark(ServerTimeMs::new(10));
-
-        assert_eq!(facts.stubs(), [stub("after", 11, false)]);
-    }
-
-    #[test]
-    fn cap_keeps_the_newest_stubs_and_records_the_gap() {
-        let mut facts = ReadFacts::default();
-        for time in 0..=MAX_STUBS {
-            let time = i64::try_from(time).expect("stub cap fits i64");
-            facts.merge_stub(stub(format!("message-{time}"), time, false));
-        }
-
-        assert_eq!(facts.stubs().len(), MAX_STUBS);
-        assert_eq!(facts.stubs()[0].time, ServerTimeMs::new(1));
-        assert_eq!(facts.gap_until(), Some(ServerTimeMs::new(1)));
-    }
-
-    #[test]
-    fn fact_snapshots_merge_commutatively() {
-        let mut left = ReadFacts::default();
-        left.merge_mark(ServerTimeMs::new(10));
-        left.merge_pending(ServerTimeMs::new(12));
-        left.merge_stub(stub("later", 14, false));
-        let mut right = ReadFacts::default();
-        right.merge_mark(ServerTimeMs::new(11));
-        right.merge_gap_until(ServerTimeMs::new(20));
-        right.merge_stub(stub("mention", 13, true));
-
-        let mut left_then_right = left.clone();
-        left_then_right.merge(right.clone());
-        right.merge(left);
-
-        assert_eq!(left_then_right, right);
-    }
-
-    #[test]
-    fn server_acknowledgement_clears_only_covered_pending_reads() {
-        let mut facts = ReadFacts::default();
-        facts.merge_pending(ServerTimeMs::new(20));
-
-        facts.acknowledge(ServerTimeMs::new(19));
-        assert_eq!(facts.pending(), Some(ServerTimeMs::new(20)));
-
-        facts.acknowledge(ServerTimeMs::new(20));
-        assert_eq!(facts.pending(), None);
-    }
-
-    #[test]
-    fn set_once_accepts_retries_and_rejects_conflicts() {
-        let mut value = None;
-
-        assert_eq!(merge_set_once(&mut value, "seed"), SetOnceMerge::Set);
-        assert_eq!(merge_set_once(&mut value, "seed"), SetOnceMerge::Unchanged);
-        assert_eq!(merge_set_once(&mut value, "other"), SetOnceMerge::Conflict);
-        assert_eq!(value, Some("seed"));
-    }
+/// The projected severity of an in-app conversation badge.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BadgeKind {
+    /// Known unread messages without a projected mention.
+    Unread,
+    /// At least one known unread message is a projected mention.
+    Mention,
 }
+
+/// The visible count on an in-app conversation badge.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BadgeCount {
+    /// An exact known unread count.
+    Exact(usize),
+    /// The unread region is incomplete or has more than 99 known messages.
+    MoreThan99,
+}
+
+/// An in-app conversation badge derived from read facts.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ConversationBadge {
+    /// The count text to display.
+    pub count: BadgeCount,
+    /// The badge's visual and accessible severity.
+    pub kind: BadgeKind,
+}
+
+/// The kind used by the operating-system app-badge policy.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversationKind {
+    /// A channel conversation.
+    Channel,
+    /// A direct-message conversation.
+    Direct,
+}
+
+/// A conversation included in the operating-system app-badge projection.
+pub struct AppBadgeConversation<'a> {
+    /// Whether the conversation is a channel or direct message.
+    pub kind: ConversationKind,
+    /// The conversation's read facts.
+    pub facts: &'a ReadFacts,
+    /// Whether channel mention severity is muted.
+    pub muted: bool,
+}
+
+/// The placement of the frozen unread divider.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "placement")]
+pub enum Divider {
+    /// Missing messages may precede the loaded unread stubs.
+    AtTop,
+    /// The divider belongs immediately before this peer message.
+    Before {
+        /// The first known peer message after the frozen divider mark.
+        msgid: String,
+    },
+}
+
+/// Counts known peer messages strictly after the conversation's mark.
+#[must_use]
+pub fn unread_count(facts: &ReadFacts) -> usize {
+    facts
+        .stubs
+        .iter()
+        .filter(|stub| facts.mark.is_none_or(|mark| stub.time > mark))
+        .count()
+}
+
+/// Counts known unread mentions, or returns zero for a muted channel.
+#[must_use]
+pub fn mention_count(facts: &ReadFacts, muted: bool) -> usize {
+    if muted {
+        return 0;
+    }
+    facts
+        .stubs
+        .iter()
+        .filter(|stub| stub.mention && facts.mark.is_none_or(|mark| stub.time > mark))
+        .count()
+}
+
+/// Returns whether the unread region may contain messages absent from the stub index.
+#[must_use]
+pub fn has_unread_gap(facts: &ReadFacts) -> bool {
+    facts
+        .gap_until
+        .is_some_and(|gap| facts.mark.is_none_or(|mark| gap > mark))
+}
+
+/// Derives the in-app badge from known peer-message facts.
+#[must_use]
+pub fn conversation_badge(facts: &ReadFacts, muted: bool) -> Option<ConversationBadge> {
+    let unread = unread_count(facts);
+    let has_gap = has_unread_gap(facts);
+    if unread == 0 && !has_gap {
+        return None;
+    }
+
+    Some(ConversationBadge {
+        count: if unread > 99 || has_gap {
+            BadgeCount::MoreThan99
+        } else {
+            BadgeCount::Exact(unread)
+        },
+        kind: if mention_count(facts, muted) > 0 {
+            BadgeKind::Mention
+        } else {
+            BadgeKind::Unread
+        },
+    })
+}
+
+/// Derives the frozen unread divider from an explicit pane mark.
+#[must_use]
+pub fn divider(facts: &ReadFacts, divider_mark: Option<ServerTimeMs>) -> Option<Divider> {
+    let mark = divider_mark?;
+    if facts.gap_until.is_some_and(|gap| gap > mark) {
+        return Some(Divider::AtTop);
+    }
+
+    facts
+        .stubs
+        .iter()
+        .find(|stub| stub.time > mark)
+        .map(|stub| Divider::Before {
+            msgid: stub.msgid.clone(),
+        })
+}
+
+/// Sums direct unread messages and channel mentions for the operating-system badge.
+#[must_use]
+pub fn app_badge_count<'a>(
+    conversations: impl IntoIterator<Item = AppBadgeConversation<'a>>,
+) -> usize {
+    conversations.into_iter().fold(0, |total, conversation| {
+        let contribution = match conversation.kind {
+            ConversationKind::Channel => mention_count(conversation.facts, conversation.muted),
+            ConversationKind::Direct => unread_count(conversation.facts),
+        };
+        total.saturating_add(contribution)
+    })
+}
+
+/// Returns whether a conversation mark covers an operating-system notification.
+#[must_use]
+pub fn should_close_notification<K: Eq>(
+    notification_conversation: &K,
+    notification_time: ServerTimeMs,
+    conversation: &K,
+    mark: Option<ServerTimeMs>,
+) -> bool {
+    notification_conversation == conversation && mark.is_some_and(|mark| notification_time <= mark)
+}
+
+#[cfg(test)]
+mod tests;
