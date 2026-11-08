@@ -3337,7 +3337,7 @@ async fn fetch_history(
         } => {
             client
                 .history(channel)
-                .after(newest.reference())
+                .latest_after(newest.reference())
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
@@ -3347,7 +3347,7 @@ async fn fetch_history(
         } => {
             client
                 .history(nick)
-                .after(newest.reference())
+                .latest_after(newest.reference())
                 .limit(HISTORY_PAGE_SIZE)
                 .await
         }
@@ -4331,7 +4331,7 @@ fn process_history(
     let conversation = page.conversation.clone();
     let item_count = page.items.len();
     let end = page.end;
-    let (oldest, newest) = history_page_bounds(&page);
+    let bounds = history_page_bounds(&page);
     let snapshot = client.state();
     let mut state = lock(state);
     let Some(running) = state
@@ -4415,8 +4415,7 @@ fn process_history(
         &mut running.model,
         load,
         &conversation,
-        oldest,
-        newest,
+        bounds,
         item_count,
         end,
     );
@@ -4468,14 +4467,20 @@ fn finish_history_page(
     model: &mut NetworkModel,
     load: Option<HistoryLoad>,
     conversation: &papo::Conversation,
-    oldest: Option<papo::HistoryReference>,
-    newest: Option<HistoryCursor>,
+    bounds: HistoryPageBounds,
     item_count: usize,
     end: bool,
 ) -> Vec<EngineToUi> {
-    let Some(completion) =
-        load.and_then(|_| model.finish_history(conversation, oldest, newest, item_count, end))
-    else {
+    let Some(completion) = load.and_then(|_| {
+        model.finish_history(
+            conversation,
+            bounds.oldest,
+            bounds.oldest_time_ms,
+            bounds.newest,
+            item_count,
+            end,
+        )
+    }) else {
         return Vec::new();
     };
     let mut output = model
@@ -4744,9 +4749,13 @@ fn schedule_snapshot_write_after(
     });
 }
 
-fn history_page_bounds(
-    page: &papo::HistoryPage,
-) -> (Option<papo::HistoryReference>, Option<HistoryCursor>) {
+struct HistoryPageBounds {
+    oldest: Option<papo::HistoryReference>,
+    oldest_time_ms: Option<i64>,
+    newest: Option<HistoryCursor>,
+}
+
+fn history_page_bounds(page: &papo::HistoryPage) -> HistoryPageBounds {
     let oldest = page
         .items
         .iter()
@@ -4760,7 +4769,7 @@ fn history_page_bounds(
             Some((time, reference))
         })
         .min_by_key(|(time, _)| *time)
-        .map(|(_, reference)| reference);
+        .map(|(time, reference)| (reference, time_millis(time)));
     let newest = page
         .items
         .iter()
@@ -4779,7 +4788,11 @@ fn history_page_bounds(
                 newest
             }
         });
-    (oldest, newest)
+    HistoryPageBounds {
+        oldest: oldest.as_ref().map(|(reference, _)| reference.clone()),
+        oldest_time_ms: oldest.map(|(_, time)| time),
+        newest,
+    }
 }
 
 fn valid_endpoint(endpoint: &str, allow_insecure: bool) -> bool {
@@ -8564,7 +8577,7 @@ async fn delay(duration: Duration) {
         assert!(
             running
                 .model
-                .finish_history(&conversation, None, None, 1, true)
+                .finish_history(&conversation, None, None, None, 1, true)
                 .is_some()
         );
         running.chat_list.recent_directs_ready = true;
@@ -9155,7 +9168,7 @@ async fn delay(duration: Duration) {
             UNIX_EPOCH + Duration::from_millis(300),
         );
 
-        let after = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
+        let after = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room ").await;
         assert_eq!(
             lock(&state)
                 .network
@@ -9450,11 +9463,11 @@ async fn delay(duration: Duration) {
         .await;
         let after = tokio::time::timeout(
             Duration::from_secs(1),
-            next_sent_containing(&mut wire, " CHATHISTORY AFTER Bob "),
+            next_sent_containing(&mut wire, " CHATHISTORY LATEST Bob "),
         )
         .await
         .expect("ready direct catch-up starts on the second connection");
-        assert!(after.ends_with("CHATHISTORY AFTER Bob msgid=dm-1 100"));
+        assert!(after.ends_with("CHATHISTORY LATEST Bob msgid=dm-1 100"));
 
         drain.abort();
     }
@@ -9516,8 +9529,8 @@ async fn delay(duration: Duration) {
         };
         let fresh_fetch = fresh.clone();
         let after_task = tokio::spawn(async move { fetch_history(&fresh_fetch, after).await });
-        let request = next_sent_containing(&mut fresh_wire, " CHATHISTORY AFTER #room ").await;
-        assert!(request.ends_with("CHATHISTORY AFTER #room msgid=channel-1 100"));
+        let request = next_sent_containing(&mut fresh_wire, " CHATHISTORY LATEST #room ").await;
+        assert!(request.ends_with("CHATHISTORY LATEST #room msgid=channel-1 100"));
         after_task.abort();
     }
 
@@ -11721,9 +11734,9 @@ async fn delay(duration: Duration) {
         assert!(wire.next_sent().await.ends_with("JOIN #room"));
         let catchup_client = client.clone();
         let catchup_task = tokio::spawn(async move { fetch_history(&catchup_client, after).await });
-        let request = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
+        let request = next_sent_containing(&mut wire, " CHATHISTORY LATEST #room ").await;
         let label = request_label(&request);
-        assert!(request.contains("CHATHISTORY AFTER #room msgid=live-1"));
+        assert!(request.contains("CHATHISTORY LATEST #room msgid=live-1"));
         wire.server(
             "@time=2026-10-15T12:00:02.000Z;msgid=live-2 :alice!a@host PRIVMSG #room :newer live arrival",
         )

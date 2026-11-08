@@ -1699,6 +1699,7 @@ impl NetworkModel {
         &mut self,
         conversation: &papo::Conversation,
         oldest: Option<papo::HistoryReference>,
+        oldest_time_ms: Option<i64>,
         newest: Option<HistoryCursor>,
         item_count: usize,
         end: bool,
@@ -1728,14 +1729,14 @@ impl NetworkModel {
             }
             HistoryState::Refreshing { oldest, at_start } => {
                 advance_cursor(buffer, newest);
-                buffer.history = if item_count > 0 && !end {
-                    HistoryState::RefreshCapped
-                } else {
+                buffer.history = if end {
                     HistoryState::Ready { oldest, at_start }
+                } else {
+                    HistoryState::RefreshCapped
                 };
                 buffer.projection.cached = None;
                 buffer.projection.cached_preview = None;
-                gap = item_count > 0 && !end;
+                gap = !end;
                 None
             }
             HistoryState::Unrequested
@@ -1743,8 +1744,10 @@ impl NetworkModel {
             | HistoryState::Ready { .. }
             | HistoryState::RefreshCapped => return None,
         };
-        if gap && let Some(oldest_unread) = buffer.read_facts.stubs().first() {
-            buffer.read_facts.merge_gap_until(oldest_unread.time);
+        if gap && let Some(oldest_time_ms) = oldest_time_ms {
+            buffer
+                .read_facts
+                .merge_gap_until(ServerTimeMs::new(oldest_time_ms));
         }
         buffer.projection.sync_state = buffer.history.sync_state();
         derive_read_projection(buffer);
@@ -3236,9 +3239,8 @@ fn next_message_id_after_stub(msgid: &str) -> u64 {
 }
 
 fn derive_chat_projection(buffer: &mut BufferState) {
-    buffer.projection.last_message = (!matches!(buffer.history, HistoryState::RefreshCapped))
-        .then(|| latest_real_message(buffer).map(|record| record.projection.clone()))
-        .flatten();
+    buffer.projection.last_message =
+        latest_real_message(buffer).map(|record| record.projection.clone());
     buffer.projection.last_activity_ms = chat_activity_time(buffer);
 }
 
@@ -3586,7 +3588,7 @@ mod tests {
             | HistoryFetch::After { target, .. } => target,
         };
         let completion = model
-            .finish_history(&target.conversation(), None, None, 0, true)
+            .finish_history(&target.conversation(), None, None, None, 0, true)
             .expect("history finishes");
         assert_eq!(completion.buffer_id, buffer_id);
         assert_eq!(completion.at_start, Some(true));
@@ -4063,6 +4065,7 @@ mod tests {
             .finish_history(
                 &papo::Conversation::Private(nick.clone()),
                 None,
+                None,
                 Some(HistoryCursor::new(Some("alice-400".into()), 400)),
                 3,
                 true,
@@ -4231,7 +4234,7 @@ mod tests {
             panic!("changed cached channel uses AFTER")
         };
         model
-            .finish_history(&target.conversation(), None, None, 1, true)
+            .finish_history(&target.conversation(), None, None, None, 1, true)
             .expect("delta finishes");
         assert_eq!(
             model.cursor(),
@@ -4431,7 +4434,14 @@ mod tests {
             );
         }
         model
-            .finish_history(&papo::Conversation::Channel(channel), None, None, 3, true)
+            .finish_history(
+                &papo::Conversation::Channel(channel),
+                None,
+                None,
+                None,
+                3,
+                true,
+            )
             .expect("latest history finishes");
 
         let buffer = &model.buffers[&buffer_id];
@@ -4465,7 +4475,7 @@ mod tests {
     }
 
     #[test]
-    fn changed_cached_direct_refreshes_once_from_read_position_and_caps() {
+    fn changed_cached_direct_fetches_the_newest_page_after_its_read_position() {
         let (mut model, state) = model(10);
         model.restore_chat_list(ChatListSnapshot::new(
             "network".into(),
@@ -4500,10 +4510,26 @@ mod tests {
         ));
         assert_eq!(model.buffers[&buffer_id].projection.unread, 100);
 
+        for time in [299, 300] {
+            let mut history = direct_incoming(&state, "alice", &format!("line {time}"), time);
+            history.origin = TimelineOrigin::History;
+            model.receive_incoming(history, &state);
+        }
         let completion = model
-            .finish_history(&papo::Conversation::Private(nick), None, None, 100, false)
+            .finish_history(
+                &papo::Conversation::Private(nick),
+                None,
+                Some(299),
+                None,
+                2,
+                false,
+            )
             .expect("capped refresh finishes");
         assert!(completion.gap);
+        assert_eq!(
+            model.buffers[&buffer_id].read_facts.gap_until(),
+            Some(ServerTimeMs::new(299))
+        );
         assert!(matches!(
             model.buffers[&buffer_id].history,
             HistoryState::RefreshCapped
@@ -4515,7 +4541,7 @@ mod tests {
     }
 
     #[test]
-    fn capped_refresh_keeps_target_activity_without_a_stale_preview() {
+    fn capped_refresh_shows_the_newest_page_preview_and_target_activity() {
         let (mut model, state) = model(10);
         model.restore_chat_list(ChatListSnapshot::new(
             "network".into(),
@@ -4558,6 +4584,7 @@ mod tests {
                 &papo::Conversation::Channel(channel.clone()),
                 None,
                 None,
+                None,
                 100,
                 false,
             )
@@ -4566,7 +4593,14 @@ mod tests {
         let buffer = &model.buffers[&model.names[&NameKey::Channel(channel)]];
         assert!(matches!(buffer.history, HistoryState::RefreshCapped));
         assert_eq!(buffer.projection.last_activity_ms, Some(300));
-        assert!(buffer.projection.last_message.is_none());
+        assert_eq!(
+            buffer
+                .projection
+                .last_message
+                .as_ref()
+                .map(|message| message.text.as_str()),
+            Some("oldest pending page")
+        );
     }
 
     #[test]
@@ -4601,7 +4635,14 @@ mod tests {
         history.origin = TimelineOrigin::History;
         model.receive_incoming(history, &state);
         model
-            .finish_history(&papo::Conversation::Private(nick), None, None, 1, true)
+            .finish_history(
+                &papo::Conversation::Private(nick),
+                None,
+                None,
+                None,
+                1,
+                true,
+            )
             .expect("catch-up finishes");
 
         assert_eq!(
@@ -5854,6 +5895,7 @@ mod tests {
             .finish_history(
                 &papo::Conversation::Channel(channel),
                 None,
+                None,
                 Some(HistoryCursor::new(Some("history-latest".into()), 200)),
                 2,
                 true,
@@ -5975,6 +6017,7 @@ mod tests {
             .finish_history(
                 &papo::Conversation::Channel(channel.clone()),
                 None,
+                None,
                 Some(HistoryCursor::new(Some("old-history".into()), 200)),
                 1,
                 true,
@@ -6007,6 +6050,7 @@ mod tests {
         relaunched
             .finish_history(
                 &papo::Conversation::Channel(channel),
+                None,
                 None,
                 Some(HistoryCursor::new(Some("offline-traffic".into()), 350)),
                 1,
@@ -6184,7 +6228,7 @@ mod tests {
             panic!("cached direct requests latest history")
         };
         let completion = model
-            .finish_history(&target.conversation(), None, None, 0, false)
+            .finish_history(&target.conversation(), None, None, None, 0, false)
             .expect("latest history completes");
         assert_eq!(completion.buffer_id, buffer_id);
         assert_eq!(completion.at_start, Some(true));
