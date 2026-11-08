@@ -144,7 +144,7 @@ it("shows a push summary in every overlay and details in the push view", () => {
   setPushDebugSnapshot(window, undefined);
 });
 
-it("renders the persisted push delivery log", async () => {
+it("renders and copies the persisted push delivery log", async () => {
   const factory = new IDBFactory();
   vi.stubGlobal("indexedDB", factory);
   await appendPushDeliveryLog({
@@ -162,6 +162,11 @@ it("renders the persisted push delivery log", async () => {
       reason: "decrypt_failed",
     },
   });
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
 
   const stop = installPushDebug(document.createElement("div"), window);
 
@@ -170,5 +175,17 @@ it("renders the persisted push delivery log", async () => {
       "outcome=final-generic fallback=true elapsed=2001ms deferred=false stages=decrypt:8ms failure=decrypt/OperationError/decrypt-failed",
     ),
   );
+  const copy = document.querySelector<HTMLButtonElement>(
+    '[data-debug-copy="push"]',
+  );
+  expect(copy?.closest("[data-debug-overlay]")).not.toHaveAttribute(
+    "data-debug-interactive",
+  );
+  expect(copy).toHaveTextContent("Copy push log");
+  copy?.click();
+  expect(writeText).toHaveBeenCalledWith(
+    expect.stringContaining("v=worker-1234 outcome=final-generic"),
+  );
   stop();
+  Reflect.deleteProperty(window.navigator, "clipboard");
 });

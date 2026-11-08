@@ -7,8 +7,10 @@
   inset-block-start: calc(env(safe-area-inset-top, 0px) + 56px);
   inset-inline-end: 4px;
   margin: 0;
+  max-block-size: calc(100dvh - env(safe-area-inset-top, 0px) - 64px);
   max-inline-size: calc(100vw - 8px);
   opacity: 0.88;
+  overflow: auto;
   overflow-wrap: anywhere;
   padding: 4px 6px;
   pointer-events: none;
@@ -22,14 +24,18 @@
   user-select: text;
 }
 
-[data-foreground-log-copy] {
+button[data-debug-copy] {
   background: var(--wl-color-panel-alt);
   border: 1px solid var(--wl-color-panel-border);
   border-radius: var(--wl-radius-control);
   color: var(--wl-color-panel-fg);
   font: inherit;
+  inline-size: 100%;
+  inset-block-start: 0;
   padding: 2px 4px;
   pointer-events: auto;
+  position: sticky;
+  touch-action: pan-y;
   user-select: none;
 }
 

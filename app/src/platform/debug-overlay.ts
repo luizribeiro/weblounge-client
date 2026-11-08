@@ -116,6 +116,7 @@ export function installPushDebug(
         );
       };
     },
+    copy: { label: "Copy push log", read: () => deliveries },
   });
 }
 

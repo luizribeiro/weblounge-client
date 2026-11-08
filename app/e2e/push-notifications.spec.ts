@@ -160,6 +160,9 @@ test("shows a delivered push in the in-app push debug overlay", async ({
   await expect(overlay).not.toContainText("overlay-private-msgid-5a82");
   await expect(overlay).not.toContainText("private-nick");
   await expect(overlay).not.toContainText("#private-channel");
+  await expect(
+    overlay.getByRole("button", { name: "Copy push log" }),
+  ).toBeVisible();
 });
 
 test("re-shows a duplicate msgid without incrementing its badge", async ({
