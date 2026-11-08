@@ -5,7 +5,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SNAPSHOT_KEY: &[u8] = b"chat-list-snapshot";
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
+const MERGED_ROW_SCHEMA: u32 = 6;
 const ACCOUNT_KEY_SCHEMA: u32 = 2;
 const COUNTLESS_BADGE_SCHEMA: u32 = 3;
 const ACTIVITY_CURSOR_SCHEMA: u32 = 4;
@@ -23,6 +24,22 @@ pub(crate) struct ChatListSnapshot {
     )]
     pub(crate) cursor_ms: Option<i64>,
     pub(crate) rows: Vec<SnapshotRow>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    presences: Vec<SnapshotPresence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tombstones: Vec<SnapshotRemoval>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SnapshotPresence {
+    pub(crate) conversation: SnapshotConversation,
+    pub(crate) joined_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SnapshotRemoval {
+    pub(crate) conversation: SnapshotConversation,
+    pub(crate) removed_at_ms: i64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -81,6 +98,8 @@ impl ChatListSnapshot {
             fingerprint,
             cursor_ms: None,
             rows,
+            presences: Vec::new(),
+            tombstones: Vec::new(),
         }
     }
 
@@ -92,7 +111,9 @@ impl ChatListSnapshot {
     pub(crate) fn decode(bytes: &[u8], expected: &str) -> Option<Self> {
         let mut value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
         let schema = u32::try_from(value.get("schema")?.as_u64()?).ok()?;
-        if matches!(
+        if schema == MERGED_ROW_SCHEMA {
+            value["schema"] = SCHEMA_VERSION.into();
+        } else if matches!(
             schema,
             ACCOUNT_KEY_SCHEMA
                 | COUNTLESS_BADGE_SCHEMA
@@ -353,7 +374,7 @@ mod tests {
         let encoded = snapshot.encode().expect("encode");
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
 
-        assert_eq!(value["schema"], 6);
+        assert_eq!(value["schema"], 7);
         assert_eq!(value["cursor_ms"], 1_700_000_000_100_i64);
         assert!(value.get("synced_through_ms").is_none());
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
@@ -439,7 +460,7 @@ mod tests {
             ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected)
                 .expect("schema 2 migrates");
 
-        assert_eq!(migrated.schema, 6);
+        assert_eq!(migrated.schema, 7);
         assert_eq!(migrated.cursor_ms, None);
         assert!(migrated.rows.iter().all(|row| row.peer_pin.is_none()));
         assert!(migrated.rows.iter().all(|row| row.stubs.is_empty()));
@@ -480,7 +501,7 @@ mod tests {
             serde_json::from_slice(&migrated.encode().expect("encode migrated snapshot"))
                 .expect("json");
 
-        assert_eq!(migrated.schema, 6);
+        assert_eq!(migrated.schema, 7);
         assert_eq!(migrated.cursor_ms, Some(400));
         assert_eq!(row.read_at_ms, Some(100));
         assert_eq!(row.pending_read_at_ms, None);
@@ -494,6 +515,22 @@ mod tests {
         assert!(row.stubs.is_empty());
         assert_eq!(row.gap_until, None);
         assert!(encoded["rows"][0].get("badge").is_none());
+    }
+
+    #[test]
+    fn schema_six_migration_preserves_merged_read_facts() {
+        let expected = snapshot();
+        let mut previous: serde_json::Value =
+            serde_json::from_slice(&expected.encode().expect("encode")).expect("json");
+        previous["schema"] = 6.into();
+
+        let migrated = ChatListSnapshot::decode(
+            &serde_json::to_vec(&previous).expect("json"),
+            &expected.fingerprint,
+        )
+        .expect("schema 6 migrates");
+
+        assert_eq!(migrated, expected);
     }
 
     #[tokio::test]

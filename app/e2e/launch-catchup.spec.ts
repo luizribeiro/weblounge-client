@@ -260,7 +260,7 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
         ),
       )
       .toBe(true);
-    await expect.poll(() => snapshotSchema(current)).toBe(6);
+    await expect.poll(() => snapshotSchema(current)).toBe(7);
 
     await current.close();
     current = await context.newPage();
