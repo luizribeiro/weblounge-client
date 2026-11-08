@@ -1908,9 +1908,7 @@ impl Runtime {
             .model
             .request_mark_read(buffer_id, through, server_backed)
         {
-            preparation @ (ReadPreparation::Ready(_) | ReadPreparation::LocalOnly(_)) => {
-                preparation
-            }
+            preparation @ ReadPreparation::Ready(_) => preparation,
             ReadPreparation::Invalid => {
                 engine_log(EngineMessageKey::ReadMarkerInvalid.as_str());
                 return vec![
@@ -2083,13 +2081,6 @@ fn record_read_preparations(
         match preparation {
             ReadPreparation::Ready(advance) => {
                 output.extend(record_read_advances(running, [advance]));
-            }
-            ReadPreparation::LocalOnly(advance) => {
-                output.extend(
-                    running
-                        .model
-                        .advance_read(advance.buffer_id, advance.time, false),
-                );
             }
             ReadPreparation::Invalid => {}
         }
@@ -10134,7 +10125,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn restored_push_uses_authoritative_history_time_for_mark_read() {
+    async fn restored_push_marks_immediately_before_authoritative_history() {
         let caps = [
             "account-tag",
             "draft/read-marker",
@@ -10149,7 +10140,7 @@ async fn delay(duration: Duration) {
             matches!(event, papo::Event::Connected(_))
         })
         .await;
-        let (state, outbound, mut receiver) = harness(client.clone());
+        let (state, outbound, _receiver) = harness(client.clone());
         let (buffer_id, message_id) = restore_pushed_direct(&state, &client);
         let runtime = Runtime {
             state: Arc::clone(&state),
@@ -10183,40 +10174,23 @@ async fn delay(duration: Duration) {
             event,
             EngineToUi::CommandResult { id } if id == "mark-pushed"
         )));
-        assert!(
+        assert_eq!(
             lock(&state)
                 .network
                 .as_ref()
                 .expect("network remains active")
                 .pending_reads
-                .is_empty()
+                .len(),
+            1
         );
-        wire.server("@account=alice;msgid=unrelated;time=2026-11-03T12:35:00.000Z :alice!a@host PRIVMSG weblounge :new and unread")
-            .await;
-        process_next_message(&mut events, &state, &outbound, &client).await;
-        assert!(collect(&mut receiver).iter().any(|event| matches!(
-            event,
-            EngineToUi::UnreadChanged {
-                buffer_id: current_buffer,
-                unread: 1,
-                mentions: 1,
-            } if *current_buffer == buffer_id
-        )));
-        assert!(
-            tokio::time::timeout(Duration::ZERO, wire.next_sent())
-                .await
-                .is_err()
-        );
-        wire.server("@account=alice;msgid=pushed-direct;time=2026-11-03T12:34:56.789742688Z :alice!a@host PRIVMSG weblounge :arrived while closed")
-            .await;
-        process_next_message(&mut events, &state, &outbound, &client).await;
-
-        _ = collect(&mut receiver);
         let request = wire.next_sent().await;
-        assert!(request.ends_with("MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"));
+        assert!(
+            request.ends_with("MARKREAD alice timestamp=2026-11-03T12:34:56.788Z"),
+            "unexpected request: {request}"
+        );
         let label = request_label(&request);
         wire.server(format!(
-            "@label={label} :offline.test MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"
+            "@label={label} :offline.test MARKREAD alice timestamp=2026-11-03T12:34:56.788Z"
         ))
         .await;
     }

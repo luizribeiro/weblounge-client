@@ -21,6 +21,9 @@ export interface ProjectionTrace {
     readonly network?: {
       readonly state?: unknown;
     };
+    readonly message?: {
+      readonly text?: string;
+    };
   };
 }
 
@@ -28,6 +31,7 @@ export async function captureHistoryWire(
   page: Page,
   options: {
     readonly beforeTarget?: string;
+    readonly holdRequest?: string;
     readonly latestExcept?: string;
   } = {},
 ): Promise<void> {
@@ -55,6 +59,7 @@ export async function captureHistoryWire(
       | { readonly instance_id: string; readonly port_id: string }
       | undefined;
     let latestHoldingWorker: Worker | undefined;
+    let requestHoldingWorker: Worker | undefined;
     const pageControl = (
       event: string,
       line = event,
@@ -90,6 +95,7 @@ export async function captureHistoryWire(
             type: "history_wire_test_trace_subscribe",
             hold_before: settings.beforeTarget !== undefined,
             before_target: settings.beforeTarget,
+            hold_request: settings.holdRequest,
             latest_except: settings.latestExcept,
           },
         ]);
@@ -115,6 +121,24 @@ export async function captureHistoryWire(
           event.data.type === "history_wire_test_trace"
         ) {
           timeline.push(event.data);
+          return;
+        }
+        if (
+          typeof event.data === "object" &&
+          event.data !== null &&
+          "type" in event.data &&
+          event.data.type === "history_wire_test_request_held"
+        ) {
+          requestHoldingWorker = this;
+          Reflect.set(globalThis, "historyHeldRequest", event.data);
+          timeline.push({
+            at: event.data.at,
+            direction: "control",
+            event: "request_held",
+            instance_id: event.data.instance_id,
+            line: event.data.line,
+            port_id: event.data.port_id,
+          });
           return;
         }
         if (
@@ -167,6 +191,7 @@ export async function captureHistoryWire(
           event.data !== null &&
           "type" in event.data &&
           (event.data.type === "buffer_updated" ||
+            event.data.type === "message_updated" ||
             event.data.type === "network_state_changed")
         )
           projections.push({ at: performance.now(), event: event.data });
@@ -206,6 +231,11 @@ export async function captureHistoryWire(
         type: "history_wire_test_release_latest",
       });
     });
+    Reflect.set(globalThis, "releaseHeldHistoryRequest", () => {
+      requestHoldingWorker?.postMessage({
+        type: "history_wire_test_release_request",
+      });
+    });
     Reflect.set(globalThis, "closeUnrelatedHistoryWireWorker", () => {
       if (workerScript === undefined) throw new Error("engine worker missing");
       const worker = new Worker(workerScript, workerOptions);
@@ -213,6 +243,46 @@ export async function captureHistoryWire(
       worker.terminate();
     });
   }, options);
+}
+
+export function heldHistoryRequestCount(page: Page): Promise<number> {
+  return page.evaluate(() =>
+    Reflect.get(globalThis, "historyHeldRequest") === undefined ? 0 : 1,
+  );
+}
+
+export async function releaseHeldHistoryRequest(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const release = Reflect.get(globalThis, "releaseHeldHistoryRequest");
+    if (typeof release !== "function")
+      throw new Error("history request gate missing");
+    release();
+  });
+}
+
+export function historyMessageUpdateCount(
+  page: Page,
+  text: string,
+): Promise<number> {
+  return page.evaluate((expected) => {
+    const entries = Reflect.get(globalThis, "historyProjectionTimeline");
+    if (!Array.isArray(entries)) return 0;
+    return entries.filter(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        "event" in entry &&
+        typeof entry.event === "object" &&
+        entry.event !== null &&
+        "type" in entry.event &&
+        entry.event.type === "message_updated" &&
+        "message" in entry.event &&
+        typeof entry.event.message === "object" &&
+        entry.event.message !== null &&
+        "text" in entry.event.message &&
+        entry.event.message.text === expected,
+    ).length;
+  }, text);
 }
 
 export async function closeUnrelatedHistoryWireWorker(

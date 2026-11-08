@@ -320,7 +320,6 @@ pub(crate) struct ReadAdvance {
 
 pub(crate) enum ReadPreparation {
     Ready(ReadAdvance),
-    LocalOnly(ReadAdvance),
     Invalid,
 }
 
@@ -2274,25 +2273,18 @@ impl NetworkModel {
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return ReadPreparation::Invalid;
         };
-        let Some(record) = buffer
+        if !buffer
             .timeline
             .iter()
-            .find(|record| record.projection.id == through && is_committed(&record.projection))
-        else {
+            .any(|record| record.projection.id == through && is_committed(&record.projection))
+        {
             return ReadPreparation::Invalid;
-        };
-        let provisional = record.provisional_identity.is_some();
-        if provisional && server_backed {
-            buffer.deferred_read = Some(through);
         }
         let Some(advance) = read_advance(buffer_id, buffer, through, true) else {
             return ReadPreparation::Invalid;
         };
-        if provisional && server_backed {
-            ReadPreparation::LocalOnly(advance)
-        } else {
-            ReadPreparation::Ready(advance)
-        }
+        let _ = server_backed;
+        ReadPreparation::Ready(advance)
     }
 
     pub(crate) fn prepare_mark_read(
@@ -2341,7 +2333,7 @@ impl NetworkModel {
             .filter_map(|(buffer_id, through)| {
                 match self.request_mark_read(buffer_id, through, server_backed) {
                     ReadPreparation::Invalid => None,
-                    preparation => Some(preparation),
+                    preparation @ ReadPreparation::Ready(_) => Some(preparation),
                 }
             })
             .collect()
@@ -4940,10 +4932,10 @@ mod tests {
         model.restore_pushed_messages(vec![pushed], &state);
 
         let preparations = model.request_mark_all_read(true);
-        let [ReadPreparation::LocalOnly(advance)] = preparations.as_slice() else {
-            panic!("one local-only advance expected");
+        let [ReadPreparation::Ready(advance)] = preparations.as_slice() else {
+            panic!("one ready advance expected");
         };
-        let events = model.advance_read(advance.buffer_id, advance.time, false);
+        let events = model.advance_read(advance.buffer_id, advance.time, true);
 
         assert!(events.iter().any(|event| matches!(
             event,
@@ -4954,92 +4946,13 @@ mod tests {
             }
         )));
         assert_eq!(
-            model.buffers[&advance.buffer_id].deferred_read,
-            model.buffers[&advance.buffer_id]
-                .timeline
-                .last()
-                .map(|record| record.projection.id)
+            model.buffers[&advance.buffer_id].read_facts.pending(),
+            Some(ServerTimeMs::new(time_millis(advance.time)))
         );
     }
 
     #[test]
-    fn deferred_push_read_waits_for_its_exact_verified_row() {
-        let (mut model, state) = model(10);
-        model.receive_incoming(
-            incoming(
-                &state,
-                "verified earlier",
-                Some("verified"),
-                Some(1_000),
-                1_000,
-                TimelineOrigin::History,
-            ),
-            &state,
-        );
-        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
-            "schema": 1,
-            "network_label": "Test",
-            "nickname": "weblounge",
-            "sender": "alice",
-            "target": "#room",
-            "msgid": "missing-from-history",
-            "time": "2026-11-03T12:34:56.789Z",
-            "text": "arrived while closed",
-            "kind": "message",
-        }))
-        .expect("pushed message");
-        let restored = model.restore_pushed_messages(vec![pushed], &state);
-        let (buffer_id, pushed_id) = restored
-            .iter()
-            .find_map(|event| match event {
-                EngineToUi::MessagesAppended {
-                    buffer_id,
-                    messages,
-                } => Some((*buffer_id, messages[0].id)),
-                _ => None,
-            })
-            .expect("pushed row is restored");
-        assert!(matches!(
-            model.request_mark_read(buffer_id, pushed_id, true),
-            ReadPreparation::LocalOnly(_)
-        ));
-
-        assert!(model.resolve_deferred_read(buffer_id).is_none());
-        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(pushed_id));
-        model.receive_incoming(
-            incoming(
-                &state,
-                "verified later",
-                Some("later"),
-                Some(2_000),
-                2_000,
-                TimelineOrigin::Live,
-            ),
-            &state,
-        );
-        assert!(model.resolve_deferred_read(buffer_id).is_none());
-        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(pushed_id));
-
-        model.receive_incoming(
-            incoming(
-                &state,
-                "arrived while closed",
-                Some("missing-from-history"),
-                Some(1_500),
-                1_500,
-                TimelineOrigin::History,
-            ),
-            &state,
-        );
-        let advance = model
-            .resolve_deferred_read(buffer_id)
-            .expect("the restored row is now verified");
-        assert_eq!(time_millis(advance.time), 1_500);
-        assert!(model.resolve_deferred_read(buffer_id).is_none());
-    }
-
-    #[test]
-    fn reading_another_buffer_keeps_a_deferred_push_read() {
+    fn reading_another_buffer_keeps_a_pending_push_read() {
         let (mut model, state) = model(10);
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
@@ -5064,10 +4977,11 @@ mod tests {
                 _ => None,
             })
             .expect("pushed row is restored");
-        assert!(matches!(
-            model.request_mark_read(buffer_id, pushed_id, true),
-            ReadPreparation::LocalOnly(_)
-        ));
+        let ReadPreparation::Ready(advance) = model.request_mark_read(buffer_id, pushed_id, true)
+        else {
+            panic!("push-only reads advance immediately")
+        };
+        model.advance_read(buffer_id, advance.time, true);
         let mut elsewhere = incoming(
             &state,
             "verified elsewhere",
@@ -5092,7 +5006,10 @@ mod tests {
             model.request_mark_read(elsewhere_buffer, elsewhere_id, true),
             ReadPreparation::Ready(_)
         ));
-        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(pushed_id));
+        assert_eq!(
+            model.buffers[&buffer_id].read_facts.pending(),
+            Some(ServerTimeMs::new(time_millis(advance.time)))
+        );
     }
 
     #[test]
@@ -6430,7 +6347,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_push_read_does_not_persist_until_history_verifies_it() {
+    fn push_read_persists_its_mark_and_pending_time_before_history() {
         let (mut model, state) = model(10);
         let cached = SnapshotRow {
             conversation: SnapshotConversation::Direct {
@@ -6471,17 +6388,24 @@ mod tests {
                 _ => None,
             })
             .expect("pushed row is restored");
-        let ReadPreparation::LocalOnly(advance) =
-            model.request_mark_read(buffer_id, message_id, true)
+        let ReadPreparation::Ready(advance) = model.request_mark_read(buffer_id, message_id, true)
         else {
-            panic!("provisional push defers its server read")
+            panic!("provisional push advances immediately")
         };
-        model.advance_read(buffer_id, advance.time, false);
+        model.advance_read(buffer_id, advance.time, true);
 
         let merged = model.merge_chat_list_snapshot("network".into(), &previous);
+        let encoded = serde_json::to_value(&merged).expect("snapshot json");
 
-        assert_eq!(merged.rows, vec![cached]);
-        assert_eq!(model.buffers[&buffer_id].deferred_read, Some(message_id));
+        assert_eq!(merged.rows[0].read_at_ms, Some(time_millis(advance.time)));
+        assert_eq!(
+            encoded["rows"][0]["pending_read_at_ms"],
+            time_millis(advance.time)
+        );
+        assert_eq!(
+            model.buffers[&buffer_id].read_facts.pending(),
+            Some(ServerTimeMs::new(time_millis(advance.time)))
+        );
     }
 
     #[test]

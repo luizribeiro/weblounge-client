@@ -1,7 +1,12 @@
 import { createConnection } from "node:net";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
-import { captureHistoryWire } from "./history-wire-fixture";
+import {
+  captureHistoryWire,
+  heldHistoryRequestCount,
+  historyMessageUpdateCount,
+  releaseHeldHistoryRequest,
+} from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
@@ -339,7 +344,7 @@ test.describe("connection resilience against local Ergo", () => {
     }
   });
 
-  test("keeps a read push row after leaving until history verifies it", async ({
+  test("marks a push-only read before authoritative history arrives", async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -359,8 +364,12 @@ test.describe("connection resilience against local Ergo", () => {
     const leaveBot = await connectBot("leave");
     let markerReader: IrcClient | undefined;
     let dropped = false;
+    let historyHeld = false;
     try {
       await installWorkerControl(page);
+      await captureHistoryWire(page, {
+        holdRequest: `CHATHISTORY LATEST ${pushedChannel} `,
+      });
       await page.goto("/manifest.webmanifest");
       await controlForwarder("drop");
       dropped = true;
@@ -412,10 +421,18 @@ test.describe("connection resilience against local Ergo", () => {
 
       await controlForwarder("restore");
       dropped = false;
-      await expectOnline(page, testInfo.project.name);
+      await expect.poll(() => heldHistoryRequestCount(page)).toBe(1);
+      historyHeld = true;
       await expect
         .poll(() => markerReader?.readMarker(pushedChannel))
         .toBe(identity.time);
+      await releaseHeldHistoryRequest(page);
+      historyHeld = false;
+      await expect.poll(() => historyMessageUpdateCount(page, text)).toBe(1);
+      await expect
+        .poll(() => snapshotReadAt(page, pushedChannel))
+        .toBe(Date.parse(identity.time));
+      await expectOnline(page, testInfo.project.name);
 
       await page.goto(appUrl);
       if (!isMobile(testInfo.project.name))
@@ -432,6 +449,7 @@ test.describe("connection resilience against local Ergo", () => {
         await expect(relaunchedRow).toHaveAttribute("data-unread", "0");
       }
     } finally {
+      if (historyHeld) await releaseHeldHistoryRequest(page);
       if (dropped) await controlForwarder("restore");
       markerReader?.close();
       leaveBot.close();
@@ -828,6 +846,60 @@ function messageIdentity(line: string): {
   if (msgid === undefined || time === undefined)
     throw new Error(`message has no server identity: ${line}`);
   return { msgid, time };
+}
+
+async function snapshotReadAt(
+  page: Page,
+  title: string,
+): Promise<number | undefined> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(
+      (value, rowTitle) =>
+        new Promise<number | undefined>((resolve, reject) => {
+          const request = value
+            .transaction("cache", "readonly")
+            .objectStore("cache")
+            .get(new TextEncoder().encode("chat-list-snapshot"));
+          request.onsuccess = () => {
+            const bytes = request.result as Uint8Array | undefined;
+            if (bytes === undefined) {
+              resolve(undefined);
+              return;
+            }
+            const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+            if (
+              typeof parsed !== "object" ||
+              parsed === null ||
+              !("rows" in parsed) ||
+              !Array.isArray(parsed.rows)
+            ) {
+              resolve(undefined);
+              return;
+            }
+            const row = parsed.rows.find(
+              (candidate: unknown) =>
+                typeof candidate === "object" &&
+                candidate !== null &&
+                "title" in candidate &&
+                candidate.title === rowTitle,
+            );
+            resolve(
+              typeof row === "object" &&
+                row !== null &&
+                "read_at_ms" in row &&
+                typeof row.read_at_ms === "number"
+                ? row.read_at_ms
+                : undefined,
+            );
+          };
+          request.onerror = () => reject(request.error);
+        }),
+      title,
+    );
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 async function seedPushedMessage(
