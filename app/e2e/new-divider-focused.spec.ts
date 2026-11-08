@@ -62,7 +62,9 @@ test.describe("New divider ownership", () => {
 
       const text = `scrolled DM arrival ${Date.now()}`;
       await peer.privmsgConfirmed("weblounge", text);
-      await expect.poll(() => bufferUnreadCount(page, peer.nickname)).toBe(0);
+      await expect(
+        bufferRow(page, peer.nickname).getByRole("status"),
+      ).toBeHidden();
       await expect(
         page.getByRole("button", { name: /new message/ }),
       ).toBeVisible();
