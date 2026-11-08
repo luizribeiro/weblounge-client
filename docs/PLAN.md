@@ -24,9 +24,9 @@ The single place a fresh session reads to know where the project stands. Update 
 ## Progress
 
 - [x] Keep the transcript DOM unchanged when a page becomes hidden. Freezing the New-divider
-  boundary now records its time without publishing reactive geometry until the page is visible, so
-  queued engine traffic still appears in one visible catch-up. The aggregate native-feel regression
-  and a deterministic message-list fixture cover the own-message boundary that exposed the write.
+  boundary now changes only its non-reactive state, so queued engine traffic still appears in one
+  visible catch-up. The aggregate native-feel regression and a deterministic message-list fixture
+  cover the own-message boundary that exposed the write.
 - [x] Scope the mobile-shell screenshot's member assertion to the open Members dialog. The modal
   intentionally retains the scrimmed conversation, so its transcript nick action can coexist with
   the member-row action without making the Playwright locator ambiguous.
