@@ -546,9 +546,7 @@ impl NetworkModel {
             if let Some(buffer) = self.buffers.get_mut(&projection.id) {
                 buffer.restored_from_snapshot = true;
                 buffer.projection.title = row.title;
-                buffer.projection.cached = Some(true);
-                buffer.projection.cached_preview = row.preview;
-                buffer.provisional_preview = buffer.projection.cached_preview.clone();
+                buffer.provisional_preview = row.preview;
                 buffer.provisional_activity_ms = row.last_activity_ms;
                 buffer.newest = row
                     .newest
@@ -677,33 +675,37 @@ impl NetworkModel {
         }
     }
 
-    pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
-        EngineToUi::ChatListLive {
-            network_id: self.network.id,
-            buffers: self.ordered_buffers(),
-        }
-    }
-
-    pub(crate) fn mark_vanished_cached_rows(&mut self) {
+    pub(crate) fn mark_vanished_restored_rows(&mut self) -> Vec<EngineToUi> {
+        let mut events = Vec::new();
         for buffer in self.buffers.values_mut() {
             if buffer.restored_from_snapshot
                 && buffer.projection.kind == BufferKind::Channel
                 && buffer.projection.channel_status != Some(ChannelStatus::Joined)
+                && buffer.projection.available != Some(false)
             {
-                buffer.projection.cached = None;
                 buffer.projection.available = Some(false);
+                events.push(EngineToUi::BufferUpdated {
+                    buffer: buffer.projection.clone(),
+                });
             }
         }
+        events
     }
 
-    pub(crate) fn awaits_live_target(&self, buffer_id: BufferId) -> bool {
-        self.buffers.get(&buffer_id).is_some_and(|buffer| {
-            buffer.projection.cached == Some(true)
-                || matches!(
-                    &buffer.direct,
-                    Some(DirectAvailability::Pending | DirectAvailability::Resolving)
-                )
-        })
+    pub(crate) fn mark_vanished_cached_rows(&mut self) {
+        _ = self.mark_vanished_restored_rows();
+    }
+
+    pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
+        EngineToUi::ChatListLive {
+            network_id: self.network.id,
+            buffers: self
+                .buffer_order
+                .iter()
+                .filter_map(|id| self.buffers.get(id))
+                .map(|buffer| buffer.projection.clone())
+                .collect(),
+        }
     }
 
     pub(crate) fn chat_list_complete(&self) -> bool {
@@ -712,13 +714,28 @@ impl NetworkModel {
                 buffer.projection.kind == BufferKind::Server
                     || buffer.projection.available == Some(false)
                     || (self.targets_synced
-                        && buffer.projection.cached == Some(true)
+                        && buffer.restored_from_snapshot
                         && matches!(buffer.history, HistoryState::Unrequested))
                     || matches!(
                         buffer.history,
                         HistoryState::Ready { .. } | HistoryState::RefreshCapped
                     )
             })
+    }
+
+    pub(crate) fn awaits_live_target(&self, buffer_id: BufferId) -> bool {
+        self.buffers.get(&buffer_id).is_some_and(|buffer| {
+            (buffer.restored_from_snapshot
+                && buffer.projection.kind == BufferKind::Channel
+                && buffer.projection.channel_status != Some(ChannelStatus::Joined))
+                || (buffer.restored_from_snapshot
+                    && buffer.projection.kind == BufferKind::Direct
+                    && buffer.direct.is_none())
+                || matches!(
+                    &buffer.direct,
+                    Some(DirectAvailability::Pending | DirectAvailability::Resolving)
+                )
+        })
     }
 
     #[cfg(test)]
@@ -730,7 +747,7 @@ impl NetworkModel {
             .filter(|buffer| {
                 buffer.projection.kind != BufferKind::Server
                     && buffer.projection.available != Some(false)
-                    && buffer.projection.cached != Some(true)
+                    && !buffer.restored_from_snapshot
             })
             .filter_map(snapshot_row)
             .collect();
@@ -772,6 +789,7 @@ impl NetworkModel {
         ChatListSnapshot::new(fingerprint, rows).with_cursor_ms(self.cursor.map(time_millis))
     }
 
+    #[cfg(test)]
     fn ordered_buffers(&self) -> Vec<BufferProjection> {
         self.buffer_order
             .iter()
@@ -804,7 +822,6 @@ impl NetworkModel {
             let key = NameKey::Channel(channel);
             if let Some(id) = self.names.get(&key).copied() {
                 if let Some(buffer) = self.buffers.get_mut(&id) {
-                    buffer.restored_from_snapshot = false;
                     let title = key.title();
                     if buffer.projection.topic != topic
                         || buffer.projection.channel_status != Some(ChannelStatus::Joined)
@@ -1149,12 +1166,15 @@ impl NetworkModel {
         {
             return None;
         }
-        let cached = buffer.projection.cached == Some(true);
+        let restored = buffer.restored_from_snapshot;
         let key = buffer.key.clone()?;
         let direct = buffer.direct.clone();
         let pin = buffer.direct_pin.clone();
         let mismatched = buffer.direct_mismatch.is_some();
-        let awaits_live_target = cached
+        let awaits_live_target = (restored
+            && buffer.projection.kind == BufferKind::Channel
+            && buffer.projection.channel_status != Some(ChannelStatus::Joined))
+            || (restored && buffer.projection.kind == BufferKind::Direct && direct.is_none())
             || matches!(
                 &direct,
                 Some(DirectAvailability::Pending | DirectAvailability::Resolving)
@@ -1242,8 +1262,9 @@ impl NetworkModel {
         if buffer.projection.available == Some(false) {
             return PendingTargetState::Gone;
         }
-        if buffer.projection.cached == Some(true)
-            || (buffer.restored_from_snapshot && buffer.projection.kind == BufferKind::Channel)
+        if buffer.restored_from_snapshot
+            && buffer.projection.kind == BufferKind::Channel
+            && buffer.projection.channel_status != Some(ChannelStatus::Joined)
         {
             return PendingTargetState::Waiting;
         }
@@ -1597,7 +1618,6 @@ impl NetworkModel {
         queued
             .into_iter()
             .filter_map(|(buffer_id, target)| {
-                self.promote_cached_for_history(buffer_id);
                 set_history_state(
                     self.buffers.get_mut(&buffer_id)?,
                     HistoryState::LoadingLatest,
@@ -1631,7 +1651,7 @@ impl NetworkModel {
                     | HistoryState::LoadingOlder { .. }
                     | HistoryState::Refreshing { .. } => None,
                 }?;
-                Some((*buffer_id, fetch, buffer.projection.cached == Some(true)))
+                Some((*buffer_id, fetch, buffer.restored_from_snapshot))
             })
             .collect::<Vec<_>>();
         for (buffer_id, fetch, keep_cached) in &planned {
@@ -1647,17 +1667,6 @@ impl NetworkModel {
         planned.into_iter().map(|(_, fetch, _)| fetch).collect()
     }
 
-    pub(crate) fn promote_cached_for_history(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
-        let buffer = self.buffers.get_mut(&buffer_id)?;
-        if buffer.projection.cached != Some(true) {
-            return None;
-        }
-        promote_cached_buffer(buffer);
-        Some(EngineToUi::BufferUpdated {
-            buffer: buffer.projection.clone(),
-        })
-    }
-
     pub(crate) fn request_latest_channel(
         &mut self,
         channel: &papo::ChannelName,
@@ -1667,14 +1676,17 @@ impl NetworkModel {
             .get(&NameKey::Channel(channel.clone()))
             .copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        if buffer.projection.cached == Some(true)
-            || !matches!(buffer.history, HistoryState::Unrequested)
-        {
+        if buffer.restored_from_snapshot || !matches!(buffer.history, HistoryState::Unrequested) {
             return None;
         }
         let target = HistoryTarget::from_key(buffer.key.clone()?);
         set_history_state(buffer, HistoryState::LoadingLatest);
         Some(target)
+    }
+
+    pub(crate) fn promote_cached_for_history(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
+        self.buffers.get(&buffer_id)?;
+        None
     }
 
     pub(crate) fn history_load(&self, conversation: &papo::Conversation) -> Option<HistoryLoad> {
@@ -1714,9 +1726,6 @@ impl NetworkModel {
                 Some(item_count == 0)
             }
             HistoryState::LoadingLatest => {
-                if buffer.projection.cached == Some(true) {
-                    promote_cached_buffer(buffer);
-                }
                 buffer.history = HistoryState::Ready {
                     oldest,
                     at_start: item_count == 0,
@@ -1730,8 +1739,6 @@ impl NetworkModel {
                 } else {
                     HistoryState::RefreshCapped
                 };
-                buffer.projection.cached = None;
-                buffer.projection.cached_preview = None;
                 gap = !end;
                 None
             }
@@ -1952,11 +1959,6 @@ impl NetworkModel {
         let direct_key = DirectKey::from_nick(&nick);
         let (buffer_id, added) =
             self.ensure_buffer(NameKey::Direct(nick), Some(direct_key), Some(direct));
-        if let Some(buffer) = self.buffers.get_mut(&buffer_id)
-            && buffer.projection.cached == Some(true)
-        {
-            promote_cached_buffer(buffer);
-        }
         let newly_added = added.is_some();
         self.capture_direct_pin(buffer_id);
         let mut events = Vec::new();
@@ -1990,7 +1992,7 @@ impl NetworkModel {
             let target = HistoryTarget::Direct(nick.clone());
             match &buffer.history {
                 HistoryState::Unrequested | HistoryState::QueuedLatest
-                    if buffer.projection.cached == Some(true)
+                    if buffer.restored_from_snapshot
                         && buffer
                             .newest
                             .as_ref()
@@ -1999,7 +2001,7 @@ impl NetworkModel {
                     None
                 }
                 HistoryState::Unrequested | HistoryState::QueuedLatest
-                    if buffer.projection.cached == Some(true) =>
+                    if buffer.restored_from_snapshot =>
                 {
                     match cached_refresh_cursor(buffer) {
                         Some(newest) => Some(HistoryFetch::After { target, newest }),
@@ -2075,7 +2077,7 @@ impl NetworkModel {
         let target = HistoryTarget::Channel(channel.clone());
         let fetch = match &buffer.history {
             HistoryState::Unrequested
-                if buffer.projection.cached == Some(true)
+                if buffer.restored_from_snapshot
                     && buffer
                         .newest
                         .as_ref()
@@ -2083,7 +2085,7 @@ impl NetworkModel {
             {
                 None
             }
-            HistoryState::Unrequested if buffer.projection.cached == Some(true) => {
+            HistoryState::Unrequested if buffer.restored_from_snapshot => {
                 match cached_refresh_cursor(buffer) {
                     Some(newest) => Some(HistoryFetch::After { target, newest }),
                     None => Some(HistoryFetch::Latest(target)),
@@ -2993,20 +2995,9 @@ impl NetworkModel {
     }
 }
 
-fn promote_cached_buffer(buffer: &mut BufferState) {
-    buffer.projection.cached = None;
-    buffer.projection.cached_preview = None;
-    buffer.projection.unread = 0;
-    buffer.projection.mentions = 0;
-    buffer.projection.read_through = None;
-}
-
 fn begin_target_fetch(buffer: &mut BufferState, fetch: &HistoryFetch) {
     match fetch {
         HistoryFetch::Latest(_) => {
-            if buffer.projection.cached == Some(true) {
-                promote_cached_buffer(buffer);
-            }
             set_history_state(buffer, HistoryState::LoadingLatest);
         }
         HistoryFetch::After { .. } => {
@@ -3036,10 +3027,6 @@ fn advance_incoming_cursor(
         && incoming.origin == TimelineOrigin::Live
         && let Some(cursor) = cursor
     {
-        if buffer.projection.cached == Some(true) {
-            promote_cached_buffer(buffer);
-            derive_read_projection(buffer);
-        }
         set_history_state(
             buffer,
             HistoryState::Ready {
@@ -3167,16 +3154,6 @@ fn derive_read_projection(buffer: &mut BufferState) {
     let mark = buffer.read_facts.mark().map(ServerTimeMs::value);
     buffer.projection.read_at_ms = mark;
     derive_chat_projection(buffer);
-    buffer.projection.read_through = mark.and_then(|marker| {
-        buffer
-            .timeline
-            .iter()
-            .rev()
-            .find(|record| {
-                is_committed(&record.projection) && message_time(&record.projection) <= marker
-            })
-            .map(|record| record.projection.id)
-    });
     let unread = unread_count(&buffer.read_facts);
     buffer.projection.unread = if has_unread_gap(&buffer.read_facts) {
         u64::try_from(unread.max(100)).unwrap_or(u64::MAX)
@@ -4081,10 +4058,6 @@ mod tests {
         assert!(added.is_none());
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick.clone())]];
         assert_eq!(buffer.projection.unread, 3);
-        assert_eq!(
-            buffer.projection.cached_preview.as_deref(),
-            Some("cached preview")
-        );
         assert_eq!(buffer.projection.preview.as_deref(), Some("cached preview"));
         assert!(matches!(buffer.history, HistoryState::Unrequested));
     }
@@ -4112,7 +4085,6 @@ mod tests {
         let nick = nick_name(&state, "alice");
         let buffer_id = model.names[&NameKey::Direct(nick.clone())];
         let buffer = model.buffers.get_mut(&buffer_id).expect("direct");
-        buffer.projection.cached = None;
         buffer.history = HistoryState::Ready {
             oldest: None,
             at_start: false,
@@ -4303,16 +4275,12 @@ mod tests {
         let buffer_id = model.names[&NameKey::Channel(channel)];
 
         assert!(matches!(fetches.as_slice(), [HistoryFetch::Latest(_)]));
-        assert_eq!(model.buffers[&buffer_id].projection.cached, Some(true));
+        assert!(model.buffers[&buffer_id].restored_from_snapshot);
         model
             .fail_history(&fetches[0])
             .expect("fallback latest fails");
-        assert!(model.chat_list_complete());
         assert_eq!(
-            model.buffers[&buffer_id]
-                .projection
-                .cached_preview
-                .as_deref(),
+            model.buffers[&buffer_id].projection.preview.as_deref(),
             Some("cached")
         );
         assert_eq!(model.buffers[&buffer_id].projection.unread, 1);
@@ -4326,7 +4294,6 @@ mod tests {
         let fetches = model.fallback_target_history(false);
 
         assert!(fetches.is_empty());
-        assert!(model.chat_list_complete());
     }
 
     #[test]
@@ -4355,7 +4322,7 @@ mod tests {
 
         assert!(matches!(fetch, Some(HistoryFetch::Latest(_))));
         let buffer = &model.buffers[&model.names[&NameKey::Direct(nick)]];
-        assert_eq!(buffer.projection.cached, None);
+        assert!(buffer.restored_from_snapshot);
         assert!(matches!(buffer.history, HistoryState::LoadingLatest));
     }
 
@@ -4385,7 +4352,7 @@ mod tests {
 
         assert!(matches!(fetch, Some(HistoryFetch::Latest(_))));
         let buffer = &model.buffers[&model.names[&NameKey::Channel(channel)]];
-        assert_eq!(buffer.projection.cached, None);
+        assert!(buffer.restored_from_snapshot);
         assert!(matches!(buffer.history, HistoryState::LoadingLatest));
     }
 
@@ -4426,7 +4393,6 @@ mod tests {
             HistoryFetch::Latest(HistoryTarget::Channel(_))
         ));
 
-        model.promote_cached_for_history(buffer_id);
         for (text, msgid, time) in [
             ("before", "before", 100),
             ("through", "through", 200),
@@ -4457,10 +4423,7 @@ mod tests {
 
         let buffer = &model.buffers[&buffer_id];
         assert_eq!(buffer.projection.unread, 1);
-        assert_eq!(
-            buffer.projection.read_through,
-            Some(buffer.timeline[1].projection.id)
-        );
+        assert_eq!(buffer.projection.read_at_ms, Some(200));
     }
 
     #[test]
@@ -5844,7 +5807,7 @@ mod tests {
             .next()
             .expect("directly received buffer exists");
         assert_eq!(model.buffers[&id].projection.unread, 1);
-        assert_eq!(model.buffers[&id].projection.read_through, None);
+        assert_eq!(model.buffers[&id].projection.read_at_ms, None);
         assert_eq!(model.buffers[&id].read_facts.mark(), None);
 
         let own_id = model.buffers[&id].timeline[1].projection.id;
@@ -5855,7 +5818,10 @@ mod tests {
 
         let buffer = &model.buffers[&id];
         assert_eq!(buffer.projection.unread, 0);
-        assert_eq!(buffer.projection.read_through, Some(own_id));
+        assert_eq!(
+            buffer.projection.read_at_ms,
+            Some(time_millis(advance.time))
+        );
         assert_eq!(
             buffer.read_facts.pending(),
             Some(ServerTimeMs::new(time_millis(advance.time)))
@@ -6139,7 +6105,7 @@ mod tests {
             model.prepare_live_send(&mut pending),
             PendingTargetState::Waiting
         ));
-        model.mark_vanished_cached_rows();
+        _ = model.mark_vanished_restored_rows();
         assert!(matches!(
             model.prepare_live_send(&mut pending),
             PendingTargetState::Waiting
@@ -6176,15 +6142,20 @@ mod tests {
             model.connected_history().as_slice(),
             [HistoryFetch::Latest(_)]
         ));
-        assert_eq!(model.buffers[&buffer_id].projection.cached, None);
+        assert!(model.buffers[&buffer_id].restored_from_snapshot);
         assert!(matches!(
             model.prepare_live_send(&mut pending),
             PendingTargetState::Waiting
         ));
 
-        model.mark_vanished_cached_rows();
+        let events = model.mark_vanished_restored_rows();
 
         assert_eq!(model.buffers[&buffer_id].projection.available, Some(false));
+        assert!(matches!(
+            events.as_slice(),
+            [EngineToUi::BufferUpdated { buffer }]
+                if buffer.id == buffer_id && buffer.available == Some(false)
+        ));
         assert!(matches!(
             model.prepare_live_send(&mut pending),
             PendingTargetState::Gone
@@ -6214,8 +6185,8 @@ mod tests {
         let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
 
         assert!(model.queue_latest_history(buffer_id));
-        model.mark_vanished_cached_rows();
-        assert_eq!(model.buffers[&buffer_id].projection.cached, Some(true));
+        _ = model.mark_vanished_restored_rows();
+        assert!(model.buffers[&buffer_id].restored_from_snapshot);
 
         let fetches = model.connected_history();
         assert!(matches!(
@@ -6223,11 +6194,11 @@ mod tests {
             [HistoryFetch::Latest(HistoryTarget::Direct(_))]
         ));
         let buffer = &model.buffers[&buffer_id];
-        assert_eq!(buffer.projection.cached, None);
-        assert_eq!(buffer.projection.cached_preview, None);
+        assert!(buffer.restored_from_snapshot);
+        assert_eq!(buffer.projection.preview.as_deref(), Some("stale preview"));
         assert_eq!(
             (buffer.projection.unread, buffer.projection.mentions),
-            (0, 0)
+            (3, 3)
         );
         assert!(matches!(buffer.history, HistoryState::LoadingLatest));
 
@@ -6319,14 +6290,12 @@ mod tests {
         let alice = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
         let slow = model.names[&NameKey::Channel(channel_name(&state, "#slow"))];
         let alice_buffer = model.buffers.get_mut(&alice).expect("alice buffer");
-        super::promote_cached_buffer(alice_buffer);
         alice_buffer.projection.title = "Alice live".into();
         alice_buffer.history = HistoryState::Ready {
             oldest: None,
             at_start: true,
         };
         let slow_buffer = model.buffers.get_mut(&slow).expect("slow buffer");
-        super::promote_cached_buffer(slow_buffer);
         slow_buffer.projection.title = "#slow provisional".into();
         slow_buffer.history = HistoryState::LoadingLatest;
         model.ensure_buffer(NameKey::Direct(nick_name(&state, "bob")), None, None);
@@ -6607,49 +6576,6 @@ mod tests {
         assert_eq!(model.buffers[&buffer_id].timeline.len(), 1);
         assert_eq!(model.buffers[&buffer_id].projection.unread, 1);
         assert_eq!(model.buffers[&buffer_id].projection.mentions, 1);
-    }
-
-    #[test]
-    fn chat_list_is_complete_only_when_online_and_fully_hydrated() {
-        let (mut model, state) = model(10);
-        let key = NameKey::Channel(channel_name(&state, "#room"));
-        let (buffer_id, _) = model.ensure_buffer(key, None, None);
-        assert!(!model.chat_list_complete());
-
-        model.set_connection(crate::NetworkConnectionState::Online, None);
-        assert!(!model.chat_list_complete());
-        model.buffers.get_mut(&buffer_id).expect("buffer").history = HistoryState::Ready {
-            oldest: None,
-            at_start: true,
-        };
-        assert!(model.chat_list_complete());
-
-        model.set_connection(
-            crate::NetworkConnectionState::Reconnecting {
-                attempt: 1,
-                next_retry_at_ms: 1,
-            },
-            None,
-        );
-        assert!(!model.chat_list_complete());
-    }
-
-    #[test]
-    fn first_live_direct_completes_its_current_chat_list_row() {
-        let (mut model, state) = model(10);
-        model.set_connection(crate::NetworkConnectionState::Online, None);
-
-        model.receive_incoming(
-            direct_incoming(&state, "alice", "live first contact", 1_000),
-            &state,
-        );
-
-        assert!(model.chat_list_complete());
-        let buffer_id = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
-        assert!(matches!(
-            model.request_history(buffer_id, crate::HistoryDirection::Older),
-            Some(HistoryFetch::Before { .. })
-        ));
     }
 
     #[test]

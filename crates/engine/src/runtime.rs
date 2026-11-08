@@ -5595,7 +5595,7 @@ async fn delay(duration: Duration) {
     }
 
     #[test]
-    fn hosted_profile_restores_cached_chats_before_a_token_exists() {
+    fn hosted_profile_projects_restored_chats_before_a_token_exists() {
         let endpoint = "wss://beta.weblounge.org/socket";
         let snapshot = ChatListSnapshot::new(
             crate::chat_list_snapshot::fingerprint("weblounge", endpoint),
@@ -5635,10 +5635,8 @@ async fn delay(duration: Duration) {
 
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::ChatListSnapshotLoaded { buffers, .. }
-                if buffers.iter().any(|buffer| {
-                    buffer.title == "#lounge" && buffer.cached == Some(true)
-                })
+            EngineToUi::BuffersChanged { buffers, .. }
+                if buffers.iter().any(|buffer| buffer.title == "#lounge")
         )));
         let state = lock(&runtime.state);
         let running = state.network.as_ref().expect("hosted profile is retained");
