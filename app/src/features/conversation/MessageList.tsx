@@ -1031,36 +1031,34 @@ function formatNicks(nicks: readonly string[]): string {
   });
 }
 
-function toCopyRows(rows: readonly TimelineRow[]): CopyRow[] {
-  const result: CopyRow[] = [];
-  for (const row of rows) {
-    if (row.kind === "day")
-      result.push({ kind: "day-divider", label: row.label });
+function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
+  return rows.map((row) => {
+    if (row.kind === "day") return { kind: "day-divider", label: row.label };
     if (row.kind === "membership")
-      result.push({
+      return {
         kind: "membership",
         text:
           row.membership.type === "kicked"
             ? `← ${kickText(row.membership)}`
             : `${membershipArrow(row.membership.kind)} ${formatNicks(row.membership.nicks)} ${membershipVerb(row.membership.kind)}`,
-      });
+      };
     if (row.kind === "message" && row.message.kind === "action")
-      result.push({
+      return {
         kind: "action",
         author: row.message.author,
         text: row.message.text,
-      });
+      };
     if (row.kind === "message" && row.message.kind === "text")
-      result.push({
+      return {
         kind: "message",
         time: new Date(messageTime(row.message)),
         author: row.message.author,
         text: row.message.text,
-      });
+      };
     if (row.kind === "message" && isNoticeMessage(row.message))
-      result.push({ kind: "membership", text: noticeText(row.message) });
-  }
-  return result;
+      return { kind: "membership", text: noticeText(row.message) };
+    return undefined;
+  });
 }
 
 function noticeText(message: NoticeMessage): string {

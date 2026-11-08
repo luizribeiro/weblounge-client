@@ -111,6 +111,43 @@ it("copies data rows virtualised out between the selection endpoints", () => {
   );
 });
 
+it("keeps selection indices aligned across a non-copying divider", () => {
+  const list = messageList();
+  list.children[1]?.setAttribute("data-copy-row-index", "2");
+  const selection = document.getSelection();
+  const range = document.createRange();
+  const first = list.children[0]?.firstChild;
+  const last = list.children[1]?.firstChild;
+  if (
+    selection === null ||
+    first === undefined ||
+    first === null ||
+    last === undefined ||
+    last === null
+  ) {
+    throw new Error("selection fixture is unavailable");
+  }
+  range.setStart(first, 0);
+  range.setEnd(last, last.textContent?.length ?? 0);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  const setData = vi.fn();
+
+  copySelectedRows(
+    {
+      clipboardData: { setData },
+      preventDefault: vi.fn(),
+    } as unknown as ClipboardEvent,
+    list,
+    [copyRows[0], undefined, copyRows[1]],
+  );
+
+  expect(setData).toHaveBeenCalledWith(
+    "text/plain",
+    "[22:01] <luiz> first\n[22:02] <tomo> second",
+  );
+});
+
 const copyRows: readonly CopyRow[] = [
   {
     kind: "message",

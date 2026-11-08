@@ -3,7 +3,7 @@ import { type CopyRow, serializeCopyRows } from "./copy-rows";
 export function copySelectedRows(
   event: ClipboardEvent,
   list: HTMLElement,
-  rows: readonly CopyRow[],
+  rows: readonly (CopyRow | undefined)[],
 ): void {
   const selection = list.ownerDocument.getSelection();
   const first = rowIndex(selection?.anchorNode, list);
@@ -20,7 +20,9 @@ export function copySelectedRows(
 
   const start = Math.min(first, last);
   const end = Math.max(first, last) + 1;
-  const text = serializeCopyRows(rows.slice(start, end));
+  const text = serializeCopyRows(
+    rows.slice(start, end).filter((row): row is CopyRow => row !== undefined),
+  );
   if (text === "") return;
   event.clipboardData.setData("text/plain", text);
   event.preventDefault();
