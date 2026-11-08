@@ -4,6 +4,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Known limits
 
+- Read-state migration step 5 remains blocked on papo exposing a bounded `LATEST` history API.
+  Step 6 is complete independently; do not emulate the missing protocol operation in the client.
 - The 16-buffer stock-fakelag launch now sends 36 commands instead of 81, but the two changed-buffer
   history replies still arrive about 1.5 seconds after their requests. They wait behind
   papo's post-JOIN burst of seven `NAMES`, seven `MODE`, and seven `WHO` commands. Removing that
@@ -65,6 +67,11 @@ The single place a fresh session reads to know where the project stands. Update 
   mark and latest position but discards saved badge counts once; changed conversations rebuild their
   facts from server history. This removes cached count bases, push decrements, marker recounts,
   lifecycle zeroing and stored snapshot badges.
+- [x] Land read-state migration step 6. Per-conversation pending times replace deferred message ids
+  and survive snapshot restore or papo client replacement; one advance path now owns user reads,
+  own committed messages and push reconciliation. Reading a push-only row sends `MARKREAD`
+  immediately, and an authoritative history copy one millisecond later carries the read forward and
+  queues the repaired marker without reviving the badge.
 - [x] Keep schema-6 read facts and closed-page notifications consistent after a remote read. A mark
   that covers a bounded unread gap now removes that dominated gap before snapshot persistence, and
   an unchanged cached direct with retained stubs still fetches its server marker during TARGETS
