@@ -23,6 +23,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Scope the mobile-shell screenshot's member assertion to the open Members dialog. The modal
+  intentionally retains the scrimmed conversation, so its transcript nick action can coexist with
+  the member-row action without making the Playwright locator ambiguous.
 - [x] Include the repository's shared read-state fixtures in the filtered Rust source so Nix
   clippy and cargo-test builds can compile the engine's golden tests from the same JSON file the
   TypeScript mirror will consume.

@@ -135,21 +135,23 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       });
       const darkWithoutScrim = await sampleScrimPixel(page, messageList);
       await page.getByRole("button", { name: "Show members" }).click();
-      await expect(
-        page.getByRole("button", {
-          name: "Open direct message with mel-mobile",
-        }),
-      ).toBeVisible();
+      const membersDialog = page.getByRole("dialog", { name: "Members" });
+      await expect(membersDialog).toBeVisible();
       await expect(page.locator("[data-overlay-drawer]")).toHaveAttribute(
         "data-phase",
         "open",
       );
+      await expect(
+        membersDialog.getByRole("button", {
+          name: "Open direct message with mel-mobile",
+        }),
+      ).toBeVisible();
       await page.emulateMedia({ colorScheme: "light" });
       await expect(page.locator("html")).toHaveAttribute(
         "data-theme",
         "lounge",
       );
-      const memberNames = page.locator("[data-member-name]");
+      const memberNames = membersDialog.locator("[data-member-name]");
       expect(await sampleScrimPixel(page, memberNames)).toBeLessThan(
         lightWithoutScrim,
       );
