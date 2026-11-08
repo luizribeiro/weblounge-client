@@ -29,6 +29,12 @@ The single place a fresh session reads to know where the project stands. Update 
   only that receipt's notification, and retains final generics for route, decryption and parse
   failures. Unit coverage pins both controls and the intended error fallback; a condition-gated
   Chromium push journey holds real preparation past 1.5 seconds and proves no notification remains.
+- [x] Land read-state migration step 8. Snapshot rows now enter the same projected buffer list as
+  live rows and retain stable buffer identities while `BufferUpdated` replaces their preview,
+  sync, read and activity fields in place. Cached-list staging, promotion, optimistic count
+  clearing, `UnreadChanged`, `ReadMarkerMoved` and `read_through` are gone. Direct markers settle
+  before launch catch-up can expose unread facts, and every visible desktop conversation suppresses
+  its count throughout live-edge delivery.
 - [x] Recognize tagged IRC departures while the resilience harness claims the always-on nickname.
   Ergo attaches server-time, account and msgid tags to the holder's QUIT, so the harness now accepts
   the tagged source prefix and retries its NICK only after that observed departure.
