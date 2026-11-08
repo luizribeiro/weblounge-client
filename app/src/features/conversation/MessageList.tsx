@@ -21,7 +21,6 @@ import type {
   NoticeKind,
 } from "../../engine/protocol";
 import { keyboardMotionTranscriptRevealEvent } from "../../platform/keyboard-motion";
-import { pageIsForeground } from "../../platform/push/foreground-state";
 import {
   type AppGeometryChange,
   appGeometryChangeEvent,
@@ -49,6 +48,7 @@ import { createNickLookup, type NickDisplay } from "./nick-lookup";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
+  readonly foreground?: boolean | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
@@ -100,23 +100,28 @@ export function MessageList(props: MessageListProps) {
   const estimatedSizes = new Map<string, number>();
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
-  const initialReadAt = props.readAtMs ?? null;
-  let boundaryFrozen = hasUnreadAfter(props.messages, initialReadAt);
-  let pendingEmptyBoundary =
-    initialReadAt !== null &&
-    props.messages.length === 0 &&
-    props.syncState === "syncing";
+  const initialReadAt = dividerMarkAfterOwnSend(
+    props.readAtMs ?? null,
+    props.messages,
+  );
+  let dividerTracksMark = !openingBoundaryPending(
+    props.messages,
+    initialReadAt,
+    props.syncState,
+  );
+  let watchedThrough: number | undefined;
+  let observedOwnTime = latestCommittedOwnTime(props.messages);
+  let observedPeerTime = latestPeerTime(props.messages);
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
-  let scrollFrozenReadAt: number | undefined;
-  const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
+  const [dividerMark, setDividerMark] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
   const rows = createMemo(() =>
-    timelineRows(props.messages, props.memberships ?? [], frozenReadAt()),
+    timelineRows(props.messages, props.memberships ?? [], dividerMark()),
   );
   // TanStack rebuilds its index-keyed measurements only when the row count or
   // the key extractor's identity changes, and a moving divider keeps the count.
@@ -125,40 +130,23 @@ export function MessageList(props: MessageListProps) {
     return (index: number) => current[index]?.key ?? index;
   });
   const nickLookup = createMemo(() => createNickLookup(props.messages));
-  const freezeUnreadBoundary = (write: (readAtMs: number) => void) => {
-    if (boundaryFrozen) return;
-    const lastSeen = latestMessageTime(props.messages);
-    if (lastSeen === undefined) return;
-    boundaryFrozen = true;
-    if (!hasUnreadAfter(props.messages, frozenReadAt())) write(lastSeen);
-  };
   const setLiveEdge = (live: boolean) => {
     if (scrollLiveEdgeFrame !== undefined) {
       window.cancelAnimationFrame(scrollLiveEdgeFrame);
       scrollLiveEdgeFrame = undefined;
-      scrollFrozenReadAt = undefined;
     }
-    if (!live && logicallyAtLiveEdge) freezeUnreadBoundary(setFrozenReadAt);
     logicallyAtLiveEdge = live;
     setPublishedAtLiveEdge(live);
     if (live) setUnseen(0);
     props.onLiveEdgeChange?.(live);
   };
   const deferScrollLiveEdge = (live: boolean) => {
-    if (!live && logicallyAtLiveEdge)
-      freezeUnreadBoundary((readAtMs) => {
-        scrollFrozenReadAt = readAtMs;
-      });
     // Arrivals must observe the user's position immediately, while reactive
     // publication waits because it can rewrite virtual transcript geometry.
     logicallyAtLiveEdge = live;
     if (scrollLiveEdgeFrame !== undefined) return;
     scrollLiveEdgeFrame = window.requestAnimationFrame(() => {
       scrollLiveEdgeFrame = undefined;
-      if (scrollFrozenReadAt !== undefined) {
-        setFrozenReadAt(scrollFrozenReadAt);
-        scrollFrozenReadAt = undefined;
-      }
       setPublishedAtLiveEdge(logicallyAtLiveEdge);
       if (logicallyAtLiveEdge) setUnseen(0);
       props.onLiveEdgeChange?.(logicallyAtLiveEdge);
@@ -317,13 +305,19 @@ export function MessageList(props: MessageListProps) {
   createEffect(() => {
     if (props.bufferId !== currentBuffer) {
       currentBuffer = props.bufferId;
-      const marker = props.readAtMs ?? null;
-      setFrozenReadAt(marker);
-      boundaryFrozen = hasUnreadAfter(props.messages, marker);
-      pendingEmptyBoundary =
-        marker !== null &&
-        props.messages.length === 0 &&
-        props.syncState === "syncing";
+      const marker = dividerMarkAfterOwnSend(
+        props.readAtMs ?? null,
+        props.messages,
+      );
+      setDividerMark(marker);
+      dividerTracksMark = !openingBoundaryPending(
+        props.messages,
+        marker,
+        props.syncState,
+      );
+      watchedThrough = undefined;
+      observedOwnTime = latestCommittedOwnTime(props.messages);
+      observedPeerTime = latestPeerTime(props.messages);
       renderedCount = 0;
       olderPageArmed = true;
       setUnseen(0);
@@ -333,26 +327,59 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const marker = props.readAtMs ?? null;
-    const hasUnread = hasUnreadAfter(props.messages, marker);
-    if (props.messages.length === 0) {
-      pendingEmptyBoundary = marker !== null && props.syncState === "syncing";
-    } else if (pendingEmptyBoundary) {
-      pendingEmptyBoundary = false;
-      if (hasUnread) {
-        boundaryFrozen = true;
-        setFrozenReadAt(marker);
-        return;
-      }
+    if (props.messages.length === 0 && props.syncState !== "syncing")
+      dividerTracksMark = true;
+    const ownTime = latestCommittedOwnTime(props.messages);
+    const peerTime = latestPeerTime(props.messages);
+    if (
+      ownTime !== undefined &&
+      (observedOwnTime === undefined || ownTime > observedOwnTime)
+    ) {
+      const ownMark = Math.max(marker ?? ownTime, ownTime);
+      setDividerMark(ownMark);
+      dividerTracksMark =
+        !hasUnreadAfter(props.messages, ownMark) ||
+        (peerTime !== undefined &&
+          (observedPeerTime === undefined || peerTime > observedPeerTime));
+      watchedThrough = undefined;
     }
-    const away =
-      !publishedAtLiveEdge() || !pageIsForeground(document, navigator);
-    if (hasUnread && away) {
-      boundaryFrozen = true;
-      setFrozenReadAt(marker);
-    } else if (!boundaryFrozen) {
-      setFrozenReadAt(
-        hasUnread ? (latestMessageTime(props.messages) ?? marker) : marker,
-      );
+    observedOwnTime = ownTime;
+    observedPeerTime = peerTime;
+    const reading =
+      props.foreground !== false &&
+      publishedAtLiveEdge() &&
+      logicallyAtLiveEdge;
+    if (!reading) {
+      if (dividerTracksMark) setDividerMark(maximumMark(dividerMark(), marker));
+      dividerTracksMark = false;
+      watchedThrough = undefined;
+      return;
+    }
+    if (
+      watchedThrough !== undefined &&
+      marker !== null &&
+      marker >= watchedThrough
+    ) {
+      dividerTracksMark = true;
+      watchedThrough = undefined;
+    }
+    if (watchedThrough !== undefined) {
+      const watched = latestMessageTime(props.messages);
+      if (watched !== undefined && watched > watchedThrough) {
+        setDividerMark(watched);
+        watchedThrough = watched;
+      }
+      return;
+    }
+    if (!dividerTracksMark) return;
+    const current = dividerMark();
+    if (hasUnreadAfter(props.messages, current)) {
+      const watched = latestMessageTime(props.messages);
+      setDividerMark(watched ?? current);
+      dividerTracksMark = false;
+      watchedThrough = watched;
+    } else {
+      setDividerMark(maximumMark(current, marker));
     }
   });
   createEffect(() => {
@@ -380,10 +407,6 @@ export function MessageList(props: MessageListProps) {
     const handleFontsLoaded = () => {
       remeasure();
       if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
-    };
-    const updateForeground = () => {
-      if (!pageIsForeground(document, navigator))
-        freezeUnreadBoundary(() => undefined);
     };
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
@@ -420,9 +443,6 @@ export function MessageList(props: MessageListProps) {
       settleKeyboardMotionTranscript,
     );
     fonts?.addEventListener("loadingdone", handleFontsLoaded);
-    document.addEventListener("visibilitychange", updateForeground);
-    window.addEventListener("focus", updateForeground);
-    window.addEventListener("blur", updateForeground);
     window.addEventListener(appGeometryChangeEvent, anchorGeometryChange);
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
@@ -439,9 +459,6 @@ export function MessageList(props: MessageListProps) {
         settleKeyboardMotionTranscript,
       );
       fonts?.removeEventListener("loadingdone", handleFontsLoaded);
-      document.removeEventListener("visibilitychange", updateForeground);
-      window.removeEventListener("focus", updateForeground);
-      window.removeEventListener("blur", updateForeground);
       window.removeEventListener(appGeometryChangeEvent, anchorGeometryChange);
       list?.removeEventListener("keydown", markScrollKeyIntent);
       list?.removeEventListener("pointerdown", markPointerScrollIntent);
@@ -880,6 +897,17 @@ function hasUnreadAfter(
   return unreadStartId(messages, readAtMs) !== undefined;
 }
 
+function openingBoundaryPending(
+  messages: readonly MessageProjection[],
+  readAtMs: number | null,
+  syncState: BufferProjection["sync_state"] | undefined,
+): boolean {
+  return (
+    hasUnreadAfter(messages, readAtMs) ||
+    (readAtMs !== null && messages.length === 0 && syncState === "syncing")
+  );
+}
+
 function timelineRows(
   messages: readonly MessageProjection[],
   memberships: readonly MembershipProjection[],
@@ -943,19 +971,52 @@ function unreadStartId(
     (left, right) =>
       messageTime(left) - messageTime(right) || left.id - right.id,
   );
-  const effectiveReadAt = ordered.reduce(
-    (current, message) =>
-      message.authorship === "own" &&
-      !isNoticeMessage(message) &&
-      (message.delivery === "received" || message.delivery === "confirmed")
-        ? Math.max(current, messageTime(message))
-        : current,
-    readAtMs,
-  );
   return ordered.find(
     (message) =>
-      message.authorship !== "own" && messageTime(message) > effectiveReadAt,
+      message.authorship !== "own" && messageTime(message) > readAtMs,
   )?.id;
+}
+
+function latestCommittedOwnTime(
+  messages: readonly MessageProjection[],
+): number | undefined {
+  return messages.reduce<number | undefined>((latest, message) => {
+    if (
+      message.authorship !== "own" ||
+      isNoticeMessage(message) ||
+      (message.delivery !== "received" && message.delivery !== "confirmed")
+    ) {
+      return latest;
+    }
+    const time = messageTime(message);
+    return latest === undefined ? time : Math.max(latest, time);
+  }, undefined);
+}
+
+function latestPeerTime(
+  messages: readonly MessageProjection[],
+): number | undefined {
+  return messages.reduce<number | undefined>((latest, message) => {
+    if (message.authorship === "own" || isNoticeMessage(message)) return latest;
+    const time = messageTime(message);
+    return latest === undefined ? time : Math.max(latest, time);
+  }, undefined);
+}
+
+function dividerMarkAfterOwnSend(
+  readAtMs: number | null,
+  messages: readonly MessageProjection[],
+): number | null {
+  const ownTime = latestCommittedOwnTime(messages);
+  return ownTime === undefined
+    ? readAtMs
+    : Math.max(readAtMs ?? ownTime, ownTime);
+}
+
+function maximumMark(left: number | null, right: number | null): number | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return Math.max(left, right);
 }
 
 function latestMessageTime(

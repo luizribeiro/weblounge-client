@@ -1061,8 +1061,13 @@ it("defers live-edge geometry until after the scroll handler", async () => {
     received_at_ms: index + 1,
   }));
   const [readAtMs, setReadAtMs] = createSignal(3);
+  const onLiveEdgeChange = vi.fn();
   const { container } = render(() => (
-    <MessageList messages={messages} readAtMs={readAtMs()} />
+    <MessageList
+      messages={messages}
+      onLiveEdgeChange={onLiveEdgeChange}
+      readAtMs={readAtMs()}
+    />
   ));
   const list = container.querySelector<HTMLOListElement>("[data-message-list]");
   if (list === null) throw new Error("message list is missing");
@@ -1072,6 +1077,7 @@ it("defers live-edge geometry until after the scroll handler", async () => {
   });
   setReadAtMs(1);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
+  onLiveEdgeChange.mockClear();
   expect(container.querySelector("[data-new-line]")).toBeNull();
 
   fireEvent.wheel(list, { deltaY: -100 });
@@ -1079,21 +1085,18 @@ it("defers live-edge geometry until after the scroll handler", async () => {
   list.dispatchEvent(new Event("scroll"));
 
   expect(container.querySelector("[data-new-line]")).toBeNull();
+  expect(onLiveEdgeChange).not.toHaveBeenCalledWith(false);
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  expect(container.querySelector("[data-new-line]")).not.toBeNull();
+  expect(onLiveEdgeChange).toHaveBeenCalledWith(false);
+  expect(container.querySelector("[data-new-line]")).toBeNull();
 });
 
 it("does not add New for a message arriving at the foreground live edge", async () => {
-  vi.spyOn(document, "hasFocus").mockReturnValue(false);
-  Object.defineProperty(navigator, "standalone", {
-    configurable: true,
-    value: true,
-  });
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
     { ...message, delivery: "received" },
   ]);
   const { container } = render(() => (
-    <MessageList messages={messages()} readAtMs={1} />
+    <MessageList foreground messages={messages()} readAtMs={1} />
   ));
 
   setMessages([
@@ -1105,6 +1108,13 @@ it("does not add New for a message arriving at the foreground live edge", async 
       text: "arriving now",
       received_at_ms: 2,
     },
+    {
+      ...message,
+      id: 3,
+      delivery: "received",
+      text: "arriving before the dwell settles",
+      received_at_ms: 3,
+    },
   ]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
@@ -1112,20 +1122,16 @@ it("does not add New for a message arriving at the foreground live edge", async 
 });
 
 it("keeps New when a hidden arrival is delivered after foregrounding", async () => {
-  vi.spyOn(document, "hasFocus").mockReturnValue(true);
-  let hidden = false;
-  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const [foreground, setForeground] = createSignal(true);
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
     { ...message, delivery: "received" },
   ]);
   const { container } = render(() => (
-    <MessageList messages={messages()} readAtMs={1} />
+    <MessageList foreground={foreground()} messages={messages()} readAtMs={1} />
   ));
 
-  hidden = true;
-  document.dispatchEvent(new Event("visibilitychange"));
-  hidden = false;
-  document.dispatchEvent(new Event("visibilitychange"));
+  setForeground(false);
+  setForeground(true);
   setMessages([
     ...messages(),
     {
@@ -1142,11 +1148,10 @@ it("keeps New when a hidden arrival is delivered after foregrounding", async () 
 });
 
 it("does not rewrite transcript geometry while the page becomes hidden", async () => {
-  vi.spyOn(document, "hasFocus").mockReturnValue(true);
-  let hidden = false;
-  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const [foreground, setForeground] = createSignal(true);
   const { container } = render(() => (
     <MessageList
+      foreground={foreground()}
       messages={[
         {
           ...message,
@@ -1166,8 +1171,7 @@ it("does not rewrite transcript geometry while the page becomes hidden", async (
     mutations += records.length;
   }).observe(list, { attributes: true, childList: true, subtree: true });
 
-  hidden = true;
-  document.dispatchEvent(new Event("visibilitychange"));
+  setForeground(false);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(mutations).toBe(0);
@@ -1184,30 +1188,25 @@ it("restacks measured rows when the New boundary moves past a long row", async (
       }
     },
   );
-  vi.spyOn(document, "hasFocus").mockReturnValue(false);
   const longText = (label: string) =>
     `${label} ${"the deploy health check failed again ".repeat(12)}`;
-  const [readAtMs, setReadAtMs] = createSignal<number | null>(1);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    message,
+    {
+      ...message,
+      id: 2,
+      text: longText("first"),
+      received_at_ms: 2,
+    },
+    {
+      ...message,
+      id: 3,
+      text: longText("second"),
+      received_at_ms: 3,
+    },
+  ]);
   const { container } = render(() => (
-    <MessageList
-      bufferId={2}
-      messages={[
-        message,
-        {
-          ...message,
-          id: 2,
-          text: longText("first"),
-          received_at_ms: 2,
-        },
-        {
-          ...message,
-          id: 3,
-          text: longText("second"),
-          received_at_ms: 3,
-        },
-      ]}
-      readAtMs={readAtMs()}
-    />
+    <MessageList bufferId={2} messages={messages()} readAtMs={1} />
   ));
   const flushRowSizes = async () => {
     await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -1218,11 +1217,22 @@ it("restacks measured rows when the New boundary moves past a long row", async (
   };
   await flushRowSizes();
 
-  setReadAtMs(2);
+  setMessages([
+    ...messages(),
+    {
+      ...message,
+      id: 4,
+      authorship: "own",
+      delivery: "confirmed",
+      text: "own reply",
+      received_at_ms: 2,
+    },
+  ]);
   await flushRowSizes();
 
   const rows = renderedRowGeometry(container);
   expect(rows.map((row) => row.newLine)).toEqual([
+    false,
     false,
     false,
     false,
