@@ -28,7 +28,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Make Chromium push injection wait for service-worker delivery. The shared E2E helper now
   keeps one controller-bound CDP session and waits for a test-build-only receipt emitted after the
   push event's `waitUntil` work settles, so constrained runs cannot inspect notifications before
-  presentation or silent control handling completes.
+  presentation or silent control handling completes. Direct-push history reconciliation is pinned
+  to remain unread unless the user explicitly advances it.
 - [x] Make always-on control nick claims survive the app disconnect race. A 433 now waits for the
   previous holder's observed departure before sending NICK once more, and a scripted harness test
   pins the failing 433, QUIT, confirmation ordering without a timed retry.

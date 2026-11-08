@@ -3838,6 +3838,8 @@ mod tests {
             direct.projection.direct_identity,
             Some(crate::DirectIdentityState::Verified)
         );
+        assert_eq!(direct.projection.read_at_ms, None);
+        assert_eq!(direct.read_facts.mark(), None);
         assert_eq!(direct.timeline.len(), 1);
     }
 
