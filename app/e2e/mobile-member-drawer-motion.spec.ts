@@ -5,9 +5,9 @@ import {
   openStandaloneChannel,
 } from "./member-drawer";
 import {
-  expectStepsFollowCurve,
+  durationMs,
+  expectEqualAtDevicePixelPrecision,
   expectTransitionMatches,
-  hasIntermediatePosition,
   type TransitionStyle,
 } from "./motion-assertions";
 
@@ -18,21 +18,18 @@ test.beforeEach(async ({ browserName, page }) => {
 test("opens with a fast start, anchored right, over a painted chat", async ({
   page,
 }) => {
-  const { before, frames } = await recordMotion(page, { kind: "show" });
+  const recording = await recordMotion(page, { kind: "show" });
+  const { before, frames } = recording;
   const moving = frames.filter((frame) => frame.left !== null);
   const final = moving.at(-1);
-  if (final?.left == null || final.right == null || final.width == null)
+  if (final?.left == null || final.right == null)
     throw new Error("the drawer never painted");
-  const start = final.left + final.width;
 
-  expect(
-    hasIntermediatePosition(
-      moving.map((frame) => frame.left ?? start),
-      start,
-      final.left,
-    ),
-  ).toBe(true);
-  expectDrawerTransition(moving, "drawerOpenDuration");
+  expectDrawerTransition(
+    moving,
+    "drawerOpenDuration",
+    recording.transitionEndElapsedMs,
+  );
   expect(
     monotonic(
       moving.map((frame) => frame.left ?? 0),
@@ -99,22 +96,14 @@ test("hands a released drag to the transition without jumping", async ({
     (frame): frame is MotionFrame & { left: number } => frame.left !== null,
   );
   expect(
-    hasIntermediatePosition(
-      returning.map((frame) => frame.left),
-      dragLeft,
-      openLeft,
-    ),
-  ).toBe(true);
-  expect(
     monotonic([dragLeft, ...returning.map((frame) => frame.left)], "down"),
   ).toBe(true);
-  expectDrawerTransition(returning, "drawerOpenDuration");
-  expectStepsFollowCurve(
-    returning.map((frame) => ({ position: frame.left, time: frame.time })),
-    { position: dragLeft, time: settle.triggeredAt },
-    openLeft,
-    returning[0]?.drawerTransition ?? missingTransition(),
+  expectDrawerTransition(
+    returning,
+    "drawerOpenDuration",
+    settle.transitionEndElapsedMs,
   );
+  expectTransitionStartsAtDrag(returning, settle.before);
 
   await drawerPointer(page, "pointerdown", 100, 300, 1_000, 2);
   await drawerPointer(page, "pointermove", 115, 300, 1_050, 2);
@@ -128,28 +117,17 @@ test("hands a released drag to the transition without jumping", async ({
   const present = close.frames.filter((frame) => frame.left !== null);
   expect(close.before.drawerLeft - openLeft).toBeCloseTo(85, 0);
   expect(
-    hasIntermediatePosition(
-      present.map((frame) => frame.left ?? 0),
-      close.before.drawerLeft,
-      close.before.viewportWidth,
-    ),
-  ).toBe(true);
-  expect(
     monotonic(
       [close.before.drawerLeft, ...present.map((frame) => frame.left ?? 0)],
       "up",
     ),
   ).toBe(true);
-  expectDrawerTransition(present, "drawerCloseDuration");
-  expectStepsFollowCurve(
-    present.map((frame) => ({
-      position: frame.left ?? close.before.viewportWidth,
-      time: frame.time,
-    })),
-    { position: close.before.drawerLeft, time: close.triggeredAt },
-    close.before.viewportWidth,
-    present[0]?.drawerTransition ?? missingTransition(),
+  expectDrawerTransition(
+    present,
+    "drawerCloseDuration",
+    close.transitionEndElapsedMs,
   );
+  expectTransitionStartsAtDrag(present, close.before);
   expect(present.at(-1)?.left ?? 0).toBeGreaterThanOrEqual(
     close.before.viewportWidth - 0.5,
   );
@@ -173,6 +151,7 @@ interface Box {
 }
 
 interface MotionFrame {
+  readonly drawerTransitionStartX: number | null;
   readonly drawerTransition: TransitionStyle;
   readonly header: Box;
   readonly left: number | null;
@@ -190,7 +169,9 @@ interface MotionFrame {
 }
 
 interface MotionBefore {
+  readonly devicePixelRatio: number;
   readonly drawerLeft: number;
+  readonly drawerTransformX: number;
   readonly header: Box;
   readonly list: Box;
   readonly viewportWidth: number;
@@ -199,7 +180,7 @@ interface MotionBefore {
 interface MotionRecording {
   readonly before: MotionBefore;
   readonly frames: readonly MotionFrame[];
-  readonly triggeredAt: number;
+  readonly transitionEndElapsedMs: number | null;
 }
 
 async function recordMotion(
@@ -209,6 +190,7 @@ async function recordMotion(
   return page.evaluate(
     (action) =>
       new Promise<MotionRecording>((resolve, reject) => {
+        let transitionEndElapsedMs: number | null = null;
         const box = (selector: string): Box => {
           const element = document.querySelector(selector);
           if (element === null) throw new Error(`${selector} is missing`);
@@ -236,7 +218,31 @@ async function recordMotion(
               ? null
               : getComputedStyle(scrim);
           const rootStyle = getComputedStyle(document.documentElement);
+          const transition = drawer
+            ?.getAnimations()
+            .find(
+              (animation) =>
+                animation instanceof CSSTransition &&
+                animation.transitionProperty === "transform",
+            );
+          // WebKit can expose accelerated geometry from a different phase than
+          // its JavaScript clock. The generated keyframe owns the real start.
+          const transitionStart =
+            transition?.effect instanceof KeyframeEffect
+              ? transition.effect.getKeyframes()[0]?.transform
+              : undefined;
+          const transitionStartX = () => {
+            if (typeof transitionStart !== "string" || rect === undefined)
+              return null;
+            const percent =
+              /^translateX\((-?\d*\.?\d+)%\)$/.exec(transitionStart) ??
+              /^translate3d\((-?\d*\.?\d+)%, 0px, 0px\)$/.exec(transitionStart);
+            if (percent !== null)
+              return (Number(percent[1]) * rect.width) / 100;
+            return new DOMMatrixReadOnly(transitionStart).m41;
+          };
           return {
+            drawerTransitionStartX: transitionStartX(),
             drawerTransition: {
               duration: drawerStyle?.transitionDuration ?? "0s",
               property: drawerStyle?.transitionProperty ?? "all",
@@ -284,8 +290,14 @@ async function recordMotion(
           return overlay === null;
         };
         const current = sample();
+        const drawer = document.querySelector<HTMLElement>("[role=dialog]");
         const before: MotionBefore = {
+          devicePixelRatio: window.devicePixelRatio,
           drawerLeft: current.left ?? innerWidth,
+          drawerTransformX:
+            drawer === null
+              ? 0
+              : new DOMMatrixReadOnly(getComputedStyle(drawer).transform).m41,
           header: current.header,
           list: current.list,
           viewportWidth: innerWidth,
@@ -295,20 +307,40 @@ async function recordMotion(
           if (element === null) throw new Error(`${selector} is missing`);
           element.click();
         };
+        const captureTransitionEnd = (event: TransitionEvent) => {
+          if (
+            event.target instanceof Element &&
+            event.target.matches("[role=dialog]") &&
+            event.propertyName === "transform"
+          )
+            transitionEndElapsedMs = event.elapsedTime * 1_000;
+        };
+        document.addEventListener("transitionend", captureTransitionEnd, true);
         let recordingStarted = false;
         const startRecording = () => {
           if (recordingStarted) return;
           recordingStarted = true;
-          const frames: MotionFrame[] = [];
+          const frames: MotionFrame[] = [sample()];
           const triggeredAt = performance.now();
           const step = () => {
             frames.push(sample());
-            if (settled()) resolve({ before, frames, triggeredAt });
-            else if (performance.now() - triggeredAt > 3_000)
+            if (settled()) {
+              document.removeEventListener(
+                "transitionend",
+                captureTransitionEnd,
+                true,
+              );
+              resolve({ before, frames, transitionEndElapsedMs });
+            } else if (performance.now() - triggeredAt > 3_000) {
+              document.removeEventListener(
+                "transitionend",
+                captureTransitionEnd,
+                true,
+              );
               reject(
                 new Error(`motion did not settle: ${frames.length} frames`),
               );
-            else requestAnimationFrame(step);
+            } else requestAnimationFrame(step);
           };
           requestAnimationFrame(step);
         };
@@ -384,17 +416,15 @@ async function expectSlidesClosed(
   page: Page,
   kind: "close-button" | "scrim" | "escape" | "back",
 ): Promise<void> {
-  const { before, frames } = await recordMotion(page, { kind });
+  const recording = await recordMotion(page, { kind });
+  const { before, frames } = recording;
   const present = frames.filter((frame) => frame.left !== null);
 
-  expect(
-    hasIntermediatePosition(
-      present.map((frame) => frame.left ?? before.viewportWidth),
-      before.drawerLeft,
-      before.viewportWidth,
-    ),
-  ).toBe(true);
-  expectDrawerTransition(present, "drawerCloseDuration");
+  expectDrawerTransition(
+    present,
+    "drawerCloseDuration",
+    recording.transitionEndElapsedMs,
+  );
   expect(
     monotonic(
       present.map((frame) => frame.left ?? 0),
@@ -428,6 +458,7 @@ function expectChatStill(
 function expectDrawerTransition(
   frames: readonly MotionFrame[],
   duration: "drawerCloseDuration" | "drawerOpenDuration",
+  transitionEndElapsedMs: number | null,
 ): void {
   expect(frames.length).toBeGreaterThan(0);
   for (const frame of frames) {
@@ -444,10 +475,26 @@ function expectDrawerTransition(
       frame.tokens.drawerCurve,
     );
   }
+  expect(transitionEndElapsedMs).toBeCloseTo(
+    durationMs(frames[0]?.tokens[duration] ?? "0ms"),
+    5,
+  );
 }
 
-function missingTransition(): TransitionStyle {
-  throw new Error("drawer transition was not sampled");
+function expectTransitionStartsAtDrag(
+  frames: readonly MotionFrame[],
+  before: MotionBefore,
+): void {
+  const starts = frames.flatMap((frame) =>
+    frame.drawerTransitionStartX === null ? [] : [frame.drawerTransitionStartX],
+  );
+  expect(starts.length).toBeGreaterThan(0);
+  for (const start of starts)
+    expectEqualAtDevicePixelPrecision(
+      start,
+      before.drawerTransformX,
+      before.devicePixelRatio,
+    );
 }
 
 function monotonic(values: readonly number[], direction: "up" | "down") {

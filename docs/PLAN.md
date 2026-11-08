@@ -27,6 +27,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Make the member-drawer handoff audit independent of WebKit's unsynchronized compositor
+  geometry and JavaScript clock. Released returns and closes now compare the generated transition
+  start keyframe with the transform held under the finger at device-pixel precision, while the real
+  transition-end elapsed time proves the declared motion ran even when no intermediate frame is
+  sampled.
 - [x] Preserve read-state transition evidence across delayed browser delivery. The shared
   foreground signal now retains an exit epoch so a hidden-to-visible batch cannot let a later peer
   message move the pane's frozen New divider, and each message list publishes its initial live edge
