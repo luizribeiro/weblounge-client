@@ -959,8 +959,8 @@ async function findRouteContext(
     openPushDatabase(),
   );
   try {
-    const [storedRoute, notificationState] = await trace.measure(
-      "route_lookup",
+    const [routeRecord, notificationState] = await trace.measure(
+      "database_transaction",
       async () => {
         const transaction = database.transaction(
           [pushRoutesStore, pushStateStore],
@@ -978,11 +978,14 @@ async function findRouteContext(
           ),
         ]);
         await transactionDone(transaction);
-        if (result[0] === undefined)
-          throw new Error("push route is unavailable");
         return result;
       },
     );
+    const storedRoute = await trace.measure("route_lookup", () => {
+      if (routeRecord === undefined)
+        throw new Error("push route is unavailable");
+      return routeRecord;
+    });
     const route = await trace.measure("key_lookup", () =>
       decodeStoredRoute(storedRoute),
     );
