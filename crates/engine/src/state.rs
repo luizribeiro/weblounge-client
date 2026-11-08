@@ -564,6 +564,9 @@ impl NetworkModel {
                 if let Some(mark) = row.read_at_ms {
                     buffer.read_facts.merge_mark(ServerTimeMs::new(mark));
                 }
+                if let Some(pending) = row.pending_read_at_ms {
+                    buffer.read_facts.merge_pending(ServerTimeMs::new(pending));
+                }
                 for stub in row.stubs {
                     self.next_message_id = self
                         .next_message_id
@@ -3064,6 +3067,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
             .map(|message| snapshot_preview(&buffer.projection, message)),
         newest: buffer.newest.as_ref().map(HistoryCursor::snapshot),
         read_at_ms: buffer.read_facts.mark().map(ServerTimeMs::value),
+        pending_read_at_ms: buffer.read_facts.pending().map(ServerTimeMs::value),
         stubs: buffer.read_facts.stubs().to_vec(),
         gap_until: buffer.read_facts.gap_until(),
         peer_pin: buffer
@@ -3076,6 +3080,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
 
 fn copy_read_facts_to_snapshot(buffer: &BufferState, row: &mut SnapshotRow) {
     row.read_at_ms = buffer.read_facts.mark().map(ServerTimeMs::value);
+    row.pending_read_at_ms = buffer.read_facts.pending().map(ServerTimeMs::value);
     row.stubs = buffer.read_facts.stubs().to_vec();
     row.gap_until = buffer.read_facts.gap_until();
 }
@@ -4047,6 +4052,7 @@ mod tests {
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4085,6 +4091,7 @@ mod tests {
                     server_time_ms: 300,
                 }),
                 read_at_ms: Some(100),
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4114,6 +4121,7 @@ mod tests {
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4153,6 +4161,7 @@ mod tests {
                         server_time_ms: 100,
                     }),
                     read_at_ms: None,
+                    pending_read_at_ms: None,
                     peer_pin: None,
                 }],
             )
@@ -4232,6 +4241,7 @@ mod tests {
                     server_time_ms: 100,
                 }),
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4283,6 +4293,7 @@ mod tests {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4312,6 +4323,7 @@ mod tests {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4349,6 +4361,7 @@ mod tests {
                     server_time_ms: 300,
                 }),
                 read_at_ms: Some(200),
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4432,6 +4445,7 @@ mod tests {
                     server_time_ms: 200,
                 }),
                 read_at_ms: Some(50),
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -4481,6 +4495,7 @@ mod tests {
                     server_time_ms: 100,
                 }),
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -6027,6 +6042,7 @@ mod tests {
                 preview: Some("hello".into()),
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -6065,6 +6081,7 @@ mod tests {
                 preview: Some("cached".into()),
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -6109,6 +6126,7 @@ mod tests {
                 preview: Some("stale preview".into()),
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));
@@ -6165,6 +6183,7 @@ mod tests {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: Some("not-a-peer-key".into()),
             }],
         ));
@@ -6191,6 +6210,7 @@ mod tests {
             preview: Some("cached channel preview".into()),
             newest: None,
             read_at_ms: None,
+            pending_read_at_ms: None,
             peer_pin: None,
         };
         let previous = ChatListSnapshot::new(
@@ -6208,6 +6228,7 @@ mod tests {
                     preview: Some("cached direct preview".into()),
                     newest: None,
                     read_at_ms: None,
+                    pending_read_at_ms: None,
                     peer_pin: None,
                 },
             ],
@@ -6253,6 +6274,7 @@ mod tests {
             preview: Some("cached direct".into()),
             newest: None,
             read_at_ms: None,
+            pending_read_at_ms: None,
             peer_pin: None,
         };
         let unresolved = SnapshotRow {
@@ -6266,6 +6288,7 @@ mod tests {
             preview: Some("cached channel".into()),
             newest: None,
             read_at_ms: None,
+            pending_read_at_ms: None,
             peer_pin: None,
         };
         let cached =
@@ -6323,6 +6346,7 @@ mod tests {
                     server_time_ms: 2_000,
                 }),
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         );
@@ -6371,6 +6395,7 @@ mod tests {
                 server_time_ms: 100,
             }),
             read_at_ms: None,
+            pending_read_at_ms: None,
             peer_pin: None,
         };
         let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
@@ -6406,6 +6431,7 @@ mod tests {
             preview: Some("cached preview".into()),
             newest: None,
             read_at_ms: None,
+            pending_read_at_ms: None,
             peer_pin: None,
         };
         let previous = ChatListSnapshot::new("network".into(), vec![cached.clone()]);
@@ -6469,6 +6495,7 @@ mod tests {
                     server_time_ms: 1_793_709_296_789,
                 }),
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         ));

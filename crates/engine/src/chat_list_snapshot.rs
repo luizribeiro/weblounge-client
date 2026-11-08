@@ -77,6 +77,7 @@ impl ChatListSnapshot {
                 }
                 row.as_object_mut()?.remove("stubs");
                 row.as_object_mut()?.remove("gap_until");
+                row.as_object_mut()?.remove("pending_read_at_ms");
                 row.as_object_mut()?.remove("badge");
             }
         }
@@ -99,6 +100,8 @@ pub(crate) struct SnapshotRow {
     pub(crate) newest: Option<SnapshotCursor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) read_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) pending_read_at_ms: Option<i64>,
     #[serde(default)]
     pub(crate) stubs: Vec<MessageStub>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -184,6 +187,7 @@ mod tests {
                         server_time_ms: 1_700_000_000_000,
                     }),
                     read_at_ms: Some(1_699_999_999_000),
+                    pending_read_at_ms: Some(1_699_999_999_000),
                     stubs: vec![MessageStub {
                         msgid: "newest-1".into(),
                         time: ServerTimeMs::new(1_700_000_000_000),
@@ -201,6 +205,7 @@ mod tests {
                     preview: Some(truncate_preview(&"é".repeat(81))),
                     newest: None,
                     read_at_ms: None,
+                    pending_read_at_ms: None,
                     stubs: vec![MessageStub {
                         msgid: "alice-1".into(),
                         time: ServerTimeMs::new(1_700_000_000_001),
@@ -226,6 +231,10 @@ mod tests {
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
         assert_eq!(value["rows"][0]["newest"]["msgid"], "newest-1");
         assert_eq!(value["rows"][0]["read_at_ms"], 1_699_999_999_000_i64);
+        assert_eq!(
+            value["rows"][0]["pending_read_at_ms"],
+            1_699_999_999_000_i64
+        );
         assert_eq!(value["rows"][0]["stubs"][0]["msgid"], "newest-1");
         assert_eq!(value["rows"][1]["stubs"][0]["mention"], true);
         assert_eq!(value["rows"][1]["gap_until"], 1_700_000_000_000_i64);
@@ -346,6 +355,7 @@ mod tests {
         assert_eq!(migrated.schema, 6);
         assert_eq!(migrated.cursor_ms, Some(400));
         assert_eq!(row.read_at_ms, Some(100));
+        assert_eq!(row.pending_read_at_ms, None);
         assert_eq!(
             row.newest,
             Some(SnapshotCursor {

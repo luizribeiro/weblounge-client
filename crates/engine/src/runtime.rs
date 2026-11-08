@@ -5416,6 +5416,7 @@ async fn delay(duration: Duration) {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         );
@@ -5689,6 +5690,7 @@ async fn delay(duration: Duration) {
                 preview: Some("cached before credentials".into()),
                 newest: None,
                 read_at_ms: None,
+                pending_read_at_ms: None,
                 peer_pin: None,
             }],
         );
@@ -7943,6 +7945,7 @@ async fn delay(duration: Duration) {
                     preview: None,
                     newest: None,
                     read_at_ms: None,
+                    pending_read_at_ms: None,
                     peer_pin: None,
                 }],
             ));
@@ -8567,6 +8570,7 @@ async fn delay(duration: Duration) {
                         server_time_ms: 100,
                     }),
                     read_at_ms: None,
+                    pending_read_at_ms: None,
                     peer_pin: None,
                 }],
             )
@@ -9252,12 +9256,12 @@ async fn delay(duration: Duration) {
                             server_time_ms: 100,
                         }),
                         read_at_ms: None,
+                        pending_read_at_ms: None,
                         peer_pin: None,
                     }],
                 ));
         }
         let nick = papo_testing::nick(client.state().casemapping(), "alice");
-
         restore_target_rows(
             &state,
             &outbound,
@@ -9280,10 +9284,8 @@ async fn delay(duration: Duration) {
                 .as_mut()
                 .expect("network remains active")
                 .model;
-            assert!(matches!(
-                model.direct(&nick),
-                Some(DirectAvailability::Pending)
-            ));
+            let pending = model.direct(&nick);
+            assert!(matches!(pending, Some(DirectAvailability::Pending)));
             let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
                 panic!("buffer projection event expected")
             };
@@ -9295,10 +9297,8 @@ async fn delay(duration: Duration) {
                 Some((3, 3))
             );
             assert!(model.begin_direct_resolution(&nick).is_some());
-            assert!(matches!(
-                model.direct(&nick),
-                Some(DirectAvailability::Resolving)
-            ));
+            let resolving = model.direct(&nick);
+            assert!(matches!(resolving, Some(DirectAvailability::Resolving)));
         }
 
         let label = request_label(&request);
@@ -10296,6 +10296,7 @@ async fn delay(duration: Duration) {
             preview: Some("cached slow preview".into()),
             newest: None,
             read_at_ms: None,
+            pending_read_at_ms: None,
             peer_pin: None,
         };
         {

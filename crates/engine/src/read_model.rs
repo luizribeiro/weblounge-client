@@ -86,6 +86,11 @@ impl ReadFacts {
         merge_max(&mut self.pending, Some(pending));
     }
 
+    /// Drops a local advance when the network cannot acknowledge read markers.
+    pub fn clear_pending(&mut self) {
+        self.pending = None;
+    }
+
     /// Clears a pending advance covered by a server acknowledgement.
     pub fn acknowledge(&mut self, acknowledged: ServerTimeMs) {
         self.merge_mark(acknowledged);
