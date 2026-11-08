@@ -84,7 +84,7 @@ test.describe("IRCv3 read markers", () => {
     }
   });
 
-  test("does not flash New for an arrival at the focused live edge", async ({
+  test("keeps the open conversation count suppressed at the focused live edge", async ({
     page,
   }) => {
     const channel = `#active-${Date.now().toString(36)}`;
@@ -103,21 +103,14 @@ test.describe("IRCv3 read markers", () => {
     try {
       const active = page.locator('[data-buffer-id][aria-current="page"]');
       await expect(active).toHaveAttribute("data-unread", "0");
-      await page.locator("[data-message-list]").evaluate((list) => {
-        Object.assign(window, {
-          unreadCountAppeared: false,
-          unreadDividerAppeared: false,
-        });
-        new MutationObserver(() => {
-          if (list.querySelector("[data-new-line]") !== null)
-            Object.assign(window, { unreadDividerAppeared: true });
-        }).observe(list, { childList: true, subtree: true });
+      await page.locator("[data-message-list]").evaluate(() => {
+        Object.assign(window, { openConversationCountAppeared: false });
         new MutationObserver(() => {
           const active = document.querySelector(
             '[data-buffer-id][aria-current="page"]',
           );
           if (Number(active?.getAttribute("data-unread")) > 0)
-            Object.assign(window, { unreadCountAppeared: true });
+            Object.assign(window, { openConversationCountAppeared: true });
         }).observe(document.body, {
           attributeFilter: ["data-unread"],
           childList: true,
@@ -127,25 +120,21 @@ test.describe("IRCv3 read markers", () => {
 
       await bot.privmsgConfirmed(channel, text);
       await expect(page.getByText(text, { exact: true })).toBeVisible();
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (window as Window & { unreadCountAppeared?: boolean })
-                .unreadCountAppeared,
-          ),
-        )
-        .toBe(true);
+      const ownText = `settled focused arrival ${Date.now()}`;
+      await composer.fill(ownText);
+      await composer.press("Enter");
+      await expect(page.getByText(ownText, { exact: true })).toBeVisible();
       await expect(active).toHaveAttribute("data-unread", "0");
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (window as Window & { unreadDividerAppeared?: boolean })
-                .unreadDividerAppeared,
-          ),
-        )
-        .toBe(false);
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as Window & {
+                openConversationCountAppeared?: boolean;
+              }
+            ).openConversationCountAppeared,
+        ),
+      ).toBe(false);
     } finally {
       bot.close();
     }

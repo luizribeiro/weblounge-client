@@ -976,7 +976,6 @@ async function installNotificationTapEngine(
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
       ...(withDirect
         ? [
@@ -990,7 +989,6 @@ async function installNotificationTapEngine(
               topic: null,
               unread: 1,
               mentions: 1,
-              read_through: null,
             },
           ]
         : []),
@@ -1025,18 +1023,17 @@ async function installNotificationTapEngine(
             },
           });
           this.emit({
-            type: "chat_list_snapshot_loaded",
+            type: "buffers_changed",
             network_id: 1,
             buffers: buffers(false).map((buffer) => ({
               ...buffer,
-              cached: true,
-              cached_preview: "cached message",
+              preview: "cached message",
             })),
           });
         }
         if (isRecord(request) && request.type === "load_pushed_messages") {
           this.emit({
-            type: "chat_list_live",
+            type: "buffers_changed",
             network_id: 1,
             buffers: buffers(true),
           });

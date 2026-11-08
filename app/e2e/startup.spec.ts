@@ -565,7 +565,7 @@ test("reveals local Ergo rows with channel and direct previews", async ({
   }
 });
 
-test("keeps seeded rows unchanged through the cached-to-live frame", async ({
+test("updates each restored row in place without a duplicate or remount", async ({
   baseURL,
   page,
 }) => {
@@ -592,20 +592,47 @@ test("keeps seeded rows unchanged through the cached-to-live frame", async ({
   await page.goto("/config.json");
   await seedChatListSnapshot(page, snapshot);
   await installSnapshotSwapEngine(page, snapshot);
-  await recordChatListSwap(page);
 
   await page.goto("/?irc-password=weblounge-test");
 
-  const filmstrip = await chatListSwapFilmstrip(page);
-  expect(filmstrip[0]?.cached).toBe(true);
-  expect(filmstrip.at(-1)?.cached).toBe(false);
-  const firstFrame = filmstrip[0]?.rows;
-  expect(firstFrame).toBeDefined();
-  for (const frame of filmstrip) expect(frame.rows).toEqual(firstFrame);
-  expect(firstFrame?.map((row) => row.title)).toEqual([
-    "zeta, 2 unread, including mentions",
-    "alpha",
-  ]);
+  await expect(
+    page.locator("[data-mobile-chat-list] [data-buffer-id]"),
+  ).toHaveCount(2);
+  expect(
+    await page
+      .locator("[data-mobile-chat-list] [data-buffer-id]")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("aria-label"))),
+  ).toEqual(["zeta, 2 unread, including mentions", "alpha"]);
+  await page.evaluate(() => {
+    Reflect.set(globalThis, "initialProjectedRows", [
+      ...document.querySelectorAll("[data-mobile-chat-list] [data-buffer-id]"),
+    ]);
+    const release = Reflect.get(globalThis, "releaseSnapshotProjection");
+    if (typeof release !== "function")
+      throw new Error("projection release missing");
+    release();
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        if (Reflect.get(globalThis, "snapshotProjectionReleased") !== true)
+          return false;
+        const initial = Reflect.get(globalThis, "initialProjectedRows");
+        const current = [
+          ...document.querySelectorAll(
+            "[data-mobile-chat-list] [data-buffer-id]",
+          ),
+        ];
+        return (
+          Array.isArray(initial) &&
+          current.length === 2 &&
+          new Set(current.map((row) => row.getAttribute("data-buffer-id")))
+            .size === current.length &&
+          current.every((row, index) => row === initial[index])
+        );
+      }),
+    )
+    .toBe(true);
 });
 
 test("drops legacy saved counts while keeping the cached list interactive", async ({
@@ -795,59 +822,6 @@ async function firstRevealRows(
   );
 }
 
-interface ChatListFrame {
-  readonly cached: boolean;
-  readonly rows: Array<{
-    readonly text: string;
-    readonly time: string | null;
-    readonly title: string | null;
-  }>;
-}
-
-async function recordChatListSwap(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Reflect.set(globalThis, "chatListSwapFilmstrip", undefined);
-    const frames: ChatListFrame[] = [];
-    let sawCached = false;
-    const sample = () => {
-      const elements = [
-        ...document.querySelectorAll<HTMLElement>(
-          "[data-mobile-chat-list] [data-buffer-id]",
-        ),
-      ];
-      const cached = elements.some((row) => row.dataset.cached === "true");
-      if (elements.length > 0 && (cached || sawCached)) {
-        sawCached ||= cached;
-        frames.push({
-          cached,
-          rows: elements.map((row) => ({
-            text: row.textContent ?? "",
-            time: row.querySelector("time")?.textContent ?? null,
-            title: row.getAttribute("aria-label"),
-          })),
-        });
-      }
-      if (sawCached && !cached) {
-        Reflect.set(globalThis, "chatListSwapFilmstrip", frames);
-      } else {
-        requestAnimationFrame(sample);
-      }
-    };
-    requestAnimationFrame(sample);
-  });
-}
-
-async function chatListSwapFilmstrip(page: Page): Promise<ChatListFrame[]> {
-  await expect
-    .poll(() =>
-      page.evaluate(() => Reflect.get(globalThis, "chatListSwapFilmstrip")),
-    )
-    .not.toBeUndefined();
-  return page.evaluate(
-    () => Reflect.get(globalThis, "chatListSwapFilmstrip") as ChatListFrame[],
-  );
-}
-
 async function installSnapshotSwapEngine(
   page: Page,
   snapshot: {
@@ -864,18 +838,16 @@ async function installSnapshotSwapEngine(
     network_id: 1,
     kind: "direct",
     sync_state: "pending",
-    cached: true,
     title: row.title,
     draft_key: `Local Ergo:${row.title}`,
     topic: null,
     unread: row.badge.kind === "none" ? 0 : (row.badge.count ?? 1),
     mentions: row.badge.kind === "mentions" ? (row.badge.count ?? 1) : 0,
-    read_through: null,
     last_activity_ms: row.last_activity_ms,
-    cached_preview: row.preview,
+    preview: row.preview,
   }));
   const live = cached.map((buffer, index) => {
-    const { cached: _, cached_preview: text, ...projection } = buffer;
+    const { cached: _, preview: text, ...projection } = buffer;
     return {
       ...projection,
       sync_state: "synced",
@@ -1058,28 +1030,24 @@ async function installHistoryStallEngine(
               },
             });
             this.emit({
-              type: "chat_list_snapshot_loaded",
+              type: "buffers_changed",
               network_id: 1,
               buffers: swap.cached,
             });
-            requestAnimationFrame(() =>
-              requestAnimationFrame(() => {
-                this.emit({
-                  type: "network_state_changed",
-                  network: {
-                    id: 1,
-                    label: "Local Ergo",
-                    nickname: "weblounge",
-                    state: "online",
-                  },
-                });
-                this.emit({
-                  type: "chat_list_live",
-                  network_id: 1,
-                  buffers: swap.live,
-                });
-              }),
-            );
+            Reflect.set(globalThis, "releaseSnapshotProjection", () => {
+              this.emit({
+                type: "network_state_changed",
+                network: {
+                  id: 1,
+                  label: "Local Ergo",
+                  nickname: "weblounge",
+                  state: "online",
+                },
+              });
+              for (const buffer of swap.live)
+                this.emit({ type: "buffer_updated", buffer });
+              Reflect.set(globalThis, "snapshotProjectionReleased", true);
+            });
             this.emit({ type: "command_result", id: payload.id });
             return;
           }
@@ -1089,7 +1057,7 @@ async function installHistoryStallEngine(
               id: 1,
               label: "Local Ergo",
               nickname: "weblounge",
-              state: "online",
+              state: "connecting",
             },
           });
           this.emit({
@@ -1107,7 +1075,6 @@ async function installHistoryStallEngine(
                 member_count: 0,
                 unread: 0,
                 mentions: 0,
-                read_through: null,
               },
             ],
           });
@@ -1167,11 +1134,11 @@ async function installDelayedLiveListEngine(
               id: 1,
               label: "Local Ergo",
               nickname: "weblounge",
-              state: "online",
+              state: "connecting",
             },
           });
           this.emit({
-            type: "chat_list_snapshot_loaded",
+            type: "buffers_changed",
             network_id: 1,
             buffers: stableRows
               ? [buffer(2, "#first", true), buffer(3, "#tapped", true)]
@@ -1186,7 +1153,16 @@ async function installDelayedLiveListEngine(
 
       releaseLiveList(): void {
         this.emit({
-          type: "chat_list_live",
+          type: "network_state_changed",
+          network: {
+            id: 1,
+            label: "Local Ergo",
+            nickname: "weblounge",
+            state: "online",
+          },
+        });
+        this.emit({
+          type: "buffers_changed",
           network_id: 1,
           buffers: stableRows
             ? [buffer(2, "#first", false), buffer(3, "#tapped", false)]
@@ -1209,8 +1185,7 @@ async function installDelayedLiveListEngine(
       member_count: 0,
       unread: 0,
       mentions: 0,
-      read_through: null,
-      ...(cached ? { cached: true, cached_preview: "seeded cache" } : {}),
+      ...(cached ? { preview: "seeded cache" } : {}),
     });
     const port = new DelayedLiveListPort();
     Object.defineProperty(globalThis, "SharedWorker", {

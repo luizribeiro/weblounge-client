@@ -72,7 +72,7 @@ test.describe("local Ergo user flow", () => {
       const activeChannel = page.locator(
         '[data-buffer-id][aria-current="page"]',
       );
-      await expect(activeChannel).toHaveAttribute("data-mentions", "1");
+      await expect(activeChannel).toHaveAttribute("data-mentions", "0");
       await expect(activeChannel).toHaveAccessibleName("#weblounge-test");
     } finally {
       bot.close();
@@ -768,9 +768,7 @@ test.describe("local Ergo user flow", () => {
       await expect(
         page.getByRole("button", { name: /new message/ }),
       ).toBeVisible();
-      await expect
-        .poll(async () => Number(await active.getAttribute("data-unread")))
-        .toBeGreaterThan(0);
+      await expect(active).toHaveAttribute("data-unread", "0");
 
       await page.keyboard.press("End");
       await expect(

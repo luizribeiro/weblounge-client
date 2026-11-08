@@ -278,11 +278,11 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
               id: 1,
               label: "Local Ergo",
               nickname: "weblounge",
-              state: "online",
+              state: "connecting",
             },
           });
           this.emit({
-            type: "chat_list_snapshot_loaded",
+            type: "buffers_changed",
             network_id: 1,
             buffers: [buffer(2, "#cached", true)],
           });
@@ -295,7 +295,16 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
 
       releaseLiveList(): void {
         this.emit({
-          type: "chat_list_live",
+          type: "network_state_changed",
+          network: {
+            id: 1,
+            label: "Local Ergo",
+            nickname: "weblounge",
+            state: "online",
+          },
+        });
+        this.emit({
+          type: "buffers_changed",
           network_id: 1,
           buffers: [buffer(3, "#live", false)],
         });
@@ -316,8 +325,7 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
       member_count: 0,
       unread: 0,
       mentions: 0,
-      read_through: null,
-      ...(cached ? { cached: true, cached_preview: "seeded cache" } : {}),
+      ...(cached ? { preview: "seeded cache" } : {}),
     });
     const port = new DelayedLiveListPort();
     Object.defineProperty(globalThis, "SharedWorker", {

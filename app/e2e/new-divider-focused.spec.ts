@@ -24,28 +24,6 @@ test.describe("New divider ownership", () => {
     });
   });
 
-  test("does not show New for a focused DM arrival at the live edge", async ({
-    isMobile,
-    page,
-  }) => {
-    const peer = await openDirect(page, "focused", isMobile);
-    try {
-      await observeUnreadBoundary(page, peer.nickname);
-      const text = `focused DM arrival ${Date.now()}`;
-      await peer.privmsgConfirmed("weblounge", text);
-
-      await expect(messageText(page, text)).toBeVisible();
-      await expect(page.locator("[data-new-line]")).toHaveCount(0);
-      await nextPaint(page);
-      await expect(page.locator("[data-new-line]")).toHaveCount(0);
-      await expect.poll(() => unreadCountAppeared(page)).toBe(true);
-      await expect.poll(() => bufferUnreadCount(page, peer.nickname)).toBe(0);
-      expect(await unreadBoundaryAppeared(page)).toBe(false);
-    } finally {
-      peer.close();
-    }
-  });
-
   test("shows New when the DM arrives while the page is hidden", async ({
     isMobile,
     page,
@@ -157,61 +135,6 @@ function bufferUnreadCount(page: Page, title: string): Promise<number> {
     if (desktopCount !== null) return Number(desktopCount);
     return Number(row.querySelector('[role="status"]')?.textContent ?? 0);
   });
-}
-
-async function observeUnreadBoundary(page: Page, title: string): Promise<void> {
-  await page.locator("[data-message-list]").evaluate((list) => {
-    const state = window as Window & {
-      unreadBoundaryAppeared?: boolean;
-      unreadCountAppeared?: boolean;
-    };
-    state.unreadBoundaryAppeared = false;
-    state.unreadCountAppeared = false;
-    new MutationObserver(() => {
-      if (list.querySelector("[data-new-line]") !== null)
-        state.unreadBoundaryAppeared = true;
-    }).observe(list, { childList: true, subtree: true });
-  });
-  await bufferRow(page, title).evaluate((row) => {
-    const state = window as Window & { unreadCountAppeared?: boolean };
-    new MutationObserver(() => {
-      const desktopCount = row.getAttribute("data-unread");
-      const count =
-        desktopCount === null
-          ? Number(row.querySelector('[role="status"]')?.textContent ?? 0)
-          : Number(desktopCount);
-      if (count > 0) state.unreadCountAppeared = true;
-    }).observe(row, {
-      attributeFilter: ["data-unread"],
-      childList: true,
-      subtree: true,
-    });
-  });
-}
-
-function unreadBoundaryAppeared(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () =>
-      (window as Window & { unreadBoundaryAppeared?: boolean })
-        .unreadBoundaryAppeared === true,
-  );
-}
-
-function unreadCountAppeared(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () =>
-      (window as Window & { unreadCountAppeared?: boolean })
-        .unreadCountAppeared === true,
-  );
-}
-
-async function nextPaint(page: Page): Promise<void> {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
 }
 
 async function setVisibility(page: Page, hidden: boolean): Promise<void> {

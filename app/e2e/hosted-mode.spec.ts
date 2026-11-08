@@ -1718,7 +1718,7 @@ async function installFakeEngine(
           });
           if (Reflect.get(globalThis, "hostedCachedChatList") === true) {
             this.emit({
-              type: "chat_list_snapshot_loaded",
+              type: "buffers_changed",
               network_id: 1,
               buffers: [
                 {
@@ -1732,9 +1732,7 @@ async function installFakeEngine(
                   member_count: 0,
                   unread: 1,
                   mentions: 0,
-                  read_through: null,
-                  cached: true,
-                  cached_preview: "available before credentials",
+                  preview: "available before credentials",
                 },
               ],
             });
@@ -1867,7 +1865,6 @@ async function installFakeEngine(
                   topic: null,
                   unread: 0,
                   mentions: 0,
-                  read_through: null,
                 },
                 {
                   id: 2,
@@ -1880,7 +1877,6 @@ async function installFakeEngine(
                   member_count: 0,
                   unread: 0,
                   mentions: 0,
-                  read_through: null,
                 },
                 {
                   id: 3,
@@ -1893,7 +1889,6 @@ async function installFakeEngine(
                   member_count: 0,
                   unread: 0,
                   mentions: 0,
-                  read_through: null,
                 },
                 ...(Reflect.get(globalThis, "hostedReadDirect") === true
                   ? [
@@ -1907,7 +1902,6 @@ async function installFakeEngine(
                         topic: null,
                         unread: 0,
                         mentions: 0,
-                        read_through: null,
                         read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
                       },
                     ]
@@ -1919,10 +1913,19 @@ async function installFakeEngine(
               "setHostedUnread",
               (unread: number, mentions: number) => {
                 this.emit({
-                  type: "unread_changed",
-                  buffer_id: 2,
-                  unread,
-                  mentions,
+                  type: "buffer_updated",
+                  buffer: {
+                    id: 2,
+                    network_id: 1,
+                    kind: "channel",
+                    sync_state: "synced",
+                    title: "#lounge",
+                    draft_key: "10:weblounge:rfc1459:#lounge",
+                    topic: null,
+                    member_count: 0,
+                    unread,
+                    mentions,
+                  },
                 });
               },
             );
