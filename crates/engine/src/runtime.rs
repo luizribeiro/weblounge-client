@@ -2065,7 +2065,7 @@ fn record_read_advances(
         output.extend(
             running
                 .model
-                .apply_read_time(advance.buffer_id, advance.time),
+                .advance_read(advance.buffer_id, advance.time, server_backed),
         );
         if server_backed {
             queue_read_advance(&mut running.pending_reads, advance);
@@ -2088,7 +2088,7 @@ fn record_read_preparations(
                 output.extend(
                     running
                         .model
-                        .apply_read_time(advance.buffer_id, advance.time),
+                        .advance_read(advance.buffer_id, advance.time, false),
                 );
             }
             ReadPreparation::Invalid => {}
@@ -11954,9 +11954,14 @@ async fn delay(duration: Duration) {
         assert!(
             confirmation_events
                 .iter()
+                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 1, .. }))
+        );
+        assert!(
+            model
+                .advance_read(buffer_id, advance.time, false)
+                .iter()
                 .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
         );
-        assert!(model.apply_read_time(buffer_id, advance.time).is_empty());
     }
 
     #[tokio::test]
