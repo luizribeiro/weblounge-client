@@ -9101,7 +9101,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn unchanged_unread_direct_queries_only_its_marker() {
+    async fn unchanged_unread_direct_queries_its_marker_and_leaves_its_send_target_lazy() {
         let caps = [
             "batch",
             "draft/chathistory",
@@ -9152,15 +9152,30 @@ async fn delay(duration: Duration) {
             1,
             NetworkId(1),
             vec![(
-                papo::Conversation::Private(nick),
+                papo::Conversation::Private(nick.clone()),
                 UNIX_EPOCH + Duration::from_millis(100),
             )],
             true,
         );
 
         let marker = wire.next_sent().await;
-        assert!(marker.ends_with("MARKREAD alice"));
+        assert!(marker.ends_with("MARKREAD alice"), "{marker}");
         assert!(!marker.contains("CHATHISTORY"));
+        let mut state = lock(&state);
+        let model = &mut state
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model;
+        assert!(matches!(
+            model.direct(&nick),
+            Some(DirectAvailability::Pending)
+        ));
+        assert!(model.begin_direct_resolution(&nick).is_some());
+        assert!(matches!(
+            model.direct(&nick),
+            Some(DirectAvailability::Resolving)
+        ));
     }
 
     #[tokio::test]

@@ -14,6 +14,73 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     "requires the flake's local Ergo fixture",
   );
 
+  test("sends from a snapshot-restored DM after TARGETS reconciliation", async ({
+    baseURL,
+    page,
+  }) => {
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const suffix = Date.now().toString(36);
+    const appAccount = `send-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
+    const keeper = await IrcClient.connectIsolated(
+      appAccount,
+      "#weblounge-test",
+    );
+    const bot = await IrcClient.connect(
+      `send-dm-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const incoming = `snapshot direct ${suffix}`;
+    const reply = `reply after TARGETS ${suffix}`;
+    try {
+      await keeper.setAlwaysOn(true);
+      keeper.close();
+      await keeper.waitForDisconnect();
+      await bot.privmsgConfirmed(appAccount, incoming);
+      await page.goto("/config.json");
+      await seedUnreadDirectSnapshot(
+        page,
+        baseURL,
+        bot.nickname,
+        incoming,
+        [],
+        [],
+      );
+      await useDedicatedWorker(page);
+      await page.goto(
+        startUrlForAccount(appAccount, appPassword, "#weblounge-test"),
+      );
+
+      await bufferRow(page, bot.nickname).click();
+      await expect(
+        page
+          .getByRole("list", { name: "Messages" })
+          .getByText(incoming, { exact: true }),
+      ).toBeVisible();
+      await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
+        "data-chat-list-hydrating",
+        "true",
+      );
+
+      const composer = page.getByRole("textbox", {
+        name: `Message ${bot.nickname}`,
+      });
+      await composer.fill(reply);
+      await composer.press("Enter");
+      await expect(
+        page.getByRole("button", { name: "Failed · Retry" }),
+      ).toHaveCount(0);
+      await expect(messageRow(page, reply, "confirmed")).toHaveCount(1);
+      await bot.waitForPrivmsg(bot.nickname, reply, appAccount);
+    } finally {
+      keeper.close();
+      bot.close();
+    }
+  });
+
   test("persists a fetched server marker before the next launch", async ({
     baseURL,
     context,
@@ -699,6 +766,12 @@ function bufferRow(page: Page, channel: string) {
       }),
     )
     .first();
+}
+
+function messageRow(page: Page, text: string, delivery: string) {
+  return page
+    .locator(`[data-message-row][data-delivery="${delivery}"]`)
+    .filter({ has: page.getByText(text, { exact: true }) });
 }
 
 async function expectRead(

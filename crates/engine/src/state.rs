@@ -1980,7 +1980,7 @@ impl NetworkModel {
                 begin_target_fetch(buffer, fetch);
             }
             if should_resolve {
-                buffer.direct = Some(DirectAvailability::Resolving);
+                buffer.direct = Some(DirectAvailability::Pending);
             }
             derive_chat_projection(buffer);
         }
