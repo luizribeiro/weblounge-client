@@ -24,6 +24,15 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep an on-device, privacy-safe log of the newest 50 service-worker push deliveries for blank
+  iPhone notification diagnosis. Each entry records only the worker/shell version, closed outcome,
+  fallback and total timing, deferred-write state, code-defined stage timings, and a safe error
+  name/reason; bounded log writes run after delivery and cannot affect presentation or receipt
+  ordering. Protected-storage diagnosis distinguishes database open and transaction failures plus
+  parser Cache API and Wasm loading. Failed database writes remain in the worker's memory for the
+  next push or unlocked app event. `/debug push` reads and copies the persisted lines inside an
+  installed Home Screen app, and built-app coverage proves a real delivered push appears without its
+  text, nick, channel or msgid.
 - [x] Remove a deadline generic after a slow push is successfully classified as a silent
   `MARKREAD` or `PING`. The coordinator now waits for any in-flight fallback presentation, closes
   only that receipt's notification, and retains final generics for route, decryption and parse
