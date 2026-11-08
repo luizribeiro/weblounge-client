@@ -56,7 +56,6 @@ struct DirectMismatch {
 struct TimelineRecord {
     projection: MessageProjection,
     counts_as_mention: bool,
-    restored_from_push: bool,
     send_text: Option<String>,
     sequence: u64,
     dedup: DedupReferences,
@@ -95,7 +94,6 @@ struct BufferState {
     direct_pin: Option<papo::PeerKey>,
     direct_mismatch: Option<DirectMismatch>,
     read_at_ms: Option<i64>,
-    local_unread_floor_ms: Option<i64>,
     cached_unread_base: u64,
     cached_mentions_base: u64,
     history: HistoryState,
@@ -344,6 +342,7 @@ pub(crate) struct NetworkModel {
     reconcilable_failed_sends: HashSet<LocalSendId>,
     recent_commands: VecDeque<String>,
     cursor: Option<SystemTime>,
+    seed_cursor: Option<SystemTime>,
     pending_live_cursor: Option<SystemTime>,
     cursor_settled: bool,
     targets_synced: bool,
@@ -391,7 +390,6 @@ impl NetworkModel {
             direct_pin: None,
             direct_mismatch: None,
             read_at_ms: None,
-            local_unread_floor_ms: None,
             cached_unread_base: 0,
             cached_mentions_base: 0,
             history: HistoryState::Ready {
@@ -422,6 +420,7 @@ impl NetworkModel {
             reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
             cursor: None,
+            seed_cursor: None,
             pending_live_cursor: None,
             cursor_settled: false,
             targets_synced: false,
@@ -580,7 +579,7 @@ impl NetworkModel {
                 }
                 buffer.direct_pin = row.peer_pin.and_then(|pin| pin.parse().ok());
                 buffer.projection.direct_identity = direct_identity(buffer);
-                derive_chat_projection(buffer);
+                derive_read_projection(buffer);
             }
         }
         self.sort_buffer_order();
@@ -590,10 +589,15 @@ impl NetworkModel {
         self.cursor
     }
 
+    fn seed_mark_ms(&self) -> Option<i64> {
+        self.cursor.max(self.seed_cursor).map(time_millis)
+    }
+
     pub(crate) fn begin_target_sync(&mut self, now: SystemTime) {
         self.targets_synced = false;
         self.pending_target_sync = None;
-        self.pending_live_cursor = self.cursor.is_none().then_some(now);
+        self.seed_cursor = Some(self.cursor.unwrap_or(now));
+        self.pending_live_cursor = None;
         self.cursor_settled = false;
     }
 
@@ -653,6 +657,7 @@ impl NetworkModel {
             .take()
             .map_or(through, |live| through.max(live));
         self.cursor = Some(self.cursor.map_or(through, |current| current.max(through)));
+        self.seed_cursor = None;
         self.cursor_settled = true;
     }
 
@@ -2417,23 +2422,6 @@ impl NetworkModel {
         ]
     }
 
-    pub(crate) fn establish_channel_unread_floor(
-        &mut self,
-        channel: &papo::ChannelName,
-        joined_at: SystemTime,
-    ) {
-        let Some(buffer_id) = self.names.get(&NameKey::Channel(channel.clone())) else {
-            return;
-        };
-        let Some(buffer) = self.buffers.get_mut(buffer_id) else {
-            return;
-        };
-        if buffer.read_at_ms.is_none() && buffer.local_unread_floor_ms.is_none() {
-            buffer.local_unread_floor_ms = Some(time_millis(joined_at));
-            derive_read_projection(buffer);
-        }
-    }
-
     pub(crate) fn apply_server_read_marker(
         &mut self,
         conversation: &papo::Conversation,
@@ -2523,8 +2511,6 @@ impl NetworkModel {
                 .find(|record| record.projection.id == message.id)
         {
             record.provisional_identity = Some(provisional_identity);
-            record.restored_from_push = true;
-            derive_read_projection(buffer);
         }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             advance_incoming_cursor(buffer, &incoming, cursor);
@@ -2835,6 +2821,7 @@ impl NetworkModel {
     ) -> BufferProjection {
         let id = BufferId(self.next_buffer_id);
         self.next_buffer_id += 1;
+        let seed_mark_ms = self.seed_mark_ms();
         let direct_key = match (&key, direct_key) {
             (NameKey::Direct(nick), None) => Some(DirectKey::from_nick(nick)),
             (_, direct_key) => direct_key,
@@ -2862,7 +2849,7 @@ impl NetworkModel {
             unread: 0,
             mentions: 0,
             read_through: None,
-            read_at_ms: None,
+            read_at_ms: seed_mark_ms,
             last_message: None,
             last_activity_ms: None,
             cached_preview: None,
@@ -2883,8 +2870,7 @@ impl NetworkModel {
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
                 direct_pin: None,
                 direct_mismatch: None,
-                read_at_ms: None,
-                local_unread_floor_ms: None,
+                read_at_ms: seed_mark_ms,
                 cached_unread_base: 0,
                 cached_mentions_base: 0,
                 history: HistoryState::Unrequested,
@@ -2972,7 +2958,6 @@ impl NetworkModel {
         let record = TimelineRecord {
             projection,
             counts_as_mention,
-            restored_from_push: false,
             send_text,
             sequence: self.next_sequence,
             dedup,
@@ -3227,10 +3212,6 @@ fn derive_read_projection(buffer: &mut BufferState) {
                 && buffer
                     .read_at_ms
                     .is_none_or(|floor| message_time(&record.projection) > floor)
-                && (record.restored_from_push
-                    || buffer
-                        .local_unread_floor_ms
-                        .is_none_or(|floor| message_time(&record.projection) > floor))
         })
         .fold((0, 0), |(unread, mentions), record| {
             (unread + 1, mentions + u64::from(record.counts_as_mention))
@@ -5731,11 +5712,11 @@ mod tests {
     }
 
     #[test]
-    fn unmarked_channel_history_is_a_baseline_for_later_unread() {
+    fn unmarked_channel_seed_makes_old_history_read_and_later_traffic_unread() {
         let (mut model, state) = model(10);
+        model.begin_target_sync(UNIX_EPOCH + Duration::from_millis(250));
         let channel = channel_name(&state, "#room");
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
-        model.establish_channel_unread_floor(&channel, UNIX_EPOCH + Duration::from_millis(250));
         model
             .request_history(buffer_id, crate::HistoryDirection::Latest)
             .expect("latest history starts");
@@ -5767,7 +5748,7 @@ mod tests {
             (buffer.projection.unread, buffer.projection.mentions),
             (0, 0)
         );
-        assert_eq!(buffer.read_at_ms, None);
+        assert_eq!(buffer.read_at_ms, Some(250));
 
         for (text, msgid, time) in [
             ("ordinary live row", "live-ordinary", 300),
@@ -5794,11 +5775,11 @@ mod tests {
     }
 
     #[test]
-    fn pushed_channel_message_remains_unread_before_reconnect_join_floor() {
+    fn pushed_channel_message_remains_unread_before_reconnect_seed() {
         let (mut model, state) = model(10);
-        let channel = channel_name(&state, "#room");
-        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
-        model.establish_channel_unread_floor(&channel, UNIX_EPOCH + Duration::from_millis(250));
+        model.restore_chat_list(
+            ChatListSnapshot::new("network".into(), Vec::new()).with_cursor_ms(Some(100)),
+        );
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
             "network_label": "Test",
@@ -5813,6 +5794,8 @@ mod tests {
         .expect("pushed message");
 
         model.restore_pushed_messages(vec![pushed], &state);
+        let channel = channel_name(&state, "#room");
+        let buffer_id = model.names[&NameKey::Channel(channel)];
         assert_eq!(
             (
                 model.buffers[&buffer_id].projection.unread,
@@ -5849,6 +5832,74 @@ mod tests {
             ),
             (0, 0)
         );
+    }
+
+    #[test]
+    fn seeded_mark_persists_and_offline_unmarked_traffic_stays_unread() {
+        let (mut first, state) = model(10);
+        first.begin_target_sync(UNIX_EPOCH + Duration::from_millis(250));
+        let channel = channel_name(&state, "#room");
+        let (buffer_id, _) = first.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        first
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("initial history starts");
+        first.receive_incoming(
+            incoming(
+                &state,
+                "old history",
+                Some("old-history"),
+                Some(200),
+                200,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        first
+            .finish_history(
+                &papo::Conversation::Channel(channel.clone()),
+                None,
+                Some(HistoryCursor::new(Some("old-history".into()), 200)),
+                1,
+                true,
+            )
+            .expect("initial history finishes");
+        first.finish_target_sync(Some(UNIX_EPOCH + Duration::from_millis(300)));
+
+        let snapshot = first.chat_list_snapshot("network".into());
+        assert_eq!(snapshot.rows[0].read_at_ms, Some(250));
+        assert_eq!(snapshot.cursor_ms, Some(300));
+
+        let mut relaunched = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 10);
+        relaunched.restore_chat_list(snapshot);
+        relaunched.begin_target_sync(UNIX_EPOCH + Duration::from_millis(400));
+        let buffer_id = relaunched.names[&NameKey::Channel(channel.clone())];
+        relaunched
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("offline delta starts");
+        relaunched.receive_incoming(
+            incoming(
+                &state,
+                "offline traffic",
+                Some("offline-traffic"),
+                Some(350),
+                350,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        relaunched
+            .finish_history(
+                &papo::Conversation::Channel(channel),
+                None,
+                Some(HistoryCursor::new(Some("offline-traffic".into()), 350)),
+                1,
+                true,
+            )
+            .expect("offline delta finishes");
+
+        let buffer = &relaunched.buffers[&buffer_id];
+        assert_eq!(buffer.read_at_ms, Some(250));
+        assert_eq!(buffer.projection.unread, 1);
     }
 
     #[test]

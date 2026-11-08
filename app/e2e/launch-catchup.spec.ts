@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import { IrcClient } from "./irc-client";
+import { useDedicatedWorker } from "./production-ergo";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -260,6 +261,52 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
     await expect(bufferRow(current, channel)).toContainText(changedText);
     await expect(bufferRow(current, channel)).toHaveAccessibleName(
       `${channel}, 2 unread`,
+    );
+  } finally {
+    if (!current.isClosed()) await current.close();
+    keeper.close();
+    writer.close();
+  }
+});
+
+test("an unmarked channel keeps pre-follow history read and offline traffic unread", async ({
+  baseURL,
+  context,
+  page,
+}) => {
+  if (baseURL === undefined) throw new Error("Playwright base URL is missing");
+  const suffix = Date.now().toString(36).slice(-5);
+  const account = `seed-${suffix}`;
+  const password = `test-${account}`;
+  const channel = `#seed-${suffix}`;
+  const keeper = await IrcClient.connectIsolated(account, channel);
+  const writer = await IrcClient.connectIsolated(`seed-w-${suffix}`, channel);
+  let current = page;
+  try {
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    const oldText = `history before this device ${suffix}`;
+    await writer.privmsgConfirmed(channel, oldText);
+
+    await useDedicatedWorker(current);
+    await current.goto(accountUrl(baseURL, account, password, channel));
+    await expect(bufferRow(current, channel)).toContainText(oldText);
+    await expect(bufferRow(current, channel)).toHaveAccessibleName(channel);
+    await expect
+      .poll(async () => (await snapshotReadAt(current, channel)) !== undefined)
+      .toBe(true);
+
+    await current.close();
+    const offlineText = `offline unmarked traffic ${suffix}`;
+    await writer.privmsgConfirmed(channel, offlineText);
+
+    current = await context.newPage();
+    await useDedicatedWorker(current);
+    await current.goto(accountUrl(baseURL, account, password, channel));
+    await expect(bufferRow(current, channel)).toContainText(offlineText);
+    await expect(bufferRow(current, channel)).toHaveAccessibleName(
+      `${channel}, 1 unread`,
     );
   } finally {
     if (!current.isClosed()) await current.close();
@@ -556,6 +603,60 @@ async function snapshotSchema(page: Page): Promise<number | undefined> {
           };
           request.onerror = () => reject(request.error);
         }),
+    );
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}
+
+async function snapshotReadAt(
+  page: Page,
+  title: string,
+): Promise<number | undefined> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(
+      (value, rowTitle) =>
+        new Promise<number | undefined>((resolve, reject) => {
+          const request = value
+            .transaction("cache", "readonly")
+            .objectStore("cache")
+            .get(new TextEncoder().encode("chat-list-snapshot"));
+          request.onsuccess = () => {
+            const bytes = request.result as Uint8Array | undefined;
+            if (bytes === undefined) {
+              resolve(undefined);
+              return;
+            }
+            const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+            if (
+              typeof parsed !== "object" ||
+              parsed === null ||
+              !("rows" in parsed) ||
+              !Array.isArray(parsed.rows)
+            ) {
+              resolve(undefined);
+              return;
+            }
+            const row = parsed.rows.find(
+              (candidate: unknown) =>
+                typeof candidate === "object" &&
+                candidate !== null &&
+                "title" in candidate &&
+                candidate.title === rowTitle,
+            );
+            resolve(
+              typeof row === "object" &&
+                row !== null &&
+                "read_at_ms" in row &&
+                typeof row.read_at_ms === "number"
+                ? row.read_at_ms
+                : undefined,
+            );
+          };
+          request.onerror = () => reject(request.error);
+        }),
+      title,
     );
   } finally {
     await closeEngineDatabase(database);
