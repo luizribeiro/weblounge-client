@@ -3422,7 +3422,7 @@ fn spawn_target_reconciliation(
             .network
             .as_ref()
             .filter(|running| running.instance == instance)
-            .and_then(|running| running.model.last_sync())
+            .and_then(|running| running.model.cursor())
             .unwrap_or_else(|| {
                 until
                     .checked_sub(RECENT_DIRECT_WINDOW)
@@ -3438,7 +3438,7 @@ fn spawn_target_reconciliation(
             .map(|recent| (recent.conversation, recent.latest_server_time))
             .collect();
         restore_target_rows(
-            &state, &outbound, &client, instance, network_id, recent, complete,
+            &state, &outbound, &client, instance, recent, complete, until,
         );
     });
 }
@@ -3482,13 +3482,12 @@ fn restore_target_rows(
     outbound: &mpsc::UnboundedSender<EngineToUi>,
     client: &papo::Client,
     instance: u64,
-    network_id: NetworkId,
     recent: Vec<(papo::Conversation, SystemTime)>,
     complete: bool,
+    upper_bound: SystemTime,
 ) {
     let snapshot = client.state();
     let target_count = recent.len();
-    let latest_observed = recent.iter().map(|(_, latest)| *latest).max();
     let mut channel_fetches = Vec::new();
     let mut directs = recent
         .into_iter()
@@ -3517,8 +3516,7 @@ fn restore_target_rows(
     });
     let mut seen = HashSet::new();
     directs.retain(|(nick, _)| seen.insert(nick.key().to_owned()));
-    let covered_through =
-        target_sync_boundary(complete, target_count, directs.len(), latest_observed);
+    let covered_through = target_sync_boundary(complete, target_count, directs.len(), upper_bound);
     directs.truncate(RECENT_DIRECT_LIMIT);
     let Some((mut output, direct_fetches, marker_targets)) =
         restore_direct_target_rows(state, instance, directs)
@@ -3534,6 +3532,7 @@ fn restore_target_rows(
     else {
         return;
     };
+    let network_id = running.model.id();
     running.model.finish_target_sync(covered_through);
     output.push(running.model.buffers_event());
     drop(runtime);
@@ -3596,11 +3595,10 @@ fn target_sync_boundary(
     complete: bool,
     target_count: usize,
     direct_count: usize,
-    latest_observed: Option<SystemTime>,
+    upper_bound: SystemTime,
 ) -> Option<SystemTime> {
     (complete && target_count < RECENT_TARGET_LIMIT && direct_count <= RECENT_DIRECT_LIMIT)
-        .then_some(latest_observed)
-        .flatten()
+        .then_some(upper_bound)
 }
 
 fn running_network_id(state: &Arc<Mutex<RuntimeState>>, instance: u64) -> Option<NetworkId> {
@@ -3757,6 +3755,7 @@ fn process_papo_event(
     output: &mut Vec<EngineToUi>,
 ) -> EventEffects {
     let mut effects = EventEffects::default();
+    let live_server_time = event.server_time();
     effects.history_fetches = match event {
         papo::Event::Connecting(connecting) => {
             process_connecting(running, &connecting, output);
@@ -3850,6 +3849,7 @@ fn process_papo_event(
         }
         _ => Vec::new(),
     };
+    running.model.observe_live_server_time(live_server_time);
     effects
 }
 
@@ -4021,7 +4021,7 @@ fn process_connected(
             .model
             .set_connection(next, Some(connected.nick.to_string())),
     );
-    running.model.begin_target_sync();
+    running.model.begin_target_sync(papo::time::now());
     output.extend(running.model.sync_channels(snapshot));
     let history_fetches = running.model.connected_history();
     if !history_fetches.is_empty() {
@@ -5346,16 +5346,19 @@ async fn delay(duration: Duration) {
     }
 
     #[test]
-    fn target_boundary_uses_observed_server_time_only_for_complete_results() {
-        let observed = UNIX_EPOCH + Duration::from_secs(200);
+    fn target_boundary_uses_the_query_upper_bound_only_for_complete_results() {
+        let upper_bound = UNIX_EPOCH + Duration::from_secs(200);
 
         assert_eq!(
-            target_sync_boundary(true, 2, 1, Some(observed)),
-            Some(observed)
+            target_sync_boundary(true, 2, 1, upper_bound),
+            Some(upper_bound)
         );
-        assert_eq!(target_sync_boundary(true, 1_000, 1, Some(observed)), None);
-        assert_eq!(target_sync_boundary(true, 101, 101, Some(observed)), None);
-        assert_eq!(target_sync_boundary(true, 0, 0, None), None);
+        assert_eq!(target_sync_boundary(true, 1_000, 1, upper_bound), None);
+        assert_eq!(target_sync_boundary(true, 101, 101, upper_bound), None);
+        assert_eq!(
+            target_sync_boundary(true, 0, 0, upper_bound),
+            Some(upper_bound)
+        );
     }
 
     fn runtime_state(network: RunningNetwork) -> RuntimeState {
@@ -8556,7 +8559,7 @@ async fn delay(duration: Duration) {
                     peer_pin: None,
                 }],
             )
-            .with_synced_through_ms(Some(100)),
+            .with_cursor_ms(Some(100)),
         );
         running
             .model
@@ -9161,7 +9164,7 @@ async fn delay(duration: Duration) {
         let state = lock(&state);
         let running = state.network.as_ref().expect("network remains active");
         assert!(running.model.chat_list_complete());
-        assert!(running.model.last_sync().is_some());
+        assert!(running.model.cursor().is_some());
     }
 
     #[tokio::test]
@@ -9178,12 +9181,12 @@ async fn delay(duration: Duration) {
             &outbound,
             &client,
             1,
-            NetworkId(1),
             vec![(
                 papo::Conversation::Channel(channel),
                 UNIX_EPOCH + Duration::from_millis(300),
             )],
             true,
+            UNIX_EPOCH + Duration::from_millis(300),
         );
 
         let after = next_sent_containing(&mut wire, " CHATHISTORY AFTER #room ").await;
@@ -9193,7 +9196,7 @@ async fn delay(duration: Duration) {
                 .as_ref()
                 .expect("network remains active")
                 .model
-                .last_sync(),
+                .cursor(),
             Some(UNIX_EPOCH + Duration::from_millis(100))
         );
         send_history_page(&mut wire, request_label(&after), &[]).await;
@@ -9249,12 +9252,12 @@ async fn delay(duration: Duration) {
             &outbound,
             &client,
             1,
-            NetworkId(1),
             vec![(
                 papo::Conversation::Private(nick.clone()),
                 UNIX_EPOCH + Duration::from_millis(100),
             )],
             true,
+            UNIX_EPOCH + Duration::from_millis(100),
         );
 
         let marker = wire.next_sent().await;
@@ -9320,10 +9323,37 @@ async fn delay(duration: Duration) {
         .await
         .expect("direct latest history becomes ready");
 
+        let live_cursor_text =
+            papo_proto::time::format(papo::time::now()).expect("live cursor formats");
+        let live_cursor =
+            papo_proto::time::parse(&live_cursor_text).expect("formatted live cursor parses");
+        wire.server(format!(
+            "@time={live_cursor_text} :offline.test NOTICE weblounge :live cursor"
+        ))
+        .await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if lock(&state)
+                    .network
+                    .as_ref()
+                    .expect("network remains active")
+                    .model
+                    .cursor()
+                    == Some(live_cursor)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("settled live traffic advances the persisted boundary");
+
         wire.close().await;
         client.reconnect().await.expect("manual reconnect starts");
         register_for_history(&mut wire).await;
         let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
+        assert!(targets.contains(&format!("timestamp={live_cursor_text}")));
         send_recent_targets(
             &mut wire,
             request_label(&targets),

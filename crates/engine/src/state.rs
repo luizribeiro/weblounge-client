@@ -343,7 +343,9 @@ pub(crate) struct NetworkModel {
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     reconcilable_failed_sends: HashSet<LocalSendId>,
     recent_commands: VecDeque<String>,
-    last_sync: Option<SystemTime>,
+    cursor: Option<SystemTime>,
+    pending_live_cursor: Option<SystemTime>,
+    cursor_settled: bool,
     targets_synced: bool,
     pending_target_sync: Option<PendingTargetSync>,
     #[cfg(test)]
@@ -419,7 +421,9 @@ impl NetworkModel {
             fallbacks: HashMap::new(),
             reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
-            last_sync: None,
+            cursor: None,
+            pending_live_cursor: None,
+            cursor_settled: false,
             targets_synced: false,
             pending_target_sync: None,
             #[cfg(test)]
@@ -534,7 +538,7 @@ impl NetworkModel {
     }
 
     pub(crate) fn restore_chat_list(&mut self, snapshot: ChatListSnapshot) {
-        self.last_sync = snapshot.synced_through_ms.map(system_time_from_millis);
+        self.cursor = snapshot.cursor_ms.map(system_time_from_millis);
         for row in snapshot.rows {
             let key = match row.conversation {
                 SnapshotConversation::Channel { key } => {
@@ -582,18 +586,21 @@ impl NetworkModel {
         self.sort_buffer_order();
     }
 
-    pub(crate) const fn last_sync(&self) -> Option<SystemTime> {
-        self.last_sync
+    pub(crate) const fn cursor(&self) -> Option<SystemTime> {
+        self.cursor
     }
 
-    pub(crate) fn begin_target_sync(&mut self) {
+    pub(crate) fn begin_target_sync(&mut self, now: SystemTime) {
         self.targets_synced = false;
         self.pending_target_sync = None;
+        self.pending_live_cursor = self.cursor.is_none().then_some(now);
+        self.cursor_settled = false;
     }
 
     pub(crate) fn finish_target_sync(&mut self, until: Option<SystemTime>) {
         self.targets_synced = true;
         let Some(until) = until else {
+            self.pending_live_cursor = None;
             return;
         };
         let unresolved = self
@@ -608,7 +615,7 @@ impl NetworkModel {
             .filter_map(|buffer| buffer.key.clone())
             .collect::<HashSet<_>>();
         if unresolved.is_empty() {
-            self.advance_target_sync(until);
+            self.settle_cursor(until);
         } else {
             self.pending_target_sync = Some(PendingTargetSync {
                 through: until,
@@ -633,16 +640,34 @@ impl NetworkModel {
             .pending_target_sync
             .take()
             .expect("pending target sync");
-        if !sync.failed {
-            self.advance_target_sync(sync.through);
+        if sync.failed {
+            self.pending_live_cursor = None;
+        } else {
+            self.settle_cursor(sync.through);
         }
     }
 
-    fn advance_target_sync(&mut self, through: SystemTime) {
-        self.last_sync = Some(
-            self.last_sync
-                .map_or(through, |current| current.max(through)),
-        );
+    fn settle_cursor(&mut self, through: SystemTime) {
+        let through = self
+            .pending_live_cursor
+            .take()
+            .map_or(through, |live| through.max(live));
+        self.cursor = Some(self.cursor.map_or(through, |current| current.max(through)));
+        self.cursor_settled = true;
+    }
+
+    pub(crate) fn observe_live_server_time(&mut self, time: Option<SystemTime>) {
+        let Some(time) = time.filter(|_| self.is_online()) else {
+            return;
+        };
+        if self.cursor_settled {
+            self.cursor = Some(self.cursor.map_or(time, |current| current.max(time)));
+        } else {
+            self.pending_live_cursor = Some(
+                self.pending_live_cursor
+                    .map_or(time, |current| current.max(time)),
+            );
+        }
     }
 
     pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
@@ -702,8 +727,7 @@ impl NetworkModel {
             })
             .filter_map(snapshot_row)
             .collect();
-        ChatListSnapshot::new(fingerprint, rows)
-            .with_synced_through_ms(self.last_sync.map(time_millis))
+        ChatListSnapshot::new(fingerprint, rows).with_cursor_ms(self.cursor.map(time_millis))
     }
 
     pub(crate) fn merge_chat_list_snapshot(
@@ -741,8 +765,7 @@ impl NetworkModel {
                 Some(row)
             })
             .collect();
-        ChatListSnapshot::new(fingerprint, rows)
-            .with_synced_through_ms(self.last_sync.map(time_millis))
+        ChatListSnapshot::new(fingerprint, rows).with_cursor_ms(self.cursor.map(time_millis))
     }
 
     fn ordered_buffers(&self) -> Vec<BufferProjection> {
@@ -3496,7 +3519,7 @@ mod tests {
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
-        MembershipProjection, MessageAuthorship, NetworkId,
+        MembershipProjection, MessageAuthorship, NetworkConnectionState, NetworkId,
         chat_list_snapshot::{
             ChatListSnapshot, SnapshotBadge, SnapshotConversation, SnapshotCursor, SnapshotRow,
         },
@@ -4150,7 +4173,7 @@ mod tests {
                     peer_pin: None,
                 }],
             )
-            .with_synced_through_ms(Some(100)),
+            .with_cursor_ms(Some(100)),
         );
         let channel = channel_name(&state, "#room");
         let fetch = model
@@ -4158,9 +4181,11 @@ mod tests {
             .expect("changed channel starts a delta");
 
         model.finish_target_sync(Some(UNIX_EPOCH + Duration::from_millis(300)));
+        model.set_connection(NetworkConnectionState::Online, None);
+        model.observe_live_server_time(Some(UNIX_EPOCH + Duration::from_millis(400)));
 
         assert_eq!(
-            model.last_sync(),
+            model.cursor(),
             Some(UNIX_EPOCH + Duration::from_millis(100))
         );
         assert_eq!(
@@ -4169,7 +4194,7 @@ mod tests {
                     "network".into(),
                     &ChatListSnapshot::new("network".into(), Vec::new())
                 )
-                .synced_through_ms,
+                .cursor_ms,
             Some(100)
         );
         let HistoryFetch::After { target, .. } = fetch else {
@@ -4179,25 +4204,27 @@ mod tests {
             .finish_history(&target.conversation(), None, None, 1, true)
             .expect("delta finishes");
         assert_eq!(
-            model.last_sync(),
-            Some(UNIX_EPOCH + Duration::from_millis(300))
+            model.cursor(),
+            Some(UNIX_EPOCH + Duration::from_millis(400))
         );
     }
 
     #[test]
     fn failed_target_delta_does_not_advance_the_sync_boundary() {
         let (mut model, state) = model(10);
-        model.last_sync = Some(UNIX_EPOCH + Duration::from_millis(100));
+        model.cursor = Some(UNIX_EPOCH + Duration::from_millis(100));
         let channel = channel_name(&state, "#room");
         let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
         model.buffers.get_mut(&buffer_id).expect("channel").history = HistoryState::LoadingLatest;
         model.finish_target_sync(Some(UNIX_EPOCH + Duration::from_millis(300)));
+        model.set_connection(NetworkConnectionState::Online, None);
+        model.observe_live_server_time(Some(UNIX_EPOCH + Duration::from_millis(400)));
         let fetch = HistoryFetch::Latest(HistoryTarget::Channel(channel));
 
         model.fail_history(&fetch).expect("delta fails");
 
         assert_eq!(
-            model.last_sync(),
+            model.cursor(),
             Some(UNIX_EPOCH + Duration::from_millis(100))
         );
         assert!(model.pending_target_sync.is_none());

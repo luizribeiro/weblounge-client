@@ -12,8 +12,12 @@ pub(crate) const PREVIEW_LIMIT: usize = 80;
 pub(crate) struct ChatListSnapshot {
     schema: u32,
     fingerprint: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) synced_through_ms: Option<i64>,
+    #[serde(
+        default,
+        alias = "synced_through_ms",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) cursor_ms: Option<i64>,
     pub(crate) rows: Vec<SnapshotRow>,
 }
 
@@ -22,13 +26,13 @@ impl ChatListSnapshot {
         Self {
             schema: SCHEMA_VERSION,
             fingerprint,
-            synced_through_ms: None,
+            cursor_ms: None,
             rows,
         }
     }
 
-    pub(crate) const fn with_synced_through_ms(mut self, synced_through_ms: Option<i64>) -> Self {
-        self.synced_through_ms = synced_through_ms;
+    pub(crate) const fn with_cursor_ms(mut self, cursor_ms: Option<i64>) -> Self {
+        self.cursor_ms = cursor_ms;
         self
     }
 
@@ -193,7 +197,7 @@ mod tests {
                 },
             ],
         )
-        .with_synced_through_ms(Some(1_700_000_000_100))
+        .with_cursor_ms(Some(1_700_000_000_100))
     }
 
     #[test]
@@ -203,7 +207,8 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
 
         assert_eq!(value["schema"], 5);
-        assert_eq!(value["synced_through_ms"], 1_700_000_000_100_i64);
+        assert_eq!(value["cursor_ms"], 1_700_000_000_100_i64);
+        assert!(value.get("synced_through_ms").is_none());
         assert_eq!(value["rows"][0]["last_activity_ms"], 1_700_000_000_000_i64);
         assert_eq!(value["rows"][0]["newest"]["msgid"], "newest-1");
         assert_eq!(value["rows"][0]["read_at_ms"], 1_699_999_999_000_i64);
@@ -242,6 +247,25 @@ mod tests {
     }
 
     #[test]
+    fn sync_boundary_field_decodes_as_the_network_cursor() {
+        let snapshot = snapshot();
+        let expected = fingerprint("Lounge", "wss://irc.example");
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&snapshot.encode().expect("encode")).expect("json");
+        let cursor = legacy
+            .as_object_mut()
+            .expect("snapshot")
+            .remove("cursor_ms")
+            .expect("cursor");
+        legacy["synced_through_ms"] = cursor;
+
+        assert_eq!(
+            ChatListSnapshot::decode(&serde_json::to_vec(&legacy).expect("json"), &expected),
+            Some(snapshot)
+        );
+    }
+
+    #[test]
     fn account_key_schema_migrates_without_inventing_peer_pins() {
         let snapshot = snapshot();
         let expected = fingerprint("Lounge", "wss://irc.example");
@@ -251,7 +275,7 @@ mod tests {
         legacy
             .as_object_mut()
             .expect("snapshot")
-            .remove("synced_through_ms");
+            .remove("cursor_ms");
         for row in legacy["rows"].as_array_mut().expect("rows") {
             let badge = row["badge"].as_object_mut().expect("badge");
             if badge["kind"] == "unread" {
@@ -267,7 +291,7 @@ mod tests {
                 .expect("schema 2 migrates");
 
         assert_eq!(migrated.schema, 5);
-        assert_eq!(migrated.synced_through_ms, None);
+        assert_eq!(migrated.cursor_ms, None);
         assert!(migrated.rows.iter().all(|row| row.peer_pin.is_none()));
         assert_eq!(migrated.rows[0].badge, SnapshotBadge::Unread { count: 1 });
         assert_eq!(
@@ -289,7 +313,7 @@ mod tests {
         legacy
             .as_object_mut()
             .expect("snapshot")
-            .remove("synced_through_ms");
+            .remove("cursor_ms");
         legacy["rows"][0]["badge"] = serde_json::json!({ "kind": "unread" });
         legacy["rows"][1]["badge"] = serde_json::json!({ "kind": "mentions", "count": 3 });
 
