@@ -57,28 +57,37 @@ test("starts under the beta CSP without a policy violation", async ({
   expect(consoleViolations).toEqual([]);
 });
 
-test("shimmers through cached-list hydration and finishes its sweep", async ({
+test("shimmers through restored projection updates and finishes its sweep", async ({
   page,
 }) => {
-  await installDelayedLiveListEngine(page);
+  await installDelayedProjectionEngine(page);
 
   await page.goto("/?irc-password=weblounge-test");
 
-  await expect(page.getByRole("button", { name: "#cached" })).toBeVisible();
+  const row = page.getByRole("button", { name: "#restored" });
+  await expect(row).toBeVisible();
+  await row.evaluate((element) =>
+    Reflect.set(globalThis, "initialRestoredRow", element),
+  );
   await expect(
     page.locator("[data-mobile-chats] [data-connection-progress]"),
   ).toBeVisible();
-  await observeCachedListShimmer(page);
+  await observeProjectionShimmer(page);
   await page.evaluate(() => {
-    const release = Reflect.get(globalThis, "releaseLiveChatList");
-    if (typeof release !== "function") throw new Error("live list unavailable");
+    const release = Reflect.get(globalThis, "releaseSnapshotProjection");
+    if (typeof release !== "function")
+      throw new Error("snapshot projection unavailable");
     release();
   });
 
-  await expect(page.getByRole("button", { name: "#live" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "#cached" })).toHaveCount(0);
+  await expect(row).toContainText("live projection");
+  expect(
+    await row.evaluate(
+      (element) => element === Reflect.get(globalThis, "initialRestoredRow"),
+    ),
+  ).toBe(true);
   await expect
-    .poll(() => cachedListShimmerObservation(page))
+    .poll(() => projectionShimmerObservation(page))
     .toMatchObject({
       filled: true,
       progressAtSwap: true,
@@ -90,17 +99,17 @@ test("shimmers through cached-list hydration and finishes its sweep", async ({
   ).toHaveCount(0);
 });
 
-test.describe("desktop cached chat list", () => {
+test.describe("desktop restored chat list", () => {
   test.use({
     hasTouch: false,
     isMobile: false,
     viewport: { width: 1280, height: 800 },
   });
 
-  test("opens a cached row when the live list arrives during its tap", async ({
+  test("opens a restored row when its projection updates during a tap", async ({
     page,
   }) => {
-    await installDelayedLiveListEngine(page, true);
+    await installDelayedProjectionEngine(page, true);
     await page.goto("/?irc-password=weblounge-test");
 
     const row = page.getByRole("button", { name: "#tapped" });
@@ -116,14 +125,11 @@ test.describe("desktop cached chat list", () => {
     );
     await page.mouse.down();
     await page.evaluate(() => {
-      const release = Reflect.get(globalThis, "releaseLiveChatList");
+      const release = Reflect.get(globalThis, "releaseSnapshotProjection");
       if (typeof release !== "function")
-        throw new Error("live list unavailable");
+        throw new Error("snapshot projection unavailable");
       release();
     });
-    await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
-      "data-chat-list-hydrating",
-    );
     await page.mouse.up();
 
     await expect(page.locator("[data-conversation-title]")).toContainText(
@@ -424,12 +430,12 @@ test("uses cached config and chats while config revalidation is blocked", async 
       JSON.stringify({ config: { mode: "app" }, schema: 1 }),
     );
   });
-  await installDelayedLiveListEngine(page);
+  await installDelayedProjectionEngine(page);
   await page.route("**/config.json", () => new Promise(() => {}));
 
   await page.goto("/?irc-password=weblounge-test");
 
-  await expect(page.getByRole("button", { name: "#cached" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "#restored" })).toBeVisible();
   await expect(page.getByText(/misconfigured/iu)).toHaveCount(0);
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
 });
@@ -635,7 +641,7 @@ test("updates each restored row in place without a duplicate or remount", async 
     .toBe(true);
 });
 
-test("drops legacy saved counts while keeping the cached list interactive", async ({
+test("drops legacy saved counts while keeping the restored list interactive", async ({
   baseURL,
   context,
   page,
@@ -693,7 +699,7 @@ test("drops legacy saved counts while keeping the cached list interactive", asyn
     await expect(
       page.locator("[data-mobile-chats] [data-connection-progress]"),
     ).toBeVisible();
-    await observeCachedListShimmer(page);
+    await observeProjectionShimmer(page, "This conversation is not available.");
     await page.getByRole("button", { name: "#cached" }).click();
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
     await page.getByRole("textbox").fill("queued from cache");
@@ -711,7 +717,7 @@ test("drops legacy saved counts while keeping the cached list interactive", asyn
       page.getByText("This conversation is not available."),
     ).toBeVisible();
     await expect
-      .poll(() => cachedListShimmerObservation(page))
+      .poll(() => projectionShimmerObservation(page))
       .toMatchObject({
         filled: true,
         progressAtSwap: true,
@@ -738,7 +744,7 @@ test("drops legacy saved counts while keeping the cached list interactive", asyn
   }
 });
 
-test("reveals after the hydration cap when latest history stalls", async ({
+test("reveals restored rows without waiting for stalled history", async ({
   page,
 }) => {
   test.skip(
@@ -762,8 +768,7 @@ test("reveals after the hydration cap when latest history stalls", async ({
     online: Reflect.get(globalThis, "startupOnlineAt") as number,
     reveal: Reflect.get(globalThis, "startupRevealAt") as number,
   }));
-  // wait-ok: verifies the fixed 400ms product cap rather than waiting for state.
-  expect(measured.reveal - measured.online).toBeGreaterThanOrEqual(380);
+  expect(measured.reveal - measured.online).toBeLessThan(380);
   await expect(page.locator("[data-initial-splash]")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "#weblounge-test" }),
@@ -847,7 +852,7 @@ async function installSnapshotSwapEngine(
     preview: row.preview,
   }));
   const live = cached.map((buffer, index) => {
-    const { cached: _, preview: text, ...projection } = buffer;
+    const { preview: text, ...projection } = buffer;
     return {
       ...projection,
       sync_state: "synced",
@@ -904,8 +909,11 @@ interface ShimmerObservation {
   readonly swapIterations?: number;
 }
 
-async function observeCachedListShimmer(page: Page): Promise<void> {
-  await page.evaluate(() => {
+async function observeProjectionShimmer(
+  page: Page,
+  settledText?: string,
+): Promise<void> {
+  await page.evaluate((settledText) => {
     const logo = document.querySelector(
       "[data-mobile-chats] [data-connection-progress]",
     );
@@ -917,7 +925,7 @@ async function observeCachedListShimmer(page: Page): Promise<void> {
       stoppedAtIteration?: number;
       swapIterations?: number;
     } = { iterations: 0 };
-    Reflect.set(globalThis, "cachedListShimmerObservation", observation);
+    Reflect.set(globalThis, "projectionShimmerObservation", observation);
     document.addEventListener(
       "animationiteration",
       (event) => {
@@ -929,11 +937,14 @@ async function observeCachedListShimmer(page: Page): Promise<void> {
       if (logo.getAttribute("data-connection-phase") === "filling") {
         observation.filled = true;
       }
-      if (
+      const projectionSettled =
         observation.swapIterations === undefined &&
-        document.querySelector('[data-buffer-id][aria-label="#cached"]') ===
-          null
-      ) {
+        (document
+          .querySelector('[data-buffer-id][aria-label="#restored"]')
+          ?.textContent?.includes("live projection") === true ||
+          (settledText !== undefined &&
+            document.body.textContent?.includes(settledText) === true));
+      if (projectionSettled) {
         observation.progressAtSwap = logo.hasAttribute(
           "data-connection-progress",
         );
@@ -949,17 +960,17 @@ async function observeCachedListShimmer(page: Page): Promise<void> {
       childList: true,
       subtree: true,
     });
-  });
+  }, settledText);
 }
 
-async function cachedListShimmerObservation(
+async function projectionShimmerObservation(
   page: Page,
 ): Promise<ShimmerObservation> {
   return page.evaluate(
     () =>
       Reflect.get(
         globalThis,
-        "cachedListShimmerObservation",
+        "projectionShimmerObservation",
       ) as ShimmerObservation,
   );
 }
@@ -1103,18 +1114,18 @@ async function installHistoryStallEngine(
   }, swap);
 }
 
-async function installDelayedLiveListEngine(
+async function installDelayedProjectionEngine(
   page: Page,
   stableRows = false,
 ): Promise<void> {
   await page.addInitScript((stableRows) => {
-    class DelayedLiveListPort extends EventTarget {
+    class DelayedProjectionPort extends EventTarget {
       postMessage(message: unknown): void {
         if (!isRecord(message)) return;
         if (message.type === "hello") {
           this.emit({
             type: "ready",
-            engine_instance: "delayed-live-list-engine",
+            engine_instance: "delayed-projection-engine",
             revision: 0,
           });
           return;
@@ -1142,7 +1153,7 @@ async function installDelayedLiveListEngine(
             network_id: 1,
             buffers: stableRows
               ? [buffer(2, "#first", true), buffer(3, "#tapped", true)]
-              : [buffer(2, "#cached", true)],
+              : [buffer(2, "#restored", true)],
           });
         }
         this.emit({ type: "command_result", id: payload.id });
@@ -1151,7 +1162,7 @@ async function installDelayedLiveListEngine(
       start(): void {}
       close(): void {}
 
-      releaseLiveList(): void {
+      releaseProjection(): void {
         this.emit({
           type: "network_state_changed",
           network: {
@@ -1161,13 +1172,11 @@ async function installDelayedLiveListEngine(
             state: "online",
           },
         });
-        this.emit({
-          type: "buffers_changed",
-          network_id: 1,
-          buffers: stableRows
-            ? [buffer(2, "#first", false), buffer(3, "#tapped", false)]
-            : [buffer(3, "#live", false)],
-        });
+        const buffers = stableRows
+          ? [buffer(2, "#first", false), buffer(3, "#tapped", false)]
+          : [buffer(2, "#restored", false)];
+        for (const projection of buffers)
+          this.emit({ type: "buffer_updated", buffer: projection });
       }
 
       private emit(data: unknown): void {
@@ -1185,17 +1194,17 @@ async function installDelayedLiveListEngine(
       member_count: 0,
       unread: 0,
       mentions: 0,
-      ...(cached ? { preview: "seeded cache" } : {}),
+      preview: cached ? "seeded snapshot" : "live projection",
     });
-    const port = new DelayedLiveListPort();
+    const port = new DelayedProjectionPort();
     Object.defineProperty(globalThis, "SharedWorker", {
       configurable: true,
       value: class {
         readonly port = port;
       },
     });
-    Reflect.set(globalThis, "releaseLiveChatList", () =>
-      port.releaseLiveList(),
+    Reflect.set(globalThis, "releaseSnapshotProjection", () =>
+      port.releaseProjection(),
     );
 
     function isRecord(value: unknown): value is Record<string, unknown> {

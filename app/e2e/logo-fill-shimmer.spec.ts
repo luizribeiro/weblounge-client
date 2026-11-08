@@ -16,7 +16,7 @@ for (const shell of ["desktop", "mobile"] as const) {
       browserName,
       page,
     }) => {
-      await installDelayedLiveListEngine(page);
+      await installDelayedProjectionEngine(page);
       await page.goto("/");
       const brand = connectionBrand(page, shell);
       await expect(brand).toHaveAttribute("data-connection-phase", "loading");
@@ -70,7 +70,7 @@ for (const shell of ["desktop", "mobile"] as const) {
       await brand.evaluate((element) => {
         for (const animation of element.getAnimations({ subtree: true }))
           animation.play();
-        const release = Reflect.get(globalThis, "releaseLiveChatList");
+        const release = Reflect.get(globalThis, "releaseSnapshotProjection");
         if (typeof release !== "function") throw new Error("release missing");
         release();
       });
@@ -97,7 +97,7 @@ for (const shell of ["desktop", "mobile"] as const) {
 
     test("uses a static partial fill with reduced motion", async ({ page }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await installDelayedLiveListEngine(page);
+      await installDelayedProjectionEngine(page);
       await page.goto("/");
       const brand = connectionBrand(page, shell);
 
@@ -111,7 +111,7 @@ for (const shell of ["desktop", "mobile"] as const) {
       );
 
       await page.evaluate(() => {
-        const release = Reflect.get(globalThis, "releaseLiveChatList");
+        const release = Reflect.get(globalThis, "releaseSnapshotProjection");
         if (typeof release !== "function") throw new Error("release missing");
         release();
       });
@@ -238,7 +238,7 @@ function maxPixelChange(baseline: Frame, frame: Frame, rect: Rect): number {
   return maximum;
 }
 
-async function installDelayedLiveListEngine(page: Page): Promise<void> {
+async function installDelayedProjectionEngine(page: Page): Promise<void> {
   await page.addInitScript(() => {
     let hidden = false;
     Object.defineProperties(document, {
@@ -252,7 +252,7 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
       hidden = next;
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    class DelayedLiveListPort extends EventTarget {
+    class DelayedProjectionPort extends EventTarget {
       postMessage(message: unknown): void {
         if (!isRecord(message)) return;
         if (message.type === "hello") {
@@ -284,7 +284,7 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
           this.emit({
             type: "buffers_changed",
             network_id: 1,
-            buffers: [buffer(2, "#cached", true)],
+            buffers: [buffer(true)],
           });
         }
         this.emit({ type: "command_result", id: payload.id });
@@ -293,7 +293,7 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
       start(): void {}
       close(): void {}
 
-      releaseLiveList(): void {
+      releaseProjection(): void {
         this.emit({
           type: "network_state_changed",
           network: {
@@ -303,39 +303,35 @@ async function installDelayedLiveListEngine(page: Page): Promise<void> {
             state: "online",
           },
         });
-        this.emit({
-          type: "buffers_changed",
-          network_id: 1,
-          buffers: [buffer(3, "#live", false)],
-        });
+        this.emit({ type: "buffer_updated", buffer: buffer(false) });
       }
 
       private emit(data: unknown): void {
         this.dispatchEvent(new MessageEvent("message", { data }));
       }
     }
-    const buffer = (id: number, title: string, cached: boolean) => ({
-      id,
+    const buffer = (restored: boolean) => ({
+      id: 2,
       network_id: 1,
       kind: "channel",
-      sync_state: cached ? "pending" : "synced",
-      title,
-      draft_key: `test:${title}`,
+      sync_state: restored ? "pending" : "synced",
+      title: "#restored",
+      draft_key: "test:#restored",
       topic: null,
       member_count: 0,
       unread: 0,
       mentions: 0,
-      ...(cached ? { preview: "seeded cache" } : {}),
+      preview: restored ? "seeded snapshot" : "live projection",
     });
-    const port = new DelayedLiveListPort();
+    const port = new DelayedProjectionPort();
     Object.defineProperty(globalThis, "SharedWorker", {
       configurable: true,
       value: class {
         readonly port = port;
       },
     });
-    Reflect.set(globalThis, "releaseLiveChatList", () =>
-      port.releaseLiveList(),
+    Reflect.set(globalThis, "releaseSnapshotProjection", () =>
+      port.releaseProjection(),
     );
 
     function isRecord(value: unknown): value is Record<string, unknown> {
