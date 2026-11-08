@@ -692,37 +692,6 @@ impl NetworkModel {
         events
     }
 
-    pub(crate) fn mark_vanished_cached_rows(&mut self) {
-        _ = self.mark_vanished_restored_rows();
-    }
-
-    pub(crate) fn finish_cached_chat_list(&mut self) -> EngineToUi {
-        EngineToUi::ChatListLive {
-            network_id: self.network.id,
-            buffers: self
-                .buffer_order
-                .iter()
-                .filter_map(|id| self.buffers.get(id))
-                .map(|buffer| buffer.projection.clone())
-                .collect(),
-        }
-    }
-
-    pub(crate) fn chat_list_complete(&self) -> bool {
-        self.is_online()
-            && self.buffers.values().all(|buffer| {
-                buffer.projection.kind == BufferKind::Server
-                    || buffer.projection.available == Some(false)
-                    || (self.targets_synced
-                        && buffer.restored_from_snapshot
-                        && matches!(buffer.history, HistoryState::Unrequested))
-                    || matches!(
-                        buffer.history,
-                        HistoryState::Ready { .. } | HistoryState::RefreshCapped
-                    )
-            })
-    }
-
     pub(crate) fn awaits_live_target(&self, buffer_id: BufferId) -> bool {
         self.buffers.get(&buffer_id).is_some_and(|buffer| {
             (buffer.restored_from_snapshot
@@ -1682,11 +1651,6 @@ impl NetworkModel {
         let target = HistoryTarget::from_key(buffer.key.clone()?);
         set_history_state(buffer, HistoryState::LoadingLatest);
         Some(target)
-    }
-
-    pub(crate) fn promote_cached_for_history(&mut self, buffer_id: BufferId) -> Option<EngineToUi> {
-        self.buffers.get(&buffer_id)?;
-        None
     }
 
     pub(crate) fn history_load(&self, conversation: &papo::Conversation) -> Option<HistoryLoad> {

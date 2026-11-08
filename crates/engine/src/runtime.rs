@@ -135,9 +135,6 @@ struct ChatListSync {
     snapshot: Option<ChatListSnapshot>,
     removed: Vec<SnapshotRemoval>,
     joined: Vec<SnapshotPresence>,
-    recent_directs_ready: bool,
-    live: bool,
-    restored_from_cache: bool,
 }
 
 struct QueuedSend {
@@ -1027,7 +1024,6 @@ impl Runtime {
             .cached_snapshot
             .take()
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
-        let had_cached_chat_list = cached_snapshot.is_some();
         if let Some(snapshot) = cached_snapshot.as_ref() {
             model.restore_chat_list(snapshot.clone());
         }
@@ -1036,15 +1032,6 @@ impl Runtime {
             .restore_pushed_messages(pushed, &client.state())
             .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
-        if had_cached_chat_list {
-            output.push(EngineToUi::ChatListSnapshotLoaded {
-                network_id: id,
-                buffers: match model.buffers_event() {
-                    EngineToUi::BuffersChanged { buffers, .. } => buffers,
-                    _ => Vec::new(),
-                },
-            });
-        }
         if restored_push {
             output.extend(model.snapshot_events());
             output.push(EngineToUi::PushedMessagesLoaded { network_id: id });
@@ -1068,7 +1055,6 @@ impl Runtime {
                     cached_snapshot
                         .unwrap_or_else(|| ChatListSnapshot::new(snapshot_fingerprint, Vec::new())),
                 ),
-                restored_from_cache: had_cached_chat_list,
                 ..ChatListSync::default()
             },
             push: PushRegistration::default(),
@@ -1118,7 +1104,6 @@ impl Runtime {
             .cached_snapshot
             .take()
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &snapshot_fingerprint));
-        let had_cached_chat_list = cached_snapshot.is_some();
         if let Some(snapshot) = cached_snapshot.as_ref() {
             model.restore_chat_list(snapshot.clone());
         }
@@ -1127,15 +1112,6 @@ impl Runtime {
             .restore_pushed_messages(pushed, &client.state())
             .is_empty();
         let mut output = vec![model.network_event(), model.buffers_event()];
-        if had_cached_chat_list {
-            output.push(EngineToUi::ChatListSnapshotLoaded {
-                network_id: id,
-                buffers: match model.buffers_event() {
-                    EngineToUi::BuffersChanged { buffers, .. } => buffers,
-                    _ => Vec::new(),
-                },
-            });
-        }
         if restored_push {
             output.extend(model.snapshot_events());
             output.push(EngineToUi::PushedMessagesLoaded { network_id: id });
@@ -1163,7 +1139,6 @@ impl Runtime {
                     cached_snapshot
                         .unwrap_or_else(|| ChatListSnapshot::new(snapshot_fingerprint, Vec::new())),
                 ),
-                restored_from_cache: had_cached_chat_list,
                 ..ChatListSync::default()
             },
             push: PushRegistration::default(),
@@ -1972,7 +1947,6 @@ impl Runtime {
         let Some(fetch) = running.model.request_history(buffer_id, direction) else {
             return vec![EngineToUi::CommandResult { id: command_id }];
         };
-        let promoted = running.model.promote_cached_for_history(buffer_id);
         let sync = running.model.buffer_updated(buffer_id);
         let direct_resolution = running.model.begin_buffer_direct_resolution(buffer_id);
         let marker_nick = direct_history_target(&fetch)
@@ -1998,9 +1972,7 @@ impl Runtime {
                 nick,
             );
         }
-        promoted
-            .into_iter()
-            .chain(sync)
+        sync.into_iter()
             .chain([
                 EngineToUi::HistoryStateChanged {
                     buffer_id,
@@ -3614,7 +3586,7 @@ fn send_recent_directs_ready(
     network_id: NetworkId,
     mark_vanished: bool,
 ) {
-    let client = {
+    let (client, vanished) = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -3623,17 +3595,19 @@ fn send_recent_directs_ready(
         else {
             return;
         };
-        running.chat_list.recent_directs_ready = true;
-        if mark_vanished {
-            running.model.mark_vanished_cached_rows();
-        }
+        let vanished = if mark_vanished {
+            running.model.mark_vanished_restored_rows()
+        } else {
+            Vec::new()
+        };
         if !running.pending_sends.is_empty() && !running.flushing_sends {
             running.flushing_sends = true;
-            Some(running.client.clone())
+            (Some(running.client.clone()), vanished)
         } else {
-            None
+            (None, vanished)
         }
     };
+    send_events(outbound, vanished);
     let _ = outbound.send(EngineToUi::RecentDirectsReady { network_id });
     if let Some(client) = client {
         spawn_send_flush(Arc::clone(state), outbound.clone(), client, instance);
@@ -4603,10 +4577,10 @@ fn record_read_advances_and_flush(
 
 fn update_chat_list(
     state: &Arc<Mutex<RuntimeState>>,
-    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    _outbound: &mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
 ) {
-    let (live_event, changes, storage, writer) = {
+    let (changes, storage, writer) = {
         let mut state = lock(state);
         let storage = state.storage.clone();
         let writer = Arc::clone(&state.snapshot_writer);
@@ -4617,11 +4591,6 @@ fn update_chat_list(
         else {
             return;
         };
-        let complete = running.chat_list.recent_directs_ready && running.model.chat_list_complete();
-        let live_event =
-            (complete && !running.chat_list.live && running.chat_list.restored_from_cache)
-                .then(|| running.model.finish_cached_chat_list());
-        running.chat_list.live |= complete;
         let previous = running
             .chat_list
             .snapshot
@@ -4636,11 +4605,8 @@ fn update_chat_list(
         let joined = std::mem::take(&mut running.chat_list.joined);
         let changes = SnapshotChanges::between(&previous, &snapshot, removed, joined);
         running.chat_list.snapshot = Some(snapshot);
-        (live_event, changes, storage, writer)
+        (changes, storage, writer)
     };
-    if let Some(event) = live_event {
-        let _ = outbound.send(event);
-    }
     if let Some(changes) = changes {
         schedule_snapshot_write(storage, writer, changes);
     }
@@ -5621,7 +5587,7 @@ async fn delay(duration: Duration) {
     }
 
     #[test]
-    fn hosted_profile_projects_restored_chats_before_a_token_exists() {
+    fn hosted_profile_projects_restored_chats_once_before_a_token_exists() {
         let endpoint = "wss://beta.weblounge.org/socket";
         let snapshot = ChatListSnapshot::new(
             crate::chat_list_snapshot::fingerprint("weblounge", endpoint),
@@ -5659,11 +5625,14 @@ async fn delay(duration: Duration) {
             },
         });
 
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::BuffersChanged { buffers, .. }
-                if buffers.iter().any(|buffer| buffer.title == "#lounge")
-        )));
+        assert!(matches!(
+            output.as_slice(),
+            [
+                EngineToUi::NetworkStateChanged { .. },
+                EngineToUi::BuffersChanged { buffers, .. },
+                EngineToUi::CommandResult { id },
+            ] if id == "prepare" && buffers.iter().any(|buffer| buffer.title == "#lounge")
+        ));
         let state = lock(&runtime.state);
         let running = state.network.as_ref().expect("hosted profile is retained");
         assert_eq!(running.authentication_kind, AuthenticationKind::HostedOAuth);
@@ -7916,7 +7885,7 @@ async fn delay(duration: Duration) {
                     peer_pin: None,
                 }],
             ));
-            model.mark_vanished_cached_rows();
+            _ = model.mark_vanished_restored_rows();
         }
         let runtime = Runtime { state, outbound };
         mark_runtime_online(&runtime);
@@ -8547,7 +8516,6 @@ async fn delay(duration: Duration) {
             .model
             .set_connection(NetworkConnectionState::Online, None);
         running.chat_list.fingerprint = "network".into();
-        running.chat_list.restored_from_cache = true;
     }
 
     fn complete_alice_chat_list(
@@ -8585,7 +8553,6 @@ async fn delay(duration: Duration) {
                 .finish_history(&conversation, None, None, None, 1, true)
                 .is_some()
         );
-        running.chat_list.recent_directs_ready = true;
         running.chat_list.fingerprint = "network".into();
         HistoryTarget::Direct(nick)
     }
@@ -9167,7 +9134,6 @@ async fn delay(duration: Duration) {
 
         let state = lock(&state);
         let running = state.network.as_ref().expect("network remains active");
-        assert!(running.model.chat_list_complete());
         assert!(running.model.cursor().is_some());
     }
 
@@ -10348,14 +10314,6 @@ async fn delay(duration: Duration) {
         restore_and_store_snapshot(&state, &snapshot).await;
 
         let target = complete_alice_chat_list(&state, &client);
-        assert!(
-            !lock(&state)
-                .network
-                .as_ref()
-                .expect("network remains active")
-                .model
-                .chat_list_complete()
-        );
         update_chat_list(&state, &outbound, 1);
         tokio::task::yield_now().await;
         tokio::time::advance(Duration::from_millis(750)).await;
