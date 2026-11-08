@@ -1,6 +1,7 @@
 import { createConnection } from "node:net";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
+import { captureHistoryWire } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { expectEqualAtDevicePixelPrecision } from "./motion-assertions";
@@ -164,6 +165,52 @@ test.describe("connection resilience against local Ergo", () => {
       order.indexOf(texts[1] ?? ""),
     );
     await expectShellToRemain(page, channel);
+  });
+
+  test("bounds a send queued on a silently dead resumed socket", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      !isMobile(testInfo.project.name),
+      "iOS suspension regression uses the mobile lifecycle",
+    );
+    test.skip(
+      process.env.WEBLOUNGE_E2E_FORWARDER_URL === undefined,
+      "requires the controllable socket forwarder",
+    );
+    await installNativeFeelInstrumentation(page);
+    await captureHistoryWire(page);
+    let dropped = false;
+    try {
+      const composer = await openChannel(page, testInfo.project.name);
+      await controlForwarder("drop");
+      dropped = true;
+
+      const text = `queued on dead socket ${Date.now()}`;
+      await composer.fill(text);
+      await composer.press("Enter");
+      await expect(messageRow(page, text, "optimistic")).toHaveCount(1);
+
+      await setVisibility(page, true);
+      await setVisibility(page, false);
+      await dispatchPersistedPageShow(page);
+      await expectTransientConnectionPresentation(
+        page,
+        isMobile(testInfo.project.name),
+      );
+      await controlForwarder("restore");
+      dropped = false;
+
+      await expect.poll(() => currentNetworkState(page)).not.toBe("online");
+      await expectOnline(page, testInfo.project.name);
+      await expect.poll(() => sentWireLineCount(page, text)).toBe(1);
+      await expect(messageRow(page, text, "failed")).toHaveCount(1);
+      await expect(
+        page.getByRole("button", { name: "Failed · Retry" }),
+      ).toHaveCount(1);
+    } finally {
+      if (dropped) await controlForwarder("restore");
+    }
   });
 
   test("keeps the online wasm engine alive through a foreground probe", async ({
@@ -551,6 +598,30 @@ function transcriptRow(page: Page, text: string) {
   return page
     .locator("[data-message-row]")
     .filter({ has: page.getByText(text, { exact: true }) });
+}
+
+async function sentWireLineCount(page: Page, text: string): Promise<number> {
+  return page.evaluate((needle) => {
+    const timeline = Reflect.get(globalThis, "historyWireTimeline");
+    if (!Array.isArray(timeline)) return 0;
+    return timeline.filter(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        "direction" in entry &&
+        entry.direction === "sent" &&
+        "line" in entry &&
+        typeof entry.line === "string" &&
+        entry.line.includes(needle),
+    ).length;
+  }, text);
+}
+
+function currentNetworkState(page: Page): Promise<string | null> {
+  return page
+    .locator("[data-network-state]")
+    .first()
+    .getAttribute("data-network-state");
 }
 
 async function scrollDesktopBetweenEdges(

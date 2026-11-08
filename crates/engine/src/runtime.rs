@@ -236,6 +236,13 @@ struct RuntimeState {
     cached_pushed_messages: Vec<PushedMessage>,
     build_version: String,
     update_ready: bool,
+    inflight_send_cancel: Option<InflightSendCancel>,
+}
+
+struct InflightSendCancel {
+    instance: u64,
+    cancel: oneshot::Sender<()>,
+    settled: oneshot::Receiver<()>,
 }
 
 #[derive(Default)]
@@ -319,6 +326,7 @@ impl Runtime {
                 cached_pushed_messages,
                 build_version,
                 update_ready: false,
+                inflight_send_cancel: None,
             })),
             outbound,
         }
@@ -1260,6 +1268,7 @@ impl Runtime {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
         let client = running.client.clone();
+        let instance = running.instance;
         let hosted = running.authentication_kind == AuthenticationKind::HostedOAuth;
         let online = running.model.is_online();
         let state_event = (!online).then(|| {
@@ -1272,6 +1281,7 @@ impl Runtime {
         });
         drop(state);
         let outbound = self.outbound.clone();
+        let runtime_state = Arc::clone(&self.state);
         spawn_task(async move {
             let alive = if online {
                 tokio::select! {
@@ -1284,9 +1294,11 @@ impl Runtime {
             let result = if alive {
                 Ok(())
             } else if hosted {
+                cancel_inflight_send(&runtime_state, instance).await;
                 let _ = outbound.send(EngineToUi::HostedTokenRequired { network_id });
                 Ok(())
             } else {
+                cancel_inflight_send(&runtime_state, instance).await;
                 client.reconnect().await
             };
             let event = if result.is_ok() {
@@ -2353,12 +2365,13 @@ enum SendError {
     DirectTargetGone,
     PeerPinMismatch(papo::PeerPinMismatch),
     Offline,
+    Interrupted,
 }
 
 impl SendError {
     const fn message_key(&self) -> EngineMessageKey {
         match self {
-            Self::Protocol | Self::Offline => EngineMessageKey::SendFailed,
+            Self::Protocol | Self::Offline | Self::Interrupted => EngineMessageKey::SendFailed,
             Self::DirectTargetGone => EngineMessageKey::DirectTargetGone,
             Self::PeerPinMismatch(_) => EngineMessageKey::DirectIdentityMismatch,
         }
@@ -2466,6 +2479,7 @@ fn spawn_typing_pause(state: Arc<Mutex<RuntimeState>>, instance: u64, pause: cra
 fn classify_send_error(error: &papo::Error) -> SendError {
     match error {
         papo::Error::Disconnected(_) => SendError::Offline,
+        papo::Error::Interrupted(_) => SendError::Interrupted,
         papo::Error::TargetGone => SendError::DirectTargetGone,
         _ => SendError::Protocol,
     }
@@ -2508,9 +2522,41 @@ async fn flush_pending_sends(
             }
             FlushNext::Stop => return,
         };
-        let result = send(client, &queued.pending).await;
+        let (cancel, cancel_requested) = oneshot::channel();
+        let (settled, settled_confirmation) = oneshot::channel();
+        let _settled_guard = SendAttemptGuard(Some(settled));
+        {
+            let mut state = lock(state);
+            let Some(running) = state
+                .network
+                .as_ref()
+                .filter(|running| running.instance == instance)
+            else {
+                return;
+            };
+            if !running.flushing_sends {
+                return;
+            }
+            state.inflight_send_cancel = Some(InflightSendCancel {
+                instance,
+                cancel,
+                settled: settled_confirmation,
+            });
+        }
+        let result = tokio::select! {
+            result = send(client, &queued.pending) => result,
+            _ = cancel_requested => Err(SendError::Interrupted),
+        };
+        let mut retry_now = false;
         let (events, own_read_advance) = {
             let mut state = lock(state);
+            if state
+                .inflight_send_cancel
+                .as_ref()
+                .is_some_and(|current| current.instance == instance)
+            {
+                state.inflight_send_cancel = None;
+            }
             let Some(running) = state
                 .network
                 .as_mut()
@@ -2522,8 +2568,17 @@ async fn flush_pending_sends(
                 Ok(sent) => confirm_send_with_read(&mut running.model, &queued.pending, &sent),
                 Err(SendError::Offline) if queued.retry_if_disconnected => {
                     running.pending_sends.push_front(queued);
-                    running.flushing_sends = false;
-                    return;
+                    retry_now = running.device_online
+                        && running.model.is_online()
+                        && client.state().is_connected();
+                    if !retry_now {
+                        running.flushing_sends = false;
+                        return;
+                    }
+                    (None, None)
+                }
+                Err(SendError::Interrupted) => {
+                    (Some(running.model.interrupt_send(&queued.pending)), None)
                 }
                 Err(error) => (
                     Some(
@@ -2535,12 +2590,45 @@ async fn flush_pending_sends(
                 ),
             }
         };
+        if retry_now {
+            continue;
+        }
         for event in events.into_iter().flatten() {
             let _ = outbound.send(event);
         }
         if let Some(advance) = own_read_advance {
             record_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
         }
+    }
+}
+
+struct SendAttemptGuard(Option<oneshot::Sender<()>>);
+
+impl Drop for SendAttemptGuard {
+    fn drop(&mut self) {
+        if let Some(settled) = self.0.take() {
+            _ = settled.send(());
+        }
+    }
+}
+
+async fn cancel_inflight_send(state: &Arc<Mutex<RuntimeState>>, instance: u64) {
+    let cancel = {
+        let mut state = lock(state);
+        match state.inflight_send_cancel.take() {
+            Some(current) if current.instance == instance => {
+                Some((current.cancel, current.settled))
+            }
+            Some(other) => {
+                state.inflight_send_cancel = Some(other);
+                None
+            }
+            None => None,
+        }
+    };
+    if let Some((cancel, settled)) = cancel {
+        _ = cancel.send(());
+        _ = settled.await;
     }
 }
 
@@ -5278,6 +5366,7 @@ async fn delay(duration: Duration) {
             cached_pushed_messages: Vec::new(),
             build_version: "weblounge test".into(),
             update_ready: false,
+            inflight_send_cancel: None,
             network: Some(network),
         }
     }
@@ -6776,6 +6865,7 @@ async fn delay(duration: Duration) {
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
+                inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -6868,6 +6958,7 @@ async fn delay(duration: Duration) {
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
+                inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::HostedOAuth,
@@ -7493,6 +7584,7 @@ async fn delay(duration: Duration) {
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
+                inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -7887,6 +7979,7 @@ async fn delay(duration: Duration) {
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
+                inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -8014,6 +8107,7 @@ async fn delay(duration: Duration) {
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
+                inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -8082,6 +8176,7 @@ async fn delay(duration: Duration) {
                 cached_pushed_messages: Vec::new(),
                 build_version: "weblounge test".into(),
                 update_ready: false,
+                inflight_send_cancel: None,
                 network: Some(RunningNetwork {
                     instance: 1,
                     authentication_kind: AuthenticationKind::SaslPlain,
@@ -8414,6 +8509,7 @@ async fn delay(duration: Duration) {
             cached_pushed_messages: Vec::new(),
             build_version: "weblounge test".into(),
             update_ready: false,
+            inflight_send_cancel: None,
             network: Some(RunningNetwork {
                 instance: 1,
                 authentication_kind: AuthenticationKind::SaslPlain,

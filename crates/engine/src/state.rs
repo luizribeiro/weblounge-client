@@ -1454,6 +1454,10 @@ impl NetworkModel {
         events
     }
 
+    pub(crate) fn interrupt_send(&mut self, pending: &PendingSend) -> Vec<EngineToUi> {
+        self.fail_send(pending, EngineMessageKey::SendFailed)
+    }
+
     pub(crate) fn retry_send(
         &mut self,
         buffer_id: BufferId,
