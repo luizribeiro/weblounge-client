@@ -387,6 +387,64 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("keeps a remotely read DM clear across an immediate reload", async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString(36);
+    const channel = `#immediate-read-${suffix}`;
+    const appAccount = `immediate-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
+    const text = `immediate read ${suffix}`;
+    const keeper = await IrcClient.connectIsolated(appAccount, channel);
+    const bot = await IrcClient.connect(
+      `immediate-bot-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      channel,
+    );
+    let markerReader: IrcClient | undefined;
+    try {
+      await keeper.setAlwaysOn(true);
+      keeper.close();
+      await keeper.waitForDisconnect();
+      await useDedicatedWorker(page);
+      await recordCachedRow(page, bot.nickname);
+      await page.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await expect(bufferRow(page, channel)).toBeVisible();
+      const line = await bot.privmsgConfirmed(appAccount, text);
+      await expectUnreadCount(bufferRow(page, bot.nickname), bot.nickname, 1);
+      await expect
+        .poll(() => snapshotReadState(page, bot.nickname))
+        .toEqual({ gap: false, mentions: 1, unread: 1 });
+
+      markerReader = await IrcClient.connect(
+        appAccount,
+        appAccount,
+        appPassword,
+        channel,
+      );
+      await markerReader.markRead(bot.nickname, messageTag(line, "time"));
+      await expectRead(bufferRow(page, bot.nickname), bot.nickname);
+      expect(await snapshotReadState(page, bot.nickname)).toEqual({
+        gap: false,
+        mentions: 0,
+        unread: 0,
+      });
+
+      await page.goto(startUrlForAccount(appAccount, appPassword, channel));
+      await expect
+        .poll(() => cachedRow(page))
+        .toMatchObject({
+          label: bot.nickname,
+          unread: isMobile(page) ? null : "0",
+        });
+    } finally {
+      markerReader?.close();
+      keeper.close();
+      bot.close();
+    }
+  });
+
   test("keeps a newer live preview when catch-up finishes behind it", async ({
     context,
     page,
