@@ -24,8 +24,7 @@ use crate::{
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
         DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget, NetworkModel,
-        PendingSend, PendingTargetState, ReadAdvance, ReadPreparation, SendTarget, is_own_nick,
-        time_millis,
+        PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
     },
 };
 
@@ -1903,24 +1902,17 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let server_backed = running.read_markers_server_backed();
-        let preparation = match running
-            .model
-            .request_mark_read(buffer_id, through, server_backed)
-        {
-            preparation @ ReadPreparation::Ready(_) => preparation,
-            ReadPreparation::Invalid => {
-                engine_log(EngineMessageKey::ReadMarkerInvalid.as_str());
-                return vec![
-                    EngineToUi::Diagnostic {
-                        command_id: command_id.clone(),
-                        message: EngineMessageKey::ReadMarkerInvalid.as_str().into(),
-                    },
-                    EngineToUi::CommandResult { id: command_id },
-                ];
-            }
+        let Some(advance) = running.model.request_mark_read(buffer_id, through) else {
+            engine_log(EngineMessageKey::ReadMarkerInvalid.as_str());
+            return vec![
+                EngineToUi::Diagnostic {
+                    command_id: command_id.clone(),
+                    message: EngineMessageKey::ReadMarkerInvalid.as_str().into(),
+                },
+                EngineToUi::CommandResult { id: command_id },
+            ];
         };
-        let mut output = record_read_preparations(running, [preparation]);
+        let mut output = record_read_advances(running, [advance]);
         let flush = start_read_flush(running);
         let instance = running.instance;
         output.push(EngineToUi::CommandResult { id: command_id });
@@ -1943,9 +1935,8 @@ impl Runtime {
         let Some(running) = state.network.as_mut() else {
             return rejected_command(command_id, EngineMessageKey::NetworkNotFound);
         };
-        let server_backed = running.read_markers_server_backed();
-        let preparations = running.model.request_mark_all_read(server_backed);
-        let mut output = record_read_preparations(running, preparations);
+        let advances = running.model.request_mark_all_read();
+        let mut output = record_read_advances(running, advances);
         let flush = start_read_flush(running);
         let instance = running.instance;
         output.push(EngineToUi::CommandResult { id: command_id });
@@ -2067,22 +2058,6 @@ fn record_read_advances(
         );
         if server_backed {
             queue_read_advance(&mut running.pending_reads, advance);
-        }
-    }
-    output
-}
-
-fn record_read_preparations(
-    running: &mut RunningNetwork,
-    preparations: impl IntoIterator<Item = ReadPreparation>,
-) -> Vec<EngineToUi> {
-    let mut output = Vec::new();
-    for preparation in preparations {
-        match preparation {
-            ReadPreparation::Ready(advance) => {
-                output.extend(record_read_advances(running, [advance]));
-            }
-            ReadPreparation::Invalid => {}
         }
     }
     output
@@ -2589,7 +2564,7 @@ async fn flush_pending_sends(
             let _ = outbound.send(event);
         }
         if let Some(advance) = own_read_advance {
-            record_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
+            record_read_advances_and_flush(state, outbound.clone(), instance, vec![advance]);
         }
     }
 }
@@ -2712,7 +2687,7 @@ async fn finish_send(
         let _ = outbound.send(event);
     }
     if let Some(advance) = own_read_advance {
-        record_deferred_read_advances(state, outbound.clone(), instance, vec![advance]);
+        record_read_advances_and_flush(state, outbound.clone(), instance, vec![advance]);
     }
 }
 
@@ -2744,16 +2719,7 @@ fn receive_message(
     let own_advance = (message.authorship == papo::Authorship::Own)
         .then(|| received_read_advance(model, &events))
         .flatten();
-    let mut advances = own_advance
-        .into_iter()
-        .chain(reconciled_advance)
-        .collect::<Vec<_>>();
-    if !history
-        && let Some(buffer_id) = message_event_buffer_id(&events)
-        && let Some(advance) = model.resolve_deferred_read(buffer_id)
-    {
-        advances.push(advance);
-    }
+    let advances = own_advance.into_iter().chain(reconciled_advance).collect();
     (events, advances)
 }
 
@@ -2765,18 +2731,11 @@ fn received_read_advance(model: &NetworkModel, events: &[EngineToUi]) -> Option<
         } => messages.last().map(|message| (*buffer_id, message.id)),
         EngineToUi::MessageConfirmed {
             buffer_id, message, ..
-        } => Some((*buffer_id, message.id)),
+        }
+        | EngineToUi::MessageUpdated { buffer_id, message } => Some((*buffer_id, message.id)),
         _ => None,
     })?;
     model.prepare_mark_read(buffer_id, through)
-}
-
-fn message_event_buffer_id(events: &[EngineToUi]) -> Option<BufferId> {
-    events.iter().find_map(|event| match event {
-        EngineToUi::MessagesAppended { buffer_id, .. }
-        | EngineToUi::MessageUpdated { buffer_id, .. } => Some(*buffer_id),
-        _ => None,
-    })
 }
 
 fn completion_context(
@@ -3706,14 +3665,6 @@ fn process_event_with_direct(
     }
     drop(state);
     send_events(outbound, output);
-    if !effects.own_read_advances.is_empty() {
-        record_deferred_read_advances(
-            &shared_state,
-            outbound.clone(),
-            instance,
-            effects.own_read_advances,
-        );
-    }
     update_chat_list(&shared_state, outbound, instance);
     spawn_event_flushes(
         &shared_state,
@@ -3729,7 +3680,6 @@ fn process_event_with_direct(
 #[derive(Default)]
 struct EventEffects {
     history_fetches: Vec<HistoryFetch>,
-    own_read_advances: Vec<ReadAdvance>,
     clear_hosted_authentication: bool,
     flush_sends: bool,
     read_flush: Option<(papo::Client, u64)>,
@@ -3791,10 +3741,11 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::Message(message) => {
-            let (received, advance) =
+            let (received, advances) =
                 receive_message(&mut running.model, &message, false, snapshot, direct);
-            effects.own_read_advances.extend(advance);
             output.extend(received);
+            output.extend(record_read_advances(running, advances));
+            effects.read_flush = start_read_flush(running);
             Vec::new()
         }
         papo::Event::TypingChanged(changed) => {
@@ -4458,6 +4409,8 @@ fn process_history(
     if let Some(unread) = unread {
         output.push(unread);
     }
+    merge_history_read_events(&mut output, record_read_advances(running, read_advances));
+    let read_flush = start_read_flush(running);
     let finished = finish_history_page(
         &mut running.model,
         load,
@@ -4468,11 +4421,27 @@ fn process_history(
         end,
     );
     output.extend(finished);
-    resolve_history_read(&mut running.model, &conversation, &mut read_advances);
     drop(state);
     send_events(outbound, output);
-    flush_history_read_advances(&shared_state, outbound, instance, read_advances);
     update_chat_list(&shared_state, outbound, instance);
+    if let Some((client, instance)) = read_flush {
+        spawn_read_flush(shared_state, outbound.clone(), client, instance);
+    }
+}
+
+fn merge_history_read_events(
+    output: &mut Vec<EngineToUi>,
+    events: impl IntoIterator<Item = EngineToUi>,
+) {
+    for event in events {
+        match event {
+            EngineToUi::UnreadChanged { .. } => {
+                output.retain(|queued| !matches!(queued, EngineToUi::UnreadChanged { .. }));
+                output.push(event);
+            }
+            _ => output.push(event),
+        }
+    }
 }
 
 fn push_history_timeline(
@@ -4492,25 +4461,6 @@ fn push_history_timeline(
         });
     } else if let Some(event) = model.history_append_event(buffer_id, messages) {
         output.push(event);
-    }
-}
-
-fn resolve_history_read(
-    model: &mut NetworkModel,
-    conversation: &papo::Conversation,
-    advances: &mut Vec<ReadAdvance>,
-) {
-    advances.extend(model.resolve_deferred_read_for(conversation));
-}
-
-fn flush_history_read_advances(
-    state: &Arc<Mutex<RuntimeState>>,
-    outbound: &mpsc::UnboundedSender<EngineToUi>,
-    instance: u64,
-    advances: Vec<ReadAdvance>,
-) {
-    if !advances.is_empty() {
-        record_deferred_read_advances(state, outbound.clone(), instance, advances);
     }
 }
 
@@ -4549,7 +4499,7 @@ fn finish_history_page(
     output
 }
 
-fn record_deferred_read_advances(
+fn record_read_advances_and_flush(
     state: &Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
     instance: u64,
@@ -4569,6 +4519,7 @@ fn record_deferred_read_advances(
         (events, flush)
     };
     send_events(&outbound, events);
+    update_chat_list(state, &outbound, instance);
     if let Some((client, instance)) = flush {
         spawn_read_flush(Arc::clone(state), outbound, client, instance);
     }

@@ -89,7 +89,6 @@ struct BufferState {
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
     timeline: Vec<TimelineRecord>,
-    deferred_read: Option<MessageId>,
     memberships: Vec<MembershipProjection>,
     last_membership: Option<MessageId>,
     direct: Option<DirectAvailability>,
@@ -318,11 +317,6 @@ pub(crate) struct ReadAdvance {
     pub(crate) time: SystemTime,
 }
 
-pub(crate) enum ReadPreparation {
-    Ready(ReadAdvance),
-    Invalid,
-}
-
 /// Mutable application identity and timeline state for one papo client.
 pub(crate) struct NetworkModel {
     network: NetworkProjection,
@@ -382,7 +376,6 @@ impl NetworkModel {
             key: None,
             direct_key: None,
             timeline: Vec::new(),
-            deferred_read: None,
             memberships: Vec::new(),
             last_membership: None,
             direct: None,
@@ -768,9 +761,7 @@ impl NetworkModel {
                     .iter()
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
-                if buffer.deferred_read.is_none() {
-                    copy_read_facts_to_snapshot(buffer, &mut row);
-                }
+                copy_read_facts_to_snapshot(buffer, &mut row);
                 Some(row)
             })
             .collect();
@@ -2293,26 +2284,19 @@ impl NetworkModel {
     }
 
     pub(crate) fn request_mark_read(
-        &mut self,
+        &self,
         buffer_id: BufferId,
         through: MessageId,
-        server_backed: bool,
-    ) -> ReadPreparation {
-        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
-            return ReadPreparation::Invalid;
-        };
+    ) -> Option<ReadAdvance> {
+        let buffer = self.buffers.get(&buffer_id)?;
         if !buffer
             .timeline
             .iter()
             .any(|record| record.projection.id == through && is_committed(&record.projection))
         {
-            return ReadPreparation::Invalid;
+            return None;
         }
-        let Some(advance) = read_advance(buffer_id, buffer, through, true) else {
-            return ReadPreparation::Invalid;
-        };
-        let _ = server_backed;
-        ReadPreparation::Ready(advance)
+        read_advance(buffer_id, buffer, through, true)
     }
 
     pub(crate) fn prepare_mark_read(
@@ -2324,23 +2308,7 @@ impl NetworkModel {
         read_advance(buffer_id, buffer, through, false)
     }
 
-    pub(crate) fn resolve_deferred_read(&mut self, buffer_id: BufferId) -> Option<ReadAdvance> {
-        let buffer = self.buffers.get_mut(&buffer_id)?;
-        let through = buffer.deferred_read?;
-        let advance = verified_read_advance(buffer_id, buffer, through)?;
-        buffer.deferred_read = None;
-        Some(advance)
-    }
-
-    pub(crate) fn resolve_deferred_read_for(
-        &mut self,
-        conversation: &papo::Conversation,
-    ) -> Option<ReadAdvance> {
-        let key = NameKey::from_conversation(conversation)?;
-        self.resolve_deferred_read(*self.names.get(&key)?)
-    }
-
-    pub(crate) fn request_mark_all_read(&mut self, server_backed: bool) -> Vec<ReadPreparation> {
+    pub(crate) fn request_mark_all_read(&self) -> Vec<ReadAdvance> {
         let targets = self
             .buffer_order
             .iter()
@@ -2358,12 +2326,7 @@ impl NetworkModel {
             .collect::<Vec<_>>();
         targets
             .into_iter()
-            .filter_map(|(buffer_id, through)| {
-                match self.request_mark_read(buffer_id, through, server_backed) {
-                    ReadPreparation::Invalid => None,
-                    preparation @ ReadPreparation::Ready(_) => Some(preparation),
-                }
-            })
+            .filter_map(|(buffer_id, through)| self.request_mark_read(buffer_id, through))
             .collect()
     }
 
@@ -2725,14 +2688,14 @@ impl NetworkModel {
             let carry_read = buffer
                 .read_facts
                 .mark()
-                .is_some_and(|mark| pushed_time <= mark && authoritative_time > mark.value());
+                .is_some_and(|mark| pushed_time <= mark && message_time(&message) > mark.value());
             record.projection = message.clone();
             record.counts_as_mention = message.authorship != MessageAuthorship::Own
                 && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
             record.provisional_identity = None;
             buffer.read_facts.replace_stub(MessageStub {
                 msgid: msgid.to_owned(),
-                time: ServerTimeMs::new(authoritative_time),
+                time: ServerTimeMs::new(message_time(&message)),
                 mention: record.counts_as_mention,
             });
             buffer.timeline.sort_by_key(order_key);
@@ -2923,7 +2886,6 @@ impl NetworkModel {
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
                 timeline: Vec::new(),
-                deferred_read: None,
                 memberships: Vec::new(),
                 last_membership: None,
                 direct: (kind == BufferKind::Direct)
@@ -3336,20 +3298,6 @@ fn read_advance(
     })
 }
 
-fn verified_read_advance(
-    buffer_id: BufferId,
-    buffer: &BufferState,
-    through: MessageId,
-) -> Option<ReadAdvance> {
-    let record = buffer.timeline.iter().find(|record| {
-        record.projection.id == through
-            && record.provisional_identity.is_none()
-            && !record.projection.server_ids.is_empty()
-            && record.projection.server_time_ms.is_some()
-    })?;
-    read_advance(buffer_id, buffer, record.projection.id, false)
-}
-
 fn message_time(message: &MessageProjection) -> i64 {
     message.server_time_ms.unwrap_or(message.received_at_ms)
 }
@@ -3554,8 +3502,8 @@ mod tests {
 
     use super::{
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey,
-        NetworkModel, PendingTargetState, ReadPreparation, SendTarget, TimelineOrigin,
-        collapse_blank_lines, derive_read_projection, draft_key, nick_color_index, time_millis,
+        NetworkModel, PendingTargetState, SendTarget, TimelineOrigin, collapse_blank_lines,
+        derive_read_projection, draft_key, nick_color_index, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -4988,9 +4936,9 @@ mod tests {
             );
         }
 
-        let preparations = model.request_mark_all_read(false);
-        let [ReadPreparation::Ready(advance)] = preparations.as_slice() else {
-            panic!("one ready advance expected");
+        let advances = model.request_mark_all_read();
+        let [advance] = advances.as_slice() else {
+            panic!("one advance expected");
         };
         let events = model.advance_read(advance.buffer_id, advance.time, false);
         assert!(events.iter().any(|event| matches!(
@@ -5022,9 +4970,9 @@ mod tests {
         .expect("pushed message");
         model.restore_pushed_messages(vec![pushed], &state);
 
-        let preparations = model.request_mark_all_read(true);
-        let [ReadPreparation::Ready(advance)] = preparations.as_slice() else {
-            panic!("one ready advance expected");
+        let advances = model.request_mark_all_read();
+        let [advance] = advances.as_slice() else {
+            panic!("one immediate advance expected");
         };
         let events = model.advance_read(advance.buffer_id, advance.time, true);
 
@@ -5079,10 +5027,9 @@ mod tests {
                 _ => None,
             })
             .expect("pushed row is restored");
-        let ReadPreparation::Ready(advance) = model.request_mark_read(buffer_id, pushed_id, true)
-        else {
-            panic!("push-only reads advance immediately")
-        };
+        let advance = model
+            .request_mark_read(buffer_id, pushed_id)
+            .expect("push-only reads advance immediately");
         model.advance_read(buffer_id, advance.time, true);
         let pushed_time = time_millis(advance.time);
 
@@ -5129,10 +5076,9 @@ mod tests {
                 _ => None,
             })
             .expect("pushed row is restored");
-        let ReadPreparation::Ready(advance) = model.request_mark_read(buffer_id, pushed_id, true)
-        else {
-            panic!("push-only reads advance immediately")
-        };
+        let advance = model
+            .request_mark_read(buffer_id, pushed_id)
+            .expect("push-only reads advance immediately");
         model.advance_read(buffer_id, advance.time, true);
         let mut elsewhere = incoming(
             &state,
@@ -5154,10 +5100,11 @@ mod tests {
             })
             .expect("other buffer row is appended");
         let elsewhere_buffer = model.names[&NameKey::Channel(channel_name(&state, "#elsewhere"))];
-        assert!(matches!(
-            model.request_mark_read(elsewhere_buffer, elsewhere_id, true),
-            ReadPreparation::Ready(_)
-        ));
+        assert!(
+            model
+                .request_mark_read(elsewhere_buffer, elsewhere_id)
+                .is_some()
+        );
         assert_eq!(
             model.buffers[&buffer_id].read_facts.pending(),
             Some(ServerTimeMs::new(time_millis(advance.time)))
@@ -6391,9 +6338,9 @@ mod tests {
             .expect("live direct")
             .projection
             .id;
-        let ReadPreparation::Ready(advance) = model.request_mark_read(alice, through, true) else {
-            panic!("live direct read is authoritative")
-        };
+        let advance = model
+            .request_mark_read(alice, through)
+            .expect("live direct read is authoritative");
         model.advance_read(alice, advance.time, false);
 
         let merged = model.merge_chat_list_snapshot("network".into(), &after_targets);
@@ -6448,9 +6395,9 @@ mod tests {
             })
         );
         let through = buffer.timeline.last().expect("live direct").projection.id;
-        let ReadPreparation::Ready(advance) = model.request_mark_read(alice, through, true) else {
-            panic!("live direct read is authoritative")
-        };
+        let advance = model
+            .request_mark_read(alice, through)
+            .expect("live direct read is authoritative");
         model.advance_read(alice, advance.time, false);
 
         let merged = model.merge_chat_list_snapshot("network".into(), &previous);
@@ -6540,10 +6487,9 @@ mod tests {
                 _ => None,
             })
             .expect("pushed row is restored");
-        let ReadPreparation::Ready(advance) = model.request_mark_read(buffer_id, message_id, true)
-        else {
-            panic!("provisional push advances immediately")
-        };
+        let advance = model
+            .request_mark_read(buffer_id, message_id)
+            .expect("provisional push advances immediately");
         model.advance_read(buffer_id, advance.time, true);
 
         let merged = model.merge_chat_list_snapshot("network".into(), &previous);
