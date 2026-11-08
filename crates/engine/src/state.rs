@@ -927,6 +927,7 @@ impl NetworkModel {
             .collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn receive(
         &mut self,
         message: &papo::Message,
@@ -934,10 +935,27 @@ impl NetworkModel {
         state: &papo::State,
         direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
+        let (mut events, carry_read) = self.receive_with_advance(message, history, state, direct);
+        if let Some(advance) = carry_read {
+            events.extend(self.advance_read(advance.buffer_id, advance.time, false));
+        }
+        events
+    }
+
+    pub(crate) fn receive_with_advance(
+        &mut self,
+        message: &papo::Message,
+        history: bool,
+        state: &papo::State,
+        direct: Option<papo::DirectRef>,
+    ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
         let Some(conversation) = NameKey::from_conversation(message.conversation()) else {
-            return vec![EngineToUi::notice(
-                EngineMessageKey::UnsupportedConversation,
-            )];
+            return (
+                vec![EngineToUi::notice(
+                    EngineMessageKey::UnsupportedConversation,
+                )],
+                None,
+            );
         };
         let origin = if history {
             TimelineOrigin::History
@@ -974,7 +992,8 @@ impl NetworkModel {
             received_at_ms: time_millis(message.received_at),
             origin,
         };
-        self.receive_incoming(incoming, state)
+        let received = self.receive_incoming_result(incoming, state);
+        (received.events, received.carry_read)
     }
 
     pub(crate) fn restore_pushed_messages(
@@ -2442,14 +2461,30 @@ impl NetworkModel {
     }
 
     fn receive_incoming(&mut self, incoming: Incoming, state: &papo::State) -> Vec<EngineToUi> {
-        if let Some(events) = self.reconcile_pushed_message(&incoming, state) {
-            return events;
+        let received = self.receive_incoming_result(incoming, state);
+        let mut events = received.events;
+        if let Some(advance) = received.carry_read {
+            events.extend(self.advance_read(advance.buffer_id, advance.time, false));
+        }
+        events
+    }
+
+    fn receive_incoming_result(
+        &mut self,
+        incoming: Incoming,
+        state: &papo::State,
+    ) -> IncomingResult {
+        if let Some((events, carry_read)) = self.reconcile_pushed_message(&incoming, state) {
+            return IncomingResult { events, carry_read };
         }
         if let Some(events) = self.reconcile_failed_own_message(&incoming, state) {
-            return events;
+            return IncomingResult {
+                events,
+                carry_read: None,
+            };
         }
         let Some(dedup) = self.deduplicate_incoming(&incoming) else {
-            return Vec::new();
+            return IncomingResult::default();
         };
 
         let (buffer_id, initially_added) = self.ensure_buffer(
@@ -2479,7 +2514,10 @@ impl NetworkModel {
             false,
         );
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
-            return inconsistent_state_notice();
+            return IncomingResult {
+                events: inconsistent_state_notice(),
+                carry_read: None,
+            };
         };
         if let Some(provisional_identity) = incoming.provisional_identity.clone()
             && let Some(buffer) = self.buffers.get_mut(&buffer_id)
@@ -2495,7 +2533,10 @@ impl NetworkModel {
         }
         let (unread, mentions, added) = {
             let Some(buffer) = self.buffers.get(&buffer_id) else {
-                return inconsistent_state_notice();
+                return IncomingResult {
+                    events: inconsistent_state_notice(),
+                    carry_read: None,
+                };
             };
             (
                 buffer.projection.unread,
@@ -2526,7 +2567,10 @@ impl NetworkModel {
         if let Some(account) = incoming.legacy_account_key {
             events.push(self.legacy_draft_migration(buffer_id, &account));
         }
-        events
+        IncomingResult {
+            events,
+            carry_read: None,
+        }
     }
 
     fn reconcile_failed_own_message(
@@ -2601,7 +2645,7 @@ impl NetworkModel {
         &mut self,
         incoming: &Incoming,
         state: &papo::State,
-    ) -> Option<Vec<EngineToUi>> {
+    ) -> Option<(Vec<EngineToUi>, Option<ReadAdvance>)> {
         if incoming.origin == TimelineOrigin::Push {
             return None;
         }
@@ -2642,23 +2686,32 @@ impl NetworkModel {
             identity_disagrees,
         );
         message.server_ids = vec![msgid.to_owned()];
-        let buffer = self.buffers.get_mut(&buffer_id)?;
-        let record = buffer
-            .timeline
-            .iter_mut()
-            .find(|record| record.projection.id == message_id)?;
-        record.projection = message.clone();
-        record.counts_as_mention = message.authorship != MessageAuthorship::Own
-            && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
-        record.provisional_identity = None;
-        buffer.read_facts.replace_stub(MessageStub {
-            msgid: msgid.to_owned(),
-            time: ServerTimeMs::new(message_time(&message)),
-            mention: record.counts_as_mention,
-        });
-        buffer.timeline.sort_by_key(order_key);
-        derive_read_projection(buffer);
-        let buffer = buffer.projection.clone();
+        let authoritative_time = message_time(&message);
+        let carry_read = {
+            let buffer = self.buffers.get_mut(&buffer_id)?;
+            let record = buffer
+                .timeline
+                .iter_mut()
+                .find(|record| record.projection.id == message_id)?;
+            let pushed_time = ServerTimeMs::new(message_time(&record.projection));
+            let carry_read = buffer
+                .read_facts
+                .mark()
+                .is_some_and(|mark| pushed_time <= mark && authoritative_time > mark.value());
+            record.projection = message.clone();
+            record.counts_as_mention = message.authorship != MessageAuthorship::Own
+                && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
+            record.provisional_identity = None;
+            buffer.read_facts.replace_stub(MessageStub {
+                msgid: msgid.to_owned(),
+                time: ServerTimeMs::new(authoritative_time),
+                mention: record.counts_as_mention,
+            });
+            buffer.timeline.sort_by_key(order_key);
+            derive_read_projection(buffer);
+            carry_read
+        };
+        let buffer = self.buffers[&buffer_id].projection.clone();
         let mut events = vec![
             EngineToUi::MessageUpdated { buffer_id, message },
             EngineToUi::BufferUpdated {
@@ -2673,7 +2726,11 @@ impl NetworkModel {
         if let Some(account) = &incoming.legacy_account_key {
             events.push(self.legacy_draft_migration(buffer_id, account));
         }
-        Some(events)
+        let carry_read = carry_read.then_some(ReadAdvance {
+            buffer_id,
+            time: system_time_from_millis(authoritative_time),
+        });
+        Some((events, carry_read))
     }
 
     fn project_incoming(
@@ -3352,6 +3409,12 @@ struct Incoming {
     server_time_ms: Option<i64>,
     received_at_ms: i64,
     origin: TimelineOrigin,
+}
+
+#[derive(Default)]
+struct IncomingResult {
+    events: Vec<EngineToUi>,
+    carry_read: Option<ReadAdvance>,
 }
 
 fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
@@ -4948,6 +5011,67 @@ mod tests {
         assert_eq!(
             model.buffers[&advance.buffer_id].read_facts.pending(),
             Some(ServerTimeMs::new(time_millis(advance.time)))
+        );
+    }
+
+    #[test]
+    fn authoritative_push_reconciliation_carries_an_intervening_read() {
+        let (mut model, state) = model(10);
+        model.receive_incoming(
+            incoming(
+                &state,
+                "verified earlier",
+                Some("verified"),
+                Some(1_000),
+                1_000,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "missing-from-history",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+        let restored = model.restore_pushed_messages(vec![pushed], &state);
+        let (buffer_id, pushed_id) = restored
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended {
+                    buffer_id,
+                    messages,
+                } => Some((*buffer_id, messages[0].id)),
+                _ => None,
+            })
+            .expect("pushed row is restored");
+        let ReadPreparation::Ready(advance) = model.request_mark_read(buffer_id, pushed_id, true)
+        else {
+            panic!("push-only reads advance immediately")
+        };
+        model.advance_read(buffer_id, advance.time, true);
+        let pushed_time = time_millis(advance.time);
+
+        model.receive_incoming(
+            incoming(
+                &state,
+                "arrived while closed",
+                Some("missing-from-history"),
+                Some(pushed_time + 1),
+                pushed_time + 1,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        assert_eq!(
+            model.buffers[&buffer_id].read_facts.mark(),
+            Some(ServerTimeMs::new(pushed_time + 1))
         );
     }
 

@@ -2739,11 +2739,14 @@ fn receive_message(
     state: &papo::State,
     direct: Option<papo::DirectRef>,
 ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
-    let events = model.receive(message, history, state, direct);
+    let (events, reconciled_advance) = model.receive_with_advance(message, history, state, direct);
     let own_advance = (message.authorship == papo::Authorship::Own)
         .then(|| received_read_advance(model, &events))
         .flatten();
-    let mut advances = own_advance.into_iter().collect::<Vec<_>>();
+    let mut advances = own_advance
+        .into_iter()
+        .chain(reconciled_advance)
+        .collect::<Vec<_>>();
     if !history
         && let Some(buffer_id) = message_event_buffer_id(&events)
         && let Some(advance) = model.resolve_deferred_read(buffer_id)
@@ -10125,7 +10128,7 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
-    async fn restored_push_marks_immediately_before_authoritative_history() {
+    async fn restored_push_marks_immediately_then_repairs_a_millisecond_straddle() {
         let caps = [
             "account-tag",
             "draft/read-marker",
@@ -10140,7 +10143,7 @@ async fn delay(duration: Duration) {
             matches!(event, papo::Event::Connected(_))
         })
         .await;
-        let (state, outbound, _receiver) = harness(client.clone());
+        let (state, outbound, mut receiver) = harness(client.clone());
         let (buffer_id, message_id) = restore_pushed_direct(&state, &client);
         let runtime = Runtime {
             state: Arc::clone(&state),
@@ -10191,6 +10194,37 @@ async fn delay(duration: Duration) {
         let label = request_label(&request);
         wire.server(format!(
             "@label={label} :offline.test MARKREAD alice timestamp=2026-11-03T12:34:56.788Z"
+        ))
+        .await;
+        wire.server("@account=alice;msgid=unrelated;time=2026-11-03T12:35:00.000Z :alice!a@host PRIVMSG weblounge :new and unread")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        assert!(collect(&mut receiver).iter().any(|event| matches!(
+            event,
+            EngineToUi::UnreadChanged {
+                buffer_id: current_buffer,
+                unread: 1,
+                mentions: 1,
+            } if *current_buffer == buffer_id
+        )));
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err()
+        );
+        wire.server("@account=alice;msgid=pushed-direct;time=2026-11-03T12:34:56.789Z :alice!a@host PRIVMSG weblounge :arrived while closed")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+
+        _ = collect(&mut receiver);
+        let request = wire.next_sent().await;
+        assert!(
+            request.ends_with("MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"),
+            "unexpected request: {request}"
+        );
+        let label = request_label(&request);
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD alice timestamp=2026-11-03T12:34:56.789Z"
         ))
         .await;
     }
