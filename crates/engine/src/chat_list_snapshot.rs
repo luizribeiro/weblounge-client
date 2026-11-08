@@ -25,6 +25,54 @@ pub(crate) struct ChatListSnapshot {
     pub(crate) rows: Vec<SnapshotRow>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotChanges {
+    fingerprint: String,
+    cursor_ms: Option<i64>,
+    rows: Vec<SnapshotRow>,
+    removed: Vec<SnapshotConversation>,
+}
+
+impl SnapshotChanges {
+    pub(crate) fn between(
+        previous: &ChatListSnapshot,
+        next: &ChatListSnapshot,
+        removed: Vec<SnapshotConversation>,
+    ) -> Option<Self> {
+        let rows = next
+            .rows
+            .iter()
+            .filter(|row| {
+                previous
+                    .rows
+                    .iter()
+                    .find(|stored| stored.conversation == row.conversation)
+                    != Some(*row)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let cursor_ms = (next.cursor_ms > previous.cursor_ms)
+            .then_some(next.cursor_ms)
+            .flatten();
+        (!rows.is_empty() || !removed.is_empty() || cursor_ms.is_some()).then(|| Self {
+            fingerprint: next.fingerprint.clone(),
+            cursor_ms,
+            rows,
+            removed,
+        })
+    }
+
+    fn initial(snapshot: &ChatListSnapshot) -> Self {
+        let empty = ChatListSnapshot::new(snapshot.fingerprint.clone(), Vec::new());
+        Self::between(&empty, snapshot, Vec::new()).unwrap_or(Self {
+            fingerprint: snapshot.fingerprint.clone(),
+            cursor_ms: snapshot.cursor_ms,
+            rows: Vec::new(),
+            removed: Vec::new(),
+        })
+    }
+}
+
 impl ChatListSnapshot {
     pub(crate) fn new(fingerprint: String, rows: Vec<SnapshotRow>) -> Self {
         Self {
@@ -186,17 +234,27 @@ pub(crate) async fn write<B: KvBackend>(
     backend: &B,
     snapshot: &ChatListSnapshot,
 ) -> Result<(), StorageError> {
-    let incoming = snapshot.clone();
+    write_changes(backend, &SnapshotChanges::initial(snapshot)).await
+}
+
+pub(crate) async fn write_changes<B: KvBackend>(
+    backend: &B,
+    changes: &SnapshotChanges,
+) -> Result<(), StorageError> {
+    let changes = changes.clone();
     backend
         .update(Space::Cache, SNAPSHOT_KEY, |stored| {
             let mut snapshot = stored
                 .as_deref()
-                .and_then(|bytes| ChatListSnapshot::decode(bytes, &incoming.fingerprint))
-                .unwrap_or_else(|| ChatListSnapshot::new(incoming.fingerprint.clone(), Vec::new()));
-            for row in incoming.rows {
+                .and_then(|bytes| ChatListSnapshot::decode(bytes, &changes.fingerprint))
+                .unwrap_or_else(|| ChatListSnapshot::new(changes.fingerprint.clone(), Vec::new()));
+            for row in changes.rows {
                 snapshot.merge_row(row);
             }
-            merge_max(&mut snapshot.cursor_ms, incoming.cursor_ms);
+            for removed in changes.removed {
+                snapshot.rows.retain(|row| row.conversation != removed);
+            }
+            merge_max(&mut snapshot.cursor_ms, changes.cursor_ms);
             snapshot.encode().map(Some)
         })
         .await
@@ -233,8 +291,8 @@ fn latest_time(row: &SnapshotRow) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow, clear, fingerprint,
-        read, truncate_preview, write,
+        ChatListSnapshot, SnapshotChanges, SnapshotConversation, SnapshotCursor, SnapshotRow,
+        clear, fingerprint, read, truncate_preview, write, write_changes,
     };
     use crate::read_model::{MessageStub, ServerTimeMs};
     use crate::storage::MemoryKv;
@@ -496,5 +554,51 @@ mod tests {
         stored.merge(refreshed.clone());
 
         assert_eq!(stored.preview, refreshed.preview);
+    }
+
+    #[tokio::test]
+    async fn changed_rows_share_one_atomic_update() {
+        let backend = MemoryKv::default();
+        let before = snapshot();
+        write(&backend, &before).await.expect("seed");
+        let mut after = before.clone();
+        after.rows[0].title = "new channel title".into();
+        after.rows[0].last_activity_ms = Some(1_700_000_000_100);
+        after.rows[1].title = "new direct title".into();
+        after.rows[1].last_activity_ms = Some(1_700_000_000_101);
+        backend.fail_commit_after(1);
+
+        write(&backend, &after).await.expect("one batch update");
+
+        let stored = read(&backend)
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, &before.fingerprint));
+        assert_eq!(stored, Some(after));
+    }
+
+    #[tokio::test]
+    async fn only_an_explicit_removal_deletes_a_stored_row() {
+        let backend = MemoryKv::default();
+        let before = snapshot();
+        write(&backend, &before).await.expect("seed");
+        let without_channel =
+            ChatListSnapshot::new(before.fingerprint.clone(), vec![before.rows[1].clone()]);
+
+        assert!(SnapshotChanges::between(&before, &without_channel, Vec::new()).is_none());
+        let changes = SnapshotChanges::between(
+            &before,
+            &without_channel,
+            vec![before.rows[0].conversation.clone()],
+        )
+        .expect("explicit removal");
+        write_changes(&backend, &changes).await.expect("remove row");
+
+        let stored = read(&backend)
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, &before.fingerprint))
+            .expect("stored snapshot");
+        assert_eq!(stored.rows, without_channel.rows);
     }
 }

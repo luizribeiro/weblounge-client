@@ -151,6 +151,8 @@ pub struct MemoryKv {
     rows: Mutex<MemoryRows>,
     #[cfg(test)]
     commit_failures: Mutex<usize>,
+    #[cfg(test)]
+    commits_before_failure: Mutex<Option<usize>>,
 }
 
 type MemoryRows = BTreeMap<(Space, Vec<u8>), Vec<u8>>;
@@ -190,6 +192,7 @@ impl KvBackend for MemoryKv {
     async fn commit(&self, space: Space, operations: Vec<Operation>) -> Result<(), StorageError> {
         #[cfg(test)]
         {
+            fail_commit_if_requested(self)?;
             let mut failures = lock(&self.commit_failures);
             if *failures > 0 {
                 *failures -= 1;
@@ -220,6 +223,7 @@ impl KvBackend for MemoryKv {
     {
         #[cfg(test)]
         {
+            fail_commit_if_requested(self)?;
             let mut failures = lock(&self.commit_failures);
             if *failures > 0 {
                 *failures -= 1;
@@ -250,6 +254,23 @@ impl MemoryKv {
     pub(crate) fn fail_next_commit(&self) {
         *lock(&self.commit_failures) += 1;
     }
+
+    pub(crate) fn fail_commit_after(&self, successful_commits: usize) {
+        *lock(&self.commits_before_failure) = Some(successful_commits);
+    }
+}
+
+#[cfg(test)]
+fn fail_commit_if_requested(backend: &MemoryKv) -> Result<(), StorageError> {
+    let mut remaining = lock(&backend.commits_before_failure);
+    if *remaining == Some(0) {
+        *remaining = None;
+        return Err(StorageError::Transaction("injected commit failure".into()));
+    }
+    if let Some(remaining) = remaining.as_mut() {
+        *remaining -= 1;
+    }
+    Ok(())
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
