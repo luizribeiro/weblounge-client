@@ -808,6 +808,48 @@ standalone inputs, the derived foreground decision and acted-on transitions. Lea
 only acquire or renewal results and successful beacon sends. The newest-first plain-text list is
 copyable and never contains routes, devices, networks, conversations, people or message content.
 
+### On-device delivery log implementation (2026-11-08)
+
+Blank iPhone fallback notifications need a diagnostic that survives service-worker suspension and
+does not require a Mac. The service worker therefore keeps the newest 50 delivery summaries under
+one key in the existing push database's `state` store. This is device-local diagnostic state, not
+telemetry: the client never uploads it, and sign-out/reset behavior remains that database's existing
+responsibility.
+
+Each versioned entry contains only its wall time, the worker/shell compatibility version, one closed
+outcome (`real_notification`, `deadline_generic_replaced`, `final_generic`, `silent_control`, or
+`dismissed_fallback`), whether the 1.5-second fallback deadline fired, total elapsed milliseconds,
+whether its database write had to be deferred, and elapsed milliseconds for code-defined stages.
+The stages follow the worker's actual work: envelope decode, push-database open, push-database
+transaction, route lookup, key lookup, decrypt, parser cache lookup, parser/Wasm load, parse,
+notification show, fallback dismissal, and state commit. A final failure contains only its stage,
+the JavaScript error `name`, and a short reason selected from a code-owned table. Error messages and
+stacks are never persisted. When available, an entry may also say that Web Locks exists and record
+the aggregate visibility of controlled window clients. Neither signal claims to reveal the device's
+lock state.
+
+The entry type has no fields for payload text, nick, target, network, msgid, route id, endpoint, or
+key material. The writer accepts only that type, bounds its own database work independently, and
+runs after the delivery outcome is settled. It first tries IndexedDB. On failure it retains a
+`deferred=true` entry in the service worker's in-memory ring, which remains writable when protected
+device storage is not. The next push, window message, navigation, activation, or notification tap
+tries to flush that ring to IndexedDB. Memory is deliberately the fallback rather than the Cache API:
+Cache availability while locked is itself under diagnosis, and a second unverified storage backend
+would obscure the result. The tradeoff is that iOS can terminate the worker before an unlock event,
+losing an unflushed entry. A failed or timed-out diagnostic write is swallowed and cannot change
+notification presentation, fallback timing, silent-control handling, or receipt-order commit release.
+
+`/debug push` is the in-app activation path, including inside an installed iPhone Home Screen app;
+its persisted flag avoids reliance on a launch query string. The push overlay reads the ring on
+opening, renders newest-first single-line entries, and provides a copy button for those same safe
+lines. `/debug off` removes the overlay flag as before.
+
+Unit tests pin every outcome, named-stage failures, deadline overrun, successful and silent
+deliveries, writer failure isolation, deferred flush, the 50-entry bound, and rejection of
+distinctive payload and identifier strings from serialized entries. Built-app Chromium delivery
+opens the overlay through the composer command and observes the stored entry. Existing push
+notification/full-chain and native-feel journeys remain the behavioral regression boundary.
+
 ### Web Push urgency policy implementation (2026-11-04)
 
 Active Web Push routes accept RFC 8030's `very-low`, `low`, `normal`, and `high` urgency values,
