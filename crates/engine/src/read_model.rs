@@ -197,6 +197,7 @@ pub enum BadgeCount {
     /// An exact known unread count.
     Exact(usize),
     /// The unread region is incomplete or has more than 99 known messages.
+    #[serde(rename = "more_than_99")]
     MoreThan99,
 }
 
@@ -338,6 +339,8 @@ pub fn should_close_notification<K: Eq>(
     notification_conversation == conversation && mark.is_some_and(|mark| notification_time <= mark)
 }
 
+#[cfg(test)]
+mod golden_tests;
 #[cfg(test)]
 mod property_tests;
 #[cfg(test)]

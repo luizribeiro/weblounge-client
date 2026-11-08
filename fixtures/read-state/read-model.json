@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "channel mention after an inclusive mark",
+      "kind": "channel",
+      "muted": false,
+      "facts": {
+        "mark": 100,
+        "pending": null,
+        "stubs": [
+          { "msgid": "plain", "time": 101, "mention": false },
+          { "msgid": "highlight", "time": 102, "mention": true }
+        ],
+        "gap_until": null
+      },
+      "divider_mark": 100,
+      "notification_checks": [
+        { "same_conversation": true, "time": 100, "close": true },
+        { "same_conversation": true, "time": 101, "close": false },
+        { "same_conversation": false, "time": 99, "close": false }
+      ],
+      "expected": {
+        "unread": 2,
+        "mentions": 1,
+        "divider": { "placement": "before", "msgid": "plain" },
+        "badge": { "count": { "exact": 2 }, "kind": "mention" },
+        "app_badge": 1
+      }
+    },
+    {
+      "name": "muted channel retains unread without mention severity",
+      "kind": "channel",
+      "muted": true,
+      "facts": {
+        "mark": 200,
+        "pending": null,
+        "stubs": [
+          { "msgid": "muted-highlight", "time": 201, "mention": true }
+        ],
+        "gap_until": null
+      },
+      "divider_mark": 200,
+      "notification_checks": [],
+      "expected": {
+        "unread": 1,
+        "mentions": 0,
+        "divider": { "placement": "before", "msgid": "muted-highlight" },
+        "badge": { "count": { "exact": 1 }, "kind": "unread" },
+        "app_badge": 0
+      }
+    },
+    {
+      "name": "direct messages all contribute to the app badge",
+      "kind": "direct",
+      "muted": false,
+      "facts": {
+        "mark": 300,
+        "pending": 302,
+        "stubs": [
+          { "msgid": "dm-one", "time": 301, "mention": true },
+          { "msgid": "dm-two", "time": 302, "mention": true }
+        ],
+        "gap_until": null
+      },
+      "divider_mark": 300,
+      "notification_checks": [
+        { "same_conversation": true, "time": 299, "close": true },
+        { "same_conversation": true, "time": 301, "close": false }
+      ],
+      "expected": {
+        "unread": 2,
+        "mentions": 2,
+        "divider": { "placement": "before", "msgid": "dm-one" },
+        "badge": { "count": { "exact": 2 }, "kind": "mention" },
+        "app_badge": 2
+      }
+    },
+    {
+      "name": "known gap forces a top divider and 99 plus",
+      "kind": "channel",
+      "muted": false,
+      "facts": {
+        "mark": 400,
+        "pending": null,
+        "stubs": [
+          { "msgid": "retained", "time": 450, "mention": false }
+        ],
+        "gap_until": 440
+      },
+      "divider_mark": 400,
+      "notification_checks": [],
+      "expected": {
+        "unread": 1,
+        "mentions": 0,
+        "divider": { "placement": "at_top" },
+        "badge": { "count": "more_than_99", "kind": "unread" },
+        "app_badge": 0
+      }
+    },
+    {
+      "name": "covered facts project no unread state",
+      "kind": "direct",
+      "muted": false,
+      "facts": {
+        "mark": 500,
+        "pending": null,
+        "stubs": [
+          { "msgid": "before", "time": 499, "mention": true },
+          { "msgid": "tie", "time": 500, "mention": true }
+        ],
+        "gap_until": 500
+      },
+      "divider_mark": 500,
+      "notification_checks": [
+        { "same_conversation": true, "time": 500, "close": true }
+      ],
+      "expected": {
+        "unread": 0,
+        "mentions": 0,
+        "divider": null,
+        "badge": null,
+        "app_badge": 0
+      }
+    }
+  ]
+}
