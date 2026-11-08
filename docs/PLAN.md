@@ -65,6 +65,11 @@ The single place a fresh session reads to know where the project stands. Update 
   mark and latest position but discards saved badge counts once; changed conversations rebuild their
   facts from server history. This removes cached count bases, push decrements, marker recounts,
   lifecycle zeroing and stored snapshot badges.
+- [x] Keep schema-6 read facts and closed-page notifications consistent after a remote read. A mark
+  that covers a bounded unread gap now removes that dominated gap before snapshot persistence, and
+  an unchanged cached direct with retained stubs still fetches its server marker during TARGETS
+  reconciliation. Engine regressions and the built-app stale-snapshot and full push VM journeys
+  cover both boundaries.
 - [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now
   reuse one route/dead-endpoint reconciliation, while a foreground Web Lock and shared heartbeat
   deadline keep one device lease across brief blur, visibility and tab handoffs; only real freeze
