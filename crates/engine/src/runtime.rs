@@ -249,8 +249,6 @@ struct SnapshotWriter {
     generation: u64,
     active: bool,
     pending: VecDeque<SnapshotChanges>,
-    flush: Option<oneshot::Sender<()>>,
-    flush_requested: bool,
 }
 
 #[derive(Clone)]
@@ -392,7 +390,6 @@ impl Runtime {
                 self.set_device_online(envelope.id, network_id, online)
             }
             EngineRequest::FlushChatListSnapshot => {
-                flush_snapshot_write(&lock(&self.state).snapshot_writer);
                 vec![EngineToUi::CommandResult { id: envelope.id }]
             }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
@@ -1918,7 +1915,6 @@ impl Runtime {
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
         update_chat_list(&self.state, &self.outbound, instance);
-        flush_snapshot_write(&lock(&self.state).snapshot_writer);
         if let Some((client, instance)) = flush {
             spawn_read_flush(
                 Arc::clone(&self.state),
@@ -1942,7 +1938,6 @@ impl Runtime {
         output.push(EngineToUi::CommandResult { id: command_id });
         drop(state);
         update_chat_list(&self.state, &self.outbound, instance);
-        flush_snapshot_write(&lock(&self.state).snapshot_writer);
         if let Some((client, instance)) = flush {
             spawn_read_flush(
                 Arc::clone(&self.state),
@@ -4604,34 +4599,16 @@ fn schedule_snapshot_write(
     writer: Arc<Mutex<SnapshotWriter>>,
     changes: SnapshotChanges,
 ) {
-    schedule_snapshot_write_after(storage, writer, changes, std::future::ready(()));
-}
-
-fn begin_snapshot_write(
-    writer: &Arc<Mutex<SnapshotWriter>>,
-    changes: SnapshotChanges,
-) -> Option<(u64, oneshot::Receiver<()>)> {
-    let mut writer = lock(writer);
-    writer.pending.push_back(changes);
-    if writer.active {
-        return None;
-    }
-    writer.active = true;
-    let (flush, receiver) = oneshot::channel();
-    writer.flush = Some(flush);
-    Some((writer.generation, receiver))
-}
-
-fn flush_snapshot_write(writer: &Arc<Mutex<SnapshotWriter>>) {
-    let mut writer = lock(writer);
-    if !writer.active {
-        return;
-    }
-    if let Some(flush) = writer.flush.take() {
-        let _ = flush.send(());
-    } else {
-        writer.flush_requested = true;
-    }
+    let generation = {
+        let mut writer = lock(&writer);
+        writer.pending.push_back(changes);
+        if writer.active {
+            return;
+        }
+        writer.active = true;
+        writer.generation
+    };
+    spawn_snapshot_writer(storage, writer, generation);
 }
 
 fn cancel_snapshot_writes(writer: &Arc<Mutex<SnapshotWriter>>) {
@@ -4639,42 +4616,6 @@ fn cancel_snapshot_writes(writer: &Arc<Mutex<SnapshotWriter>>) {
     writer.generation = writer.generation.wrapping_add(1);
     writer.active = false;
     writer.pending.clear();
-    writer.flush = None;
-    writer.flush_requested = false;
-}
-
-enum SnapshotInterval {
-    Immediate,
-    Wait(oneshot::Receiver<()>),
-}
-
-fn next_snapshot_interval(
-    writer: &Arc<Mutex<SnapshotWriter>>,
-    generation: u64,
-) -> Option<SnapshotInterval> {
-    let mut writer = lock(writer);
-    if writer.generation != generation {
-        return None;
-    }
-    if writer.pending.is_empty() {
-        writer.active = false;
-        writer.flush = None;
-        writer.flush_requested = false;
-        return None;
-    }
-    if std::mem::take(&mut writer.flush_requested) {
-        return Some(SnapshotInterval::Immediate);
-    }
-    let (flush, receiver) = oneshot::channel();
-    writer.flush = Some(flush);
-    Some(SnapshotInterval::Wait(receiver))
-}
-
-async fn wait_for_snapshot_interval(flush: oneshot::Receiver<()>) {
-    tokio::select! {
-        () = delay(Duration::from_millis(750)) => {}
-        _ = flush => {}
-    }
 }
 
 async fn write_snapshot_intervals(
@@ -4689,7 +4630,6 @@ async fn write_snapshot_intervals(
             if writer.generation != generation {
                 return;
             }
-            writer.flush = None;
             let Some(changes) = writer.pending.pop_front() else {
                 writer.active = false;
                 return;
@@ -4712,11 +4652,6 @@ async fn write_snapshot_intervals(
                     writer.pending.push_front(changes);
                 }
             }
-        }
-        match next_snapshot_interval(&writer, generation) {
-            Some(SnapshotInterval::Immediate) => {}
-            Some(SnapshotInterval::Wait(flush)) => wait_for_snapshot_interval(flush).await,
-            None => return,
         }
     }
 }
@@ -4743,39 +4678,23 @@ async fn delay(duration: Duration) {
 }
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-fn schedule_snapshot_write_after(
+fn spawn_snapshot_writer(
     storage: RuntimeStorage,
     writer: Arc<Mutex<SnapshotWriter>>,
-    changes: SnapshotChanges,
-    delay: impl std::future::Future<Output = ()> + 'static,
+    generation: u64,
 ) {
-    let Some((generation, flush)) = begin_snapshot_write(&writer, changes) else {
-        return;
-    };
     spawn_task(async move {
-        tokio::select! {
-            () = delay => {}
-            _ = flush => {}
-        }
         write_snapshot_intervals(storage, writer, generation).await;
     });
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-fn schedule_snapshot_write_after(
+fn spawn_snapshot_writer(
     storage: RuntimeStorage,
     writer: Arc<Mutex<SnapshotWriter>>,
-    changes: SnapshotChanges,
-    delay: impl std::future::Future<Output = ()> + Send + 'static,
+    generation: u64,
 ) {
-    let Some((generation, flush)) = begin_snapshot_write(&writer, changes) else {
-        return;
-    };
     spawn_task(async move {
-        tokio::select! {
-            () = delay => {}
-            _ = flush => {}
-        }
         write_snapshot_intervals(storage, writer, generation).await;
     });
 }
@@ -5286,19 +5205,18 @@ mod tests {
     };
 
     use papo_testing::{ConnectedBuilder, Wire, wire};
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::mpsc;
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL, PushRegistration,
         READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork, Runtime, RuntimeState,
         attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
-        flush_snapshot_write, join_request_events, lock, next_connection_state,
-        permanent_mark_read_error, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write,
-        schedule_snapshot_write_after, spawn_history_fetch, spawn_online_direct_resolution,
-        spawn_read_marker_fetch, spawn_target_reconciliation, state_limit_events,
-        target_sync_boundary, update_chat_list, utf16_len,
+        join_request_events, lock, next_connection_state, permanent_mark_read_error,
+        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
+        restore_target_rows, schedule_snapshot_write, spawn_history_fetch,
+        spawn_online_direct_resolution, spawn_read_marker_fetch, spawn_target_reconciliation,
+        state_limit_events, target_sync_boundary, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -5461,71 +5379,42 @@ async fn delay(duration: Duration) {
         .expect("both queued rows persist");
     }
 
-    #[tokio::test]
-    async fn snapshot_flush_wakes_a_pending_throttled_write() {
-        let storage = Arc::new(MemoryKv::default());
-        let writer = Arc::default();
-        let snapshot = ChatListSnapshot::new("network".into(), Vec::new());
-        let changed = snapshot.clone().with_cursor_ms(Some(100));
-        let (_clock, pending) = oneshot::channel::<()>();
-        schedule_snapshot_write_after(
-            Arc::clone(&storage),
-            Arc::clone(&writer),
-            SnapshotChanges::between(&snapshot, &changed, Vec::new()).expect("cursor changed"),
-            async move {
-                let _ = pending.await;
-            },
-        );
-        tokio::task::yield_now().await;
-        assert_eq!(read(storage.as_ref()).await.expect("read"), None);
-
-        flush_snapshot_write(&writer);
-
-        tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                if read(storage.as_ref()).await.expect("read").is_some() {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("lifecycle flush writes without the throttle delay");
-        let stored = read(storage.as_ref())
-            .await
-            .expect("read")
-            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
-        assert_eq!(stored, Some(changed));
-    }
-
     #[tokio::test(start_paused = true)]
-    async fn snapshot_writer_retries_a_failed_commit() {
+    async fn snapshot_writer_retries_without_a_readiness_gate() {
         let storage = Arc::new(MemoryKv::default());
         let writer = Arc::default();
-        let snapshot = ChatListSnapshot::new("network".into(), Vec::new());
-        let changed = snapshot.clone().with_cursor_ms(Some(100));
-        let (tick, clock) = oneshot::channel();
+        let empty = ChatListSnapshot::new("network".into(), Vec::new());
+        let snapshot = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(100),
+                preview: Some("hello".into()),
+                newest: None,
+                read_at_ms: Some(100),
+                pending_read_at_ms: Some(100),
+                stubs: Vec::new(),
+                gap_until: None,
+                peer_pin: None,
+            }],
+        );
         storage.fail_next_commit();
-        schedule_snapshot_write_after(
+        schedule_snapshot_write(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            SnapshotChanges::between(&snapshot, &changed, Vec::new()).expect("cursor changed"),
-            async move {
-                let _ = clock.await;
-            },
+            SnapshotChanges::between(&empty, &snapshot, Vec::new()).expect("mark changed"),
         );
 
-        let _ = tick.send(());
         tokio::task::yield_now().await;
-        assert_eq!(read(storage.as_ref()).await.expect("read"), None);
-
-        tokio::time::advance(Duration::from_millis(750)).await;
         tokio::task::yield_now().await;
         let stored = read(storage.as_ref())
             .await
             .expect("read")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
-        assert_eq!(stored, Some(changed));
+        assert_eq!(stored, Some(snapshot));
     }
 
     #[test]
