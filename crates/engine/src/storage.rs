@@ -136,6 +136,11 @@ pub trait KvBackend {
     /// Applies every operation atomically.
     async fn commit(&self, space: Space, operations: Vec<Operation>) -> Result<(), StorageError>;
 
+    /// Atomically replaces one value based on the value stored in the same transaction.
+    async fn update<F>(&self, space: Space, key: &[u8], update: F) -> Result<(), StorageError>
+    where
+        F: FnOnce(Option<Vec<u8>>) -> Result<Option<Vec<u8>>, StorageError>;
+
     /// Deletes every value in one space.
     async fn clear(&self, space: Space) -> Result<(), StorageError>;
 }
@@ -206,6 +211,31 @@ impl KvBackend for MemoryKv {
             }
         }
         *lock(&self.rows) = next;
+        Ok(())
+    }
+
+    async fn update<F>(&self, space: Space, key: &[u8], update: F) -> Result<(), StorageError>
+    where
+        F: FnOnce(Option<Vec<u8>>) -> Result<Option<Vec<u8>>, StorageError>,
+    {
+        #[cfg(test)]
+        {
+            let mut failures = lock(&self.commit_failures);
+            if *failures > 0 {
+                *failures -= 1;
+                return Err(StorageError::Transaction("injected commit failure".into()));
+            }
+        }
+        let mut rows = lock(&self.rows);
+        let row_key = (space, key.to_vec());
+        match update(rows.get(&row_key).cloned())? {
+            Some(value) => {
+                rows.insert(row_key, value);
+            }
+            None => {
+                rows.remove(&row_key);
+            }
+        }
         Ok(())
     }
 
@@ -323,6 +353,19 @@ mod indexed_db {
                 Self::IndexedDb(backend) => backend.commit(space, operations).await,
                 Self::Memory(backend) if space == Space::Cache => {
                     backend.commit(space, operations).await
+                }
+                Self::Memory(_) => Err(StorageError::UnsupportedSpace(space)),
+            }
+        }
+
+        async fn update<F>(&self, space: Space, key: &[u8], update: F) -> Result<(), StorageError>
+        where
+            F: FnOnce(Option<Vec<u8>>) -> Result<Option<Vec<u8>>, StorageError>,
+        {
+            match self {
+                Self::IndexedDb(backend) => backend.update(space, key, update).await,
+                Self::Memory(backend) if space == Space::Cache => {
+                    backend.update(space, key, update).await
                 }
                 Self::Memory(_) => Err(StorageError::UnsupportedSpace(space)),
             }
@@ -505,6 +548,42 @@ mod indexed_db {
                             store.clear().map_err(transaction_error)?;
                         }
                     }
+                }
+            }
+            transaction
+                .commit()
+                .map_err(transaction_error)?
+                .await
+                .map(|_| ())
+                .map_err(transaction_error)
+        }
+
+        async fn update<F>(&self, space: Space, key: &[u8], update: F) -> Result<(), StorageError>
+        where
+            F: FnOnce(Option<Vec<u8>>) -> Result<Option<Vec<u8>>, StorageError>,
+        {
+            let store_name = Self::store_name(space)?;
+            let transaction = self
+                .database
+                .transaction(&[store_name], TransactionMode::ReadWrite)
+                .map_err(transaction_error)?;
+            let store = transaction
+                .object_store(store_name)
+                .map_err(transaction_error)?;
+            let value = store
+                .get(bytes_value(key))
+                .map_err(transaction_error)?
+                .await
+                .map_err(transaction_error)?;
+            let current = value.map(|value| decode_bytes(&value)).transpose()?;
+            match update(current)? {
+                Some(value) => {
+                    store
+                        .put(&bytes_value(&value), Some(&bytes_value(key)))
+                        .map_err(transaction_error)?;
+                }
+                None => {
+                    store.delete(bytes_value(key)).map_err(transaction_error)?;
                 }
             }
             transaction
@@ -716,6 +795,29 @@ mod tests {
                 .expect("range")
                 .rows,
             vec![(vec![b'a'], vec![b'a']), (vec![b'z'], b"last".to_vec())]
+        );
+    }
+
+    #[tokio::test]
+    async fn update_reads_and_replaces_inside_one_atomic_operation() {
+        let backend = MemoryKv::default();
+        backend
+            .update(Space::Cache, b"counter", |stored| {
+                assert_eq!(stored, None);
+                Ok(Some(vec![1]))
+            })
+            .await
+            .expect("insert");
+        backend
+            .update(Space::Cache, b"counter", |stored| {
+                assert_eq!(stored, Some(vec![1]));
+                Ok(Some(vec![2]))
+            })
+            .await
+            .expect("replace");
+        assert_eq!(
+            backend.get(Space::Cache, b"counter").await,
+            Ok(Some(vec![2]))
         );
     }
 }
