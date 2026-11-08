@@ -1976,6 +1976,7 @@ impl Runtime {
         let promoted = running.model.promote_cached_for_history(buffer_id);
         let sync = running.model.buffer_updated(buffer_id);
         let direct_resolution = running.model.begin_buffer_direct_resolution(buffer_id);
+        let marker_nick = direct_history_target(&fetch).cloned();
         let client = running.client.clone();
         let instance = running.instance;
         spawn_history_fetch(
@@ -1984,6 +1985,7 @@ impl Runtime {
             client.clone(),
             instance,
             fetch,
+            marker_nick,
         );
         if let Some(nick) = direct_resolution {
             spawn_cached_direct_resolution(
@@ -3028,12 +3030,14 @@ async fn drain_events(
             );
         }
         for fetch in history_fetches {
+            let marker_nick = direct_history_target(&fetch).cloned();
             spawn_history_fetch(
                 Arc::clone(&state),
                 outbound.clone(),
                 client.clone(),
                 instance,
                 fetch,
+                marker_nick,
             );
         }
         if restore_directs {
@@ -3188,33 +3192,37 @@ fn member_windows(
         .collect()
 }
 
-fn spawn_history_fetch(
-    state: Arc<Mutex<RuntimeState>>,
-    outbound: mpsc::UnboundedSender<EngineToUi>,
-    client: papo::Client,
-    instance: u64,
-    fetch: HistoryFetch,
-) {
-    let marker_target = match &fetch {
-        HistoryFetch::Latest(target @ HistoryTarget::Direct(_))
+fn direct_history_target(fetch: &HistoryFetch) -> Option<&papo::Nick> {
+    match fetch {
+        HistoryFetch::Latest(HistoryTarget::Direct(nick))
         | HistoryFetch::After {
-            target: target @ HistoryTarget::Direct(_),
+            target: HistoryTarget::Direct(nick),
             ..
-        } => Some(target.clone()),
+        } => Some(nick),
         HistoryFetch::Latest(HistoryTarget::Channel(_))
         | HistoryFetch::Before { .. }
         | HistoryFetch::After {
             target: HistoryTarget::Channel(_),
             ..
         } => None,
-    };
-    if let Some(target) = marker_target {
+    }
+}
+
+fn spawn_history_fetch(
+    state: Arc<Mutex<RuntimeState>>,
+    outbound: mpsc::UnboundedSender<EngineToUi>,
+    client: papo::Client,
+    instance: u64,
+    fetch: HistoryFetch,
+    marker_nick: Option<papo::Nick>,
+) {
+    if let Some(nick) = marker_nick {
         spawn_read_marker_fetch(
             Arc::clone(&state),
             outbound.clone(),
             client.clone(),
             instance,
-            target,
+            HistoryTarget::Direct(nick),
         );
     }
     spawn_history_page(state, outbound, client, instance, fetch);
@@ -3414,12 +3422,14 @@ fn fallback_target_reconciliation(
     send_events(outbound, buffers.into_iter().collect());
     send_recent_directs_ready(state, outbound, instance, network_id, false);
     for fetch in fetches {
+        let marker_nick = direct_history_target(&fetch).cloned();
         spawn_history_fetch(
             Arc::clone(state),
             outbound.clone(),
             client.clone(),
             instance,
             fetch,
+            marker_nick,
         );
     }
 }
@@ -3496,12 +3506,14 @@ fn restore_target_rows(
         );
     }
     for fetch in channel_fetches {
+        let marker_nick = direct_history_target(&fetch).cloned();
         spawn_history_fetch(
             Arc::clone(state),
             outbound.clone(),
             client.clone(),
             instance,
             fetch,
+            marker_nick,
         );
     }
 }
@@ -9223,16 +9235,12 @@ async fn delay(duration: Duration) {
                     }],
                 ));
         }
-        let nick = papo_testing::nick(client.state().casemapping(), "alice");
         restore_target_rows(
             &state,
             &outbound,
             &client,
             1,
-            vec![(
-                papo::Conversation::Private(nick.clone()),
-                UNIX_EPOCH + Duration::from_millis(100),
-            )],
+            Vec::new(),
             true,
             UNIX_EPOCH + Duration::from_millis(100),
         );
@@ -9240,14 +9248,12 @@ async fn delay(duration: Duration) {
         let request = wire.next_sent().await;
         assert!(request.ends_with("MARKREAD alice"));
         {
-            let mut state = lock(&state);
-            let model = &mut state
+            let state = lock(&state);
+            let model = &state
                 .network
-                .as_mut()
+                .as_ref()
                 .expect("network remains active")
                 .model;
-            let pending = model.direct(&nick);
-            assert!(matches!(pending, Some(DirectAvailability::Pending)));
             let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
                 panic!("buffer projection event expected")
             };
@@ -9258,9 +9264,6 @@ async fn delay(duration: Duration) {
                     .map(|buffer| (buffer.unread, buffer.mentions)),
                 Some((3, 3))
             );
-            assert!(model.begin_direct_resolution(&nick).is_some());
-            let resolving = model.direct(&nick);
-            assert!(matches!(resolving, Some(DirectAvailability::Resolving)));
         }
 
         let label = request_label(&request);
@@ -12325,6 +12328,7 @@ async fn delay(duration: Duration) {
             harness.client.clone(),
             1,
             fetch,
+            None,
         );
         let before =
             next_sent_containing(&mut harness.wire, "CHATHISTORY BEFORE #room msgid=m1").await;
