@@ -2,6 +2,10 @@ import "./viewport-debug.css";
 import { buildVersion } from "../build-version";
 import { deploymentConfigUnknownFields } from "../hosted/deployment-config";
 import { foregroundLog, formatForegroundLog } from "./push/foreground-log";
+import {
+  formatPushDeliveryLog,
+  readPushDeliveryLog,
+} from "./push/push-delivery-log";
 
 export type DebugReading = readonly [label: string, value: string];
 
@@ -71,11 +75,47 @@ export function installPushDebug(
   _root: HTMLElement,
   browserWindow: Window,
 ): () => void {
+  let deliveries = "Loading push delivery log…";
   return installDebugSection(browserWindow, {
     id: "push",
     title: "push",
-    read: () =>
-      pushSnapshots.get(browserWindow)?.readings ?? [["status", "unavailable"]],
+    read: () => [
+      ...(pushSnapshots.get(browserWindow)?.readings ?? [
+        ["status", "unavailable"] as const,
+      ]),
+      ["deliveries", deliveries],
+    ],
+    subscribe: (render) => {
+      let active = true;
+      const refresh = () => {
+        void readPushDeliveryLog().then(
+          (entries) => {
+            if (!active) return;
+            deliveries = formatPushDeliveryLog(entries);
+            render();
+          },
+          () => {
+            if (!active) return;
+            deliveries = "Push delivery log unavailable.";
+            render();
+          },
+        );
+      };
+      const onVisibility = () => {
+        if (!browserWindow.document.hidden) refresh();
+      };
+      refresh();
+      browserWindow.addEventListener("focus", refresh);
+      browserWindow.document.addEventListener("visibilitychange", onVisibility);
+      return () => {
+        active = false;
+        browserWindow.removeEventListener("focus", refresh);
+        browserWindow.document.removeEventListener(
+          "visibilitychange",
+          onVisibility,
+        );
+      };
+    },
   });
 }
 
@@ -144,14 +184,18 @@ function managerFor(browserWindow: Window): OverlayManager {
           ].join("\n"),
         )
         .join("\n\n");
-      const copy = [...manager.sections.values()]
-        .map(({ section }) => section.copy)
-        .find((candidate) => candidate !== undefined);
+      const copiedSection = [...manager.sections.values()].find(
+        ({ section }) => section.copy !== undefined,
+      );
+      const copy = copiedSection?.section.copy;
       overlay.replaceChildren();
-      if (copy !== undefined) {
+      if (copiedSection !== undefined && copy !== undefined) {
         overlay.removeAttribute("aria-hidden");
         const button = browserWindow.document.createElement("button");
-        button.dataset.foregroundLogCopy = "true";
+        button.dataset.debugCopy = copiedSection.section.id;
+        if (copiedSection.section.id === "default") {
+          button.dataset.foregroundLogCopy = "true";
+        }
         button.type = "button";
         button.textContent = copy.label;
         button.addEventListener("click", (event) => {
@@ -159,7 +203,9 @@ function managerFor(browserWindow: Window): OverlayManager {
           void browserWindow.navigator.clipboard?.writeText(copy.read());
         });
         overlay.append(button, "\n");
-      } else overlay.setAttribute("aria-hidden", "true");
+      } else {
+        overlay.setAttribute("aria-hidden", "true");
+      }
       overlay.append(content);
     },
   };

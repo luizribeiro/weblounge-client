@@ -132,6 +132,36 @@ test("decrypts a real envelope into one routed notification", async ({
     ]);
 });
 
+test("shows a delivered push in the in-app push debug overlay", async ({
+  context,
+  page,
+}) => {
+  await installNotificationTapEngine(context);
+  await prepareServiceWorker(context, page);
+  const distinctiveText = "overlay-private-message-7f31";
+  const envelope = await seedRouteAndEncrypt(
+    page,
+    `@time=2026-11-03T12:34:56.789Z;msgid=overlay-private-msgid-5a82 :private-nick!p@example.test PRIVMSG #private-channel :${distinctiveText}`,
+  );
+
+  await deliverPush(context, page, envelope);
+  const composer = page.getByRole("textbox", { name: /^Message /u });
+  if ((await composer.count()) === 0) {
+    await page.getByRole("button", { name: "#home" }).click();
+  }
+  await composer.fill("/debug push");
+  await composer.press("Enter");
+
+  const overlay = page.locator("[data-debug-overlay]");
+  await expect(overlay).toContainText("outcome=real-notification");
+  await expect(overlay).toContainText("stages=envelope-decode:");
+  await expect(overlay).toContainText("notification-show:");
+  await expect(overlay).not.toContainText(distinctiveText);
+  await expect(overlay).not.toContainText("overlay-private-msgid-5a82");
+  await expect(overlay).not.toContainText("private-nick");
+  await expect(overlay).not.toContainText("#private-channel");
+});
+
 test("re-shows a duplicate msgid without incrementing its badge", async ({
   context,
   page,

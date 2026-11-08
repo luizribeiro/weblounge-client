@@ -1,3 +1,4 @@
+import { IDBFactory } from "fake-indexeddb";
 import { expect, it, vi } from "vitest";
 import { decodeDeploymentConfig } from "../hosted/deployment-config";
 import {
@@ -9,6 +10,7 @@ import {
   setPushDebugSnapshot,
 } from "./debug-overlay";
 import { foregroundLog } from "./push/foreground-log";
+import { appendPushDeliveryLog } from "./push/push-delivery-log";
 
 it("records the latest engine failure in debug diagnostics", () => {
   setEngineDebugReading(
@@ -140,4 +142,33 @@ it("shows a push summary in every overlay and details in the push view", () => {
   );
   stopPush();
   setPushDebugSnapshot(window, undefined);
+});
+
+it("renders the persisted push delivery log", async () => {
+  const factory = new IDBFactory();
+  vi.stubGlobal("indexedDB", factory);
+  await appendPushDeliveryLog({
+    schema: 1,
+    atMs: Date.UTC(2026, 10, 8, 12),
+    version: "worker-1234",
+    outcome: "final_generic",
+    fallbackDeadlineFired: true,
+    elapsedMs: 2_001,
+    deferred: false,
+    stages: [{ stage: "decrypt", elapsedMs: 8 }],
+    failure: {
+      stage: "decrypt",
+      errorName: "OperationError",
+      reason: "decrypt_failed",
+    },
+  });
+
+  const stop = installPushDebug(document.createElement("div"), window);
+
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-debug-overlay]")).toHaveTextContent(
+      "outcome=final-generic fallback=true elapsed=2001ms deferred=false stages=decrypt:8ms failure=decrypt/OperationError/decrypt-failed",
+    ),
+  );
+  stop();
 });
