@@ -44,6 +44,12 @@ The single place a fresh session reads to know where the project stands. Update 
   settles. When the server accepted a message but
   its echo was lost, reconnect history reconciles the matching failed row by server msgid without
   replaying or duplicating it. Local-Ergo iPhone WebKit covers all three paths.
+- [x] Land read-state migration steps 2–3. One persisted network cursor now bounds TARGETS, advances
+  only after each delta commits, and resumes from the same boundary after relaunch. New conversation
+  rows inherit that cursor as their persisted local mark, so pre-follow history stays read while
+  later offline traffic is unread. This replaces the temporary JOIN-time floor and pushed-row
+  provenance exception; production push, launch/catch-up, relaunch, and native-feel journeys cover
+  the resulting New-divider and badge behavior.
 - [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now
   reuse one route/dead-endpoint reconciliation, while a foreground Web Lock and shared heartbeat
   deadline keep one device lease across brief blur, visibility and tab handoffs; only real freeze
