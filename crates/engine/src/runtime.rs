@@ -4582,7 +4582,7 @@ fn update_chat_list(
         let snapshot = running
             .model
             .merge_chat_list_snapshot(running.chat_list.fingerprint.clone(), &previous);
-        let changes = SnapshotChanges::between(&previous, &snapshot, Vec::new());
+        let changes = SnapshotChanges::between(&previous, &snapshot, Vec::new(), Vec::new());
         running.chat_list.snapshot = Some(snapshot);
         (live_event, changes, storage, writer)
     };
@@ -5355,12 +5355,14 @@ async fn delay(duration: Duration) {
         schedule_snapshot_write(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            SnapshotChanges::between(&empty, &first, Vec::new()).expect("first row changed"),
+            SnapshotChanges::between(&empty, &first, Vec::new(), Vec::new())
+                .expect("first row changed"),
         );
         schedule_snapshot_write(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            SnapshotChanges::between(&first, &second, Vec::new()).expect("second row changed"),
+            SnapshotChanges::between(&first, &second, Vec::new(), Vec::new())
+                .expect("second row changed"),
         );
 
         tokio::time::timeout(Duration::from_secs(1), async {
@@ -5405,7 +5407,8 @@ async fn delay(duration: Duration) {
         schedule_snapshot_write(
             Arc::clone(&storage),
             Arc::clone(&writer),
-            SnapshotChanges::between(&empty, &snapshot, Vec::new()).expect("mark changed"),
+            SnapshotChanges::between(&empty, &snapshot, Vec::new(), Vec::new())
+                .expect("mark changed"),
         );
 
         tokio::task::yield_now().await;

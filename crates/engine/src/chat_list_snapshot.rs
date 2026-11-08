@@ -47,14 +47,16 @@ pub(crate) struct SnapshotChanges {
     fingerprint: String,
     cursor_ms: Option<i64>,
     rows: Vec<SnapshotRow>,
-    removed: Vec<SnapshotConversation>,
+    removed: Vec<SnapshotRemoval>,
+    joined: Vec<SnapshotPresence>,
 }
 
 impl SnapshotChanges {
     pub(crate) fn between(
         previous: &ChatListSnapshot,
         next: &ChatListSnapshot,
-        removed: Vec<SnapshotConversation>,
+        removed: Vec<SnapshotRemoval>,
+        joined: Vec<SnapshotPresence>,
     ) -> Option<Self> {
         let rows = next
             .rows
@@ -71,23 +73,26 @@ impl SnapshotChanges {
         let cursor_ms = (next.cursor_ms > previous.cursor_ms)
             .then_some(next.cursor_ms)
             .flatten();
-        (!rows.is_empty() || !removed.is_empty() || cursor_ms.is_some()).then(|| Self {
-            fingerprint: next.fingerprint.clone(),
-            cursor_ms,
-            rows,
-            removed,
-        })
+        (!rows.is_empty() || !removed.is_empty() || !joined.is_empty() || cursor_ms.is_some()).then(
+            || Self {
+                fingerprint: next.fingerprint.clone(),
+                cursor_ms,
+                rows,
+                removed,
+                joined,
+            },
+        )
     }
 
     #[cfg(test)]
     fn initial(snapshot: &ChatListSnapshot) -> Self {
-        let empty = ChatListSnapshot::new(snapshot.fingerprint.clone(), Vec::new());
-        Self::between(&empty, snapshot, Vec::new()).unwrap_or(Self {
+        Self {
             fingerprint: snapshot.fingerprint.clone(),
             cursor_ms: snapshot.cursor_ms,
-            rows: Vec::new(),
-            removed: Vec::new(),
-        })
+            rows: snapshot.rows.clone(),
+            removed: snapshot.tombstones.clone(),
+            joined: snapshot.presences.clone(),
+        }
     }
 }
 
@@ -160,6 +165,13 @@ impl ChatListSnapshot {
     }
 
     fn merge_row(&mut self, incoming: SnapshotRow) {
+        if self
+            .tombstones
+            .iter()
+            .any(|removed| removed.conversation == incoming.conversation)
+        {
+            return;
+        }
         if let Some(stored) = self
             .rows
             .iter_mut()
@@ -169,6 +181,45 @@ impl ChatListSnapshot {
         } else {
             self.rows.push(incoming);
         }
+    }
+
+    fn merge_presence(&mut self, incoming: SnapshotPresence) {
+        let conversation = incoming.conversation.clone();
+        let joined_at_ms = incoming.joined_at_ms;
+        if let Some(stored) = self
+            .presences
+            .iter_mut()
+            .find(|stored| stored.conversation == incoming.conversation)
+        {
+            stored.joined_at_ms = stored.joined_at_ms.max(joined_at_ms);
+        } else {
+            self.presences.push(incoming);
+        }
+        self.tombstones.retain(|removed| {
+            removed.conversation != conversation || removed.removed_at_ms >= joined_at_ms
+        });
+    }
+
+    fn merge_removal(&mut self, incoming: SnapshotRemoval) {
+        let joined_at_ms = self
+            .presences
+            .iter()
+            .find(|presence| presence.conversation == incoming.conversation)
+            .map(|presence| presence.joined_at_ms);
+        if joined_at_ms.is_some_and(|joined| joined > incoming.removed_at_ms) {
+            return;
+        }
+        let conversation = incoming.conversation.clone();
+        if let Some(stored) = self
+            .tombstones
+            .iter_mut()
+            .find(|stored| stored.conversation == conversation)
+        {
+            stored.removed_at_ms = stored.removed_at_ms.max(incoming.removed_at_ms);
+        } else {
+            self.tombstones.push(incoming);
+        }
+        self.rows.retain(|row| row.conversation != conversation);
     }
 }
 
@@ -271,11 +322,14 @@ pub(crate) async fn write_changes<B: KvBackend>(
                 .as_deref()
                 .and_then(|bytes| ChatListSnapshot::decode(bytes, &changes.fingerprint))
                 .unwrap_or_else(|| ChatListSnapshot::new(changes.fingerprint.clone(), Vec::new()));
-            for row in changes.rows {
-                snapshot.merge_row(row);
+            for joined in changes.joined {
+                snapshot.merge_presence(joined);
             }
             for removed in changes.removed {
-                snapshot.rows.retain(|row| row.conversation != removed);
+                snapshot.merge_removal(removed);
+            }
+            for row in changes.rows {
+                snapshot.merge_row(row);
             }
             merge_max(&mut snapshot.cursor_ms, changes.cursor_ms);
             snapshot.encode().map(Some)
@@ -314,8 +368,9 @@ fn latest_time(row: &SnapshotRow) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChatListSnapshot, SnapshotChanges, SnapshotConversation, SnapshotCursor, SnapshotRow,
-        clear, fingerprint, read, truncate_preview, write, write_changes,
+        ChatListSnapshot, SnapshotChanges, SnapshotConversation, SnapshotCursor, SnapshotPresence,
+        SnapshotRemoval, SnapshotRow, clear, fingerprint, read, truncate_preview, write,
+        write_changes,
     };
     use crate::read_model::{MessageStub, ServerTimeMs};
     use crate::storage::MemoryKv;
@@ -624,11 +679,17 @@ mod tests {
         let without_channel =
             ChatListSnapshot::new(before.fingerprint.clone(), vec![before.rows[1].clone()]);
 
-        assert!(SnapshotChanges::between(&before, &without_channel, Vec::new()).is_none());
+        assert!(
+            SnapshotChanges::between(&before, &without_channel, Vec::new(), Vec::new()).is_none()
+        );
         let changes = SnapshotChanges::between(
             &before,
             &without_channel,
-            vec![before.rows[0].conversation.clone()],
+            vec![SnapshotRemoval {
+                conversation: before.rows[0].conversation.clone(),
+                removed_at_ms: 1_700_000_000_200,
+            }],
+            Vec::new(),
         )
         .expect("explicit removal");
         write_changes(&backend, &changes).await.expect("remove row");
@@ -639,5 +700,52 @@ mod tests {
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, &before.fingerprint))
             .expect("stored snapshot");
         assert_eq!(stored.rows, without_channel.rows);
+    }
+
+    #[tokio::test]
+    async fn stale_writer_cannot_resurrect_an_explicitly_removed_row() {
+        let backend = MemoryKv::default();
+        let mut before = snapshot();
+        before.rows.truncate(1);
+        write(&backend, &before).await.expect("seed");
+        let without_channel = ChatListSnapshot::new(before.fingerprint.clone(), Vec::new());
+        let removal = SnapshotChanges::between(
+            &before,
+            &without_channel,
+            vec![SnapshotRemoval {
+                conversation: before.rows[0].conversation.clone(),
+                removed_at_ms: 1_700_000_000_200,
+            }],
+            Vec::new(),
+        )
+        .expect("explicit removal");
+
+        write_changes(&backend, &removal).await.expect("remove row");
+        write(&backend, &before).await.expect("late stale writer");
+
+        let stored = read(&backend)
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, &before.fingerprint))
+            .expect("stored snapshot");
+        assert!(stored.rows.is_empty());
+
+        let rejoin = SnapshotChanges::between(
+            &without_channel,
+            &before,
+            Vec::new(),
+            vec![SnapshotPresence {
+                conversation: before.rows[0].conversation.clone(),
+                joined_at_ms: 1_700_000_000_300,
+            }],
+        )
+        .expect("later rejoin");
+        write_changes(&backend, &rejoin).await.expect("rejoin row");
+        let stored = read(&backend)
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, &before.fingerprint))
+            .expect("stored snapshot");
+        assert_eq!(stored.rows, before.rows);
     }
 }
