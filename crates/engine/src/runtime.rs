@@ -3755,7 +3755,7 @@ fn process_papo_event(
     output: &mut Vec<EngineToUi>,
 ) -> EventEffects {
     let mut effects = EventEffects::default();
-    let live_server_time = event.server_time();
+    let live_server_time = live_cursor_time(&event);
     effects.history_fetches = match event {
         papo::Event::Connecting(connecting) => {
             process_connecting(running, &connecting, output);
@@ -3851,6 +3851,14 @@ fn process_papo_event(
     };
     running.model.observe_live_server_time(live_server_time);
     effects
+}
+
+fn live_cursor_time(event: &papo::Event) -> Option<SystemTime> {
+    // An account tag can emit this fact before the message from the same line.
+    if matches!(event, papo::Event::AccountChanged(_)) {
+        return None;
+    }
+    event.server_time()
 }
 
 fn typing_snapshot_events(model: &NetworkModel, state: &papo::State) -> Vec<EngineToUi> {
@@ -9274,6 +9282,46 @@ async fn delay(duration: Duration) {
         ));
     }
 
+    async fn send_account_tagged_live_direct(
+        wire: &mut Wire,
+        receiver: &mut mpsc::UnboundedReceiver<EngineToUi>,
+        cursor: std::time::SystemTime,
+    ) -> String {
+        let cursor_text = papo_proto::time::format(cursor).expect("direct cursor formats");
+        wire.server(format!(
+            "@account=alice;msgid=alice-live;time={cursor_text} :Alice!a@host PRIVMSG weblounge :first live direct"
+        ))
+        .await;
+        let alice_buffer = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Some(EngineToUi::BufferAdded { buffer }) = receiver.recv().await
+                    && buffer.title == "Alice"
+                {
+                    break buffer.id;
+                }
+            }
+        })
+        .await
+        .expect("live direct creates its buffer before advancing the cursor");
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if matches!(
+                    receiver.recv().await,
+                    Some(EngineToUi::UnreadChanged {
+                        buffer_id,
+                        unread: 1,
+                        mentions: 1,
+                    }) if buffer_id == alice_buffer
+                ) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("first live direct remains after its seeded mark");
+        cursor_text
+    }
+
     #[tokio::test]
     async fn second_connected_catches_up_a_ready_direct_after_its_newest_msgid() {
         let (client, events, mut wire) =
@@ -9343,11 +9391,18 @@ async fn delay(duration: Duration) {
         .await
         .expect("settled live traffic advances the persisted boundary");
 
+        let direct_cursor_text = send_account_tagged_live_direct(
+            &mut wire,
+            &mut receiver,
+            live_cursor + Duration::from_millis(1),
+        )
+        .await;
+
         wire.close().await;
         client.reconnect().await.expect("manual reconnect starts");
         register_for_history(&mut wire).await;
         let targets = next_sent_containing(&mut wire, " CHATHISTORY TARGETS ").await;
-        assert!(targets.contains(&format!("timestamp={live_cursor_text}")));
+        assert!(targets.contains(&format!("timestamp={direct_cursor_text}")));
         send_recent_targets(
             &mut wire,
             request_label(&targets),

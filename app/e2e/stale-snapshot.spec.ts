@@ -327,7 +327,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     test.skip(browserName !== "firefox", "covers the reported Firefox failure");
     const suffix = Date.now().toString(36);
     const channel = "#weblounge-test";
-    const text = `snapshot direct ${suffix}`;
+    const textPrefix = `snapshot direct ${suffix}`;
     const bot = await IrcClient.connect(
       `snapshot-read-${suffix}`,
       "weblounge-bot",
@@ -345,8 +345,28 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await installStorageWriteFailureControl(current);
       await observeMarkReadRequests(current);
       await current.goto(startUrl());
-      const latest = await bot.privmsgConfirmed("weblounge", text);
-      const latestTime = messageTag(latest, "time");
+      await expect(
+        current.locator('[data-network-state="online"]'),
+      ).toHaveCount(1);
+      const cursorLine = await bot.privmsgConfirmed(
+        channel,
+        `snapshot cursor ${suffix}`,
+      );
+      const cursorTime = Date.parse(messageTag(cursorLine, "time"));
+      let latest: { line: string; text: string } | undefined;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const text = `${textPrefix} ${attempt}`;
+        const candidate = await bot.privmsgConfirmed("weblounge", text);
+        if (Date.parse(messageTag(candidate, "time")) > cursorTime) {
+          latest = { line: candidate, text };
+          break;
+        }
+      }
+      if (latest === undefined)
+        throw new Error(
+          "direct message time did not advance beyond the cursor",
+        );
+      const latestTime = messageTag(latest.line, "time");
       const row = bufferRow(current, bot.nickname);
       await expectUnreadCount(row, bot.nickname, 1);
       await expect
@@ -358,7 +378,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect(
         current.getByRole("heading", { name: bot.nickname }),
       ).toBeVisible();
-      await expect(current.getByText(text, { exact: true })).toBeVisible();
+      await expect(
+        current.getByText(latest.text, { exact: true }),
+      ).toBeVisible();
       await expectRead(row, bot.nickname);
       await expect.poll(() => markReadRequestCount(current)).toBeGreaterThan(0);
       await expect
