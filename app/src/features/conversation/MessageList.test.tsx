@@ -1141,6 +1141,38 @@ it("keeps New when a hidden arrival is delivered after foregrounding", async () 
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("does not rewrite transcript geometry while the page becomes hidden", async () => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  let hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const { container } = render(() => (
+    <MessageList
+      messages={[
+        {
+          ...message,
+          authorship: "own",
+          delivery: "confirmed",
+          received_at_ms: 2,
+        },
+      ]}
+      readAtMs={1}
+    />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const list = container.querySelector("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  let mutations = 0;
+  new MutationObserver((records) => {
+    mutations += records.length;
+  }).observe(list, { attributes: true, childList: true, subtree: true });
+
+  hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(mutations).toBe(0);
+});
+
 it("restacks measured rows when the New boundary moves past a long row", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(

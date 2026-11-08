@@ -110,6 +110,7 @@ export function MessageList(props: MessageListProps) {
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
   let scrollFrozenReadAt: number | undefined;
+  let hiddenFrozenReadAt: number | undefined;
   const [frozenReadAt, setFrozenReadAt] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
@@ -324,6 +325,7 @@ export function MessageList(props: MessageListProps) {
         marker !== null &&
         props.messages.length === 0 &&
         props.syncState === "syncing";
+      hiddenFrozenReadAt = undefined;
       renderedCount = 0;
       olderPageArmed = true;
       setUnseen(0);
@@ -382,8 +384,14 @@ export function MessageList(props: MessageListProps) {
       if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
     };
     const updateForeground = () => {
-      if (!pageIsForeground(document, navigator))
-        freezeUnreadBoundary(setFrozenReadAt);
+      if (!pageIsForeground(document, navigator)) {
+        freezeUnreadBoundary((readAtMs) => {
+          hiddenFrozenReadAt = readAtMs;
+        });
+      } else if (hiddenFrozenReadAt !== undefined) {
+        setFrozenReadAt(hiddenFrozenReadAt);
+        hiddenFrozenReadAt = undefined;
+      }
     };
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
