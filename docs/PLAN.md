@@ -24,6 +24,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Make the ten-minute cross-tab push budget wait for its exact boundary lease renewal to reach
+  the relay fixture. The fake clock can start the asynchronous renewal before Playwright observes
+  its request, so the journey now waits on the unchanged 21-renewal, 25-request budget.
 - [x] Keep an on-device, privacy-safe log of the newest 50 service-worker push deliveries for blank
   iPhone notification diagnosis. Each entry records only the worker/shell version, closed outcome,
   fallback and total timing, deferred-write state, code-defined stage timings, and a safe error

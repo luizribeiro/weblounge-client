@@ -1112,14 +1112,16 @@ test.describe("cross-tab push request budget", () => {
       await page.clock.fastForward(10_000);
     }
 
-    expect(requestCounts(requests), requests.join("\n")).toEqual({
-      actual: 25,
-      deadEndpoints: 1,
-      lease: 21,
-      options: 0,
-      release: 0,
-      routes: 1,
-    });
+    await expect
+      .poll(() => requestCounts(requests), { message: requests.join("\n") })
+      .toEqual({
+        actual: 25,
+        deadEndpoints: 1,
+        lease: 21,
+        options: 0,
+        release: 0,
+        routes: 1,
+      });
     await second.close();
   });
 });
