@@ -23,6 +23,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Define the accepted one-source read-state model in design 24 and land migration step 1 as an
+  unwired pure Rust module. Per-conversation marks and gaps merge by maximum, peer stubs converge by
+  msgid under a 100-entry cap, and count, mention, frozen-divider, in-app badge, OS badge and
+  notification-close projections share one formula. Generated arrival-order properties cover
+  push, history, live, server marks, reads and own messages; repository-level JSON fixtures pin the
+  later service-worker TypeScript mirror. Existing unread wiring remains unchanged.
 - [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now
   reuse one route/dead-endpoint reconciliation, while a foreground Web Lock and shared heartbeat
   deadline keep one device lease across brief blur, visibility and tab handoffs; only real freeze
