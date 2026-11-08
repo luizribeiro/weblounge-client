@@ -117,11 +117,27 @@ test.describe("desktop restored chat list", () => {
     await expect(page.locator("[data-conversation-title]")).toContainText(
       "#first",
     );
+    await expect
+      .poll(() =>
+        row.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return element.contains(
+            document.elementFromPoint(
+              bounds.left + bounds.width / 2,
+              bounds.top + bounds.height / 2,
+            ),
+          );
+        }),
+      )
+      .toBe(true);
     const bounds = await row.boundingBox();
     if (bounds === null) throw new Error("cached row is not laid out");
     await page.mouse.move(
       bounds.x + bounds.width / 2,
       bounds.y + bounds.height / 2,
+    );
+    await row.evaluate((element) =>
+      Reflect.set(globalThis, "pressedRestoredRow", element),
     );
     await page.mouse.down();
     await page.evaluate(() => {
@@ -130,6 +146,11 @@ test.describe("desktop restored chat list", () => {
         throw new Error("snapshot projection unavailable");
       release();
     });
+    expect(
+      await row.evaluate(
+        (element) => element === Reflect.get(globalThis, "pressedRestoredRow"),
+      ),
+    ).toBe(true);
     await page.mouse.up();
 
     await expect(page.locator("[data-conversation-title]")).toContainText(
