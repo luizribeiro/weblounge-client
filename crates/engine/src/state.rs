@@ -1428,17 +1428,9 @@ impl NetworkModel {
         if order_changed {
             events.push(self.buffers_event());
         }
-        let buffer = &self.buffers[&pending.buffer_id];
-        events.extend([
-            EngineToUi::BufferUpdated {
-                buffer: buffer.projection.clone(),
-            },
-            EngineToUi::UnreadChanged {
-                buffer_id: pending.buffer_id,
-                unread: buffer.projection.unread,
-                mentions: buffer.projection.mentions,
-            },
-        ]);
+        events.push(EngineToUi::BufferUpdated {
+            buffer: self.buffers[&pending.buffer_id].projection.clone(),
+        });
         Some(events)
     }
 
@@ -2376,20 +2368,9 @@ impl NetworkModel {
             return Vec::new();
         }
         derive_read_projection(buffer);
-        vec![
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread: buffer.projection.unread,
-                mentions: buffer.projection.mentions,
-            },
-            EngineToUi::ReadMarkerMoved {
-                buffer_id,
-                through: buffer.projection.read_through,
-            },
-            EngineToUi::BufferUpdated {
-                buffer: buffer.projection.clone(),
-            },
-        ]
+        vec![EngineToUi::BufferUpdated {
+            buffer: buffer.projection.clone(),
+        }]
     }
 
     pub(crate) fn apply_server_read_marker(
@@ -2417,20 +2398,9 @@ impl NetworkModel {
             return Vec::new();
         }
         derive_read_projection(buffer);
-        vec![
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread: buffer.projection.unread,
-                mentions: buffer.projection.mentions,
-            },
-            EngineToUi::ReadMarkerMoved {
-                buffer_id,
-                through: buffer.projection.read_through,
-            },
-            EngineToUi::BufferUpdated {
-                buffer: buffer.projection.clone(),
-            },
-        ]
+        vec![EngineToUi::BufferUpdated {
+            buffer: buffer.projection.clone(),
+        }]
     }
 
     pub(crate) fn pending_read_advances(&self) -> Vec<ReadAdvance> {
@@ -2547,18 +2517,14 @@ impl NetworkModel {
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             advance_incoming_cursor(buffer, &incoming, cursor);
         }
-        let (unread, mentions, added) = {
+        let added = {
             let Some(buffer) = self.buffers.get(&buffer_id) else {
                 return IncomingResult {
                     events: inconsistent_state_notice(),
                     carry_read: None,
                 };
             };
-            (
-                buffer.projection.unread,
-                buffer.projection.mentions,
-                added.map(|_| buffer.projection.clone()),
-            )
+            added.map(|_| buffer.projection.clone())
         };
         let mut events = Vec::new();
         let buffer_added = added.is_some();
@@ -2574,11 +2540,6 @@ impl NetworkModel {
         });
         events.push(EngineToUi::BufferUpdated {
             buffer: self.buffers[&buffer_id].projection.clone(),
-        });
-        events.push(EngineToUi::UnreadChanged {
-            buffer_id,
-            unread,
-            mentions,
         });
         if let Some(account) = incoming.legacy_account_key {
             events.push(self.legacy_draft_migration(buffer_id, &account));
@@ -2635,7 +2596,6 @@ impl NetworkModel {
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
         let buffer = self.buffers.get_mut(&buffer_id)?;
         advance_incoming_cursor(buffer, incoming, cursor);
-        let projection = buffer.projection.clone();
         let mut events = vec![
             EngineToUi::MessageConfirmed {
                 buffer_id,
@@ -2643,12 +2603,7 @@ impl NetworkModel {
                 message,
             },
             EngineToUi::BufferUpdated {
-                buffer: projection.clone(),
-            },
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread: projection.unread,
-                mentions: projection.mentions,
+                buffer: buffer.projection.clone(),
             },
         ];
         if order_changed {
@@ -2727,16 +2682,10 @@ impl NetworkModel {
             derive_read_projection(buffer);
             carry_read
         };
-        let buffer = self.buffers[&buffer_id].projection.clone();
         let mut events = vec![
             EngineToUi::MessageUpdated { buffer_id, message },
             EngineToUi::BufferUpdated {
-                buffer: buffer.clone(),
-            },
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread: buffer.unread,
-                mentions: buffer.mentions,
+                buffer: self.buffers[&buffer_id].projection.clone(),
             },
         ];
         if let Some(account) = &incoming.legacy_account_key {
@@ -5051,11 +5000,10 @@ mod tests {
             crate::EngineToUi::BufferUpdated { buffer }
                 if buffer.read_at_ms == Some(time_millis(advance.time))
         )));
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, crate::EngineToUi::UnreadChanged { unread: 0, .. }))
-        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::EngineToUi::BufferUpdated { buffer } if buffer.unread == 0
+        )));
     }
 
     #[test]
@@ -5083,11 +5031,8 @@ mod tests {
 
         assert!(events.iter().any(|event| matches!(
             event,
-            crate::EngineToUi::UnreadChanged {
-                unread: 0,
-                mentions: 0,
-                ..
-            }
+            crate::EngineToUi::BufferUpdated { buffer }
+                if buffer.unread == 0 && buffer.mentions == 0
         )));
         assert_eq!(
             model.buffers[&advance.buffer_id].read_facts.pending(),
@@ -6391,7 +6336,9 @@ mod tests {
         assert_eq!(merged.rows.len(), 2);
         assert!(merged.rows.contains(&unresolved));
         assert!(merged.rows.iter().any(|row| {
-            row.title == "Alice live" && row.stubs.len() == 2 && row.preview.is_none()
+            row.title == "Alice live"
+                && row.stubs.len() == 2
+                && row.preview.as_deref() == Some("cached direct preview")
         }));
         assert!(merged.rows.iter().all(|row| row.title != "bob"));
     }

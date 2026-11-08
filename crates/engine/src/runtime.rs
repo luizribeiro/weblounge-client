@@ -4410,7 +4410,6 @@ fn process_history(
     let prepend = matches!(load, Some(HistoryLoad::Latest | HistoryLoad::Older));
     let mut output = Vec::new();
     let mut timeline = None::<(BufferId, Vec<crate::MessageProjection>)>;
-    let mut unread = None;
     let mut read_advances = Vec::new();
     for item in page.items {
         match item {
@@ -4427,7 +4426,6 @@ fn process_history(
                             .get_or_insert_with(|| (buffer_id, Vec::new()))
                             .1
                             .extend(messages),
-                        EngineToUi::UnreadChanged { .. } => unread = Some(event),
                         _ => output.push(event),
                     }
                 }
@@ -4471,10 +4469,7 @@ fn process_history(
         }
     }
     push_history_timeline(&running.model, &mut output, timeline, prepend);
-    if let Some(unread) = unread {
-        output.push(unread);
-    }
-    merge_history_read_events(&mut output, record_read_advances(running, read_advances));
+    output.extend(record_read_advances(running, read_advances));
     let read_flush = start_read_flush(running);
     let finished = finish_history_page(
         &mut running.model,
@@ -4490,21 +4485,6 @@ fn process_history(
     update_chat_list(&shared_state, outbound, instance);
     if let Some((client, instance)) = read_flush {
         spawn_read_flush(shared_state, outbound.clone(), client, instance);
-    }
-}
-
-fn merge_history_read_events(
-    output: &mut Vec<EngineToUi>,
-    events: impl IntoIterator<Item = EngineToUi>,
-) {
-    for event in events {
-        match event {
-            EngineToUi::UnreadChanged { .. } => {
-                output.retain(|queued| !matches!(queued, EngineToUi::UnreadChanged { .. }));
-                output.push(event);
-            }
-            _ => output.push(event),
-        }
     }
 }
 
@@ -9321,11 +9301,10 @@ async fn delay(duration: Duration) {
             loop {
                 if matches!(
                     receiver.recv().await,
-                    Some(EngineToUi::UnreadChanged {
-                        buffer_id,
-                        unread: 1,
-                        mentions: 1,
-                    }) if buffer_id == alice_buffer
+                    Some(EngineToUi::BufferUpdated { buffer })
+                        if buffer.id == alice_buffer
+                            && buffer.unread == 1
+                            && buffer.mentions == 1
                 ) {
                     break;
                 }
@@ -9378,11 +9357,8 @@ async fn delay(duration: Duration) {
             .expect("direct message creates its row");
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::UnreadChanged {
-                buffer_id,
-                unread: 1,
-                mentions: 1,
-            } if *buffer_id == direct
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == direct && buffer.unread == 1 && buffer.mentions == 1
         )));
     }
 
@@ -9894,15 +9870,8 @@ async fn delay(duration: Duration) {
 
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::UnreadChanged {
-                unread: 0,
-                mentions: 0,
-                ..
-            }
-        )));
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::ReadMarkerMoved { through: Some(id), .. } if *id == message_id
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.unread == 0 && buffer.mentions == 0
         )));
 
         let invalid = runtime.request(EngineRequestEnvelope {
@@ -9980,11 +9949,8 @@ async fn delay(duration: Duration) {
 
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::UnreadChanged {
-                unread: 0,
-                mentions: 0,
-                ..
-            }
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.unread == 0 && buffer.mentions == 0
         )));
         assert_eq!(
             lock(&state)
@@ -10149,18 +10115,8 @@ async fn delay(duration: Duration) {
 
         assert!(output.iter().any(|event| matches!(
             event,
-            EngineToUi::UnreadChanged {
-                buffer_id: current_buffer,
-                unread: 0,
-                mentions: 0,
-            } if *current_buffer == buffer_id
-        )));
-        assert!(output.iter().any(|event| matches!(
-            event,
-            EngineToUi::ReadMarkerMoved {
-                buffer_id: current_buffer,
-                through: Some(current_message),
-            } if *current_buffer == buffer_id && *current_message == message_id
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == buffer_id && buffer.unread == 0 && buffer.mentions == 0
         )));
         assert!(output.iter().any(|event| matches!(
             event,
@@ -10190,11 +10146,8 @@ async fn delay(duration: Duration) {
         process_next_message(&mut events, &state, &outbound, &client).await;
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
-            EngineToUi::UnreadChanged {
-                buffer_id: current_buffer,
-                unread: 1,
-                mentions: 1,
-            } if *current_buffer == buffer_id
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.id == buffer_id && buffer.unread == 1 && buffer.mentions == 1
         )));
         assert!(
             tokio::time::timeout(Duration::ZERO, wire.next_sent())
@@ -10281,11 +10234,8 @@ async fn delay(duration: Duration) {
         process_event(&state, &outbound, &client, 1, message);
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
-            EngineToUi::UnreadChanged {
-                unread: 1,
-                mentions: 1,
-                ..
-            }
+            EngineToUi::BufferUpdated { buffer }
+                if buffer.unread == 1 && buffer.mentions == 1
         )));
 
         let unresolved = SnapshotRow {
@@ -10331,11 +10281,9 @@ async fn delay(duration: Duration) {
 
         let cleared = tokio::time::timeout(Duration::from_secs(1), async {
             loop {
-                if let Some(EngineToUi::UnreadChanged {
-                    unread: 0,
-                    mentions: 0,
-                    ..
-                }) = receiver.recv().await
+                if let Some(EngineToUi::BufferUpdated { buffer }) = receiver.recv().await
+                    && buffer.unread == 0
+                    && buffer.mentions == 0
                 {
                     break;
                 }
@@ -10400,11 +10348,9 @@ async fn delay(duration: Duration) {
                 through: message_id,
             },
         });
-        assert!(
-            output
-                .iter()
-                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
-        );
+        assert!(output.iter().any(
+            |event| matches!(event, EngineToUi::BufferUpdated { buffer } if buffer.unread == 0)
+        ));
         assert!(output.iter().any(|event| matches!(
             event,
             EngineToUi::CommandResult { id } if id == "mark-server"
@@ -10590,11 +10536,9 @@ async fn delay(duration: Duration) {
             _ => unreachable!("matching event is a read marker"),
         };
         process_event(&state, &outbound, &client, 1, newer);
-        assert!(
-            collect(&mut receiver)
-                .iter()
-                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
-        );
+        assert!(collect(&mut receiver).iter().any(
+            |event| matches!(event, EngineToUi::BufferUpdated { buffer } if buffer.unread == 0)
+        ));
 
         let older = std::time::UNIX_EPOCH + std::time::Duration::from_hours(498_084);
         let output = lock(&state)
@@ -10634,10 +10578,7 @@ async fn delay(duration: Duration) {
 
         assert!(collect(&mut receiver).iter().any(|event| matches!(
             event,
-            EngineToUi::ReadMarkerMoved {
-                buffer_id: BufferId(2),
-                ..
-            }
+            EngineToUi::BufferUpdated { buffer } if buffer.id == BufferId(2)
         )));
     }
 
@@ -11949,16 +11890,14 @@ async fn delay(duration: Duration) {
         let advance = model
             .prepare_mark_read(buffer_id, confirmed)
             .expect("a committed local row is a valid local read target");
-        assert!(
-            confirmation_events
-                .iter()
-                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 1, .. }))
-        );
+        assert!(confirmation_events.iter().any(
+            |event| matches!(event, EngineToUi::BufferUpdated { buffer } if buffer.unread == 1)
+        ));
         assert!(
             model
                 .advance_read(buffer_id, advance.time, false)
                 .iter()
-                .any(|event| matches!(event, EngineToUi::UnreadChanged { unread: 0, .. }))
+                .any(|event| matches!(event, EngineToUi::BufferUpdated { buffer } if buffer.unread == 0))
         );
     }
 
