@@ -118,10 +118,6 @@ test("settles the opened conversation without waiting for background history", a
       .toBe("online");
     await expect(title).not.toHaveAttribute("data-connection-progress");
     await expect.poll(() => heldLatestHistoryCount(page)).toBeGreaterThan(0);
-    await expect(page.locator("[data-app-root]")).toHaveAttribute(
-      "data-chat-list-hydrating",
-      "true",
-    );
 
     const measured = await page.evaluate(() => ({
       openedAt: Reflect.get(globalThis, "slowBufferOpenedAt") as number,

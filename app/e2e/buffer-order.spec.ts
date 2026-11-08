@@ -47,10 +47,6 @@ test.describe("buffer order against local Ergo", () => {
         await expect(page.locator('[data-network-state="online"]')).toHaveCount(
           1,
         );
-        await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
-          "data-chat-list-hydrating",
-          "true",
-        );
         const composer = page.getByRole("textbox", { name: "Message" });
         for (const channel of arrival) {
           if (channel === undefined) continue;

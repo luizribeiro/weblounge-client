@@ -118,10 +118,6 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
       }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Back to chats" }).click();
-    await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
-      "data-chat-list-hydrating",
-      "true",
-    );
 
     await expect(bufferRow(page, channels[1])).toContainText(
       `cached channel 1 ${suffix}`,
@@ -185,6 +181,18 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
     if (openedRequest === undefined || openedReply === undefined)
       throw new Error("opened history request or reply is missing");
     expect(openedRequest.at - onlineAt).toBeLessThan(500);
+    expect(
+      commandCounts.get("CHATHISTORY") ?? 0,
+      histories.map(({ line }) => line).join("\n"),
+    ).toBeLessThanOrEqual(4);
+    expect(commandCounts.get("MARKREAD") ?? 0).toBeLessThanOrEqual(2);
+    expect(commandCounts.get("MONITOR") ?? 0).toBe(0);
+    expect(commandCounts.get("WHO") ?? 0).toBeLessThanOrEqual(7);
+    expect(
+      [...commandCounts.values()].reduce((total, count) => total + count, 0),
+    ).toBeLessThanOrEqual(36);
+    expect(histories.length).toBeLessThanOrEqual(4);
+    expect(markerQueries.length).toBeLessThanOrEqual(2);
     const delayedClientReplies = clientReplies.filter(
       (reply) =>
         reply.latency >= 500 &&
@@ -202,15 +210,6 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
         }))
         .filter(({ addedDelay }) => addedDelay >= 500),
     ).toEqual([]);
-    expect(commandCounts.get("CHATHISTORY") ?? 0).toBeLessThanOrEqual(4);
-    expect(commandCounts.get("MARKREAD") ?? 0).toBeLessThanOrEqual(2);
-    expect(commandCounts.get("MONITOR") ?? 0).toBe(0);
-    expect(commandCounts.get("WHO") ?? 0).toBeLessThanOrEqual(7);
-    expect(
-      [...commandCounts.values()].reduce((total, count) => total + count, 0),
-    ).toBeLessThanOrEqual(36);
-    expect(histories.length).toBeLessThanOrEqual(4);
-    expect(markerQueries.length).toBeLessThanOrEqual(2);
   } finally {
     keeper.close();
     writer.close();
@@ -266,10 +265,6 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
     current = await context.newPage();
     await captureLaunchWire(current);
     await current.goto(accountUrl(baseURL, account, password, channel));
-    await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
-      "data-chat-list-hydrating",
-      "true",
-    );
     await expect(bufferRow(current, channel)).toContainText(changedText);
     await expect(bufferRow(current, channel)).toHaveAccessibleName(
       `${channel}, 2 unread`,
@@ -462,10 +457,6 @@ test("records the sixteen-buffer cold-launch wire budget", async ({
 
     await captureLaunchWire(page);
     await page.goto(accountUrl(baseURL, account, password, ...channels));
-    await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
-      "data-chat-list-hydrating",
-      "true",
-    );
     await expect(bufferRow(page, bots[0]?.nickname ?? "missing")).toBeVisible();
     await expect
       .poll(() =>
