@@ -24,6 +24,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Land read-state migration step 7. Snapshot persistence now queues only changed conversation
+  rows and explicit PART removals, starts each write immediately, and merges every row inside its
+  storage transaction. Concurrent tabs and late replaced-client writes can no longer lower marks or
+  pending advances, discard unread stubs, or overwrite a newer preview; a failed or interrupted
+  multi-row update leaves each row wholly old or wholly new, and cursor advances remain conservative.
+  A built-app journey proves a remote read is durable before an immediate reload.
 - [x] Land read-state migration step 5 on papo's bounded `LATEST` API. Catch-up keeps the newest
   100 messages after a cursor, treats only `page.end` as proof of completeness, persists the oldest
   returned edge for a bounded gap, and projects that gap as `99+` while retaining the newest preview.
