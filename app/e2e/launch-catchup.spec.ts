@@ -630,10 +630,18 @@ async function snapshotReadAt(
   page: Page,
   title: string,
 ): Promise<number | undefined> {
+  return snapshotNumber(page, title, "read_at_ms");
+}
+
+async function snapshotNumber(
+  page: Page,
+  title: string,
+  field: "gap_until" | "read_at_ms",
+): Promise<number | undefined> {
   const database = await openEngineDatabase(page);
   try {
     return await database.evaluate(
-      (value, rowTitle) =>
+      (value, lookup) =>
         new Promise<number | undefined>((resolve, reject) => {
           const request = value
             .transaction("cache", "readonly")
@@ -660,20 +668,17 @@ async function snapshotReadAt(
                 typeof candidate === "object" &&
                 candidate !== null &&
                 "title" in candidate &&
-                candidate.title === rowTitle,
+                candidate.title === lookup.title,
             );
-            resolve(
-              typeof row === "object" &&
-                row !== null &&
-                "read_at_ms" in row &&
-                typeof row.read_at_ms === "number"
-                ? row.read_at_ms
-                : undefined,
-            );
+            const number =
+              typeof row === "object" && row !== null
+                ? Reflect.get(row, lookup.field)
+                : undefined;
+            resolve(typeof number === "number" ? number : undefined);
           };
           request.onerror = () => reject(request.error);
         }),
-      title,
+      { field, title },
     );
   } finally {
     await closeEngineDatabase(database);
