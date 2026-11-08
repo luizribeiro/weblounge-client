@@ -4723,18 +4723,6 @@ async fn delay(duration: Duration) {
     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
 }
 
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-fn spawn_snapshot_writer(
-    storage: RuntimeStorage,
-    writer: Arc<Mutex<SnapshotWriter>>,
-    generation: u64,
-) {
-    spawn_task(async move {
-        write_snapshot_intervals(storage, writer, generation).await;
-    });
-}
-
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn spawn_snapshot_writer(
     storage: RuntimeStorage,
     writer: Arc<Mutex<SnapshotWriter>>,
