@@ -97,6 +97,7 @@ impl ReadFacts {
     /// Raises the upper edge of a known incomplete unread region.
     pub fn merge_gap_until(&mut self, gap_until: ServerTimeMs) {
         merge_max(&mut self.gap_until, Some(gap_until));
+        self.normalize_gap();
     }
 
     /// Unions one peer-message fact into this conversation by msgid.
@@ -130,6 +131,7 @@ impl ReadFacts {
         if let Some(mark) = self.mark {
             self.stubs.retain(|stub| stub.time > mark);
         }
+        self.normalize_gap();
         if self.stubs.len() <= MAX_STUBS {
             return;
         }
@@ -138,6 +140,16 @@ impl ReadFacts {
         let gap_until = self.stubs[evicted - 1].time.next();
         self.stubs.drain(..evicted);
         self.merge_gap_until(gap_until);
+    }
+
+    fn normalize_gap(&mut self) {
+        if self
+            .mark
+            .zip(self.gap_until)
+            .is_some_and(|(mark, gap_until)| mark >= gap_until)
+        {
+            self.gap_until = None;
+        }
     }
 }
 

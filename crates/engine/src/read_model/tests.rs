@@ -75,6 +75,18 @@ fn cap_keeps_the_newest_stubs_and_records_the_gap() {
 }
 
 #[test]
+fn mark_clears_a_gap_once_it_covers_the_unknown_region() {
+    let mut facts = ReadFacts::default();
+    facts.merge_gap_until(ServerTimeMs::new(20));
+
+    facts.merge_mark(ServerTimeMs::new(19));
+    assert_eq!(facts.gap_until(), Some(ServerTimeMs::new(20)));
+
+    facts.merge_mark(ServerTimeMs::new(20));
+    assert_eq!(facts.gap_until(), None);
+}
+
+#[test]
 fn fact_snapshots_merge_commutatively() {
     let mut left = ReadFacts::default();
     left.merge_mark(ServerTimeMs::new(10));
