@@ -7,6 +7,7 @@
   pushE2eHarness,
   pushRelayE2e,
   repeatEach ? null,
+  runId ? null,
 }:
 
 let
@@ -184,7 +185,7 @@ let
   '';
 in
 pkgs.testers.runNixOSTest {
-  name = "weblounge-push-e2e";
+  name = "weblounge-push-e2e${pkgs.lib.optionalString (runId != null) "-${runId}"}";
 
   nodes = {
     ergo =
