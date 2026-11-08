@@ -2,17 +2,25 @@ export interface PushPayloadParser {
   parse_push_payload_json(input: string): string;
 }
 
-export type PushParserStage = "parser_load" | "parse";
+export type PushParserStage =
+  | "parser_cache_lookup"
+  | "parser_load"
+  | "parser_wasm_load"
+  | "parse";
 export type MeasurePushParserStage = <T>(
   stage: PushParserStage,
   work: () => T | Promise<T>,
 ) => Promise<T>;
 
 export class PushParserLoader {
-  readonly #load: () => Promise<PushPayloadParser>;
+  readonly #load: (
+    measure: MeasurePushParserStage,
+  ) => Promise<PushPayloadParser>;
   #ready: Promise<PushPayloadParser> | undefined;
 
-  constructor(load: () => Promise<PushPayloadParser>) {
+  constructor(
+    load: (measure: MeasurePushParserStage) => Promise<PushPayloadParser>,
+  ) {
     this.#load = load;
   }
 
@@ -22,7 +30,7 @@ export class PushParserLoader {
   ): Promise<string> {
     let ready = this.#ready;
     if (ready === undefined) {
-      ready = this.#load();
+      ready = this.#load(measure);
       this.#ready = ready;
     }
     try {

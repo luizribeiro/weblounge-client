@@ -53,6 +53,29 @@ it("measures parser loading separately from payload parsing", async () => {
   expect(measured).toEqual(["parser_load", "parse"]);
 });
 
+it("measures parser cache access and Wasm loading inside parser loading", async () => {
+  const measured: string[] = [];
+  const loader = new PushParserLoader(async (measure) => {
+    await measure("parser_cache_lookup", () => Promise.resolve());
+    await measure("parser_wasm_load", () => Promise.resolve());
+    return {
+      parse_push_payload_json: (line) => JSON.stringify({ type: line }),
+    };
+  });
+
+  await loader.parse("ping", async (stage, work) => {
+    measured.push(stage);
+    return work();
+  });
+
+  expect(measured).toEqual([
+    "parser_cache_lookup",
+    "parser_load",
+    "parser_wasm_load",
+    "parse",
+  ]);
+});
+
 describe("push delivery state", () => {
   it("keeps a successful presentation live while persistence crosses its deadline", async () => {
     vi.useFakeTimers();

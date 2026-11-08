@@ -60,6 +60,7 @@ import {
   updateNotificationState,
 } from "./platform/push/push-notification-store";
 import {
+  type MeasurePushParserStage,
   PushParserLoader,
   type PushPayloadParser,
 } from "./platform/push/push-parser-loader";
@@ -911,12 +912,17 @@ async function setWorkerBadge(count: number): Promise<void> {
 function conversationTag(route: StoredRoute, target: string): string {
   return `${route.networkLabel}/${target.toLowerCase()}`;
 }
-async function loadPushParser(): Promise<PushPayloadParser> {
-  const response = await caches.match("/push-payload_bg.wasm", {
-    cacheName: shellCache,
+async function loadPushParser(
+  measure: MeasurePushParserStage,
+): Promise<PushPayloadParser> {
+  const response = await measure("parser_cache_lookup", async () => {
+    const cached = await caches.match("/push-payload_bg.wasm", {
+      cacheName: shellCache,
+    });
+    if (cached === undefined) throw new Error("push parser is not cached");
+    return cached;
   });
-  if (response === undefined) throw new Error("push parser is not cached");
-  await wasm_bindgen(response);
+  await measure("parser_wasm_load", () => wasm_bindgen(response));
   return wasm_bindgen;
 }
 
