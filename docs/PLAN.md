@@ -59,6 +59,12 @@ The single place a fresh session reads to know where the project stands. Update 
   real read marks remain inclusive. This replaces the temporary JOIN-time floor and pushed-row
   provenance exception; production push, launch/catch-up, relaunch, and native-feel journeys cover
   the resulting New-divider and badge behavior.
+- [x] Land read-state migration step 4. Schema 6 snapshots persist at most 100 unread message stubs
+  and a gap edge per conversation, while the engine derives unread and mention projections from the
+  shared read model independently of the 500-row rendering window. Schema 5 preserves its cursor,
+  mark and latest position but discards saved badge counts once; changed conversations rebuild their
+  facts from server history. This removes cached count bases, push decrements, marker recounts,
+  lifecycle zeroing and stored snapshot badges.
 - [x] Stabilize push-relay launch and foreground traffic. Repeated connection requirements now
   reuse one route/dead-endpoint reconciliation, while a foreground Web Lock and shared heartbeat
   deadline keep one device lease across brief blur, visibility and tab handoffs; only real freeze
