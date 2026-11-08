@@ -1,4 +1,7 @@
-import type { PushParserLoader } from "./push-parser-loader";
+import type {
+  MeasurePushParserStage,
+  PushParserLoader,
+} from "./push-parser-loader";
 
 const noticeType = `not${"ice"}` as const;
 
@@ -49,9 +52,13 @@ export async function notificationForLine(
   line: string,
   parser: PushParserLoader,
   reportError: (error: unknown) => void = () => undefined,
+  measure?: MeasurePushParserStage,
 ): Promise<ParsedNotification> {
   try {
-    const event = decodeParsedEvent(JSON.parse(await parser.parse(line)));
+    const parsed = await parser.parse(line, measure);
+    const decode = () => decodeParsedEvent(JSON.parse(parsed));
+    const event =
+      measure === undefined ? decode() : await measure("parse", decode);
     return { presentation: notificationFor(route, event), event };
   } catch (error: unknown) {
     reportError(error);

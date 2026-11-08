@@ -25,6 +25,10 @@ import {
   type PreparedPushDelivery,
   PushDeliveryCoordinator,
 } from "./platform/push/push-delivery-coordinator";
+import {
+  createPushDeliveryTrace,
+  type PushDeliveryTrace,
+} from "./platform/push/push-delivery-log";
 import type { PushPresentationState } from "./platform/push/push-delivery-state";
 import { replaceDeadlineFallback } from "./platform/push/push-fallback-replacement";
 import {
@@ -75,6 +79,11 @@ interface WorkerPushEvent extends WorkerEvent {
 
 interface PushPayloadEvent {
   readonly data: { json(): unknown } | null;
+}
+
+interface PushDeliveryInput {
+  readonly event: PushPayloadEvent;
+  readonly trace: PushDeliveryTrace;
 }
 
 interface WorkerNotificationEvent extends WorkerEvent {
@@ -168,7 +177,7 @@ type PushCommit =
   | { readonly kind: "fallback"; readonly receiptId: string };
 
 const pushDeliveries = new PushDeliveryCoordinator<
-  PushPayloadEvent,
+  PushDeliveryInput,
   PushPresentation,
   PushCommit
 >({
@@ -181,13 +190,25 @@ const pushDeliveries = new PushDeliveryCoordinator<
     kind: "fallback",
     receiptId: requiredReceiptId(fallback),
   }),
-  present: ({ title, options }) => showRegistrationNotification(title, options),
-  replace: replaceFallbackNotification,
-  dismiss: dismissFallbackNotification,
+  present: (presentation, input) =>
+    input.trace.measure("notification_show", () => {
+      const { options, title } = presentation;
+      return showRegistrationNotification(title, options);
+    }),
+  replace: (fallback, presentation, input) =>
+    input.trace.measure("notification_show", () =>
+      replaceFallbackNotification(fallback, presentation),
+    ),
+  dismiss: (fallback, input) =>
+    input.trace.measure("fallback_dismiss", () =>
+      dismissFallbackNotification(fallback),
+    ),
   prepare: preparePushDelivery,
-  commit: commitPushDelivery,
+  commit: (commit, input) =>
+    input.trace.measure("state_commit", () => commitPushDelivery(commit)),
   reportError: reportPushError,
   retryPrepare: (error) => error instanceof DatabaseTimeoutError,
+  complete: (input, completion) => input.trace.complete(completion),
 });
 
 worker.importScripts("/push-payload.js");
@@ -447,7 +468,10 @@ function harnessNotificationClients(state: "open" | "discarded" | "closed"): {
 }
 
 function queuePush(pushEvent: PushPayloadEvent): Promise<void> {
-  return pushDeliveries.enqueue(pushEvent);
+  return pushDeliveries.enqueue({
+    event: pushEvent,
+    trace: createPushDeliveryTrace(SHELL_VERSION),
+  });
 }
 
 function pushDeliveryTestId(
@@ -492,7 +516,8 @@ function pushError(error: unknown): string {
   return `${error.name}: ${error.message}${error.stack === undefined ? "" : `\n${error.stack}`}`;
 }
 
-function reportPushError(error: unknown): void {
+function reportPushError(error: unknown, input?: PushDeliveryInput): void {
+  input?.trace.fail(error);
   console.error("push delivery failed", pushError(error));
 }
 
@@ -531,12 +556,14 @@ async function previousShellAssetResponse(request: Request): Promise<Response> {
 }
 
 async function preparePushDelivery(
-  event: PushPayloadEvent,
+  input: PushDeliveryInput,
   state: PushPresentationState<PushPresentation>,
 ): Promise<PreparedPushDelivery<PushPresentation, PushCommit>> {
-  const envelope = pushEnvelope(event.data?.json());
-  const context = await findRouteContext(envelope.routeId);
-  if (context === undefined) throw new Error("push route is unavailable");
+  const { event, trace } = input;
+  const envelope = await trace.measure("envelope_decode", () =>
+    pushEnvelope(event.data?.json()),
+  );
+  const context = await findRouteContext(envelope.routeId, trace);
   const { notificationState, pendingMessages, route } = context;
   state.generic = replaceableGenericNotification(
     route.networkLabel,
@@ -545,11 +572,13 @@ async function preparePushDelivery(
   await waitForPushDeliveryTestGate(event.data?.json());
   let plaintext: Uint8Array<ArrayBuffer>;
   try {
-    plaintext = await decryptPushPayload(
-      decodePushBase64Url(envelope.ciphertext),
-      route.privateKey,
-      route.p256dh,
-      route.auth,
+    plaintext = await trace.measure("decrypt", () =>
+      decryptPushPayload(
+        decodePushBase64Url(envelope.ciphertext),
+        route.privateKey,
+        route.p256dh,
+        route.auth,
+      ),
     );
   } catch (error: unknown) {
     if (!state.expired)
@@ -560,7 +589,8 @@ async function preparePushDelivery(
     route,
     new TextDecoder().decode(plaintext),
     parser,
-    reportPushError,
+    (error) => reportPushError(error, input),
+    (stage, work) => trace.measure(stage, work),
   );
   if (parsed.event?.type === "markread") {
     return {
@@ -595,6 +625,7 @@ async function preparePushDelivery(
   return {
     kind: "visible",
     presentation,
+    ...(parsed.event === undefined ? { finalGeneric: true } : {}),
     commit: {
       kind: "visible",
       route,
@@ -879,40 +910,51 @@ function pushEnvelope(value: unknown): {
   };
 }
 
-async function findRouteContext(routeId: string): Promise<
-  | {
-      readonly route: StoredRoute;
-      readonly notificationState: NotificationState;
-      readonly pendingMessages: readonly PendingConversationMessage[];
-    }
-  | undefined
-> {
+async function findRouteContext(
+  routeId: string,
+  trace: PushDeliveryTrace,
+): Promise<{
+  readonly route: StoredRoute;
+  readonly notificationState: NotificationState;
+  readonly pendingMessages: readonly PendingConversationMessage[];
+}> {
   const pendingMessages = [...pendingConversationMessages.values()];
-  const database = await openPushDatabase();
+  const database = await trace.measure("database_open", () =>
+    openPushDatabase(),
+  );
   try {
-    const transaction = database.transaction(
-      [pushRoutesStore, pushStateStore],
-      "readonly",
+    const [storedRoute, notificationState] = await trace.measure(
+      "route_lookup",
+      async () => {
+        const transaction = database.transaction(
+          [pushRoutesStore, pushStateStore],
+          "readonly",
+        );
+        const result = await Promise.all([
+          requestResult(
+            transaction
+              .objectStore(pushRoutesStore)
+              .index(pushRouteIdIndex)
+              .get(routeId),
+          ),
+          requestResult(
+            transaction.objectStore(pushStateStore).get(notificationCountsKey),
+          ),
+        ]);
+        await transactionDone(transaction);
+        if (result[0] === undefined)
+          throw new Error("push route is unavailable");
+        return result;
+      },
     );
-    const [route, notificationState] = await Promise.all([
-      requestResult(
-        transaction
-          .objectStore(pushRoutesStore)
-          .index(pushRouteIdIndex)
-          .get(routeId),
-      ),
-      requestResult(
-        transaction.objectStore(pushStateStore).get(notificationCountsKey),
-      ),
-    ]);
-    await transactionDone(transaction);
-    return route === undefined
-      ? undefined
-      : {
-          route: decodeStoredRoute(route),
-          notificationState: decodeNotificationState(notificationState),
-          pendingMessages,
-        };
+    const route = await trace.measure("key_lookup", () =>
+      decodeStoredRoute(storedRoute),
+    );
+    return {
+      route,
+      notificationState: decodeNotificationState(notificationState),
+      pendingMessages,
+    };
   } finally {
     database.close();
   }

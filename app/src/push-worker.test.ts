@@ -39,6 +39,20 @@ it("retries loading the push parser after a cached failure", async () => {
   expect(load).toHaveBeenCalledTimes(2);
 });
 
+it("measures parser loading separately from payload parsing", async () => {
+  const measured: string[] = [];
+  const loader = new PushParserLoader(async () => ({
+    parse_push_payload_json: (line) => JSON.stringify({ type: line }),
+  }));
+
+  await loader.parse("ping", async (stage, work) => {
+    measured.push(stage);
+    return work();
+  });
+
+  expect(measured).toEqual(["parser_load", "parse"]);
+});
+
 describe("push delivery state", () => {
   it("keeps a successful presentation live while persistence crosses its deadline", async () => {
     vi.useFakeTimers();
