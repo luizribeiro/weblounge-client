@@ -60,10 +60,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           .getByRole("list", { name: "Messages" })
           .getByText(incoming, { exact: true }),
       ).toBeVisible();
-      await expect(page.locator("[data-app-root]")).not.toHaveAttribute(
-        "data-chat-list-hydrating",
-        "true",
-      );
 
       const composer = page.getByRole("textbox", {
         name: `Message ${bot.nickname}`,
@@ -266,18 +262,19 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         .poll(() => snapshotReadState(current, bot.nickname))
         .toEqual({ gap: true, mentions: 100, unread: 100 });
       await installStorageWriteFailureControl(current);
+      await observeVisibleCountIncrease(current, bot.nickname);
       await recordCachedRow(current, bot.nickname);
       await controlForwarder("drop");
       forwarderDropped = true;
       await current.goto(startUrl());
       await expect(bufferRow(current, bot.nickname)).toHaveAttribute(
         "data-unread",
-        "100",
+        "0",
       );
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({
-          unread: "100",
+          unread: "0",
         });
       await failNextStorageWrite(current);
       await controlForwarder("restore");
@@ -287,10 +284,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         "data-unread",
         "0",
       );
-      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
-        "data-chat-list-hydrating",
-        "true",
-      );
+      expect(await visibleCountIncreased(current)).toBe(false);
 
       await expect
         .poll(() => snapshotReadState(current, bot.nickname))
@@ -661,10 +655,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         ),
       );
       await expect.poll(() => cachedChatRows(current)).toEqual(finalRows);
-      await expect(current.locator("[data-app-root]")).not.toHaveAttribute(
-        "data-chat-list-hydrating",
-        "true",
-      );
       await expectRead(bufferRow(current, channel), channel);
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
     } finally {
@@ -675,7 +665,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
-  test("flushes a cleared cached DM while another row is still hydrating", async ({
+  test("flushes a cleared restored DM while another row is still syncing", async ({
     baseURL,
     context,
     page,
@@ -753,10 +743,6 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect
         .poll(() => heldLatestHistoryCount(current))
         .toBeGreaterThan(0);
-      await expect(current.locator("[data-app-root]")).toHaveAttribute(
-        "data-chat-list-hydrating",
-        "true",
-      );
       await expect
         .poll(() => snapshotReadState(current, bot.nickname))
         .toEqual({ gap: false, mentions: 0, unread: 0 });
@@ -941,10 +927,10 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
   await page.addInitScript((title) => {
     Reflect.set(globalThis, "staleSnapshotCachedRow", undefined);
     new MutationObserver(() => {
-      const root = document.querySelector("[data-chat-list-hydrating]");
-      if (root === null) return;
+      if (Reflect.get(globalThis, "staleSnapshotCachedRow") !== undefined)
+        return;
       const row = [
-        ...root.querySelectorAll<HTMLElement>("[data-buffer-id]"),
+        ...document.querySelectorAll<HTMLElement>("[data-buffer-id]"),
       ].find((candidate) => candidate.textContent?.includes(title));
       if (row !== undefined)
         Reflect.set(globalThis, "staleSnapshotCachedRow", {
@@ -953,7 +939,7 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
           unread: row.getAttribute("data-unread"),
         });
     }).observe(document, {
-      attributeFilter: ["aria-label", "data-chat-list-hydrating"],
+      attributeFilter: ["aria-label", "data-unread"],
       attributes: true,
       childList: true,
       subtree: true,
@@ -963,6 +949,34 @@ async function recordCachedRow(page: Page, channel: string): Promise<void> {
 
 function cachedRow(page: Page): Promise<unknown> {
   return page.evaluate(() => Reflect.get(globalThis, "staleSnapshotCachedRow"));
+}
+
+async function observeVisibleCountIncrease(
+  page: Page,
+  title: string,
+): Promise<void> {
+  await page.addInitScript((title) => {
+    Reflect.set(globalThis, "staleSnapshotVisibleCountIncreased", false);
+    new MutationObserver(() => {
+      const row = [...document.querySelectorAll("[data-buffer-id]")].find(
+        (candidate) => candidate.textContent?.includes(title),
+      );
+      if (Number(row?.getAttribute("data-unread")) > 0)
+        Reflect.set(globalThis, "staleSnapshotVisibleCountIncreased", true);
+    }).observe(document, {
+      attributeFilter: ["data-unread"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  }, title);
+}
+
+function visibleCountIncreased(page: Page): Promise<boolean> {
+  return page.evaluate(
+    () =>
+      Reflect.get(globalThis, "staleSnapshotVisibleCountIncreased") === true,
+  );
 }
 
 function historyWire(page: Page): Promise<unknown> {
@@ -1137,9 +1151,9 @@ async function recordCachedRows(
     new MutationObserver(() => {
       if (Reflect.get(globalThis, "badgePersistCachedRows") !== undefined)
         return;
-      const root = document.querySelector("[data-chat-list-hydrating]");
-      if (root === null) return;
-      const rows = [...root.querySelectorAll<HTMLElement>("[data-buffer-id]")];
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>("[data-buffer-id]"),
+      ];
       const captured = expectedTitles.map((title) => {
         const row = rows.find((candidate) =>
           candidate.getAttribute("aria-label")?.startsWith(title),
@@ -1150,7 +1164,12 @@ async function recordCachedRows(
       });
       if (captured.every((row) => row !== undefined))
         Reflect.set(globalThis, "badgePersistCachedRows", captured);
-    }).observe(document, { childList: true, subtree: true });
+    }).observe(document, {
+      attributeFilter: ["aria-label"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
   }, titles);
 }
 
@@ -1180,9 +1199,9 @@ async function recordCachedChatRows(
     new MutationObserver(() => {
       if (Reflect.get(globalThis, "badgePersistCachedChatRows") !== undefined)
         return;
-      const root = document.querySelector("[data-chat-list-hydrating]");
-      if (root === null) return;
-      const rows = [...root.querySelectorAll<HTMLElement>("[data-buffer-id]")];
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>("[data-buffer-id]"),
+      ];
       if (
         !titles.every((title) =>
           rows.some((row) => row.getAttribute("aria-label")?.startsWith(title)),
@@ -1197,7 +1216,12 @@ async function recordCachedChatRows(
           text: row.textContent ?? "",
         })),
       );
-    }).observe(document, { childList: true, subtree: true });
+    }).observe(document, {
+      attributeFilter: ["aria-label"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
   }, requiredTitles);
 }
 
