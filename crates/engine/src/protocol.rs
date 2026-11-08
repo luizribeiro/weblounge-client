@@ -474,6 +474,8 @@ pub struct BufferProjection {
     #[ts(type = "number")]
     pub mentions: u64,
     /// Latest committed row covered by the effective read marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number | null")]
     pub read_through: Option<MessageId>,
     /// Effective read marker as Unix milliseconds, when it is known.
     #[serde(default, skip_serializing_if = "Option::is_none")]

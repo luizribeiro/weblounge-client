@@ -1151,7 +1151,11 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ) ||
     typeof value.unread !== "number" ||
     typeof value.mentions !== "number" ||
-    !(value.read_through === null || typeof value.read_through === "number") ||
+    !(
+      value.read_through === undefined ||
+      value.read_through === null ||
+      typeof value.read_through === "number"
+    ) ||
     !(value.read_at_ms === undefined || typeof value.read_at_ms === "number") ||
     (value.last_message !== undefined && lastMessage === undefined) ||
     !(
@@ -1190,7 +1194,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
       : { member_count: value.member_count }),
     unread: value.unread,
     mentions: value.mentions,
-    read_through: value.read_through,
+    ...(typeof value.read_through !== "number"
+      ? {}
+      : { read_through: value.read_through }),
     ...(value.read_at_ms === undefined ? {} : { read_at_ms: value.read_at_ms }),
     ...(lastMessage === undefined ? {} : { last_message: lastMessage }),
     ...(value.last_activity_ms === undefined

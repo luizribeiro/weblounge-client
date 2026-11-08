@@ -4,7 +4,6 @@ import type { BufferKind } from "./BufferKind";
 import type { BufferSyncState } from "./BufferSyncState";
 import type { ChannelStatus } from "./ChannelStatus";
 import type { DirectIdentityState } from "./DirectIdentityState";
-import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 
@@ -75,7 +74,7 @@ mentions: number,
 /**
  * Latest committed row covered by the effective read marker.
  */
-read_through: MessageId | null,
+read_through?: number | null,
 /**
  * Effective read marker as Unix milliseconds, when it is known.
  */

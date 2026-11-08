@@ -283,7 +283,6 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
         member_count: 0,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     ],
   });
@@ -424,7 +423,6 @@ it("caps startup history hydration at 400ms", async () => {
         member_count: 0,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     ],
   });
@@ -436,7 +434,7 @@ it("caps startup history hydration at 400ms", async () => {
   vi.useRealTimers();
 });
 
-it("reveals and navigates a cached chat list before live synchronization", async () => {
+it("reveals and navigates restored rows while live projections update in place", async () => {
   const client = new FakeEngineClient();
   const onReady = vi.fn();
   const { container } = render(() => (
@@ -465,7 +463,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
     },
   });
   client.emit({
-    type: "chat_list_snapshot_loaded",
+    type: "buffers_changed",
     network_id: 1,
     buffers: [
       {
@@ -473,7 +471,6 @@ it("reveals and navigates a cached chat list before live synchronization", async
         network_id: 1,
         sync_state: "syncing" as const,
         kind: "channel",
-        cached: true,
         available: true,
         title: "#cached",
         draft_key: "weblounge:#cached",
@@ -481,17 +478,12 @@ it("reveals and navigates a cached chat list before live synchronization", async
         member_count: 0,
         unread: 1,
         mentions: 0,
-        read_through: null,
-        cached_preview: "alice: already here",
+        preview: "alice: already here",
       },
     ],
   });
 
   await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
-  expect(container.querySelector("[data-app-root]")).toHaveAttribute(
-    "data-chat-list-hydrating",
-    "true",
-  );
   client.emit({
     type: "network_state_changed",
     network: {
@@ -513,7 +505,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
   client.emit({
     type: "buffer_updated",
     buffer: {
-      id: 3,
+      id: 2,
       network_id: 1,
       sync_state: "synced",
       kind: "channel",
@@ -523,17 +515,12 @@ it("reveals and navigates a cached chat list before live synchronization", async
       member_count: 3,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   expect(title).toHaveAttribute("data-connection-phase", "fading");
   if (title === null) throw new Error("conversation title missing");
   fireEvent.animationEnd(title);
   expect(title).not.toHaveAttribute("data-connection-progress");
-  expect(container.querySelector("[data-app-root]")).toHaveAttribute(
-    "data-chat-list-hydrating",
-    "true",
-  );
   expect(client.requests).toContainEqual(
     expect.objectContaining({
       request: { type: "load_history", buffer_id: 2, direction: "latest" },
@@ -554,38 +541,7 @@ it("reveals and navigates a cached chat list before live synchronization", async
     }),
   );
 
-  client.emit({
-    type: "chat_list_live",
-    network_id: 1,
-    buffers: [
-      {
-        id: 2,
-        network_id: 1,
-        sync_state: "synced" as const,
-        kind: "channel",
-        title: "#cached",
-        draft_key: "weblounge:#cached",
-        topic: "Live topic",
-        member_count: 3,
-        unread: 0,
-        mentions: 0,
-        read_through: null,
-      },
-    ],
-  });
-  expect(container.querySelector("[data-app-root]")).not.toHaveAttribute(
-    "data-chat-list-hydrating",
-  );
-  const brand = container.querySelector("[data-connection-brand]");
-  expect(brand).toHaveAttribute("data-connection-phase", "finishing");
   expect(title).not.toHaveAttribute("data-connection-progress");
-  if (brand === null) throw new Error("progress UI missing");
-  fireEvent.animationIteration(brand);
-  expect(brand).toHaveAttribute("data-connection-phase", "filling");
-  fireEvent.animationEnd(brand);
-  await waitFor(() =>
-    expect(container.querySelector("[data-connection-progress]")).toBeNull(),
-  );
   await waitFor(() =>
     expect(client.requests).toContainEqual(
       expect.objectContaining({
@@ -620,7 +576,6 @@ it("lists projected networks, buffers, and messages", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   client.emit({
@@ -635,7 +590,6 @@ it("lists projected networks, buffers, and messages", async () => {
       topic: "Room topic",
       unread: 1,
       mentions: 0,
-      read_through: null,
     },
   });
   client.emit({
@@ -715,7 +669,6 @@ it("removes a parted channel and navigates to the previous buffer", async () => 
     member_count: 1,
     unread: 0,
     mentions: 0,
-    read_through: null,
   };
   const other = {
     ...room,
@@ -764,7 +717,6 @@ it("replaces a buffer's rows from the snapshot an attaching tab receives", async
       topic: null,
       unread: 1,
       mentions: 0,
-      read_through: null,
     },
   });
   client.emit({
@@ -810,7 +762,6 @@ it("opens the projected member panel and routes a member to a DM", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   fireEvent.click(
@@ -874,7 +825,6 @@ it("focuses command-created buffers only from engine buffer ids", async () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     });
   }
@@ -913,7 +863,6 @@ it("retains command focus when the target buffer arrives later", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   client.emit({
@@ -928,7 +877,6 @@ it("retains command focus when the target buffer arrives later", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
 
@@ -974,7 +922,6 @@ it("loads pushed messages and retains a service-worker route until its buffer ar
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     ],
   });
@@ -1001,7 +948,6 @@ it("loads pushed messages and retains a service-worker route until its buffer ar
       topic: null,
       unread: 1,
       mentions: 0,
-      read_through: null,
     },
   });
 
@@ -1027,7 +973,7 @@ it("retains a durable notification route through the cached-to-live swap", async
     },
   });
   client.emit({
-    type: "chat_list_snapshot_loaded",
+    type: "buffers_changed",
     network_id: 1,
     buffers: [bufferProjection(2, "channel", "#home", true)],
   });
@@ -1039,7 +985,7 @@ it("retains a durable notification route through the cached-to-live swap", async
     }),
   );
   client.emit({
-    type: "chat_list_live",
+    type: "buffers_changed",
     network_id: 1,
     buffers: [
       bufferProjection(2, "channel", "#home"),
@@ -1083,7 +1029,6 @@ it("retains engine focus until a delayed shell can consume it", async () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     });
   }
@@ -1124,7 +1069,6 @@ it("renders command error and engine notice keys as human text", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   const input = await screen.findByRole("textbox", { name: "Message #home" });
@@ -1184,7 +1128,6 @@ it("prepends requested history before live rows", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   const live = {
@@ -1265,7 +1208,6 @@ it("shows a confirmation received without this tab's optimistic row", async () =
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
 
@@ -1289,7 +1231,6 @@ it("does not resurrect a closed buffer from a later projection update", async ()
     topic: null,
     unread: 0,
     mentions: 0,
-    read_through: null,
   };
   client.emit({ type: "buffer_added", buffer: direct });
   expect(await screen.findByRole("heading", { name: "ana" })).toBeVisible();
@@ -1319,7 +1260,6 @@ it("shows an optimistic message as failed when sending fails", async () => {
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
   });
   client.emit({
@@ -1388,7 +1328,6 @@ it("shows a send failure only in its owning conversation", async () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
       {
         id: 3,
@@ -1400,7 +1339,6 @@ it("shows a send failure only in its owning conversation", async () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     ],
   });
@@ -1438,7 +1376,6 @@ it("reopens a hidden failed DM from its typed notice", async () => {
     topic: null,
     unread: 0,
     mentions: 0,
-    read_through: null,
   };
   client.emit({ type: "buffer_added", buffer });
   client.emit({
@@ -1556,13 +1493,8 @@ it("clears a cached live-edge read before selection changes and tolerates a reje
     topic: null,
     unread: 1,
     mentions: 0,
-    read_through: null,
   };
-  client.emit({
-    type: "chat_list_snapshot_loaded",
-    network_id: 1,
-    buffers: [{ ...room, cached: true }],
-  });
+  client.emit({ type: "buffers_changed", network_id: 1, buffers: [room] });
   client.emit({
     type: "messages_appended",
     buffer_id: 2,
@@ -1608,12 +1540,16 @@ it("clears a cached live-edge read before selection changes and tolerates a reje
     id: expect.any(String),
     request: { type: "mark_read", buffer_id: 2, through: 9 },
   });
+  client.emit({
+    type: "buffer_updated",
+    buffer: { ...room, unread: 0, mentions: 0 },
+  });
   expect(document.querySelector('[data-buffer-id="2"]')).toHaveAttribute(
     "data-unread",
     "0",
   );
   client.emit({
-    type: "chat_list_live",
+    type: "buffers_changed",
     network_id: 1,
     buffers: [
       { ...room, unread: 0 },
@@ -1627,7 +1563,6 @@ it("clears a cached live-edge read before selection changes and tolerates a reje
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     ],
   });
@@ -1702,7 +1637,6 @@ it("closes a conversation notification on open and whenever it becomes read", as
       topic: null,
       unread: 4,
       mentions: 0,
-      read_through: 4,
       read_at_ms: Date.parse("2026-11-04T19:24:33.000Z"),
     };
     client.emit({ type: "buffer_added", buffer });
@@ -1712,10 +1646,8 @@ it("closes a conversation notification on open and whenever it becomes read", as
     expect(getNotifications).toHaveBeenLastCalledWith();
 
     client.emit({
-      type: "unread_changed",
-      buffer_id: 2,
-      unread: 5,
-      mentions: 1,
+      type: "buffer_updated",
+      buffer: { ...buffer, unread: 5, mentions: 1 },
     });
     await Promise.resolve();
     expect(newerNotification.close).not.toHaveBeenCalled();
@@ -1773,8 +1705,7 @@ function bufferProjection(
     topic: null,
     unread: 0,
     mentions: 0,
-    read_through: null,
-    ...(cached ? { cached: true, cached_preview: "cached message" } : {}),
+    ...(cached ? { preview: "cached message" } : {}),
   };
 }
 

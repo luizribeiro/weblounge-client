@@ -254,7 +254,6 @@ export function App(props: AppProps) {
   let engineInstance: string | undefined;
   let disposed = false;
   let revealingStartup = false;
-  const [cachedChatListActive, setCachedChatListActive] = createSignal(false);
   let initialNavigationResolved = false;
   let pushedMessagesNetworkId: number | undefined;
   let startupCap: number | undefined;
@@ -682,6 +681,13 @@ export function App(props: AppProps) {
           new Set(current).add(message.network_id),
         );
         if (
+          !startupOnlineNetworks.has(message.network_id) &&
+          message.buffers.some((buffer) => buffer.kind !== "server")
+        ) {
+          setShellReady(true);
+          setStartupContentReady(true);
+        }
+        if (
           !startupRevealed() &&
           startupOnlineNetworks.has(message.network_id)
         ) {
@@ -689,25 +695,12 @@ export function App(props: AppProps) {
           trackStartupBuffers(message.buffers);
         }
       }
-      if (message.type === "chat_list_snapshot_loaded") {
-        setCachedChatListActive(true);
-        setBuffers(message.buffers);
-        setLoadedNetworkIds((current) =>
-          new Set(current).add(message.network_id),
-        );
-        setShellReady(true);
-        setStartupContentReady(true);
-      }
       if (message.type === "pushed_messages_loaded") {
         setLoadedNetworkIds((current) =>
           new Set(current).add(message.network_id),
         );
         setShellReady(true);
         setStartupContentReady(true);
-      }
-      if (message.type === "chat_list_live") {
-        setCachedChatListActive(false);
-        setBuffers(message.buffers);
       }
       if (message.type === "buffer_added" && !startupRevealed()) {
         trackStartupBuffers([message.buffer]);
@@ -724,22 +717,6 @@ export function App(props: AppProps) {
         startupHistoryComplete.add(message.buffer_id);
         startupHistoryPending.delete(message.buffer_id);
         scheduleStartupContentCheck();
-      }
-      if (
-        cachedChatListActive() &&
-        message.type === "buffer_updated" &&
-        message.buffer.cached !== true
-      ) {
-        setBuffers((current) =>
-          current.map((buffer) =>
-            buffer.draft_key === message.buffer.draft_key
-              ? {
-                  ...buffer,
-                  sync_state: message.buffer.sync_state,
-                }
-              : buffer,
-          ),
-        );
       }
       if (message.type === "buffer_snapshot" && !startupRevealed()) {
         startupHistoryComplete.add(message.buffer_id);
@@ -770,22 +747,13 @@ export function App(props: AppProps) {
         );
         setTypers((current) => withoutMapKey(current, message.buffer_id));
       }
-      const stagedLiveBufferEvent =
-        cachedChatListActive() &&
-        (message.type === "buffers_changed" ||
-          message.type === "buffer_added" ||
-          (message.type === "buffer_updated" &&
-            message.buffer.cached !== true) ||
-          message.type === "unread_changed");
-      if (!stagedLiveBufferEvent) {
-        applyDebugEvent(
-          message,
-          setNetworks,
-          setBuffers,
-          setMessages,
-          setMemberships,
-        );
-      }
+      applyDebugEvent(
+        message,
+        setNetworks,
+        setBuffers,
+        setMessages,
+        setMemberships,
+      );
     });
     let updateReady = serviceWorkerUpdateIsReady();
     const publishUpdateReady = () => {
@@ -1390,7 +1358,6 @@ export function App(props: AppProps) {
   return (
     <div
       data-app-root="true"
-      data-chat-list-hydrating={cachedChatListActive() || undefined}
       ref={(element) => {
         appRoot = element;
       }}
@@ -1428,7 +1395,6 @@ export function App(props: AppProps) {
       ) : (
         <ResponsiveShell
           activeBufferId={initialBufferId()}
-          hydrating={cachedChatListActive()}
           memberViewScope={clientId}
           networks={networks()}
           notificationPromptVisible={notificationPromptVisible()}
@@ -1445,15 +1411,6 @@ export function App(props: AppProps) {
           typers={typers()}
           memberWindows={memberWindows()}
           onMarkRead={(bufferId, through) => {
-            if (cachedChatListActive()) {
-              setBuffers((current) =>
-                current.map((buffer) =>
-                  buffer.id === bufferId
-                    ? { ...buffer, unread: 0, mentions: 0 }
-                    : buffer,
-                ),
-              );
-            }
             if (client === undefined) return;
             void client
               .send({
@@ -1837,22 +1794,6 @@ function applyDebugEvent(
     setBuffers((current) =>
       current.map((buffer) =>
         buffer.id === message.buffer.id ? message.buffer : buffer,
-      ),
-    );
-  } else if (message.type === "unread_changed") {
-    setBuffers((current) =>
-      current.map((buffer) =>
-        buffer.id === message.buffer_id
-          ? { ...buffer, unread: message.unread, mentions: message.mentions }
-          : buffer,
-      ),
-    );
-  } else if (message.type === "read_marker_moved") {
-    setBuffers((current) =>
-      current.map((buffer) =>
-        buffer.id === message.buffer_id
-          ? { ...buffer, read_through: message.through }
-          : buffer,
       ),
     );
   } else if (message.type === "messages_appended") {
