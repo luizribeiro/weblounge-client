@@ -529,8 +529,21 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     ).toHaveCount(1);
     await expect(channelRow).toHaveAttribute("aria-label", "#weblounge-test");
     await page.getByRole("button", { name: "Back to chats" }).click();
-    await bot.privmsgConfirmed("#weblounge-test", channelPreview);
-    await bot.privmsgConfirmed("weblounge", directPreview);
+    const channelLine = await bot.privmsgConfirmed(
+      "#weblounge-test",
+      channelPreview,
+    );
+    const cursorTime = serverTimeMilliseconds(channelLine);
+    let directAfterCursor = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const directLine = await bot.privmsgConfirmed("weblounge", directPreview);
+      if (serverTimeMilliseconds(directLine) > cursorTime) {
+        directAfterCursor = true;
+        break;
+      }
+    }
+    if (!directAfterCursor)
+      throw new Error("direct message time did not advance beyond the cursor");
     await expect(
       page.getByRole("button", { name: new RegExp(`^${nick}(?:,|$)`) }),
     ).toContainText(directPreview);
@@ -564,6 +577,13 @@ test("reveals local Ergo rows with channel and direct previews", async ({
     for (const seedBot of seedBots) seedBot.close();
   }
 });
+
+function serverTimeMilliseconds(line: string): number {
+  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
+  if (value === undefined)
+    throw new Error(`IRC line has no server time: ${line}`);
+  return Date.parse(value);
+}
 
 test("keeps seeded rows unchanged through the cached-to-live frame", async ({
   baseURL,
