@@ -181,6 +181,7 @@ const pushDeliveries = new PushDeliveryCoordinator<
   }),
   present: ({ title, options }) => showRegistrationNotification(title, options),
   replace: replaceFallbackNotification,
+  dismiss: dismissFallbackNotification,
   prepare: preparePushDelivery,
   commit: commitPushDelivery,
   reportError: reportPushError,
@@ -727,6 +728,17 @@ async function replaceFallbackNotification(
   return replaceDeadlineFallback(fallback, presentation, ({ title, options }) =>
     showRegistrationNotification(title, options),
   );
+}
+
+async function dismissFallbackNotification(
+  fallback: PushPresentation,
+): Promise<void> {
+  const receiptId = requiredReceiptId(fallback);
+  for (const notification of await registrationNotifications()) {
+    if (notificationReceiptId(notification) === receiptId) {
+      notification.close();
+    }
+  }
 }
 
 function notificationReceiptId(notification: {

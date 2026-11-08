@@ -96,6 +96,7 @@ describe("push fallback replacement", () => {
       present,
       replace: (fallback, replacement) =>
         replaceDeadlineFallback(fallback, replacement, present),
+      dismiss: async () => undefined,
       commit: async (commit) => {
         commits.push(commit);
       },

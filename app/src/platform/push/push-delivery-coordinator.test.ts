@@ -6,12 +6,12 @@ import {
 
 interface Input {
   readonly id: string;
-  readonly kind: "visible" | "markread";
+  readonly kind: "visible" | "markread" | "ping";
 }
 
 interface Commit {
   readonly id: string;
-  readonly kind: "visible" | "markread" | "fallback";
+  readonly kind: "visible" | "markread" | "ping" | "fallback";
 }
 
 describe("push delivery coordination", () => {
@@ -176,6 +176,7 @@ describe("push delivery coordination", () => {
           presentations.push(presentation);
         },
         replace: async () => false,
+        dismiss: async () => undefined,
         commit: async () => undefined,
         reportError: () => undefined,
         retryPrepare: () => false,
@@ -187,6 +188,75 @@ describe("push delivery coordination", () => {
 
       releasePrepare.resolve();
       await delivery;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["markread", "ping"] as const)(
+    "removes a deadline fallback after a slow %s is classified as silent",
+    async (kind) => {
+      vi.useFakeTimers();
+      try {
+        const releasePrepare = deferred<void>();
+        const notifications: string[] = [];
+        const coordinator = createCoordinator({
+          fallbackDeadlineMs: 1_500,
+          presentationBudgetMs: 2_000,
+          prepare: async (input) => {
+            await releasePrepare.promise;
+            return { kind: "silent", commit: input };
+          },
+          present: async (presentation) => {
+            notifications.push(presentation);
+          },
+          dismiss: async (fallback) => {
+            const index = notifications.indexOf(fallback);
+            if (index >= 0) notifications.splice(index, 1);
+          },
+          commit: async () => undefined,
+        });
+
+        const delivery = coordinator.enqueue({ id: "control", kind });
+        await vi.advanceTimersByTimeAsync(1_500);
+        expect(notifications).toEqual(["generic"]);
+
+        releasePrepare.resolve();
+        await delivery;
+
+        expect(notifications).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("keeps a final generic after preparation fails past the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const releasePrepare = deferred<void>();
+      const notifications: string[] = [];
+      const coordinator = createCoordinator({
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        prepare: async () => {
+          await releasePrepare.promise;
+          throw new Error("route unavailable");
+        },
+        present: async (presentation) => {
+          notifications.push(presentation);
+        },
+        commit: async () => undefined,
+      });
+
+      const delivery = coordinator.enqueue({ id: "failed", kind: "visible" });
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(notifications).toEqual(["generic"]);
+
+      releasePrepare.resolve();
+      await delivery;
+
+      expect(notifications).toEqual(["generic"]);
     } finally {
       vi.useRealTimers();
     }
@@ -217,6 +287,7 @@ describe("push delivery coordination", () => {
           if (fallbackIndex >= 0) notifications.splice(fallbackIndex, 1);
           return true;
         },
+        dismiss: async () => undefined,
         commit: async () => undefined,
         reportError: () => undefined,
         retryPrepare: () => false,
@@ -258,6 +329,7 @@ describe("push delivery coordination", () => {
           if (attempts < 3) throw new Error("presentation unavailable");
         },
         replace: async () => false,
+        dismiss: async () => undefined,
         commit: async () => undefined,
         reportError: () => undefined,
         retryPrepare: () => false,
@@ -295,6 +367,7 @@ describe("push delivery coordination", () => {
           throw new Error("presentation unavailable");
         },
         replace: async () => false,
+        dismiss: async () => undefined,
         commit: async (commit) => {
           commits.push(commit.id);
         },
@@ -335,6 +408,7 @@ describe("push delivery coordination", () => {
           presentations.push(presentation);
         },
         replace: async () => false,
+        dismiss: async () => undefined,
         commit: async () => undefined,
         reportError: (error) => errors.push(error),
         retryPrepare: () => false,
@@ -405,11 +479,14 @@ describe("push delivery coordination", () => {
 });
 
 function createCoordinator(overrides: {
+  readonly fallbackDeadlineMs?: number;
+  readonly presentationBudgetMs?: number;
   readonly prepare: (
     input: Input,
   ) => Promise<PreparedPushDelivery<string, Commit>>;
   readonly present: (presentation: string) => Promise<void>;
   readonly commit: (commit: Commit) => Promise<void>;
+  readonly dismiss?: (fallback: string) => Promise<void>;
   readonly reportError?: (error: unknown) => void;
   readonly retryPrepare?: (error: unknown) => boolean;
 }): PushDeliveryCoordinator<Input, string, Commit> {
@@ -420,6 +497,7 @@ function createCoordinator(overrides: {
     finalFallback: (generic) => generic,
     fallbackCommit: () => ({ id: "fallback", kind: "fallback" }),
     replace: async () => false,
+    dismiss: async () => undefined,
     reportError: () => undefined,
     retryPrepare: () => false,
     ...overrides,

@@ -24,6 +24,7 @@ interface PushDeliveryDependencies<Input, Presentation, Commit> {
     fallback: Presentation,
     presentation: Presentation,
   ) => Promise<boolean>;
+  readonly dismiss: (fallback: Presentation) => Promise<void>;
   readonly retryPrepare: (error: unknown) => boolean;
   readonly reportError: (error: unknown) => void;
   readonly prepare: (
@@ -87,6 +88,15 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     }
     if (prepared.kind === "silent") {
       cancelPresentationDeadline(state);
+      await state.fallback;
+      if (state.presented !== undefined) {
+        try {
+          await this.#dependencies.dismiss(state.presented);
+          state.presented = undefined;
+        } catch (error: unknown) {
+          this.#dependencies.reportError(error);
+        }
+      }
       await this.#commit(predecessor, prepared.commit);
       return;
     }

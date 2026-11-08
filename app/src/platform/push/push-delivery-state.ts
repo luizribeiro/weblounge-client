@@ -39,8 +39,12 @@ export function schedulePushPresentation<T>(
   state.fallback = new Promise<void>((resolve) => {
     state.resolveFallback = resolve;
     state.deadline = setTimeout(() => {
+      state.deadline = undefined;
       state.expired = true;
-      void showUntilPresented(state, () => state.generic).finally(resolve);
+      void showUntilPresented(state, () => state.generic).finally(() => {
+        state.resolveFallback = undefined;
+        resolve();
+      });
     }, fallbackDeadlineMs);
   });
   return state;
@@ -67,7 +71,8 @@ export async function showOnce<T>(
 export function cancelPresentationDeadline<T>(
   state: PushPresentationState<T>,
 ): void {
-  if (state.deadline !== undefined) clearTimeout(state.deadline);
+  if (state.deadline === undefined) return;
+  clearTimeout(state.deadline);
   state.deadline = undefined;
   state.resolveFallback?.();
   state.resolveFallback = undefined;
