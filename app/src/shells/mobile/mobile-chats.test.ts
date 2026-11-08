@@ -87,7 +87,6 @@ function buffer(
     topic: null,
     unread,
     mentions: 0,
-    read_through: null,
     ...(lastActivity === undefined ? {} : { last_activity_ms: lastActivity }),
     ...(id === 4
       ? {

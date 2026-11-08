@@ -114,7 +114,6 @@ function buffer(
     title: projection.title ?? "buffer",
     draft_key: "draft",
     topic: null,
-    read_through: null,
     ...projection,
     kind: projection.kind ?? "channel",
     network_id: projection.network_id ?? 1,

@@ -20,7 +20,6 @@ const channel: BufferProjection = {
   member_count: 7,
   unread: 0,
   mentions: 0,
-  read_through: null,
 };
 const otherChannel: BufferProjection = {
   ...channel,
@@ -39,7 +38,6 @@ const direct: BufferProjection = {
   topic: null,
   unread: 0,
   mentions: 0,
-  read_through: null,
 };
 const nickMessage: MessageProjection = {
   id: 1,
@@ -117,7 +115,7 @@ it("resolves a cached direct through normal history", () => {
   render(() => (
     <DesktopShell
       activeBufferId={4}
-      buffers={[{ ...direct, cached: true, unread: 2, mentions: 2 }]}
+      buffers={[{ ...direct, unread: 2, mentions: 2 }]}
       composerNotice={undefined}
       completion={undefined}
       focusRequest={undefined}
@@ -140,7 +138,7 @@ it("resolves a cached channel through normal history", () => {
   render(() => (
     <DesktopShell
       activeBufferId={2}
-      buffers={[{ ...channel, cached: true, unread: 2 }]}
+      buffers={[{ ...channel, unread: 2 }]}
       composerNotice={undefined}
       completion={undefined}
       focusRequest={undefined}

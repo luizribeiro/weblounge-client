@@ -92,6 +92,5 @@ function buffer(
     topic: null,
     unread: 0,
     mentions: 0,
-    read_through: null,
   };
 }

@@ -57,12 +57,6 @@ it("gives terminal failures one deterministic action", () => {
   });
 });
 
-it("keeps hydration progress active after transport is online", () => {
-  expect(connectionPresentation([network("online")], true).progressing).toBe(
-    true,
-  );
-});
-
 function network(state: NetworkProjection["state"]): NetworkProjection {
   return { id: 1, label: "Local", nickname: "me", state };
 }

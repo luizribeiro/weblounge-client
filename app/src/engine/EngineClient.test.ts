@@ -637,7 +637,6 @@ describe("WorkerEngineClient", () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     });
     frames[0]?.(0);
@@ -669,7 +668,6 @@ describe("WorkerEngineClient", () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
       },
     });
     frames[0]?.(0);
@@ -718,7 +716,6 @@ describe("WorkerEngineClient", () => {
         topic: null,
         unread: 0,
         mentions: 0,
-        read_through: null,
         last_message: {
           id: 8,
           author: "mel",

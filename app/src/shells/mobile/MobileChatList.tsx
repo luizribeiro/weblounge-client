@@ -41,7 +41,6 @@ import {
 interface MobileChatListProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
-  readonly hydrating?: boolean | undefined;
   readonly filter: ChatFilter;
   readonly query: string;
   readonly restoreScroll: Accessor<number>;
@@ -102,8 +101,7 @@ export function MobileChatList(props: MobileChatListProps) {
   };
   window.addEventListener("pointerup", releasePressedRow);
   window.addEventListener("pointercancel", releasePressedRow);
-  const connection = () =>
-    connectionPresentation(props.networks, props.hydrating);
+  const connection = () => connectionPresentation(props.networks);
   const progress = createConnectionProgress(() => connection().progressing, {
     atRest: () => connectionSweepAtRest(header),
     interrupted: () => connection().error !== undefined,

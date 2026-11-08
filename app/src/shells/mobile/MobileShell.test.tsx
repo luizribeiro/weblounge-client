@@ -17,7 +17,6 @@ const buffer: BufferProjection = {
   topic: null,
   unread: 0,
   mentions: 0,
-  read_through: null,
 };
 
 afterEach(() => window.history.replaceState({}, "", "/"));

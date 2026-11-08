@@ -562,9 +562,7 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       if (network !== undefined) return { type: messageType, network };
       break;
     }
-    case "buffers_changed":
-    case "chat_list_snapshot_loaded":
-    case "chat_list_live": {
+    case "buffers_changed": {
       const buffers = decodeArray(value.buffers, decodeBuffer);
       if (typeof value.network_id === "number" && buffers !== undefined) {
         return {
@@ -745,32 +743,6 @@ function decodeEngineMessage(value: unknown): EngineToUi {
         };
       }
       break;
-    case "unread_changed":
-      if (
-        typeof value.buffer_id === "number" &&
-        typeof value.unread === "number" &&
-        typeof value.mentions === "number"
-      ) {
-        return {
-          type: messageType,
-          buffer_id: value.buffer_id,
-          unread: value.unread,
-          mentions: value.mentions,
-        };
-      }
-      break;
-    case "read_marker_moved":
-      if (
-        typeof value.buffer_id === "number" &&
-        (value.through === null || typeof value.through === "number")
-      ) {
-        return {
-          type: messageType,
-          buffer_id: value.buffer_id,
-          through: value.through,
-        };
-      }
-      break;
     default:
       return assertNever(messageType);
   }
@@ -797,8 +769,6 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "completion_result" ||
     value === "network_state_changed" ||
     value === "buffers_changed" ||
-    value === "chat_list_snapshot_loaded" ||
-    value === "chat_list_live" ||
     value === "recent_directs_ready" ||
     value === "pushed_messages_loaded" ||
     value === "buffer_added" ||
@@ -816,9 +786,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "members_changed" ||
     value === "message_confirmed" ||
     value === "message_failed" ||
-    value === "message_retrying" ||
-    value === "unread_changed" ||
-    value === "read_marker_moved"
+    value === "message_retrying"
   );
 }
 
@@ -1126,7 +1094,6 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
       value.channel_status === undefined ||
       isOneOf(value.channel_status, ["joined", "kicked"])
     ) ||
-    !(value.cached === undefined || typeof value.cached === "boolean") ||
     !(value.available === undefined || typeof value.available === "boolean") ||
     typeof value.title !== "string" ||
     typeof value.draft_key !== "string" ||
@@ -1151,20 +1118,11 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ) ||
     typeof value.unread !== "number" ||
     typeof value.mentions !== "number" ||
-    !(
-      value.read_through === undefined ||
-      value.read_through === null ||
-      typeof value.read_through === "number"
-    ) ||
     !(value.read_at_ms === undefined || typeof value.read_at_ms === "number") ||
     (value.last_message !== undefined && lastMessage === undefined) ||
     !(
       value.last_activity_ms === undefined ||
       typeof value.last_activity_ms === "number"
-    ) ||
-    !(
-      value.cached_preview === undefined ||
-      typeof value.cached_preview === "string"
     ) ||
     !(value.preview === undefined || typeof value.preview === "string")
   ) {
@@ -1178,7 +1136,6 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
     ...(value.channel_status === undefined
       ? {}
       : { channel_status: value.channel_status }),
-    cached: value.cached ?? false,
     available: value.available ?? true,
     title: value.title,
     ...(value.nick_color_index === undefined
@@ -1194,17 +1151,11 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
       : { member_count: value.member_count }),
     unread: value.unread,
     mentions: value.mentions,
-    ...(typeof value.read_through !== "number"
-      ? {}
-      : { read_through: value.read_through }),
     ...(value.read_at_ms === undefined ? {} : { read_at_ms: value.read_at_ms }),
     ...(lastMessage === undefined ? {} : { last_message: lastMessage }),
     ...(value.last_activity_ms === undefined
       ? {}
       : { last_activity_ms: value.last_activity_ms }),
-    ...(value.cached_preview === undefined
-      ? {}
-      : { cached_preview: value.cached_preview }),
     ...(value.preview === undefined ? {} : { preview: value.preview }),
   };
 }

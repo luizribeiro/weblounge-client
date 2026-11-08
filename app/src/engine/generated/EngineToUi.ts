@@ -8,7 +8,6 @@ import type { EngineMessageKey } from "./EngineMessageKey";
 import type { LocalSendId } from "./LocalSendId";
 import type { MemberProjection } from "./MemberProjection";
 import type { MembershipProjection } from "./MembershipProjection";
-import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
@@ -173,27 +172,11 @@ network_id: NetworkId,
 /**
  * Complete ordered buffer projection.
  */
-buffers: Array<BufferProjection>, } | { "type": "chat_list_snapshot_loaded",
-/**
- * Network whose configured identity matched the record.
- */
-network_id: NetworkId,
-/**
- * Complete ordered cached rows with fresh session-only IDs.
- */
 buffers: Array<BufferProjection>, } | { "type": "pushed_messages_loaded",
 /**
  * Network whose cached messages are now part of its timelines.
  */
-network_id: NetworkId, } | { "type": "chat_list_live",
-/**
- * Network whose live projection completed.
- */
-network_id: NetworkId,
-/**
- * Complete ordered live rows plus an unavailable selected-cache fallback.
- */
-buffers: Array<BufferProjection>, } | { "type": "recent_directs_ready",
+network_id: NetworkId, } | { "type": "recent_directs_ready",
 /**
  * Network whose recent direct targets have been discovered.
  */
@@ -321,24 +304,4 @@ buffer_id: BufferId,
 /**
  * Retried optimistic send identity.
  */
-local_send_id: LocalSendId, } | { "type": "unread_changed",
-/**
- * Buffer whose counters changed.
- */
-buffer_id: BufferId,
-/**
- * Current unread count.
- */
-unread: number,
-/**
- * Current mention count.
- */
-mentions: number, } | { "type": "read_marker_moved",
-/**
- * Buffer whose marker moved.
- */
-buffer_id: BufferId,
-/**
- * Latest retained committed row covered by the marker.
- */
-through: MessageId | null, };
+local_send_id: LocalSendId, };

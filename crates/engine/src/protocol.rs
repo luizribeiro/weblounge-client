@@ -441,11 +441,7 @@ pub struct BufferProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub channel_status: Option<ChannelStatus>,
-    /// Whether this row was restored from the launch cache and is not live yet.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub cached: Option<bool>,
-    /// Whether the configured conversation still exists in the complete live list.
+    /// Whether the configured conversation remains available after reconciliation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub available: Option<bool>,
@@ -473,10 +469,6 @@ pub struct BufferProjection {
     /// Unread messages mentioning the current nick.
     #[ts(type = "number")]
     pub mentions: u64,
-    /// Latest committed row covered by the effective read marker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional, type = "number | null")]
-    pub read_through: Option<MessageId>,
     /// Effective read marker as Unix milliseconds, when it is known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number")]
@@ -489,10 +481,6 @@ pub struct BufferProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional, type = "number")]
     pub last_activity_ms: Option<i64>,
-    /// Already-formatted bounded preview used only by a cached launch row.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub cached_preview: Option<String>,
     /// Already-formatted bounded conversation-list preview.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -1130,24 +1118,10 @@ pub enum EngineToUi {
         /// Complete ordered buffer projection.
         buffers: Vec<BufferProjection>,
     },
-    /// Reveal one validated cached chat list before live synchronization completes.
-    ChatListSnapshotLoaded {
-        /// Network whose configured identity matched the record.
-        network_id: NetworkId,
-        /// Complete ordered cached rows with fresh session-only IDs.
-        buffers: Vec<BufferProjection>,
-    },
     /// Reveal that service-worker messages are available before network history.
     PushedMessagesLoaded {
         /// Network whose cached messages are now part of its timelines.
         network_id: NetworkId,
-    },
-    /// Replace cached rows once live discovery and latest history are complete.
-    ChatListLive {
-        /// Network whose live projection completed.
-        network_id: NetworkId,
-        /// Complete ordered live rows plus an unavailable selected-cache fallback.
-        buffers: Vec<BufferProjection>,
     },
     /// Report that initial recent-direct discovery cannot add more buffers.
     RecentDirectsReady {
@@ -1277,24 +1251,6 @@ pub enum EngineToUi {
         buffer_id: BufferId,
         /// Retried optimistic send identity.
         local_send_id: LocalSendId,
-    },
-    /// Update unread and mention counters.
-    UnreadChanged {
-        /// Buffer whose counters changed.
-        buffer_id: BufferId,
-        /// Current unread count.
-        #[ts(type = "number")]
-        unread: u64,
-        /// Current mention count.
-        #[ts(type = "number")]
-        mentions: u64,
-    },
-    /// The effective local or server-backed read position advanced.
-    ReadMarkerMoved {
-        /// Buffer whose marker moved.
-        buffer_id: BufferId,
-        /// Latest retained committed row covered by the marker.
-        through: Option<MessageId>,
     },
 }
 

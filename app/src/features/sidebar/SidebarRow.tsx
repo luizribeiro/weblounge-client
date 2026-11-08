@@ -19,6 +19,8 @@ export interface SidebarRowProps {
 export function SidebarRow(props: SidebarRowProps) {
   const showBadges = () => props.badgesSuppressed !== true;
   const badge = () => (showBadges() ? unreadBadge(props.buffer) : undefined);
+  const visibleUnread = () => (showBadges() ? props.buffer.unread : 0);
+  const visibleMentions = () => (showBadges() ? props.buffer.mentions : 0);
   const prefix = () =>
     props.buffer.kind === "channel" ? props.buffer.title.slice(0, 1) : "";
   const name = () =>
@@ -31,11 +33,11 @@ export function SidebarRow(props: SidebarRowProps) {
       aria-current={props.active ? "page" : undefined}
       class={`${styles.row} ${props.active ? styles.active : ""} ${
         props.muted === true ? styles.muted : ""
-      } ${showBadges() && props.buffer.unread > 0 ? styles.unread : ""}`}
+      } ${visibleUnread() > 0 ? styles.unread : ""}`}
       data-buffer-id={props.buffer.id}
-      data-mentions={props.buffer.mentions}
+      data-mentions={visibleMentions()}
       data-muted={props.muted === true ? "true" : undefined}
-      data-unread={props.buffer.unread}
+      data-unread={visibleUnread()}
       onClick={props.onClick}
       onFocus={props.onFocus}
       ref={props.ref}

@@ -32,11 +32,7 @@ sync_state: BufferSyncState,
  */
 channel_status?: ChannelStatus,
 /**
- * Whether this row was restored from the launch cache and is not live yet.
- */
-cached?: boolean,
-/**
- * Whether the configured conversation still exists in the complete live list.
+ * Whether the configured conversation remains available after reconciliation.
  */
 available?: boolean,
 /**
@@ -72,10 +68,6 @@ unread: number,
  */
 mentions: number,
 /**
- * Latest committed row covered by the effective read marker.
- */
-read_through?: number | null,
-/**
  * Effective read marker as Unix milliseconds, when it is known.
  */
 read_at_ms?: number,
@@ -87,10 +79,6 @@ last_message?: MessageProjection,
  * Latest conversation activity in Unix milliseconds.
  */
 last_activity_ms?: number,
-/**
- * Already-formatted bounded preview used only by a cached launch row.
- */
-cached_preview?: string,
 /**
  * Already-formatted bounded conversation-list preview.
  */

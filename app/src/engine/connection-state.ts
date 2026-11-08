@@ -32,7 +32,6 @@ export function connectionStateKind(
 
 export function connectionPresentation(
   networks: readonly NetworkProjection[],
-  hydrating = false,
 ): ConnectionPresentation {
   const failed = networks.find(
     (network) => connectionStateKind(network.state) === "failed",
@@ -57,19 +56,18 @@ export function connectionPresentation(
           },
     progressing:
       failure === undefined &&
-      (hydrating ||
-        networks.some((network) => {
-          const kind = connectionStateKind(network.state);
-          return (
-            kind === "connecting" ||
-            kind === "registering" ||
-            kind === "reconnecting" ||
-            (kind === "offline" &&
-              typeof network.state === "object" &&
-              "offline" in network.state &&
-              network.state.offline.reason === "device_offline")
-          );
-        })),
+      networks.some((network) => {
+        const kind = connectionStateKind(network.state);
+        return (
+          kind === "connecting" ||
+          kind === "registering" ||
+          kind === "reconnecting" ||
+          (kind === "offline" &&
+            typeof network.state === "object" &&
+            "offline" in network.state &&
+            network.state.offline.reason === "device_offline")
+        );
+      }),
     sendsBlocked: networks.some(
       (network) => connectionStateKind(network.state) !== "online",
     ),

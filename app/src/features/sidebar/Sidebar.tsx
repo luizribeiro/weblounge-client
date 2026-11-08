@@ -31,7 +31,6 @@ export interface SidebarListController {
 interface SidebarProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly SidebarBuffer[];
-  readonly hydrating?: boolean | undefined;
   readonly activeBufferId?: number | undefined;
   readonly visibleBufferIds: ReadonlySet<number>;
   readonly registry: ActionRegistry;
@@ -48,8 +47,7 @@ export function Sidebar(props: SidebarProps) {
   const [rovingId, setRovingId] = createSignal<number>();
   const elements = new Map<number, HTMLButtonElement>();
   const orderedIds = () => orderedBuffers(props.networks, props.buffers);
-  const connection = () =>
-    connectionPresentation(props.networks, props.hydrating);
+  const connection = () => connectionPresentation(props.networks);
   const progress = createConnectionProgress(() => connection().progressing, {
     atRest: () => connectionSweepAtRest(brand),
     interrupted: () => connection().error !== undefined,

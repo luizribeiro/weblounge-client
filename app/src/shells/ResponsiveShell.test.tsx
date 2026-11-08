@@ -139,6 +139,5 @@ function buffer(id: number, title: string): BufferProjection {
     topic: null,
     unread: 0,
     mentions: 0,
-    read_through: null,
   };
 }

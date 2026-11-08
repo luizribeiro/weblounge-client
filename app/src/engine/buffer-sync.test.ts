@@ -49,7 +49,6 @@ function presentation(
       topic: null,
       unread: 0,
       mentions: 0,
-      read_through: null,
     },
     { id: 1, label: "Local", nickname: "me", state },
   );

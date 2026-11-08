@@ -29,7 +29,6 @@ const buffer: BufferProjection = {
   topic: null,
   unread: 0,
   mentions: 0,
-  read_through: null,
 };
 
 it("routes the chats root to the mobile chat list", () => {

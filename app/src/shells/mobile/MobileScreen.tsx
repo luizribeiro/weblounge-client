@@ -25,7 +25,6 @@ import {
 export interface MobileShellData extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
-  readonly hydrating?: boolean | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
   readonly messageFailureNotices?: ReadonlyMap<number, string> | undefined;
@@ -126,7 +125,6 @@ export function MobileScreen(props: MobileScreenProps) {
         <MobileChatList
           buffers={props.buffers}
           filter={props.filter}
-          hydrating={props.hydrating}
           networks={props.networks}
           notificationPromptVisible={props.notificationPromptVisible}
           onDismissNotificationPrompt={props.onDismissNotificationPrompt}
@@ -144,7 +142,6 @@ export function MobileScreen(props: MobileScreenProps) {
       ) : buffer() !== undefined ? (
         <MobileConversation
           buffer={buffer() as BufferProjection}
-          hydrating={props.hydrating}
           commandSpecs={props.commandSpecs}
           composerNotice={composerNotice()}
           {...(props.completion === undefined

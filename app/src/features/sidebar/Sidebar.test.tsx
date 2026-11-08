@@ -25,7 +25,6 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
           topic: null,
           unread: 0,
           mentions: 0,
-          read_through: null,
         },
         {
           id: 2,
@@ -37,7 +36,6 @@ it("groups projected buffers and routes sidebar actions through commands", () =>
           topic: null,
           unread: 3,
           mentions: 1,
-          read_through: null,
         },
       ]}
       commandContext={{ bufferCount: 2, listActive: true }}
@@ -91,7 +89,6 @@ it("moves roving focus through real list commands", () => {
             topic: null,
             unread: 0,
             mentions: 0,
-            read_through: null,
           },
           {
             id: 2,
@@ -103,7 +100,6 @@ it("moves roving focus through real list commands", () => {
             topic: null,
             unread: 0,
             mentions: 0,
-            read_through: null,
           },
         ]}
         commandContext={context}

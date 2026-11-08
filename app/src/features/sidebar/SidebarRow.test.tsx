@@ -13,7 +13,6 @@ const buffer: BufferProjection = {
   topic: null,
   unread: 4,
   mentions: 2,
-  read_through: null,
 };
 
 describe("SidebarRow", () => {
@@ -33,6 +32,8 @@ describe("SidebarRow", () => {
       name: "#lounge",
     });
     expect(row).toHaveAttribute("aria-current", "page");
+    expect(row).toHaveAttribute("data-unread", "0");
+    expect(row).toHaveAttribute("data-mentions", "0");
     expect(screen.queryByText("4")).not.toBeInTheDocument();
     row.click();
     expect(onClick).toHaveBeenCalledOnce();

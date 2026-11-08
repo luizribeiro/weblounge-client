@@ -32,7 +32,6 @@ const buffer: BufferProjection = {
   topic: null,
   unread: 1,
   mentions: 0,
-  read_through: 7,
 };
 
 const message: MessageProjection = {
@@ -222,7 +221,7 @@ it("resolves a cached direct through normal history", () => {
   const loadHistory = vi.fn();
   render(() => (
     <MobileConversation
-      buffer={{ ...buffer, cached: true, unread: 2, mentions: 2 }}
+      buffer={{ ...buffer, unread: 2, mentions: 2 }}
       memberships={[]}
       messages={[]}
       onBack={() => {}}
@@ -244,7 +243,6 @@ it("resolves a cached channel through normal history", () => {
     <MobileConversation
       buffer={{
         ...buffer,
-        cached: true,
         kind: "channel",
         title: "#room",
       }}

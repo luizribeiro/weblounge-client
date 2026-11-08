@@ -56,7 +56,6 @@ import { createSinglePane, showInFocusedPane } from "./pane-layout";
 export interface DesktopShellProps extends NotificationPromptControls {
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
-  readonly hydrating?: boolean | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly composerNotice: string | undefined;
   readonly messageFailureNotices?: ReadonlyMap<number, string> | undefined;
@@ -587,7 +586,6 @@ export function DesktopShell(props: DesktopShellProps) {
         activeBufferId={activeBuffer()?.id}
         buffers={props.buffers}
         commandContext={context()}
-        hydrating={props.hydrating}
         networks={props.networks}
         notificationPromptVisible={props.notificationPromptVisible}
         onDismissNotificationPrompt={props.onDismissNotificationPrompt}

@@ -29,7 +29,6 @@ it("keeps network rows and account chrome in focused components", () => {
             topic: null,
             unread: 0,
             mentions: 0,
-            read_through: null,
           },
           {
             id: 2,
@@ -41,7 +40,6 @@ it("keeps network rows and account chrome in focused components", () => {
             topic: null,
             unread: 0,
             mentions: 0,
-            read_through: null,
           },
         ]}
         network={network}
