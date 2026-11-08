@@ -1,3 +1,7 @@
+import type {
+  PushDeliveryCompletion,
+  PushDeliveryOutcome,
+} from "./push-delivery-log";
 import {
   cancelPresentationDeadline,
   type PushPresentationState,
@@ -10,28 +14,34 @@ export type PreparedPushDelivery<Presentation, Commit> =
       readonly kind: "visible";
       readonly presentation: Presentation;
       readonly commit: Commit;
+      readonly finalGeneric?: boolean;
     }
   | { readonly kind: "silent"; readonly commit: Commit };
 
 interface PushDeliveryDependencies<Input, Presentation, Commit> {
   readonly fallbackDeadlineMs: number;
   readonly presentationBudgetMs: number;
-  readonly generic: () => Presentation;
+  readonly generic: (input: Input) => Presentation;
   readonly finalFallback: (generic: Presentation) => Presentation;
   readonly fallbackCommit: (fallback: Presentation) => Commit;
-  readonly present: (presentation: Presentation) => Promise<void>;
+  readonly present: (presentation: Presentation, input: Input) => Promise<void>;
   readonly replace: (
     fallback: Presentation,
     presentation: Presentation,
+    input: Input,
   ) => Promise<boolean>;
-  readonly dismiss: (fallback: Presentation) => Promise<void>;
+  readonly dismiss: (fallback: Presentation, input: Input) => Promise<void>;
   readonly retryPrepare: (error: unknown) => boolean;
-  readonly reportError: (error: unknown) => void;
+  readonly reportError: (error: unknown, input: Input) => void;
   readonly prepare: (
     input: Input,
     state: PushPresentationState<Presentation>,
   ) => Promise<PreparedPushDelivery<Presentation, Commit>>;
-  readonly commit: (commit: Commit) => Promise<void>;
+  readonly commit: (commit: Commit, input: Input) => Promise<void>;
+  readonly complete?:
+    | ((input: Input, completion: PushDeliveryCompletion) => Promise<void>)
+    | undefined;
+  readonly now?: (() => number) | undefined;
 }
 
 export class PushDeliveryCoordinator<Input, Presentation, Commit> {
@@ -45,21 +55,38 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
   }
 
   enqueue(input: Input): Promise<void> {
+    const startedAt = this.#dependencies.now?.() ?? performance.now();
     const predecessor = this.#commitTail;
     let releaseCommitTurn: () => void = () => {};
     this.#commitTail = new Promise<void>((resolve) => {
       releaseCommitTurn = resolve;
     });
     const state = schedulePushPresentation(
-      this.#dependencies.generic(),
-      this.#dependencies.present,
+      this.#dependencies.generic(input),
+      (presentation) => this.#dependencies.present(presentation, input),
       this.#dependencies.fallbackDeadlineMs,
       this.#dependencies.presentationBudgetMs,
-      this.#dependencies.reportError,
+      (error) => this.#dependencies.reportError(error, input),
     );
-    return this.#deliver(input, state, predecessor).finally(async () => {
-      await predecessor;
-      releaseCommitTurn();
+    const delivery = this.#deliver(input, state, predecessor).finally(
+      async () => {
+        await predecessor;
+        releaseCommitTurn();
+      },
+    );
+    return delivery.then(async (outcome) => {
+      const complete = this.#dependencies.complete;
+      if (complete === undefined) return;
+      try {
+        await complete(input, {
+          outcome,
+          fallbackDeadlineFired: state.expired,
+          elapsedMs:
+            (this.#dependencies.now?.() ?? performance.now()) - startedAt,
+        });
+      } catch (error: unknown) {
+        this.#dependencies.reportError(error, input);
+      }
     });
   }
 
@@ -67,12 +94,12 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
     input: Input,
     state: PushPresentationState<Presentation>,
     predecessor: Promise<void>,
-  ): Promise<void> {
+  ): Promise<PushDeliveryOutcome> {
     let prepared: PreparedPushDelivery<Presentation, Commit>;
     try {
       prepared = await this.#prepareUntilKnown(input, state);
     } catch (error: unknown) {
-      this.#dependencies.reportError(error);
+      this.#dependencies.reportError(error, input);
       if (!state.shown) {
         state.generic = this.#dependencies.finalFallback(state.generic);
       }
@@ -82,27 +109,33 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
         await this.#commit(
           predecessor,
           this.#dependencies.fallbackCommit(state.generic),
+          input,
         );
       }
-      return;
+      return "final_generic";
     }
     if (prepared.kind === "silent") {
       cancelPresentationDeadline(state);
       await state.fallback;
+      const hadFallback = state.presented !== undefined;
+      let dismissed = false;
       if (state.presented !== undefined) {
         try {
-          await this.#dependencies.dismiss(state.presented);
+          await this.#dependencies.dismiss(state.presented, input);
           state.presented = undefined;
+          dismissed = true;
         } catch (error: unknown) {
-          this.#dependencies.reportError(error);
+          this.#dependencies.reportError(error, input);
         }
       }
-      await this.#commit(predecessor, prepared.commit);
-      return;
+      await this.#commit(predecessor, prepared.commit, input);
+      if (dismissed) return "dismissed_fallback";
+      return hadFallback ? "final_generic" : "silent_control";
     }
     const shown = await showUntilPresented(state, () => prepared.presentation);
     cancelPresentationDeadline(state);
-    if (!shown) return;
+    if (!shown) return "final_generic";
+    let replacedFallback = false;
     if (
       state.presented !== undefined &&
       state.presented !== prepared.presentation
@@ -111,21 +144,34 @@ export class PushDeliveryCoordinator<Input, Presentation, Commit> {
         const replaced = await this.#dependencies.replace(
           state.presented,
           prepared.presentation,
+          input,
         );
-        if (replaced) state.presented = prepared.presentation;
+        if (replaced) {
+          state.presented = prepared.presentation;
+          replacedFallback = true;
+        }
       } catch (error: unknown) {
-        this.#dependencies.reportError(error);
+        this.#dependencies.reportError(error, input);
       }
     }
-    await this.#commit(predecessor, prepared.commit);
+    await this.#commit(predecessor, prepared.commit, input);
+    if (prepared.finalGeneric === true) return "final_generic";
+    if (replacedFallback) return "deadline_generic_replaced";
+    return state.presented === prepared.presentation
+      ? "real_notification"
+      : "final_generic";
   }
 
-  async #commit(predecessor: Promise<void>, commit: Commit): Promise<void> {
+  async #commit(
+    predecessor: Promise<void>,
+    commit: Commit,
+    input: Input,
+  ): Promise<void> {
     await predecessor;
     try {
-      await this.#dependencies.commit(commit);
+      await this.#dependencies.commit(commit, input);
     } catch (error: unknown) {
-      this.#dependencies.reportError(error);
+      this.#dependencies.reportError(error, input);
     }
   }
 

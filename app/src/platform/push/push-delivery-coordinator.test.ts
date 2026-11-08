@@ -476,6 +476,166 @@ describe("push delivery coordination", () => {
     expect(commits).toEqual(["message"]);
     expect(errors).toHaveLength(1);
   });
+
+  it("reports successful visible and silent outcomes", async () => {
+    const completions: unknown[] = [];
+    const coordinator = createCoordinator({
+      prepare: async (input) =>
+        input.kind === "markread"
+          ? { kind: "silent", commit: input }
+          : visible(input.id),
+      present: async () => undefined,
+      commit: async () => undefined,
+      complete: async (input, completion) => {
+        completions.push([input.id, completion]);
+      },
+      now: () => 10,
+    });
+
+    await coordinator.enqueue({ id: "message", kind: "visible" });
+    await coordinator.enqueue({ id: "read", kind: "markread" });
+
+    expect(completions).toEqual([
+      [
+        "message",
+        {
+          outcome: "real_notification",
+          fallbackDeadlineFired: false,
+          elapsedMs: 0,
+        },
+      ],
+      [
+        "read",
+        {
+          outcome: "silent_control",
+          fallbackDeadlineFired: false,
+          elapsedMs: 0,
+        },
+      ],
+    ]);
+  });
+
+  it("reports a final generic for a thrown preparation stage", async () => {
+    const complete = vi.fn(() => Promise.resolve());
+    const coordinator = createCoordinator({
+      prepare: async () => {
+        throw new Error("route unavailable");
+      },
+      present: async () => undefined,
+      commit: async () => undefined,
+      complete,
+      now: () => 10,
+    });
+
+    await coordinator.enqueue({ id: "failed", kind: "visible" });
+
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "failed" }),
+      {
+        outcome: "final_generic",
+        fallbackDeadlineFired: false,
+        elapsedMs: 0,
+      },
+    );
+  });
+
+  it("reports and replaces a deadline generic after the budget is overrun", async () => {
+    vi.useFakeTimers();
+    try {
+      const releasePrepare = deferred<void>();
+      const complete = vi.fn(() => Promise.resolve());
+      const coordinator = createCoordinator({
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        prepare: async (input) => {
+          await releasePrepare.promise;
+          return visible(input.id);
+        },
+        present: async () => undefined,
+        replace: async () => true,
+        commit: async () => undefined,
+        complete,
+        now: () => Date.now(),
+      });
+
+      const delivery = coordinator.enqueue({ id: "slow", kind: "visible" });
+      await vi.advanceTimersByTimeAsync(2_001);
+      releasePrepare.resolve();
+      await delivery;
+
+      expect(complete).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "slow" }),
+        {
+          outcome: "deadline_generic_replaced",
+          fallbackDeadlineFired: true,
+          elapsedMs: 2_001,
+        },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a dismissed fallback for a delayed silent control", async () => {
+    vi.useFakeTimers();
+    try {
+      const releasePrepare = deferred<void>();
+      const complete = vi.fn(() => Promise.resolve());
+      const coordinator = createCoordinator({
+        fallbackDeadlineMs: 1_500,
+        presentationBudgetMs: 2_000,
+        prepare: async (input) => {
+          await releasePrepare.promise;
+          return { kind: "silent", commit: input };
+        },
+        present: async () => undefined,
+        dismiss: async () => undefined,
+        commit: async () => undefined,
+        complete,
+        now: () => Date.now(),
+      });
+
+      const delivery = coordinator.enqueue({ id: "read", kind: "markread" });
+      await vi.advanceTimersByTimeAsync(1_500);
+      releasePrepare.resolve();
+      await delivery;
+
+      expect(complete).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "read" }),
+        {
+          outcome: "dismissed_fallback",
+          fallbackDeadlineFired: true,
+          elapsedMs: 1_500,
+        },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a shown notification when diagnostic recording fails", async () => {
+    const presentations: string[] = [];
+    const errors: unknown[] = [];
+    const coordinator = createCoordinator({
+      prepare: async (input) => visible(input.id),
+      present: async (presentation) => {
+        presentations.push(presentation);
+      },
+      commit: async () => undefined,
+      complete: async () => {
+        throw new Error("diagnostic write failed");
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    await expect(
+      coordinator.enqueue({ id: "message", kind: "visible" }),
+    ).resolves.toBeUndefined();
+    expect(presentations).toEqual(["message"]);
+    expect(errors).toEqual([
+      expect.objectContaining({ message: "diagnostic write failed" }),
+    ]);
+  });
 });
 
 function createCoordinator(overrides: {
@@ -487,6 +647,19 @@ function createCoordinator(overrides: {
   readonly present: (presentation: string) => Promise<void>;
   readonly commit: (commit: Commit) => Promise<void>;
   readonly dismiss?: (fallback: string) => Promise<void>;
+  readonly replace?: (
+    fallback: string,
+    presentation: string,
+  ) => Promise<boolean>;
+  readonly complete?: (
+    input: Input,
+    completion: {
+      readonly outcome: string;
+      readonly fallbackDeadlineFired: boolean;
+      readonly elapsedMs: number;
+    },
+  ) => Promise<void>;
+  readonly now?: () => number;
   readonly reportError?: (error: unknown) => void;
   readonly retryPrepare?: (error: unknown) => boolean;
 }): PushDeliveryCoordinator<Input, string, Commit> {
