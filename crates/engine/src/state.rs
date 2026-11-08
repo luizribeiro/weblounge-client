@@ -1797,6 +1797,14 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    pub(crate) fn snapshot_conversation_for_channel(
+        &self,
+        channel: &papo::ChannelName,
+    ) -> Option<SnapshotConversation> {
+        let buffer_id = self.buffer_id_for_channel(channel)?;
+        snapshot_conversation(self.buffers.get(&buffer_id)?)
+    }
+
     #[cfg(test)]
     pub(crate) fn pending_read_time(&self, buffer_id: BufferId) -> Option<SystemTime> {
         self.buffers

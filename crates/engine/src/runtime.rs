@@ -17,7 +17,9 @@ use crate::{
     EngineRequest, EngineRequestEnvelope, EngineToUi, LocalSendId, MembershipKind, MessageId,
     NetworkConnectionState, NetworkId, NoticeKind, OfflineReason, PushFailure, PushState,
     PushUnsupportedReason, TypingProjection,
-    chat_list_snapshot::{self, ChatListSnapshot, SnapshotChanges},
+    chat_list_snapshot::{
+        self, ChatListSnapshot, SnapshotChanges, SnapshotPresence, SnapshotRemoval,
+    },
     commands::{self, Command},
     notification_settings, push_device,
     pushed_messages::{self, PushedMessage},
@@ -131,6 +133,8 @@ struct HostedReconnectConfig {
 struct ChatListSync {
     fingerprint: String,
     snapshot: Option<ChatListSnapshot>,
+    removed: Vec<SnapshotRemoval>,
+    joined: Vec<SnapshotPresence>,
     recent_directs_ready: bool,
     live: bool,
     restored_from_cache: bool,
@@ -3782,14 +3786,8 @@ fn process_papo_event(
             process_read_marker(&mut running.model, &marker, output);
             Vec::new()
         }
-        papo::Event::Joined(joined) => process_join(&mut running.model, snapshot, &joined, output)
-            .into_iter()
-            .map(HistoryFetch::Latest)
-            .collect(),
-        papo::Event::Parted(parted) => process_part(&mut running.model, snapshot, &parted, output)
-            .into_iter()
-            .map(HistoryFetch::Latest)
-            .collect(),
+        papo::Event::Joined(joined) => process_join_event(running, snapshot, &joined, output),
+        papo::Event::Parted(parted) => process_part_event(running, snapshot, &parted, output),
         papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, output)
             .into_iter()
             .map(HistoryFetch::Latest)
@@ -4270,6 +4268,52 @@ fn process_part(
     Vec::new()
 }
 
+fn process_part_event(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    parted: &papo::event::Parted,
+    output: &mut Vec<EngineToUi>,
+) -> Vec<HistoryFetch> {
+    if parted.authorship == papo::Authorship::Own
+        && let Some(conversation) = running
+            .model
+            .snapshot_conversation_for_channel(&parted.channel)
+    {
+        running.chat_list.removed.push(SnapshotRemoval {
+            conversation,
+            removed_at_ms: parted
+                .server_time
+                .map_or_else(|| time_millis(parted.received_at), time_millis),
+        });
+    }
+    process_part(&mut running.model, snapshot, parted, output)
+        .into_iter()
+        .map(HistoryFetch::Latest)
+        .collect()
+}
+
+fn process_join_event(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    joined: &papo::event::Joined,
+    output: &mut Vec<EngineToUi>,
+) -> Vec<HistoryFetch> {
+    let targets = process_join(&mut running.model, snapshot, joined, output);
+    if joined.authorship == papo::Authorship::Own
+        && let Some(conversation) = running
+            .model
+            .snapshot_conversation_for_channel(&joined.channel)
+    {
+        running.chat_list.joined.push(SnapshotPresence {
+            conversation,
+            joined_at_ms: joined
+                .server_time
+                .map_or_else(|| time_millis(joined.received_at), time_millis),
+        });
+    }
+    targets.into_iter().map(HistoryFetch::Latest).collect()
+}
+
 fn process_kick(
     model: &mut NetworkModel,
     kicked: &papo::event::Kicked,
@@ -4582,7 +4626,9 @@ fn update_chat_list(
         let snapshot = running
             .model
             .merge_chat_list_snapshot(running.chat_list.fingerprint.clone(), &previous);
-        let changes = SnapshotChanges::between(&previous, &snapshot, Vec::new(), Vec::new());
+        let removed = std::mem::take(&mut running.chat_list.removed);
+        let joined = std::mem::take(&mut running.chat_list.joined);
+        let changes = SnapshotChanges::between(&previous, &snapshot, removed, joined);
         running.chat_list.snapshot = Some(snapshot);
         (live_event, changes, storage, writer)
     };
@@ -7251,6 +7297,7 @@ async fn delay(duration: Duration) {
         let buffer_id = model
             .buffer_id_for_channel(&known_channel(&client, "#projects/weblounge"))
             .expect("joined buffer exists");
+        let snapshot = model.chat_list_snapshot("network".into());
         let runtime = Runtime {
             state: Arc::new(Mutex::new(runtime_state(RunningNetwork {
                 instance: 1,
@@ -7262,7 +7309,11 @@ async fn delay(duration: Duration) {
                 pending_reads: VecDeque::new(),
                 flushing_reads: false,
                 hosted_reconnect: None,
-                chat_list: ChatListSync::default(),
+                chat_list: ChatListSync {
+                    fingerprint: "network".into(),
+                    snapshot: Some(snapshot.clone()),
+                    ..ChatListSync::default()
+                },
                 push: PushRegistration::default(),
                 typing: crate::typing::OutgoingTyping::default(),
                 client,
@@ -7271,6 +7322,10 @@ async fn delay(duration: Duration) {
             outbound,
         };
         mark_runtime_online(&runtime);
+        let storage = Arc::clone(&lock(&runtime.state).storage);
+        crate::chat_list_snapshot::write(storage.as_ref(), &snapshot)
+            .await
+            .expect("seed cache");
 
         runtime.request(EngineRequestEnvelope {
             id: "part".into(),
@@ -7288,6 +7343,20 @@ async fn delay(duration: Duration) {
         assert!(collect(&mut receiver).iter().any(
             |event| matches!(event, EngineToUi::BufferRemoved { buffer_id: removed } if *removed == buffer_id)
         ));
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let stored = read(storage.as_ref())
+                    .await
+                    .expect("read")
+                    .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+                if stored.is_some_and(|snapshot| snapshot.rows.is_empty()) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("part removes the snapshot row");
 
         let stale_close = runtime.request(EngineRequestEnvelope {
             id: "close-after-part".into(),
