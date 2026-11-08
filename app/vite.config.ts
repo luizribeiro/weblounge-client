@@ -19,6 +19,8 @@ import { messages } from "./src/strings.ts";
 
 export default defineConfig(({ mode }) => {
   const performanceHarness = process.env.WEBLOUNGE_E2E_HARNESS === "1";
+  const pushDeliveryHarness =
+    performanceHarness || process.env.WEBLOUNGE_PUSH_DELIVERY_HARNESS === "1";
   const appConfigHarness = process.env.WEBLOUNGE_E2E_APP_CONFIG === "1";
   const maxWorkers = process.env.WEBLOUNGE_VITEST_MAX_WORKERS;
   const testTimeout = process.env.WEBLOUNGE_VITEST_TEST_TIMEOUT;
@@ -58,6 +60,7 @@ export default defineConfig(({ mode }) => {
       messages["notifications.new_messages"],
     ),
     __PUSH_EVENT_HARNESS__: "false",
+    __PUSH_DELIVERY_TEST_ENABLED__: JSON.stringify(pushDeliveryHarness),
   };
 
   return {

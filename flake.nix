@@ -350,6 +350,9 @@
           WEBLOUNGE_IRC_ACCOUNT = "weblounge";
           WEBLOUNGE_IRC_CHANNEL = "#weblounge-test";
         };
+        pushE2eApp = checkApp.overrideAttrs {
+          WEBLOUNGE_PUSH_DELIVERY_HARNESS = "1";
+        };
         e2e = pkgs.stdenvNoCC.mkDerivation {
           pname = "weblounge-e2e";
           version = "0.1.0";
@@ -491,8 +494,8 @@
           '';
         };
         pushE2e = pkgs.lib.makeOverridable (import ./nix/push-e2e.nix) {
+          checkApp = pushE2eApp;
           inherit
-            checkApp
             papo-test-infra
             pkgs
             previousApp

@@ -61,6 +61,7 @@ import {
 declare const SHELL_VERSION: string;
 declare const PRECACHE_URLS: readonly string[];
 declare const __PUSH_EVENT_HARNESS__: boolean;
+declare const __PUSH_DELIVERY_TEST_ENABLED__: boolean;
 declare const wasm_bindgen: PushPayloadParser &
   ((input: Response) => Promise<unknown>);
 
@@ -279,7 +280,13 @@ worker.addEventListener("fetch", (event) => {
 
 worker.addEventListener("push", (event) => {
   const pushEvent = event as WorkerPushEvent;
-  pushEvent.waitUntil(queuePush(pushEvent));
+  const deliveryId = pushDeliveryTestId(pushEvent.data);
+  const delivery = queuePush(pushEvent);
+  pushEvent.waitUntil(
+    deliveryId === undefined
+      ? delivery
+      : reportPushDeliveryTestCompletion(deliveryId, delivery),
+  );
 });
 
 worker.addEventListener("pushsubscriptionchange", (event) => {
@@ -403,6 +410,43 @@ function harnessNotificationClients(state: "open" | "discarded" | "closed"): {
 
 function queuePush(pushEvent: PushPayloadEvent): Promise<void> {
   return pushDeliveries.enqueue(pushEvent);
+}
+
+function pushDeliveryTestId(
+  data: PushPayloadEvent["data"],
+): string | undefined {
+  if (!__PUSH_DELIVERY_TEST_ENABLED__) return undefined;
+  const value: unknown = data?.json();
+  return typeof value === "object" &&
+    value !== null &&
+    "_webloungeTestDeliveryId" in value &&
+    typeof value._webloungeTestDeliveryId === "string"
+    ? value._webloungeTestDeliveryId
+    : undefined;
+}
+
+async function reportPushDeliveryTestCompletion(
+  id: string,
+  delivery: Promise<void>,
+): Promise<void> {
+  let error: string | undefined;
+  try {
+    await delivery;
+  } catch (reason: unknown) {
+    error = pushError(reason);
+  }
+  const clients = await worker.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of clients) {
+    client.postMessage({
+      type: "push_delivery_complete",
+      id,
+      ...(error === undefined ? {} : { error }),
+    });
+  }
+  if (error !== undefined) throw new Error(error);
 }
 
 function pushError(error: unknown): string {

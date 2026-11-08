@@ -3,7 +3,6 @@ import { rename, rm, symlink } from "node:fs/promises";
 import {
   type Browser,
   type BrowserContext,
-  type CDPSession,
   type ConsoleMessage,
   expect,
   type JSHandle,
@@ -11,6 +10,7 @@ import {
   test,
 } from "@playwright/test";
 import { IrcClient } from "./irc-client";
+import { deliverPush } from "./push-delivery";
 
 const enabled = process.env.WEBLOUNGE_PUSH_FULL_E2E === "1";
 const relayControl = process.env.WEBLOUNGE_PUSH_RELAY_CONTROL ?? "";
@@ -1269,57 +1269,6 @@ async function deliverPortableEnvelope(
     .toBe("complete");
   if (result?.ok !== true)
     throw new Error(result?.error ?? "push delivery failed");
-}
-
-async function deliverPush(
-  context: BrowserContext,
-  page: Page,
-  data: string,
-): Promise<void> {
-  const { registrationId, session } = await pushDeliveryTarget(context, page);
-  await session.send("ServiceWorker.deliverPushMessage", {
-    origin: new URL(page.url()).origin,
-    registrationId,
-    data,
-  });
-}
-
-const pushDeliveryTargets = new WeakMap<
-  Page,
-  Promise<{ readonly registrationId: string; readonly session: CDPSession }>
->();
-
-function pushDeliveryTarget(
-  context: BrowserContext,
-  page: Page,
-): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
-  const existing = pushDeliveryTargets.get(page);
-  if (existing !== undefined) return existing;
-  const created = createPushDeliveryTarget(context, page);
-  pushDeliveryTargets.set(page, created);
-  return created;
-}
-
-async function createPushDeliveryTarget(
-  context: BrowserContext,
-  page: Page,
-): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
-  const session = await context.newCDPSession(page);
-  const registrationId = new Promise<string>((resolve) => {
-    session.on(
-      "ServiceWorker.workerRegistrationUpdated",
-      ({ registrations }) => {
-        const current = registrations.find(
-          (candidate) =>
-            !candidate.isDeleted &&
-            candidate.scopeURL === new URL("/", page.url()).href,
-        );
-        if (current !== undefined) resolve(current.registrationId);
-      },
-    );
-  });
-  await session.send("ServiceWorker.enable");
-  return { registrationId: await registrationId, session };
 }
 
 async function notifications(page: Page) {

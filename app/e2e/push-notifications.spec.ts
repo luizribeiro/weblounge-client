@@ -1,10 +1,4 @@
-import {
-  type BrowserContext,
-  type CDPSession,
-  expect,
-  type Page,
-  test,
-} from "@playwright/test";
+import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import {
   closeEngineDatabase,
   ENGINE_DATABASE_NAME,
@@ -13,6 +7,7 @@ import {
   openEngineDatabase,
 } from "./engine-database";
 import { IrcClient } from "./irc-client";
+import { deliverPush, deliverPushes } from "./push-delivery";
 import { deliverStablePushBatch } from "./stable-push-batch";
 
 const routeId = "route-push-e2e";
@@ -1259,69 +1254,6 @@ async function replaceWithConversationNotification(
         tag,
       }),
     ]);
-}
-
-async function deliverPush(
-  context: BrowserContext,
-  page: Page,
-  data: string,
-): Promise<void> {
-  await deliverPushes(context, page, [data]);
-}
-
-async function deliverPushes(
-  context: BrowserContext,
-  page: Page,
-  data: readonly string[],
-): Promise<void> {
-  const { registrationId, session } = await pushDeliveryTarget(context, page);
-  await Promise.all(
-    data.map((payload) =>
-      session.send("ServiceWorker.deliverPushMessage", {
-        origin: new URL(page.url()).origin,
-        registrationId,
-        data: payload,
-      }),
-    ),
-  );
-}
-
-// Chromium can acknowledge delivery before the worker receives it. Detaching here
-// discards the queued event.
-const pushDeliveryTargets = new WeakMap<
-  Page,
-  Promise<{ readonly registrationId: string; readonly session: CDPSession }>
->();
-
-function pushDeliveryTarget(
-  context: BrowserContext,
-  page: Page,
-): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
-  const existing = pushDeliveryTargets.get(page);
-  if (existing !== undefined) return existing;
-  const created = createPushDeliveryTarget(context, page);
-  pushDeliveryTargets.set(page, created);
-  return created;
-}
-
-async function createPushDeliveryTarget(
-  context: BrowserContext,
-  page: Page,
-): Promise<{ readonly registrationId: string; readonly session: CDPSession }> {
-  const session = await context.newCDPSession(page);
-  const { targetInfo } = await session.send("Target.getTargetInfo");
-  const registrationId = new Promise<string>((resolve) => {
-    session.on("ServiceWorker.workerVersionUpdated", ({ versions }) => {
-      const current = versions.find(
-        (candidate) =>
-          candidate.status === "activated" &&
-          candidate.controlledClients.includes(targetInfo.targetId),
-      );
-      if (current !== undefined) resolve(current.registrationId);
-    });
-  });
-  await session.send("ServiceWorker.enable");
-  return { registrationId: await registrationId, session };
 }
 
 async function seedRouteAndEncrypt(
