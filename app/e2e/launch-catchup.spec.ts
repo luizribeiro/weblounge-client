@@ -74,6 +74,7 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
         kind: "channel" as const,
         title: channel,
         time: messageTag(channelInitial[index], "time"),
+        msgid: messageTag(channelInitial[index], "msgid"),
         preview: `${writer.nickname}: cached channel ${index} ${suffix}`,
         badge: { kind: "unread" as const, count: 1 },
       })),
@@ -81,6 +82,7 @@ test("launch reconciles sixteen cached buffers within stock fakelag budgets", as
         kind: "direct" as const,
         title: bot.nickname,
         time: messageTag(directInitial[index], "time"),
+        msgid: messageTag(directInitial[index], "msgid"),
         preview: `cached direct ${index} ${suffix}`,
         badge:
           index === 0
@@ -232,6 +234,7 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
         kind: "channel",
         title: channel,
         time: messageTag(initial, "time"),
+        msgid: messageTag(initial, "msgid"),
         preview: `${writer.nickname}: ${initialText}`,
         badge: { kind: "unread", count: 1 },
       },
@@ -248,7 +251,7 @@ test("relaunch catches up a delta interrupted before its page arrives", async ({
         ),
       )
       .toBe(true);
-    await expect.poll(() => snapshotSchema(current)).toBe(5);
+    await expect.poll(() => snapshotSchema(current)).toBe(6);
 
     await current.close();
     current = await context.newPage();
@@ -407,6 +410,7 @@ interface SnapshotFixtureRow {
   readonly kind: "channel" | "direct";
   readonly title: string;
   readonly time: string;
+  readonly msgid: string;
   readonly preview: string;
   readonly badge:
     | { readonly kind: "none" }
@@ -473,13 +477,26 @@ async function seedSnapshot(
         });
       },
       {
-        schema: 4,
+        schema: 6,
         fingerprint,
         rows: rows.map((row) => ({
           conversation: { kind: row.kind, key: row.title },
           title: row.title,
           last_activity_ms: Date.parse(row.time),
-          badge: row.badge,
+          newest: {
+            msgid: row.msgid,
+            server_time_ms: Date.parse(row.time),
+          },
+          stubs:
+            row.badge.kind === "none"
+              ? []
+              : [
+                  {
+                    msgid: row.msgid,
+                    time: Date.parse(row.time),
+                    mention: row.badge.kind === "mentions",
+                  },
+                ],
           preview: row.preview,
         })),
       },

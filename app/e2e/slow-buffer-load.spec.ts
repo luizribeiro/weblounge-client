@@ -431,7 +431,7 @@ async function seedSnapshot(
         });
       },
       {
-        schema: 4,
+        schema: 6,
         fingerprint,
         rows: titles.map((title, index) => ({
           conversation: {
@@ -440,7 +440,7 @@ async function seedSnapshot(
           },
           title,
           last_activity_ms: 1_800_000_000_000 - index,
-          badge: { kind: "none" },
+          stubs: [],
           preview: `cached ${title}`,
         })),
       },

@@ -608,7 +608,7 @@ test("keeps seeded rows unchanged through the cached-to-live frame", async ({
   ]);
 });
 
-test("reveals an interactive IndexedDB chat list before reconnecting", async ({
+test("drops legacy saved counts while keeping the cached list interactive", async ({
   baseURL,
   context,
   page,
@@ -659,7 +659,7 @@ test("reveals an interactive IndexedDB chat list before reconnecting", async ({
     const rows = await firstRevealRows(page);
     expect(rows).toEqual([
       expect.objectContaining({
-        title: "#cached, 1 unread",
+        title: "#cached",
         text: expect.stringContaining("cached before the socket"),
       }),
     ]);

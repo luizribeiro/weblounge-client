@@ -964,14 +964,25 @@ async function seedCachedDirect(
           transaction.objectStore("cache").put(
             new TextEncoder().encode(
               JSON.stringify({
-                schema: 4,
+                schema: 6,
                 fingerprint,
                 rows: [
                   {
                     conversation: { kind: "direct", key: nick },
                     title: nick,
                     last_activity_ms: Date.now(),
-                    badge: { kind: "mentions", count: 2, mentions: 2 },
+                    stubs: [
+                      {
+                        msgid: `${nick}-cached-1`,
+                        time: Date.now() - 1,
+                        mention: true,
+                      },
+                      {
+                        msgid: `${nick}-cached-2`,
+                        time: Date.now(),
+                        mention: true,
+                      },
+                    ],
                     preview: `${nick}: ${text}`,
                   },
                 ],

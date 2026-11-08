@@ -149,11 +149,11 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         history.length,
       );
       await expect
+        .poll(() => snapshotReadState(current, channel))
+        .toEqual({ gap: false, mentions: 0, unread: history.length });
+      await expect
         .poll(() => snapshotRow(current, channel))
-        .toMatchObject({
-          badge: { kind: "unread", count: history.length },
-          preview: snapshotPreview,
-        });
+        .toMatchObject({ preview: snapshotPreview });
 
       await current.close();
       const markerReader = await IrcClient.connect(
@@ -175,11 +175,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await openSnapshotInspector(current);
       await expect
-        .poll(() => snapshotRow(current, channel))
-        .toMatchObject({
-          badge: { kind: "unread", count: history.length },
-          preview: snapshotPreview,
-        });
+        .poll(() => snapshotReadState(current, channel))
+        .toEqual({ gap: false, mentions: 0, unread: history.length });
       await captureHistoryWire(current);
       await useDedicatedWorker(current);
       await current.goto(startUrlForAccount(appAccount, appPassword, channel));
@@ -203,8 +200,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect(current.getByText(preview, { exact: true })).toBeVisible();
       await expectNewDividerBetween(current, lastRead.text, firstUnread.text);
       await expect
-        .poll(() => snapshotRow(current, channel))
-        .toMatchObject({ badge: { kind: "none" }, preview: snapshotPreview });
+        .poll(() => snapshotReadState(current, channel))
+        .toEqual({ gap: false, mentions: 0, unread: 0 });
 
       await current.close();
       current = await context.newPage();
@@ -266,10 +263,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         417,
       );
       await expect
-        .poll(() => snapshotRow(current, bot.nickname))
-        .toMatchObject({
-          badge: { kind: "mentions", count: 417, mentions: 417 },
-        });
+        .poll(() => snapshotReadState(current, bot.nickname))
+        .toEqual({ gap: true, mentions: 100, unread: 100 });
       await installStorageWriteFailureControl(current);
       await recordCachedRow(current, bot.nickname);
       await controlForwarder("drop");
@@ -277,12 +272,12 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await current.goto(startUrl());
       await expect(bufferRow(current, bot.nickname)).toHaveAttribute(
         "data-unread",
-        "417",
+        "100",
       );
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({
-          unread: "417",
+          unread: "100",
         });
       await setStorageWritesFailing(current, true);
       await controlForwarder("restore");
@@ -300,8 +295,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await setStorageWritesFailing(current, false);
       await backgroundPage(current);
       await expect
-        .poll(() => snapshotRow(current, bot.nickname))
-        .toMatchObject({ badge: { kind: "none" } });
+        .poll(() => snapshotReadState(current, bot.nickname))
+        .toEqual({ gap: false, mentions: 0, unread: 0 });
       await current.close();
 
       current = await context.newPage();
@@ -353,8 +348,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       const row = bufferRow(current, bot.nickname);
       await expectUnreadCount(row, bot.nickname, 1);
       await expect
-        .poll(() => snapshotRow(current, bot.nickname))
-        .toMatchObject({ badge: { kind: "mentions", count: 1, mentions: 1 } });
+        .poll(() => snapshotReadState(current, bot.nickname))
+        .toEqual({ gap: false, mentions: 1, unread: 1 });
 
       await setStorageWritesFailing(current, true);
       await row.click();
@@ -379,8 +374,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await setStorageWritesFailing(current, false);
       await backgroundPage(current);
       await expect
-        .poll(() => snapshotRow(current, bot.nickname))
-        .toMatchObject({ badge: { kind: "none" } });
+        .poll(() => snapshotReadState(current, bot.nickname))
+        .toEqual({ gap: false, mentions: 0, unread: 0 });
       await current.close();
 
       current = await context.newPage();
@@ -535,10 +530,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         2,
       );
       await expect
-        .poll(() => snapshotRow(current, bot.nickname))
-        .toMatchObject({
-          badge: { kind: "mentions", count: 2, mentions: 2 },
-        });
+        .poll(() => snapshotReadState(current, bot.nickname))
+        .toEqual({ gap: false, mentions: 2, unread: 2 });
 
       await current.close();
       const closedDirect = await bot.privmsgReplyConfirmed(
@@ -712,8 +705,8 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
         "true",
       );
       await expect
-        .poll(() => snapshotRow(current, bot.nickname))
-        .toMatchObject({ badge: { kind: "none" } });
+        .poll(() => snapshotReadState(current, bot.nickname))
+        .toEqual({ gap: false, mentions: 0, unread: 0 });
       await backgroundPage(current);
       await releaseHeldLatestHistory(current);
       await current.close();
@@ -851,18 +844,44 @@ async function snapshotRows(
   }));
 }
 
+async function snapshotReadState(
+  page: Page,
+  title: string,
+): Promise<{ gap: boolean; mentions: number; unread: number } | undefined> {
+  const row = await snapshotRow(page, title);
+  if (row === undefined) return undefined;
+  return snapshotFacts(title, row);
+}
+
 function snapshotLabel(title: string, value: unknown): string {
-  if (typeof value !== "object" || value === null || !("badge" in value))
-    throw new Error(`Snapshot row missing badge for ${title}`);
-  const badge = value.badge;
-  if (typeof badge !== "object" || badge === null || !("kind" in badge))
-    throw new Error(`Snapshot row has an invalid badge for ${title}`);
-  if (badge.kind === "none") return title;
-  if (!("count" in badge) || typeof badge.count !== "number")
-    throw new Error(`Snapshot row has an invalid count for ${title}`);
-  return badge.kind === "mentions"
-    ? `${title}, ${badge.count} unread, including mentions`
-    : `${title}, ${badge.count} unread`;
+  const facts = snapshotFacts(title, value);
+  if (facts.unread === 0 && !facts.gap) return title;
+  const count = facts.gap || facts.unread > 99 ? "99+" : facts.unread;
+  return facts.mentions > 0
+    ? `${title}, ${count} unread, including mentions`
+    : `${title}, ${count} unread`;
+}
+
+function snapshotFacts(
+  title: string,
+  value: unknown,
+): { gap: boolean; mentions: number; unread: number } {
+  if (typeof value !== "object" || value === null || !("stubs" in value))
+    throw new Error(`Snapshot row missing stubs for ${title}`);
+  if (!Array.isArray(value.stubs))
+    throw new Error(`Snapshot row has invalid stubs for ${title}`);
+  const mentions = value.stubs.filter(
+    (stub) =>
+      typeof stub === "object" &&
+      stub !== null &&
+      "mention" in stub &&
+      stub.mention === true,
+  ).length;
+  return {
+    gap: "gap_until" in value && typeof value.gap_until === "number",
+    mentions,
+    unread: value.stubs.length,
+  };
 }
 
 async function recordCachedRow(page: Page, channel: string): Promise<void> {
@@ -927,21 +946,26 @@ async function seedUnreadDirectSnapshot(
         });
       },
       {
-        schema: 4,
+        schema: 6,
         fingerprint,
         rows: [
           {
             conversation: { kind: "direct", key: nick },
             title: nick,
             last_activity_ms: 1_800_000_000_000,
-            badge: { kind: "mentions", count, mentions: count },
+            stubs: Array.from({ length: Math.min(count, 100) }, (_, index) => ({
+              mention: true,
+              msgid: `cached-${nick}-${index}`,
+              time: index + 1,
+            })),
+            ...(count > 100 ? { gap_until: 100 } : {}),
             preview,
           },
           ...backgroundDirects.map((backgroundNick, index) => ({
             conversation: { kind: "direct", key: backgroundNick },
             title: backgroundNick,
             last_activity_ms: 1_799_999_999_999 - index,
-            badge: { kind: "none" },
+            stubs: [],
             preview: `cached ${backgroundNick}`,
           })),
           ...channels.map((channel, index) => ({
@@ -949,7 +973,7 @@ async function seedUnreadDirectSnapshot(
             title: channel,
             last_activity_ms:
               1_799_999_999_999 - backgroundDirects.length - index,
-            badge: { kind: "none" },
+            stubs: [],
             preview: `cached ${channel}`,
           })),
         ],
