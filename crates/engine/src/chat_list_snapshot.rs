@@ -1,6 +1,6 @@
 use crate::{
-    read_model::{MessageStub, ServerTimeMs},
-    storage::{KvBackend, Operation, Space, StorageError},
+    read_model::{MessageStub, ReadFacts, ServerTimeMs, merge_max},
+    storage::{KvBackend, Space, StorageError},
 };
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +88,18 @@ impl ChatListSnapshot {
     pub(crate) fn encode(&self) -> Result<Vec<u8>, StorageError> {
         serde_json::to_vec(self).map_err(|error| StorageError::Encoding(error.to_string()))
     }
+
+    fn merge_row(&mut self, incoming: SnapshotRow) {
+        if let Some(stored) = self
+            .rows
+            .iter_mut()
+            .find(|stored| stored.conversation == incoming.conversation)
+        {
+            stored.merge(incoming);
+        } else {
+            self.rows.push(incoming);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -108,6 +120,33 @@ pub(crate) struct SnapshotRow {
     pub(crate) gap_until: Option<ServerTimeMs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) peer_pin: Option<String>,
+}
+
+impl SnapshotRow {
+    fn merge(&mut self, incoming: Self) {
+        let mut facts = read_facts(self);
+        facts.merge(read_facts(&incoming));
+        let incoming_is_newer = latest_time(&incoming) >= latest_time(self);
+        let Self {
+            title,
+            last_activity_ms,
+            preview,
+            newest,
+            peer_pin,
+            ..
+        } = incoming;
+        if incoming_is_newer {
+            self.title = title;
+            self.last_activity_ms = last_activity_ms;
+            self.preview = preview;
+            self.newest = newest;
+        }
+        self.peer_pin = self.peer_pin.take().or(peer_pin);
+        self.read_at_ms = facts.mark().map(ServerTimeMs::value);
+        self.pending_read_at_ms = facts.pending().map(ServerTimeMs::value);
+        self.stubs = facts.stubs().to_vec();
+        self.gap_until = facts.gap_until();
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -147,19 +186,48 @@ pub(crate) async fn write<B: KvBackend>(
     backend: &B,
     snapshot: &ChatListSnapshot,
 ) -> Result<(), StorageError> {
+    let incoming = snapshot.clone();
     backend
-        .commit(
-            Space::Cache,
-            vec![Operation::Put {
-                key: SNAPSHOT_KEY.to_vec(),
-                value: snapshot.encode()?,
-            }],
-        )
+        .update(Space::Cache, SNAPSHOT_KEY, |stored| {
+            let mut snapshot = stored
+                .as_deref()
+                .and_then(|bytes| ChatListSnapshot::decode(bytes, &incoming.fingerprint))
+                .unwrap_or_else(|| ChatListSnapshot::new(incoming.fingerprint.clone(), Vec::new()));
+            for row in incoming.rows {
+                snapshot.merge_row(row);
+            }
+            merge_max(&mut snapshot.cursor_ms, incoming.cursor_ms);
+            snapshot.encode().map(Some)
+        })
         .await
 }
 
 pub(crate) async fn clear<B: KvBackend>(backend: &B) -> Result<(), StorageError> {
     backend.clear(Space::Cache).await
+}
+
+fn read_facts(row: &SnapshotRow) -> ReadFacts {
+    let mut facts = ReadFacts::default();
+    if let Some(mark) = row.read_at_ms {
+        facts.merge_mark(ServerTimeMs::new(mark));
+    }
+    if let Some(pending) = row.pending_read_at_ms {
+        facts.merge_pending(ServerTimeMs::new(pending));
+    }
+    for stub in &row.stubs {
+        facts.merge_stub(stub.clone());
+    }
+    if let Some(gap_until) = row.gap_until {
+        facts.merge_gap_until(gap_until);
+    }
+    facts
+}
+
+fn latest_time(row: &SnapshotRow) -> Option<i64> {
+    row.newest
+        .as_ref()
+        .map(|cursor| cursor.server_time_ms)
+        .or(row.last_activity_ms)
 }
 
 #[cfg(test)]
@@ -382,5 +450,51 @@ mod tests {
         );
         clear(&backend).await.expect("clear");
         assert_eq!(read(&backend).await.expect("read"), None);
+    }
+
+    #[test]
+    fn interleaved_row_writers_keep_newer_facts_and_union_stubs() {
+        let mut stored = snapshot().rows.remove(0);
+        let mut newer = stored.clone();
+        newer.read_at_ms = Some(1_699_999_999_500);
+        newer.pending_read_at_ms = Some(1_699_999_999_600);
+        newer.stubs = vec![MessageStub {
+            msgid: "newer-stub".into(),
+            time: ServerTimeMs::new(1_700_000_000_100),
+            mention: true,
+        }];
+        let mut older = newer.clone();
+        older.read_at_ms = Some(1_699_999_999_000);
+        older.pending_read_at_ms = Some(1_699_999_999_100);
+        older.stubs = vec![MessageStub {
+            msgid: "older-stub".into(),
+            time: ServerTimeMs::new(1_700_000_000_000),
+            mention: false,
+        }];
+
+        stored.merge(newer);
+        stored.merge(older);
+
+        assert_eq!(stored.read_at_ms, Some(1_699_999_999_500));
+        assert_eq!(stored.pending_read_at_ms, Some(1_699_999_999_600));
+        assert_eq!(
+            stored
+                .stubs
+                .iter()
+                .map(|stub| stub.msgid.as_str())
+                .collect::<Vec<_>>(),
+            vec!["newest-1", "older-stub", "newer-stub"]
+        );
+    }
+
+    #[test]
+    fn equal_time_row_refreshes_its_preview() {
+        let mut stored = snapshot().rows.remove(0);
+        let mut refreshed = stored.clone();
+        refreshed.preview = Some("new same-millisecond preview".into());
+
+        stored.merge(refreshed.clone());
+
+        assert_eq!(stored.preview, refreshed.preview);
     }
 }
