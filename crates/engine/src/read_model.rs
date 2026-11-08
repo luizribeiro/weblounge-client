@@ -339,4 +339,6 @@ pub fn should_close_notification<K: Eq>(
 }
 
 #[cfg(test)]
+mod property_tests;
+#[cfg(test)]
 mod tests;
