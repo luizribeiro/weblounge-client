@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
   MembershipProjection,
@@ -1175,25 +1175,34 @@ it("does not add New for a message arriving at the foreground live edge", async 
 
 it("keeps New when a hidden arrival is delivered after foregrounding", async () => {
   const [foreground, setForeground] = createSignal(true);
+  const [foregroundExitEpoch, setForegroundExitEpoch] = createSignal(0);
   const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
     { ...message, delivery: "received" },
   ]);
   const { container } = render(() => (
-    <MessageList foreground={foreground()} messages={messages()} readAtMs={1} />
+    <MessageList
+      foreground={foreground()}
+      foregroundExitEpoch={foregroundExitEpoch()}
+      messages={messages()}
+      readAtMs={1}
+    />
   ));
 
-  setForeground(false);
-  setForeground(true);
-  setMessages([
-    ...messages(),
-    {
-      ...message,
-      id: 2,
-      delivery: "received",
-      text: "delivered after foregrounding",
-      received_at_ms: 2,
-    },
-  ]);
+  batch(() => {
+    setForeground(false);
+    setForegroundExitEpoch((epoch) => epoch + 1);
+    setForeground(true);
+    setMessages([
+      ...messages(),
+      {
+        ...message,
+        id: 2,
+        delivery: "received",
+        text: "delivered after foregrounding",
+        received_at_ms: 2,
+      },
+    ]);
+  });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(container.querySelector("[data-new-line]")).not.toBeNull();

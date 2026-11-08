@@ -1403,6 +1403,7 @@ export function App(props: AppProps) {
         <ResponsiveShell
           activeBufferId={initialBufferId()}
           foreground={foreground()}
+          foregroundExitEpoch={foreground.exitEpoch()}
           memberViewScope={clientId}
           networks={networks()}
           notificationPromptVisible={notificationPromptVisible()}

@@ -24,6 +24,7 @@ import {
 
 export interface MobileShellData extends NotificationPromptControls {
   readonly foreground?: boolean | undefined;
+  readonly foregroundExitEpoch?: number | undefined;
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
@@ -144,6 +145,7 @@ export function MobileScreen(props: MobileScreenProps) {
         <MobileConversation
           buffer={buffer() as BufferProjection}
           foreground={props.foreground !== false}
+          foregroundExitEpoch={props.foregroundExitEpoch}
           commandSpecs={props.commandSpecs}
           composerNotice={composerNotice()}
           {...(props.completion === undefined

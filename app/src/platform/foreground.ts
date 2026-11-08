@@ -1,13 +1,22 @@
 import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
 import { pageIsForeground } from "./push/foreground-state";
 
-export function createForegroundSignal(): Accessor<boolean> {
-  const [foreground, setForeground] = createSignal(
-    pageIsForeground(document, navigator),
-  );
+export interface ForegroundSignal extends Accessor<boolean> {
+  readonly exitEpoch: Accessor<number>;
+}
+
+export function createForegroundSignal(): ForegroundSignal {
+  let current = pageIsForeground(document, navigator);
+  const [foreground, setForeground] = createSignal(current);
+  const [exitEpoch, setExitEpoch] = createSignal(0);
 
   onMount(() => {
-    const update = () => setForeground(pageIsForeground(document, navigator));
+    const update = () => {
+      const next = pageIsForeground(document, navigator);
+      if (current && !next) setExitEpoch((epoch) => epoch + 1);
+      current = next;
+      setForeground(next);
+    };
     document.addEventListener("visibilitychange", update);
     window.addEventListener("focus", update);
     window.addEventListener("blur", update);
@@ -18,5 +27,5 @@ export function createForegroundSignal(): Accessor<boolean> {
     });
   });
 
-  return foreground;
+  return Object.assign(foreground, { exitEpoch });
 }

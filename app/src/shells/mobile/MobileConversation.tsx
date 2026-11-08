@@ -37,6 +37,7 @@ import styles from "./MobileShell.module.css";
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;
   readonly foreground?: boolean | undefined;
+  readonly foregroundExitEpoch?: number | undefined;
   readonly composerNotice?: string | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult;
@@ -187,6 +188,7 @@ export function MobileConversation(props: MobileConversationProps) {
           />
           <MessageList
             bufferId={props.buffer.id}
+            foregroundExitEpoch={props.foregroundExitEpoch}
             messages={props.messages}
             foreground={props.foreground !== false}
             memberships={props.memberships}

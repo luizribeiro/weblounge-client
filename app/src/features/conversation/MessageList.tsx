@@ -49,6 +49,7 @@ import { createNickLookup, type NickDisplay } from "./nick-lookup";
 interface MessageListProps {
   readonly bufferId?: number | undefined;
   readonly foreground?: boolean | undefined;
+  readonly foregroundExitEpoch?: number | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
@@ -111,6 +112,7 @@ export function MessageList(props: MessageListProps) {
     props.syncState,
     props.unread,
   );
+  let observedForegroundExitEpoch = props.foregroundExitEpoch;
   let watchedThrough: number | undefined;
   let observedOwnTime = latestCommittedOwnTime(props.messages);
   let observedPeerTime = latestPeerTime(props.messages);
@@ -318,6 +320,7 @@ export function MessageList(props: MessageListProps) {
         props.syncState,
         props.unread,
       );
+      observedForegroundExitEpoch = props.foregroundExitEpoch;
       watchedThrough = undefined;
       observedOwnTime = latestCommittedOwnTime(props.messages);
       observedPeerTime = latestPeerTime(props.messages);
@@ -330,6 +333,13 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const marker = props.readAtMs ?? null;
+    const foregroundExitEpoch = props.foregroundExitEpoch;
+    if (foregroundExitEpoch !== observedForegroundExitEpoch) {
+      if (dividerTracksMark) setDividerMark(maximumMark(dividerMark(), marker));
+      dividerTracksMark = false;
+      watchedThrough = undefined;
+      observedForegroundExitEpoch = foregroundExitEpoch;
+    }
     if (
       props.messages.length === 0 &&
       props.syncState !== "syncing" &&

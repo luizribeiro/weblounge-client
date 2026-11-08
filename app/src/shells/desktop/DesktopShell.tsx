@@ -61,6 +61,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly completion: CompletionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
   readonly foreground?: boolean | undefined;
+  readonly foregroundExitEpoch?: number | undefined;
   readonly onFocusRequestHandled?:
     | ((request: { readonly bufferId: number }) => void)
     | undefined;
@@ -398,6 +399,7 @@ export function DesktopShell(props: DesktopShellProps) {
               )}
               <MessageList
                 bufferId={activeBuffer()?.id}
+                foregroundExitEpoch={props.foregroundExitEpoch}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
                 foreground={props.foreground !== false}
                 memberships={

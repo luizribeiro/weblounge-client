@@ -587,6 +587,7 @@ export function MobileShell(props: MobileShellProps) {
             completion={props.completion}
             filter={filter()}
             foreground={props.foreground}
+            foregroundExitEpoch={props.foregroundExitEpoch}
             inactive={screen !== stack().active}
             memberships={props.memberships}
             messages={props.messages}
