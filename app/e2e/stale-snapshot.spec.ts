@@ -302,10 +302,14 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       current = await context.newPage();
       await useFreshSharedWorker(current);
       await recordCachedRow(current, bot.nickname);
+      await controlForwarder("drop");
+      forwarderDropped = true;
       await current.goto(startUrl());
       await expect
         .poll(() => cachedRow(current))
         .toMatchObject({ unread: "0" });
+      await controlForwarder("restore");
+      forwarderDropped = false;
     } finally {
       if (forwarderDropped) await controlForwarder("restore");
       if (!current.isClosed()) await current.close();
