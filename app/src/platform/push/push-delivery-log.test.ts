@@ -1,7 +1,11 @@
+import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it, vi } from "vitest";
 import {
+  appendPushDeliveryLog,
   createPushDeliveryTrace,
+  formatPushDeliveryLog,
   type PushDeliveryOutcome,
+  readPushDeliveryLog,
 } from "./push-delivery-log";
 
 const outcomes: readonly PushDeliveryOutcome[] = [
@@ -96,6 +100,24 @@ describe("push delivery log entries", () => {
   });
 });
 
+describe("push delivery log storage", () => {
+  it("retains the newest 50 entries and formats them newest first", async () => {
+    const factory = new IDBFactory();
+    for (let index = 0; index < 51; index += 1) {
+      await appendPushDeliveryLog(entry(index), factory);
+    }
+
+    const entries = await readPushDeliveryLog(factory);
+
+    expect(entries).toHaveLength(50);
+    expect(entries[0]?.atMs).toBe(50);
+    expect(entries.at(-1)?.atMs).toBe(1);
+    expect(formatPushDeliveryLog(entries)).toContain(
+      "1970-01-01T00:00:00.050Z v=test outcome=real-notification fallback=false elapsed=50ms stages=notification-show:1ms",
+    );
+  });
+});
+
 function clocks(): {
   readonly monotonicNow: () => number;
   readonly wallNow: () => number;
@@ -104,5 +126,17 @@ function clocks(): {
   return {
     monotonicNow: () => monotonic++,
     wallNow: () => 1_700_000_000_000,
+  };
+}
+
+function entry(index: number) {
+  return {
+    schema: 1 as const,
+    atMs: index,
+    version: "test",
+    outcome: "real_notification" as const,
+    fallbackDeadlineFired: false,
+    elapsedMs: index,
+    stages: [{ stage: "notification_show" as const, elapsedMs: 1 }],
   };
 }
