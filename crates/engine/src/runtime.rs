@@ -2106,6 +2106,7 @@ fn start_read_flush(running: &mut RunningNetwork) -> Option<(papo::Client, u64)>
         && !running.client.state().supports(papo::Feature::ReadMarkers)
     {
         running.pending_reads.clear();
+        running.model.clear_pending_reads();
         return None;
     }
     if !running.device_online
@@ -4018,6 +4019,9 @@ fn process_connected(
     );
     running.model.begin_target_sync(papo::time::now());
     output.extend(running.model.sync_channels(snapshot));
+    for advance in running.model.pending_read_advances() {
+        queue_read_advance(&mut running.pending_reads, advance);
+    }
     let history_fetches = running.model.connected_history();
     if !history_fetches.is_empty() {
         output.push(running.model.buffers_event());
@@ -10093,6 +10097,15 @@ async fn delay(duration: Duration) {
                 through: message_id,
             },
         });
+        {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            assert_eq!(
+                running.model.pending_read_time(buffer_id),
+                Some(UNIX_EPOCH + Duration::from_hours(498_084))
+            );
+            running.pending_reads.clear();
+        }
 
         let (replacement, mut replacement_events, mut replacement_wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));

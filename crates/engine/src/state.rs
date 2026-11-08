@@ -1803,6 +1803,15 @@ impl NetworkModel {
         self.names.get(&NameKey::Channel(channel.clone())).copied()
     }
 
+    #[cfg(test)]
+    pub(crate) fn pending_read_time(&self, buffer_id: BufferId) -> Option<SystemTime> {
+        self.buffers
+            .get(&buffer_id)?
+            .read_facts
+            .pending()
+            .map(|time| system_time_from_millis(time.value()))
+    }
+
     pub(crate) fn buffer_id_for_conversation(
         &self,
         conversation: &papo::Conversation,
@@ -2434,6 +2443,25 @@ impl NetworkModel {
                 buffer: buffer.projection.clone(),
             },
         ]
+    }
+
+    pub(crate) fn pending_read_advances(&self) -> Vec<ReadAdvance> {
+        self.buffer_order
+            .iter()
+            .filter_map(|buffer_id| {
+                let pending = self.buffers.get(buffer_id)?.read_facts.pending()?;
+                Some(ReadAdvance {
+                    buffer_id: *buffer_id,
+                    time: system_time_from_millis(pending.value()),
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn clear_pending_reads(&mut self) {
+        for buffer in self.buffers.values_mut() {
+            buffer.read_facts.clear_pending();
+        }
     }
 
     pub(crate) fn read_target(
