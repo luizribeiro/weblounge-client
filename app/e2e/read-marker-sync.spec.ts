@@ -28,6 +28,12 @@ test.describe("IRCv3 read markers", () => {
         second.goto("/?irc-password=weblounge-test"),
       ]);
       await Promise.all([
+        first.getByRole("button", { name: /^#weblounge-test(?:,|$)/u }).click(),
+        second
+          .getByRole("button", { name: /^#weblounge-test(?:,|$)/u })
+          .click(),
+      ]);
+      await Promise.all([
         expect(
           first.getByRole("heading", { name: /#weblounge-test/ }),
         ).toBeVisible(),
@@ -61,16 +67,14 @@ test.describe("IRCv3 read markers", () => {
 
       const mention = `weblounge cross-device marker ${Date.now()}`;
       await bot.privmsgConfirmed("#weblounge-test", mention);
-      await expect
-        .poll(async () =>
-          Number(await firstBuffer.getAttribute("data-mentions")),
-        )
-        .toBeGreaterThan(0);
-      await expect
-        .poll(async () =>
-          Number(await secondBuffer.getAttribute("data-mentions")),
-        )
-        .toBeGreaterThan(0);
+      await expect(firstBuffer).toHaveAttribute("data-mentions", "0");
+      await expect(secondBuffer).toHaveAttribute("data-mentions", "0");
+      await expect(
+        first.getByRole("button", { name: /new message/ }),
+      ).toBeVisible();
+      await expect(
+        second.getByRole("button", { name: /new message/ }),
+      ).toBeVisible();
 
       await first.bringToFront();
       await firstList.press("End");
@@ -176,9 +180,10 @@ test.describe("IRCv3 read markers", () => {
 
       const unread = `unread before own action ${suffix}`;
       await peer.privmsgConfirmed(channel, unread);
-      await expect
-        .poll(async () => Number(await active.getAttribute("data-unread")))
-        .toBeGreaterThan(0);
+      await expect(active).toHaveAttribute("data-unread", "0");
+      await expect(
+        page.getByRole("button", { name: /new message/ }),
+      ).toBeVisible();
 
       const action = `marks this read ${suffix}`;
       await ownDevice.actionConfirmed(channel, action);

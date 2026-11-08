@@ -370,6 +370,7 @@ test.describe("connection resilience against local Ergo", () => {
       await captureHistoryWire(page, {
         holdRequest: `CHATHISTORY LATEST ${pushedChannel} `,
       });
+      await observeMarkReadRequests(page);
       await page.goto("/manifest.webmanifest");
       await controlForwarder("drop");
       dropped = true;
@@ -414,6 +415,7 @@ test.describe("connection resilience against local Ergo", () => {
       } else {
         await expect(pushedRow).toHaveAttribute("data-unread", "0");
       }
+      await expect.poll(() => markReadRequestCount(page)).toBeGreaterThan(0);
       await page
         .locator(`[data-buffer-id]`)
         .filter({ has: page.getByText(leaveBot.nickname, { exact: true }) })
@@ -967,6 +969,44 @@ async function installWorkerControl(page: Page): Promise<void> {
       configurable: true,
       value: TrackedWorker,
     });
+  });
+}
+
+async function observeMarkReadRequests(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Reflect.set(globalThis, "resilienceMarkReadRequests", 0);
+    const postMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, options) {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "type" in message &&
+        message.type === "request" &&
+        "payload" in message &&
+        typeof message.payload === "object" &&
+        message.payload !== null &&
+        "request" in message.payload &&
+        typeof message.payload.request === "object" &&
+        message.payload.request !== null &&
+        "type" in message.payload.request &&
+        message.payload.request.type === "mark_read"
+      ) {
+        const count = Reflect.get(globalThis, "resilienceMarkReadRequests");
+        Reflect.set(
+          globalThis,
+          "resilienceMarkReadRequests",
+          typeof count === "number" ? count + 1 : 1,
+        );
+      }
+      Reflect.apply(postMessage, this, [message, options]);
+    };
+  });
+}
+
+function markReadRequestCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const count = Reflect.get(globalThis, "resilienceMarkReadRequests");
+    return typeof count === "number" ? count : 0;
   });
 }
 

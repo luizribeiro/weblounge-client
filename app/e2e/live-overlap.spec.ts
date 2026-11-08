@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { captureHistoryWire } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
 import { scrollAwayFromLiveEdge } from "./message-list-scroll";
 import { firstLongMessage, secondLongMessage } from "./timeline-fixtures";
@@ -17,6 +18,7 @@ test("keeps long live messages apart when the read boundary passes one", async (
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
+  await captureHistoryWire(page);
   await page.goto("/?irc-password=weblounge-test");
   await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
   const channel = `#overlap-${Date.now()}`;
@@ -46,9 +48,10 @@ test("keeps long live messages apart when the read boundary passes one", async (
     await bot.privmsgConfirmed(channel, firstLongMessage);
     await expect(messageRow(page, firstLongMessage)).toBeVisible();
     await expect(page.getByText("New", { exact: true })).toBeVisible();
+    await expect.poll(() => projectedUnread(page, channel)).toBeGreaterThan(0);
 
     await list.press("End");
-    await expect(active).toHaveAttribute("data-unread", "0");
+    await expect.poll(() => projectedUnread(page, channel)).toBe(0);
     await scrollAwayFromLiveEdge(page, list, {
       distance: 3,
       wheelDelta: 40,
@@ -76,4 +79,33 @@ async function expectNewDividerBetween(
   const divider = await index(page.locator("[data-new-line]"));
   expect(divider).toBe((await index(messageRow(page, before))) + 1);
   expect(divider).toBe((await index(messageRow(page, after))) - 1);
+}
+
+function projectedUnread(
+  page: Page,
+  title: string,
+): Promise<number | undefined> {
+  return page.evaluate((title) => {
+    const events = Reflect.get(globalThis, "historyProjectionTimeline");
+    if (!Array.isArray(events)) return undefined;
+    const entry = events.findLast(
+      (entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        "event" in entry &&
+        typeof entry.event === "object" &&
+        entry.event !== null &&
+        "buffer" in entry.event &&
+        typeof entry.event.buffer === "object" &&
+        entry.event.buffer !== null &&
+        Reflect.get(entry.event.buffer, "title") === title,
+    );
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const event = Reflect.get(entry, "event");
+    if (typeof event !== "object" || event === null) return undefined;
+    const buffer = Reflect.get(event, "buffer");
+    if (typeof buffer !== "object" || buffer === null) return undefined;
+    const unread = Reflect.get(buffer, "unread");
+    return typeof unread === "number" ? unread : undefined;
+  }, title);
 }
