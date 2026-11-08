@@ -420,6 +420,7 @@ export function MessageList(props: MessageListProps) {
       virtualizer.scrollToEnd();
   });
   onMount(() => {
+    props.onLiveEdgeChange?.(logicallyAtLiveEdge);
     const fonts = document.fonts;
     const composerOwner = list?.parentElement?.parentElement;
     const anchorComposerGeometry = () => {

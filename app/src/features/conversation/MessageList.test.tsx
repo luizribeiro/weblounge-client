@@ -1208,6 +1208,19 @@ it("keeps New when a hidden arrival is delivered after foregrounding", async () 
   expect(container.querySelector("[data-new-line]")).not.toBeNull();
 });
 
+it("publishes its initial live edge before observer delivery", () => {
+  const onLiveEdgeChange = vi.fn();
+
+  render(() => (
+    <MessageList
+      messages={[{ ...message, delivery: "received" }]}
+      onLiveEdgeChange={onLiveEdgeChange}
+    />
+  ));
+
+  expect(onLiveEdgeChange).toHaveBeenCalledWith(true);
+});
+
 it("does not rewrite transcript geometry while the page becomes hidden", async () => {
   const [foreground, setForeground] = createSignal(true);
   const { container } = render(() => (
