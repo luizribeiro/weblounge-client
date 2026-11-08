@@ -132,6 +132,8 @@ const parser = new PushParserLoader(loadPushParser);
 const harnessNotifications: Notification[] = [];
 let harnessPresentationFailures = 0;
 let harnessTagReplacement = true;
+const pushDeliveryTestGateReleases = new Map<string, () => void>();
+const releasedPushDeliveryTestGates = new Set<string>();
 const pendingReceipts = new Set<string>();
 const pendingConversationMessages = new Map<
   string,
@@ -203,6 +205,12 @@ worker.addEventListener("activate", (event) => {
 worker.addEventListener("message", (event) => {
   const message = event as WorkerEvent & MessageEvent;
   const data: unknown = message.data;
+  if (__PUSH_DELIVERY_TEST_ENABLED__ && isPushDeliveryTestGateRelease(data)) {
+    const release = pushDeliveryTestGateReleases.get(data.id);
+    if (release === undefined) releasedPushDeliveryTestGates.add(data.id);
+    else release();
+    return;
+  }
   if (__PUSH_EVENT_HARNESS__ && isHarnessPush(data)) {
     harnessPresentationFailures = data.presentationFailures ?? 0;
     harnessTagReplacement = data.tagReplacement ?? true;
@@ -360,6 +368,35 @@ function isHarnessPush(value: unknown): value is {
   );
 }
 
+function isPushDeliveryTestGateRelease(value: unknown): value is {
+  readonly type: "release_push_delivery_gate";
+  readonly id: string;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "release_push_delivery_gate" &&
+    "id" in value &&
+    typeof value.id === "string"
+  );
+}
+
+function pushDeliveryTestGateId(value: unknown): string | undefined {
+  if (!__PUSH_DELIVERY_TEST_ENABLED__) return undefined;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("_webloungeTestDeliveryId" in value) ||
+    typeof value._webloungeTestDeliveryId !== "string" ||
+    !("_webloungeTestDeliveryGate" in value) ||
+    value._webloungeTestDeliveryGate !== true
+  ) {
+    return undefined;
+  }
+  return value._webloungeTestDeliveryId;
+}
+
 function isHarnessNotificationClick(value: unknown): value is {
   readonly type: "click_notification";
   readonly id: string;
@@ -505,6 +542,7 @@ async function preparePushDelivery(
     route.networkLabel,
     state.generic.receiptId,
   );
+  await waitForPushDeliveryTestGate(event.data?.json());
   let plaintext: Uint8Array<ArrayBuffer>;
   try {
     plaintext = await decryptPushPayload(
@@ -565,6 +603,16 @@ async function preparePushDelivery(
       receiptId,
     },
   };
+}
+
+async function waitForPushDeliveryTestGate(value: unknown): Promise<void> {
+  const id = pushDeliveryTestGateId(value);
+  if (id === undefined) return;
+  if (releasedPushDeliveryTestGates.delete(id)) return;
+  await new Promise<void>((resolve) => {
+    pushDeliveryTestGateReleases.set(id, resolve);
+  });
+  pushDeliveryTestGateReleases.delete(id);
 }
 
 function replaceableGenericNotification(

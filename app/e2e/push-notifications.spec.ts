@@ -337,6 +337,33 @@ test("silently applies every delivered MARKREAD and maintenance PING", async ({
   await expect.poll(() => storedAppBadge(page)).toBe(1);
 });
 
+test("removes a deadline fallback after a slow MARKREAD", async ({
+  context,
+  page,
+}) => {
+  await prepareServiceWorker(context, page);
+  const markread = await seedRouteAndEncrypt(
+    page,
+    ":irc.example.test MARKREAD #lounge timestamp=2026-11-03T12:34:56.789Z",
+  );
+
+  await deliverPush(context, page, markread, async (release) => {
+    await expect
+      .poll(() => notifications(page), { intervals: [50] })
+      .toEqual([
+        {
+          title: "New message",
+          body: "Lounge",
+          tag: expect.stringMatching(/^weblounge-fallback\//),
+          route: "/",
+        },
+      ]);
+    await release();
+  });
+
+  await expect.poll(() => notifications(page)).toEqual([]);
+});
+
 test("MARKREAD silently closes a direct-message notification", async ({
   browserName,
   context,

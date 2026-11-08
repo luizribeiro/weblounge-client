@@ -282,7 +282,10 @@ handlers. On `push`, inside one `waitUntil`:
    replacements. The pending-receipt set protects both the current push and any newer concurrently
    presented push from an earlier commit's cleanup. A
    decrypted `MARKREAD` or `PING` never calls `showNotification`; it only performs marker-bounded
-   cleanup. A visible push otherwise performs no cleanup before or after showing itself.
+   cleanup. If classification finishes after that receipt's deadline fallback was successfully
+   shown, the worker closes that exact receipt-scoped fallback before committing the silent
+   control. It never closes a presentation that has not finished showing. A visible push otherwise
+   performs no cleanup before or after showing itself.
 5. After presentation, store the message (msgid, time, target, sender, text) in the engine's
    `Space::Cache` IndexedDB store, keyed so the engine reads it as part of the buffer's history,
    then persist and apply the badge count.

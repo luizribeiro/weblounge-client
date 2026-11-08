@@ -9,8 +9,51 @@ export async function deliverPush(
   context: BrowserContext,
   page: Page,
   data: string,
+  gate?: (release: () => Promise<void>) => Promise<void>,
 ): Promise<void> {
+  if (gate !== undefined) {
+    await deliverGatedPush(context, page, data, gate);
+    return;
+  }
   await deliverPushes(context, page, [data]);
+}
+
+async function deliverGatedPush(
+  context: BrowserContext,
+  page: Page,
+  data: string,
+  gate: (release: () => Promise<void>) => Promise<void>,
+): Promise<void> {
+  const id = randomUUID();
+  const payload = withDeliveryId(data, id, true);
+  await installCompletionListener(page);
+  const { registrationId, session } = await pushDeliveryTarget(context, page);
+  await session.send("ServiceWorker.deliverPushMessage", {
+    origin: new URL(page.url()).origin,
+    registrationId,
+    data: payload,
+  });
+  let released = false;
+  const release = async () => {
+    if (released) return;
+    released = true;
+    await page.evaluate(async (deliveryId) => {
+      const registration = await navigator.serviceWorker.ready;
+      registration.active?.postMessage({
+        type: "release_push_delivery_gate",
+        id: deliveryId,
+      });
+    }, id);
+  };
+  try {
+    await gate(release);
+  } finally {
+    await release();
+  }
+  const [error] = await waitForCompletions(page, [id]);
+  if (error !== null && error !== undefined) {
+    throw new Error(`push delivery failed: ${error}`);
+  }
 }
 
 export async function deliverPushes(
@@ -43,12 +86,16 @@ export async function deliverPushes(
   }
 }
 
-function withDeliveryId(payload: string, id: string): string {
+function withDeliveryId(payload: string, id: string, gated = false): string {
   const envelope: unknown = JSON.parse(payload);
   if (typeof envelope !== "object" || envelope === null) {
     throw new Error("push fixture envelope is invalid");
   }
-  return JSON.stringify({ ...envelope, [deliveryIdField]: id });
+  return JSON.stringify({
+    ...envelope,
+    [deliveryIdField]: id,
+    ...(gated ? { _webloungeTestDeliveryGate: true } : {}),
+  });
 }
 
 async function installCompletionListener(page: Page): Promise<void> {

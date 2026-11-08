@@ -24,6 +24,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Remove a deadline generic after a slow push is successfully classified as a silent
+  `MARKREAD` or `PING`. The coordinator now waits for any in-flight fallback presentation, closes
+  only that receipt's notification, and retains final generics for route, decryption and parse
+  failures. Unit coverage pins both controls and the intended error fallback; a condition-gated
+  Chromium push journey holds real preparation past 1.5 seconds and proves no notification remains.
 - [x] Recognize tagged IRC departures while the resilience harness claims the always-on nickname.
   Ergo attaches server-time, account and msgid tags to the holder's QUIT, so the harness now accepts
   the tagged source prefix and retries its NICK only after that observed departure.
