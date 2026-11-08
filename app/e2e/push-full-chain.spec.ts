@@ -306,6 +306,7 @@ test.describe("independent hosted read delivery", () => {
       await expect
         .poll(() => page.evaluate(() => typeof SharedWorker))
         .toBe("function");
+      await openPushChannel(page);
 
       const seed = `seed stale direct ${randomUUID()}`;
       const seeded = await readBot.privmsgConfirmed("weblounge", seed);
@@ -485,6 +486,7 @@ test.describe("independent foreground push suppression", () => {
       const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
       await foreground.goto("/");
       await expect(connectionHeading(foreground)).toBeVisible();
+      await openPushChannel(foreground);
 
       const seed = `foreground seed ${randomUUID()}`;
       const seedEcho = await foregroundBot.privmsgConfirmed("weblounge", seed);
@@ -798,6 +800,14 @@ function connectionHeading(page: Page) {
   return page
     .getByRole("complementary", { name: "Channel list" })
     .getByRole("heading", { name: "weblounge" });
+}
+
+async function openPushChannel(page: Page): Promise<void> {
+  await page
+    .getByRole("complementary", { name: "Channel list" })
+    .getByRole("button", { name: /^#push-e2e(?:,|$)/u })
+    .click();
+  await expect(page.getByRole("heading", { name: "#push-e2e" })).toBeVisible();
 }
 
 function serverTime(line: string): string {
