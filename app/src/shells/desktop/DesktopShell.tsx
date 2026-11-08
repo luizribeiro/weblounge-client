@@ -47,7 +47,6 @@ import {
   newestCommittedMessageId,
 } from "../../features/unread/createReadDwell";
 import { platformEnvironment } from "../../platform/environment";
-import { pageIsForeground } from "../../platform/push/foreground-state";
 import { t } from "../../strings";
 import { OverlayDrawer } from "../../ui/OverlayDrawer";
 import styles from "./DesktopShell.module.css";
@@ -61,6 +60,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
   readonly messageFailureNotices?: ReadonlyMap<number, string> | undefined;
   readonly completion: CompletionResult | undefined;
   readonly focusRequest: { readonly bufferId: number } | undefined;
+  readonly foreground?: boolean | undefined;
   readonly onFocusRequestHandled?:
     | ((request: { readonly bufferId: number }) => void)
     | undefined;
@@ -125,9 +125,6 @@ export function DesktopShell(props: DesktopShellProps) {
   const [drawer, setDrawer] = createSignal<"sidebar" | "members" | null>(null);
   const [shellWidth, setShellWidth] = createSignal(window.innerWidth);
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
-  const [foreground, setForeground] = createSignal(
-    pageIsForeground(document, navigator),
-  );
   let listController: SidebarListController | undefined;
   let messageListController: MessageListController | undefined;
   let shellElement: HTMLDivElement | undefined;
@@ -151,7 +148,6 @@ export function DesktopShell(props: DesktopShellProps) {
           props.networks.find((network) => network.id === buffer.network_id),
         );
   });
-  const activeUnread = createMemo(() => activeBuffer()?.unread ?? 0);
   const newestMessageId = createMemo(() =>
     newestCommittedMessageId(props.messages.get(activeBufferId() ?? -1) ?? []),
   );
@@ -295,10 +291,10 @@ export function DesktopShell(props: DesktopShellProps) {
   createReadDwell({
     atLiveEdge,
     bufferId: activeBufferId,
-    foreground,
+    foreground: () => props.foreground !== false,
     newestCommittedMessageId: newestMessageId,
     onMarkRead: (bufferId, through) => props.onMarkRead(bufferId, through),
-    unread: activeUnread,
+    visible: () => true,
   });
 
   createEffect(() => {
@@ -335,17 +331,9 @@ export function DesktopShell(props: DesktopShellProps) {
       forwardPrintableKey(event, shellElement);
     };
     document.addEventListener("keydown", handleKeydown);
-    const updateForeground = () =>
-      setForeground(pageIsForeground(document, navigator));
-    document.addEventListener("visibilitychange", updateForeground);
-    window.addEventListener("focus", updateForeground);
-    window.addEventListener("blur", updateForeground);
     onCleanup(() => {
       shellObserver?.disconnect();
       document.removeEventListener("keydown", handleKeydown);
-      document.removeEventListener("visibilitychange", updateForeground);
-      window.removeEventListener("focus", updateForeground);
-      window.removeEventListener("blur", updateForeground);
     });
   });
 
@@ -411,6 +399,7 @@ export function DesktopShell(props: DesktopShellProps) {
               <MessageList
                 bufferId={activeBuffer()?.id}
                 messages={props.messages.get(activeBuffer()?.id ?? -1) ?? []}
+                foreground={props.foreground !== false}
                 memberships={
                   props.memberships.get(activeBuffer()?.id ?? -1) ?? []
                 }

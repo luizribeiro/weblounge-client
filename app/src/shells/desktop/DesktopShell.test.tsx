@@ -51,7 +51,7 @@ const nickMessage: MessageProjection = {
   delivery: "received",
   local_send_id: null,
   server_ids: [],
-  server_time_ms: null,
+  server_time_ms: 1,
   received_at_ms: 1,
 };
 const members: MemberWindow = {

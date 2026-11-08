@@ -1,11 +1,4 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { bufferSyncPresentation } from "../../engine/buffer-sync";
 import {
   connectionPresentation,
@@ -35,7 +28,6 @@ import {
   createReadDwell,
   newestCommittedMessageId,
 } from "../../features/unread/createReadDwell";
-import { pageIsForeground } from "../../platform/push/foreground-state";
 import { t } from "../../strings";
 import { ConnectionErrorStrip } from "../../ui/ConnectionErrorStrip";
 import { Line } from "../../ui/Line";
@@ -44,6 +36,7 @@ import styles from "./MobileShell.module.css";
 
 export interface MobileConversationProps {
   readonly buffer: BufferProjection;
+  readonly foreground?: boolean | undefined;
   readonly composerNotice?: string | undefined;
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
   readonly completion?: CompletionResult;
@@ -78,26 +71,22 @@ export interface MobileConversationProps {
 
 export function MobileConversation(props: MobileConversationProps) {
   const [atLiveEdge, setAtLiveEdge] = createSignal(false);
-  const [foreground, setForeground] = createSignal(
-    pageIsForeground(document, navigator),
-  );
   let listController: MessageListController | undefined;
   const connection = () =>
     connectionPresentation(props.network === undefined ? [] : [props.network]);
   const sync = () => bufferSyncPresentation(props.buffer, props.network);
   const bufferId = createMemo(() => props.buffer.id);
-  const unread = createMemo(() => props.buffer.unread);
   const newestMessageId = createMemo(() =>
     newestCommittedMessageId(props.messages),
   );
   createReadDwell({
     atLiveEdge,
     bufferId,
-    foreground: () => foreground() && props.visible !== false,
+    foreground: () => props.foreground !== false,
     newestCommittedMessageId: newestMessageId,
     onMarkRead: (currentBufferId, through) =>
       props.onMarkRead(currentBufferId, through),
-    unread,
+    visible: () => props.visible !== false,
   });
 
   let historyRequested = false;
@@ -105,19 +94,6 @@ export function MobileConversation(props: MobileConversationProps) {
     if (historyRequested || props.buffer.available === false) return;
     historyRequested = true;
     props.onLoadHistory(props.buffer.id, "latest");
-  });
-
-  onMount(() => {
-    const updateForeground = () =>
-      setForeground(pageIsForeground(document, navigator));
-    document.addEventListener("visibilitychange", updateForeground);
-    window.addEventListener("focus", updateForeground);
-    window.addEventListener("blur", updateForeground);
-    onCleanup(() => {
-      document.removeEventListener("visibilitychange", updateForeground);
-      window.removeEventListener("focus", updateForeground);
-      window.removeEventListener("blur", updateForeground);
-    });
   });
 
   return (
@@ -212,6 +188,7 @@ export function MobileConversation(props: MobileConversationProps) {
           <MessageList
             bufferId={props.buffer.id}
             messages={props.messages}
+            foreground={props.foreground !== false}
             memberships={props.memberships}
             onLiveEdgeChange={setAtLiveEdge}
             onLoadOlder={() => props.onLoadHistory(props.buffer.id, "older")}

@@ -61,6 +61,7 @@ import {
 } from "./platform/debug-overlay";
 import { setDebugOverlayEnabled } from "./platform/debug-overlays";
 import { platformEnvironment } from "./platform/environment";
+import { createForegroundSignal } from "./platform/foreground";
 import { syncAppPushState } from "./platform/push/app-badge";
 import { EnginePushDeviceStore } from "./platform/push/engine-device-store";
 import { ForegroundLease } from "./platform/push/foreground-lease";
@@ -149,6 +150,7 @@ interface AppProps {
 
 export function App(props: AppProps) {
   const clientId = crypto.randomUUID();
+  const foreground = createForegroundSignal();
   const startupSyncRequired =
     props.hostedSession !== undefined ||
     (__DEBUG_IRC_CONFIG__ !== null &&
@@ -785,14 +787,6 @@ export function App(props: AppProps) {
           pushLeaseOwner?.setEligible(false);
         }, foregroundLeaseHandoffMilliseconds);
       }
-      if (!foreground) {
-        void mountedClient
-          .send({
-            id: crypto.randomUUID(),
-            request: { type: "flush_chat_list_snapshot" },
-          })
-          .catch(() => undefined);
-      }
       if (foreground) {
         void consumeOpenRoute();
         syncEnginePushState();
@@ -858,6 +852,19 @@ export function App(props: AppProps) {
     window.addEventListener("pageshow", handlePageShow);
     void consumeOpenRoute();
     updateVisibility();
+    let snapshotForeground = foreground();
+    createEffect(() => {
+      const next = foreground();
+      if (snapshotForeground && !next) {
+        void mountedClient
+          .send({
+            id: crypto.randomUUID(),
+            request: { type: "flush_chat_list_snapshot" },
+          })
+          .catch(() => undefined);
+      }
+      snapshotForeground = next;
+    });
     void startEngine(
       mountedClient,
       setEngineStatus,
@@ -1395,6 +1402,7 @@ export function App(props: AppProps) {
       ) : (
         <ResponsiveShell
           activeBufferId={initialBufferId()}
+          foreground={foreground()}
           memberViewScope={clientId}
           networks={networks()}
           notificationPromptVisible={notificationPromptVisible()}

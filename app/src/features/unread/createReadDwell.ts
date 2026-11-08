@@ -7,7 +7,7 @@ interface ReadDwellOptions {
   readonly foreground: Accessor<boolean>;
   readonly newestCommittedMessageId: Accessor<number | undefined>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
-  readonly unread: Accessor<number>;
+  readonly visible: Accessor<boolean>;
 }
 
 export function createReadDwell(options: ReadDwellOptions): void {
@@ -26,6 +26,7 @@ export function createReadDwell(options: ReadDwellOptions): void {
     setEligibleBufferId(undefined);
     if (
       bufferId === undefined ||
+      !options.visible() ||
       !options.atLiveEdge() ||
       !options.foreground()
     ) {
@@ -44,8 +45,8 @@ export function createReadDwell(options: ReadDwellOptions): void {
     if (
       bufferId === undefined ||
       eligibleBufferId() !== bufferId ||
-      options.unread() === 0 ||
       messageId === undefined ||
+      !options.visible() ||
       !options.atLiveEdge() ||
       !options.foreground()
     ) {
@@ -70,7 +71,8 @@ export function newestCommittedMessageId(
   for (const message of messages) {
     if (
       (message.delivery !== "received" && message.delivery !== "confirmed") ||
-      typeof message.kind === "object"
+      typeof message.kind === "object" ||
+      message.server_time_ms === null
     ) {
       continue;
     }
@@ -84,12 +86,7 @@ function compareMessageTime(
   left: MessageProjection,
   right: MessageProjection,
 ): number {
-  const primary = messageTime(left) - messageTime(right);
-  if (primary !== 0) return primary;
-  const receipt = left.received_at_ms - right.received_at_ms;
-  return receipt === 0 ? left.id - right.id : receipt;
-}
-
-function messageTime(message: MessageProjection): number {
-  return message.server_time_ms ?? message.received_at_ms;
+  const leftTime = left.server_time_ms ?? Number.MIN_SAFE_INTEGER;
+  const rightTime = right.server_time_ms ?? Number.MIN_SAFE_INTEGER;
+  return leftTime === rightTime ? left.id - right.id : leftTime - rightTime;
 }

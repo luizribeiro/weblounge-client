@@ -62,7 +62,7 @@ it("keeps the dwell armed across equal read-state snapshots", () => {
       foreground: () => true,
       newestCommittedMessageId: createMemo(() => snapshot().messageId),
       onMarkRead: markRead,
-      unread: createMemo(() => snapshot().unread),
+      visible: () => true,
     });
     return undefined;
   });
@@ -86,7 +86,7 @@ it("keeps the dwell across a newer committed message", () => {
       foreground: () => true,
       newestCommittedMessageId: messageId,
       onMarkRead: markRead,
-      unread: () => 1,
+      visible: () => true,
     });
     return undefined;
   });
@@ -101,7 +101,6 @@ it("keeps the dwell across a newer committed message", () => {
 
 it("marks later arrivals immediately while the dwell remains qualified", () => {
   const [messageId, setMessageId] = createSignal(8);
-  const [unread, setUnread] = createSignal(1);
   const markRead = vi.fn();
 
   render(() => {
@@ -111,16 +110,14 @@ it("marks later arrivals immediately while the dwell remains qualified", () => {
       foreground: () => true,
       newestCommittedMessageId: messageId,
       onMarkRead: markRead,
-      unread,
+      visible: () => true,
     });
     return undefined;
   });
 
   vi.advanceTimersByTime(500);
   expect(markRead).toHaveBeenLastCalledWith(2, 8);
-  setUnread(0);
   setMessageId(9);
-  setUnread(1);
   expect(markRead).toHaveBeenLastCalledWith(2, 9);
   expect(markRead).toHaveBeenCalledTimes(2);
 });
@@ -136,13 +133,87 @@ it("cancels the dwell when the conversation stops qualifying", () => {
       foreground,
       newestCommittedMessageId: () => 8,
       onMarkRead: markRead,
-      unread: () => 1,
+      visible: () => true,
     });
     return undefined;
   });
 
   vi.advanceTimersByTime(300);
   setForeground(false);
+  vi.advanceTimersByTime(500);
+  expect(markRead).not.toHaveBeenCalled();
+});
+
+it("qualifies each visible pane independently", () => {
+  const firstAtLiveEdge = createSignal(true);
+  const secondAtLiveEdge = createSignal(false);
+  const markRead = vi.fn();
+
+  render(() => {
+    createReadDwell({
+      atLiveEdge: firstAtLiveEdge[0],
+      bufferId: () => 2,
+      foreground: () => true,
+      newestCommittedMessageId: () => 8,
+      onMarkRead: markRead,
+      visible: () => true,
+    });
+    createReadDwell({
+      atLiveEdge: secondAtLiveEdge[0],
+      bufferId: () => 3,
+      foreground: () => true,
+      newestCommittedMessageId: () => 9,
+      onMarkRead: markRead,
+      visible: () => true,
+    });
+    return undefined;
+  });
+
+  vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenCalledTimes(1);
+  expect(markRead).toHaveBeenCalledWith(2, 8);
+
+  firstAtLiveEdge[1](false);
+  secondAtLiveEdge[1](true);
+  vi.advanceTimersByTime(500);
+  expect(markRead).toHaveBeenCalledTimes(2);
+  expect(markRead).toHaveBeenLastCalledWith(3, 9);
+});
+
+it("does not mark a pane that is not visible", () => {
+  const markRead = vi.fn();
+
+  render(() => {
+    createReadDwell({
+      atLiveEdge: () => true,
+      bufferId: () => 2,
+      foreground: () => true,
+      newestCommittedMessageId: () => 8,
+      onMarkRead: markRead,
+      visible: () => false,
+    });
+    return undefined;
+  });
+
+  vi.advanceTimersByTime(500);
+  expect(markRead).not.toHaveBeenCalled();
+});
+
+it("does not mark a pane away from its live edge", () => {
+  const markRead = vi.fn();
+
+  render(() => {
+    createReadDwell({
+      atLiveEdge: () => false,
+      bufferId: () => 2,
+      foreground: () => true,
+      newestCommittedMessageId: () => 8,
+      onMarkRead: markRead,
+      visible: () => true,
+    });
+    return undefined;
+  });
+
   vi.advanceTimersByTime(500);
   expect(markRead).not.toHaveBeenCalled();
 });

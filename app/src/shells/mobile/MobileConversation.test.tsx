@@ -5,6 +5,7 @@ import type {
   BufferProjection,
   MessageProjection,
 } from "../../engine/protocol";
+import { createForegroundSignal } from "../../platform/foreground";
 import { MobileConversation } from "./MobileConversation";
 
 vi.mock("../../features/composer/Composer", () => ({
@@ -156,7 +157,10 @@ it("waits for both visibility and window focus before starting the dwell", () =>
   hidden = true;
   focused = false;
   const markRead = vi.fn();
-  renderConversation(markRead);
+  render(() => {
+    const foreground = createForegroundSignal();
+    return conversation(buffer, markRead, foreground);
+  });
 
   vi.advanceTimersByTime(1_000);
   hidden = false;
@@ -177,7 +181,10 @@ it("treats a visible iOS standalone conversation as foreground", () => {
     value: true,
   });
   const markRead = vi.fn();
-  renderConversation(markRead);
+  render(() => {
+    const foreground = createForegroundSignal();
+    return conversation(buffer, markRead, foreground);
+  });
 
   vi.advanceTimersByTime(500);
 
@@ -301,10 +308,12 @@ function renderConversation(
 function conversation(
   currentBuffer: BufferProjection,
   onMarkRead: (bufferId: number, through: number) => void,
+  foreground: () => boolean = () => true,
 ) {
   return (
     <MobileConversation
       buffer={currentBuffer}
+      foreground={foreground()}
       memberships={[]}
       messages={[message]}
       onBack={() => {}}

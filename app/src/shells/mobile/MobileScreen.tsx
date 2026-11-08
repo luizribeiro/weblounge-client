@@ -23,6 +23,7 @@ import {
 } from "./push-motion";
 
 export interface MobileShellData extends NotificationPromptControls {
+  readonly foreground?: boolean | undefined;
   readonly networks: readonly NetworkProjection[];
   readonly buffers: readonly BufferProjection[];
   readonly commandSpecs?: readonly CommandSpec[] | undefined;
@@ -142,6 +143,7 @@ export function MobileScreen(props: MobileScreenProps) {
       ) : buffer() !== undefined ? (
         <MobileConversation
           buffer={buffer() as BufferProjection}
+          foreground={props.foreground !== false}
           commandSpecs={props.commandSpecs}
           composerNotice={composerNotice()}
           {...(props.completion === undefined
