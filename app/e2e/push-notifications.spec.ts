@@ -273,7 +273,7 @@ test("serializes concurrent pushes without closing either notification", async (
   await expect.poll(() => storedAppBadge(page)).toBe(2);
 });
 
-test("migrates and decrypts an active route from the previous schema", async ({
+test("leaves legacy route migration to the unlocked page", async ({
   context,
   page,
 }) => {
@@ -306,12 +306,7 @@ test("migrates and decrypts an active route from the previous schema", async ({
 
   await expect
     .poll(() => notifications(page))
-    .toContainEqual({
-      title: "mel in #lounge",
-      body: "hello after upgrade",
-      tag: "Lounge/#lounge",
-      route: "/Lounge/lounge",
-    });
+    .toEqual([{ title: "New message", body: "", tag: "", route: "/" }]);
 });
 
 test("silently applies every delivered MARKREAD and maintenance PING", async ({
@@ -1391,11 +1386,14 @@ async function seedRouteAndEncryptMany(
       };
       const routePair = (await crypto.subtle.generateKey(
         { name: "ECDH", namedCurve: "P-256" },
-        false,
+        true,
         ["deriveBits"],
       )) as CryptoKeyPair;
       const routePublic = new Uint8Array(
         await crypto.subtle.exportKey("raw", routePair.publicKey),
+      );
+      const routePrivate = new Uint8Array(
+        await crypto.subtle.exportKey("pkcs8", routePair.privateKey),
       );
       const authentication = crypto.getRandomValues(new Uint8Array(16));
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -1432,7 +1430,7 @@ async function seedRouteAndEncryptMany(
             endpoint: "https://push.example.test/v1/r/a-retiring-route",
             p256dh: "AQID",
             auth: "BAUG",
-            privateKey: routePair.privateKey,
+            privateKeyPkcs8: routePrivate,
             retiring: true,
           });
         }
@@ -1445,7 +1443,7 @@ async function seedRouteAndEncryptMany(
           endpoint: `https://push.example.test/v1/r/${seededRouteId}`,
           p256dh: encode(routePublic),
           auth: encode(authentication),
-          privateKey: routePair.privateKey,
+          privateKeyPkcs8: routePrivate,
         });
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);

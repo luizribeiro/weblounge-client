@@ -590,6 +590,85 @@ test.describe("independent foreground push suppression", () => {
 test.describe("independent push recovery", () => {
   test.skip(!enabled, "requires the local push E2E VM");
 
+  test("rotates a legacy CryptoKey route on launch and decrypts the next push", async ({
+    browser,
+  }) => {
+    await switchToCurrentBuild();
+    const deviceId = "legacy-key-migration";
+    const context = await pushContext(browser, deviceId);
+    const page = await context.newPage();
+    const audit = await IrcClient.connectOAuth("push-audit", oauthToken);
+    const bot = await IrcClient.connectIsolated(
+      `legacy-key-bot-${randomUUID().slice(0, 8)}`,
+      "#push-e2e",
+    );
+    try {
+      const endpointsBefore = await audit.pushSubscriptionEndpoints();
+      const devicesBefore = new Set((await relayStates()).map(({ id }) => id));
+      await page.goto("/");
+      await expect(connectionHeading(page)).toBeVisible();
+      await page.getByRole("button", { name: "Turn on" }).click();
+      await expect
+        .poll(async () => {
+          const created = (await relayStates()).find(
+            ({ id }) => !devicesBefore.has(id),
+          );
+          return created === undefined
+            ? undefined
+            : { active: created.active, probing: created.probing };
+        })
+        .toEqual({ active: 1, probing: 0 });
+      let registered = await audit.pushSubscriptionEndpoints();
+      await expect
+        .poll(async () => {
+          registered = await audit.pushSubscriptionEndpoints();
+          return registered.length;
+        })
+        .toBe(endpointsBefore.length + 1);
+      const legacyEndpoint = registered.find(
+        (endpoint) => !endpointsBefore.includes(endpoint),
+      );
+      if (legacyEndpoint === undefined)
+        throw new Error("new push endpoint is missing");
+      const legacyRouteId = await convertStoredRouteToLegacyCryptoKey(page);
+
+      await page.reload();
+      await expect(connectionHeading(page)).toBeVisible();
+      await expect
+        .poll(async () => {
+          const endpoints = await audit.pushSubscriptionEndpoints();
+          return {
+            count: endpoints.length,
+            legacy: endpoints.includes(legacyEndpoint),
+          };
+        })
+        .toEqual({ count: endpointsBefore.length + 1, legacy: false });
+      await expect
+        .poll(() => storedRouteKeyState(page))
+        .toMatchObject({
+          cryptoKeys: 0,
+          byteKeys: 1,
+          routeIds: [expect.not.stringMatching(legacyRouteId)],
+        });
+      await expectOneRoutePerDevice((await relayStates()).length);
+
+      await closeNotifications(page);
+      await releaseForegroundLeases([page]);
+      const direct = `legacy key migration ${randomUUID()}`;
+      await bot.privmsgConfirmed("weblounge", direct);
+      await deliverRecordedEnvelope(
+        context,
+        page,
+        await nextRecord(`/device/${deviceId}`),
+      );
+      await expectNotification(page, direct);
+    } finally {
+      bot.close();
+      audit.close();
+      await context.close();
+    }
+  });
+
   test("re-grants permission, rotates keys, and recovers a refused REGISTER", async ({
     browser,
   }) => {
@@ -1465,6 +1544,85 @@ async function drainPushRouteReads(page: Page): Promise<void> {
   });
 }
 
+async function convertStoredRouteToLegacyCryptoKey(
+  page: Page,
+): Promise<string> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push-v2");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readwrite");
+    const store = transaction.objectStore("routes");
+    const routes = await new Promise<readonly Record<string, unknown>[]>(
+      (resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () =>
+          resolve(request.result as readonly Record<string, unknown>[]);
+        request.onerror = () => reject(request.error);
+      },
+    );
+    const route = routes[0];
+    if (route === undefined || !(route.privateKeyPkcs8 instanceof Uint8Array)) {
+      throw new Error("byte-backed route is missing");
+    }
+    const privateKey = await crypto.subtle.importKey(
+      "pkcs8",
+      route.privateKeyPkcs8,
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      ["deriveBits"],
+    );
+    const { privateKeyPkcs8: _privateKeyPkcs8, ...metadata } = route;
+    store.put({ ...metadata, privateKey });
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+    if (typeof route.routeId !== "string")
+      throw new Error("route id is missing");
+    return route.routeId;
+  });
+}
+
+async function storedRouteKeyState(page: Page): Promise<{
+  cryptoKeys: number;
+  byteKeys: number;
+  routeIds: readonly string[];
+}> {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("weblounge-push-v2");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("routes", "readonly");
+    const routes = await new Promise<readonly Record<string, unknown>[]>(
+      (resolve, reject) => {
+        const request = transaction.objectStore("routes").getAll();
+        request.onsuccess = () =>
+          resolve(request.result as readonly Record<string, unknown>[]);
+        request.onerror = () => reject(request.error);
+      },
+    );
+    database.close();
+    return {
+      cryptoKeys: routes.filter(
+        (route) => route.privateKey?.constructor.name === "CryptoKey",
+      ).length,
+      byteKeys: routes.filter(
+        (route) => route.privateKeyPkcs8 instanceof Uint8Array,
+      ).length,
+      routeIds: routes.flatMap((route) =>
+        typeof route.routeId === "string" ? [route.routeId] : [],
+      ),
+    };
+  });
+}
+
 async function breakStoredRouteKeys(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -1483,7 +1641,8 @@ async function breakStoredRouteKeys(page: Page): Promise<void> {
       },
     );
     Reflect.set(window, "pushE2eSavedRoutes", routes);
-    for (const route of routes) store.put({ ...route, privateKey: "missing" });
+    for (const route of routes)
+      store.put({ ...route, privateKeyPkcs8: "missing" });
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
