@@ -49,7 +49,8 @@ The single place a fresh session reads to know where the project stands. Update 
   non-message boundaries. Density tokens own the group rhythm, row estimates and live-edge
   remeasurement account for the two row shapes, reactions remain below the text, and long grouped
   messages wrap inside the viewport. The shared accessible Lucide robot icon also replaces every
-  textual BOT marker on desktop, in member rows and in composer suggestions.
+  textual BOT marker on desktop, in member rows and in composer suggestions; message-row geometry
+  keeps its vertical centre within two pixels of the nick text in desktop and phone layouts.
 - [x] Land reactions/replies batch 1. Design 25 fixes the engine/protocol/UI boundaries and the
   signed-off interaction model. The engine now idempotently aggregates received live and history
   reaction additions/removals by target msgid using versioned removal tombstones, bounds facts that
