@@ -45,6 +45,7 @@ import {
   estimateMessageHeight,
 } from "./message-size-estimate";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
+import { ReactionChips } from "./ReactionChips";
 
 interface MessageListProps {
   readonly bufferId?: number | undefined;
@@ -622,6 +623,7 @@ export function MessageList(props: MessageListProps) {
                       onOpenExternal={props.onOpenExternal}
                       onRejoin={props.onRejoin}
                       onRetry={props.onRetry}
+                      presentation={props.presentation}
                       row={row()}
                     />
                   </li>
@@ -659,6 +661,7 @@ function TimelineRowView(props: {
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRejoin?: (() => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly presentation?: "desktop" | "mobile" | undefined;
   readonly row: TimelineRow | undefined;
 }) {
   return (
@@ -685,6 +688,7 @@ function TimelineRowView(props: {
                 onOpenDirect={props.onOpenDirect}
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
+                presentation={props.presentation}
               />
             )}
           </Match>
@@ -722,6 +726,7 @@ function MessageRow(props: {
   readonly onOpenDirect?: ((nick: string) => void) | undefined;
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
+  readonly presentation?: "desktop" | "mobile" | undefined;
 }) {
   const message = props.message;
   if (isNoticeMessage(message))
@@ -767,6 +772,12 @@ function MessageRow(props: {
                 text={message.text}
               />
             </Selectable>
+            <div class={styles.actionReactions}>
+              <ReactionChips
+                presentation={props.presentation}
+                reactions={message.reactions}
+              />
+            </div>
           </div>
           <Delivery message={message} onRetry={props.onRetry} />
         </>
@@ -804,6 +815,10 @@ function MessageRow(props: {
                 text={message.text}
               />
             </Selectable>
+            <ReactionChips
+              presentation={props.presentation}
+              reactions={message.reactions}
+            />
           </div>
           <Delivery message={message} onRetry={props.onRetry} />
         </>

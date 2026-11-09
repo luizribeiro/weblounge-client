@@ -88,6 +88,30 @@ it("renders highlight, nick colour, and failed delivery presentation", () => {
   expect(screen.getByText("Failed")).toBeInTheDocument();
 });
 
+it("marks received reactions for mobile touch sizing", () => {
+  render(() => (
+    <MessageList
+      messages={[
+        {
+          ...message,
+          reactions: [
+            {
+              text: "👍",
+              actors: [{ nick: "alice", mine: false }],
+              mine: false,
+            },
+          ],
+        },
+      ]}
+      presentation="mobile"
+    />
+  ));
+
+  expect(
+    screen.getByLabelText("👍, 1 reaction").closest("[data-reaction-chips]"),
+  ).toHaveAttribute("data-presentation", "mobile");
+});
+
 it("marks a direct row whose sender identity is unverified", () => {
   render(() => (
     <MessageList messages={[{ ...message, unverified_sender: true }]} />

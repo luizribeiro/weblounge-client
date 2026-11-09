@@ -216,6 +216,9 @@
   display: block;
   padding-left: 58px;
 }
+.actionReactions {
+  padding-left: 58px;
+}
 .actionStar {
   color: var(--wl-color-muted);
 }
@@ -341,5 +344,8 @@
   padding-inline-start: 14px;
 }
 .list[data-presentation="mobile"] .actionText {
+  padding-inline-start: 0;
+}
+.list[data-presentation="mobile"] .actionReactions {
   padding-inline-start: 0;
 }
