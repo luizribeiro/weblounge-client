@@ -2,7 +2,9 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import {
   captureHistoryWire,
+  heldHistoryRequestCount,
   heldLatestHistoryCount,
+  releaseHeldHistoryRequest,
   releaseHeldLatestHistory,
 } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
@@ -579,6 +581,9 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect
         .poll(() => snapshotReadState(current, bot.nickname))
         .toEqual({ gap: false, mentions: 2, unread: 2 });
+      await expect
+        .poll(() => snapshotRows(current, titles))
+        .toEqual(await visibleRows(current, titles));
 
       await current.close();
       const closedDirect = await bot.privmsgReplyConfirmed(
@@ -599,9 +604,11 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       await expect.poll(() => markerReader.readMarker(channel)).toBeUndefined();
 
       current = await context.newPage();
+      await captureHistoryWire(current, {
+        holdRequest: `CHATHISTORY LATEST ${channel} `,
+      });
       await useDedicatedWorker(current);
       await observeMarkReadRequests(current);
-      await recordCachedRows(current, titles);
       await current.goto(
         startUrlForAccount(
           appAccount,
@@ -611,13 +618,24 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           emptyChannel,
         ),
       );
+      let catchupState: "complete" | "held" | undefined;
       await expect
-        .poll(() => cachedRows(current))
-        .toEqual([
-          { label: `${bot.nickname}, 2 unread, including mentions` },
-          { label: channel },
-          { label: emptyChannel },
-        ]);
+        .poll(async () => {
+          if ((await heldHistoryRequestCount(current)) === 1)
+            catchupState = "held";
+          else if (
+            (
+              await bufferRow(current, channel).getAttribute("aria-label")
+            )?.startsWith(`${channel}, 3 unread`) === true
+          )
+            catchupState = "complete";
+          return catchupState;
+        })
+        .not.toBeUndefined();
+      if (catchupState === "held") {
+        await expectRead(bufferRow(current, channel), channel);
+        await releaseHeldHistoryRequest(current);
+      }
       await expectUnreadCount(bufferRow(current, channel), channel, 3);
       await expectRead(bufferRow(current, bot.nickname), bot.nickname);
 
@@ -1140,43 +1158,6 @@ async function failNextStorageWrite(page: Page): Promise<void> {
       throw new Error("storage write failure control is unavailable");
     failNext();
   });
-}
-
-async function recordCachedRows(
-  page: Page,
-  titles: readonly string[],
-): Promise<void> {
-  await page.addInitScript((expectedTitles) => {
-    Reflect.set(globalThis, "badgePersistCachedRows", undefined);
-    new MutationObserver(() => {
-      if (Reflect.get(globalThis, "badgePersistCachedRows") !== undefined)
-        return;
-      const rows = [
-        ...document.querySelectorAll<HTMLElement>("[data-buffer-id]"),
-      ];
-      const captured = expectedTitles.map((title) => {
-        const row = rows.find((candidate) =>
-          candidate.getAttribute("aria-label")?.startsWith(title),
-        );
-        return row === undefined
-          ? undefined
-          : { label: row.getAttribute("aria-label") ?? "" };
-      });
-      if (captured.every((row) => row !== undefined))
-        Reflect.set(globalThis, "badgePersistCachedRows", captured);
-    }).observe(document, {
-      attributeFilter: ["aria-label"],
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
-  }, titles);
-}
-
-function cachedRows(
-  page: Page,
-): Promise<readonly { label: string }[] | undefined> {
-  return page.evaluate(() => Reflect.get(globalThis, "badgePersistCachedRows"));
 }
 
 async function visibleRows(

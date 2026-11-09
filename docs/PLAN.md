@@ -38,6 +38,13 @@ The single place a fresh session reads to know where the project stands. Update 
   and idle layer styles in desktop Chromium plus phone Chromium and WebKit. Shared screenshot
   geometry coverage also pins the pseudo-element's full-bleed edges and active light/dark theme
   colour on desktop and mobile.
+- [x] Make the relaunch unread journey follow either valid launch ordering. Offline channel rows can
+  arrive live before the test intercepts their `LATEST` request, or remain cached-read until that
+  request completes; the old journey sampled between those phases and treated only the latter as
+  possible. It now proves the initial rows are durable before closing, holds the targeted delta
+  when present, and waits for either the held request or the already-complete unread projection
+  before asserting convergence. The unchanged CI rerun and repeated CPU-contention runs show the
+  engine reconstructed all three unread facts, so users were not affected.
 - [x] Isolate every phone-layout journey from the shared IRC account. Each test now registers a
   fresh account, autojoins its unique target channel and selects that buffer explicitly, so an
   active channel retained by an earlier always-on session cannot choose the tested conversation.
