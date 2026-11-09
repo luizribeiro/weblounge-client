@@ -29,10 +29,20 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
-- [x] Make the command-name ownership guard fail closed and run against the application sources in
-  Nix. The cargo-test check alone now includes `app/src`, leaving clippy, Wasm, relay and dependency
-  derivations independent of TypeScript-only changes, and the push delivery log's schema version is
-  explicitly classified as incidental.
+- [x] Land reactions/replies batch 1. Design 25 fixes the engine/protocol/UI boundaries and the
+  signed-off interaction model. The engine now idempotently aggregates received live and history
+  reaction additions/removals by target msgid using versioned removal tombstones, bounds facts that
+  precede their message, and releases indexed targets with their message windows and buffers. Live
+  lookup is direct through the msgid index; nick-keyed actors remain consistent when history omits
+  an account tag, while papo-derived ownership remains correct after reconnect. The engine projects
+  first-reaction-first summaries with exact actors and own-account state. Desktop and
+  mobile rows show read-only wrapping chips in the text column, including own highlighting,
+  16-character monospace text reactions, counts and a desktop who-reacted tooltip. A local-Ergo
+  visual review also keeps touch chips at the signed-off 32 px size and restores the tooltip's
+  token-defined elevation.
+  A journey proves a second client's reaction appears live without moving the transcript from its
+  edge, survives a history reload, disappears on unreact, and stays gone after reload; sending,
+  pickers, phone actions and replies remain later batches.
 - [x] Keep hosted sign-in cancellation inside the mounted app's engine ownership. A session that
   requires authorization now unmounts the app before redirecting, so cleanup removes foreground
   snapshot work and closes the client in that order; the abandoned startup also recognizes the

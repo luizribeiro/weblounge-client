@@ -13,11 +13,15 @@ meaning; the UI only presents typed projections and available actions.
 
 Each confirmed message keeps `reactions: BTreeMap<ReactionKey, ReactionSummary>` as sketched in
 [01](01-engine-state-model.md). A summary contains the exact reaction text, a first-seen ordinal,
-and actors keyed by papo's stable peer identity when available or its casemapped nick otherwise.
-Each actor retains its display nick and whether it is this client. The ordinal, not map order, gives
-chips first-reaction-first order. Applying `(target msgid, reaction text, actor)` is idempotent:
-`Added` inserts and `Removed` removes; an empty summary disappears. An index by target msgid retains
-facts that arrive before their message and attaches them when that message enters a window.
+and actors keyed by their casemapped nick so live and history remain identical when one omits the
+account tag. Each actor retains its display nick and whether it is this client. A nick change makes
+later reaction facts a new actor; it does not rewrite the identity recorded on older server lines.
+The ordinal, not map order, gives chips first-reaction-first order.
+
+Each `(target msgid, reaction text, actor)` fact is last-writer-wins by `(server time, reaction
+msgid)`. Removals are retained as tombstones so an older add or duplicate replay cannot resurrect a
+chip. The target-msgid index retains bounded per-buffer facts that precede their message, attaches
+them when that message enters a window, and releases them with timeline eviction, part, or close.
 
 The Engine/UI projection exposes exact text, ordered actors, count, and `mine`. Text reactions are
 presented in monospace and truncated visually to 16 characters; the who-reacted surface retains the
@@ -57,13 +61,14 @@ control is absent rather than disabled.
 
 ## Testing
 
-- Pure engine tests cover add, remove, duplicate add, history/live overlap, and reaction-before-
-  message ordering.
+- Pure engine tests cover add, remove, duplicate and out-of-order replay, history/live overlap,
+  account-tag disagreement, bounded reaction-before-message ordering, ownership after reconnect,
+  and target cleanup with timeline and buffer lifetimes.
 - Protocol/component tests cover ordered projections, ownership, text truncation/full tooltip,
   wrapping in the text column, and capability-absent labels.
 - Playwright drives the built app against local Ergo with a second papo client: a received reaction
-  appears, survives reload through history, and disappears on unreact. Every UI batch also runs the
-  native-feel idle/hidden audit.
+  appears without moving the live edge, survives reload through history, disappears on unreact,
+  and stays gone after another reload. Every UI batch also runs the native-feel idle/hidden audit.
 
 ## Out of scope
 
