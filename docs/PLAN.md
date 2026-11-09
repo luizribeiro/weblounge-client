@@ -29,6 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Vertically centre phone composer placeholder and one-line text on iOS. The mobile textarea
+  now fills its 44px Send row with an explicit 22px line box and derived symmetric padding, instead
+  of bottom-aligning a 40px intrinsic box 2.2px below the field centre. WebKit and Chromium measure
+  both empty and typed visual line boxes while retaining multiline growth, cap and caret scrolling.
 - [x] Split the production Playwright check into four generated flake checks. Their exact 489-test
   union retains all 44 projects without duplicates, while `--no-deps` prevents the slow-buffer
   project's scheduling dependency from pulling the whole Chromium project into one shard. Local
