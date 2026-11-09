@@ -41,6 +41,11 @@ The single place a fresh session reads to know where the project stands. Update 
   drag direction, then cancels the move at either cap; one-line textareas, the field wrapper, Send,
   and composer-bar padding remain page-locked while horizontal gestures, long press, active text
   selection, and transcript scrolling retain their existing ownership.
+- [x] Make the cold pushed-DM reconciliation journey close only after its background channel is
+  durable. An isolated account can become online before the joined channel's snapshot write
+  finishes; closing there restored only the DM, selected it as the sole conversation and correctly
+  cleared it through the 500 ms read dwell. The journey now waits on the persisted channel row, so
+  it proves the offline DM stays unread before reconciling one authoritative history row.
 - [x] Make the ready-direct reconnect transcript independent of sub-millisecond scheduling. Its
   live boundary now starts strictly after the nanosecond-resolution TARGETS boundary before IRC
   formatting truncates it to milliseconds, and the test waits for that monotonic condition instead

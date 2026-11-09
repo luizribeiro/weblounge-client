@@ -771,6 +771,9 @@ test("reconciles a restored pushed direct message with history", async ({
     bot = await IrcClient.connectIsolated(botNickname, "#weblounge-test");
     await page.goto(startUrlForAccount(appAccount, appPassword));
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    await expect
+      .poll(() => snapshotContainsBuffer(page, "#weblounge-test"))
+      .toBe(true);
     const departed = bot.waitForNickDeparture(appAccount);
     await page.close();
     await departed;
@@ -987,6 +990,44 @@ function startUrlForAccount(account: string, password: string): string {
     "irc-password": password,
   });
   return `/?${params.toString()}`;
+}
+
+async function snapshotContainsBuffer(
+  page: Page,
+  title: string,
+): Promise<boolean> {
+  const database = await openEngineDatabase(page);
+  try {
+    return await database.evaluate(async (value, expectedTitle) => {
+      const bytes = await new Promise<unknown>((resolve, reject) => {
+        const request = value
+          .transaction("cache")
+          .objectStore("cache")
+          .get(new TextEncoder().encode("chat-list-snapshot"));
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
+      if (!(bytes instanceof Uint8Array)) return false;
+      const snapshot: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      if (
+        typeof snapshot !== "object" ||
+        snapshot === null ||
+        !("rows" in snapshot) ||
+        !Array.isArray(snapshot.rows)
+      ) {
+        return false;
+      }
+      return snapshot.rows.some(
+        (row) =>
+          typeof row === "object" &&
+          row !== null &&
+          "title" in row &&
+          row.title === expectedTitle,
+      );
+    }, title);
+  } finally {
+    await closeEngineDatabase(database);
+  }
 }
 
 async function preparePushEventHarness(
