@@ -177,9 +177,11 @@ mod tests {
     }
 
     fn source_files(directory: &Path, files: &mut Vec<std::path::PathBuf>) {
-        if !directory.exists() {
-            return;
-        }
+        assert!(
+            directory.is_dir(),
+            "source directory is missing: {}",
+            directory.display()
+        );
         for entry in fs::read_dir(directory).expect("source directory is readable") {
             let path = entry.expect("source entry is readable").path();
             if path.is_dir() {
