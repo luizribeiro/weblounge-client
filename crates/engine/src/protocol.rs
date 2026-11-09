@@ -573,6 +573,26 @@ pub enum NoticeKind {
     Info,
 }
 
+/// One user represented in a reaction summary.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct ReactionActorProjection {
+    /// Display nickname supplied by papo.
+    pub nick: String,
+    /// Whether this actor is the current account.
+    pub mine: bool,
+}
+
+/// Aggregated reaction facts for one exact reaction value.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+pub struct ReactionProjection {
+    /// Exact reaction text received from IRC.
+    pub text: String,
+    /// Current actors in deterministic identity order.
+    pub actors: Vec<ReactionActorProjection>,
+    /// Whether the current account is among the actors.
+    pub mine: bool,
+}
+
 /// UI projection of one chat message.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 pub struct MessageProjection {
@@ -597,6 +617,10 @@ pub struct MessageProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub unverified_sender: Option<bool>,
+    /// Reactions ordered by when each reaction value first appeared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reactions: Option<Vec<ReactionProjection>>,
     /// Current delivery state.
     pub delivery: MessageDelivery,
     /// Optimistic send identity, when this is a placeholder.

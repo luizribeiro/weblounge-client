@@ -1076,6 +1076,7 @@ impl NetworkModel {
             nick_color_index: 0,
             highlighted: false,
             unverified_sender: None,
+            reactions: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
@@ -1105,6 +1106,7 @@ impl NetworkModel {
             nick_color_index: 0,
             highlighted: false,
             unverified_sender: None,
+            reactions: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: Vec::new(),
@@ -1183,6 +1185,7 @@ impl NetworkModel {
             nick_color_index: nick_color_index(state.casemapping(), &self.network.nickname),
             highlighted: false,
             unverified_sender: None,
+            reactions: None,
             delivery: MessageDelivery::Optimistic,
             local_send_id: Some(local_send_id),
             server_ids: Vec::new(),
@@ -2683,6 +2686,7 @@ impl NetworkModel {
                 && incoming.provisional_identity.is_none()
                 && (!verified_sender || identity_disagrees))
                 .then_some(true),
+            reactions: None,
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.clone().into_iter().collect(),

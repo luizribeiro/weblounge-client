@@ -306,6 +306,13 @@ describe("WorkerEngineClient", () => {
       authorship: "own",
       nick_color_index: 0,
       highlighted: false,
+      reactions: [
+        {
+          text: "👍",
+          actors: [{ nick: "mel", mine: false }],
+          mine: false,
+        },
+      ],
       delivery: "received",
       local_send_id: null,
       server_ids: [],

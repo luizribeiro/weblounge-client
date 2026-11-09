@@ -1160,6 +1160,9 @@ function decodeBuffer(value: unknown): BufferProjection | undefined {
 
 function decodeMessage(value: unknown): MessageProjection | undefined {
   const kind = isRecord(value) ? decodeMessageKind(value.kind) : undefined;
+  const reactions = isRecord(value)
+    ? decodeReactions(value.reactions)
+    : undefined;
   if (
     !isRecord(value) ||
     typeof value.id !== "number" ||
@@ -1174,6 +1177,7 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
       value.unverified_sender === undefined ||
       typeof value.unverified_sender === "boolean"
     ) ||
+    (value.reactions !== undefined && reactions === undefined) ||
     !isOneOf(value.delivery, [
       "received",
       "optimistic",
@@ -1203,12 +1207,42 @@ function decodeMessage(value: unknown): MessageProjection | undefined {
     ...(value.unverified_sender === undefined
       ? {}
       : { unverified_sender: value.unverified_sender }),
+    ...(reactions === undefined ? {} : { reactions }),
     delivery: value.delivery,
     local_send_id: value.local_send_id,
     server_ids: value.server_ids,
     server_time_ms: value.server_time_ms,
     received_at_ms: value.received_at_ms,
   };
+}
+
+function decodeReactions(
+  value: unknown,
+): NonNullable<MessageProjection["reactions"]> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const reactions: NonNullable<MessageProjection["reactions"]> = [];
+  for (const reaction of value) {
+    if (
+      !isRecord(reaction) ||
+      typeof reaction.text !== "string" ||
+      typeof reaction.mine !== "boolean" ||
+      !Array.isArray(reaction.actors)
+    )
+      return undefined;
+    const actors: { nick: string; mine: boolean }[] = [];
+    for (const actor of reaction.actors) {
+      if (
+        !isRecord(actor) ||
+        typeof actor.nick !== "string" ||
+        typeof actor.mine !== "boolean"
+      )
+        return undefined;
+      actors.push({ nick: actor.nick, mine: actor.mine });
+    }
+    reactions.push({ text: reaction.text, actors, mine: reaction.mine });
+  }
+  return reactions;
 }
 
 function decodeMessageKind(

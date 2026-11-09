@@ -4,6 +4,7 @@ import type { MessageAuthorship } from "./MessageAuthorship";
 import type { MessageDelivery } from "./MessageDelivery";
 import type { MessageId } from "./MessageId";
 import type { MessageKind } from "./MessageKind";
+import type { ReactionProjection } from "./ReactionProjection";
 
 /**
  * UI projection of one chat message.
@@ -45,6 +46,10 @@ highlighted: boolean,
  * Whether this direct-message row came from a sender whose identity was not verified.
  */
 unverified_sender?: boolean,
+/**
+ * Reactions ordered by when each reaction value first appeared.
+ */
+reactions?: Array<ReactionProjection>,
 /**
  * Current delivery state.
  */
