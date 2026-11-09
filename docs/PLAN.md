@@ -32,9 +32,10 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Repair the three layout-related CI regressions after phone transcript polish. The mobile-shell
   journey now asserts the signed-off nick header and deterministic same-minute continuation instead
   of the retired one-line phone row. Bot markers retain their accessible Lucide silhouette and nick
-  colour through a one-node CSS mask, restoring the 10k-member harness from 700 DOM nodes to 385
-  (384 before the icon change). The keyboard-motion audit now distinguishes mobile header grids
-  from desktop message columns; the reported outer-padding overlap had no painted-content overlap.
+  colour through a one-node CSS mask backed by a CSP-safe same-origin SVG, restoring the 10k-member
+  harness from 700 DOM nodes to 385 (384 before the icon change). The keyboard-motion audit now
+  distinguishes mobile header grids from desktop message columns; the reported outer-padding
+  overlap had no painted-content overlap.
 - [x] Keep the desktop composer field and Send button on one shared 40px single-line height. Their
   top and bottom edges are flush for one line, while multiline fields leave the unchanged-height
   Send pinned to the bottom. Chromium, Firefox and WebKit cover compact, cozy and comfortable

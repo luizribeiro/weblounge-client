@@ -1,7 +1,9 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { BETA_CONTENT_SECURITY_POLICY } from "../csp";
 import { IrcClient } from "./irc-client";
 import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
+import { screenshotPixelVariance } from "./transcript-paint";
 
 const defaultChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
@@ -159,12 +161,97 @@ test("keeps the desktop row while replacing its bot label", async ({
   }
 });
 
+test("paints message and member bot icons under the beta CSP", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    isPhoneProject(testInfo.project.name),
+    "runs in the desktop project",
+  );
+  const suffix = Date.now().toString(36).slice(-6);
+  const channel = `#bot-csp-${suffix}`;
+  const text = `bot CSP ${suffix}`;
+  const sender = await IrcClient.connect(
+    `csp-bot-${suffix}`,
+    "weblounge-bot",
+    "weblounge-bot-test",
+    channel,
+  );
+  try {
+    await sender.mode(sender.nickname, "+B");
+    await page.addInitScript(() => {
+      Reflect.set(globalThis, "botIconCspViolations", []);
+      document.addEventListener("securitypolicyviolation", (event) => {
+        const violations = Reflect.get(globalThis, "botIconCspViolations");
+        if (Array.isArray(violations))
+          violations.push({
+            blocked: event.blockedURI,
+            directive: event.violatedDirective,
+          });
+      });
+    });
+    await useDedicatedWorker(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const response = await page.goto("/?irc-password=weblounge-test");
+    expect(response?.headers()["content-security-policy"]).toBe(
+      BETA_CONTENT_SECURITY_POLICY,
+    );
+    const composer = page.getByRole("textbox", {
+      name: `Message ${defaultChannel}`,
+    });
+    await composer.fill(`/join ${channel}`);
+    await composer.press("Enter");
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await sender.privmsgConfirmed(channel, text);
+
+    const messageIcon = messageRow(page, text).getByRole("img", {
+      name: "bot",
+    });
+    await expect(messageIcon).toBeVisible();
+    await page.getByRole("button", { name: "Toggle member list" }).click();
+    const memberIcon = page
+      .getByRole("complementary", { name: `Members of ${channel}` })
+      .getByRole("button", {
+        name: `Open direct message with ${sender.nickname}`,
+      })
+      .getByRole("img", { name: "bot" });
+    await expect(memberIcon).toBeVisible();
+
+    for (const icon of [messageIcon, memberIcon]) {
+      expect(await maskImageOrigin(icon)).toBe(new URL(page.url()).origin);
+      expect(
+        await screenshotPixelVariance(
+          page,
+          await icon.screenshot({ scale: "css" }),
+        ),
+      ).toBeGreaterThan(1);
+    }
+    expect(
+      await page.evaluate(() =>
+        Reflect.get(globalThis, "botIconCspViolations"),
+      ),
+    ).toEqual([]);
+  } finally {
+    sender.close();
+  }
+});
+
 function isPhoneProject(name: string): boolean {
   return name === "android-phone-layout" || name === "webkit-phone-layout";
 }
 
 function messageRow(page: Page, text: string): Locator {
   return page.locator(`[data-message-row][data-message-text="${text}"]`);
+}
+
+function maskImageOrigin(icon: Locator): Promise<string> {
+  return icon.evaluate((element) => {
+    const value = getComputedStyle(element).maskImage;
+    const match = /^url\(["']?(.*?)["']?\)$/u.exec(value);
+    if (match?.[1] === undefined)
+      throw new Error(`bot icon has no mask image: ${value}`);
+    return new URL(match[1], location.href).origin;
+  });
 }
 
 function distanceFromBottom(page: Page): Promise<number> {
