@@ -857,17 +857,25 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
-  it("closes only its worker connection", async () => {
+  it("closes only its worker connection and rejects later requests", async () => {
     const { client, close } = fixture();
 
     await client.close();
 
     expect(close).toHaveBeenCalledOnce();
-    expect(() =>
-      client.send({
-        id: "late",
-        request: { type: "diagnostic", message: "late" },
-      }),
-    ).toThrow("closed");
+    const result = client.send({
+      id: "late",
+      request: { type: "diagnostic", message: "late" },
+    });
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).rejects.toThrow("closed");
+    const restarted = client.start({
+      build_id: "build-1",
+      client_id: "late-tab",
+      last_revision: null,
+      shell: "web",
+    });
+    expect(restarted).toBeInstanceOf(Promise);
+    await expect(restarted).rejects.toThrow("closed");
   });
 });

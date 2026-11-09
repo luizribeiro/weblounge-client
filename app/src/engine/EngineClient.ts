@@ -127,7 +127,8 @@ export class WorkerEngineClient implements EngineClient {
   }
 
   start(hello: Hello): Promise<void> {
-    this.#assertOpen();
+    if (this.#closed)
+      return Promise.reject(new Error("engine client is closed"));
     if (this.#startWaiter !== undefined) {
       return Promise.reject(new Error("engine handshake already pending"));
     }
@@ -141,7 +142,8 @@ export class WorkerEngineClient implements EngineClient {
   }
 
   send(request: EngineRequestEnvelope): Promise<CommandResult> {
-    this.#assertOpen();
+    if (this.#closed)
+      return Promise.reject(new Error("engine client is closed"));
     if (this.#requests.has(request.id)) {
       return Promise.reject(new Error(`duplicate request id: ${request.id}`));
     }
@@ -332,10 +334,6 @@ export class WorkerEngineClient implements EngineClient {
 
   #publish(message: EngineClientMessage): void {
     for (const listener of this.#listeners) listener(message);
-  }
-
-  #assertOpen(): void {
-    if (this.#closed) throw new Error("engine client is closed");
   }
 }
 
