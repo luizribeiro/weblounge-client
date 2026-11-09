@@ -77,8 +77,8 @@ export async function installFakeOAuth(page: Page): Promise<void> {
       callback.searchParams.set("code", code);
       callback.searchParams.set("state", state);
       await route.fulfill({
-        status: 302,
-        headers: { Location: callback.href },
+        contentType: "text/html",
+        body: `<!doctype html><meta http-equiv="refresh" content="0;url=${escapeAttribute(callback.href)}">`,
       });
       return;
     }
@@ -88,6 +88,10 @@ export async function installFakeOAuth(page: Page): Promise<void> {
     }
     await route.fulfill({ status: 404, headers });
   });
+}
+
+function escapeAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 }
 
 async function exchangeCode(
