@@ -51,6 +51,12 @@ The single place a fresh session reads to know where the project stands. Update 
   messages wrap inside the viewport. The shared accessible Lucide robot icon also replaces every
   textual BOT marker on desktop, in member rows and in composer suggestions; message-row geometry
   keeps its vertical centre within two pixels of the nick text in desktop and phone layouts.
+- [x] Make the restored pushed-DM journey model an actually closed app. It now closes the mounted
+  shell before delivery, injects from a controlled non-app page only after its service worker and
+  offline state are exact, and gates the IRC WebSocket until the cold provisional row is visible.
+  The pushed line is synthetic because the local insecure Ergo fixture cannot provide an
+  authoritative verified peer; secure push/history identity reconciliation remains covered by the
+  engine test. Fifty repeated cold journeys and the complete push-notification spec stay green.
 - [x] Land reactions/replies batch 1. Design 25 fixes the engine/protocol/UI boundaries and the
   signed-off interaction model. The engine now idempotently aggregates received live and history
   reaction additions/removals by target msgid using versioned removal tombstones, bounds facts that

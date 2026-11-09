@@ -732,34 +732,57 @@ test("keeps a restored pushed direct message verified through history", async ({
     process.env.WEBLOUNGE_E2E_ERGO !== "1",
     "requires the flake's local Ergo fixture",
   );
-  await page.addInitScript(() => {
+  let blockIrc = false;
+  let releaseBlockedIrc: (() => Promise<void>) | undefined;
+  await context.routeWebSocket("**/socket", async (socket) => {
+    if (blockIrc) {
+      releaseBlockedIrc = () =>
+        socket.close({
+          code: 1001,
+          reason: "closed-app push fixture complete",
+        });
+      return;
+    }
+    socket.connectToServer();
+  });
+  await context.addInitScript(() => {
     Object.defineProperty(globalThis, "SharedWorker", {
       configurable: true,
       value: undefined,
     });
   });
   await prepareServiceWorker(context, page);
-  await page.goto("/?irc-password=weblounge-test");
-  const bot = await IrcClient.connect(
-    "weblounge-bot",
-    "weblounge-bot",
-    "weblounge-bot-test",
-    "#weblounge-test",
-  );
   const text = `pushed direct before history ${Date.now()}`;
+  let bot: IrcClient | undefined;
+  let deliveryPage: Page | undefined;
   try {
+    bot = await IrcClient.connect(
+      "weblounge-bot",
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    await page.goto("/?irc-password=weblounge-test");
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    await page.close();
+    blockIrc = true;
+    deliveryPage = await context.newPage();
+    await deliveryPage.goto("/config.json");
+    await expect
+      .poll(() => pushDeliveryPageState(deliveryPage))
+      .toEqual({ controller: "activated", online: true });
     await context.setOffline(true);
-    await expect(page.locator('[data-network-state="online"]')).toHaveCount(0);
-    const echoed = await bot.privmsgConfirmed("weblounge", text);
-    const line = echoed.replace(/^@/u, "@account=weblounge-bot;");
-    const envelope = await seedRouteAndEncrypt(page, line, {
+    await expect
+      .poll(() => pushDeliveryPageState(deliveryPage))
+      .toEqual({ controller: "activated", online: false });
+    const line = `@account=weblounge-bot;time=${new Date().toISOString()};msgid=push-${Date.now()} :weblounge-bot!bot@localhost PRIVMSG weblounge :${text}`;
+    const envelope = await seedRouteAndEncrypt(deliveryPage, line, {
       networkLabel: "Local Ergo",
       nickname: "weblounge",
     });
-    await deliverPush(context, page, envelope);
+    await deliverPush(context, deliveryPage, envelope);
     await expect
-      .poll(() => notifications(page))
+      .poll(() => notifications(deliveryPage))
       .toEqual([
         {
           title: "weblounge-bot",
@@ -768,8 +791,8 @@ test("keeps a restored pushed direct message verified through history", async ({
           route: "/Local%20Ergo/@weblounge-bot",
         },
       ]);
-
-    await page.close();
+    await deliveryPage.close();
+    deliveryPage = undefined;
     const coldPage = await context.newPage();
     let documentRequests = 0;
     coldPage.on("request", (request) => {
@@ -791,12 +814,17 @@ test("keeps a restored pushed direct message verified through history", async ({
     await expect(row).toBeVisible();
     await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
     await expect(directBuffer).toHaveAttribute("data-unread", "0");
-    await expect(coldPage.getByRole("note")).toHaveCount(0);
+    await expect(coldPage.locator("[data-direct-identity-banner]")).toHaveCount(
+      0,
+    );
     await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
       0,
     );
 
+    blockIrc = false;
     await context.setOffline(false);
+    await releaseBlockedIrc?.();
+    releaseBlockedIrc = undefined;
     await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
       1,
     );
@@ -807,8 +835,13 @@ test("keeps a restored pushed direct message verified through history", async ({
     await expect(coldPage.getByText(text, { exact: true })).toHaveCount(1);
     await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
   } finally {
+    blockIrc = false;
     await context.setOffline(false);
-    bot.close();
+    await releaseBlockedIrc?.();
+    if (deliveryPage !== undefined && !deliveryPage.isClosed()) {
+      await deliveryPage.close();
+    }
+    bot?.close();
   }
 });
 
@@ -906,6 +939,16 @@ async function notifications(page: Page, scope = "/") {
           : "",
     }));
   }, scope);
+}
+
+async function pushDeliveryPageState(page: Page): Promise<{
+  readonly controller: string | null;
+  readonly online: boolean;
+}> {
+  return page.evaluate(() => ({
+    controller: navigator.serviceWorker.controller?.state ?? null,
+    online: navigator.onLine,
+  }));
 }
 
 async function preparePushEventHarness(
