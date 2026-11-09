@@ -1,4 +1,10 @@
-import { createEffect, createMemo, createSignal, type JSX } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  type JSX,
+  onCleanup,
+} from "solid-js";
 import type {
   CommandSpec,
   CompletionCandidate,
@@ -54,6 +60,7 @@ export function Composer(props: ComposerProps) {
   let textarea: HTMLTextAreaElement | undefined;
   let confirmButton: HTMLButtonElement | undefined;
   let composing = false;
+  let caretScrollFrame: number | undefined;
   let pendingTabInput: string | undefined;
   let tabCycle: TabCycle | undefined;
   const touchFocus = new TouchTapGesture();
@@ -97,7 +104,13 @@ export function Composer(props: ComposerProps) {
   };
   const resize = () => {
     if (textarea === undefined) return;
+    if (caretScrollFrame !== undefined) {
+      cancelAnimationFrame(caretScrollFrame);
+      caretScrollFrame = undefined;
+    }
     const previousHeight = textarea.style.height;
+    const previousScrollTop = textarea.scrollTop;
+    const caretIsAtEnd = textarea.selectionEnd === textarea.value.length;
     textarea.style.height = "0";
     const nextHeight = `${textarea.scrollHeight}px`;
     if (nextHeight !== previousHeight)
@@ -105,11 +118,36 @@ export function Composer(props: ComposerProps) {
         new Event(composerGeometryWillChangeEvent, { bubbles: true }),
       );
     textarea.style.height = nextHeight;
+    const caretNeedsDeferredReveal =
+      caretIsAtEnd &&
+      platform.environment().input === "touch" &&
+      textarea.scrollHeight > textarea.clientHeight &&
+      textarea === document.activeElement;
+    textarea.scrollTop = caretIsAtEnd
+      ? textarea.scrollHeight
+      : previousScrollTop;
+    if (caretNeedsDeferredReveal) {
+      const resized = textarea;
+      // WebKit performs its native caret reveal after autosizing, so win the
+      // final pre-paint scroll without overriding a later selection change.
+      caretScrollFrame = requestAnimationFrame(() => {
+        caretScrollFrame = undefined;
+        if (
+          resized.isConnected &&
+          resized.selectionEnd === resized.value.length
+        )
+          resized.scrollTop = resized.scrollHeight;
+      });
+    }
     if (nextHeight !== previousHeight)
       textarea.dispatchEvent(
         new Event(composerGeometryChangeEvent, { bubbles: true }),
       );
   };
+
+  onCleanup(() => {
+    if (caretScrollFrame !== undefined) cancelAnimationFrame(caretScrollFrame);
+  });
 
   createEffect(() => {
     const value = text();

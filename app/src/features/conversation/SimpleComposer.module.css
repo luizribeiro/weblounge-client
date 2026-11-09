@@ -50,6 +50,8 @@
 }
 
 .input {
+  --wl-composer-input-padding-block: 9px;
+
   background: var(--wl-color-input-bg);
   border: 1px solid var(--wl-color-border);
   border-radius: var(--wl-radius-composer);
@@ -57,7 +59,7 @@
   flex: 1;
   font: inherit;
   min-width: 0;
-  padding: 9px 11px;
+  padding: var(--wl-composer-input-padding-block) 11px;
   resize: none;
   width: 100%;
 }
@@ -226,6 +228,12 @@ textarea.input {
   border: 0;
   border-radius: 0;
   line-height: 1.4;
+  max-height: calc(
+    6.5em +
+    var(--wl-composer-input-padding-block) +
+    var(--wl-composer-input-padding-block)
+  );
+  padding-block: var(--wl-composer-input-padding-block);
   padding-inline: 11px 0;
 }
 

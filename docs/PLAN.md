@@ -877,6 +877,9 @@ Order: finish 6c and 6d, then 8, then the dogfood slice, then 7d/7f/8b, then bet
   - [x] Anchor transcript rows when the composer grows or shrinks. The live edge follows the
     composer boundary before the next frame while a scrolled-up row keeps its screen position;
     desktop and mobile cover one-to-three-line growth, deletion, and send clearing (#80).
+  - [x] Keep capped phone composer lines inside equal block padding and preserve the caret line
+    through autosize and WebKit's deferred native reveal. Chromium and mobile WebKit verify the
+    final painted geometry after keyboard-entered multiline input.
   - [x] Keep live transcripts pinned through viewport height, width, and row-measurement changes
     while preserving the visible anchor after the reader scrolls away.
   - [x] Re-pin a root-owned live transcript synchronously on every app-geometry commit, after

@@ -1,9 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, test } from "@playwright/test";
+import { waitForStableGeometry } from "./stable-geometry";
 
 const screenshotDirectory = path.join(process.cwd(), "e2e", "screenshots");
 const sixLines = ["one", "two", "three", "four", "five", "six"].join("\n");
+const fiveLines = ["one", "two", "three", "four", "five"].join("\n");
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -34,7 +36,12 @@ test("keeps the phone Send control inside a capped composer", async ({
     await expect(send).toHaveCSS("opacity", "1");
     await input.fill("phone composer one line");
     await capture(page, "phone-composer-after-one-line.png");
-    await input.fill(sixLines);
+    await input.fill(fiveLines);
+    await input.press("Shift+Enter");
+    await input.pressSequentially("six");
+    await waitForStableGeometry(input);
+    await expectLastVisibleLineFullyInside(input, 6);
+    await expectLineFullyVisible(input, 5);
     await capture(page, "phone-composer-after-six-lines.png");
     await input.fill("phone composer one line");
 
@@ -51,6 +58,9 @@ test("keeps the phone Send control inside a capped composer", async ({
     );
 
     await input.fill(sixLines);
+    await waitForStableGeometry(input);
+    await expectLastVisibleLineFullyInside(input, 6);
+    await expectLineFullyVisible(input, 5);
     const cappedHeight = await field.evaluate(
       (element) => element.getBoundingClientRect().height,
     );
@@ -105,6 +115,60 @@ test("bottom-aligns desktop Send with a multiline field", async ({
     await context.close();
   }
 });
+
+interface LineGeometry {
+  bottom: number;
+  contentBottom: number;
+  contentTop: number;
+  top: number;
+}
+
+async function lineGeometry(
+  input: Locator,
+  lineIndex: number,
+): Promise<LineGeometry> {
+  return input.evaluate((element, index) => {
+    const textarea = element as HTMLTextAreaElement;
+    const style = getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    const paddingTop = Number.parseFloat(style.paddingTop);
+    const paddingBottom = Number.parseFloat(style.paddingBottom);
+    const top = paddingTop + index * lineHeight - textarea.scrollTop;
+    return {
+      bottom: top + lineHeight,
+      contentBottom: textarea.clientHeight - paddingBottom,
+      contentTop: paddingTop,
+      top,
+    };
+  }, lineIndex);
+}
+
+async function expectLastVisibleLineFullyInside(
+  input: Locator,
+  lineCount: number,
+): Promise<void> {
+  const lines = await Promise.all(
+    Array.from({ length: lineCount }, (_, index) => lineGeometry(input, index)),
+  );
+  const visible = lines.filter(
+    (line) =>
+      line.bottom > line.contentTop + 0.5 &&
+      line.top < line.contentBottom - 0.5,
+  );
+  const last = visible.at(-1);
+  expect(last).toBeDefined();
+  if (last === undefined) return;
+  expect(last.bottom - last.contentBottom).toBeLessThanOrEqual(0.5);
+}
+
+async function expectLineFullyVisible(
+  input: Locator,
+  lineIndex: number,
+): Promise<void> {
+  const line = await lineGeometry(input, lineIndex);
+  expect(line.bottom - line.contentBottom).toBeLessThanOrEqual(0.5);
+  expect(line.contentTop - line.top).toBeLessThanOrEqual(0.5);
+}
 
 async function expectInside(field: Locator, control: Locator): Promise<void> {
   const [fieldBox, controlBox] = await Promise.all([
