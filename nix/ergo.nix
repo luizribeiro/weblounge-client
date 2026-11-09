@@ -26,6 +26,7 @@ let
       .channels.max-channels-per-client = 8 |
       .history.enabled = true |
       .history.persistent.enabled = false |
+      .history.tagmsg-storage.whitelist += ["+draft/unreact", "+unreact"] |
       .languages.enabled = false |
       .api.enabled = true |
       .api.listener = "127.0.0.1:8089" |
