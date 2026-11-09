@@ -45,6 +45,7 @@ import {
   estimateMessageHeight,
   messageSizeRevision,
 } from "./message-size-estimate";
+import { startsMobileMessageGroup } from "./mobile-message-group";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionChips } from "./ReactionChips";
 
@@ -87,6 +88,7 @@ type TimelineRow =
       readonly kind: "message";
       readonly key: string;
       readonly message: MessageProjection;
+      readonly startsMobileGroup: boolean;
     };
 
 type NoticeMessage = MessageProjection & {
@@ -709,6 +711,7 @@ function TimelineRowView(props: {
                 onOpenExternal={props.onOpenExternal}
                 onRetry={props.onRetry}
                 presentation={props.presentation}
+                startsMobileGroup={row.startsMobileGroup}
               />
             )}
           </Match>
@@ -747,6 +750,7 @@ function MessageRow(props: {
   readonly onOpenExternal?: ((href: string) => void) | undefined;
   readonly onRetry?: ((localSendId: number) => void) | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
+  readonly startsMobileGroup: boolean;
 }) {
   const message = props.message;
   if (isNoticeMessage(message))
@@ -764,6 +768,7 @@ function MessageRow(props: {
       class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
       data-delivery={message.delivery}
       data-message-row="true"
+      data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={message.text}
       data-unverified-sender={message.unverified_sender === true || undefined}
     >
@@ -986,6 +991,7 @@ function timelineRows(
   const rows: TimelineRow[] = [];
   let day = "";
   let newInserted = false;
+  let previousGroupMessage: MessageProjection | undefined;
   const firstUnread = unreadStartId(messages, readAtMs);
   const items = [
     ...messages.map((value) => ({
@@ -1007,6 +1013,7 @@ function timelineRows(
     if (nextDay !== day) {
       day = nextDay;
       rows.push({ kind: "day", key: `day-${day}`, label: formatDay(time) });
+      previousGroupMessage = undefined;
     }
     if (
       !newInserted &&
@@ -1015,19 +1022,28 @@ function timelineRows(
     ) {
       rows.push({ kind: "new", key: `new-before-${firstUnread}` });
       newInserted = true;
+      previousGroupMessage = undefined;
     }
-    if (item.kind === "message")
+    if (item.kind === "message") {
       rows.push({
         kind: "message",
         key: `message-${item.value.id}`,
         message: item.value,
+        startsMobileGroup: startsMobileMessageGroup(
+          previousGroupMessage,
+          item.value,
+        ),
       });
-    else
+      previousGroupMessage =
+        item.value.kind === "text" ? item.value : undefined;
+    } else {
       rows.push({
         kind: "membership",
         key: `membership-${item.value.id}`,
         membership: item.value,
       });
+      previousGroupMessage = undefined;
+    }
   }
   return rows;
 }
