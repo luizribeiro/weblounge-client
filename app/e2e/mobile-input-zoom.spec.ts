@@ -543,6 +543,7 @@ test.describe("mobile text field zoom", () => {
       await expect(last).toBeVisible();
       const messages = page.locator("[data-message-list]");
       await messages.press("End");
+      await waitForStableGeometry(messages, "[data-message-row]");
       const openHeight = (await page.evaluate(() => innerHeight)) - 358;
 
       await pauseOpeningMotion(page, openHeight);

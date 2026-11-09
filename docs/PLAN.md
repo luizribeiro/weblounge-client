@@ -30,6 +30,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Reset each pane's qualified read dwell when the retained foreground-exit epoch changes, so a
   coalesced hidden-to-visible transition cannot mark a delayed peer arrival read before its New
   divider freezes.
+- [x] Make the mobile keyboard-motion harness wait for the browser state it samples. Transition
+  collection now starts only after both composer and transcript animations mount, and the paused
+  paint audit waits for stable virtual-row geometry before cloning the transcript snapshot.
 - [x] Make the member-drawer handoff audit independent of WebKit's unsynchronized compositor
   geometry and JavaScript clock. Released returns and closes now compare the generated transition
   start keyframe with the transform held under the finger at device-pixel precision, while the real
