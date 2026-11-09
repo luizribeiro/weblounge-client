@@ -115,8 +115,11 @@ new `DeviceId` and device secret. An existing live device updates changed target
 upsert again. Sign-out calls `DELETE /v1/devices/:id`. Its platform target is a browser
 `PushSubscription` (later an APNs token, FCM token or UnifiedPush endpoint). For each home it owns a **route**
 (`https://push.weblounge.org/v1/r/<128-bit random id>`) with its own **P-256 key pair and auth
-secret**. The private key stays on the device: a non-extractable `CryptoKey` in IndexedDB on the
-web, the Keychain or Android Keystore natively.
+secret**. The private key stays on the device, in the Keychain or Android Keystore natively. On the
+web, IndexedDB stores its exported PKCS#8 bytes and the worker imports a
+non-extractable key for each decrypt. WebKit wraps structured-cloned `CryptoKey`s with an iOS
+Keychain key that is unavailable while the phone is locked, aborting route reads. Raw bytes remain
+readable while locked; the accepted trade-off is that script running in our origin can copy them.
 
 **Route lifecycle.** Idempotent `POST /v1/devices/:id/routes` carries the home's VAPID public key
 and the page's optional current route id. The client already has the home key from ISUPPORT (papo
@@ -240,9 +243,8 @@ default of 0, so pushes are never delayed by the home.
 handlers. On `push`, inside one `waitUntil`:
 
 1. Look up the route (network label, buffer map) in the `weblounge-push-v2` IndexedDB database.
-2. Decrypt the inner payload with **WebCrypto**: ECDH with the non-extractable key, HKDF, AES-GCM
-   (about 80 lines of TS). Rust can't reach a non-extractable key, so the Rust `ece` path is for
-   native targets only.
+2. Import the stored PKCS#8 bytes as a non-extractable ECDH key, then decrypt the inner payload with
+   **WebCrypto** using ECDH, HKDF and AES-GCM (about 80 lines of TS).
 3. Parse the plaintext line with `push-payload` compiled to wasm (see Types).
 4. For a visible payload, establish one successful `showNotification` before any further database
    work. A rejected presentation retries with 50–250 ms backoff inside one receipt-anchored
@@ -495,8 +497,7 @@ Where rules live is deferred (see Decisions).
   shows stored pushed messages and deduplicates them by `msgid`; owns badge counts and the mention classifier; never holds a private key or talks to the relay.
 - **Platform** (`app/src/platform/push/` on the web): asks for OS permission (from a user gesture
   on iOS and Firefox); creates the push subscription; talks to the relay; generates and stores
-  route keys in its own `weblounge-push-v2` database, since the engine's byte store can't hold live
-  `CryptoKey`s; holds the lease; sets the app badge.
+  route-key bytes in its own `weblounge-push-v2` database; holds the lease; sets the app badge.
 - **UI:** one "Turn on notifications" affordance, shown when a network has `ConfigurePushAction`
   and this device hasn't decided; on iOS only in an installed PWA (Safari tabs get "Add to Home
   Screen to get notifications"). Each network's info/settings shows its status: "on", "turned off
@@ -595,12 +596,17 @@ keep the 30-second heartbeat.
 
 The page owns `weblounge-push-v2`, with one route record keyed by pinned home VAPID key. A bounded,
 failure-tolerant service-worker update wait precedes push setup. The page and current worker create
-the new database directly, then copy routes and badge state by opening deployed `weblounge-push`
-without requesting a version change. A deployed page may therefore retain its old connection
+the new database directly, but only the unlocked page copies routes and badge state by opening
+deployed `weblounge-push` without requesting a version change. A deployed page may therefore retain its old connection
 without blocking current push delivery; a missing old database is also valid. Each record
 contains its relay device id, current `NetworkId` and label, relay endpoint, public key, auth secret
-and a non-extractable ECDH private `CryptoKey`. Each route receives independently generated P-256
-and 16-byte auth material. The one-time copy migrates route-id-keyed records deployed in build
+and PKCS#8 ECDH private-key bytes. Each route receives independently generated P-256 and 16-byte
+auth material. A legacy `CryptoKey` record is replaced immediately with key-free migration metadata
+when the unlocked page reads it. The ordinary route lifecycle then omits the old route id, so the
+relay creates one probing replacement and retires the old route; the engine exact-unregisters the
+retired endpoint, registers the replacement at the home, and only successful REGISTER activates it.
+The stored bytes make later requirements reuse that route, so launch cannot loop or create a second
+replacement. The one-time copy migrates route-id-keyed records deployed in build
 `3252cde0a0221c58dc7f54e78efeb49cf226efd5` by keeping one record per home, preferring an active
 record over a retiring duplicate and then a complete record. Records without a device id or label
 are exact-unregistered and removed on first convergence.
@@ -620,7 +626,7 @@ re-upserts; 401 enters hosted reauthorization.
 The relay owns reconciliation and retires every duplicate live route for the same device and home.
 Its dead-endpoint drain returns at most five endpoints for the requested home VAPID key. The page
 acknowledges only after the engine has exact-unregistered them, so failures are re-offered before a
-later REGISTER instead of losing cleanup work. Local legacy route keys likewise remain until the
+later REGISTER instead of losing cleanup work. Key-free legacy route metadata remains until the
 relay convergence call succeeds. Hosted sign-out attempts every exact IRC unregister but always
 deletes the relay device and local records even when IRC is unavailable.
 
@@ -705,8 +711,8 @@ and keeps the existing same-origin GET-only fetch boundary. `crates/push-payload
 Wasm is 46,764 bytes under a build-enforced 128 KiB ceiling; both bootstrap and Wasm are explicit
 precache entries.
 
-Push delivery is serialized. It reads the route's non-extractable P-256 key through the route-id
-index, derives the RFC 8291 content key and nonce with WebCrypto ECDH and HKDF, decrypts AES-GCM,
+Push delivery is serialized. It reads the route's PKCS#8 bytes through the route-id index, imports
+a non-extractable P-256 key, derives the RFC 8291 content key and nonce with WebCrypto ECDH and HKDF, decrypts AES-GCM,
 and sends only the plaintext IRC line to the parser. Visible chat lines carry the sender, body,
 stable `<networkLabel>/<buffer>` tag and buffer route. The worker presents that notification before
 opening the engine database for message handoff or the push database for badge persistence.
@@ -1000,6 +1006,10 @@ migration remain a v1 prerequisite above.
 - **Upgrade guard.** The captured Ergo and soju payload fixtures are recorded from that end-to-end
   run and checked in. The `push-payload` tests over them and the full chain run in CI on every
   push, so every papo or `papo-proto` bump commit must pass both.
+- **Locked-device guard.** CI cannot simulate iOS Keychain protection while an iPhone is locked.
+  Unit coverage recursively rejects every `CryptoKey` in a stored route, and the full-chain journey
+  seeds a legacy key, launches the page, observes one replacement registration and decrypts the next
+  delivered push from its stored bytes. Final locked-screen verification remains on the iPhone.
 - **Playwright** (Chromium, built app; no service worker in dev): Playwright's Chromium has no push
   service, so `PushManager.prototype.subscribe` is stubbed with `addInitScript` to return a fake
   subscription, and delivery uses CDP `ServiceWorker.deliverPushMessage` with the sink's envelope.
