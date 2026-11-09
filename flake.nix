@@ -73,6 +73,16 @@
             ./fixtures/read-state
           ];
         };
+        cargoTestSource = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./Cargo.lock
+            ./Cargo.toml
+            ./app/src
+            ./crates
+            ./fixtures/read-state
+          ];
+        };
         cargoArgs = {
           src = cargoSource;
           strictDeps = true;
@@ -673,6 +683,7 @@
           cargo-test = craneLib.cargoTest (
             checkCargoArgs
             // {
+              src = cargoTestSource;
               cargoArtifacts = checkCargoArtifacts;
               cargoTestExtraArgs = "--workspace";
             }
