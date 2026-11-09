@@ -19,7 +19,7 @@ export interface StoredPushRoute {
   readonly endpoint: string;
   readonly p256dh: string;
   readonly auth: string;
-  readonly privateKey: CryptoKey;
+  readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
   readonly target?: WebPushTarget;
   readonly active?: boolean;
   readonly needsReregistration?: boolean;
@@ -37,7 +37,7 @@ export interface PushRouteStore {
 export interface RouteKeys {
   readonly p256dh: string;
   readonly auth: string;
-  readonly privateKey: CryptoKey;
+  readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
 }
 
 export async function createRouteKeys(
@@ -45,19 +45,19 @@ export async function createRouteKeys(
 ): Promise<RouteKeys> {
   const pair = (await webCrypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
-    false,
+    true,
     ["deriveBits"],
   )) as CryptoKeyPair;
-  if (pair.privateKey.extractable) {
-    throw new Error("route private key must be non-extractable");
-  }
-  const rawPublicKey = await webCrypto.subtle.exportKey("raw", pair.publicKey);
+  const [rawPublicKey, privateKeyPkcs8] = await Promise.all([
+    webCrypto.subtle.exportKey("raw", pair.publicKey),
+    webCrypto.subtle.exportKey("pkcs8", pair.privateKey),
+  ]);
   const auth = new Uint8Array(16);
   webCrypto.getRandomValues(auth);
   return {
     p256dh: encodeBase64Url(rawPublicKey),
     auth: encodeBase64Url(auth),
-    privateKey: pair.privateKey,
+    privateKeyPkcs8: new Uint8Array(privateKeyPkcs8),
   };
 }
 
@@ -105,7 +105,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     const database = await openDatabase(this.#factory);
     try {
       const transaction = database.transaction(pushRoutesStore, "readwrite");
-      transaction.objectStore(pushRoutesStore).put(route);
+      transaction.objectStore(pushRoutesStore).put(encodeRoute(route));
       await transactionDone(transaction, pageDatabaseDeadlineMs);
     } finally {
       database.close();
@@ -167,17 +167,20 @@ function decodeRoute(value: unknown): StoredPushRoute {
     typeof value.p256dh !== "string" ||
     !("auth" in value) ||
     typeof value.auth !== "string" ||
-    !("privateKey" in value) ||
-    !(value.privateKey instanceof CryptoKey) ||
     typeof networkLabel !== "string" ||
     typeof nickname !== "string"
   ) {
     throw new Error("push database contains an invalid route");
   }
-  return {
-    ...(value as Omit<StoredPushRoute, "networkLabel" | "nickname">),
+  const metadata = {
+    networkId: value.networkId,
     networkLabel,
     nickname,
+    vapid: value.vapid,
+    routeId: value.routeId,
+    endpoint: value.endpoint,
+    p256dh: value.p256dh,
+    auth: value.auth,
     ...("needsReregistration" in value && value.needsReregistration === true
       ? { needsReregistration: true }
       : {}),
@@ -191,6 +194,48 @@ function decodeRoute(value: unknown): StoredPushRoute {
       ? { target: value.target }
       : {}),
     ...("active" in value && value.active === true ? { active: true } : {}),
+  };
+  const privateKeyPkcs8 =
+    "privateKeyPkcs8" in value
+      ? decodePrivateKeyBytes(value.privateKeyPkcs8)
+      : undefined;
+  if (privateKeyPkcs8 !== undefined) {
+    return { ...metadata, privateKeyPkcs8 };
+  }
+  throw new Error("push database contains an invalid route key");
+}
+
+function decodePrivateKeyBytes(
+  value: unknown,
+): Uint8Array<ArrayBuffer> | undefined {
+  if (
+    !ArrayBuffer.isView(value) ||
+    value.constructor.name !== "Uint8Array" ||
+    value.byteLength === 0
+  ) {
+    return undefined;
+  }
+  return Uint8Array.from(value as Uint8Array);
+}
+
+function encodeRoute(route: StoredPushRoute): StoredPushRoute {
+  return {
+    networkId: route.networkId,
+    networkLabel: route.networkLabel,
+    nickname: route.nickname,
+    vapid: route.vapid,
+    routeId: route.routeId,
+    endpoint: route.endpoint,
+    p256dh: route.p256dh,
+    auth: route.auth,
+    privateKeyPkcs8: route.privateKeyPkcs8.slice(),
+    ...(route.deviceId === undefined ? {} : { deviceId: route.deviceId }),
+    ...(route.target === undefined ? {} : { target: route.target }),
+    ...(route.active === true ? { active: true } : {}),
+    ...(route.needsReregistration === true
+      ? { needsReregistration: true }
+      : {}),
+    ...(route.retiring === true ? { retiring: true } : {}),
   };
 }
 

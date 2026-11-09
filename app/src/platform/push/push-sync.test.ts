@@ -184,7 +184,7 @@ function fixture() {
     generateRouteKeys: async () => ({
       p256dh: "route-public-key",
       auth: "route-auth",
-      privateKey: {} as CryptoKey,
+      privateKeyPkcs8: Uint8Array.of(1, 2, 3),
     }),
     exclusive: async (_name, work) => work(),
     retry: (work, delay) => {
@@ -228,7 +228,7 @@ function route(overrides: Partial<StoredPushRoute> = {}): StoredPushRoute {
     endpoint: `${relayOrigin}/v1/r/route-1`,
     p256dh: "route-public-key",
     auth: "route-auth",
-    privateKey: {} as CryptoKey,
+    privateKeyPkcs8: Uint8Array.of(1, 2, 3),
     ...overrides,
   };
 }

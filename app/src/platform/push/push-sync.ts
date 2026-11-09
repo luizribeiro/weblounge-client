@@ -705,7 +705,7 @@ function storedRoute(
     endpoint: route.endpoint,
     p256dh: keys.p256dh,
     auth: keys.auth,
-    privateKey: keys.privateKey,
+    privateKeyPkcs8: keys.privateKeyPkcs8,
     target,
   };
 }
