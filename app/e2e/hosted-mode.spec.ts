@@ -268,6 +268,8 @@ test("falls back to PKCE when the member session needs login", async ({
 test("takes a signed-out member session through hosted sign-in to #lounge", async ({
   page,
 }) => {
+  const unexpectedFailureScreens: string[] = [];
+  await observeUnexpectedFailureScreens(page, unexpectedFailureScreens);
   const closedClientErrors: Array<{
     readonly detail: string;
     readonly source: "console" | "pageerror";
@@ -307,7 +309,11 @@ test("takes a signed-out member session through hosted sign-in to #lounge", asyn
 
   await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
   await expect(page).toHaveURL(redirectUri());
+  await expect(
+    page.getByRole("alert", { name: "Something went wrong." }),
+  ).toHaveCount(0);
   await page.close();
+  expect(unexpectedFailureScreens).toEqual([]);
   expect(closedClientErrors).toEqual([]);
 });
 
@@ -2180,5 +2186,35 @@ async function disableSharedWorker(page: Page): Promise<void> {
       configurable: true,
       value: undefined,
     });
+  });
+}
+
+async function observeUnexpectedFailureScreens(
+  page: Page,
+  observed: string[],
+): Promise<void> {
+  await page.exposeFunction(
+    "recordUnexpectedFailureScreen",
+    (message: string) => observed.push(message),
+  );
+  await page.addInitScript(() => {
+    const reported = new WeakSet<Element>();
+    const inspect = () => {
+      for (const alert of document.querySelectorAll(
+        '[data-hosted-status] [role="alert"]',
+      )) {
+        const message = alert.textContent?.trim();
+        if (message !== "Something went wrong." || reported.has(alert))
+          continue;
+        reported.add(alert);
+        const record = Reflect.get(globalThis, "recordUnexpectedFailureScreen");
+        if (typeof record === "function") void record(message);
+      }
+    };
+    new MutationObserver(inspect).observe(document, {
+      childList: true,
+      subtree: true,
+    });
+    inspect();
   });
 }
