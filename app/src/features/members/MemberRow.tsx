@@ -1,6 +1,7 @@
 import type { EngineToUi } from "../../engine/protocol";
 import { t } from "../../strings";
 import { nickPaletteSize } from "../../theme/theme-registry";
+import { BotIcon } from "../../ui/BotIcon";
 import { Line } from "../../ui/Line";
 import styles from "./MemberRow.module.css";
 
@@ -56,7 +57,7 @@ export function MemberRow(props: MemberRowProps) {
         </Line>
         {props.member.bot === true && (
           <span class={styles.bot} data-member-trailing="true">
-            {t("common.bot")}
+            <BotIcon color={color()} />
           </span>
         )}
         {props.member.is_you && (

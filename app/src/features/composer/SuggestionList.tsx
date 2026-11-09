@@ -3,6 +3,7 @@ import type { CompletionCandidate } from "../../engine/protocol";
 import { TouchTapGesture } from "../../platform/focus-without-pan";
 import { t, translate } from "../../strings";
 import { nickPaletteSize } from "../../theme/theme-registry";
+import { BotIcon } from "../../ui/BotIcon";
 import { Line } from "../../ui/Line";
 import styles from "../conversation/SimpleComposer.module.css";
 
@@ -86,7 +87,7 @@ export function SuggestionList(props: SuggestionListProps) {
                     {candidateLabel(candidate())}
                   </span>
                   {candidateIsBot(candidate()) && (
-                    <span class={styles.bot}>{t("common.bot")}</span>
+                    <BotIcon color={candidateColor(candidate())} />
                   )}
                 </Line>
                 {candidateDetail(candidate()) !== null && (
@@ -171,8 +172,14 @@ function candidateDetail(
 function candidateStyle(candidate: CompletionCandidate | undefined) {
   return candidate?.type === "person"
     ? {
-        color: `var(--wl-nick-${candidate.nick_color_index % nickPaletteSize})`,
+        color: candidateColor(candidate),
         opacity: candidate.away ? 0.62 : 1,
       }
     : undefined;
+}
+
+function candidateColor(candidate: CompletionCandidate | undefined): string {
+  return candidate?.type === "person"
+    ? `var(--wl-nick-${candidate.nick_color_index % nickPaletteSize})`
+    : "currentcolor";
 }

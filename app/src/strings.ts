@@ -18,6 +18,7 @@ export const messages = {
   "action.switcher": "Jump to",
   "common.away": "Away",
   "common.bot": "BOT",
+  "common.bot_icon": "bot",
   "common.cancel": "Cancel",
   "common.channel": "Channel",
   "common.send": "Send",

@@ -153,16 +153,8 @@
 .nickAction:active {
   background: var(--wl-color-selection);
 }
-.bot {
-  border: 1px solid currentcolor;
-  border-radius: 3px;
-  color: var(--wl-color-muted);
-  flex: none;
-  font-family: var(--wl-font-mono);
-  font-size: 8px;
-  line-height: 1.2;
+.botIcon {
   margin-left: 4px;
-  padding: 0 2px;
 }
 .text {
   min-width: 0;

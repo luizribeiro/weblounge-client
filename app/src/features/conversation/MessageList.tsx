@@ -26,6 +26,7 @@ import {
   appGeometryChangeEvent,
 } from "../../platform/viewport-geometry";
 import { t } from "../../strings";
+import { BotIcon } from "../../ui/BotIcon";
 import type { CopyRow } from "../../ui/copy-rows";
 import { copySelectedRows } from "../../ui/copy-selection";
 import { formatTime, formattedTimeColumnWidth } from "../../ui/format-time";
@@ -46,6 +47,7 @@ import {
   messageSizeRevision,
 } from "./message-size-estimate";
 import { startsMobileMessageGroup } from "./mobile-message-group";
+import { nickColor } from "./nick-color";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionChips } from "./ReactionChips";
 
@@ -826,7 +828,14 @@ function MessageRow(props: {
               />
             </span>
             {message.bot === true && (
-              <span class={styles.bot}>{t("common.bot")}</span>
+              <BotIcon
+                class={styles.botIcon}
+                color={
+                  message.authorship === "own"
+                    ? "var(--wl-color-self-nick)"
+                    : nickColor(message.nick_color_index)
+                }
+              />
             )}
             <UnverifiedSenderMark message={message} />
           </Line>

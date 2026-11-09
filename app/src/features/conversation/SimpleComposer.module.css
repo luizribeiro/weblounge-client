@@ -123,15 +123,6 @@ textarea.input {
   color: var(--wl-color-muted);
 }
 
-.bot {
-  border: 1px solid var(--wl-color-border);
-  border-radius: var(--wl-radius-pill);
-  color: var(--wl-color-muted);
-  font-family: var(--wl-font-mono);
-  font-size: var(--wl-font-section-size);
-  padding-inline: 3px;
-}
-
 @keyframes suggestion-rise {
   from {
     transform: translateY(4px);

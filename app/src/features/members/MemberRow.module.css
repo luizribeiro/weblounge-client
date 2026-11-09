@@ -66,14 +66,7 @@
 }
 
 .bot {
-  border: 1px solid var(--wl-color-border);
-  border-radius: var(--wl-radius-pill);
-  color: var(--wl-color-muted);
-  font-family: var(--wl-font-mono);
-  font-size: 9px;
-  font-weight: 650;
-  line-height: 14px;
-  padding-inline: 3px;
+  display: flex;
 }
 
 .you {

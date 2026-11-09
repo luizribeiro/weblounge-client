@@ -694,7 +694,10 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
     /action/,
   );
   expect(screen.getByText("Sending…")).toBeInTheDocument();
-  expect(screen.getByText("BOT")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "bot" })).toHaveStyle({
+    color: "var(--wl-nick-1)",
+  });
+  expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });
 
 it("renders topic notices with their setter and time", async () => {

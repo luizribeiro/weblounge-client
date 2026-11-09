@@ -55,7 +55,10 @@ it("renders rich options and routes pointer selection", () => {
     "aria-selected",
     "true",
   );
-  expect(screen.getByText("BOT")).toBeVisible();
+  expect(screen.getByRole("img", { name: "bot" })).toHaveStyle({
+    color: "var(--wl-nick-2)",
+  });
+  expect(screen.queryByText("BOT")).not.toBeInTheDocument();
   const channel = screen.getByRole("option", { name: /#papo/u });
   const pointerDown = new Event("pointerdown", {
     bubbles: true,

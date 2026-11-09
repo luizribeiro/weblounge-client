@@ -1,0 +1,7 @@
+.icon {
+  block-size: var(--wl-size-bot-icon);
+  display: inline-block;
+  flex: none;
+  inline-size: var(--wl-size-bot-icon);
+  vertical-align: -0.2em;
+}
