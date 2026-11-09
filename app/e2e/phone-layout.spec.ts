@@ -30,10 +30,11 @@ test("groups phone messages without losing timestamps or the live edge", async (
   const first = `phone first ${suffix}`;
   const second = `phone grouped ${suffix} ${"wrap inside the phone text column ".repeat(5)}`;
   const changedSender = `phone sender ${suffix}`;
+  const beforeMinute = `phone before minute ${suffix}`;
   const changedMinute = `phone minute ${suffix}`;
   try {
     await sender.mode(sender.nickname, "+B");
-    await rewriteGroupingTimes(page, first, second, changedMinute);
+    await armGroupingTimes(first, second, beforeMinute, changedMinute);
     await useDedicatedWorker(page);
     await page.goto("/?irc-password=weblounge-test");
     await expect(
@@ -66,12 +67,17 @@ test("groups phone messages without losing timestamps or the live edge", async (
       "false",
     );
     await expect(secondRow.locator("time")).toBeHidden();
-    expect(await wrapsAcrossLines(secondRow)).toBe(true);
+    await expect.poll(() => wrapsAcrossLines(secondRow)).toBe(true);
     await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
 
     await peer.privmsgConfirmed(channel, changedSender);
+    await sender.privmsgConfirmed(channel, beforeMinute);
     await sender.privmsgConfirmed(channel, changedMinute);
     await expect(messageRow(page, changedSender)).toHaveAttribute(
+      "data-message-group-start",
+      "true",
+    );
+    await expect(messageRow(page, beforeMinute)).toHaveAttribute(
       "data-message-group-start",
       "true",
     );
@@ -80,6 +86,9 @@ test("groups phone messages without losing timestamps or the live edge", async (
       "true",
     );
     await expect(messageRow(page, changedMinute).locator("time")).toBeVisible();
+    expect(await messageMinute(page, beforeMinute)).not.toBe(
+      await messageMinute(page, changedMinute),
+    );
 
     await peer.reactionConfirmed(channel, messageId(echoed), "👍");
     const reaction = secondRow.locator('[data-reaction="👍"]');
@@ -152,6 +161,14 @@ function distanceFromBottom(page: Page): Promise<number> {
   });
 }
 
+async function messageMinute(page: Page, text: string): Promise<number> {
+  const dateTime = await messageRow(page, text)
+    .locator("time")
+    .getAttribute("datetime");
+  if (dateTime === null) throw new Error(`message has no timestamp: ${text}`);
+  return Math.floor(Date.parse(dateTime) / 60_000);
+}
+
 function wrapsAcrossLines(row: Locator): Promise<boolean> {
   return row.locator("[data-selectable]").evaluate((text) => {
     const style = getComputedStyle(text);
@@ -217,39 +234,30 @@ function keepsDesktopColumns(row: Locator): Promise<boolean> {
   });
 }
 
-async function rewriteGroupingTimes(
-  page: Page,
+async function armGroupingTimes(
   first: string,
   second: string,
+  beforeMinute: string,
   changedMinute: string,
 ): Promise<void> {
-  await page.routeWebSocket(/\/socket/u, (route) => {
-    const server = route.connectToServer();
-    let groupMinute: number | undefined;
-    server.onMessage((message) => {
-      const source = typeof message === "string" ? message : message.toString();
-      const rewritten = source
-        .split("\r\n")
-        .map((line) => {
-          const time = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
-          if (time === undefined) return line;
-          if (line.endsWith(` :${first}`))
-            groupMinute = Math.floor(Date.parse(time) / 60_000) * 60_000;
-          const replacement = line.endsWith(` :${first}`)
-            ? groupMinute
-            : line.endsWith(` :${second}`)
-              ? (groupMinute ?? Date.parse(time)) + 1_000
-              : line.endsWith(` :${changedMinute}`)
-                ? (groupMinute ?? Date.parse(time)) + 60_000
-                : undefined;
-          return replacement === undefined
-            ? line
-            : line.replace(time, new Date(replacement).toISOString());
-        })
-        .join("\r\n");
-      route.send(rewritten);
-    });
-  });
+  const minute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
+  await Promise.all([
+    armTime(first, minute + 1_000),
+    armTime(second, minute + 2_000),
+    armTime(beforeMinute, minute + 59_000),
+    armTime(changedMinute, minute + 60_000),
+  ]);
+}
+
+async function armTime(text: string, time: number): Promise<void> {
+  const control =
+    process.env.WEBLOUNGE_E2E_FORWARDER_URL ?? "http://127.0.0.1:8091";
+  const url = new URL("/rewrite-time", control);
+  url.searchParams.set("contains", ` :${text}`);
+  url.searchParams.set("time", new Date(time).toISOString());
+  const response = await fetch(url, { method: "POST" });
+  if (!response.ok)
+    throw new Error(`could not arm time rewrite: ${response.status}`);
 }
 
 function messageId(line: string): string {
