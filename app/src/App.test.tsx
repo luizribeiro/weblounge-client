@@ -11,6 +11,7 @@ import type {
   EngineRequestEnvelope,
 } from "./engine/protocol";
 import { OneShotAccessToken } from "./hosted/HostedSession";
+import { SessionTokenError } from "./hosted/session-token";
 import { startupDeadlineMs } from "./hosted/startup-deadline";
 import { recordPendingOpenRoute } from "./platform/push/pending-open-route";
 
@@ -322,6 +323,52 @@ it("hands a hosted token to the engine once and reauthorizes on rejection", asyn
     id: expect.any(String),
     request: { type: "expire_hosted_authentication", network_id: 1 },
   });
+});
+
+it("leaves a cancelled hosted startup to the bootstrap redirect", async () => {
+  const client = new FakeEngineClient();
+  const authorize = vi.fn();
+  render(() => (
+    <App
+      engineClient={client}
+      hostedSession={{
+        sessionTokenEndpoint:
+          "https://members.weblounge.org/oauth/session-token",
+        network: {
+          name: "weblounge",
+          endpoint: "wss://beta.weblounge.org/socket",
+          autojoin: ["#lounge"],
+        },
+        startupCancelled: () => true,
+        token: Promise.resolve({
+          type: "error",
+          error: new SessionTokenError(
+            "authorization_required",
+            "Sign-in required",
+          ),
+        }),
+      }}
+      onHostedAuthorizationRequired={authorize}
+    />
+  ));
+
+  await waitFor(() =>
+    expect(client.requests).toContainEqual(
+      expect.objectContaining({
+        request: expect.objectContaining({ type: "prepare_hosted" }),
+      }),
+    ),
+  );
+  await Promise.resolve();
+
+  expect(authorize).not.toHaveBeenCalled();
+  expect(client.requests).not.toContainEqual(
+    expect.objectContaining({
+      request: expect.objectContaining({
+        type: "expire_hosted_authentication",
+      }),
+    }),
+  );
 });
 
 it("acquires hosted reconnect tokens in the page", async () => {

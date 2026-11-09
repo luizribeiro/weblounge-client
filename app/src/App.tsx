@@ -1734,6 +1734,7 @@ async function startEngine(
     }
     return "ready";
   } catch (error: unknown) {
+    if (hostedSession.startupCancelled?.() === true) return "reloading";
     return { error };
   }
 }

@@ -265,6 +265,51 @@ test("falls back to PKCE when the member session needs login", async ({
   await expect(page).toHaveURL(redirectUri());
 });
 
+test("takes a signed-out member session through hosted sign-in to #lounge", async ({
+  page,
+}) => {
+  const closedClientErrors: Array<{
+    readonly detail: string;
+    readonly source: "console" | "pageerror";
+  }> = [];
+  page.on("console", (message) => {
+    if (message.text().includes("engine client is closed")) {
+      closedClientErrors.push({
+        detail: `${message.text()} ${JSON.stringify(message.location())}`,
+        source: "console",
+      });
+    }
+  });
+  page.on("pageerror", (error) => {
+    if (error.message.includes("engine client is closed")) {
+      closedClientErrors.push({
+        detail: error.stack ?? error.message,
+        source: "pageerror",
+      });
+    }
+  });
+  await installFakeEngine(page);
+  const redirectUri = await installHostedConfig(page);
+  await page.route(`${oauthIssuer}/oauth/session-token`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await fulfillSessionPreflight(route, new URL(redirectUri()).origin);
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      headers: sessionCors(new URL(redirectUri()).origin),
+      body: JSON.stringify({ error: "login_required" }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
+  await expect(page).toHaveURL(redirectUri());
+  expect(closedClientErrors).toEqual([]);
+});
+
 for (const worker of ["shared", "dedicated"] as const) {
   test(`redirects a signed-out member with the real ${worker} worker`, async ({
     page,

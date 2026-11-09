@@ -176,10 +176,10 @@ function Bootstrap(props: BootstrapProps) {
       }),
       (error: unknown) => ({ type: "error" as const, error }),
     );
-    void tokenResult.then(async (result) => {
+    void tokenResult.then((result) => {
       if (result.type === "error" && requiresAuthorization(result.error)) {
         startupCancelled = true;
-        await engineClient.close().catch(() => undefined);
+        setState({ type: "starting" });
         void restartAuthorization(config);
       } else if (
         result.type === "error" &&
