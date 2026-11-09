@@ -307,6 +307,7 @@ test("takes a signed-out member session through hosted sign-in to #lounge", asyn
 
   await expect(page.getByRole("heading", { name: "#lounge" })).toBeVisible();
   await expect(page).toHaveURL(redirectUri());
+  await page.close();
   expect(closedClientErrors).toEqual([]);
 });
 
