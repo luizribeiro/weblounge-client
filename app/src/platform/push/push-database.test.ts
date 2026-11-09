@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -102,6 +103,42 @@ describe("push database deadlines", () => {
     expect(close).toHaveBeenCalledOnce();
     current.close();
   });
+});
+
+it("copies a legacy route without its CryptoKey", async () => {
+  const factory = new IDBFactory();
+  const current = await createCurrentDatabase(factory);
+  const legacy = await createLegacyDatabase(factory);
+  const pair = (await webcrypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    ["deriveBits"],
+  )) as import("node:crypto").webcrypto.CryptoKeyPair;
+  const transaction = legacy.transaction(pushRoutesStore, "readwrite");
+  transaction.objectStore(pushRoutesStore).put({
+    networkId: 1,
+    networkLabel: "Lounge",
+    nickname: "weblounge",
+    vapid: "home-vapid",
+    routeId: "legacy-route",
+    endpoint: "https://push.example.test/v1/r/legacy-route",
+    p256dh: "public-key",
+    auth: "auth-secret",
+    privateKey: pair.privateKey,
+  });
+  await transactionDone(transaction);
+  legacy.close();
+
+  await migrateLegacyPushDatabase(current, factory);
+
+  const read = current.transaction(pushRoutesStore, "readonly");
+  const [stored] = await requestResult(
+    read.objectStore(pushRoutesStore).getAll(),
+  );
+  await transactionDone(read);
+  expect(stored).toMatchObject({ keyStorage: "legacy-crypto-key" });
+  expect(stored).not.toHaveProperty("privateKey");
+  current.close();
 });
 
 function createCurrentDatabase(factory: IDBFactory): Promise<IDBDatabase> {

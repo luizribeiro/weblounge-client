@@ -32,6 +32,29 @@ it("stores no CryptoKey anywhere in a route record", async () => {
   expect(containsCryptoKey(await readRawRoute(factory))).toBe(false);
 });
 
+it("detects a legacy CryptoKey route without returning its key", async () => {
+  const factory = new IDBFactory();
+  const pair = (await webcrypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    ["deriveBits"],
+  )) as import("node:crypto").webcrypto.CryptoKeyPair;
+  const store = new IndexedDbPushRouteStore(factory);
+  await store.get("missing");
+  await seedRawRoute(
+    factory,
+    route({
+      privateKey: pair.privateKey as unknown as CryptoKey,
+    }),
+  );
+
+  const stored = await store.get("home-vapid");
+
+  expect(stored).toMatchObject({ keyStorage: "legacy-crypto-key" });
+  expect(containsCryptoKey(stored)).toBe(false);
+  expect(containsCryptoKey(await readRawRoute(factory))).toBe(false);
+});
+
 function route(keys: object): StoredPushRoute {
   return {
     networkId: 1,
@@ -45,6 +68,18 @@ function route(keys: object): StoredPushRoute {
     auth: "route-auth",
     ...keys,
   } as StoredPushRoute;
+}
+
+async function seedRawRoute(factory: IDBFactory, value: object): Promise<void> {
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = factory.open(pushDatabaseName);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const transaction = database.transaction(pushRoutesStore, "readwrite");
+  transaction.objectStore(pushRoutesStore).put(value);
+  await transactionDone(transaction);
+  database.close();
 }
 
 async function readRawRoute(factory: IDBFactory): Promise<unknown> {

@@ -32,6 +32,7 @@ export interface ConversationNotificationCount {
 export function openPushDatabase(
   factory: IDBFactory = indexedDB,
   deadlineMs = databaseDeadlineMs,
+  migrateLegacy = false,
 ): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -52,7 +53,10 @@ export function openPushDatabase(
         return;
       }
       request.result.onversionchange = () => request.result.close();
-      void migrateLegacyPushDatabase(request.result, factory, deadlineMs).then(
+      const migration = migrateLegacy
+        ? migrateLegacyPushDatabase(request.result, factory, deadlineMs)
+        : Promise.resolve();
+      void migration.then(
         () => {
           clearTimeout(deadline);
           if (settled) {
@@ -106,8 +110,23 @@ export async function migrateLegacyPushDatabase(
     }
   }
   const current = await readRoutes(database, deadlineMs);
-  const selected = selectRoutes([...routes, ...current]);
+  const selected = selectRoutes([...routes, ...current]).map(removeLegacyKey);
   await writeMigration(database, selected, badge, counts, deadlineMs);
+}
+
+function removeLegacyKey(value: unknown): unknown {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("privateKey" in value) ||
+    typeof value.privateKey !== "object" ||
+    value.privateKey === null ||
+    value.privateKey.constructor.name !== "CryptoKey"
+  ) {
+    return value;
+  }
+  const { privateKey: _privateKey, ...route } = value;
+  return { ...route, keyStorage: "legacy-crypto-key" };
 }
 
 function createRoutesStore(database: IDBDatabase): IDBObjectStore {

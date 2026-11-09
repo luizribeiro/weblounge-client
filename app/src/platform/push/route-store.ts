@@ -26,12 +26,19 @@ export interface StoredPushRoute {
   readonly retiring?: boolean;
 }
 
+export interface LegacyStoredPushRoute
+  extends Omit<StoredPushRoute, "privateKeyPkcs8"> {
+  readonly keyStorage: "legacy-crypto-key";
+}
+
+export type PushRouteRecord = StoredPushRoute | LegacyStoredPushRoute;
+
 export interface PushRouteStore {
-  get(homeVapid: string): Promise<StoredPushRoute | undefined>;
-  findRoute(routeId: string): Promise<StoredPushRoute | undefined>;
+  get(homeVapid: string): Promise<PushRouteRecord | undefined>;
+  findRoute(routeId: string): Promise<PushRouteRecord | undefined>;
   put(route: StoredPushRoute): Promise<void>;
   delete(homeVapid: string): Promise<void>;
-  all(): Promise<readonly StoredPushRoute[]>;
+  all(): Promise<readonly PushRouteRecord[]>;
 }
 
 export interface RouteKeys {
@@ -68,7 +75,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     this.#factory = factory;
   }
 
-  async get(homeVapid: string): Promise<StoredPushRoute | undefined> {
+  async get(homeVapid: string): Promise<PushRouteRecord | undefined> {
     const database = await openDatabase(this.#factory);
     try {
       const transaction = database.transaction(pushRoutesStore, "readonly");
@@ -77,13 +84,16 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
         pageDatabaseDeadlineMs,
       );
       await transactionDone(transaction, pageDatabaseDeadlineMs);
-      return value === undefined ? undefined : decodeRoute(value);
+      if (value === undefined) return undefined;
+      const route = decodeRoute(value);
+      await replaceLegacyKey(database, route);
+      return route;
     } finally {
       database.close();
     }
   }
 
-  async findRoute(routeId: string): Promise<StoredPushRoute | undefined> {
+  async findRoute(routeId: string): Promise<PushRouteRecord | undefined> {
     const database = await openDatabase(this.#factory);
     try {
       const transaction = database.transaction(pushRoutesStore, "readonly");
@@ -95,7 +105,10 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
         pageDatabaseDeadlineMs,
       );
       await transactionDone(transaction, pageDatabaseDeadlineMs);
-      return value === undefined ? undefined : decodeRoute(value);
+      if (value === undefined) return undefined;
+      const route = decodeRoute(value);
+      await replaceLegacyKey(database, route);
+      return route;
     } finally {
       database.close();
     }
@@ -123,7 +136,7 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
     }
   }
 
-  async all(): Promise<readonly StoredPushRoute[]> {
+  async all(): Promise<readonly PushRouteRecord[]> {
     const database = await openDatabase(this.#factory);
     try {
       const transaction = database.transaction(pushRoutesStore, "readonly");
@@ -132,7 +145,9 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
         pageDatabaseDeadlineMs,
       );
       await transactionDone(transaction, pageDatabaseDeadlineMs);
-      return values.map(decodeRoute);
+      const routes = values.map(decodeRoute);
+      await replaceLegacyKeys(database, routes);
+      return routes;
     } finally {
       database.close();
     }
@@ -140,10 +155,10 @@ export class IndexedDbPushRouteStore implements PushRouteStore {
 }
 
 function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
-  return openPushDatabase(factory, pageDatabaseDeadlineMs);
+  return openPushDatabase(factory, pageDatabaseDeadlineMs, true);
 }
 
-function decodeRoute(value: unknown): StoredPushRoute {
+function decodeRoute(value: unknown): PushRouteRecord {
   const networkLabel =
     typeof value === "object" && value !== null && "networkLabel" in value
       ? value.networkLabel
@@ -202,6 +217,12 @@ function decodeRoute(value: unknown): StoredPushRoute {
   if (privateKeyPkcs8 !== undefined) {
     return { ...metadata, privateKeyPkcs8 };
   }
+  if (
+    ("keyStorage" in value && value.keyStorage === "legacy-crypto-key") ||
+    ("privateKey" in value && isCryptoKey(value.privateKey))
+  ) {
+    return { ...metadata, keyStorage: "legacy-crypto-key" };
+  }
   throw new Error("push database contains an invalid route key");
 }
 
@@ -216,6 +237,12 @@ function decodePrivateKeyBytes(
     return undefined;
   }
   return Uint8Array.from(value as Uint8Array);
+}
+
+export function hasRouteKeyBytes(
+  route: PushRouteRecord,
+): route is StoredPushRoute {
+  return "privateKeyPkcs8" in route;
 }
 
 function encodeRoute(route: StoredPushRoute): StoredPushRoute {
@@ -237,6 +264,34 @@ function encodeRoute(route: StoredPushRoute): StoredPushRoute {
       : {}),
     ...(route.retiring === true ? { retiring: true } : {}),
   };
+}
+
+function isCryptoKey(value: unknown): value is CryptoKey {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    value.constructor.name === "CryptoKey"
+  );
+}
+
+async function replaceLegacyKey(
+  database: IDBDatabase,
+  route: PushRouteRecord,
+): Promise<void> {
+  if (hasRouteKeyBytes(route)) return;
+  await replaceLegacyKeys(database, [route]);
+}
+
+async function replaceLegacyKeys(
+  database: IDBDatabase,
+  routes: readonly PushRouteRecord[],
+): Promise<void> {
+  const legacy = routes.filter((route) => !hasRouteKeyBytes(route));
+  if (legacy.length === 0) return;
+  const transaction = database.transaction(pushRoutesStore, "readwrite");
+  const store = transaction.objectStore(pushRoutesStore);
+  for (const route of legacy) store.put(route);
+  await transactionDone(transaction, pageDatabaseDeadlineMs);
 }
 
 function isWebPushTarget(value: unknown): value is WebPushTarget {
