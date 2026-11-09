@@ -9,6 +9,7 @@ type EstimatedMessage = Pick<MessageProjection, "kind" | "reactions" | "text">;
 
 const baseFontSize = 14;
 const listInlinePadding = 28;
+const mobileListInlinePadding = 32;
 const rowInlinePadding = 16;
 const nickColumnWidth = 112;
 const gridGapWidth = 30;
@@ -19,12 +20,41 @@ export function estimateMessageHeight(
   viewportWidth: number,
   density: DensityId,
   presentation: "desktop" | "mobile" = "desktop",
+  startsMobileGroup = true,
 ): number {
   const preset = densityPresets[density];
   const fontSize = baseFontSize + Number.parseFloat(preset.fontDelta);
   const lineHeight = fontSize * Number.parseFloat(preset.lineHeight);
   const verticalPadding = 2 * Number.parseFloat(preset.oneLineRowPadding);
-  const rowWidth = Math.max(viewportWidth - listInlinePadding, 1);
+  const rowWidth = Math.max(
+    viewportWidth -
+      (presentation === "mobile" ? mobileListInlinePadding : listInlinePadding),
+    1,
+  );
+  if (presentation === "mobile" && message.kind === "text") {
+    const textWidth = Math.max(rowWidth, fontSize * 4);
+    const charactersPerLine = Math.max(
+      1,
+      Math.floor(textWidth / (fontSize * 0.55)),
+    );
+    const textHeight = Math.ceil(
+      estimatedLines(message.text, charactersPerLine) * lineHeight,
+    );
+    const topPadding = Number.parseFloat(
+      startsMobileGroup
+        ? preset.mobileGroupTopPadding
+        : preset.mobileContinuationPadding,
+    );
+    const headerHeight = startsMobileGroup
+      ? lineHeight + Number.parseFloat(preset.mobileHeaderGap)
+      : 0;
+    return (
+      topPadding +
+      headerHeight +
+      textHeight +
+      estimatedReactionHeight(message, textWidth, presentation)
+    );
+  }
   const textWidth = Math.max(
     rowWidth - rowInlinePadding - messageChromeWidth(message.kind, fontSize),
     fontSize * 4,
@@ -41,11 +71,14 @@ export function estimateMessageHeight(
   return textHeight + estimatedReactionHeight(message, textWidth, presentation);
 }
 
-export function messageSizeRevision(message: EstimatedMessage): string {
+export function messageSizeRevision(
+  message: EstimatedMessage,
+  startsMobileGroup?: boolean,
+): string {
   const reactions = message.reactions
     ?.map((reaction) => `${reaction.text}:${reaction.actors.length}`)
     .join("\u0001");
-  return `${JSON.stringify(message.kind)}\u0000${message.text}\u0000${reactions ?? ""}`;
+  return `${JSON.stringify(message.kind)}\u0000${message.text}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}`;
 }
 
 export function currentMessageDensity(root: HTMLElement): DensityId {

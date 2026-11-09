@@ -12,6 +12,9 @@
     "memberAvatar": "18px",
     "mobileRowHeight": "52px",
     "mobileAvatar": "32px",
+    "mobileContinuationPadding": "4px",
+    "mobileGroupTopPadding": "12px",
+    "mobileHeaderGap": "3px",
     "mobilePreviews": false
   },
   "cozy": {
@@ -27,6 +30,9 @@
     "memberAvatar": "24px",
     "mobileRowHeight": "70px",
     "mobileAvatar": "44px",
+    "mobileContinuationPadding": "6px",
+    "mobileGroupTopPadding": "16px",
+    "mobileHeaderGap": "4px",
     "mobilePreviews": true
   },
   "comfortable": {
@@ -42,6 +48,9 @@
     "memberAvatar": "28px",
     "mobileRowHeight": "80px",
     "mobileAvatar": "48px",
+    "mobileContinuationPadding": "8px",
+    "mobileGroupTopPadding": "20px",
+    "mobileHeaderGap": "5px",
     "mobilePreviews": true
   }
 }

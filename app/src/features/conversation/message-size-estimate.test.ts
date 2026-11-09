@@ -41,6 +41,29 @@ describe("estimateMessageHeight", () => {
     );
     expect(messageSizeRevision(reacted)).not.toBe(messageSizeRevision(base));
   });
+
+  it("estimates phone headers and continuation rows separately", () => {
+    const message = { kind: "text" as const, text: "hello" };
+    const groupStart = estimateMessageHeight(
+      message,
+      390,
+      "cozy",
+      "mobile",
+      true,
+    );
+    const continuation = estimateMessageHeight(
+      message,
+      390,
+      "cozy",
+      "mobile",
+      false,
+    );
+
+    expect(groupStart).toBeGreaterThan(continuation + 20);
+    expect(messageSizeRevision(message, true)).not.toBe(
+      messageSizeRevision(message, false),
+    );
+  });
 });
 
 it("uses cozy density when the root has no valid density", () => {

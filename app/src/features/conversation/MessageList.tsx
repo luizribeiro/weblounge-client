@@ -136,6 +136,13 @@ export function MessageList(props: MessageListProps) {
   const rows = createMemo(() =>
     timelineRows(props.messages, props.memberships ?? [], dividerMark()),
   );
+  const rowSizeRevision = (row: TimelineRow) =>
+    row.kind === "message"
+      ? messageSizeRevision(
+          row.message,
+          props.presentation === "mobile" ? row.startsMobileGroup : undefined,
+        )
+      : row.key;
   // TanStack rebuilds its index-keyed measurements only when the row count or
   // the key extractor's identity changes, and a moving divider keeps the count.
   const rowKey = createMemo(() => {
@@ -244,13 +251,14 @@ export function MessageList(props: MessageListProps) {
       const width =
         observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
       const cached = estimatedSizes.get(row.key);
-      const revision = messageSizeRevision(row.message);
+      const revision = rowSizeRevision(row);
       if (cached?.revision === revision) return cached.size;
       const estimated = estimateMessageHeight(
         row.message,
         width,
         estimatedDensity,
         props.presentation,
+        row.startsMobileGroup,
       );
       estimatedSizes.set(row.key, { revision, size: estimated });
       return estimated;
@@ -430,16 +438,15 @@ export function MessageList(props: MessageListProps) {
     if (messages.length !== previousCount && logicallyAtLiveEdge)
       virtualizer.scrollToEnd();
   });
-  let measuredRevisions = props.messages
-    .map(messageSizeRevision)
-    .join("\u0002");
-  let measuredRevisionCount = props.messages.length;
+  let measuredRevisions = rows().map(rowSizeRevision).join("\u0002");
+  let measuredRevisionCount = rows().length;
   createEffect(() => {
-    const revisions = props.messages.map(messageSizeRevision).join("\u0002");
+    const currentRows = rows();
+    const revisions = currentRows.map(rowSizeRevision).join("\u0002");
     if (revisions === measuredRevisions) return;
-    const sameCount = props.messages.length === measuredRevisionCount;
+    const sameCount = currentRows.length === measuredRevisionCount;
     measuredRevisions = revisions;
-    measuredRevisionCount = props.messages.length;
+    measuredRevisionCount = currentRows.length;
     if (!sameCount) return;
     virtualizer.measure();
     if (logicallyAtLiveEdge) virtualizer.scrollToEnd();

@@ -23,6 +23,9 @@ export interface DensityPreset {
   readonly memberAvatar: string;
   readonly mobileRowHeight: string;
   readonly mobileAvatar: string;
+  readonly mobileContinuationPadding: string;
+  readonly mobileGroupTopPadding: string;
+  readonly mobileHeaderGap: string;
   readonly mobilePreviews: boolean;
 }
 
@@ -44,6 +47,9 @@ export function densityStyleSheet(): string {
         fontDelta: preset.fontDelta,
         groupTopPadding: preset.groupTopPadding,
         lineHeight: preset.lineHeight,
+        mobileContinuationPadding: preset.mobileContinuationPadding,
+        mobileGroupTopPadding: preset.mobileGroupTopPadding,
+        mobileHeaderGap: preset.mobileHeaderGap,
         oneLineRowPadding: preset.oneLineRowPadding,
       }),
       densityRule("sidebar-density", "sidebar", id, {
