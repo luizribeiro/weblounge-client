@@ -30,9 +30,11 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Keep hosted sign-in cancellation inside the mounted app's engine ownership. A session that
   requires authorization now unmounts the app before redirecting, so cleanup removes foreground
   snapshot work and closes the client in that order; the abandoned startup also recognizes the
-  cancellation instead of starting a second authorization path through the closed client. A full
-  signed-out, PKCE callback, `#lounge` and page-teardown journey now covers WebKit and Chromium
-  without a closed client error or a transient unexpected-failure screen.
+  cancellation instead of starting a second authorization path through the closed client. Engine
+  requests made after close reject their promises instead of throwing synchronously, so a late
+  pagehide or visibility flush follows the same handled failure contract. A full signed-out, PKCE
+  callback, `#lounge` and page-teardown journey now covers WebKit and Chromium without a closed
+  client error or a transient unexpected-failure screen.
 - [x] Reset each pane's qualified read dwell when the retained foreground-exit epoch changes, so a
   coalesced hidden-to-visible transition cannot mark a delayed peer arrival read before its New
   divider freezes.
