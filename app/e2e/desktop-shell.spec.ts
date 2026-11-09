@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { expectFullBleedHighlight } from "./highlight-geometry";
 import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 import { expectAlignedPrefixColumn } from "./prefix-column-geometry";
@@ -287,6 +288,10 @@ test.describe("desktop shell against local Ergo", () => {
       await screenshotPage
         .getByRole("button", { name: /^#weblounge-test/ })
         .click();
+      await expect(screenshotPage.locator("html")).toHaveAttribute(
+        "data-theme",
+        "lounge",
+      );
       await expect(
         screenshotPage.getByText("weblounge: history on open is working", {
           exact: true,
@@ -332,6 +337,10 @@ test.describe("desktop shell against local Ergo", () => {
           })),
         )
         .toEqual({ background: "#18221e", theme: "lounge-night" });
+      await expectFullBleedHighlight(
+        screenshotPage,
+        "weblounge: history on open is working",
+      );
       await screenshotWithInter(screenshotBody, {
         path: path.join(screenshotDirectory, "desktop-shell-dark.png"),
       });
@@ -342,28 +351,6 @@ test.describe("desktop shell against local Ergo", () => {
     }
   });
 });
-
-async function expectFullBleedHighlight(
-  page: import("@playwright/test").Page,
-  text: string,
-): Promise<void> {
-  const list = page.getByRole("list", { name: "Messages" });
-  const row = list.locator("[data-message-row]").filter({ hasText: text });
-  const listWidth = await list.evaluate((element) => element.clientWidth);
-  const highlightBackground = await page.locator("html").evaluate((element) => {
-    const sample = document.createElement("div");
-    sample.style.background = getComputedStyle(element).getPropertyValue(
-      "--wl-color-mention-bg",
-    );
-    document.body.append(sample);
-    const background = getComputedStyle(sample).backgroundColor;
-    sample.remove();
-    return background;
-  });
-  await expect(row).toHaveAttribute("data-message-text", text);
-  await expect(row).toHaveCSS("background-color", highlightBackground);
-  await expect(row).toHaveCSS("width", `${listWidth}px`);
-}
 
 async function expectDesktopGeometry(
   page: import("@playwright/test").Page,

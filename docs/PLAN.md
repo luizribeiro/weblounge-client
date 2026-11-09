@@ -35,7 +35,9 @@ The single place a fresh session reads to know where the project stands. Update 
   requests permanent transform promotion, so an opaque mention band cannot cover iOS's native
   scroll indicator; row positioning transforms remain shared by highlighted and normal messages.
   Local-Ergo browser coverage pins text gaps, same-minute continuation bands, live-edge placement
-  and idle layer styles in desktop Chromium plus phone Chromium and WebKit.
+  and idle layer styles in desktop Chromium plus phone Chromium and WebKit. Shared screenshot
+  geometry coverage also pins the pseudo-element's full-bleed edges and active light/dark theme
+  colour on desktop and mobile.
 - [x] Isolate every phone-layout journey from the shared IRC account. Each test now registers a
   fresh account, autojoins its unique target channel and selects that buffer explicitly, so an
   active channel retained by an earlier always-on session cannot choose the tested conversation.

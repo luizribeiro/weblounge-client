@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expectFullBleedHighlight } from "./highlight-geometry";
 import { screenshotWithInter } from "./inter-font";
 import { IrcClient } from "./irc-client";
 
@@ -92,6 +93,10 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       });
 
       await page.emulateMedia({ colorScheme: "light" });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-theme",
+        "lounge",
+      );
       await page.getByRole("button", { name: "#weblounge-test" }).click();
       await expect(
         page.getByText("weblounge: Mobile history is ready for the lounge", {
@@ -130,6 +135,14 @@ test.describe("mobile shell screenshots against local Ergo", () => {
       });
       const lightWithoutScrim = await sampleScrimPixel(page, messageList);
       await page.emulateMedia({ colorScheme: "dark" });
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-theme",
+        "lounge-night",
+      );
+      await expectFullBleedHighlight(
+        page,
+        "weblounge: Mobile history is ready for the lounge",
+      );
       await screenshotWithInter(messageList, {
         path: path.join(screenshotDirectory, "mobile-chat-dark.png"),
       });
@@ -174,28 +187,6 @@ test.describe("mobile shell screenshots against local Ergo", () => {
     }
   });
 });
-
-async function expectFullBleedHighlight(
-  page: Page,
-  text: string,
-): Promise<void> {
-  const list = page.getByRole("list", { name: "Messages" });
-  const row = list.locator("[data-message-row]").filter({ hasText: text });
-  const listWidth = await list.evaluate((element) => element.clientWidth);
-  const highlightBackground = await page.locator("html").evaluate((element) => {
-    const sample = document.createElement("div");
-    sample.style.background = getComputedStyle(element).getPropertyValue(
-      "--wl-color-mention-bg",
-    );
-    document.body.append(sample);
-    const background = getComputedStyle(sample).backgroundColor;
-    sample.remove();
-    return background;
-  });
-  await expect(row).toHaveAttribute("data-message-text", text);
-  await expect(row).toHaveCSS("background-color", highlightBackground);
-  await expect(row).toHaveCSS("width", `${listWidth}px`);
-}
 
 async function sampleScrimPixel(
   page: Page,
