@@ -1,3 +1,5 @@
+#![expect(dead_code, reason = "runtime wiring lands in the next commit")]
+
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{ReactionActorProjection, ReactionProjection};

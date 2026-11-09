@@ -9,7 +9,6 @@ mod notification_settings;
 mod protocol;
 mod push_device;
 mod pushed_messages;
-#[cfg(test)]
 mod reactions;
 pub mod read_model;
 mod request_error;

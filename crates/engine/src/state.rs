@@ -14,6 +14,7 @@ use crate::{
     },
     name_key::NameKey,
     pushed_messages::{PushedMessage, PushedMessageKind},
+    reactions::{ReactionAction, ReactionActor, ReactionIndex},
     read_model::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
@@ -332,6 +333,7 @@ pub(crate) struct NetworkModel {
     names: HashMap<NameKey, BufferId>,
     directs: HashMap<DirectKey, BufferId>,
     msgids: HashMap<String, usize>,
+    reactions: ReactionIndex,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     reconcilable_failed_sends: HashSet<LocalSendId>,
     recent_commands: VecDeque<String>,
@@ -406,6 +408,7 @@ impl NetworkModel {
             names: HashMap::new(),
             directs: HashMap::new(),
             msgids: HashMap::new(),
+            reactions: ReactionIndex::default(),
             fallbacks: HashMap::new(),
             reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
@@ -972,6 +975,45 @@ impl NetworkModel {
         };
         let received = self.receive_incoming_result(incoming, state);
         (received.events, received.carry_read)
+    }
+
+    #[expect(dead_code, reason = "runtime wiring lands in the next commit")]
+    pub(crate) fn receive_reaction(
+        &mut self,
+        reaction: &papo::event::Reacted,
+    ) -> Option<EngineToUi> {
+        let target = reaction.reacts_to.to_string();
+        let actor = ReactionActor {
+            key: reaction_actor_key(&reaction.actor),
+            nick: reaction.actor.nick().to_string(),
+            mine: reaction.authorship == papo::Authorship::Own,
+        };
+        let action = match reaction.action {
+            papo::event::ReactionAction::Added => ReactionAction::Added,
+            papo::event::ReactionAction::Removed => ReactionAction::Removed,
+            _ => return None,
+        };
+        if !self
+            .reactions
+            .apply(&target, &reaction.reaction, actor, action)
+        {
+            return None;
+        }
+        let reactions = nonempty_reactions(self.reactions.summaries(&target));
+        self.buffers.iter_mut().find_map(|(buffer_id, buffer)| {
+            let record = buffer.timeline.iter_mut().find(|record| {
+                record
+                    .projection
+                    .server_ids
+                    .iter()
+                    .any(|msgid| msgid == &target)
+            })?;
+            record.projection.reactions.clone_from(&reactions);
+            Some(EngineToUi::MessageUpdated {
+                buffer_id: *buffer_id,
+                message: record.projection.clone(),
+            })
+        })
     }
 
     pub(crate) fn restore_pushed_messages(
@@ -2458,13 +2500,8 @@ impl NetworkModel {
         let cursor = incoming
             .server_time_ms
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
-        let message = Self::project_incoming(
-            self.allocate_message_id(),
-            &incoming,
-            state,
-            verified_sender,
-            false,
-        );
+        let message_id = self.allocate_message_id();
+        let message = self.project_incoming(message_id, &incoming, state, verified_sender, false);
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
             return IncomingResult {
                 events: inconsistent_state_notice(),
@@ -2554,7 +2591,7 @@ impl NetworkModel {
             .as_ref()
             .is_some_and(|current| self.apply_direct_peer_key(buffer_id, current.clone()));
         let mut message =
-            Self::project_incoming(message_id, incoming, state, verified_sender, false);
+            self.project_incoming(message_id, incoming, state, verified_sender, false);
         message.delivery = MessageDelivery::Confirmed;
         let order_changed = self.insert(buffer_id, message.clone(), None, dedup).ok()?;
         let cursor = incoming
@@ -2615,7 +2652,7 @@ impl NetworkModel {
                 .as_ref()
                 .zip(incoming.legacy_account_key.as_ref())
                 .is_some_and(|(pushed, authoritative)| pushed != authoritative);
-        let mut message = Self::project_incoming(
+        let mut message = self.project_incoming(
             message_id,
             incoming,
             state,
@@ -2665,6 +2702,7 @@ impl NetworkModel {
     }
 
     fn project_incoming(
+        &self,
         id: MessageId,
         incoming: &Incoming,
         state: &papo::State,
@@ -2686,7 +2724,11 @@ impl NetworkModel {
                 && incoming.provisional_identity.is_none()
                 && (!verified_sender || identity_disagrees))
                 .then_some(true),
-            reactions: None,
+            reactions: incoming
+                .msgid
+                .as_deref()
+                .map(|msgid| self.reactions.summaries(msgid))
+                .and_then(nonempty_reactions),
             delivery: MessageDelivery::Received,
             local_send_id: None,
             server_ids: incoming.msgid.clone().into_iter().collect(),
@@ -3315,6 +3357,20 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
         papo::Authorship::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
     }
+}
+
+#[expect(dead_code, reason = "runtime wiring lands in the next commit")]
+fn reaction_actor_key(actor: &papo::UserSource) -> String {
+    actor.account().name().map_or_else(
+        || format!("nick:{}", actor.nick().key()),
+        |account| format!("account:{}", account.key()),
+    )
+}
+
+fn nonempty_reactions(
+    reactions: Vec<crate::ReactionProjection>,
+) -> Option<Vec<crate::ReactionProjection>> {
+    (!reactions.is_empty()).then_some(reactions)
 }
 
 fn matches_highlight_rules(text: &str, state: &papo::State) -> bool {
