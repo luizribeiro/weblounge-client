@@ -13,6 +13,8 @@ import type {
 import { relayRetryDelay } from "./relay-client";
 import {
   createRouteKeys,
+  hasRouteKeyBytes,
+  type PushRouteRecord,
   type PushRouteStore,
   type RouteKeys,
   type StoredPushRoute,
@@ -275,6 +277,7 @@ export class PushSynchronizer {
     if (
       !rotate &&
       reconciledRoute?.vapid === home &&
+      hasRouteKeyBytes(reconciledRoute) &&
       reconciledRoute.deviceId === device.id &&
       reconciledRoute.needsReregistration !== true
     ) {
@@ -285,6 +288,7 @@ export class PushSynchronizer {
     const stored = await this.#routes.get(home);
     const current =
       stored !== undefined &&
+      hasRouteKeyBytes(stored) &&
       stored.deviceId === device.id &&
       stored.networkLabel.length > 0 &&
       stored.needsReregistration !== true
@@ -404,6 +408,7 @@ export class PushSynchronizer {
       routeId,
     );
     if (activated.ok) {
+      if (!hasRouteKeyBytes(route)) return;
       await this.#routes.put({ ...route, active: true });
       this.#activeRoutes.add(routeId);
       this.#publish(networkId, "active", routeId);
@@ -445,6 +450,7 @@ export class PushSynchronizer {
     const home = this.#homes.get(networkId);
     const route = await this.#routes.findRoute(failedRouteId);
     if (home === undefined || route === undefined) return;
+    if (!hasRouteKeyBytes(route)) return;
     if (route.active === true) {
       const { active: _active, ...probingRoute } = route;
       await this.#routes.put(probingRoute);
@@ -580,16 +586,18 @@ export class PushSynchronizer {
     await Promise.all(
       routes
         .filter((route) => route.deviceId === device.id)
+        .filter(hasRouteKeyBytes)
         .map((route) => this.#routes.put({ ...route, target })),
     );
   }
 
   async #legacyRoutes(
     device: RelayDevice,
-  ): Promise<readonly StoredPushRoute[]> {
-    const legacy: StoredPushRoute[] = [];
+  ): Promise<readonly PushRouteRecord[]> {
+    const legacy: PushRouteRecord[] = [];
     for (const route of await this.#routes.all()) {
       if (
+        !hasRouteKeyBytes(route) ||
         route.networkLabel.length === 0 ||
         route.deviceId === undefined ||
         route.deviceId !== device.id
@@ -626,7 +634,7 @@ export class PushSynchronizer {
 
   async #unregisterExact(
     networkId: number,
-    route: StoredPushRoute,
+    route: PushRouteRecord,
   ): Promise<void> {
     await this.#engine.send({
       id: crypto.randomUUID(),

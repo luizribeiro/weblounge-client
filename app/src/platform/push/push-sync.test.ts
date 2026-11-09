@@ -12,7 +12,11 @@ import type {
 import type { PushDeviceStore } from "./engine-device-store";
 import { PushSynchronizer } from "./push-sync";
 import type { RelayClient } from "./relay-client";
-import type { PushRouteStore, StoredPushRoute } from "./route-store";
+import type {
+  PushRouteRecord,
+  PushRouteStore,
+  StoredPushRoute,
+} from "./route-store";
 
 const relayOrigin = "https://push.example.test";
 const target = {
@@ -89,13 +93,13 @@ class MemoryDevices implements PushDeviceStore {
 }
 
 class MemoryRoutes implements PushRouteStore {
-  readonly values = new Map<string, StoredPushRoute>();
+  readonly values = new Map<string, PushRouteRecord>();
 
-  get(homeVapid: string): Promise<StoredPushRoute | undefined> {
+  get(homeVapid: string): Promise<PushRouteRecord | undefined> {
     return Promise.resolve(this.values.get(homeVapid));
   }
 
-  findRoute(routeId: string): Promise<StoredPushRoute | undefined> {
+  findRoute(routeId: string): Promise<PushRouteRecord | undefined> {
     return Promise.resolve(
       [...this.values.values()].find((route) => route.routeId === routeId),
     );
@@ -111,7 +115,7 @@ class MemoryRoutes implements PushRouteStore {
     return Promise.resolve();
   }
 
-  all(): Promise<readonly StoredPushRoute[]> {
+  all(): Promise<readonly PushRouteRecord[]> {
     return Promise.resolve([...this.values.values()]);
   }
 }
@@ -470,18 +474,23 @@ describe("push state synchronization", () => {
     expect(current.routes.values.get("home-vapid")?.active).toBeUndefined();
   });
 
-  it("rotates a route whose worker keys failed", async () => {
+  it("rotates a legacy route once without creating duplicates", async () => {
     const current = fixture();
     current.devices.credentials = {
       relay: relayOrigin,
       device_id: "device-1",
       secret: "device-secret",
     };
-    current.routes.values.set(
-      "home-vapid",
-      route({ routeId: "failed-route", needsReregistration: true }),
-    );
+    const { privateKeyPkcs8: _privateKeyPkcs8, ...metadata } = route({
+      routeId: "failed-route",
+    });
+    current.routes.values.set("home-vapid", {
+      ...metadata,
+      keyStorage: "legacy-crypto-key",
+    });
 
+    requireRoute(current.engine);
+    await current.synchronizer.settled();
     requireRoute(current.engine);
     await current.synchronizer.settled();
 
@@ -493,6 +502,8 @@ describe("push state synchronization", () => {
     const stored = current.routes.values.get("home-vapid");
     expect(stored?.routeId).toBe("route-1");
     expect(stored?.needsReregistration).toBeUndefined();
+    expect(current.relay.ensureRoute).toHaveBeenCalledOnce();
+    expect(current.routes.values.size).toBe(1);
   });
 
   it("rotates invalid parameters once per connection", async () => {
