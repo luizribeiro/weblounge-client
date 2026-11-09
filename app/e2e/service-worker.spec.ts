@@ -517,8 +517,13 @@ test("a hosted reset token clears the shell only once", async ({ context }) => {
     });
 
     deployment.serveClient({ reset_token: "incident-1" });
-    await page.reload();
-    await expect.poll(() => deployment.navigations()).toBe(3);
+    await Promise.all([
+      page.waitForURL((url) => url.searchParams.has("_weblounge_reload"), {
+        waitUntil: "load",
+      }),
+      page.reload(),
+    ]);
+    expect(deployment.navigations()).toBe(3);
     await expect
       .poll(() =>
         page.evaluate(async () =>

@@ -29,6 +29,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Wait for the hosted reset navigation to finish before inspecting its document. The reset
+  token was already claimed before shell cleanup and produced exactly one cache-busting reload;
+  the service-worker journey could observe its server request and evaluate in the old document as
+  that one reload committed. The journey now follows the reset URL through load and retains exact
+  navigation counts before proving a repeated token preserves the rebuilt shell.
 - [x] Hold keyboard opening motion at zero until the first render callback after layout commit.
   WebKit can resolve pending play against the prior refresh tick, which made a nominal 2 ms first
   frame paint more than 50 px into the opening motion under load.
