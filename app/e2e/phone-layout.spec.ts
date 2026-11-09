@@ -28,7 +28,7 @@ test("groups phone messages without losing timestamps or the live edge", async (
     channel,
   );
   const first = `phone first ${suffix}`;
-  const second = `phone grouped ${suffix}`;
+  const second = `phone grouped ${suffix} ${"wrap inside the phone text column ".repeat(5)}`;
   const changedSender = `phone sender ${suffix}`;
   const changedMinute = `phone minute ${suffix}`;
   try {
@@ -66,6 +66,7 @@ test("groups phone messages without losing timestamps or the live edge", async (
       "false",
     );
     await expect(secondRow.locator("time")).toBeHidden();
+    expect(await wrapsAcrossLines(secondRow)).toBe(true);
     await expect.poll(() => distanceFromBottom(page)).toBeLessThanOrEqual(2);
 
     await peer.privmsgConfirmed(channel, changedSender);
@@ -148,6 +149,16 @@ function distanceFromBottom(page: Page): Promise<number> {
   return page.locator("[data-message-list]").evaluate((element) => {
     const list = element as HTMLElement;
     return list.scrollHeight - list.scrollTop - list.clientHeight;
+  });
+}
+
+function wrapsAcrossLines(row: Locator): Promise<boolean> {
+  return row.locator("[data-selectable]").evaluate((text) => {
+    const style = getComputedStyle(text);
+    return (
+      text.getBoundingClientRect().height >
+      Number.parseFloat(style.lineHeight) * 2
+    );
   });
 }
 

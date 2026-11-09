@@ -304,7 +304,8 @@
   row-gap: var(--wl-density-message-mobile-header-gap);
 }
 .list[data-presentation="mobile"] .row[data-message-group-start="false"] {
-  grid-template-areas: "content content status";
+  grid-template-areas: "content status";
+  grid-template-columns: minmax(0, 1fr) auto;
   padding-block-start: var(--wl-density-message-mobile-continuation-padding);
   row-gap: 0;
 }
