@@ -553,6 +553,14 @@
           biome = {
             enable = true;
             settings.flags = "--no-errors-on-unmatched";
+            types_or = [
+              "javascript"
+              "jsx"
+              "ts"
+              "tsx"
+              "json"
+              "xml"
+            ];
           };
           yamllint = {
             enable = true;
