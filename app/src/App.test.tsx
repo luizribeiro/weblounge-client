@@ -175,6 +175,33 @@ it("reports document visibility to the engine", () => {
   focused.mockRestore();
 });
 
+it("does not throw or retain foreground handlers after the engine closes", async () => {
+  const client = new RejectingClosedEngineClient();
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const view = render(() => <App engineClient={client} />);
+  await screen.findByText("Engine ready: wasm worker round trip complete");
+  await client.close();
+
+  focused.mockReturnValue(false);
+  expect(() => window.dispatchEvent(new Event("blur"))).not.toThrow();
+  hidden.mockReturnValue(true);
+  expect(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  ).not.toThrow();
+  expect(client.rejectedAfterClose).toEqual(["flush_chat_list_snapshot"]);
+
+  view.unmount();
+  const rejectedAfterUnmount = [...client.rejectedAfterClose];
+  hidden.mockReturnValue(false);
+  focused.mockReturnValue(true);
+  document.dispatchEvent(new Event("visibilitychange"));
+  window.dispatchEvent(new Event("focus"));
+  expect(client.rejectedAfterClose).toEqual(rejectedAfterUnmount);
+  hidden.mockRestore();
+  focused.mockRestore();
+});
+
 it("checks worker liveness on a persisted page restore", () => {
   const client = new FakeEngineClient();
   render(() => <App engineClient={client} />);
@@ -1827,4 +1854,21 @@ class FakeEngineClient implements EngineClient {
   }
 
   async close(): Promise<void> {}
+}
+
+class RejectingClosedEngineClient extends FakeEngineClient {
+  readonly rejectedAfterClose: EngineRequestEnvelope["request"]["type"][] = [];
+  #closed = false;
+
+  override send(request: EngineRequestEnvelope) {
+    if (this.#closed) {
+      this.rejectedAfterClose.push(request.request.type);
+      return Promise.reject(new Error("engine client is closed"));
+    }
+    return super.send(request);
+  }
+
+  override async close(): Promise<void> {
+    this.#closed = true;
+  }
 }
