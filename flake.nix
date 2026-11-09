@@ -247,9 +247,9 @@
             WEBLOUNGE_VITEST_TEST_TIMEOUT=${toString vitestEnvironment.testTimeout} \
             ${command}
         '';
-        playwrightCommand = ''
+        playwrightCommand = args: ''
           playwright_status=0
-          pnpm --filter @weblounge/app e2e || playwright_status=$?
+          pnpm --filter @weblounge/app e2e ${args} || playwright_status=$?
           if [[ "$playwright_status" -ne 0 ]]; then
             while IFS= read -r -d $'\0' context; do
               echo "Playwright error context: $context"
@@ -363,6 +363,7 @@
         pushE2eApp = checkApp.overrideAttrs {
           WEBLOUNGE_PUSH_DELIVERY_HARNESS = "1";
         };
+        e2eShardCount = 4;
         e2e = pkgs.stdenvNoCC.mkDerivation {
           pname = "weblounge-e2e";
           version = "0.1.0";
@@ -386,6 +387,7 @@
           WEBLOUNGE_E2E_ERGO = "1";
           WEBLOUNGE_E2E_IRC_TARGET = "ws://127.0.0.1:8066";
           WEBLOUNGE_E2E_FORWARDER_URL = "http://127.0.0.1:8091";
+          WEBLOUNGE_E2E_SHARD = "unsharded";
           WEBLOUNGE_EXPECTED_BUILD_SHA = "ci";
           buildPhase = ''
             runHook preBuild
@@ -428,12 +430,21 @@
                 cat forwarder.log >&2
                 exit 1
               fi
-              ${playwrightCommand}
+              ${playwrightCommand ''--no-deps --shard="$WEBLOUNGE_E2E_SHARD"''}
             ''}
             runHook postBuild
           '';
           installPhase = "touch $out";
         };
+        e2eShards = builtins.listToAttrs (
+          map (shard: {
+            name = "e2e-${toString shard}-of-${toString e2eShardCount}";
+            value = e2e.overrideAttrs {
+              pname = "weblounge-e2e-${toString shard}-of-${toString e2eShardCount}";
+              WEBLOUNGE_E2E_SHARD = "${toString shard}/${toString e2eShardCount}";
+            };
+          }) (pkgs.lib.range 1 e2eShardCount)
+        );
         e2eDev = pkgs.stdenvNoCC.mkDerivation {
           pname = "weblounge-e2e-dev";
           version = "0.1.0";
@@ -452,7 +463,7 @@
           WEBLOUNGE_E2E_DEV = "1";
           buildPhase = ''
             runHook preBuild
-            ${runE2e playwrightCommand}
+            ${runE2e (playwrightCommand "")}
             runHook postBuild
           '';
           installPhase = "touch $out";
@@ -697,13 +708,13 @@
           push-payload-wasm = pushPayloadWasm;
           app-build = checkApp;
           e2e-network-fallback = e2eNetworkFallbackTest;
-          inherit e2e;
           e2e-dev = e2eDev;
           upgrade-e2e = upgradeE2e;
           biome = appCheck "biome" "${pkgs.biome}/bin/biome check .";
           tsc = appCheck "tsc" "${pkgs.pnpm}/bin/pnpm typecheck";
           vitest = appCheck "vitest" (vitestCommand "${pkgs.pnpm}/bin/pnpm test");
-        };
+        }
+        // e2eShards;
         formatter = pkgs.nixfmt-tree;
         packages = {
           inherit app;

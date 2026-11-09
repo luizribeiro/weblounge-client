@@ -29,6 +29,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Split the production Playwright check into four generated flake checks. Their exact 489-test
+  union retains all 44 projects without duplicates, while `--no-deps` prevents the slow-buffer
+  project's scheduling dependency from pulling the whole Chromium project into one shard. Local
+  shard times were 3.4–4.8 minutes versus 18.5 minutes for CI's unsharded run. The investigated
+  11.5-minute dependency job rebuilt unchanged dev/release Cargo artifacts and wasm-bindgen tooling
+  despite identical cached derivations, so no source filter was broadened or coverage weakened.
 - [x] Land reactions/replies batch 1. Design 25 fixes the engine/protocol/UI boundaries and the
   signed-off interaction model. The engine now idempotently aggregates received live and history
   reaction additions/removals by target msgid using versioned removal tombstones, bounds facts that
