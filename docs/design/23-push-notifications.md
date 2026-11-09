@@ -328,6 +328,13 @@ grow into a second engine.
 
 ### Tapping a notification
 
+#### Known platform limitation
+
+In an iOS Home Screen app, WebKit often does not dispatch `notificationclick` when a tap
+foregrounds a suspended app ([WebKit bug 268797](https://bugs.webkit.org/show_bug.cgi?id=268797)).
+The app then stays on the chat list. We deliberately do not infer the tapped notification: landing
+on the list is preferable to opening the wrong chat.
+
 `notification.data` carries the buffer route, e.g. `/weblounge/@mel`, plus the conversation tag,
 message id and server time needed for read-marker cleanup (`10-navigation.md:201-222`,
 `app/src/navigation/buffer-route.ts`). On `notificationclick`, the worker first records one

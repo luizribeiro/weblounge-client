@@ -4,6 +4,8 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Known limits
 
+- WebKit bug 268797 can leave an iOS Home Screen app on the chat list after a notification tap; we
+  deliberately do not guess which conversation to open.
 - The dwell, divider, and snapshot flush now share one foreground signal. The push lease still uses
   its existing lifecycle wiring while the iOS push investigation is active; moving it onto the
   shared signal is deferred to the push migration step.

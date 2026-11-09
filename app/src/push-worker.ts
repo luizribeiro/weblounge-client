@@ -334,6 +334,10 @@ worker.addEventListener("pushsubscriptionchange", (event) => {
   (event as WorkerEvent).waitUntil(notifyWindowsOfSubscriptionChange());
 });
 
+// iOS Home Screen WebKit often omits notificationclick when a tap foregrounds a
+// suspended app, leaving it on the chat list. We deliberately do not infer which
+// notification was tapped: the list is safer than opening the wrong chat.
+// https://bugs.webkit.org/show_bug.cgi?id=268797
 worker.addEventListener("notificationclick", (event) => {
   const click = event as WorkerNotificationEvent;
   click.preventDefault();
