@@ -9,6 +9,8 @@ mod notification_settings;
 mod protocol;
 mod push_device;
 mod pushed_messages;
+#[cfg(test)]
+mod reactions;
 pub mod read_model;
 mod request_error;
 mod runtime;
@@ -30,7 +32,8 @@ pub use protocol::{
     MessageDelivery, MessageId, MessageKind, MessageProjection, NetworkConnectionState, NetworkId,
     NetworkProjection, NoticeAction, NoticeKind, NoticeTone, OfflineReason, PushDeploymentConfig,
     PushDeviceCredentials, PushFailure, PushRoute, PushState, PushUnsupportedReason,
-    RedactedSecret, SaslCredentials, ShellKind, TypingProjection, UiToEngine,
+    ReactionActorProjection, ReactionProjection, RedactedSecret, SaslCredentials, ShellKind,
+    TypingProjection, UiToEngine,
 };
 
 /// Reads service-worker push records while constructing the web engine.
