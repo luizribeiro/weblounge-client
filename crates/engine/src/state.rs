@@ -977,7 +977,6 @@ impl NetworkModel {
         (received.events, received.carry_read)
     }
 
-    #[expect(dead_code, reason = "runtime wiring lands in the next commit")]
     pub(crate) fn receive_reaction(
         &mut self,
         reaction: &papo::event::Reacted,
@@ -3359,7 +3358,6 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
     }
 }
 
-#[expect(dead_code, reason = "runtime wiring lands in the next commit")]
 fn reaction_actor_key(actor: &papo::UserSource) -> String {
     actor.account().name().map_or_else(
         || format!("nick:{}", actor.nick().key()),

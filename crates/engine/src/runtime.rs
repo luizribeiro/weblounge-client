@@ -3773,6 +3773,12 @@ fn process_papo_event(
             effects.read_flush = start_read_flush(running);
             Vec::new()
         }
+        papo::Event::Reacted(reaction) => {
+            if let Some(event) = running.model.receive_reaction(&reaction) {
+                output.push(event);
+            }
+            Vec::new()
+        }
         papo::Event::TypingChanged(changed) => {
             if changed.authorship != papo::Authorship::Own
                 && let Some(event) =
@@ -4430,6 +4436,9 @@ fn process_history(
                     }
                 }
             }
+            papo::Event::Reacted(reaction) => {
+                merge_history_reaction(&mut running.model, &reaction, &mut timeline, &mut output);
+            }
             papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
                 if let Some(event) = running.model.receive_membership(
                     &joined.channel,
@@ -4486,6 +4495,26 @@ fn process_history(
     if let Some((client, instance)) = read_flush {
         spawn_read_flush(shared_state, outbound.clone(), client, instance);
     }
+}
+
+fn merge_history_reaction(
+    model: &mut NetworkModel,
+    reaction: &papo::event::Reacted,
+    timeline: &mut Option<(BufferId, Vec<crate::MessageProjection>)>,
+    output: &mut Vec<EngineToUi>,
+) {
+    let Some(event) = model.receive_reaction(reaction) else {
+        return;
+    };
+    if let EngineToUi::MessageUpdated { buffer_id, message } = &event
+        && let Some((timeline_buffer, messages)) = timeline
+        && timeline_buffer == buffer_id
+        && let Some(current) = messages.iter_mut().find(|current| current.id == message.id)
+    {
+        current.clone_from(message);
+        return;
+    }
+    output.push(event);
 }
 
 fn push_history_timeline(
@@ -12267,7 +12296,123 @@ async fn delay(duration: Duration) {
             .collect()
     }
 
+    fn projected_reaction<'a>(
+        events: &'a [EngineToUi],
+        text: &str,
+    ) -> Option<&'a crate::ReactionProjection> {
+        events
+            .iter()
+            .flat_map(|event| match event {
+                EngineToUi::MessagesAppended { messages, .. }
+                | EngineToUi::MessagesPrepended { messages, .. }
+                | EngineToUi::BufferSnapshot { messages, .. } => messages.as_slice(),
+                EngineToUi::MessageUpdated { message, .. } => std::slice::from_ref(message),
+                _ => &[],
+            })
+            .filter(|message| message.text == text)
+            .find_map(|message| {
+                message
+                    .reactions
+                    .as_deref()?
+                    .iter()
+                    .find(|reaction| reaction.text == "👍")
+            })
+    }
+
     const HISTORY_CAPS: &str = "draft/chathistory labeled-response batch server-time message-tags";
+
+    #[tokio::test]
+    async fn live_reaction_updates_its_loaded_message() {
+        let mut harness = ReplayHarness::joined(&format!("{HISTORY_CAPS} draft/react")).await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(&mut harness.wire, &latest, &[]).await;
+        _ = harness.page_output("initial-sentinel").await;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:01:00.000Z;msgid=live-target :alice!a@host PRIVMSG #room :live target")
+            .await;
+        harness
+            .wire
+            .server("@time=2026-10-27T13:02:00.000Z;msgid=live-reaction;+draft/react=👍;+draft/reply=live-target :alice!a@host TAGMSG #room")
+            .await;
+
+        let mut output = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while projected_reaction(&output, "live target").is_none() {
+                output.push(
+                    harness
+                        .receiver
+                        .recv()
+                        .await
+                        .expect("runtime remains active"),
+                );
+            }
+        })
+        .await
+        .expect("live reaction updates its row");
+        assert!(
+            !projected_reaction(&output, "live target")
+                .expect("live reaction")
+                .mine
+        );
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn own_history_reaction_remains_mine_after_reconnect() {
+        let mut harness =
+            ReplayHarness::joined(&format!("{HISTORY_CAPS} account-tag draft/react")).await;
+        harness
+            .wire
+            .server(":offline.test 900 weblounge weblounge!u@host account :logged in")
+            .await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(
+            &mut harness.wire,
+            &latest,
+            &[
+                "@batch={batch};account=alice;time=2026-10-27T12:00:00.000Z;msgid=target :alice!a@host PRIVMSG #room :reacted message",
+                "@batch={batch};account=account;time=2026-10-27T12:01:00.000Z;msgid=own-reaction;+draft/react=👍;+draft/reply=target :weblounge!u@host TAGMSG #room",
+            ],
+        )
+        .await;
+
+        let output = harness.page_output("reconnect-sentinel").await;
+        assert!(
+            projected_reaction(&output, "reacted message")
+                .expect("history reaction")
+                .mine
+        );
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn hosted_fresh_client_marks_account_owned_history_reaction_as_mine() {
+        let mut harness =
+            ReplayHarness::joined(&format!("{HISTORY_CAPS} account-tag draft/react")).await;
+        harness
+            .wire
+            .server(":offline.test 900 weblounge weblounge!u@host account :logged in")
+            .await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(
+            &mut harness.wire,
+            &latest,
+            &[
+                "@batch={batch};account=alice;time=2026-10-27T12:00:00.000Z;msgid=target :alice!a@host PRIVMSG #room :hosted message",
+                "@batch={batch};account=account;time=2026-10-27T12:01:00.000Z;msgid=hosted-reaction;+draft/react=👍;+draft/reply=target :phone!u@host TAGMSG #room",
+            ],
+        )
+        .await;
+
+        let output = harness.page_output("hosted-sentinel").await;
+        assert!(
+            projected_reaction(&output, "hosted message")
+                .expect("history reaction")
+                .mine
+        );
+        harness.drain.abort();
+    }
 
     #[tokio::test]
     async fn latest_ergo_page_prepends_once() {
