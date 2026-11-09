@@ -5,6 +5,7 @@ interface ReadDwellOptions {
   readonly atLiveEdge: Accessor<boolean>;
   readonly bufferId: Accessor<number | undefined>;
   readonly foreground: Accessor<boolean>;
+  readonly foregroundExitEpoch: Accessor<number | undefined>;
   readonly newestCommittedMessageId: Accessor<number | undefined>;
   readonly onMarkRead: (bufferId: number, through: number) => void;
   readonly visible: Accessor<boolean>;
@@ -21,6 +22,7 @@ export function createReadDwell(options: ReadDwellOptions): void {
 
   createEffect(() => {
     const bufferId = options.bufferId();
+    options.foregroundExitEpoch();
     clearDwellTimer();
     setDwelledBufferId(undefined);
     setEligibleBufferId(undefined);

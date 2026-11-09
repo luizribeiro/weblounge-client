@@ -84,6 +84,7 @@ export function MobileConversation(props: MobileConversationProps) {
     atLiveEdge,
     bufferId,
     foreground: () => props.foreground !== false,
+    foregroundExitEpoch: () => props.foregroundExitEpoch,
     newestCommittedMessageId: newestMessageId,
     onMarkRead: (currentBufferId, through) =>
       props.onMarkRead(currentBufferId, through),

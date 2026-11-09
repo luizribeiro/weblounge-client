@@ -293,6 +293,7 @@ export function DesktopShell(props: DesktopShellProps) {
     atLiveEdge,
     bufferId: activeBufferId,
     foreground: () => props.foreground !== false,
+    foregroundExitEpoch: () => props.foregroundExitEpoch,
     newestCommittedMessageId: newestMessageId,
     onMarkRead: (bufferId, through) => props.onMarkRead(bufferId, through),
     visible: () => true,
