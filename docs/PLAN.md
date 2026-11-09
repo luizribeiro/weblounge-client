@@ -29,6 +29,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Prevent keyboard-open iPhones from panning the page when a vertical drag starts in the
+  composer. The touch lock now lets an overflowing textarea scroll only while it can move in the
+  drag direction, then cancels the move at either cap; one-line textareas, the field wrapper, Send,
+  and composer-bar padding remain page-locked while horizontal gestures, long press, active text
+  selection, and transcript scrolling retain their existing ownership.
 - [x] Repair the three layout-related CI regressions after phone transcript polish. The mobile-shell
   journey now asserts the signed-off nick header and deterministic same-minute continuation instead
   of the retired one-line phone row. Bot markers retain their accessible Lucide silhouette and nick

@@ -41,7 +41,6 @@ export function shouldLockTouchMove({
     !keyboardOpen ||
     startTarget === null ||
     !root.contains(startTarget) ||
-    startTarget.closest("textarea") !== null ||
     selectionActive ||
     Math.abs(deltaY) <= Math.abs(deltaX)
   )

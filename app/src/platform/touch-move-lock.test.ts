@@ -46,12 +46,30 @@ describe("touch move lock", () => {
     expect(decide(root, scroller, 0, -40)).toBe(true);
   });
 
-  it("exempts textarea and active selection gestures", () => {
+  it("locks a textarea only when it cannot scroll in the drag direction", () => {
+    const { root } = surfaces();
+    const textarea = document.createElement("textarea");
+    textarea.style.overflowY = "auto";
+    root.append(textarea);
+    setScrollGeometry(textarea, 0, 100, 100);
+    expect(decide(root, textarea, 0, 40)).toBe(true);
+    expect(decide(root, textarea, 0, -40)).toBe(true);
+
+    setScrollGeometry(textarea, 0, 500, 100);
+
+    expect(decide(root, textarea, 0, 40)).toBe(true);
+    expect(decide(root, textarea, 0, -40)).toBe(false);
+
+    setScrollGeometry(textarea, 400, 500, 100);
+    expect(decide(root, textarea, 0, 40)).toBe(false);
+    expect(decide(root, textarea, 0, -40)).toBe(true);
+  });
+
+  it("leaves active selection gestures unlocked", () => {
     const { root } = surfaces();
     const textarea = document.createElement("textarea");
     root.append(textarea);
-    expect(decide(root, textarea, 0, 40)).toBe(false);
-    expect(decide(root, root, 0, 40, true, true)).toBe(false);
+    expect(decide(root, textarea, 0, 40, true, true)).toBe(false);
   });
 
   it("allows horizontal drags and all moves while the keyboard is closed", () => {

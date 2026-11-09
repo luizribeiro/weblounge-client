@@ -111,6 +111,62 @@ test.describe("mobile text field zoom", () => {
       opening.map(() => ({ appTop: 0, offsetTop: 0, scrollY: 0 })),
     );
 
+    await composer.fill("one line");
+    expect(
+      (
+        await touchMove(composer, 400, 400, {
+          endX: 240,
+          startX: 200,
+        })
+      ).moveAllowed,
+    ).toBe(true);
+    expect(
+      (await touchMove(composer, 400, 400, { duration: 500 })).moveAllowed,
+    ).toBe(true);
+    for (const target of [composer, page.locator("[data-composer-field]")]) {
+      expect((await touchMove(target, 400, 320)).moveAllowed).toBe(false);
+    }
+    await composer.fill("");
+    for (const target of [
+      page.getByRole("button", { name: "Send" }),
+      page.locator("[data-composer]"),
+    ]) {
+      expect((await touchMove(target, 400, 320)).moveAllowed).toBe(false);
+    }
+
+    await composer.fill(
+      Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"),
+    );
+    await waitForStableGeometry(composer);
+    const textareaScroll = await composer.evaluate((field) => ({
+      clientHeight: field.clientHeight,
+      scrollHeight: field.scrollHeight,
+    }));
+    expect(textareaScroll.scrollHeight).toBeGreaterThan(
+      textareaScroll.clientHeight,
+    );
+
+    await composer.evaluate((field) => {
+      field.scrollTop = 0;
+    });
+    expect((await touchMove(composer, 400, 480)).moveAllowed).toBe(false);
+    expect((await touchMove(composer, 480, 400)).moveAllowed).toBe(true);
+    await composer.evaluate((field) => field.scrollBy(0, 40));
+    expect(await composer.evaluate((field) => field.scrollTop)).toBeGreaterThan(
+      0,
+    );
+
+    await composer.evaluate((field) => {
+      field.scrollTop = field.scrollHeight;
+    });
+    const scrollCap = await composer.evaluate((field) => field.scrollTop);
+    expect((await touchMove(composer, 480, 400)).moveAllowed).toBe(false);
+    expect((await touchMove(composer, 400, 480)).moveAllowed).toBe(true);
+    await composer.evaluate((field) => field.scrollBy(0, -40));
+    expect(await composer.evaluate((field) => field.scrollTop)).toBeLessThan(
+      scrollCap,
+    );
+
     const headerMove = await touchMove(
       page.getByRole("button", { name: "Back to chats" }),
       200,
