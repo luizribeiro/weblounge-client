@@ -43,6 +43,13 @@ The single place a fresh session reads to know where the project stands. Update 
   shard times were 3.4–4.8 minutes versus 18.5 minutes for CI's unsharded run. The investigated
   11.5-minute dependency job rebuilt unchanged dev/release Cargo artifacts and wasm-bindgen tooling
   despite identical cached derivations, so no source filter was broadened or coverage weakened.
+- [x] Polish the touch transcript into sender-and-minute groups. Phone text messages now put a
+  coloured, clickable nick, robot marker and timestamp on a dedicated header, keep following
+  messages on the full text width, and start a fresh header after sender, minute, divider or
+  non-message boundaries. Density tokens own the group rhythm, row estimates and live-edge
+  remeasurement account for the two row shapes, reactions remain below the text, and long grouped
+  messages wrap inside the viewport. The shared accessible Lucide robot icon also replaces every
+  textual BOT marker on desktop, in member rows and in composer suggestions.
 - [x] Land reactions/replies batch 1. Design 25 fixes the engine/protocol/UI boundaries and the
   signed-off interaction model. The engine now idempotently aggregates received live and history
   reaction additions/removals by target msgid using versioned removal tombstones, bounds facts that
