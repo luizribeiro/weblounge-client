@@ -1,9 +1,19 @@
 .form {
-  align-items: center;
+  align-items: flex-end;
   border-top: 1px solid var(--wl-color-border);
   display: flex;
   gap: 8px;
   padding: 10px 14px max(14px, var(--wl-safe-bottom-effective));
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+}
+
+.entryRow {
+  align-items: flex-end;
+  display: flex;
 }
 
 .wrap {
@@ -49,6 +59,7 @@
   min-width: 0;
   padding: 9px 11px;
   resize: none;
+  width: 100%;
 }
 
 textarea.input {
@@ -174,7 +185,12 @@ textarea.input {
   padding: 9px 14px;
 }
 
+.touchSend {
+  display: none;
+}
+
 .send:disabled,
+.send[data-empty="true"],
 .input:disabled {
   opacity: 0.55;
 }
@@ -189,4 +205,65 @@ textarea.input {
 
 :global(#root[data-input="touch"]) .candidate {
   height: var(--wl-size-touch-target);
+}
+
+:global(#root[data-input="touch"]) .field {
+  background: var(--wl-color-input-bg);
+  border: 1px solid var(--wl-color-border);
+  border-radius: calc(var(--wl-size-touch-target) / 2);
+  overflow: hidden;
+}
+
+:global(#root[data-input="touch"]) .field:focus-within {
+  border-color: var(--wl-color-focus-ring);
+}
+
+:global(#root[data-input="touch"]) .input {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  line-height: 1.4;
+  padding-inline: 11px 0;
+}
+
+:global(#root[data-input="touch"]) .desktopSend {
+  display: none;
+}
+
+:global(#root[data-input="touch"]) .touchSend {
+  align-items: center;
+  align-self: flex-end;
+  background: transparent;
+  display: grid;
+  flex: 0 0 var(--wl-size-touch-target);
+  height: var(--wl-size-touch-target);
+  justify-items: center;
+  padding: 0;
+  width: var(--wl-size-touch-target);
+}
+
+:global(#root[data-input="touch"]) .touchSend span {
+  align-items: center;
+  background: var(--wl-color-accent);
+  border-radius: 50%;
+  display: grid;
+  height: var(--wl-size-composer-send);
+  justify-items: center;
+  width: var(--wl-size-composer-send);
+}
+
+:global(#root[data-input="touch"]) .touchSend svg {
+  fill: none;
+  height: var(--wl-size-composer-send-icon);
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  width: var(--wl-size-composer-send-icon);
+}
+
+:global(#root[data-input="touch"]) .touchSend:disabled span,
+:global(#root[data-input="touch"]) .touchSend[data-empty="true"] span {
+  background: var(--wl-color-chip);
+  color: var(--wl-color-muted);
 }

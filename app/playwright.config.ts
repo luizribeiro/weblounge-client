@@ -176,6 +176,11 @@ export default defineConfig({
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
+      name: "webkit-phone-composer",
+      testMatch: "**/phone-composer.spec.ts",
+      use: { browserName: "webkit" },
+    },
+    {
       name: "webkit-conversation",
       testMatch: ["**/composer-anchor.spec.ts", "**/transcript-paint.spec.ts"],
       use: { browserName: "webkit" },

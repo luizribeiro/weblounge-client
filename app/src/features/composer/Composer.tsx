@@ -177,6 +177,11 @@ export function Composer(props: ComposerProps) {
       })
       .catch(() => undefined);
   };
+  const sendEmpty = () => text().trim() === "";
+  const send = () => {
+    submit();
+    textarea?.focus();
+  };
   createEffect(() => {
     setSelected(suggestions() === undefined ? -1 : 0);
   });
@@ -393,49 +398,72 @@ export function Composer(props: ComposerProps) {
         role="combobox"
         tabIndex={-1}
       >
-        <textarea
-          aria-label={t("composer.input", { target: props.bufferTitle })}
-          autocomplete="off"
-          class={styles.input}
-          disabled={props.disabled}
-          onCompositionEnd={(event) => {
-            composing = false;
-            const value = event.currentTarget.value;
-            update(value);
-            request(value, event.currentTarget.selectionStart, false);
-          }}
-          onCompositionStart={() => {
-            composing = true;
-            setDismissedInput(text());
-            setSelected(-1);
-          }}
-          onInput={(event) => {
-            const value = event.currentTarget.value;
-            update(value);
-            if (!composing) {
-              request(value, event.currentTarget.selectionStart, false);
-            }
-          }}
-          onKeyDown={keydown}
-          placeholder={t("composer.input", { target: props.bufferTitle })}
-          ref={(element) => {
-            textarea = element;
-            if (props.focusOnMount === true)
-              requestAnimationFrame(() => {
-                if (element.isConnected) element.focus({ preventScroll: true });
-              });
-          }}
-          rows={1}
-          value={text()}
-        />
+        <div class={styles.field} data-composer-field="true">
+          <div class={styles.entryRow}>
+            <textarea
+              aria-label={t("composer.input", { target: props.bufferTitle })}
+              autocomplete="off"
+              class={styles.input}
+              disabled={props.disabled}
+              onCompositionEnd={(event) => {
+                composing = false;
+                const value = event.currentTarget.value;
+                update(value);
+                request(value, event.currentTarget.selectionStart, false);
+              }}
+              onCompositionStart={() => {
+                composing = true;
+                setDismissedInput(text());
+                setSelected(-1);
+              }}
+              onInput={(event) => {
+                const value = event.currentTarget.value;
+                update(value);
+                if (!composing) {
+                  request(value, event.currentTarget.selectionStart, false);
+                }
+              }}
+              onKeyDown={keydown}
+              placeholder={t("composer.input", { target: props.bufferTitle })}
+              ref={(element) => {
+                textarea = element;
+                if (props.focusOnMount === true)
+                  requestAnimationFrame(() => {
+                    if (element.isConnected)
+                      element.focus({ preventScroll: true });
+                  });
+              }}
+              rows={1}
+              value={text()}
+            />
+            <button
+              aria-label={t("common.send")}
+              class={`${styles.send} ${styles.touchSend}`}
+              data-composer-send="true"
+              data-empty={sendEmpty()}
+              disabled={props.disabled}
+              onClick={send}
+              onPointerDown={(event) => event.preventDefault()}
+              onTouchEnd={(event) => {
+                event.preventDefault();
+                send();
+              }}
+              type="button"
+            >
+              <span data-composer-send-visual="true">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
         <button
-          class={styles.send}
+          class={`${styles.send} ${styles.desktopSend}`}
           data-composer-send="true"
+          data-empty={sendEmpty()}
           disabled={props.disabled}
-          onClick={() => {
-            submit();
-            textarea?.focus();
-          }}
+          onClick={send}
           onPointerDown={(event) => event.preventDefault()}
           type="button"
         >

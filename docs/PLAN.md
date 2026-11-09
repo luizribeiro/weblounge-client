@@ -43,6 +43,10 @@ The single place a fresh session reads to know where the project stands. Update 
   A journey proves a second client's reaction appears live without moving the transcript from its
   edge, survives a history reload, disappears on unreact, and stays gone after reload; sending,
   pickers, phone actions and replies remain later batches.
+- [x] Move phone Send inside a fully rounded composer field as a 34px arrow with a 44px touch
+  target. The field grows upward to its multiline cap and then scrolls while Send stays pinned to
+  the bottom; desktop Send now bottom-aligns too. The field/entry split leaves room for later reply
+  and photo rows, and built-app Chromium and WebKit cover geometry, focus retention and sending.
 - [x] Keep hosted sign-in cancellation inside the mounted app's engine ownership. A session that
   requires authorization now unmounts the app before redirecting, so cleanup removes foreground
   snapshot work and closes the client in that order; the abandoned startup also recognizes the
