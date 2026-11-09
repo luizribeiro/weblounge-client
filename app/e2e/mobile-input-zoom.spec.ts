@@ -1139,6 +1139,20 @@ async function sampleKeyboardTransition(
       )
         throw new Error("keyboard test surfaces are missing");
       const frames: KeyboardFrame[] = [];
+      const waitForOpeningAnimations = async () => {
+        while (true) {
+          const snapshot = document.querySelector<HTMLElement>(
+            "[data-keyboard-transcript-snapshot-layer]",
+          );
+          const composerAnimations = composer.getAnimations({ subtree: true });
+          const transcriptAnimations = snapshot?.getAnimations() ?? [];
+          if (composerAnimations.length > 0 && transcriptAnimations.length > 0)
+            return;
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          );
+        }
+      };
       const sample = () => {
         const composerAnimations = composer.getAnimations({ subtree: true });
         const animationTime = composerAnimations[0]?.currentTime;
@@ -1237,6 +1251,8 @@ async function sampleKeyboardTransition(
         );
         field.focus({ preventScroll: true });
         setViewport(nextHeight);
+        if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
+          await waitForOpeningAnimations();
         sample();
       } else {
         window.addEventListener("weblounge:keyboard-layout-commit", sample, {
@@ -1279,13 +1295,29 @@ async function liveEdgeGap(locator: ReturnType<Page["locator"]>) {
 }
 
 async function pauseOpeningMotion(page: Page, height: number): Promise<void> {
-  await page.evaluate((nextHeight) => {
+  await page.evaluate(async (nextHeight) => {
     const field = document.querySelector<HTMLTextAreaElement>(
       "[data-composer] textarea",
     );
     const setViewport = window.__setVisualViewport;
     if (field === null || setViewport === undefined)
       throw new Error("keyboard paint surfaces are missing");
+    const openingAnimations = async () => {
+      while (true) {
+        const composer = field.closest<HTMLElement>("[data-composer]");
+        const snapshot = document.querySelector<HTMLElement>(
+          "[data-keyboard-transcript-snapshot-layer]",
+        );
+        const composerAnimations =
+          composer?.getAnimations({ subtree: true }) ?? [];
+        const transcriptAnimations = snapshot?.getAnimations() ?? [];
+        if (composerAnimations.length > 0 && transcriptAnimations.length > 0)
+          return [...composerAnimations, ...transcriptAnimations];
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+      }
+    };
     field.dispatchEvent(
       new PointerEvent("pointerdown", {
         bubbles: true,
@@ -1296,16 +1328,8 @@ async function pauseOpeningMotion(page: Page, height: number): Promise<void> {
     );
     field.focus({ preventScroll: true });
     setViewport(nextHeight);
-    for (const animation of document.getAnimations()) {
-      const target = animation.effect?.target;
-      if (
-        target instanceof Element &&
-        target.matches(
-          "[data-composer], [data-keyboard-transcript-snapshot-layer]",
-        )
-      )
-        animation.currentTime = 0;
-    }
+    for (const animation of await openingAnimations())
+      animation.currentTime = 0;
   }, height);
 }
 
