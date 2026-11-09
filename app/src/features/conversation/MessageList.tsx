@@ -294,6 +294,21 @@ export function MessageList(props: MessageListProps) {
         virtualizer.measureElement(element);
     });
   };
+  const refreshRenderedMeasurements = () => {
+    if (list?.isConnected !== true) return;
+    const measurements = [
+      ...list.querySelectorAll<HTMLLIElement>("li[data-index]"),
+    ].flatMap((element) => {
+      const index = Number(element.dataset.index);
+      const size =
+        element.getBoundingClientRect().height || element.offsetHeight;
+      return Number.isInteger(index) && size > 0 ? [{ index, size }] : [];
+    });
+    preserveVisualScrollAnchor(list, () => {
+      for (const { index, size } of measurements)
+        virtualizer.resizeItem(index, size);
+    });
+  };
   const measureRow = (element: HTMLLIElement, index: number) => {
     element.dataset.index = String(index);
     const measured = measureElement(element, undefined, virtualizer);
@@ -459,7 +474,10 @@ export function MessageList(props: MessageListProps) {
       syncViewportRect?.();
     };
     const settleKeyboardMotionTranscript = () => {
-      remeasure();
+      // The keyboard commit scroll is still active here, so TanStack skips
+      // measureElement. Keep unrendered measurements and update painted rows
+      // directly before the frozen snapshot leaves.
+      refreshRenderedMeasurements();
       if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
     };
     const cancelComposerScroll = () => {

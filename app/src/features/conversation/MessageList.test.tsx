@@ -5,7 +5,10 @@ import type {
   MembershipProjection,
   MessageProjection,
 } from "../../engine/protocol";
-import { observeKeyboardMotion } from "../../platform/keyboard-motion";
+import {
+  keyboardMotionTranscriptRevealEvent,
+  observeKeyboardMotion,
+} from "../../platform/keyboard-motion";
 import {
   keyboardLayoutCommitEvent,
   keyboardLayoutWillCommitEvent,
@@ -422,12 +425,14 @@ it("remeasures stale live rows before a keyboard snapshot reveals them", async (
 
   const root = container.firstElementChild;
   const composer = container.querySelector<HTMLElement>("[data-composer]");
+  const list = container.querySelector<HTMLElement>("[data-message-list]");
   const transcript = container.querySelector<HTMLElement>(
     "[data-message-motion-layer]",
   );
   if (
     !(root instanceof HTMLElement) ||
     composer === null ||
+    list === null ||
     transcript === null
   )
     throw new Error("keyboard motion fixture is incomplete");
@@ -472,6 +477,14 @@ it("remeasures stale live rows before a keyboard snapshot reveals them", async (
     firstHeight,
   );
 
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 100 },
+    scrollHeight: { configurable: true, value: 500 },
+  });
+  list.scrollTop = 1;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
   const frames: FrameRequestCallback[] = [];
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
     frames.push(callback);
@@ -511,6 +524,15 @@ it("preserves fractional row measurements without transcript reserve", async () 
     throw new Error("message row is missing");
 
   for (const observer of observers) observer.flushTarget(row, 19.25);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(spacer.style.height).toBe("47.25px");
+
+  container
+    .querySelector<HTMLElement>("[data-message-motion-layer]")
+    ?.dispatchEvent(
+      new Event(keyboardMotionTranscriptRevealEvent, { bubbles: true }),
+    );
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(spacer.style.height).toBe("47.25px");

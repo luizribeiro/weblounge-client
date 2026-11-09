@@ -29,6 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep the live transcript flush with the composer when an opening keyboard snapshot hands
+  back to WebKit. The reveal now refreshes rendered row sizes directly without clearing valid
+  virtualizer measurements; an in-progress live-edge scroll can no longer make TanStack skip the
+  refill and leave a grouped-row estimate as a persistent blank gap.
 - [x] Prevent keyboard-open iPhones from panning the page when a vertical drag starts in the
   composer. The touch lock now lets an overflowing textarea scroll only while it can move in the
   drag direction, then cancels the move at either cap; one-line textareas, the field wrapper, Send,
