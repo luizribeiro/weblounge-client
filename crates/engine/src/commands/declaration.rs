@@ -216,6 +216,7 @@ mod tests {
                     | "app/src/push-worker.ts",
                 "notice",
             ) | ("app/src/actions/action-registry.ts", "help")
+                | ("app/src/platform/push/push-delivery-log.ts", "version",)
                 | (
                     "app/src/engine/EngineClient.ts",
                     "notice" | "part" | "quit" | "topic",

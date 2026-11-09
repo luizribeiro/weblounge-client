@@ -29,6 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Make the command-name ownership guard fail closed and run against the application sources in
+  Nix. The cargo-test check alone now includes `app/src`, leaving clippy, Wasm, relay and dependency
+  derivations independent of TypeScript-only changes, and the push delivery log's schema version is
+  explicitly classified as incidental.
 - [x] Keep hosted sign-in cancellation inside the mounted app's engine ownership. A session that
   requires authorization now unmounts the app before redirecting, so cleanup removes foreground
   snapshot work and closes the client in that order; the abandoned startup also recognizes the
