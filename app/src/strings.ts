@@ -80,7 +80,7 @@ export const messages = {
   "reaction.including_you": ", including you",
   "reaction.label_one": "{reaction}, 1 reaction{ownership}",
   "reaction.label_many": "{reaction}, {count} reactions{ownership}",
-  "reaction.who": "{who} reacted with {reaction}",
+  "reaction.who_action": "reacted with {reaction}",
   "reaction.you": "you",
   "direct_identity.cannot_verify": "Can't verify this is the same {nick}",
   "direct_identity.changed": "This isn't the same {nick} — different account",

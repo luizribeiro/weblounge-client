@@ -55,6 +55,9 @@
   width: max-content;
   z-index: 5;
 }
+.tooltipWho {
+  font-weight: 600;
+}
 .chips[data-presentation="mobile"] {
   gap: 6px;
   padding: 6px 0 2px;

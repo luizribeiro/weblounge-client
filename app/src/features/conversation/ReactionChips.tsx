@@ -19,7 +19,7 @@ export function ReactionChips(props: {
         <For each={props.reactions}>
           {(reaction) => {
             const label = reactionLabel(reaction);
-            const tooltip = reactionTooltip(reaction);
+            const who = reactionWho(reaction);
             const text = displayReaction(reaction.text);
             return (
               <span class={styles.wrapper}>
@@ -41,7 +41,8 @@ export function ReactionChips(props: {
                 </span>
                 <Show when={active() === reaction.text}>
                   <span class={styles.tooltip} role="tooltip">
-                    {tooltip}
+                    <strong class={styles.tooltipWho}>{who}</strong>{" "}
+                    {t("reaction.who_action", { reaction: reaction.text })}
                   </span>
                 </Show>
               </span>
@@ -81,14 +82,11 @@ function reactionLabel(reaction: ReactionProjection): string {
   });
 }
 
-function reactionTooltip(reaction: ReactionProjection): string {
+function reactionWho(reaction: ReactionProjection): string {
   const names = reaction.actors.map((actor) =>
     actor.mine ? t("reaction.you") : actor.nick,
   );
-  return t("reaction.who", {
-    who: formatNames(names),
-    reaction: reaction.text,
-  });
+  return formatNames(names);
 }
 
 function formatNames(names: readonly string[]): string {

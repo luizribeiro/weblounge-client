@@ -34,4 +34,7 @@ it("renders counts, ownership, text truncation, and the full who tooltip", async
   expect(await screen.findByRole("tooltip")).toHaveTextContent(
     "alice and you reacted with 👍",
   );
+  expect(screen.getByText("alice and you", { exact: true }).tagName).toBe(
+    "STRONG",
+  );
 });
