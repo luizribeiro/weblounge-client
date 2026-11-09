@@ -169,6 +169,12 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 .messageLink {
   color: var(--wl-color-accent);
   overflow-wrap: anywhere;
@@ -202,6 +208,9 @@
 .action {
   display: block;
   font-style: italic;
+}
+.actionContent {
+  min-width: 0;
 }
 .actionText {
   display: block;
@@ -291,6 +300,7 @@
 }
 .list[data-presentation="mobile"] .time,
 .list[data-presentation="mobile"] .nickColumn,
+.list[data-presentation="mobile"] .content,
 .list[data-presentation="mobile"] .text,
 .list[data-presentation="mobile"] .pending,
 .list[data-presentation="mobile"] .failed {

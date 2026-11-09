@@ -744,28 +744,30 @@ function MessageRow(props: {
     >
       {message.kind === "action" ? (
         <>
-          <Selectable
-            class={styles.actionText}
-            surfaceId={`message-${message.id}`}
-          >
-            <span aria-hidden="true" class={styles.actionStar}>
-              *
-            </span>{" "}
-            <Nickname
-              class={styles.actionNick}
-              display={message}
-              onOpenDirect={props.onOpenDirect}
-              value={message.author}
-            />
-            <UnverifiedSenderMark message={message} />{" "}
-            <MessageText
-              authors={props.nickLookup}
-              onOpenChannel={props.onOpenChannel}
-              onOpenDirect={props.onOpenDirect}
-              onOpenExternal={props.onOpenExternal}
-              text={message.text}
-            />
-          </Selectable>
+          <div class={styles.actionContent}>
+            <Selectable
+              class={styles.actionText}
+              surfaceId={`message-${message.id}`}
+            >
+              <span aria-hidden="true" class={styles.actionStar}>
+                *
+              </span>{" "}
+              <Nickname
+                class={styles.actionNick}
+                display={message}
+                onOpenDirect={props.onOpenDirect}
+                value={message.author}
+              />
+              <UnverifiedSenderMark message={message} />{" "}
+              <MessageText
+                authors={props.nickLookup}
+                onOpenChannel={props.onOpenChannel}
+                onOpenDirect={props.onOpenDirect}
+                onOpenExternal={props.onOpenExternal}
+                text={message.text}
+              />
+            </Selectable>
+          </div>
           <Delivery message={message} onRetry={props.onRetry} />
         </>
       ) : (
@@ -792,15 +794,17 @@ function MessageRow(props: {
             )}
             <UnverifiedSenderMark message={message} />
           </Line>
-          <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
-            <MessageText
-              authors={props.nickLookup}
-              onOpenChannel={props.onOpenChannel}
-              onOpenDirect={props.onOpenDirect}
-              onOpenExternal={props.onOpenExternal}
-              text={message.text}
-            />
-          </Selectable>
+          <div class={styles.content}>
+            <Selectable class={styles.text} surfaceId={`message-${message.id}`}>
+              <MessageText
+                authors={props.nickLookup}
+                onOpenChannel={props.onOpenChannel}
+                onOpenDirect={props.onOpenDirect}
+                onOpenExternal={props.onOpenExternal}
+                text={message.text}
+              />
+            </Selectable>
+          </div>
           <Delivery message={message} onRetry={props.onRetry} />
         </>
       )}
