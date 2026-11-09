@@ -48,7 +48,11 @@ export function densityStyleSheet(): string {
         groupTopPadding: preset.groupTopPadding,
         lineHeight: preset.lineHeight,
         mobileContinuationPadding: preset.mobileContinuationPadding,
+        mobileContinuationHighlightInset: halfPixels(
+          preset.mobileContinuationPadding,
+        ),
         mobileGroupTopPadding: preset.mobileGroupTopPadding,
+        mobileGroupHighlightInset: halfPixels(preset.mobileGroupTopPadding),
         mobileHeaderGap: preset.mobileHeaderGap,
         oneLineRowPadding: preset.oneLineRowPadding,
       }),
@@ -91,6 +95,10 @@ function validatePresets(
     );
   }
   return value as Readonly<Record<DensityId, DensityPreset>>;
+}
+
+function halfPixels(value: string): string {
+  return `${Number.parseFloat(value) / 2}px`;
 }
 
 function densityRule(

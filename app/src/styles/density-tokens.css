@@ -5,7 +5,9 @@
   --wl-density-message-group-top-padding: 5px;
   --wl-density-message-line-height: 1.4;
   --wl-density-message-mobile-continuation-padding: 4px;
+  --wl-density-message-mobile-continuation-highlight-inset: 2px;
   --wl-density-message-mobile-group-top-padding: 12px;
+  --wl-density-message-mobile-group-highlight-inset: 6px;
   --wl-density-message-mobile-header-gap: 3px;
   --wl-density-message-one-line-row-padding: 1px;
 }
@@ -26,7 +28,9 @@
   --wl-density-message-group-top-padding: 10px;
   --wl-density-message-line-height: 1.5;
   --wl-density-message-mobile-continuation-padding: 6px;
+  --wl-density-message-mobile-continuation-highlight-inset: 3px;
   --wl-density-message-mobile-group-top-padding: 16px;
+  --wl-density-message-mobile-group-highlight-inset: 8px;
   --wl-density-message-mobile-header-gap: 4px;
   --wl-density-message-one-line-row-padding: 3px;
 }
@@ -47,7 +51,9 @@
   --wl-density-message-group-top-padding: 15px;
   --wl-density-message-line-height: 1.6;
   --wl-density-message-mobile-continuation-padding: 8px;
+  --wl-density-message-mobile-continuation-highlight-inset: 4px;
   --wl-density-message-mobile-group-top-padding: 20px;
+  --wl-density-message-mobile-group-highlight-inset: 10px;
   --wl-density-message-mobile-header-gap: 5px;
   --wl-density-message-one-line-row-padding: 5px;
 }
