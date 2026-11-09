@@ -41,6 +41,10 @@ The single place a fresh session reads to know where the project stands. Update 
   drag direction, then cancels the move at either cap; one-line textareas, the field wrapper, Send,
   and composer-bar padding remain page-locked while horizontal gestures, long press, active text
   selection, and transcript scrolling retain their existing ownership.
+- [x] Make the ready-direct reconnect transcript independent of sub-millisecond scheduling. Its
+  live boundary now starts strictly after the nanosecond-resolution TARGETS boundary before IRC
+  formatting truncates it to milliseconds, and the test waits for that monotonic condition instead
+  of expiring after one second. The runtime cursor was already correct; this was test-only.
 - [x] Repair the three layout-related CI regressions after phone transcript polish. The mobile-shell
   journey now asserts the signed-off nick header and deterministic same-minute continuation instead
   of the retired one-line phone row. Bot markers retain their accessible Lucide silhouette and nick

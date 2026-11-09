@@ -9424,31 +9424,35 @@ async fn delay(duration: Duration) {
         .await
         .expect("direct latest history becomes ready");
 
-        let live_cursor_text =
-            papo_proto::time::format(papo::time::now()).expect("live cursor formats");
+        let settled_cursor = lock(&state)
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model
+            .cursor()
+            .expect("initial target sync settles the cursor");
+        let live_cursor_text = papo_proto::time::format(settled_cursor + Duration::from_millis(1))
+            .expect("live cursor formats");
         let live_cursor =
             papo_proto::time::parse(&live_cursor_text).expect("formatted live cursor parses");
+        assert!(live_cursor > settled_cursor);
         wire.server(format!(
             "@time={live_cursor_text} :offline.test NOTICE weblounge :live cursor"
         ))
         .await;
-        tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                if lock(&state)
-                    .network
-                    .as_ref()
-                    .expect("network remains active")
-                    .model
-                    .cursor()
-                    == Some(live_cursor)
-                {
-                    break;
-                }
-                tokio::task::yield_now().await;
+        let advanced_cursor = loop {
+            let cursor = lock(&state)
+                .network
+                .as_ref()
+                .expect("network remains active")
+                .model
+                .cursor();
+            if cursor.is_some_and(|cursor| cursor >= live_cursor) {
+                break cursor;
             }
-        })
-        .await
-        .expect("settled live traffic advances the persisted boundary");
+            tokio::task::yield_now().await;
+        };
+        assert_eq!(advanced_cursor, Some(live_cursor));
 
         let direct_cursor_text = send_account_tagged_live_direct(
             &mut wire,
