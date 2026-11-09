@@ -32,6 +32,13 @@ The single place a fresh session reads to know where the project stands. Update 
   start keyframe with the transform held under the finger at device-pixel precision, while the real
   transition-end elapsed time proves the declared motion ran even when no intermediate frame is
   sampled.
+- [x] Keep locked iPhones able to decrypt push routes. Web route records now contain exported
+  PKCS#8 bytes instead of structured-cloned `CryptoKey`s, and the service worker imports a
+  non-extractable key per delivery. On the first unlocked launch, a legacy key record is scrubbed
+  to key-free metadata and the existing relay/home lifecycle rotates it once through probing,
+  exact unregister, REGISTER and activation. Unit guards walk persisted values for `CryptoKey`s,
+  while the full push VM seeds a legacy route and proves its one replacement decrypts the next DM;
+  iOS lock-state itself remains device-only verification.
 - [x] Preserve read-state transition evidence across delayed browser delivery. The shared
   foreground signal now retains an exit epoch so a hidden-to-visible batch cannot let a later peer
   message move the pane's frozen New divider, and each message list publishes its initial live edge
