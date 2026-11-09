@@ -15,7 +15,7 @@ interface EncryptedRecord {
 
 export async function decryptPushPayload(
   encrypted: Uint8Array<ArrayBuffer>,
-  receiverPrivateKey: CryptoKey,
+  receiverPrivateKeyPkcs8: Uint8Array<ArrayBuffer>,
   receiverPublicKey: string,
   authenticationSecret: string,
   webCrypto: Crypto = crypto,
@@ -35,6 +35,13 @@ export async function decryptPushPayload(
     { name: "ECDH", namedCurve: "P-256" },
     false,
     [],
+  );
+  const receiverPrivateKey = await webCrypto.subtle.importKey(
+    "pkcs8",
+    receiverPrivateKeyPkcs8,
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    ["deriveBits"],
   );
   const sharedSecret = await webCrypto.subtle.deriveBits(
     { name: "ECDH", public: senderPublic },

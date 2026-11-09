@@ -125,7 +125,7 @@ interface StoredRoute {
   readonly deviceId?: string;
   readonly p256dh: string;
   readonly auth: string;
-  readonly privateKey: CryptoKey;
+  readonly privateKeyPkcs8: Uint8Array<ArrayBuffer>;
   readonly needsReregistration?: boolean;
   readonly retiring?: boolean;
 }
@@ -612,7 +612,7 @@ async function preparePushDelivery(
     plaintext = await trace.measure("decrypt", () =>
       decryptPushPayload(
         decodePushBase64Url(envelope.ciphertext),
-        route.privateKey,
+        route.privateKeyPkcs8,
         route.p256dh,
         route.auth,
       ),
@@ -1165,8 +1165,9 @@ function decodeStoredRoute(value: unknown): StoredRoute {
     typeof value.p256dh !== "string" ||
     !("auth" in value) ||
     typeof value.auth !== "string" ||
-    !("privateKey" in value) ||
-    !(value.privateKey instanceof CryptoKey)
+    !("privateKeyPkcs8" in value) ||
+    !(value.privateKeyPkcs8 instanceof Uint8Array) ||
+    value.privateKeyPkcs8.byteLength === 0
   ) {
     throw new Error("invalid stored push route");
   }

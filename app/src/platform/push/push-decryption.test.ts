@@ -12,7 +12,7 @@ const encrypted =
 
 describe("RFC 8291 decryption", () => {
   it("decrypts the section 5 test vector", async () => {
-    const privateKey = await importReceiverPrivateKey();
+    const privateKey = await receiverPrivateKeyBytes();
 
     const plaintext = await decryptPushPayload(
       decodeBase64Url(encrypted),
@@ -28,7 +28,7 @@ describe("RFC 8291 decryption", () => {
   });
 
   it("rejects authentication failures and invalid padding", async () => {
-    const privateKey = await importReceiverPrivateKey();
+    const privateKey = await receiverPrivateKeyBytes();
     const tampered = decodeBase64Url(encrypted);
     const finalIndex = tampered.length - 1;
     tampered[finalIndex] = (tampered[finalIndex] ?? 0) ^ 1;
@@ -54,26 +54,27 @@ describe("RFC 8291 decryption", () => {
   });
 });
 
-async function importReceiverPrivateKey(): Promise<CryptoKey> {
+async function receiverPrivateKeyBytes(): Promise<Uint8Array<ArrayBuffer>> {
   const point = decodeBase64Url(receiverPublic);
   const coordinateLength = 32;
   const x = point.slice(1, coordinateLength + 1);
   const y = point.slice(coordinateLength + 1);
-  return (await webcrypto.subtle.importKey(
+  const privateKey = await webcrypto.subtle.importKey(
     "jwk",
     {
       crv: "P-256",
       d: receiverPrivate,
-      ext: false,
+      ext: true,
       key_ops: ["deriveBits"],
       kty: "EC",
       x: encodeBase64UrlForTest(x),
       y: encodeBase64UrlForTest(y),
     },
     { name: "ECDH", namedCurve: "P-256" },
-    false,
+    true,
     ["deriveBits"],
-  )) as unknown as CryptoKey;
+  );
+  return new Uint8Array(await webcrypto.subtle.exportKey("pkcs8", privateKey));
 }
 
 function encodeBase64UrlForTest(bytes: Uint8Array): string {
