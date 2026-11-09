@@ -107,6 +107,9 @@ test("groups phone messages without losing timestamps or the live edge", async (
     const icon = visibleBotRow.getByRole("img", { name: "bot" });
     await expect(icon).toBeVisible();
     expect(await iconMatchesNick(visibleBotRow, sender.nickname)).toBe(true);
+    expect(
+      await iconNickCentreOffset(visibleBotRow, sender.nickname),
+    ).toBeLessThanOrEqual(2);
     await expect(page.getByText("BOT", { exact: true })).toHaveCount(0);
     await expect(visibleBotRow.locator("[data-message-avatar]")).toHaveCount(0);
   } finally {
@@ -145,6 +148,9 @@ test("keeps the desktop row while replacing its bot label", async ({
     await expect(row).toBeVisible();
     await expect(row.getByRole("img", { name: "bot" })).toBeVisible();
     expect(await iconMatchesNick(row, sender.nickname)).toBe(true);
+    expect(
+      await iconNickCentreOffset(row, sender.nickname),
+    ).toBeLessThanOrEqual(2);
     await expect(page.getByText("BOT", { exact: true })).toHaveCount(0);
     expect(await keepsDesktopColumns(row)).toBe(true);
   } finally {
@@ -195,6 +201,21 @@ function iconMatchesNick(row: Locator, nick: string): Promise<boolean> {
       icon !== null &&
       author !== null &&
       getComputedStyle(icon).color === getComputedStyle(author).color
+    );
+  }, nick);
+}
+
+function iconNickCentreOffset(row: Locator, nick: string): Promise<number> {
+  return row.evaluate((element, expectedNick) => {
+    const icon = element.querySelector<SVGElement>('[role="img"]');
+    const author = element.querySelector<HTMLElement>(
+      `[title="${expectedNick}"]`,
+    );
+    if (icon === null || author === null) return Number.POSITIVE_INFINITY;
+    const iconBox = icon.getBoundingClientRect();
+    const authorBox = author.getBoundingClientRect();
+    return Math.abs(
+      iconBox.top + iconBox.height / 2 - (authorBox.top + authorBox.height / 2),
     );
   }, nick);
 }
