@@ -20,7 +20,6 @@ describe("keyboard motion", () => {
       frames.push(callback);
       return frames.length;
     });
-    vi.spyOn(window.performance, "now").mockReturnValue(125);
     const fixture = motionFixture();
     const stop = observeKeyboardMotion(fixture.root, window, { enabled: true });
 
@@ -45,8 +44,15 @@ describe("keyboard motion", () => {
       expect.any(Object),
     );
     await Promise.resolve();
-    expect(fixture.animations[0]?.animation.startTime).toBe(125);
-    expect(fixture.animations[1]?.animation.startTime).toBe(125);
+    expect(fixture.animations[0]?.animation.currentTime).toBe(0);
+    expect(fixture.animations[1]?.animation.currentTime).toBe(0);
+    expect(fixture.animations[0]?.animation.pause).toHaveBeenCalledOnce();
+    expect(fixture.animations[1]?.animation.pause).toHaveBeenCalledOnce();
+    expect(fixture.animations[0]?.animation.play).not.toHaveBeenCalled();
+    expect(fixture.animations[1]?.animation.play).not.toHaveBeenCalled();
+    frames.shift()?.(0);
+    expect(fixture.animations[0]?.animation.play).toHaveBeenCalledOnce();
+    expect(fixture.animations[1]?.animation.play).toHaveBeenCalledOnce();
     expect(fixture.root.dataset.keyboardMotion).toBe("opening");
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
@@ -63,11 +69,11 @@ describe("keyboard motion", () => {
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
-    frames.shift()?.(0);
+    frames.shift()?.(16);
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).not.toBeNull();
-    frames.shift()?.(16);
+    frames.shift()?.(32);
     expect(
       fixture.root.querySelector("[data-keyboard-transcript-snapshot]"),
     ).toBeNull();
@@ -335,13 +341,24 @@ interface TestAnimation {
 
 function fakeAnimation(): TestAnimation {
   const reverse = vi.fn();
+  let playState: AnimationPlayState = "running";
   let finish: () => void = () => undefined;
   const animation = {
     cancel: vi.fn(),
+    currentTime: null,
     finished: new Promise<Animation>((resolve) => {
       finish = () => resolve(animation);
     }),
+    pause: vi.fn(() => {
+      playState = "paused";
+    }),
     playbackRate: 1,
+    play: vi.fn(() => {
+      playState = "running";
+    }),
+    get playState() {
+      return playState;
+    },
     reverse,
     startTime: null,
   } as unknown as Animation;

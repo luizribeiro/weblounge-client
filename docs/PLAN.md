@@ -29,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Hold keyboard opening motion at zero until the first render callback after layout commit.
+  WebKit can resolve pending play against the prior refresh tick, which made a nominal 2 ms first
+  frame paint more than 50 px into the opening motion under load.
 - [x] Keep the live transcript flush with the composer when an opening keyboard snapshot hands
   back to WebKit. The reveal now refreshes rendered row sizes directly without clearing valid
   virtualizer measurements; an in-progress live-edge scroll can no longer make TanStack skip the

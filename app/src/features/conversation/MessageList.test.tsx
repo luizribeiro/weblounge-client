@@ -1660,10 +1660,13 @@ function controlledAnimation(collection: ControlledAnimation[]): Animation {
   let finish: () => void = () => undefined;
   const animation = {
     cancel: vi.fn(),
+    currentTime: null,
     finished: new Promise<Animation>((resolve) => {
       finish = () => resolve(animation);
     }),
+    pause: vi.fn(),
     playbackRate: 1,
+    play: vi.fn(),
     playState: "running",
     startTime: null,
   } as unknown as Animation;

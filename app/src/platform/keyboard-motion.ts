@@ -159,14 +159,22 @@ export function observeKeyboardMotion(
       ],
       options,
     );
+    const resumeComposer = holdAnimationAtStart(composerAnimation);
+    const resumeTranscript = holdAnimationAtStart(transcriptAnimation);
     track(composerAnimation, running);
     running.add(transcriptAnimation);
     browserWindow.queueMicrotask(() => {
       if (!running.has(composerAnimation) || !running.has(transcriptAnimation))
         return;
-      const commitTime = browserWindow.performance.now();
-      anchorAnimation(composerAnimation, commitTime);
-      anchorAnimation(transcriptAnimation, commitTime);
+      browserWindow.requestAnimationFrame(() => {
+        if (
+          !running.has(composerAnimation) ||
+          !running.has(transcriptAnimation)
+        )
+          return;
+        if (resumeComposer) composerAnimation.play();
+        if (resumeTranscript) transcriptAnimation.play();
+      });
     });
     const layout = openingLayout;
     if (layout !== undefined)
@@ -215,8 +223,7 @@ export function observeKeyboardMotion(
     closing = state;
     running.add(animation);
     browserWindow.queueMicrotask(() => {
-      if (running.has(animation))
-        anchorAnimation(animation, browserWindow.performance.now());
+      if (running.has(animation)) anchorAnimation(animation);
     });
     watchClosing(state);
     state.checkFrame = browserWindow.requestAnimationFrame(() => {
@@ -398,7 +405,19 @@ function track(animation: Animation, running: Set<Animation>): void {
   );
 }
 
-function anchorAnimation(animation: Animation, startTime: number): void {
-  if (animation.playState === "paused") animation.currentTime = 0;
-  else animation.startTime = startTime;
+function anchorAnimation(animation: Animation): void {
+  if (animation.playState === "paused") {
+    animation.currentTime = 0;
+    return;
+  }
+  animation.pause();
+  animation.currentTime = 0;
+  animation.play();
+}
+
+function holdAnimationAtStart(animation: Animation): boolean {
+  const resume = animation.playState !== "paused";
+  if (resume) animation.pause();
+  animation.currentTime = 0;
+  return resume;
 }
