@@ -72,6 +72,12 @@ export default defineConfig({
       use: { browserName: "firefox" },
     },
     {
+      name: "firefox-desktop-composer",
+      grep: /aligns desktop Send/u,
+      testMatch: "**/phone-composer.spec.ts",
+      use: { browserName: "firefox" },
+    },
+    {
       name: "firefox-console",
       testMatch: "**/console-clean.spec.ts",
       use: { browserName: "firefox" },

@@ -133,7 +133,7 @@ test("keeps the phone Send control inside a capped composer", async ({
   }
 });
 
-test("bottom-aligns desktop Send with a multiline field", async ({
+test("aligns desktop Send with single-line and multiline fields", async ({
   browser,
   baseURL,
 }) => {
@@ -141,7 +141,7 @@ test("bottom-aligns desktop Send with a multiline field", async ({
     baseURL,
     hasTouch: false,
     isMobile: false,
-    viewport: { width: 1_200, height: 800 },
+    viewport: { width: 1_280, height: 800 },
   });
   const page = await context.newPage();
   try {
@@ -151,9 +151,23 @@ test("bottom-aligns desktop Send with a multiline field", async ({
     });
     const field = page.locator("[data-composer-field]");
     const send = page.getByRole("button", { name: "Send" });
-    await input.fill(sixLines);
+    for (const density of ["compact", "cozy", "comfortable"]) {
+      await page.locator("html").evaluate((root, value) => {
+        root.dataset.messageDensity = value;
+      }, density);
+      await input.fill("desktop composer one line");
+      await waitForStableGeometry(input);
+      const singleLineHeight = await expectEdgesAligned(field, send);
 
-    await expectBottomAligned(field, send);
+      await input.fill("one\ntwo\nthree");
+      await waitForStableGeometry(input);
+      await expectBottomAligned(field, send, 0.5);
+      await expect
+        .poll(() =>
+          send.evaluate((element) => element.getBoundingClientRect().height),
+        )
+        .toBeCloseTo(singleLineHeight, 1);
+    }
   } finally {
     await context.close();
   }
@@ -285,6 +299,7 @@ async function expectInside(field: Locator, control: Locator): Promise<void> {
 async function expectBottomAligned(
   field: Locator,
   control: Locator,
+  tolerance = 1,
 ): Promise<void> {
   await expect
     .poll(async () => {
@@ -298,7 +313,32 @@ async function expectBottomAligned(
         fieldBox.y + fieldBox.height - (controlBox.y + controlBox.height),
       );
     })
-    .toBeLessThanOrEqual(1);
+    .toBeLessThanOrEqual(tolerance);
+}
+
+async function expectEdgesAligned(
+  field: Locator,
+  control: Locator,
+): Promise<number> {
+  await expect
+    .poll(async () => {
+      const [fieldBox, controlBox] = await Promise.all([
+        field.boundingBox(),
+        control.boundingBox(),
+      ]);
+      if (fieldBox === null || controlBox === null)
+        return Number.POSITIVE_INFINITY;
+      return Math.max(
+        Math.abs(
+          fieldBox.y + fieldBox.height - (controlBox.y + controlBox.height),
+        ),
+        Math.abs(fieldBox.y - controlBox.y),
+      );
+    })
+    .toBeLessThanOrEqual(0.5);
+  const controlBox = await control.boundingBox();
+  expect(controlBox).not.toBeNull();
+  return controlBox?.height ?? 0;
 }
 
 async function capture(

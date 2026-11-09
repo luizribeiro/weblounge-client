@@ -29,6 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep the desktop composer field and Send button on one shared 40px single-line height. Their
+  top and bottom edges are flush for one line, while multiline fields leave the unchanged-height
+  Send pinned to the bottom. Chromium, Firefox and WebKit cover compact, cozy and comfortable
+  message densities.
 - [x] Vertically centre phone composer placeholder and one-line text on iOS. The mobile textarea
   now fills its 44px Send row with an explicit 22px line box and derived symmetric padding, instead
   of bottom-aligning a 40px intrinsic box 2.2px below the field centre. WebKit and Chromium measure

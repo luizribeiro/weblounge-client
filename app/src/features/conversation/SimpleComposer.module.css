@@ -66,7 +66,7 @@
 
 textarea.input {
   max-height: 7em;
-  min-height: 40px;
+  min-height: var(--wl-size-composer-single-line);
 }
 
 .candidates {
@@ -198,6 +198,10 @@ textarea.input {
 
 .desktopSend[data-empty="true"] {
   opacity: 0.55;
+}
+
+.desktopSend {
+  height: var(--wl-size-composer-single-line);
 }
 
 :global(#root[data-input="touch"]) .popup {
