@@ -5,8 +5,6 @@ import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
 import { screenshotPixelVariance } from "./transcript-paint";
 
-const defaultChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
-
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
   "requires the flake's local Ergo fixture",
@@ -18,6 +16,7 @@ test("groups phone messages without losing timestamps or the live edge", async (
   test.skip(!isPhoneProject(testInfo.project.name), "runs in touch projects");
   const suffix = `${testInfo.project.name.slice(0, 2)}${Date.now().toString(36).slice(-5)}`;
   const channel = `#phone-${suffix}`;
+  const startUrl = await isolatedStartUrl(`phone-user-${suffix}`, channel);
   const sender = await IrcClient.connect(
     `phone-bot-${suffix}`,
     "weblounge-bot",
@@ -45,17 +44,10 @@ test("groups phone messages without losing timestamps or the live edge", async (
       changedMinute,
     );
     await useDedicatedWorker(page);
-    await page.goto("/?irc-password=weblounge-test");
-    await expect(
-      page.getByRole("button", { name: defaultChannel }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: defaultChannel }).click();
+    await page.goto(startUrl);
+    await expect(page.getByRole("button", { name: channel })).toBeVisible();
+    await page.getByRole("button", { name: channel }).click();
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
-    const composer = page.getByRole("textbox", {
-      name: `Message ${defaultChannel}`,
-    });
-    await composer.fill(`/join ${channel}`);
-    await composer.press("Enter");
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
     for (let index = 0; index < 10; index += 1)
@@ -131,6 +123,7 @@ test("keeps the desktop row while replacing its bot label", async ({
   const suffix = Date.now().toString(36).slice(-6);
   const channel = `#desktop-${suffix}`;
   const text = `desktop bot ${suffix}`;
+  const startUrl = await isolatedStartUrl(`desktop-user-${suffix}`, channel);
   const sender = await IrcClient.connect(
     `desktop-bot-${suffix}`,
     "weblounge-bot",
@@ -140,11 +133,9 @@ test("keeps the desktop row while replacing its bot label", async ({
   try {
     await sender.mode(sender.nickname, "+B");
     await useDedicatedWorker(page);
-    await page.goto("/?irc-password=weblounge-test");
+    await page.goto(startUrl);
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
-    const composer = page.getByRole("textbox", { name: "Message" });
-    await composer.fill(`/join ${channel}`);
-    await composer.press("Enter");
+    await page.getByRole("button", { name: channel }).click();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     await sender.privmsgConfirmed(channel, text);
     const row = messageRow(page, text);
@@ -171,6 +162,7 @@ test("paints message and member bot icons under the beta CSP", async ({
   const suffix = Date.now().toString(36).slice(-6);
   const channel = `#bot-csp-${suffix}`;
   const text = `bot CSP ${suffix}`;
+  const startUrl = await isolatedStartUrl(`csp-user-${suffix}`, channel);
   const sender = await IrcClient.connect(
     `csp-bot-${suffix}`,
     "weblounge-bot",
@@ -192,15 +184,11 @@ test("paints message and member bot icons under the beta CSP", async ({
     });
     await useDedicatedWorker(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    const response = await page.goto("/?irc-password=weblounge-test");
+    const response = await page.goto(startUrl);
     expect(response?.headers()["content-security-policy"]).toBe(
       BETA_CONTENT_SECURITY_POLICY,
     );
-    const composer = page.getByRole("textbox", {
-      name: `Message ${defaultChannel}`,
-    });
-    await composer.fill(`/join ${channel}`);
-    await composer.press("Enter");
+    await page.getByRole("button", { name: channel }).click();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
     await sender.privmsgConfirmed(channel, text);
 
@@ -238,6 +226,22 @@ test("paints message and member bot icons under the beta CSP", async ({
 
 function isPhoneProject(name: string): boolean {
   return name === "android-phone-layout" || name === "webkit-phone-layout";
+}
+
+async function isolatedStartUrl(
+  account: string,
+  channel: string,
+): Promise<string> {
+  const seed = await IrcClient.connectIsolated(account, channel);
+  seed.close();
+  await seed.waitForDisconnect();
+  const params = new URLSearchParams({
+    "irc-account": account,
+    "irc-nickname": account,
+    "irc-password": `test-${account}`,
+    "irc-autojoin": channel,
+  });
+  return `/?${params.toString()}`;
 }
 
 function messageRow(page: Page, text: string): Locator {

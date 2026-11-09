@@ -29,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Isolate every phone-layout journey from the shared IRC account. Each test now registers a
+  fresh account, autojoins its unique target channel and selects that buffer explicitly, so an
+  active channel retained by an earlier always-on session cannot choose the tested conversation.
 - [x] Wait for the hosted reset navigation to finish before inspecting its document. The reset
   token was already claimed before shell cleanup and produced exactly one cache-busting reload;
   the service-worker journey could observe its server request and evaluate in the old document as
