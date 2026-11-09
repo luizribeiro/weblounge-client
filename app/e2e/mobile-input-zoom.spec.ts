@@ -802,7 +802,7 @@ interface KeyboardFrame {
   readonly animations: number;
   readonly composerTop: number;
   readonly composerVisible: boolean;
-  readonly desktopGridRows: number;
+  readonly desktopColumnRows: number;
   readonly headerTop: number;
   readonly keyboard: string | undefined;
   readonly liveEdgeGap: number;
@@ -1197,11 +1197,12 @@ async function sampleKeyboardTransition(
           composerVisible:
             composerRect.bottom > headerRect.bottom &&
             composerRect.top < viewport.offsetTop + viewport.height,
-          desktopGridRows: rows.filter((row) => {
+          desktopColumnRows: rows.filter((row) => {
             const content = row.firstElementChild;
             return (
               content instanceof HTMLElement &&
-              getComputedStyle(content).display === "grid"
+              content.matches("[data-message-row]") &&
+              getComputedStyle(content).gridTemplateAreas === "none"
             );
           }).length,
           headerTop: headerRect.top,
@@ -1622,7 +1623,7 @@ function expectOpeningKeyboardMotion(frames: readonly KeyboardFrame[]): void {
       .every(
         (frame) =>
           frame.visibleRows > 0 &&
-          frame.desktopGridRows === 0 &&
+          frame.desktopColumnRows === 0 &&
           frame.overlappingRows <= 2 &&
           frame.overlappingRowContent === 0 &&
           Math.abs(frame.headerTop - headerTop) <= 0.5 &&
@@ -1705,7 +1706,7 @@ function expectClosingKeyboardMotion(frames: readonly KeyboardFrame[]): void {
     frames.every(
       (frame) =>
         frame.visibleRows > 0 &&
-        frame.desktopGridRows === 0 &&
+        frame.desktopColumnRows === 0 &&
         frame.overlappingRows <= 1 &&
         frame.overlappingRowContent === 0 &&
         frame.transcriptAnimations === 0 &&
