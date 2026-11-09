@@ -54,6 +54,7 @@
   --wl-radius-palette: 6px;
   --wl-radius-pill: 3px;
   --wl-effect-overlay-shadow: 0 20px 60px rgba(29, 40, 37, 0.18);
+  --wl-effect-tooltip-shadow: 0 8px 24px rgba(29, 40, 37, 0.18);
   --wl-effect-icon-ring: none;
   --wl-nick-0: #2f6b5e;
   --wl-nick-1: #8a5a12;
@@ -104,6 +105,7 @@
   --wl-radius-palette: 6px;
   --wl-radius-pill: 3px;
   --wl-effect-overlay-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  --wl-effect-tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   --wl-effect-icon-ring: inset 0 0 0 1px rgba(237, 239, 229, 0.16);
   --wl-nick-0: #8fd3c1;
   --wl-nick-1: #e8c07a;

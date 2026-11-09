@@ -49,6 +49,7 @@
   },
   "effects": {
     "overlayShadow": "0 20px 60px rgba(29,40,37,.18)",
+    "tooltipShadow": "0 8px 24px rgba(29,40,37,.18)",
     "iconRing": "none"
   },
   "nickPalette": [
