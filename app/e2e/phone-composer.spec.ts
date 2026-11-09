@@ -12,6 +12,49 @@ test.skip(
   "requires the flake's local Ergo fixture",
 );
 
+test("centres the phone composer text with its field", async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await browser.newContext({
+    baseURL,
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto("/?irc-password=weblounge-test");
+    await page.getByRole("button", { name: "#weblounge-test" }).click();
+    await expect(page.locator("[data-motion]")).toHaveCount(0);
+    const input = page.getByRole("textbox", {
+      name: "Message #weblounge-test",
+    });
+    const empty = await firstLineGeometry(input);
+
+    await input.fill("M");
+    const typed = await firstLineGeometry(input);
+
+    expect(Math.abs(empty.textCenter - empty.fieldCenter)).toBeLessThanOrEqual(
+      1,
+    );
+    expect(Math.abs(empty.textCenter - empty.sendCenter)).toBeLessThanOrEqual(
+      1,
+    );
+    expect(Math.abs(typed.textCenter - typed.fieldCenter)).toBeLessThanOrEqual(
+      1,
+    );
+    expect(Math.abs(typed.textCenter - typed.sendCenter)).toBeLessThanOrEqual(
+      1,
+    );
+    expect(Math.abs(typed.textCenter - empty.textCenter)).toBeLessThanOrEqual(
+      1,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
 test("keeps the phone Send control inside a capped composer", async ({
   browser,
   baseURL,
@@ -121,6 +164,57 @@ interface LineGeometry {
   contentBottom: number;
   contentTop: number;
   top: number;
+}
+
+interface FirstLineGeometry {
+  readonly fieldCenter: number;
+  readonly sendCenter: number;
+  readonly textCenter: number;
+}
+
+async function firstLineGeometry(input: Locator): Promise<FirstLineGeometry> {
+  return input.evaluate(async (element) => {
+    const textarea = element as HTMLTextAreaElement;
+    await document.fonts.ready;
+    const field = textarea.closest<HTMLElement>("[data-composer-field]");
+    const send = field?.querySelector<HTMLElement>("[data-composer-send]");
+    if (field === null || field === undefined || send === null)
+      throw new Error("composer geometry is missing");
+    const inputStyle = getComputedStyle(textarea);
+    const inputRect = textarea.getBoundingClientRect();
+    const fieldStyle = getComputedStyle(field);
+    const fieldRect = field.getBoundingClientRect();
+    const sendRect = send.getBoundingClientRect();
+    const probe = document.createElement("span");
+    probe.style.background = "transparent";
+    probe.style.border = "0";
+    probe.style.font = inputStyle.font;
+    probe.style.fontKerning = inputStyle.fontKerning;
+    probe.style.letterSpacing = inputStyle.letterSpacing;
+    probe.style.lineHeight = inputStyle.lineHeight;
+    probe.style.margin = "0";
+    probe.style.opacity = "0";
+    probe.style.padding = "0";
+    probe.style.position = "fixed";
+    probe.style.whiteSpace = "pre";
+    probe.style.left = `${inputRect.left + Number.parseFloat(inputStyle.borderLeftWidth) + Number.parseFloat(inputStyle.paddingLeft)}px`;
+    probe.style.top = `${inputRect.top + Number.parseFloat(inputStyle.borderTopWidth) + Number.parseFloat(inputStyle.paddingTop) - textarea.scrollTop}px`;
+    probe.textContent = textarea.value || textarea.placeholder;
+    document.body.append(probe);
+    const range = document.createRange();
+    range.selectNodeContents(probe);
+    const textRect = range.getBoundingClientRect();
+    probe.remove();
+    const fieldInnerTop =
+      fieldRect.top + Number.parseFloat(fieldStyle.borderTopWidth);
+    const fieldInnerBottom =
+      fieldRect.bottom - Number.parseFloat(fieldStyle.borderBottomWidth);
+    return {
+      fieldCenter: (fieldInnerTop + fieldInnerBottom) / 2,
+      sendCenter: (sendRect.top + sendRect.bottom) / 2,
+      textCenter: (textRect.top + textRect.bottom) / 2,
+    };
+  });
 }
 
 async function lineGeometry(

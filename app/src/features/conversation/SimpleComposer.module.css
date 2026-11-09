@@ -224,10 +224,14 @@ textarea.input {
 }
 
 :global(#root[data-input="touch"]) .input {
+  --wl-composer-input-padding-block: calc(
+    (var(--wl-size-touch-target) - 22px) / 2
+  );
+
   background: transparent;
   border: 0;
   border-radius: 0;
-  line-height: 1.4;
+  line-height: 22px;
   max-height: calc(
     6.5em +
     var(--wl-composer-input-padding-block) +
