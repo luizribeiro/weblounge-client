@@ -34,7 +34,13 @@ test("groups phone messages without losing timestamps or the live edge", async (
   const changedMinute = `phone minute ${suffix}`;
   try {
     await sender.mode(sender.nickname, "+B");
-    await armGroupingTimes(first, second, beforeMinute, changedMinute);
+    await armGroupingTimes(
+      first,
+      second,
+      changedSender,
+      beforeMinute,
+      changedMinute,
+    );
     await useDedicatedWorker(page);
     await page.goto("/?irc-password=weblounge-test");
     await expect(
@@ -237,6 +243,7 @@ function keepsDesktopColumns(row: Locator): Promise<boolean> {
 async function armGroupingTimes(
   first: string,
   second: string,
+  changedSender: string,
   beforeMinute: string,
   changedMinute: string,
 ): Promise<void> {
@@ -244,6 +251,7 @@ async function armGroupingTimes(
   await Promise.all([
     armTime(first, minute + 1_000),
     armTime(second, minute + 2_000),
+    armTime(changedSender, minute + 3_000),
     armTime(beforeMinute, minute + 59_000),
     armTime(changedMinute, minute + 60_000),
   ]);
