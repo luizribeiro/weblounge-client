@@ -18,9 +18,12 @@ it("renders member facts and opens the direct conversation", () => {
   render(() => <MemberRow member={member} onOpenDirect={open} />);
 
   expect(screen.getByText("@")).toBeInTheDocument();
-  expect(screen.getByRole("img", { name: "bot" })).toHaveStyle({
+  const botIcon = screen.getByRole("img", { name: "bot" });
+  expect(botIcon).toHaveStyle({
     color: "var(--wl-nick-2)",
   });
+  expect(botIcon.tagName).toBe("SPAN");
+  expect(botIcon).toBeEmptyDOMElement();
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
   expect(screen.getByText("concierge")).toHaveStyle({
     color: "var(--wl-nick-2)",

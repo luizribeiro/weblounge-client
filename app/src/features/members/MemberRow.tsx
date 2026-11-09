@@ -56,9 +56,7 @@ export function MemberRow(props: MemberRowProps) {
           {props.member.nick}
         </Line>
         {props.member.bot === true && (
-          <span class={styles.bot} data-member-trailing="true">
-            <BotIcon color={color()} />
-          </span>
+          <BotIcon class={styles.bot} color={color()} />
         )}
         {props.member.is_you && (
           <span class={styles.you} data-member-trailing="true">
