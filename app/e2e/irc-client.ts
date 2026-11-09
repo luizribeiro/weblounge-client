@@ -315,6 +315,23 @@ export class IrcClient {
     );
   }
 
+  async unreactionConfirmed(
+    target: string,
+    messageId: string,
+    reaction: string,
+  ): Promise<void> {
+    this.send(
+      `@+draft/unreact=${reaction};+draft/reply=${messageId} TAGMSG ${target}`,
+    );
+    await this.waitFor(
+      `echoed removed reaction to ${target}`,
+      (line) =>
+        line.includes(`+draft/unreact=${reaction}`) &&
+        line.includes(`+draft/reply=${messageId}`) &&
+        line.includes(` TAGMSG ${target}`),
+    );
+  }
+
   async typingConfirmed(
     target: string,
     state: "active" | "paused" | "done",
