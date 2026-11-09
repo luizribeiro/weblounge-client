@@ -43,6 +43,7 @@ import { MessageText, Nickname } from "./MessageText";
 import {
   currentMessageDensity,
   estimateMessageHeight,
+  messageSizeRevision,
 } from "./message-size-estimate";
 import { createNickLookup, type NickDisplay } from "./nick-lookup";
 import { ReactionChips } from "./ReactionChips";
@@ -100,7 +101,10 @@ export function MessageList(props: MessageListProps) {
   let observedHeight: number | undefined;
   let syncViewportRect: (() => boolean) | undefined;
   const estimatedDensity = currentMessageDensity(document.documentElement);
-  const estimatedSizes = new Map<string, number>();
+  const estimatedSizes = new Map<
+    string,
+    { readonly revision: string; readonly size: number }
+  >();
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadAt = dividerMarkAfterOwnSend(
@@ -236,13 +240,15 @@ export function MessageList(props: MessageListProps) {
       const width =
         observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
       const cached = estimatedSizes.get(row.key);
-      if (cached !== undefined) return cached;
+      const revision = messageSizeRevision(row.message);
+      if (cached?.revision === revision) return cached.size;
       const estimated = estimateMessageHeight(
         row.message,
         width,
         estimatedDensity,
+        props.presentation,
       );
-      estimatedSizes.set(row.key, estimated);
+      estimatedSizes.set(row.key, { revision, size: estimated });
       return estimated;
     },
     get getItemKey() {
@@ -419,6 +425,16 @@ export function MessageList(props: MessageListProps) {
     renderedCount = messages.length;
     if (messages.length !== previousCount && logicallyAtLiveEdge)
       virtualizer.scrollToEnd();
+  });
+  let measuredRevisions = props.messages
+    .map(messageSizeRevision)
+    .join("\u0002");
+  createEffect(() => {
+    const revisions = props.messages.map(messageSizeRevision).join("\u0002");
+    if (revisions === measuredRevisions) return;
+    measuredRevisions = revisions;
+    virtualizer.measure();
+    if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
   });
   onMount(() => {
     props.onLiveEdgeChange?.(logicallyAtLiveEdge);

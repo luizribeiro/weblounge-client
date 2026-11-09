@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   currentMessageDensity,
   estimateMessageHeight,
+  messageSizeRevision,
 } from "./message-size-estimate";
 
 describe("estimateMessageHeight", () => {
@@ -20,6 +21,25 @@ describe("estimateMessageHeight", () => {
     expect(estimateMessageHeight(message, 402, "comfortable")).toBeGreaterThan(
       estimateMessageHeight(message, 402, "compact"),
     );
+  });
+
+  it("reserves space and invalidates the estimate when reactions change", () => {
+    const base = { kind: "text" as const, text: "hello" };
+    const reacted = {
+      ...base,
+      reactions: [
+        {
+          text: "👍",
+          mine: false,
+          actors: [{ nick: "alice", mine: false }],
+        },
+      ],
+    };
+
+    expect(estimateMessageHeight(reacted, 402, "cozy")).toBeGreaterThan(
+      estimateMessageHeight(base, 402, "cozy"),
+    );
+    expect(messageSizeRevision(reacted)).not.toBe(messageSizeRevision(base));
   });
 });
 

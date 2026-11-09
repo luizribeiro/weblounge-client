@@ -5,7 +5,7 @@ import {
 } from "../../density/density";
 import type { MessageProjection } from "../../engine/protocol";
 
-type EstimatedMessage = Pick<MessageProjection, "kind" | "text">;
+type EstimatedMessage = Pick<MessageProjection, "kind" | "reactions" | "text">;
 
 const baseFontSize = 14;
 const listInlinePadding = 28;
@@ -18,6 +18,7 @@ export function estimateMessageHeight(
   message: EstimatedMessage,
   viewportWidth: number,
   density: DensityId,
+  presentation: "desktop" | "mobile" = "desktop",
 ): number {
   const preset = densityPresets[density];
   const fontSize = baseFontSize + Number.parseFloat(preset.fontDelta);
@@ -33,7 +34,18 @@ export function estimateMessageHeight(
     Math.floor(textWidth / (fontSize * 0.55)),
   );
   const lines = estimatedLines(message.text, charactersPerLine);
-  return Math.max(28, Math.ceil(lines * lineHeight + verticalPadding));
+  const textHeight = Math.max(
+    28,
+    Math.ceil(lines * lineHeight + verticalPadding),
+  );
+  return textHeight + estimatedReactionHeight(message, textWidth, presentation);
+}
+
+export function messageSizeRevision(message: EstimatedMessage): string {
+  const reactions = message.reactions
+    ?.map((reaction) => `${reaction.text}:${reaction.actors.length}`)
+    .join("\u0001");
+  return `${JSON.stringify(message.kind)}\u0000${message.text}\u0000${reactions ?? ""}`;
 }
 
 export function currentMessageDensity(root: HTMLElement): DensityId {
@@ -60,4 +72,33 @@ function estimatedLines(text: string, charactersPerLine: number): number {
         lines + Math.max(1, Math.ceil(segment.length / charactersPerLine)),
       0,
     );
+}
+
+function estimatedReactionHeight(
+  message: EstimatedMessage,
+  availableWidth: number,
+  presentation: "desktop" | "mobile",
+): number {
+  const reactions = message.reactions ?? [];
+  if (reactions.length === 0) return 0;
+  const mobile = presentation === "mobile";
+  const gap = mobile ? 6 : 4;
+  const chipHeight = mobile ? 32 : 22;
+  const padding = mobile ? 22 : 16;
+  let rows = 1;
+  let occupied = 0;
+  for (const reaction of reactions) {
+    const characters = Math.min(Array.from(reaction.text).length, 17);
+    const width = Math.min(
+      availableWidth,
+      Math.max(chipHeight, padding + characters * (mobile ? 9 : 7) + 14),
+    );
+    if (occupied > 0 && occupied + gap + width > availableWidth) {
+      rows += 1;
+      occupied = width;
+    } else {
+      occupied += (occupied > 0 ? gap : 0) + width;
+    }
+  }
+  return 4 + rows * chipHeight + (rows - 1) * gap + (mobile ? 8 : 2);
 }
