@@ -14,7 +14,7 @@ use crate::{
     },
     name_key::NameKey,
     pushed_messages::{PushedMessage, PushedMessageKind},
-    reactions::{ReactionAction, ReactionActor, ReactionIndex},
+    reactions::{ReactionAction, ReactionActor, ReactionIndex, ReactionUpdate, ReactionVersion},
     read_model::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
@@ -75,6 +75,12 @@ struct ProvisionalIdentity {
 struct DedupReferences {
     msgids: Vec<String>,
     fallback: Option<FallbackKey>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MsgidReference {
+    count: usize,
+    location: Option<(BufferId, MessageId)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -332,7 +338,7 @@ pub(crate) struct NetworkModel {
     buffers: HashMap<BufferId, BufferState>,
     names: HashMap<NameKey, BufferId>,
     directs: HashMap<DirectKey, BufferId>,
-    msgids: HashMap<String, usize>,
+    msgids: HashMap<String, MsgidReference>,
     reactions: ReactionIndex,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
     reconcilable_failed_sends: HashSet<LocalSendId>,
@@ -408,7 +414,7 @@ impl NetworkModel {
             names: HashMap::new(),
             directs: HashMap::new(),
             msgids: HashMap::new(),
-            reactions: ReactionIndex::default(),
+            reactions: ReactionIndex::with_preload_limit(window_limit),
             fallbacks: HashMap::new(),
             reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
@@ -982,6 +988,13 @@ impl NetworkModel {
         reaction: &papo::event::Reacted,
     ) -> Option<EngineToUi> {
         let target = reaction.reacts_to.to_string();
+        let loaded = self
+            .msgids
+            .get(&target)
+            .and_then(|reference| reference.location);
+        let buffer_id = loaded
+            .map(|(buffer_id, _)| buffer_id)
+            .or_else(|| self.buffer_id_for_conversation(reaction.conversation()))?;
         let actor = ReactionActor {
             key: reaction_actor_key(&reaction.actor),
             nick: reaction.actor.nick().to_string(),
@@ -992,26 +1005,34 @@ impl NetworkModel {
             papo::event::ReactionAction::Removed => ReactionAction::Removed,
             _ => return None,
         };
-        if !self
-            .reactions
-            .apply(&target, &reaction.reaction, actor, action)
-        {
+        let version = ReactionVersion::new(
+            time_millis(reaction.server_time.unwrap_or(reaction.received_at)),
+            reaction
+                .msgid()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+        );
+        if !self.reactions.apply(
+            buffer_id,
+            &target,
+            &reaction.reaction,
+            ReactionUpdate::new(actor, action, version),
+            loaded.is_some(),
+        ) {
             return None;
         }
         let reactions = nonempty_reactions(self.reactions.summaries(&target));
-        self.buffers.iter_mut().find_map(|(buffer_id, buffer)| {
-            let record = buffer.timeline.iter_mut().find(|record| {
-                record
-                    .projection
-                    .server_ids
-                    .iter()
-                    .any(|msgid| msgid == &target)
-            })?;
-            record.projection.reactions.clone_from(&reactions);
-            Some(EngineToUi::MessageUpdated {
-                buffer_id: *buffer_id,
-                message: record.projection.clone(),
-            })
+        let (_, message_id) = loaded?;
+        let record = self
+            .buffers
+            .get_mut(&buffer_id)?
+            .timeline
+            .iter_mut()
+            .find(|record| record.projection.id == message_id)?;
+        record.projection.reactions.clone_from(&reactions);
+        Some(EngineToUi::MessageUpdated {
+            buffer_id,
+            message: record.projection.clone(),
         })
     }
 
@@ -1431,7 +1452,12 @@ impl NetworkModel {
         let mut order_changed = false;
         for message in &messages {
             for msgid in &message.server_ids {
-                *self.msgids.entry(msgid.clone()).or_default() += 1;
+                let reference = self.msgids.entry(msgid.clone()).or_insert(MsgidReference {
+                    count: 0,
+                    location: None,
+                });
+                reference.count += 1;
+                reference.location = Some((pending.buffer_id, message.id));
             }
             order_changed |= self
                 .insert(
@@ -1857,7 +1883,11 @@ impl NetworkModel {
         let key = NameKey::Channel(channel.clone());
         let buffer_id = self.names.remove(&key)?;
         self.buffer_order.retain(|id| *id != buffer_id);
-        self.buffers.remove(&buffer_id)?;
+        let buffer = self.buffers.remove(&buffer_id)?;
+        for record in buffer.timeline {
+            self.release_dedup(record.dedup);
+        }
+        self.reactions.clear_buffer(buffer_id);
         Some(EngineToUi::BufferRemoved { buffer_id })
     }
 
@@ -1879,6 +1909,10 @@ impl NetworkModel {
         let buffer = self.buffers.get_mut(&buffer_id)?;
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
         buffer.direct = Some(DirectAvailability::Pending);
+        for record in &mut buffer.timeline {
+            record.projection.reactions = None;
+        }
+        self.reactions.clear_buffer(buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
     }
@@ -2500,6 +2534,12 @@ impl NetworkModel {
             .server_time_ms
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
         let message_id = self.allocate_message_id();
+        for msgid in &dedup.msgids {
+            self.reactions.mark_loaded(msgid);
+            if let Some(reference) = self.msgids.get_mut(msgid) {
+                reference.location = Some((buffer_id, message_id));
+            }
+        }
         let message = self.project_incoming(message_id, &incoming, state, verified_sender, false);
         let Ok(order_changed) = self.insert(buffer_id, message.clone(), None, dedup) else {
             return IncomingResult {
@@ -2585,6 +2625,12 @@ impl NetworkModel {
         let dedup = self.deduplicate_incoming(incoming)?;
         self.reconcilable_failed_sends.remove(&local_send_id);
         self.buffers.get_mut(&buffer_id)?.timeline.remove(index);
+        for msgid in &dedup.msgids {
+            self.reactions.mark_loaded(msgid);
+            if let Some(reference) = self.msgids.get_mut(msgid) {
+                reference.location = Some((buffer_id, message_id));
+            }
+        }
         let verified_sender = incoming
             .peer_key
             .as_ref()
@@ -2741,7 +2787,13 @@ impl NetworkModel {
             if self.msgids.contains_key(msgid) {
                 return None;
             }
-            self.msgids.insert(msgid.clone(), 1);
+            self.msgids.insert(
+                msgid.clone(),
+                MsgidReference {
+                    count: 1,
+                    location: None,
+                },
+            );
             return Some(DedupReferences {
                 msgids: vec![msgid.clone()],
                 fallback: None,
@@ -2984,7 +3036,14 @@ impl NetworkModel {
 
     fn release_dedup(&mut self, dedup: DedupReferences) {
         for msgid in dedup.msgids {
-            decrement_or_remove(&mut self.msgids, &msgid);
+            let remove = self.msgids.get_mut(&msgid).is_some_and(|reference| {
+                reference.count -= 1;
+                reference.count == 0
+            });
+            if remove {
+                self.msgids.remove(&msgid);
+                self.reactions.remove_target(&msgid);
+            }
         }
         if let Some(fallback) = dedup.fallback {
             let remove = self.fallbacks.get_mut(&fallback).is_some_and(|(_, count)| {
@@ -3315,16 +3374,6 @@ fn direct_identity(buffer: &BufferState) -> Option<DirectIdentityState> {
     )
 }
 
-fn decrement_or_remove(counts: &mut HashMap<String, usize>, key: &str) {
-    let remove = counts.get_mut(key).is_some_and(|count| {
-        *count -= 1;
-        *count == 0
-    });
-    if remove {
-        counts.remove(key);
-    }
-}
-
 #[derive(Clone, Debug)]
 struct Incoming {
     conversation: NameKey,
@@ -3359,10 +3408,9 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
 }
 
 fn reaction_actor_key(actor: &papo::UserSource) -> String {
-    actor.account().name().map_or_else(
-        || format!("nick:{}", actor.nick().key()),
-        |account| format!("account:{}", account.key()),
-    )
+    // History can omit an account tag that was present live. Existing facts retain the
+    // nick-at-event across later nick changes; a subsequent reaction uses the new nick.
+    format!("nick:{}", actor.nick().key())
 }
 
 fn nonempty_reactions(
@@ -3468,18 +3516,19 @@ pub(crate) fn time_millis(time: SystemTime) -> i64 {
 mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use papo_testing::{StateBuilder, wire};
+    use papo_testing::{MessageBuilder, StateBuilder, wire};
 
     use super::{
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey,
         NetworkModel, PendingTargetState, SendTarget, TimelineOrigin, collapse_blank_lines,
-        derive_read_projection, draft_key, nick_color_index, time_millis,
+        derive_read_projection, draft_key, nick_color_index, reaction_actor_key, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
         MembershipProjection, MessageAuthorship, NetworkConnectionState, NetworkId,
         chat_list_snapshot::{ChatListSnapshot, SnapshotConversation, SnapshotCursor, SnapshotRow},
         pushed_messages::PushedMessage,
+        reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
         read_model::{MessageStub, ServerTimeMs},
     };
 
@@ -3652,6 +3701,107 @@ mod tests {
             NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), limit),
             StateBuilder::new("weblounge").connected(true).build(),
         )
+    }
+
+    #[test]
+    fn reaction_actor_identity_does_not_depend_on_account_tags() {
+        let state = StateBuilder::new("weblounge").connected(true).build();
+        let nick = nick_name(&state, "alice");
+        let live = MessageBuilder::new("#room", "live")
+            .actor(nick.clone(), None, None)
+            .account(papo_testing::account(state.casemapping(), "alice"))
+            .build();
+        let history = MessageBuilder::new("#room", "history")
+            .actor(nick, None, None)
+            .build();
+
+        assert_eq!(
+            reaction_actor_key(&live.actor),
+            reaction_actor_key(&history.actor)
+        );
+    }
+
+    #[test]
+    fn reaction_targets_follow_timeline_and_buffer_lifetimes() {
+        let (mut model, state) = model(1);
+        model.receive_incoming(
+            incoming(
+                &state,
+                "first",
+                Some("evicted"),
+                Some(1),
+                1,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let channel = channel_name(&state, "#room");
+        let channel_id = model.names[&NameKey::Channel(channel.clone())];
+        model.reactions.apply(
+            channel_id,
+            "evicted",
+            "👍",
+            ReactionUpdate::new(
+                ReactionActor {
+                    key: "nick:alice".into(),
+                    nick: "alice".into(),
+                    mine: false,
+                },
+                ReactionAction::Added,
+                ReactionVersion::new(1, "reaction"),
+            ),
+            true,
+        );
+        model.receive_incoming(
+            incoming(
+                &state,
+                "second",
+                Some("retained"),
+                Some(2),
+                2,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        assert!(!model.reactions.contains_target("evicted"));
+
+        model.reactions.apply(
+            channel_id,
+            "parted",
+            "👍",
+            ReactionUpdate::new(
+                ReactionActor {
+                    key: "nick:alice".into(),
+                    nick: "alice".into(),
+                    mine: false,
+                },
+                ReactionAction::Added,
+                ReactionVersion::new(2, "part-reaction"),
+            ),
+            false,
+        );
+        model.remove_channel(&channel).expect("channel is removed");
+        assert!(!model.reactions.contains_target("parted"));
+
+        let direct = NameKey::Direct(nick_name(&state, "bob"));
+        let (direct_id, _) = model.ensure_buffer(direct, None, None);
+        model.reactions.apply(
+            direct_id,
+            "closed",
+            "👍",
+            ReactionUpdate::new(
+                ReactionActor {
+                    key: "nick:bob".into(),
+                    nick: "bob".into(),
+                    mine: false,
+                },
+                ReactionAction::Added,
+                ReactionVersion::new(3, "close-reaction"),
+            ),
+            false,
+        );
+        model.close_direct(direct_id).expect("direct is closed");
+        assert!(!model.reactions.contains_target("closed"));
     }
 
     fn snapshot_stubs(count: usize, mentions: usize, latest: i64) -> Vec<MessageStub> {
