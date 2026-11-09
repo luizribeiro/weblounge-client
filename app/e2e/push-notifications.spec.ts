@@ -724,7 +724,7 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
   }
 });
 
-test("keeps a restored pushed direct message verified through history", async ({
+test("reconciles a restored pushed direct message with history", async ({
   context,
   page,
 }) => {
@@ -752,19 +752,29 @@ test("keeps a restored pushed direct message verified through history", async ({
     });
   });
   await prepareServiceWorker(context, page);
+  const suffix = Date.now().toString(36);
+  const appAccount = `push-user-${suffix}`;
+  const appPassword = `test-${appAccount}`;
+  const botNickname = `push-bot-${suffix}`;
   const text = `pushed direct before history ${Date.now()}`;
+  let accountRegistered = false;
   let bot: IrcClient | undefined;
   let deliveryPage: Page | undefined;
   try {
-    bot = await IrcClient.connect(
-      "weblounge-bot",
-      "weblounge-bot",
-      "weblounge-bot-test",
+    const accountSeed = await IrcClient.connectIsolated(
+      appAccount,
       "#weblounge-test",
     );
-    await page.goto("/?irc-password=weblounge-test");
+    accountRegistered = true;
+    accountSeed.close();
+    await accountSeed.waitForDisconnect();
+    bot = await IrcClient.connectIsolated(botNickname, "#weblounge-test");
+    await page.goto(startUrlForAccount(appAccount, appPassword));
     await expect(page.locator('[data-network-state="online"]')).toHaveCount(1);
+    const departed = bot.waitForNickDeparture(appAccount);
     await page.close();
+    await departed;
+    await setTestAccountAlwaysOn(appAccount, appPassword, true);
     blockIrc = true;
     deliveryPage = await context.newPage();
     await deliveryPage.goto("/config.json");
@@ -775,20 +785,21 @@ test("keeps a restored pushed direct message verified through history", async ({
     await expect
       .poll(() => pushDeliveryPageState(deliveryPage))
       .toEqual({ controller: "activated", online: false });
-    const line = `@account=weblounge-bot;time=${new Date().toISOString()};msgid=push-${Date.now()} :weblounge-bot!bot@localhost PRIVMSG weblounge :${text}`;
+    const echoed = await bot.privmsgConfirmed(appAccount, text);
+    const line = echoed.replace(/^@/u, `@account=${botNickname};`);
     const envelope = await seedRouteAndEncrypt(deliveryPage, line, {
       networkLabel: "Local Ergo",
-      nickname: "weblounge",
+      nickname: appAccount,
     });
     await deliverPush(context, deliveryPage, envelope);
     await expect
       .poll(() => notifications(deliveryPage))
       .toEqual([
         {
-          title: "weblounge-bot",
+          title: botNickname,
           body: text,
-          tag: "Local Ergo/weblounge-bot",
-          route: "/Local%20Ergo/@weblounge-bot",
+          tag: `Local Ergo/${botNickname}`,
+          route: `/Local%20Ergo/@${botNickname}`,
         },
       ]);
     await deliveryPage.close();
@@ -803,11 +814,11 @@ test("keeps a restored pushed direct message verified through history", async ({
         documentRequests += 1;
       }
     });
-    await coldPage.goto("/?irc-password=weblounge-test");
+    await coldPage.goto(startUrlForAccount(appAccount, appPassword));
 
     const directBuffer = coldPage
       .locator("[data-buffer-id]")
-      .filter({ hasText: "weblounge-bot" });
+      .filter({ hasText: botNickname });
     await expect(directBuffer).toHaveAttribute("data-unread", "1");
     await directBuffer.click();
     const row = coldPage.locator("[data-message-row]", { hasText: text });
@@ -829,11 +840,12 @@ test("keeps a restored pushed direct message verified through history", async ({
       1,
     );
     const marker = `direct history settled ${Date.now()}`;
-    await bot.privmsgConfirmed("weblounge", marker);
+    await bot.privmsgConfirmed(appAccount, marker);
     await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
     expect(documentRequests).toBe(1);
-    await expect(coldPage.getByText(text, { exact: true })).toHaveCount(1);
-    await expect(row).not.toHaveAttribute("data-unverified-sender", "true");
+    await expect(row).toHaveCount(1);
+    // The plaintext fixture turns the provisional row into an unverified authoritative row.
+    await expect(row).toHaveAttribute("data-unverified-sender", "true");
   } finally {
     blockIrc = false;
     await context.setOffline(false);
@@ -842,6 +854,9 @@ test("keeps a restored pushed direct message verified through history", async ({
       await deliveryPage.close();
     }
     bot?.close();
+    if (accountRegistered) {
+      await setTestAccountAlwaysOn(appAccount, appPassword, false);
+    }
   }
 });
 
@@ -949,6 +964,29 @@ async function pushDeliveryPageState(page: Page): Promise<{
     controller: navigator.serviceWorker.controller?.state ?? null,
     online: navigator.onLine,
   }));
+}
+
+async function setTestAccountAlwaysOn(
+  account: string,
+  password: string,
+  enabled: boolean,
+): Promise<void> {
+  const client = await IrcClient.connectWithoutJoin(account, account, password);
+  try {
+    await client.setAlwaysOn(enabled);
+  } finally {
+    client.close();
+    await client.waitForDisconnect();
+  }
+}
+
+function startUrlForAccount(account: string, password: string): string {
+  const params = new URLSearchParams({
+    "irc-account": account,
+    "irc-nickname": account,
+    "irc-password": password,
+  });
+  return `/?${params.toString()}`;
 }
 
 async function preparePushEventHarness(
