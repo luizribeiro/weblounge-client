@@ -187,6 +187,16 @@ export default defineConfig({
       use: { browserName: "webkit" },
     },
     {
+      name: "webkit-phone-layout",
+      testMatch: "**/phone-layout.spec.ts",
+      use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
+    },
+    {
+      name: "android-phone-layout",
+      testMatch: "**/phone-layout.spec.ts",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    {
       name: "webkit-conversation",
       testMatch: ["**/composer-anchor.spec.ts", "**/transcript-paint.spec.ts"],
       use: { browserName: "webkit" },

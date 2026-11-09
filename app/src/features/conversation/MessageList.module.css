@@ -289,30 +289,40 @@
   z-index: 2;
 }
 
-.list[data-presentation="mobile"] .row {
-  display: block;
-  padding-inline: 14px;
+.list[data-presentation="mobile"] {
+  padding-block-start: 0;
 }
-.list[data-presentation="mobile"] .time,
-.list[data-presentation="mobile"] .nickColumn,
-.list[data-presentation="mobile"] .content,
-.list[data-presentation="mobile"] .text,
-.list[data-presentation="mobile"] .pending,
-.list[data-presentation="mobile"] .failed {
-  display: inline;
+.list[data-presentation="mobile"] .row:not(.action) {
+  column-gap: var(--wl-space-list-gap);
+  display: grid;
+  grid-template-areas:
+    "nick time status"
+    "content content content";
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  padding: var(--wl-density-message-mobile-group-top-padding)
+    var(--wl-space-transcript-inline) 0;
+  row-gap: var(--wl-density-message-mobile-header-gap);
 }
-.list[data-presentation="mobile"] .time,
+.list[data-presentation="mobile"] .row[data-message-group-start="false"] {
+  grid-template-areas: "content content status";
+  padding-block-start: var(--wl-density-message-mobile-continuation-padding);
+  row-gap: 0;
+}
+.list[data-presentation="mobile"] .time {
+  grid-area: time;
+}
 .list[data-presentation="mobile"] .nickColumn {
-  margin-inline-end: 6px;
+  align-items: center;
+  grid-area: nick;
+  justify-content: flex-start;
 }
 .list[data-presentation="mobile"] .time [data-line],
 .list[data-presentation="mobile"] .nickColumn {
-  display: inline;
   overflow: visible;
   white-space: nowrap;
 }
 .list[data-presentation="mobile"] .nickIdentity {
-  display: inline;
+  justify-content: flex-start;
 }
 .list[data-presentation="mobile"] .nick {
   direction: inherit;
@@ -327,13 +337,26 @@
   position: absolute;
   white-space: nowrap;
 }
+.list[data-presentation="mobile"] .content {
+  grid-area: content;
+}
 .list[data-presentation="mobile"] .pending,
 .list[data-presentation="mobile"] .failed {
-  margin-inline-start: 6px;
+  grid-area: status;
+  justify-self: start;
+}
+.list[data-presentation="mobile"] .row[data-message-group-start="false"] .time,
+.list[data-presentation="mobile"]
+  .row[data-message-group-start="false"]
+  .nickColumn {
+  display: none;
+}
+.list[data-presentation="mobile"] .action {
+  padding-inline: var(--wl-space-transcript-inline);
 }
 .list[data-presentation="mobile"] .membership,
 .list[data-presentation="mobile"] .notice {
-  padding-inline-start: 14px;
+  padding-inline-start: var(--wl-space-transcript-inline);
 }
 .list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;
