@@ -132,6 +132,20 @@ These commands are visible only when your rank in the focused channel allows the
 
 Ergo implements `NS`, `CS`, `HS` and `HISTSERV` as real IRC verbs. The client detects Ergo from the `004`/`RPL_MYINFO` version prefix `ergo-` and then sends the verb. This is a server-identity check, not a `Feature` or ISUPPORT token, so it is named here explicitly. When the server is unknown, the client falls back to `PRIVMSG NickServ` (and so on). On Ergo a PRIVMSG is avoided because it could reach a nick squatter. Service traffic never creates a DM buffer. Replies arrive as NOTICEs, and the client shows them inline (or in a Services panel), not in a DM tab.
 
+Incoming notice routing is fixed by its typed audience and actor:
+
+| Notice | Destination |
+|---|---|
+| Channel audience | That channel's transcript |
+| Server audience (`Me` or broadcast) | The network's server buffer |
+| Proven service actor | The network's server buffer, never a DM |
+| Ordinary user in a private conversation | That user's DM transcript |
+
+Service detection uses server-provided identity facts. On Ergo, the services host or advertised
+service metadata is authoritative; nickname spelling alone is not. Channel and DM notices use the
+same unread and highlight rules as messages. Server-buffer notices retain the server buffer's
+existing exclusion from app unread badges.
+
 | Command | Aliases | Arguments | What it does | papo / capability | Pri | Surfaces | Perm | Confirm |
 |---|---|---|---|---|---|---|---|---|
 | ns | nickserv | Text | Talks to NickServ. Completes subcommands from a static per-server table. | pass-through to services (`send_raw("NS …")` on Ergo, else `privmsg`) | M3 | S | anyone | no (typed); GUI drop is menu |
