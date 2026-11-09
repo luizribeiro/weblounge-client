@@ -43,6 +43,10 @@ The single place a fresh session reads to know where the project stands. Update 
   A journey proves a second client's reaction appears live without moving the transcript from its
   edge, survives a history reload, disappears on unreact, and stays gone after reload; sending,
   pickers, phone actions and replies remain later batches.
+- [x] Match the empty phone Send treatment to the signed-off composer states: its 34px circle now
+  uses the chip and muted tokens at full intensity instead of compounding those colours with the
+  desktop empty-state opacity. Built-app Lounge Night captures cover every changed phone and
+  desktop state at the requested reference viewports.
 - [x] Move phone Send inside a fully rounded composer field as a 34px arrow with a 44px touch
   target. The field grows upward to its multiline cap and then scrolls while Send stays pinned to
   the bottom; desktop Send now bottom-aligns too. The field/entry split leaves room for later reply

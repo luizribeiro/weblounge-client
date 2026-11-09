@@ -190,8 +190,11 @@ textarea.input {
 }
 
 .send:disabled,
-.send[data-empty="true"],
 .input:disabled {
+  opacity: 0.55;
+}
+
+.desktopSend[data-empty="true"] {
   opacity: 0.55;
 }
 

@@ -30,6 +30,8 @@ test("keeps the phone Send control inside a capped composer", async ({
     });
     const field = page.locator("[data-composer-field]");
     const send = page.getByRole("button", { name: "Send" });
+    await expect(send).toHaveAttribute("data-empty", "true");
+    await expect(send).toHaveCSS("opacity", "1");
     await input.fill("phone composer one line");
     await capture(page, "phone-composer-after-one-line.png");
     await input.fill(sixLines);
