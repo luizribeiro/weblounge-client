@@ -5,6 +5,7 @@ import {
   nativeFeelAudit,
   resetNativeFeelLayoutShift,
 } from "./native-feel-audit";
+import { armMessageTime } from "./time-rewrite";
 
 test.use({
   hasTouch: true,
@@ -346,12 +347,29 @@ test.describe("mobile shell against local Ergo", () => {
       await test.step("render and send wrapped direct messages", async () => {
         const wrappingText =
           "A deliberately long mobile message wraps beneath itself instead of reserving desktop columns on this narrow screen.";
+        const groupedText = "A same-minute follow-up uses the full text width.";
+        const groupedMinute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
+        await Promise.all([
+          armMessageTime(wrappingText, groupedMinute + 1_000),
+          armMessageTime(groupedText, groupedMinute + 2_000),
+        ]);
         await bots[9]?.privmsgConfirmed("weblounge", wrappingText);
-        const wrappedMessage = page.getByText(wrappingText, { exact: true });
+        const transcript = page.getByRole("list", { name: "Messages" });
+        const wrappedMessage = transcript.getByText(wrappingText, {
+          exact: true,
+        });
         await expect(wrappedMessage).toBeVisible();
-        await expect(
-          wrappedMessage.locator("xpath=ancestor::*[@data-message-row]"),
-        ).toHaveAttribute("data-unverified-sender", "true");
+        const wrappedRow = wrappedMessage.locator(
+          "xpath=ancestor::*[@data-message-row]",
+        );
+        await expect(wrappedRow).toHaveAttribute(
+          "data-unverified-sender",
+          "true",
+        );
+        await expect(wrappedRow).toHaveAttribute(
+          "data-message-group-start",
+          "true",
+        );
         const geometry = await wrappedMessage.evaluate((text) => {
           const row = text.closest<HTMLElement>("[data-message-row]");
           const nick = row?.querySelector<HTMLElement>("[title]");
@@ -374,15 +392,37 @@ test.describe("mobile shell against local Ergo", () => {
                 .map((line) => line.left),
             ),
             lineCount: lines.length,
-            nickRight: nick.getBoundingClientRect().right,
-            nickTop: nick.getBoundingClientRect().top,
+            nickBottom: nick.getBoundingClientRect().bottom,
           };
         });
         expect(geometry.lineCount).toBeGreaterThan(1);
-        expect(geometry.firstTop).toBeCloseTo(geometry.nickTop, 0);
-        expect(geometry.firstLeft).toBeGreaterThan(geometry.nickRight);
-        expect(geometry.firstLeft - geometry.nickRight).toBeLessThan(12);
+        expect(geometry.firstTop).toBeGreaterThanOrEqual(geometry.nickBottom);
+        expect(geometry.firstLeft).toBeCloseTo(geometry.contentLeft, 0);
         expect(geometry.lastLeft).toBeCloseTo(geometry.contentLeft, 0);
+        await bots[9]?.privmsgConfirmed("weblounge", groupedText);
+        const groupedMessage = transcript.getByText(groupedText, {
+          exact: true,
+        });
+        const groupedRow = groupedMessage.locator(
+          "xpath=ancestor::*[@data-message-row]",
+        );
+        await expect(groupedRow).toHaveAttribute(
+          "data-message-group-start",
+          "false",
+        );
+        await expect(groupedRow.locator("time")).toBeHidden();
+        expect(
+          await groupedMessage.evaluate((text) => {
+            const row = text.closest<HTMLElement>("[data-message-row]");
+            if (row === null) throw new Error("message row is missing");
+            const rowStyle = getComputedStyle(row);
+            return (
+              text.getBoundingClientRect().left -
+              row.getBoundingClientRect().left -
+              Number.parseFloat(rowStyle.paddingLeft)
+            );
+          }),
+        ).toBeCloseTo(0, 0);
         const composer = page.getByRole("textbox", {
           name: `Message ${targetNick}`,
         });

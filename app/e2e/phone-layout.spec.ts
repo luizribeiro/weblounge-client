@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { IrcClient } from "./irc-client";
 import { useDedicatedWorker } from "./production-ergo";
+import { armMessageTime } from "./time-rewrite";
 
 const defaultChannel = process.env.WEBLOUNGE_E2E_CHANNEL ?? "#weblounge-test";
 
@@ -270,23 +271,12 @@ async function armGroupingTimes(
 ): Promise<void> {
   const minute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
   await Promise.all([
-    armTime(first, minute + 1_000),
-    armTime(second, minute + 2_000),
-    armTime(changedSender, minute + 3_000),
-    armTime(beforeMinute, minute + 59_000),
-    armTime(changedMinute, minute + 60_000),
+    armMessageTime(first, minute + 1_000),
+    armMessageTime(second, minute + 2_000),
+    armMessageTime(changedSender, minute + 3_000),
+    armMessageTime(beforeMinute, minute + 59_000),
+    armMessageTime(changedMinute, minute + 60_000),
   ]);
-}
-
-async function armTime(text: string, time: number): Promise<void> {
-  const control =
-    process.env.WEBLOUNGE_E2E_FORWARDER_URL ?? "http://127.0.0.1:8091";
-  const url = new URL("/rewrite-time", control);
-  url.searchParams.set("contains", ` :${text}`);
-  url.searchParams.set("time", new Date(time).toISOString());
-  const response = await fetch(url, { method: "POST" });
-  if (!response.ok)
-    throw new Error(`could not arm time rewrite: ${response.status}`);
 }
 
 function messageId(line: string): string {
