@@ -429,10 +429,14 @@ export function MessageList(props: MessageListProps) {
   let measuredRevisions = props.messages
     .map(messageSizeRevision)
     .join("\u0002");
+  let measuredRevisionCount = props.messages.length;
   createEffect(() => {
     const revisions = props.messages.map(messageSizeRevision).join("\u0002");
     if (revisions === measuredRevisions) return;
+    const sameCount = props.messages.length === measuredRevisionCount;
     measuredRevisions = revisions;
+    measuredRevisionCount = props.messages.length;
+    if (!sameCount) return;
     virtualizer.measure();
     if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
   });

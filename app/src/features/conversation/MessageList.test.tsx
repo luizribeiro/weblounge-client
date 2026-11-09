@@ -336,16 +336,12 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
       return this.matches("li[data-index]") ? measuredRowHeight(this) : 0;
     },
   );
-  const messages = [
+  const initialMessages = [
     { ...message, id: 1, text: "short" },
     { ...message, id: 2, text: "x".repeat(2_000) },
-    {
-      ...message,
-      id: 3,
-      text: `https://example.com/${"unbroken".repeat(160)}`,
-    },
   ];
-  const { container } = render(() => <MessageList messages={messages} />);
+  const [messages, setMessages] = createSignal(initialMessages);
+  const { container } = render(() => <MessageList messages={messages()} />);
   const list = container.querySelector<HTMLOListElement>("[data-message-list]");
   const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
   if (list === null || spacer === null)
@@ -367,6 +363,16 @@ it("measures wrapped rows without overlap and preserves the live edge", async ()
   });
 
   await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  setMessages([
+    ...initialMessages,
+    {
+      ...message,
+      id: 3,
+      text: `https://example.com/${"unbroken".repeat(160)}`,
+    },
+  ]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
