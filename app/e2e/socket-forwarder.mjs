@@ -1,5 +1,6 @@
 import http from "node:http";
 import net from "node:net";
+import { WebSocketIrcTimeRewriter } from "./socket-forwarder-rewrite.mjs";
 
 const listenPort = Number(process.env.WEBLOUNGE_FORWARDER_PORT ?? "8066");
 const targetPort = Number(
@@ -24,6 +25,7 @@ const server = net.createServer((client) => {
     upstream: undefined,
     silent: false,
     dropIncomingContaining: undefined,
+    incomingTimeRewriter: new WebSocketIrcTimeRewriter(incomingTimeRewrites),
     recentIncoming: Buffer.alloc(0),
   };
   const upstream = net.connect(targetPort, "127.0.0.1");
@@ -46,27 +48,8 @@ const server = net.createServer((client) => {
         Math.max(0, candidate.length - target.length + 1),
       );
     }
-    let rewritten = data;
-    const ruleIndex = incomingTimeRewrites.findIndex(
-      ({ contains }) => data.indexOf(Buffer.from(contains)) >= 0,
-    );
-    const rule = incomingTimeRewrites[ruleIndex];
-    if (rule !== undefined) {
-      const match = data.indexOf(Buffer.from(rule.contains));
-      const lineStart = data.lastIndexOf("\r\n", match) + 2;
-      const timeTagStart = data.indexOf("time=", lineStart);
-      if (timeTagStart < lineStart || timeTagStart >= match)
-        throw new Error("matched IRC line has no server-time tag");
-      const timeStart = timeTagStart + 5;
-      const timeEnd = findTagEnd(data, timeStart);
-      const replacement = Buffer.from(
-        withTimestampPrecision(rule.time, timeEnd - timeStart),
-      );
-      rewritten = Buffer.from(data);
-      replacement.copy(rewritten, timeStart);
-      incomingTimeRewrites.splice(ruleIndex, 1);
-    }
-    client.write(rewritten);
+    const rewritten = connection.incomingTimeRewriter.push(data);
+    if (rewritten.length > 0) client.write(rewritten);
   });
   client.on("close", () => closeConnection(connection));
   client.on("error", () => closeConnection(connection));
@@ -126,7 +109,11 @@ const control = http.createServer((request, response) => {
       response.writeHead(400).end("missing contains or time");
       return;
     }
-    incomingTimeRewrites.push({ contains, time });
+    const existing = incomingTimeRewrites.find(
+      (rule) => rule.contains === contains,
+    );
+    if (existing === undefined) incomingTimeRewrites.push({ contains, time });
+    else existing.time = time;
     response.end("armed");
     return;
   }
@@ -137,22 +124,6 @@ function closeConnection(connection) {
   if (!connections.delete(connection)) return;
   connection.client.destroy();
   connection.upstream?.destroy();
-}
-
-function withTimestampPrecision(time, length) {
-  if (length === time.length) return time;
-  const fractionalDigits = length - 21;
-  if (fractionalDigits < 0)
-    throw new Error("server time is shorter than an IRCv3 timestamp");
-  const milliseconds = time.slice(20, 23);
-  return `${time.slice(0, 19)}.${milliseconds.padEnd(fractionalDigits, "0").slice(0, fractionalDigits)}Z`;
-}
-
-function findTagEnd(data, start) {
-  let index = start;
-  while (index < data.length && ![32, 59, 13, 10].includes(data[index]))
-    index += 1;
-  return index;
 }
 
 server.listen(listenPort, "127.0.0.1");
