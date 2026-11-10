@@ -49,6 +49,36 @@ it("broadcasts optimistic state to every shared port", async () => {
   );
 });
 
+it("keeps timeline patches dormant while forwarding their legacy turn", async () => {
+  const port = new FakePort();
+  const runtime = new EngineWorkerRuntime(async () => ({
+    handle: () =>
+      JSON.stringify([
+        { type: "messages_appended", buffer_id: 2, messages: [] },
+        {
+          type: "timeline_changed",
+          buffer_id: 2,
+          reset: false,
+          upserted: [],
+          removed: [],
+        },
+        { type: "command_result", id: "turn-1" },
+      ]),
+  }));
+  runtime.attach(port);
+
+  port.receive({ type: "request", payload: { id: "turn-1" } });
+  await vi.waitFor(() => expect(port.sent).toHaveLength(2));
+
+  expect(
+    port.sent.map((event) =>
+      typeof event === "object" && event !== null && "type" in event
+        ? event.type
+        : undefined,
+    ),
+  ).toEqual(["messages_appended", "command_result"]);
+});
+
 it("routes asynchronous buffer focus requests only to the submitting port", async () => {
   const first = new FakePort();
   const second = new FakePort();

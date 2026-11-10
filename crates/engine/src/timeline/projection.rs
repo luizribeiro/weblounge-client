@@ -82,7 +82,7 @@ pub enum SystemLine {
 /// A non-empty sequence of semantic run clauses.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
 #[serde(transparent)]
-#[ts(type = "Array<RunClause>")]
+#[ts(as = "Vec<RunClause>")]
 pub struct RunClauses(Vec<RunClause>);
 
 impl RunClauses {

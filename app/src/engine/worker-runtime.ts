@@ -193,6 +193,7 @@ export class EngineWorkerRuntime {
   }
 
   #route(event: unknown, callingPort?: WorkerHostPort): void {
+    if (isRecord(event) && event.type === "timeline_changed") return;
     const hostedNetwork = hostedTokenNetwork(event);
     if (hostedNetwork !== undefined) {
       const port = callingPort ?? this.#activePort;

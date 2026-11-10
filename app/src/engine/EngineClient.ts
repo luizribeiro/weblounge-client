@@ -659,6 +659,10 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
+    case "timeline_changed":
+      throw new Error(
+        "timeline patches are not consumed before buffer-events batch 1c",
+      );
     case "membership_changed": {
       const membership = decodeMembership(value.membership);
       if (typeof value.buffer_id === "number" && membership !== undefined) {
@@ -779,6 +783,7 @@ function isEngineMessageType(value: string): value is EngineToUi["type"] {
     value === "message_updated" ||
     value === "messages_prepended" ||
     value === "buffer_snapshot" ||
+    value === "timeline_changed" ||
     value === "history_state_changed" ||
     value === "membership_changed" ||
     value === "members_changed" ||

@@ -8,6 +8,7 @@ import type { EngineMessageKey } from "./EngineMessageKey";
 import type { LocalSendId } from "./LocalSendId";
 import type { MemberProjection } from "./MemberProjection";
 import type { MembershipProjection } from "./MembershipProjection";
+import type { MessageId } from "./MessageId";
 import type { MessageProjection } from "./MessageProjection";
 import type { NetworkId } from "./NetworkId";
 import type { NetworkProjection } from "./NetworkProjection";
@@ -15,6 +16,7 @@ import type { NoticeAction } from "./NoticeAction";
 import type { NoticeTone } from "./NoticeTone";
 import type { PushDeviceCredentials } from "./PushDeviceCredentials";
 import type { PushState } from "./PushState";
+import type { TimelineItem } from "./TimelineItem";
 import type { TypingProjection } from "./TypingProjection";
 
 /**
@@ -244,7 +246,23 @@ messages: Array<MessageProjection>,
 /**
  * Retained membership runs.
  */
-memberships: Array<MembershipProjection>, } | { "type": "history_state_changed",
+memberships: Array<MembershipProjection>, } | { "type": "timeline_changed",
+/**
+ * Buffer whose timeline changed.
+ */
+buffer_id: BufferId,
+/**
+ * Whether this patch replaces the receiver's complete mirror.
+ */
+reset: boolean,
+/**
+ * New or changed items in engine order.
+ */
+upserted: Array<TimelineItem>,
+/**
+ * Items no longer present in the projection.
+ */
+removed: Array<MessageId>, } | { "type": "history_state_changed",
 /**
  * Conversation whose history state changed.
  */

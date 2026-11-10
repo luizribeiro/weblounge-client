@@ -1213,6 +1213,17 @@ pub enum EngineToUi {
         /// Retained membership runs.
         memberships: Vec<MembershipProjection>,
     },
+    /// Atomically reconcile one buffer's engine-ordered timeline.
+    TimelineChanged {
+        /// Buffer whose timeline changed.
+        buffer_id: BufferId,
+        /// Whether this patch replaces the receiver's complete mirror.
+        reset: bool,
+        /// New or changed items in engine order.
+        upserted: Vec<crate::timeline::TimelineItem>,
+        /// Items no longer present in the projection.
+        removed: Vec<MessageId>,
+    },
     /// Report one buffer's older-history request and terminal boundary.
     HistoryStateChanged {
         /// Conversation whose history state changed.
