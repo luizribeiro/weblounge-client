@@ -44,6 +44,9 @@ The single place a fresh session reads to know where the project stands. Update 
   transcript size estimator's `topic` discriminant is now covered by the same narrow per-file
   incidental allowance as the rendered notice switch, without allowing command-name literals
   elsewhere.
+- [x] Require meaningful mounted geometry before checking virtual-row contiguity. Every spacing
+  checkpoint now declares a minimum row count, waits for stable `data-row-key` rows to reach it,
+  and only then compares adjacent bounds, so an empty or single-row render cannot pass.
 - [x] Make the away-from-edge append spacing assertion non-vacuous. The journey now waits until
   the unseen row is mounted with measured geometry, proves its key is in the post-append snapshot,
   and requires at least one shared row key before accepting the measured common-row shift.

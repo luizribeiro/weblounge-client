@@ -69,7 +69,7 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     expect(density.historyBefore).toBeCloseTo(density.dividerBefore, 0);
     expect(density.historyAfter).toBeCloseTo(density.dividerAfter, 0);
 
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
     if (phone) {
       await expectTextGap(
         messageRow(page, scenario.groupStart),
@@ -170,7 +170,7 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await expect
       .poll(() => list.evaluate((element) => element.scrollHeight))
       .toBeGreaterThan(2_500);
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
 
     await expect
       .poll(async () => {
@@ -181,14 +181,14 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await list.evaluate((element) => {
       element.scrollTop = 0;
     });
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
     await throttleCpu(page, testInfo.project.name);
     await list.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
       element.dispatchEvent(new Event("scroll"));
     });
     await expect(messageRow(page, seedFence)).toBeVisible();
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
 
     const reactionTarget = await writer.privmsgConfirmed(
       channel,
@@ -200,22 +200,22 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await expect(
       messageRow(page, reactionText).locator('[data-reaction="👍"]'),
     ).toBeVisible();
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
 
     await page.setViewportSize(
       phone ? { width: 844, height: 390 } : { width: 980, height: 800 },
     );
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
     await page.setViewportSize(
       phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
     );
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
 
     if (phone) {
       await keyboardGeometry(page, true);
-      await expectContiguousRows(page);
+      await expectContiguousRows(page, 2);
       await keyboardGeometry(page, false);
-      await expectContiguousRows(page);
+      await expectContiguousRows(page, 2);
     }
 
     await throttleCpu(page, testInfo.project.name, 1);
@@ -240,7 +240,7 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     expect(commonRowShift(beforeJump, afterJump)).toBeLessThanOrEqual(1);
     await jump.click();
     await throttleCpu(page, testInfo.project.name, 1);
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, 2);
   } finally {
     for (const client of writers) client.close();
   }
@@ -309,7 +309,7 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
           .locator("[data-message-row]")
           .filter({ hasText: text.split("\n")[0] }),
       ).toBeVisible();
-    await expectContiguousRows(page);
+    await expectContiguousRows(page, hiddenMessages.length);
   } finally {
     writer.close();
   }
@@ -417,11 +417,16 @@ async function transcriptDensity(page: Page, unreadMessage: string) {
   }, unreadMessage);
 }
 
-async function expectContiguousRows(page: Page): Promise<void> {
+async function expectContiguousRows(
+  page: Page,
+  minimumRows: number,
+): Promise<void> {
+  const rows = page.locator("li[data-row-key]");
+  await expect.poll(() => rows.count()).toBeGreaterThanOrEqual(minimumRows);
   await expect
     .poll(() =>
-      page.locator("li[data-index]").evaluateAll((rows) => {
-        const ordered = rows
+      rows.evaluateAll((elements) => {
+        const ordered = elements
           .map((row) => ({
             index: Number((row as HTMLElement).dataset.index),
             key: (row as HTMLElement).dataset.rowKey,
