@@ -85,6 +85,82 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("first paint retains an own send after immediate relaunch", async ({
+    baseURL,
+    browser,
+    browserName,
+  }) => {
+    const { defaultBrowserType: _browser, ...device } =
+      devices[browserName === "webkit" ? "iPhone 16 Pro" : "Pixel 7"];
+    const context = await browser.newContext({ ...device, baseURL });
+    const suffix = Date.now().toString(36).slice(-6);
+    const channels = [`#own-send-${suffix}`, `#other-${suffix}`];
+    const [target, other] = channels;
+    if (target === undefined || other === undefined)
+      throw new Error("relaunch channels are missing");
+    const appAccount = `own-send-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
+    const keeper = await IrcClient.connectIsolated(appAccount, target);
+    await keeper.joinAll([other]);
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    const bot = await IrcClient.connect(
+      `own-send-bot-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      other,
+    );
+    let current = await context.newPage();
+    let forwarderDropped = false;
+    try {
+      await useDedicatedWorker(current);
+      await current.goto(
+        startUrlForAccount(appAccount, appPassword, ...channels),
+      );
+      for (const channel of channels)
+        await expect(bufferRow(current, channel)).toBeVisible();
+      await bot.privmsgConfirmed(other, `newer other ${suffix}`);
+
+      await bufferRow(current, target).click();
+      const own = `own relaunch preview ${suffix}`;
+      const composer = current.getByRole("textbox", {
+        name: `Message ${target}`,
+      });
+      await composer.fill(own);
+      await composer.press("Enter");
+      await expect(messageRow(current, own, "confirmed")).toHaveCount(1);
+      await expect
+        .poll(() => selectedChatRows(current, channels))
+        .toEqual([
+          {
+            title: target,
+            preview: `${appAccount}: ${own}`,
+            time: expect.stringMatching(/\S/u),
+          },
+          expect.objectContaining({ title: other }),
+        ]);
+      const finalRows = await selectedChatRows(current, channels);
+
+      await controlForwarder("drop");
+      forwarderDropped = true;
+      await backgroundPage(current);
+      await current.close();
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await recordFirstChatRows(current, channels);
+      await current.goto(
+        startUrlForAccount(appAccount, appPassword, ...channels),
+      );
+      await expect.poll(() => firstChatRows(current)).toEqual(finalRows);
+    } finally {
+      if (forwarderDropped) await controlForwarder("restore");
+      if (!current.isClosed()) await current.close();
+      await context.close();
+      bot.close();
+    }
+  });
+
   test("persists a fetched server marker before the next launch", async ({
     baseURL,
     context,
@@ -618,6 +694,7 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
           expectedOrder.map((title, index) => ({
             title,
             preview: `${bots[bots.length - index - 1]?.nickname}: ${finalPreviews[finalPreviews.length - index - 1]}`,
+            time: expect.stringMatching(/\S/u),
           })),
         );
       const finalRows = await selectedChatRows(current, channels);
@@ -1463,6 +1540,7 @@ async function recordCachedChatRows(
 interface SelectedChatRow {
   readonly title: string;
   readonly preview: string;
+  readonly time: string;
 }
 
 async function selectedChatRows(
@@ -1481,7 +1559,13 @@ async function selectedChatRows(
         const preview =
           row.querySelector("time")?.parentElement?.nextElementSibling
             ?.textContent;
-        return [{ title, preview: preview ?? "" }];
+        return [
+          {
+            title,
+            preview: preview ?? "",
+            time: row.querySelector("time")?.textContent ?? "",
+          },
+        ];
       }),
     titles,
   );
@@ -1511,7 +1595,13 @@ async function recordFirstChatRows(
         const preview =
           row.querySelector("time")?.parentElement?.nextElementSibling
             ?.textContent;
-        return [{ title, preview: preview ?? "" }];
+        return [
+          {
+            title,
+            preview: preview ?? "",
+            time: row.querySelector("time")?.textContent ?? "",
+          },
+        ];
       });
       if (selected.length === titles.length)
         Reflect.set(globalThis, "firstRelaunchChatRows", selected);
