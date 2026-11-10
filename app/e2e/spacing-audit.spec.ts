@@ -220,17 +220,24 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
 
     await throttleCpu(page, testInfo.project.name, 1);
     await scrollAwayFromLiveEdge(page, list, {
-      distance: 300,
+      distance: 100,
       input: phone ? "touch" : "wheel",
+      wheelDelta: 55,
     });
     const beforeJump = await mountedRowPositions(page);
     await throttleCpu(page, testInfo.project.name);
-    writer.privmsg(channel, `spacing unseen ${suffix}`);
+    const unseenText = `spacing unseen ${suffix}`;
+    writer.privmsg(channel, unseenText);
     const jump = page.getByRole("button", { name: /new message/u });
     await expect(jump).toBeVisible();
-    expect(
-      await commonRowShift(beforeJump, await mountedRowPositions(page)),
-    ).toBeLessThanOrEqual(1);
+    await expect
+      .poll(() => mountedMessageRowKey(page, unseenText))
+      .toBeTruthy();
+    const unseenKey = await mountedMessageRowKey(page, unseenText);
+    const afterJump = await mountedRowPositions(page);
+    expect(afterJump.map(([key]) => key)).toContain(unseenKey);
+    expect(commonRowKeys(beforeJump, afterJump).length).toBeGreaterThan(0);
+    expect(commonRowShift(beforeJump, afterJump)).toBeLessThanOrEqual(1);
     await jump.click();
     await throttleCpu(page, testInfo.project.name, 1);
     await expectContiguousRows(page);
@@ -553,6 +560,28 @@ function mountedRowPositions(
           ] as const,
       ),
     );
+}
+
+function mountedMessageRowKey(
+  page: Page,
+  text: string,
+): Promise<string | undefined> {
+  return messageRow(page, text).evaluateAll((rows) => {
+    const row = rows[0]?.closest<HTMLElement>("li[data-row-key]");
+    return row !== null &&
+      row !== undefined &&
+      row.getBoundingClientRect().height > 0
+      ? row.dataset.rowKey
+      : undefined;
+  });
+}
+
+function commonRowKeys(
+  before: readonly (readonly [string, number])[],
+  after: readonly (readonly [string, number])[],
+): readonly string[] {
+  const afterKeys = new Set(after.map(([key]) => key));
+  return before.flatMap(([key]) => (afterKeys.has(key) ? [key] : []));
 }
 
 function commonRowShift(

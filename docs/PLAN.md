@@ -44,6 +44,9 @@ The single place a fresh session reads to know where the project stands. Update 
   transcript size estimator's `topic` discriminant is now covered by the same narrow per-file
   incidental allowance as the rendered notice switch, without allowing command-name literals
   elsewhere.
+- [x] Make the away-from-edge append spacing assertion non-vacuous. The journey now waits until
+  the unseen row is mounted with measured geometry, proves its key is in the post-append snapshot,
+  and requires at least one shared row key before accepting the measured common-row shift.
 - [x] Bound transcript row-size caches to the current projection. The desktop shell reuses one
   `MessageList` across buffer switches, so removed row keys are now pruned from both cached
   estimates and revision sources instead of retaining every buffer opened during the session.
