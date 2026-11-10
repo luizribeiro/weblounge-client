@@ -334,13 +334,14 @@ export function MessageList(props: MessageListProps) {
   };
   const refreshRenderedMeasurements = () => {
     if (list?.isConnected !== true) return;
+    const indexes = new Map(rows().map((row, index) => [row.key, index]));
     const measurements = [
-      ...list.querySelectorAll<HTMLLIElement>("li[data-index]"),
+      ...list.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
     ].flatMap((element) => {
-      const index = Number(element.dataset.index);
+      const index = indexes.get(element.dataset.rowKey ?? "");
       const size =
         element.getBoundingClientRect().height || element.offsetHeight;
-      return Number.isInteger(index) && size > 0 ? [{ index, size }] : [];
+      return index !== undefined && size > 0 ? [{ index, size }] : [];
     });
     preserveVisualScrollAnchor(list, () => {
       for (const { index, size } of measurements)
@@ -349,20 +350,24 @@ export function MessageList(props: MessageListProps) {
   };
   const remeasure = () => {
     if (list?.isConnected !== true) return;
+    const indexes = new Map(rows().map((row, index) => [row.key, index]));
     const elements = [
-      ...list.querySelectorAll<HTMLLIElement>("li[data-index]"),
+      ...list.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
     ];
     const measurements = elements.flatMap((element) => {
-      const index = Number(element.dataset.index);
+      const index = indexes.get(element.dataset.rowKey ?? "");
       const size =
         element.getBoundingClientRect().height || element.offsetHeight;
-      return Number.isInteger(index) && size > 0 ? [{ index, size }] : [];
+      return index === undefined ? [] : [{ element, index, size }];
     });
     preserveVisualScrollAnchor(list, () => {
       virtualizer.measure();
       for (const { index, size } of measurements)
-        virtualizer.resizeItem(index, size);
-      for (const element of elements) virtualizer.measureElement(element);
+        if (size > 0) virtualizer.resizeItem(index, size);
+      for (const { element, index } of measurements) {
+        element.dataset.index = String(index);
+        virtualizer.measureElement(element);
+      }
     });
   };
   const syncRenderedRowPositions = () => {

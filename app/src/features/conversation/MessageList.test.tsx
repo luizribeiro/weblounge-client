@@ -363,6 +363,89 @@ it("anchors the viewport when history rows are prepended", async () => {
   expect(list.scrollTop).toBe(68);
 });
 
+it("caches mounted row heights on the first frame after ordered inserts", async () => {
+  vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
+  const heightForKey = (key: string) => {
+    if (key.startsWith("day-")) return 34;
+    return 24 + Number(key.slice("message-".length)) * 3;
+  };
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (!this.matches("li[data-row-key]")) return rect(0, 0);
+      return rect(0, heightForKey(this.dataset.rowKey ?? ""));
+    },
+  );
+  const at = (id: number, receivedAtMs: number): MessageProjection => ({
+    ...message,
+    id,
+    received_at_ms: receivedAtMs,
+    text: `message ${id}`,
+  });
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    at(2, 2),
+    at(4, 4),
+  ]);
+  const { container } = render(() => <MessageList messages={messages()} />);
+  const rowIndexes = () =>
+    new Map(
+      [...container.querySelectorAll<HTMLLIElement>("li[data-row-key]")].map(
+        (row) => [row.dataset.rowKey ?? "", row.dataset.index ?? "0"],
+      ),
+    );
+  const retainStaleIndexesForMeasurement = (
+    previousIndexes: ReadonlyMap<string, string>,
+  ) => {
+    const currentIndexes = rowIndexes();
+    for (const row of container.querySelectorAll<HTMLLIElement>(
+      "li[data-row-key]",
+    ))
+      row.dataset.index = previousIndexes.get(row.dataset.rowKey ?? "") ?? "0";
+    queueMicrotask(() => {
+      for (const row of container.querySelectorAll<HTMLLIElement>(
+        "li[data-row-key]",
+      ))
+        row.dataset.index = currentIndexes.get(row.dataset.rowKey ?? "") ?? "0";
+    });
+  };
+  const assertFirstFrameSizes = async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
+    const rows = [
+      ...container.querySelectorAll<HTMLLIElement>("li[data-row-key]"),
+    ].sort(
+      (left, right) =>
+        translateY(left.style.transform) - translateY(right.style.transform),
+    );
+    if (spacer === null || rows.length === 0)
+      throw new Error("virtual rows are missing");
+    const totalSize = Number.parseFloat(spacer.style.height);
+    const bottom = Math.max(0, 768 - totalSize);
+    for (const [index, row] of rows.entries()) {
+      const start = translateY(row.style.transform) - bottom;
+      const next = rows[index + 1];
+      const cachedSize =
+        next === undefined
+          ? totalSize - start
+          : translateY(next.style.transform) - bottom - start;
+      expect(cachedSize, row.dataset.rowKey).toBe(
+        heightForKey(row.dataset.rowKey ?? ""),
+      );
+    }
+  };
+
+  await assertFirstFrameSizes();
+  const beforePrepend = rowIndexes();
+  setMessages([at(1, 1), ...messages()]);
+  retainStaleIndexesForMeasurement(beforePrepend);
+  await assertFirstFrameSizes();
+  const beforeMidInsert = rowIndexes();
+  setMessages([at(1, 1), at(2, 2), at(3, 3), at(4, 4)]);
+  retainStaleIndexesForMeasurement(beforeMidInsert);
+  await assertFirstFrameSizes();
+});
+
 it("remeasures a revised row before adding confirmation split rows", async () => {
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
     function (this: HTMLElement) {
