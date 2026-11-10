@@ -59,7 +59,7 @@ test.describe("connection resilience against local Ergo", () => {
             distance: scrollDistance,
             input: "touch",
           })
-        : await scrollDesktopBetweenEdges(list, scrollDistance);
+        : await scrollDesktopBetweenEdges(page, list, scrollDistance);
       expect(scrollTop).toBeGreaterThan(0);
       const scrollAnchor = await list.evaluate(visibleMessageAnchor);
       const draft = `draft survives ${Date.now()}`;
@@ -682,14 +682,13 @@ function currentNetworkState(page: Page): Promise<string | null> {
 }
 
 async function scrollDesktopBetweenEdges(
+  page: Page,
   list: Locator,
   minimumMargin: number,
 ): Promise<number> {
   const range = await messageListScrollRange(list);
-  const target = range / 2;
-  await list.evaluate((element, scrollTop) => {
-    element.scrollTop = scrollTop;
-  }, target);
+  await list.hover();
+  await page.mouse.wheel(0, -range / 2);
   await waitForStableScrollTop(list);
   await expect
     .poll(() =>

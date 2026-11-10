@@ -29,6 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep reconnect scroll preservation under actual reader ownership. The resilience journey now
+  uses a wheel gesture before its condition-based stability check; assigning `scrollTop` directly
+  left the app logically at the live edge, so the new foreground measurement refresh correctly
+  returned to the bottom even though the test treated that scripted position as user-owned.
 - [x] Keep the command-registry second-source check precise for generated notice kinds. The
   transcript size estimator's `topic` discriminant is now covered by the same narrow per-file
   incidental allowance as the rendered notice switch, without allowing command-name literals
