@@ -974,6 +974,72 @@ it("anchors visible content when a reaction revision grows a row above it", asyn
   );
 });
 
+it("retains offscreen measurements through a same-count revision", async () => {
+  const observers: ControlledResizeObserver[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class extends ControlledResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super(callback);
+        observers.push(this);
+      }
+    },
+  );
+  const initialMessages = Array.from({ length: 80 }, (_, index) => ({
+    ...message,
+    id: index + 1,
+    highlighted: false,
+    received_at_ms: index + 1,
+    text: `message ${index + 1}`,
+  }));
+  const [messages, setMessages] = createSignal(initialMessages);
+  const { container } = render(() => <MessageList messages={messages()} />);
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
+  if (list === null || spacer === null)
+    throw new Error("message list is missing");
+  let scrollTop = 0;
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 120 },
+    scrollHeight: {
+      configurable: true,
+      get: () => Number.parseFloat(spacer.style.height) || 0,
+    },
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = Math.max(0, Math.min(value, list.scrollHeight - 120));
+      },
+    },
+  });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const measuredRow = container.querySelector<HTMLLIElement>(
+    '[data-row-key="message-1"]',
+  );
+  if (measuredRow === null) throw new Error("first row is missing");
+  for (const observer of observers) observer.flushTarget(measuredRow, 200);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  const measuredTotal = Number.parseFloat(spacer.style.height);
+
+  fireEvent.wheel(list, { deltaY: 100 });
+  list.scrollTop = list.scrollHeight;
+  list.dispatchEvent(new Event("scroll"));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  expect(container.querySelector('[data-row-key="message-1"]')).toBeNull();
+
+  setMessages(
+    initialMessages.map((current) =>
+      current.id === 80 ? { ...current, text: "revised tail" } : current,
+    ),
+  );
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(Number.parseFloat(spacer.style.height)).toBe(measuredTotal);
+});
+
 it("renders action, own, pending, bot, divider, New, and membership variants", async () => {
   const membership: MembershipProjection = {
     type: "change",

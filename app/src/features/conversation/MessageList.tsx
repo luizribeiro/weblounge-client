@@ -257,7 +257,7 @@ export function MessageList(props: MessageListProps) {
         observedHeight = next.height;
         setViewportHeight(next.height);
         callback(next);
-        if (widthChanged) remeasure();
+        if (widthChanged) remeasureAll();
         if (followEnd) scrollToLiveEdge();
         return followEnd;
       };
@@ -350,7 +350,10 @@ export function MessageList(props: MessageListProps) {
     });
     if (publishPositions) setMeasurementEpoch((epoch) => epoch + 1);
   };
-  const remeasure = () => {
+  const remeasureRows = (
+    clearMeasurements: boolean,
+    revisedIndexes: readonly number[] = [],
+  ) => {
     if (list?.isConnected !== true) return;
     const indexes = new Map(rows().map((row, index) => [row.key, index]));
     const elements = [
@@ -363,7 +366,14 @@ export function MessageList(props: MessageListProps) {
       return index === undefined ? [] : [{ element, index, size }];
     });
     preserveVisualScrollAnchor(list, () => {
-      virtualizer.measure();
+      if (clearMeasurements) virtualizer.measure();
+      const mountedIndexes = new Set(measurements.map(({ index }) => index));
+      for (const index of revisedIndexes)
+        if (!mountedIndexes.has(index))
+          virtualizer.resizeItem(
+            index,
+            virtualizer.options.estimateSize(index),
+          );
       for (const { index, size } of measurements)
         if (size > 0) virtualizer.resizeItem(index, size);
       for (const { element, index } of measurements) {
@@ -373,6 +383,7 @@ export function MessageList(props: MessageListProps) {
     });
     setMeasurementEpoch((epoch) => epoch + 1);
   };
+  const remeasureAll = () => remeasureRows(true);
   const measureRow = (element: HTMLLIElement, index: number) => {
     element.dataset.index = String(index);
     const measured = measureElement(element, undefined, virtualizer);
@@ -529,22 +540,23 @@ export function MessageList(props: MessageListProps) {
     }));
     const unchanged =
       currentMeasurements.length === measuredRows.length &&
-      measuredRows.every(
-        (row, index) =>
-          currentMeasurements[index]?.key === row.key &&
-          currentMeasurements[index]?.revision === row.revision,
-      );
+      samePrefix(measuredRows, currentMeasurements);
     if (unchanged) return;
     const appended =
       currentMeasurements.length > measuredRows.length &&
-      measuredRows.every(
-        (row, index) =>
-          currentMeasurements[index]?.key === row.key &&
-          currentMeasurements[index]?.revision === row.revision,
-      );
+      samePrefix(measuredRows, currentMeasurements);
+    const previousRevisions = new Map(
+      measuredRows.map((row) => [row.key, row.revision]),
+    );
+    const revisedIndexes = currentMeasurements.flatMap((row, index) => {
+      const previousRevision = previousRevisions.get(row.key);
+      return previousRevision !== undefined && previousRevision !== row.revision
+        ? [index]
+        : [];
+    });
     measuredRows = currentMeasurements;
     queueMicrotask(() => {
-      if (!appended) remeasure();
+      if (!appended) remeasureRows(false, revisedIndexes);
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     });
   });
@@ -592,7 +604,7 @@ export function MessageList(props: MessageListProps) {
       if (logicallyAtLiveEdge) virtualizer.cancelScroll();
     };
     const handleFontsLoaded = () => {
-      remeasure();
+      remeasureAll();
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     };
     const rowMountObserver = new MutationObserver((records) => {
@@ -1353,6 +1365,17 @@ function formatNoticeTime(milliseconds: number): string {
 }
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight);
+}
+
+function samePrefix(
+  previous: readonly { readonly key: string; readonly revision: string }[],
+  current: readonly { readonly key: string; readonly revision: string }[],
+): boolean {
+  return previous.every(
+    (row, index) =>
+      current[index]?.key === row.key &&
+      current[index]?.revision === row.revision,
+  );
 }
 
 function estimateDecorationHeight(
