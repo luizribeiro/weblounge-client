@@ -11781,6 +11781,87 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn confirmed_own_send_persists_when_the_read_mark_is_already_ahead() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        let connected = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, connected);
+        process_event(&state, &outbound, &client, 1, joined);
+        let channel = known_channel(&client, "#room");
+        let buffer_id = {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            let buffer_id = running
+                .model
+                .buffer_id_for_target(&SendTarget::Channel(channel.clone()))
+                .expect("join projects the room");
+            running.model.finish_history(
+                &papo::Conversation::Channel(channel),
+                None,
+                None,
+                None,
+                0,
+                true,
+            );
+            running.model.advance_read(
+                buffer_id,
+                papo::time::now() + Duration::from_secs(60),
+                false,
+            );
+            running.chat_list.fingerprint = "network".into();
+            buffer_id
+        };
+        update_chat_list(&state, &outbound, 1);
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        runtime.request(EngineRequestEnvelope {
+            id: "send".into(),
+            request: EngineRequest::SendMessage {
+                buffer_id,
+                text: "own snapshot edge".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "PRIVMSG #room :own snapshot edge");
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !matches!(
+                receiver.recv().await,
+                Some(EngineToUi::MessageConfirmed { .. })
+            ) {}
+        })
+        .await
+        .expect("send confirms");
+
+        let storage = lock(&state).storage.clone();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let snapshot = read(storage.as_ref())
+                    .await
+                    .expect("read snapshot")
+                    .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+                if snapshot.and_then(|snapshot| snapshot.rows[0].preview.clone())
+                    == Some("weblounge: own snapshot edge".into())
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("confirmed own preview persists");
+    }
+
+    #[tokio::test]
     async fn cached_target_failure_emits_legacy_event_and_patch_in_one_flush() {
         let (client, _events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
