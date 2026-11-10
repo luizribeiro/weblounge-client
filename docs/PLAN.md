@@ -31,9 +31,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 - [x] Make IRC `NOTICE` a first-class chat semantic across live events, history replay and push
   restoration. Channel notices stay in their channel; ordinary private notices use the sender's
-  verified DM thread; typed server notices and strongly identified Ergo services use the existing
-  server buffer without creating a DM. Channel and DM notices share message unread/highlight,
-  deduplication and projection behavior, while server-buffer badge behavior stays unchanged.
+  verified DM thread, including service nicks until papo exposes typed service identity; typed
+  server notices use the existing server buffer. Channel and DM notices share message
+  unread/highlight, deduplication and projection behavior, while server-buffer badge behavior stays
+  unchanged.
   Pushed notices retain their semantic through authoritative same-msgid reconciliation. The app
   renders sender-shaped muted italic rows that break normal-message grouping and use matching
   desktop/phone size estimates. Engine replay tests cover channel, DM, server/service, history and

@@ -1045,13 +1045,7 @@ impl NetworkModel {
                 None,
             );
         };
-        let service =
-            matches!(&input, ChatInput::Notice(notice) if is_service_actor(&notice.actor));
-        let destination = if service {
-            IncomingDestination::Server
-        } else {
-            IncomingDestination::Conversation(conversation.clone())
-        };
+        let destination = IncomingDestination::Conversation(conversation.clone());
         let origin = if history {
             TimelineOrigin::History
         } else {
@@ -1065,18 +1059,14 @@ impl NetworkModel {
         let authorship = input.authorship();
         let incoming = Incoming {
             direct: direct.map(DirectAvailability::Guarded),
-            direct_key: (!service).then_some(direct_key).flatten(),
-            peer_key: (!service && authorship != papo::Authorship::Own)
+            direct_key,
+            peer_key: (authorship != papo::Authorship::Own)
                 .then(|| actor.peer_key().cloned())
                 .flatten(),
-            legacy_account_key: (!service)
-                .then(|| {
-                    actor
-                        .account()
-                        .name()
-                        .map(|account| account.key().to_owned())
-                })
-                .flatten(),
+            legacy_account_key: actor
+                .account()
+                .name()
+                .map(|account| account.key().to_owned()),
             provisional_identity: None,
             destination,
             author: actor.nick().to_string(),
@@ -3565,15 +3555,6 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
         papo::Authorship::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
     }
-}
-
-fn is_service_actor(actor: &papo::UserSource) -> bool {
-    actor
-        .host()
-        .is_some_and(|host| host.eq_ignore_ascii_case("localhost"))
-        && actor
-            .username()
-            .is_some_and(|username| username.eq_ignore_ascii_case(actor.nick().as_str()))
 }
 
 fn reaction_actor_key(actor: &papo::UserSource) -> String {

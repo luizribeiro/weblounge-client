@@ -130,7 +130,7 @@ These commands are visible only when your rank in the focused channel allows the
 
 ## Account & services
 
-Ergo implements `NS`, `CS`, `HS` and `HISTSERV` as real IRC verbs. The client detects Ergo from the `004`/`RPL_MYINFO` version prefix `ergo-` and then sends the verb. This is a server-identity check, not a `Feature` or ISUPPORT token, so it is named here explicitly. When the server is unknown, the client falls back to `PRIVMSG NickServ` (and so on). On Ergo a PRIVMSG is avoided because it could reach a nick squatter. Service traffic never creates a DM buffer. Replies arrive as NOTICEs, and the client shows them inline (or in a Services panel), not in a DM tab.
+Ergo implements `NS`, `CS`, `HS` and `HISTSERV` as real IRC verbs. The client detects Ergo from the `004`/`RPL_MYINFO` version prefix `ergo-` and then sends the verb. This is a server-identity check, not a `Feature` or ISUPPORT token, so it is named here explicitly. When the server is unknown, the client falls back to `PRIVMSG NickServ` (and so on). On Ergo a PRIVMSG is avoided because it could reach a nick squatter. Until papo exposes a typed service identity, replies from user-prefixed sources such as NickServ are ordinary private NOTICEs and therefore use that nick's DM thread. Once papo provides that signal, typed service replies move to the server buffer without creating a DM.
 
 Incoming notice routing is fixed by its typed audience and actor:
 
@@ -138,13 +138,14 @@ Incoming notice routing is fixed by its typed audience and actor:
 |---|---|
 | Channel audience | That channel's transcript |
 | Server audience (`Me` or broadcast) | The network's server buffer |
-| Proven service actor | The network's server buffer, never a DM |
 | Ordinary user in a private conversation | That user's DM transcript |
+| Service actor without a typed papo identity | That sender's DM transcript, like any private user notice |
+| Service actor after papo exposes a typed identity | The network's server buffer, never a DM |
 
-Service detection uses server-provided identity facts. On Ergo, the services host or advertised
-service metadata is authoritative; nickname spelling alone is not. Channel and DM notices use the
-same unread and highlight rules as messages. Server-buffer notices retain the server buffer's
-existing exclusion from app unread badges.
+There is no heuristic service detection: nickname, username and hostname spelling never change a
+private notice's destination. Channel and DM notices use the same unread and highlight rules as
+messages. Server-buffer notices retain the server buffer's existing exclusion from app unread
+badges.
 
 | Command | Aliases | Arguments | What it does | papo / capability | Pri | Surfaces | Perm | Confirm |
 |---|---|---|---|---|---|---|---|---|

@@ -12422,6 +12422,24 @@ async fn delay(duration: Duration) {
         serde_json::to_value(&message.kind).expect("message kind serializes") == "irc_notice"
     }
 
+    fn snapshot_messages(
+        model: &NetworkModel,
+        buffer_id: BufferId,
+    ) -> Vec<crate::MessageProjection> {
+        model
+            .snapshot_events()
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferSnapshot {
+                    buffer_id: current,
+                    messages,
+                    ..
+                } if current == buffer_id => Some(messages),
+                _ => None,
+            })
+            .expect("buffer snapshot")
+    }
+
     #[tokio::test]
     async fn live_notices_use_chat_routing_semantics_and_server_buffer_routing() {
         let mut harness =
@@ -12477,52 +12495,37 @@ async fn delay(duration: Duration) {
             .iter()
             .find(|buffer| buffer.title == "Bob")
             .expect("direct buffer");
+        let nickserv = buffers
+            .iter()
+            .find(|buffer| buffer.title == "NickServ")
+            .expect("NickServ direct buffer");
         let server = buffers
             .iter()
             .find(|buffer| buffer.id == BufferId(1))
             .expect("server buffer");
-        let snapshots = model.snapshot_events();
-        let messages = |buffer_id| {
-            snapshots.iter().find_map(|event| match event {
-                EngineToUi::BufferSnapshot {
-                    buffer_id: current,
-                    messages,
-                    ..
-                } if *current == buffer_id => Some(messages.as_slice()),
-                _ => None,
-            })
-        };
-
+        let channel_messages = snapshot_messages(model, channel.id);
+        let direct_messages = snapshot_messages(model, direct.id);
+        let nickserv_messages = snapshot_messages(model, nickserv.id);
+        let server_messages = snapshot_messages(model, server.id);
         assert!(
-            messages(channel.id)
-                .expect("channel snapshot")
+            channel_messages
                 .iter()
                 .all(|message| { message.text == "notice-live-ready" || is_irc_notice(message) })
         );
         assert_eq!((channel.unread, channel.mentions), (2, 1));
         assert_eq!((direct.unread, direct.mentions), (1, 1));
-        assert!(
-            messages(direct.id)
-                .expect("direct snapshot")
-                .iter()
-                .all(is_irc_notice)
-        );
+        assert!(direct_messages.iter().all(is_irc_notice));
+        assert_eq!((nickserv.unread, nickserv.mentions), (1, 1));
+        assert!(nickserv_messages.iter().all(is_irc_notice));
         assert_eq!(
-            messages(server.id)
-                .expect("server snapshot")
+            server_messages
                 .iter()
                 .map(|message| message.text.as_str())
                 .collect::<Vec<_>>(),
-            ["server notice", "service notice"]
+            ["server notice"]
         );
-        assert!(
-            messages(server.id)
-                .expect("server snapshot")
-                .iter()
-                .all(is_irc_notice)
-        );
+        assert!(server_messages.iter().all(is_irc_notice));
         assert_eq!((server.unread, server.mentions), (0, 0));
-        assert!(!buffers.iter().any(|buffer| buffer.title == "NickServ"));
         drop(state);
         harness.drain.abort();
     }
