@@ -662,7 +662,7 @@ test("shows one generic notification without replacing keys when parsing fails",
   expect(await routeNeedsReregistration(page)).toBe(false);
 });
 
-test("shows a cold pushed row before IRC and deduplicates its history copy", async ({
+test("shows a cold pushed notice before IRC and deduplicates its history copy", async ({
   context,
   page,
 }) => {
@@ -683,9 +683,9 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
     "weblounge-bot-test",
     "#weblounge-test",
   );
-  const text = `pushed before history ${Date.now()}`;
+  const text = `pushed notice before history ${Date.now()}`;
   try {
-    const line = await bot.privmsgConfirmed("#weblounge-test", text);
+    const line = await bot.noticeConfirmed("#weblounge-test", text);
     const envelope = await seedRouteAndEncrypt(page, line, {
       networkLabel: "Local Ergo",
       nickname: "weblounge",
@@ -704,7 +704,14 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
       "/Local%20Ergo/weblounge-test?irc-password=weblounge-test",
     );
 
-    await expect(coldPage.getByText(text, { exact: true })).toBeVisible();
+    const notice = coldPage.locator(
+      `[data-message-row][data-message-text="${text}"]`,
+    );
+    await expect(notice).toHaveAttribute("data-irc-notice", "true");
+    await expect(notice.getByText(text, { exact: true })).toHaveCSS(
+      "font-style",
+      "italic",
+    );
     await expect.poll(() => notifications(coldPage)).toEqual([]);
     await expect(coldPage.locator('[data-network-state="online"]')).toHaveCount(
       0,
@@ -717,7 +724,7 @@ test("shows a cold pushed row before IRC and deduplicates its history copy", asy
     const marker = `history settled ${Date.now()}`;
     bot.privmsg("#weblounge-test", marker);
     await expect(coldPage.getByText(marker, { exact: true })).toBeVisible();
-    await expect(coldPage.getByText(text, { exact: true })).toHaveCount(1);
+    await expect(notice).toHaveCount(1);
   } finally {
     await context.setOffline(false);
     bot.close();
