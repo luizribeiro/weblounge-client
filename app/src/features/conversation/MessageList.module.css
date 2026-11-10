@@ -407,8 +407,7 @@
     --wl-density-message-mobile-line-after-message-padding
   );
 }
-.virtualRow[data-line-spacing="after-divider"]
-  :is(.row, .membership, .notice) {
+.virtualRow[data-line-spacing="after-divider"] :is(.row, .membership, .notice) {
   padding-block-start: 0;
 }
 .list[data-presentation="mobile"]
