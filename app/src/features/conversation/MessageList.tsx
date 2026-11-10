@@ -144,6 +144,7 @@ export function MessageList(props: MessageListProps) {
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
+  const [measurementEpoch, setMeasurementEpoch] = createSignal(0);
   const rows = createMemo(() =>
     timelineRows(
       props.messages,
@@ -332,7 +333,7 @@ export function MessageList(props: MessageListProps) {
     }
     virtualizer.scrollToEnd();
   };
-  const refreshRenderedMeasurements = () => {
+  const refreshRenderedMeasurements = (publishPositions = false) => {
     if (list?.isConnected !== true) return;
     const indexes = new Map(rows().map((row, index) => [row.key, index]));
     const measurements = [
@@ -347,6 +348,7 @@ export function MessageList(props: MessageListProps) {
       for (const { index, size } of measurements)
         virtualizer.resizeItem(index, size);
     });
+    if (publishPositions) setMeasurementEpoch((epoch) => epoch + 1);
   };
   const remeasure = () => {
     if (list?.isConnected !== true) return;
@@ -369,20 +371,7 @@ export function MessageList(props: MessageListProps) {
         virtualizer.measureElement(element);
       }
     });
-  };
-  const syncRenderedRowPositions = () => {
-    if (list?.isConnected !== true) return;
-    const items = new Map(
-      [...virtualizer.getVirtualItems()].map((item) => [item.index, item]),
-    );
-    const offset = bottomOffset(viewportHeight(), virtualizer.getTotalSize());
-    for (const element of list.querySelectorAll<HTMLLIElement>(
-      "li[data-index]",
-    )) {
-      const item = items.get(Number(element.dataset.index));
-      if (item !== undefined)
-        element.style.transform = `translateY(${item.start + offset}px)`;
-    }
+    setMeasurementEpoch((epoch) => epoch + 1);
   };
   const measureRow = (element: HTMLLIElement, index: number) => {
     element.dataset.index = String(index);
@@ -559,6 +548,32 @@ export function MessageList(props: MessageListProps) {
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     });
   });
+  let foregroundRefreshArmed = props.foreground === false;
+  let foregroundRefreshFrame: number | undefined;
+  createEffect(() => {
+    if (props.foreground === false) {
+      if (foregroundRefreshFrame !== undefined) {
+        window.cancelAnimationFrame(foregroundRefreshFrame);
+        foregroundRefreshFrame = undefined;
+      }
+      foregroundRefreshArmed = true;
+      return;
+    }
+    if (!foregroundRefreshArmed || foregroundRefreshFrame !== undefined) return;
+    foregroundRefreshFrame = window.requestAnimationFrame(() => {
+      foregroundRefreshFrame = undefined;
+      if (!foregroundRefreshArmed) return;
+      refreshRenderedMeasurements(true);
+      if (logicallyAtLiveEdge) scrollToLiveEdge();
+      foregroundRefreshFrame = window.requestAnimationFrame(() => {
+        foregroundRefreshFrame = undefined;
+        if (!foregroundRefreshArmed) return;
+        foregroundRefreshArmed = false;
+        refreshRenderedMeasurements(true);
+        if (logicallyAtLiveEdge) scrollToLiveEdge();
+      });
+    });
+  });
   onMount(() => {
     props.onLiveEdgeChange?.(logicallyAtLiveEdge);
     const fonts = document.fonts;
@@ -570,7 +585,7 @@ export function MessageList(props: MessageListProps) {
       // The keyboard commit scroll is still active here, so TanStack skips
       // measureElement. Keep unrendered measurements and update painted rows
       // directly before the frozen snapshot leaves.
-      refreshRenderedMeasurements();
+      refreshRenderedMeasurements(true);
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     };
     const cancelComposerScroll = () => {
@@ -581,15 +596,23 @@ export function MessageList(props: MessageListProps) {
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     };
     const rowMountObserver = new MutationObserver((records) => {
-      const mountedRow = records.some((record) =>
-        [...record.addedNodes].some(
-          (node) =>
-            node instanceof HTMLElement && node.matches("li[data-index]"),
-        ),
-      );
-      if (!mountedRow) return;
+      if (
+        !foregroundRefreshArmed ||
+        !records.some((record) =>
+          [...record.addedNodes].some(
+            (node) =>
+              node instanceof HTMLElement && node.matches("li[data-row-key]"),
+          ),
+        )
+      )
+        return;
+      foregroundRefreshArmed = false;
+      if (foregroundRefreshFrame !== undefined) {
+        window.cancelAnimationFrame(foregroundRefreshFrame);
+        foregroundRefreshFrame = undefined;
+      }
       refreshRenderedMeasurements();
-      syncRenderedRowPositions();
+      if (logicallyAtLiveEdge) scrollToLiveEdge();
     });
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
@@ -656,6 +679,8 @@ export function MessageList(props: MessageListProps) {
       window.removeEventListener("touchcancel", endTouchScrollIntent);
       if (scrollLiveEdgeFrame !== undefined)
         window.cancelAnimationFrame(scrollLiveEdgeFrame);
+      if (foregroundRefreshFrame !== undefined)
+        window.cancelAnimationFrame(foregroundRefreshFrame);
       userScrollIntent.dispose();
     });
     queueMicrotask(jumpToBottom);
@@ -755,6 +780,13 @@ export function MessageList(props: MessageListProps) {
             <For each={virtualItems()}>
               {(virtualRow) => {
                 const row = () => rows()[virtualRow.index];
+                const measuredStart = () => {
+                  measurementEpoch();
+                  return renderedRowStart(
+                    virtualRow,
+                    virtualizer.getVirtualItems(),
+                  );
+                };
                 const selected = () => {
                   const item = row();
                   return (
@@ -775,7 +807,7 @@ export function MessageList(props: MessageListProps) {
                     data-selected={selected()}
                     ref={(element) => measureRow(element, virtualRow.index)}
                     style={{
-                      transform: `translateY(${virtualRow.start + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
+                      transform: `translateY(${measuredStart() + bottomOffset(viewportHeight(), virtualizer.getTotalSize())}px)`,
                     }}
                   >
                     <TimelineRowView
@@ -815,6 +847,25 @@ const scrollKeys = new Set([
   "PageDown",
   "PageUp",
 ]);
+
+function renderedRowStart(
+  rendered: {
+    readonly index: number;
+    readonly key: string | number | bigint;
+    readonly start: number;
+  },
+  current: readonly {
+    readonly index: number;
+    readonly key: string | number | bigint;
+    readonly start: number;
+  }[],
+): number {
+  const item = current.find(
+    (candidate) =>
+      candidate.index === rendered.index && candidate.key === rendered.key,
+  );
+  return item?.start ?? rendered.start;
+}
 
 function TimelineRowView(props: {
   readonly index: number;

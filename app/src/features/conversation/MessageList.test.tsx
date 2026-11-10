@@ -1713,6 +1713,49 @@ it("does not rewrite transcript geometry while the page becomes hidden", async (
   expect(mutations).toBe(0);
 });
 
+it("does not force rendered-row layout when rows mount in the foreground", async () => {
+  const layoutReads = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(() => rect(0, 28));
+  const { container } = render(() => (
+    <MessageList messages={[message, { ...message, id: 2 }]} />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  layoutReads.mockClear();
+
+  const motionLayer = container.querySelector<HTMLOListElement>(
+    "[data-message-motion-layer]",
+  );
+  if (motionLayer === null) throw new Error("message motion layer is missing");
+  const mounted = document.createElement("li");
+  mounted.dataset.index = "1";
+  mounted.dataset.rowKey = "message-2";
+  motionLayer.append(mounted);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(layoutReads).not.toHaveBeenCalled();
+});
+
+it("refreshes rendered-row measurements once after returning to foreground", async () => {
+  const [foreground, setForeground] = createSignal(true);
+  const layoutReads = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(() => rect(0, 28));
+  render(() => <MessageList foreground={foreground()} messages={[message]} />);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  layoutReads.mockClear();
+
+  setForeground(false);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(layoutReads).not.toHaveBeenCalled();
+  setForeground(true);
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+
+  expect(layoutReads).toHaveBeenCalled();
+});
+
 it("restacks measured rows when the New boundary moves past a long row", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(
