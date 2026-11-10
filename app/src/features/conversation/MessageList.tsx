@@ -309,6 +309,7 @@ export function MessageList(props: MessageListProps) {
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
   });
+  const virtualItems = createMemo(() => [...virtualizer.getVirtualItems()]);
   const scrollToLiveEdge = () => {
     if (list === undefined) return;
     if (list.scrollHeight <= list.clientHeight + liveEdgeTolerance) {
@@ -701,7 +702,7 @@ export function MessageList(props: MessageListProps) {
             data-message-motion-layer="true"
             role="presentation"
           >
-            <For each={virtualizer.getVirtualItems()}>
+            <For each={virtualItems()}>
               {(virtualRow) => {
                 const row = () => rows()[virtualRow.index];
                 const selected = () => {
