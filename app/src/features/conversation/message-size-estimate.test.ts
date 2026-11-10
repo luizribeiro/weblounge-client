@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   currentMessageDensity,
   estimateMessageHeight,
@@ -142,6 +142,18 @@ describe("estimateMessageHeight", () => {
       ),
     ).toBe(18);
     expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(24);
+  });
+
+  it("builds notice revisions without generic serialization", () => {
+    const stringify = vi.spyOn(JSON, "stringify");
+
+    messageSizeRevision({
+      delivery: "received",
+      kind: { notice: { type: "topic", setter: "alice", set_at: 42 } },
+      text: "new topic",
+    });
+
+    expect(stringify).not.toHaveBeenCalled();
   });
 
   it("reserves width and invalidates the estimate for delivery labels", () => {

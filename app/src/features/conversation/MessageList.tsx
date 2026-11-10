@@ -119,6 +119,15 @@ export function MessageList(props: MessageListProps) {
     string,
     { readonly revision: string; readonly size: number }
   >();
+  const rowRevisionCache = new Map<
+    string,
+    {
+      readonly groupStart: boolean | undefined;
+      readonly revision: string;
+      readonly source: object | string;
+      readonly spacing: MobileLineSpacing | undefined;
+    }
+  >();
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadAt = dividerMarkAfterOwnSend(
@@ -153,17 +162,38 @@ export function MessageList(props: MessageListProps) {
       props.historyState,
     ),
   );
-  const rowSizeRevision = (row: TimelineRow, index: number) => {
+  const rowSizeRevision = (
+    row: TimelineRow,
+    index: number,
+    currentRows = rows(),
+  ) => {
+    const spacing =
+      props.presentation === "mobile"
+        ? phoneRowSpacing(currentRows, index)
+        : undefined;
+    const source = rowRevisionSource(row);
+    const groupStart =
+      row.kind === "message" ? row.startsMobileGroup : undefined;
+    const cached = rowRevisionCache.get(row.key);
+    if (
+      cached?.source === source &&
+      cached.groupStart === groupStart &&
+      cached.spacing === spacing
+    )
+      return cached.revision;
     const revision =
       row.kind === "message"
-        ? messageSizeRevision(
-            row.message,
-            props.presentation === "mobile" ? row.startsMobileGroup : undefined,
-          )
-        : row.key;
-    return props.presentation === "mobile"
-      ? `${revision}\u0000${phoneRowSpacing(rows(), index)}`
-      : revision;
+        ? messageSizeRevision(row.message, groupStart)
+        : decorationSizeRevision(row);
+    const value =
+      spacing === undefined ? revision : `${revision}\u0000${spacing}`;
+    rowRevisionCache.set(row.key, {
+      groupStart,
+      revision: value,
+      source,
+      spacing,
+    });
+    return value;
   };
   // TanStack rebuilds its index-keyed measurements only when the row count or
   // the key extractor's identity changes, and a moving divider keeps the count.
@@ -278,8 +308,9 @@ export function MessageList(props: MessageListProps) {
       };
     },
     estimateSize: (index) => {
-      const row = rows()[index];
-      const spacing = phoneRowSpacing(rows(), index);
+      const currentRows = rows();
+      const row = currentRows[index];
+      const spacing = phoneRowSpacing(currentRows, index);
       if (row?.kind !== "message")
         return estimateDecorationHeight(
           row?.kind,
@@ -290,7 +321,7 @@ export function MessageList(props: MessageListProps) {
       const width =
         observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
       const cached = estimatedSizes.get(row.key);
-      const revision = rowSizeRevision(row, index);
+      const revision = rowSizeRevision(row, index, currentRows);
       if (cached?.revision === revision) return cached.size;
       const estimated = estimateMessageHeight(
         row.message,
@@ -528,33 +559,44 @@ export function MessageList(props: MessageListProps) {
     if (messages.length !== previousCount && logicallyAtLiveEdge)
       scrollToLiveEdge();
   });
-  let measuredRows = rows().map((row, index) => ({
-    key: row.key,
-    revision: rowSizeRevision(row, index),
-  }));
+  let measuredRows = rows();
+  let measuredRevisions = measuredRows.map((row, index) =>
+    rowSizeRevision(row, index, measuredRows),
+  );
   createEffect(() => {
     const currentRows = rows();
-    const currentMeasurements = currentRows.map((row, index) => ({
-      key: row.key,
-      revision: rowSizeRevision(row, index),
-    }));
+    const currentRevisions = currentRows.map((row, index) =>
+      rowSizeRevision(row, index, currentRows),
+    );
     const unchanged =
-      currentMeasurements.length === measuredRows.length &&
-      samePrefix(measuredRows, currentMeasurements);
+      currentRows.length === measuredRows.length &&
+      samePrefix(
+        measuredRows,
+        measuredRevisions,
+        currentRows,
+        currentRevisions,
+      );
     if (unchanged) return;
     const appended =
-      currentMeasurements.length > measuredRows.length &&
-      samePrefix(measuredRows, currentMeasurements);
+      currentRows.length > measuredRows.length &&
+      samePrefix(
+        measuredRows,
+        measuredRevisions,
+        currentRows,
+        currentRevisions,
+      );
     const previousRevisions = new Map(
-      measuredRows.map((row) => [row.key, row.revision]),
+      measuredRows.map((row, index) => [row.key, measuredRevisions[index]]),
     );
-    const revisedIndexes = currentMeasurements.flatMap((row, index) => {
+    const revisedIndexes = currentRows.flatMap((row, index) => {
       const previousRevision = previousRevisions.get(row.key);
-      return previousRevision !== undefined && previousRevision !== row.revision
+      return previousRevision !== undefined &&
+        previousRevision !== currentRevisions[index]
         ? [index]
         : [];
     });
-    measuredRows = currentMeasurements;
+    measuredRows = currentRows;
+    measuredRevisions = currentRevisions;
     queueMicrotask(() => {
       if (!appended) remeasureRows(false, revisedIndexes);
       if (logicallyAtLiveEdge) scrollToLiveEdge();
@@ -1368,14 +1410,54 @@ function bottomOffset(viewportHeight: number, contentHeight: number): number {
 }
 
 function samePrefix(
-  previous: readonly { readonly key: string; readonly revision: string }[],
-  current: readonly { readonly key: string; readonly revision: string }[],
+  previousRows: readonly TimelineRow[],
+  previousRevisions: readonly string[],
+  currentRows: readonly TimelineRow[],
+  currentRevisions: readonly string[],
 ): boolean {
-  return previous.every(
+  return previousRows.every(
     (row, index) =>
-      current[index]?.key === row.key &&
-      current[index]?.revision === row.revision,
+      currentRows[index]?.key === row.key &&
+      currentRevisions[index] === previousRevisions[index],
   );
+}
+
+function rowRevisionSource(row: TimelineRow): object | string {
+  switch (row.kind) {
+    case "message":
+      return row.message;
+    case "membership":
+      return row.membership;
+    case "history":
+      return row.state;
+    case "day":
+    case "new":
+      return row.key;
+    default: {
+      const exhaustive: never = row;
+      return exhaustive;
+    }
+  }
+}
+
+function decorationSizeRevision(
+  row: Exclude<TimelineRow, { readonly kind: "message" }>,
+): string {
+  switch (row.kind) {
+    case "history":
+      return `${row.key}:${row.state.loading}:${row.state.at_start}`;
+    case "membership":
+      return row.membership.type === "change"
+        ? `${row.key}:${row.membership.kind}:${row.membership.nicks.join("\u0001")}`
+        : `${row.key}:${row.membership.actor}:${row.membership.reason ?? ""}`;
+    case "day":
+    case "new":
+      return row.key;
+    default: {
+      const exhaustive: never = row;
+      return exhaustive;
+    }
+  }
 }
 
 function estimateDecorationHeight(

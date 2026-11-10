@@ -1113,6 +1113,57 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });
 
+it("remeasures collapsed membership content on its first revised frame", async () => {
+  vi.stubGlobal("ResizeObserver", ControlledResizeObserver);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (!this.matches("li[data-row-key]")) return rect(0, 0);
+      const membership = this.querySelector("[data-membership-row]");
+      if (membership === null) return rect(0, 28);
+      return rect(0, membership.textContent?.includes("and") ? 70 : 30);
+    },
+  );
+  const initialMembership: MembershipProjection = {
+    type: "change",
+    id: 20,
+    kind: "joined",
+    nicks: ["mel"],
+    server_time_ms: 2,
+    received_at_ms: 2,
+  };
+  const [memberships, setMemberships] = createSignal([initialMembership]);
+  const { container } = render(() => (
+    <MessageList
+      memberships={memberships()}
+      messages={[
+        { ...message, received_at_ms: 1 },
+        { ...message, id: 2, received_at_ms: 3 },
+      ]}
+    />
+  ));
+  const membershipHeight = () => {
+    const membership = container.querySelector<HTMLLIElement>(
+      '[data-row-key="membership-20"]',
+    );
+    const following = container.querySelector<HTMLLIElement>(
+      '[data-row-key="message-2"]',
+    );
+    if (membership === null || following === null)
+      throw new Error("membership fixture rows are missing");
+    return (
+      translateY(following.style.transform) -
+      translateY(membership.style.transform)
+    );
+  };
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  expect(membershipHeight()).toBe(30);
+
+  setMemberships([{ ...initialMembership, nicks: ["mel", "rafa", "cyd"] }]);
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  expect(membershipHeight()).toBe(70);
+});
+
 it("uses one history-edge divider for loading and the reached boundary", async () => {
   const [historyState, setHistoryState] = createSignal({
     at_start: false,

@@ -133,7 +133,22 @@ export function messageSizeRevision(
   const reactions = message.reactions
     ?.map((reaction) => `${reaction.text}:${reaction.actors.length}`)
     .join("\u0001");
-  return `${JSON.stringify(message.kind)}\u0000${message.text}\u0000${message.delivery}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}`;
+  return `${messageKindRevision(message.kind)}\u0000${message.text}\u0000${message.delivery}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}`;
+}
+
+function messageKindRevision(kind: EstimatedMessage["kind"]): string {
+  if (typeof kind === "string") return kind;
+  const notice = kind.notice;
+  switch (notice.type) {
+    case "info":
+      return "notice:info";
+    case "topic":
+      return `notice:topic:${notice.setter ?? ""}:${notice.set_at ?? ""}`;
+    default: {
+      const exhaustive: never = notice;
+      return exhaustive;
+    }
+  }
 }
 
 export function currentMessageDensity(root: HTMLElement): DensityId {
