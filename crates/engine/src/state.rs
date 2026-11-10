@@ -3313,21 +3313,15 @@ impl NetworkModel {
             dedup,
             provisional_identity: None,
         };
-        let released = {
-            let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
-                return Err(StateError::MissingBuffer(buffer_id));
-            };
-            buffer.timeline.push(record);
-            buffer.timeline.sort_by_key(|record| record.order);
-            buffer.chat_metadata.insert(id, metadata);
-            if let Some(stub) = stub {
-                buffer.read_facts.merge_stub(stub);
-            }
-            evict_oldest_chat_records(buffer, self.window_limit)
+        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+            return Err(StateError::MissingBuffer(buffer_id));
         };
+        buffer.timeline.push(record);
+        buffer.timeline.sort_by_key(|record| record.order);
+        buffer.chat_metadata.insert(id, metadata);
         self.dirty_timelines.insert(buffer_id);
-        for dedup in released {
-            self.release_dedup(dedup);
+        if let Some(stub) = stub {
+            buffer.read_facts.merge_stub(stub);
         }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             derive_read_projection(buffer);
@@ -3343,6 +3337,7 @@ impl NetworkModel {
         };
         buffer_ids.sort_unstable_by_key(|id| id.0);
         let mut output = Vec::new();
+        let mut released = Vec::new();
         for buffer_id in buffer_ids {
             let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
                 continue;
@@ -3382,6 +3377,10 @@ impl NetworkModel {
                     removed: change.removed,
                 });
             }
+            released.extend(evict_over_budget(buffer, self.window_limit));
+        }
+        for dedup in released {
+            self.release_dedup(dedup);
         }
         output
     }
@@ -3714,28 +3713,50 @@ fn fold_clause(event: &FoldEvent, casemapping: papo::Casemapping) -> RunClause {
     }
 }
 
-fn evict_oldest_chat_records(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferences> {
-    let excess = buffer
-        .timeline
+fn evict_over_budget(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferences> {
+    let Ok(items) = fold(&buffer.timeline) else {
+        return Vec::new();
+    };
+    let chat_excess = items
         .iter()
-        .filter(|record| matches!(record.body, RecordBody::Chat(_)))
+        .filter(|item| matches!(item.body, FoldedBody::Chat(_)))
         .count()
         .saturating_sub(limit);
-    let evicted = buffer
-        .timeline
+    let system_excess = items
         .iter()
-        .filter(|record| matches!(record.body, RecordBody::Chat(_)))
-        .take(excess)
-        .map(|record| record.id)
-        .collect::<HashSet<_>>();
+        .filter(|item| !matches!(item.body, FoldedBody::Chat(_)))
+        .count()
+        .saturating_sub(limit);
+    let mut chats_left = chat_excess;
+    let mut systems_left = system_excess;
+    let mut evicted_records = HashSet::new();
+    for item in items {
+        let chat = matches!(item.body, FoldedBody::Chat(_));
+        let evict = if chat && chats_left > 0 {
+            chats_left -= 1;
+            true
+        } else if !chat && systems_left > 0 {
+            systems_left -= 1;
+            true
+        } else {
+            false
+        };
+        if evict {
+            buffer.silently_evicted.insert(item.id);
+            evicted_records.extend(item.record_ids().iter().copied());
+        }
+    }
     buffer
         .timeline
-        .retain(|record| !evicted.contains(&record.id));
-    evicted
-        .into_iter()
-        .filter_map(|id| buffer.chat_metadata.remove(&id))
-        .map(|metadata| metadata.dedup)
-        .collect()
+        .retain(|record| !evicted_records.contains(&record.id));
+    let mut released = Vec::new();
+    for id in evicted_records {
+        if let Some(metadata) = buffer.chat_metadata.remove(&id) {
+            released.push(metadata.dedup);
+        }
+        buffer.system_server_times.remove(&id);
+    }
+    released
 }
 
 fn legacy_memberships(buffer: &BufferState) -> Vec<MembershipProjection> {
@@ -4155,6 +4176,7 @@ mod tests {
         pushed_messages::PushedMessage,
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
         read_model::{MessageStub, ServerTimeMs},
+        timeline::{RecordBody, TimelineItem, apply_timeline_change},
     };
 
     fn secure_wire_builder() -> papo::Builder {
@@ -4330,6 +4352,109 @@ mod tests {
         )
     }
 
+    fn apply_new_rows(rows: &mut Vec<TimelineItem>, events: &[EngineToUi]) {
+        for event in events {
+            if let EngineToUi::TimelineChanged {
+                reset,
+                upserted,
+                removed,
+                ..
+            } = event
+            {
+                *rows = apply_timeline_change(
+                    rows,
+                    &crate::timeline::TimelineChange {
+                        reset: *reset,
+                        upserted: upserted.clone(),
+                        removed: removed.clone(),
+                    },
+                )
+                .expect("engine patch applies")
+                .items;
+            }
+        }
+    }
+
+    fn finish_timeline_turn(model: &mut NetworkModel, mut old: Vec<EngineToUi>) -> Vec<EngineToUi> {
+        let patches = model.take_timeline_changes(false);
+        assert!(
+            patches
+                .iter()
+                .filter(|event| matches!(event, EngineToUi::TimelineChanged { .. }))
+                .count()
+                <= 1
+        );
+        old.extend(patches);
+        old
+    }
+
+    #[test]
+    fn system_budget_never_evicts_chat_and_eviction_stays_silent() {
+        let (mut model, state) = model(2);
+        for (text, time) in [("first", 1), ("second", 2)] {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(text),
+                    Some(time),
+                    time,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+        let initial = model.take_timeline_changes(false);
+        let channel = channel_name(&state, "#room");
+        for index in 0..20 {
+            model.receive_membership(
+                &channel,
+                MembershipKind::Joined,
+                format!("nick-{index}"),
+                Some(10 + index),
+                10 + index,
+            );
+        }
+        let flood = model.take_timeline_changes(false);
+        let buffer_id = model.names[&NameKey::Channel(channel)];
+        assert_eq!(
+            model.buffers[&buffer_id]
+                .timeline
+                .iter()
+                .filter_map(chat_projection)
+                .map(|message| message.text.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert_eq!(
+            model.buffers[&buffer_id]
+                .timeline
+                .iter()
+                .filter(|record| !matches!(record.body, RecordBody::Chat(_)))
+                .count(),
+            2
+        );
+        let next = model.receive_incoming(
+            incoming(
+                &state,
+                "third",
+                Some("third"),
+                Some(40),
+                40,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let next = finish_timeline_turn(&mut model, next);
+        assert!(next.iter().all(|event| !matches!(event, EngineToUi::TimelineChanged { removed, .. } if !removed.is_empty())));
+
+        let mut mirror = Vec::new();
+        apply_new_rows(&mut mirror, &initial);
+        apply_new_rows(&mut mirror, &flood);
+        apply_new_rows(&mut mirror, &next);
+        assert_eq!(mirror.len(), 23);
+    }
+
     #[test]
     fn reaction_actor_identity_does_not_depend_on_account_tags() {
         let state = StateBuilder::new("weblounge").connected(true).build();
@@ -4390,6 +4515,7 @@ mod tests {
             ),
             &state,
         );
+        _ = model.take_timeline_changes(false);
         assert!(!model.reactions.contains_target("evicted"));
 
         model.reactions.apply(
@@ -6109,6 +6235,8 @@ mod tests {
                 &state,
             );
         }
+        _ = live.take_timeline_changes(false);
+
         assert_eq!(timeline(&live), ["two", "three"]);
         let buffer = live
             .buffers
@@ -6188,6 +6316,8 @@ mod tests {
                 &state,
             );
         }
+        _ = model.take_timeline_changes(false);
+
         let snapshots = model
             .snapshot_events()
             .into_iter()
@@ -6222,6 +6352,7 @@ mod tests {
                 &state,
             );
         }
+        _ = msgid_model.take_timeline_changes(false);
         assert_eq!(msgid_model.msgids.len(), 2);
 
         let (mut fallback_model, state) = model(2);
@@ -6238,6 +6369,7 @@ mod tests {
                 &state,
             );
         }
+        _ = fallback_model.take_timeline_changes(false);
         assert_eq!(fallback_model.fallbacks.len(), 2);
     }
 
