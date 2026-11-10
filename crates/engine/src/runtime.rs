@@ -334,7 +334,7 @@ impl Runtime {
     // One exhaustive dispatcher keeps protocol routing under a single owner.
     #[allow(clippy::too_many_lines)]
     pub(crate) fn request(&self, envelope: EngineRequestEnvelope) -> Vec<EngineToUi> {
-        let mut output = match envelope.request {
+        match envelope.request {
             EngineRequest::Ping => vec![EngineToUi::Pong { id: envelope.id }],
             EngineRequest::Diagnostic { message } => Self::diagnostic(envelope.id, message),
             EngineRequest::Connect {
@@ -467,11 +467,7 @@ impl Runtime {
             EngineRequest::DeferDirectIdentity { buffer_id } => {
                 self.defer_direct_identity(envelope.id, buffer_id)
             }
-        };
-        if let Some(running) = lock(&self.state).network.as_mut() {
-            output.extend(running.model.take_timeline_changes(false));
         }
-        output
     }
 
     fn diagnostic(command_id: String, message: String) -> Vec<EngineToUi> {
@@ -575,11 +571,10 @@ impl Runtime {
             if !history_fetches.is_empty() {
                 events.push(running.model.buffers_event());
             }
-            events.extend(running.model.take_timeline_changes(false));
             let client = running.client.clone();
             let instance = running.instance;
             events.push(EngineToUi::CommandResult { id: command_id });
-            drop(state);
+            let events = finish_timeline_turn(state, events);
             send_events(&outbound, events);
             for fetch in history_fetches {
                 spawn_history_fetch(
@@ -843,7 +838,10 @@ impl Runtime {
         else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
-        vec![event, EngineToUi::CommandResult { id: command_id }]
+        finish_timeline_turn(
+            state,
+            vec![event, EngineToUi::CommandResult { id: command_id }],
+        )
     }
 
     fn identify(&self, command_id: String, password: &str) -> Vec<EngineToUi> {
@@ -1086,7 +1084,7 @@ impl Runtime {
             push: PushRegistration::default(),
             typing: crate::typing::OutgoingTyping::default(),
         });
-        drop(state);
+        let output = finish_timeline_turn(state, output);
 
         spawn_task(async move {
             let _ = driver.await;
@@ -1170,7 +1168,7 @@ impl Runtime {
             push: PushRegistration::default(),
             typing: crate::typing::OutgoingTyping::default(),
         });
-        output
+        finish_timeline_turn(state, output)
     }
 
     fn reconnect_hosted(
@@ -1468,7 +1466,7 @@ impl Runtime {
         let client = running.client.clone();
         let instance = running.instance;
         output.push(EngineToUi::CommandResult { id: command_id });
-        drop(state);
+        let output = finish_timeline_turn(state, output);
 
         if let (Some(target), Some(typing)) = (typing_target, typing_done) {
             spawn_typing(client.clone(), target, typing);
@@ -1511,14 +1509,14 @@ impl Runtime {
         };
         let client = running.client.clone();
         let instance = running.instance;
-        drop(state);
+        let output = finish_timeline_turn(state, vec![event]);
         let state = Arc::clone(&self.state);
         let outbound = self.outbound.clone();
         spawn_task(async move {
             finish_send(&state, &outbound, &client, instance, &pending).await;
             let _ = outbound.send(EngineToUi::CommandResult { id: command_id });
         });
-        vec![event]
+        output
     }
 
     fn join(&self, command_id: String, targets: Vec<JoinTarget>) -> Vec<EngineToUi> {
@@ -1737,7 +1735,7 @@ impl Runtime {
                     output.extend(events);
                     Some(pending)
                 });
-                (pending, rejection, output)
+                (pending, rejection, finish_timeline_turn(state, output))
             };
             for event in output {
                 let _ = outbound.send(event);
@@ -1785,7 +1783,10 @@ impl Runtime {
         let Some(event) = running.model.close_direct(buffer_id) else {
             return rejected_command(command_id, EngineMessageKey::BufferNotSendable);
         };
-        vec![event, EngineToUi::CommandResult { id: command_id }]
+        finish_timeline_turn(
+            state,
+            vec![event, EngineToUi::CommandResult { id: command_id }],
+        )
     }
 
     fn cycle(
@@ -1891,7 +1892,7 @@ impl Runtime {
             .into_iter()
             .collect::<Vec<_>>();
         output.push(EngineToUi::CommandResult { id: command_id });
-        output
+        finish_timeline_turn(state, output)
     }
 
     fn mark_read(
@@ -2472,18 +2473,7 @@ async fn flush_pending_sends(
     instance: u64,
 ) {
     loop {
-        let next = {
-            let mut state = lock(state);
-            let Some(running) = state
-                .network
-                .as_mut()
-                .filter(|running| running.instance == instance)
-            else {
-                return;
-            };
-            take_next_send(running)
-        };
-        let queued = match next {
+        let queued = match take_next_send_turn(state, instance) {
             FlushNext::Send(queued) => queued,
             FlushNext::Fail(events) => {
                 send_events(outbound, events);
@@ -2533,7 +2523,7 @@ async fn flush_pending_sends(
             else {
                 return;
             };
-            let (mut events, advance) = match result {
+            let (events, advance) = match result {
                 Ok(sent) => confirm_send_with_read(&mut running.model, &queued.pending, &sent),
                 Err(SendError::Offline) if queued.retry_if_disconnected => {
                     running.pending_sends.push_front(queued);
@@ -2558,8 +2548,8 @@ async fn flush_pending_sends(
                     None,
                 ),
             };
-            append_timeline_events(&mut running.model, &mut events);
-            (events, advance)
+            let events = finish_timeline_turn(state, events.unwrap_or_default());
+            ((!events.is_empty()).then_some(events), advance)
         };
         if retry_now {
             continue;
@@ -2568,6 +2558,21 @@ async fn flush_pending_sends(
         if let Some(advance) = own_read_advance {
             record_read_advances_and_flush(state, outbound.clone(), instance, vec![advance]);
         }
+    }
+}
+
+fn take_next_send_turn(state: &Arc<Mutex<RuntimeState>>, instance: u64) -> FlushNext {
+    let mut state = lock(state);
+    let Some(running) = state
+        .network
+        .as_mut()
+        .filter(|running| running.instance == instance)
+    else {
+        return FlushNext::Stop;
+    };
+    match take_next_send(running) {
+        FlushNext::Fail(events) => FlushNext::Fail(finish_timeline_turn(state, events)),
+        next => next,
     }
 }
 
@@ -2664,7 +2669,7 @@ async fn finish_send(
         else {
             return;
         };
-        let (mut events, advance) = match result {
+        let (events, advance) = match result {
             Ok(sent) => confirm_send_with_read(&mut running.model, pending, &sent),
             Err(SendError::PeerPinMismatch(mismatch)) => {
                 let mut events = running
@@ -2684,8 +2689,8 @@ async fn finish_send(
                 None,
             ),
         };
-        append_timeline_events(&mut running.model, &mut events);
-        (events, advance)
+        let events = finish_timeline_turn(state, events.unwrap_or_default());
+        ((!events.is_empty()).then_some(events), advance)
     };
     send_optional_events(outbound, events);
     if let Some(advance) = own_read_advance {
@@ -2710,11 +2715,14 @@ fn confirm_send_with_read(
     (events, advance)
 }
 
-fn append_timeline_events(model: &mut NetworkModel, events: &mut Option<Vec<EngineToUi>>) {
-    let timeline = model.take_timeline_changes(false);
-    if !timeline.is_empty() {
-        events.get_or_insert_with(Vec::new).extend(timeline);
+fn finish_timeline_turn(
+    mut state: MutexGuard<'_, RuntimeState>,
+    mut events: Vec<EngineToUi>,
+) -> Vec<EngineToUi> {
+    if let Some(running) = state.network.as_mut() {
+        events.extend(running.model.take_timeline_changes(false));
     }
+    events
 }
 
 fn send_optional_events(
@@ -3797,11 +3805,13 @@ fn process_event_with_direct(
     };
     let mut output = Vec::new();
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
-    output.extend(running.model.take_timeline_changes(false));
     if effects.clear_hosted_authentication {
+        output.extend(running.model.take_timeline_changes(false));
         state.network = None;
+        drop(state);
+    } else {
+        output = finish_timeline_turn(state, output);
     }
-    drop(state);
     send_events(outbound, output);
     update_chat_list(&shared_state, outbound, instance);
     spawn_event_flushes(
@@ -4651,8 +4661,7 @@ fn process_history(
         end,
     );
     output.extend(finished);
-    output.extend(running.model.take_timeline_changes(false));
-    drop(state);
+    let output = finish_timeline_turn(state, output);
     send_events(outbound, output);
     update_chat_list(&shared_state, outbound, instance);
     if let Some((client, instance)) = read_flush {
@@ -5427,14 +5436,15 @@ mod tests {
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HistoryPageBounds, HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL,
-        PushRegistration, READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork,
-        Runtime, RuntimeState, attach_shell, completion_context, connection_failure_notice,
-        drain_events, fetch_history, finish_history_page, join_request_events, lock,
-        next_connection_state, permanent_mark_read_error, person_candidates, process_event,
-        process_history, queue_read_advance, read_retry_delay, restore_target_rows,
-        schedule_snapshot_write, spawn_history_fetch, spawn_online_direct_resolution,
-        spawn_read_marker_fetch, spawn_target_reconciliation, state_limit_events,
-        target_sync_boundary, update_chat_list, utf16_len,
+        PushRegistration, QueuedSend, READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState,
+        RunningNetwork, Runtime, RuntimeState, attach_shell, completion_context,
+        connection_failure_notice, drain_events, fetch_history, finish_history_page,
+        flush_pending_sends, join_request_events, lock, next_connection_state,
+        permanent_mark_read_error, person_candidates, process_event, process_history,
+        queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write,
+        spawn_history_fetch, spawn_online_direct_resolution, spawn_read_marker_fetch,
+        spawn_target_reconciliation, state_limit_events, target_sync_boundary, update_chat_list,
+        utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -6032,6 +6042,7 @@ async fn delay(duration: Duration) {
         let (state, outbound, mut receiver) = harness(client);
         lock(&state).storage = storage;
         let runtime = Runtime { state, outbound };
+        mark_runtime_online(&runtime);
 
         assert!(
             runtime
@@ -6045,14 +6056,17 @@ async fn delay(duration: Duration) {
         );
         let events = tokio::time::timeout(Duration::from_secs(1), async {
             let mut events = Vec::new();
+            let mut command_complete = false;
+            let mut timeline_complete = false;
             loop {
                 let event = receiver.recv().await.expect("runtime event");
-                let complete = matches!(
+                command_complete |= matches!(
                     &event,
                     EngineToUi::CommandResult { id } if id == "load-push"
                 );
+                timeline_complete |= matches!(event, EngineToUi::TimelineChanged { .. });
                 events.push(event);
-                if complete {
+                if command_complete && timeline_complete {
                     break events;
                 }
             }
@@ -6064,6 +6078,26 @@ async fn delay(duration: Duration) {
             event,
             EngineToUi::MessagesAppended { messages, .. }
                 if messages[0].text == "loaded into the open app"
+        )));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, EngineToUi::BuffersChanged { .. }))
+                .count(),
+            2,
+            "restoration and its pushed-history spawn both publish buffer state"
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            EngineToUi::TimelineChanged { upserted, .. }
+                if matches!(
+                    upserted.as_slice(),
+                    [item] if matches!(
+                        &item.body,
+                        crate::timeline::ItemBody::Message(message)
+                            if message.text == "loaded into the open app"
+                    )
+                )
         )));
     }
 
@@ -11607,6 +11641,107 @@ async fn delay(duration: Duration) {
         process_event(&state, &outbound, &client, 1, connected);
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued one");
         assert_eq!(wire.next_sent().await, "PRIVMSG #room :queued two");
+    }
+
+    #[tokio::test]
+    async fn cached_target_failure_emits_legacy_event_and_patch_in_one_flush() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        restore_cached_room(&state);
+        let channel = papo_testing::channel(client.state().casemapping(), "#room");
+        {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            let buffer_id = running
+                .model
+                .buffer_id_for_target(&SendTarget::Channel(channel))
+                .expect("cached channel exists");
+            let (pending, _) = running
+                .model
+                .begin_send(buffer_id, "cannot deliver".into(), &client.state())
+                .expect("cached channel accepts an optimistic send");
+            _ = running.model.take_timeline_changes(false);
+            _ = running.model.mark_vanished_restored_rows();
+            running.pending_sends.push_back(QueuedSend {
+                pending,
+                retry_if_disconnected: true,
+                await_live_target: true,
+            });
+            running.flushing_sends = true;
+        }
+
+        flush_pending_sends(&state, &outbound, &client, 1).await;
+
+        let output = collect(&mut receiver);
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageFailed {
+                message_key: EngineMessageKey::CachedTargetGone,
+                ..
+            }
+        )));
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::TimelineChanged { upserted, .. }
+                if matches!(
+                    upserted.as_slice(),
+                    [item] if matches!(
+                        &item.body,
+                        crate::timeline::ItemBody::Message(message)
+                            if message.delivery == MessageDelivery::Failed
+                    )
+                )
+        )));
+    }
+
+    #[tokio::test]
+    async fn command_mutation_drains_patch_before_releasing_model_lock() {
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[]).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        restore_cached_room(&state);
+        set_harness_device_online(&state, false);
+        let channel = papo_testing::channel(client.state().casemapping(), "#room");
+        let buffer_id = lock(&state)
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model
+            .buffer_id_for_target(&SendTarget::Channel(channel))
+            .expect("cached channel exists");
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        let output = runtime.send_input(
+            "send".into(),
+            buffer_id,
+            "queued offline".into(),
+            &crate::MessageKind::Text,
+        );
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].delivery == MessageDelivery::Optimistic
+        )));
+        assert!(
+            output
+                .iter()
+                .any(|event| matches!(event, EngineToUi::TimelineChanged { .. }))
+        );
+        let mut state = lock(&state);
+        let remaining = state
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .take_timeline_changes(false);
+        assert!(remaining.is_empty());
     }
 
     #[tokio::test]
