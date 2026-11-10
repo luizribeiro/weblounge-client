@@ -4118,7 +4118,6 @@ fn process_connected(
     connected: &papo::event::Connected,
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryFetch> {
-    running.model.restart_inflight_history();
     running.model.rebuild_name_keys(snapshot);
     let next = next_connection_state(
         running.model.connection(),
@@ -4177,6 +4176,7 @@ fn process_disconnect(
     disconnected: &papo::Disconnected,
     output: &mut Vec<EngineToUi>,
 ) -> bool {
+    running.model.restart_inflight_history();
     running.model.invalidate_direct_handles();
     running.flushing_reads = false;
     let mut retained = VecDeque::new();
