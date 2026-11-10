@@ -2040,9 +2040,11 @@ impl NetworkModel {
         let buffer_id = self.names.get(&target.name_key()).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let history = match &buffer.history {
-            HistoryState::LoadingLatest | HistoryState::Refreshing { .. } => {
-                HistoryState::Unrequested
-            }
+            HistoryState::LoadingLatest => HistoryState::Unrequested,
+            HistoryState::Refreshing { oldest, at_start } => HistoryState::Ready {
+                oldest: oldest.clone(),
+                at_start: *at_start,
+            },
             HistoryState::LoadingOlder { oldest } => HistoryState::Ready {
                 oldest: Some(oldest.clone()),
                 at_start: false,
@@ -3322,20 +3324,26 @@ fn begin_target_fetch(buffer: &mut BufferState, fetch: &HistoryFetch) {
 }
 
 fn begin_pushed_history(buffer: &mut BufferState, target: HistoryTarget) -> Option<HistoryFetch> {
-    let next = match &buffer.history {
+    let (next, fetch) = match &buffer.history {
         HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::RefreshCapped => {
-            HistoryState::LoadingLatest
+            (HistoryState::LoadingLatest, HistoryFetch::Latest(target))
         }
-        HistoryState::Ready { oldest, at_start } => HistoryState::Refreshing {
-            oldest: oldest.clone(),
-            at_start: *at_start,
+        HistoryState::Ready { oldest, at_start } => match buffer.newest.clone() {
+            Some(newest) => (
+                HistoryState::Refreshing {
+                    oldest: oldest.clone(),
+                    at_start: *at_start,
+                },
+                HistoryFetch::After { target, newest },
+            ),
+            None => (HistoryState::LoadingLatest, HistoryFetch::Latest(target)),
         },
         HistoryState::LoadingLatest
         | HistoryState::LoadingOlder { .. }
         | HistoryState::Refreshing { .. } => return None,
     };
     set_history_state(buffer, next);
-    Some(HistoryFetch::Latest(target))
+    Some(fetch)
 }
 
 fn advance_incoming_cursor(
@@ -4263,14 +4271,19 @@ mod tests {
             model.buffers[&buffer_id].projection.sync_state,
             BufferSyncState::Pending
         );
-        assert_eq!(model.buffers[&buffer_id].newest, Some(authoritative_cursor));
+        assert_eq!(
+            model.buffers[&buffer_id].newest,
+            Some(authoritative_cursor.clone())
+        );
         let fetch = model
             .request_history(buffer_id, crate::HistoryDirection::Latest)
             .expect("provisional edge requests authority");
         assert!(matches!(
             &fetch,
-            HistoryFetch::Latest(HistoryTarget::Channel(target))
-                if target == &channel
+            HistoryFetch::After {
+                target: HistoryTarget::Channel(target),
+                newest,
+            } if target == &channel && newest == &authoritative_cursor
         ));
         model.restart_inflight_history();
         assert_eq!(
@@ -4278,12 +4291,19 @@ mod tests {
             BufferSyncState::Pending
         );
         let resumed = model.connected_history();
-        assert!(matches!(resumed.as_slice(), [HistoryFetch::Latest(_)]));
+        assert!(matches!(
+            resumed.as_slice(),
+            [HistoryFetch::After { newest, .. }] if newest == &authoritative_cursor
+        ));
         let failed_buffer = model.fail_history(&resumed[0]).expect("fetch fails");
         assert_eq!(failed_buffer, buffer_id);
         let retry = model
             .retry_pushed_history(buffer_id)
             .expect("provisional fetch retries once");
+        assert!(matches!(
+            &retry,
+            HistoryFetch::After { newest, .. } if newest == &authoritative_cursor
+        ));
         model.fail_history(&retry).expect("retry fails");
         assert!(model.retry_pushed_history(buffer_id).is_none());
         assert_eq!(

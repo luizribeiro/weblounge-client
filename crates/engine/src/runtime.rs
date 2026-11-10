@@ -5402,14 +5402,15 @@ mod tests {
 
     use super::{
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
-        HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL, PushRegistration,
-        READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork, Runtime, RuntimeState,
-        attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
-        join_request_events, lock, next_connection_state, permanent_mark_read_error,
-        person_candidates, process_event, process_history, queue_read_advance, read_retry_delay,
-        restore_target_rows, schedule_snapshot_write, spawn_history_fetch,
-        spawn_online_direct_resolution, spawn_read_marker_fetch, spawn_target_reconciliation,
-        state_limit_events, target_sync_boundary, update_chat_list, utf16_len,
+        HistoryPageBounds, HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL,
+        PushRegistration, READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState, RunningNetwork,
+        Runtime, RuntimeState, attach_shell, completion_context, connection_failure_notice,
+        drain_events, fetch_history, finish_history_page, join_request_events, lock,
+        next_connection_state, permanent_mark_read_error, person_candidates, process_event,
+        process_history, queue_read_advance, read_retry_delay, restore_target_rows,
+        schedule_snapshot_write, spawn_history_fetch, spawn_online_direct_resolution,
+        spawn_read_marker_fetch, spawn_target_reconciliation, state_limit_events,
+        target_sync_boundary, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -5424,8 +5425,8 @@ mod tests {
         pushed_messages::PushedMessage,
         read_model::{MessageStub, ServerTimeMs},
         state::{
-            DirectAvailability, HistoryFetch, HistoryTarget, NetworkModel, PendingSend,
-            ReadAdvance, SendTarget,
+            DirectAvailability, HistoryCursor, HistoryFetch, HistoryTarget, NetworkModel,
+            PendingSend, ReadAdvance, SendTarget,
         },
         storage::{KvBackend, MemoryKv, Operation, Space},
     };
@@ -5440,6 +5441,21 @@ mod tests {
                 mention: index < mentions,
             })
             .collect()
+    }
+
+    fn pushed_channel_message(msgid: &str, text: &str) -> PushedMessage {
+        serde_json::from_value(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": msgid,
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": text,
+            "kind": "message",
+        }))
+        .expect("pushed message")
     }
 
     #[test]
@@ -5470,6 +5486,105 @@ async fn delay(duration: Duration) {
         assert_eq!(
             target_sync_boundary(true, 0, 0, upper_bound),
             Some(upper_bound)
+        );
+    }
+
+    #[tokio::test]
+    async fn pushed_ready_buffer_refresh_does_not_create_a_gap() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["draft/chathistory", "message-tags", "server-time"])
+            .await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
+        model.sync_channels(&client.state());
+        let channel = known_channel(&client, "#room");
+        let buffer_id = model
+            .buffer_id_for_channel(&channel)
+            .expect("joined channel has a buffer");
+        model
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("initial history starts");
+        wire.server("@time=1970-01-01T00:00:00.100Z;msgid=authoritative-edge :alice!a@host PRIVMSG #room :authoritative history")
+            .await;
+        let history = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Message(_))
+        })
+        .await;
+        let papo::Event::Message(history) = history else {
+            panic!("history message expected")
+        };
+        model.receive(&history, true, &client.state(), None);
+        let newest = HistoryCursor::new(Some("authoritative-edge".into()), 100);
+        model
+            .finish_history(
+                &papo::Conversation::Channel(channel.clone()),
+                Some(papo::HistoryReference::from(papo::MessageId::from(
+                    "authoritative-edge",
+                ))),
+                Some(100),
+                None,
+                1,
+                false,
+            )
+            .expect("initial history finishes");
+        let pushed = pushed_channel_message("pushed-edge", "provisional while suspended");
+        let pushed_buffer_id = model
+            .restore_pushed_messages(vec![pushed], &client.state())
+            .iter()
+            .find_map(|event| match event {
+                EngineToUi::MessagesAppended { buffer_id, .. } => Some(*buffer_id),
+                _ => None,
+            })
+            .expect("pushed message is restored");
+        assert_eq!(pushed_buffer_id, buffer_id);
+
+        let fetch = model
+            .request_history(buffer_id, crate::HistoryDirection::Latest)
+            .expect("provisional edge requests authority");
+        assert!(
+            matches!(
+                &fetch,
+                HistoryFetch::After {
+                    target: HistoryTarget::Channel(target),
+                    newest: cursor,
+                } if target == &channel && cursor == &newest
+            ),
+            "{fetch:?}"
+        );
+        let conversation = papo::Conversation::Channel(channel);
+        let load = model.history_load(&conversation);
+        let output = finish_history_page(
+            &mut model,
+            load,
+            &conversation,
+            HistoryPageBounds {
+                oldest: Some(papo::HistoryReference::from(papo::MessageId::from(
+                    "pushed-edge",
+                ))),
+                oldest_time_ms: Some(200),
+                newest: Some(HistoryCursor::new(Some("pushed-edge".into()), 200)),
+            },
+            1,
+            true,
+        );
+
+        assert!(!output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages.iter().any(|message| {
+                    message.text == "Some messages were skipped while reconnecting."
+                })
+        )));
+        assert_eq!(
+            model.chat_list_snapshot("network".into()).rows[0].gap_until,
+            None
         );
     }
 
