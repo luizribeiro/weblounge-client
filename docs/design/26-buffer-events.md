@@ -460,8 +460,8 @@ values):
 |---|---|---|---|
 | Line row (system, notice, card) after a message or card | 12 px above | 3/3 px | line row top padding, chosen by predecessor |
 | Line row after a line row | 4 px above | 3/3 px | the same |
-| Any row after a divider | 0 above | own padding | the divider owns both sides |
-| Divider (day, New, gap, history, empty) | 14/14 px | 10/10 px | divider padding |
+| Any row after a divider | 0 above | 0 above | the divider owns both sides |
+| Divider (day, New, gap, history, empty) | 20/8 px | 14/6 px | divider top/bottom padding |
 
 Message rows, highlight-band splitting (notices use it), the first and last row and typing are
 unchanged. `row-spacing.ts` exports the single `topPadding(previousFamily, row, presentation)`
@@ -473,8 +473,10 @@ Batch 3 adds these tokens to `app/densities/presets.json` (compact / cozy / comf
 |---|---|---|---|
 | `mobileLineTopPadding` | 8 | 12 | 16 |
 | `mobileLineGapPadding` | 2 | 4 | 6 |
-| `mobileDividerPadding` | 10 | 14 | 18 |
-| `dividerPadding` | 6 | 10 | 14 |
+| `mobileDividerTopPadding` | 16 | 20 | 24 |
+| `mobileDividerBottomPadding` | 6 | 8 | 10 |
+| `dividerTopPadding` | 10 | 14 | 18 |
+| `dividerBottomPadding` | 4 | 6 | 8 |
 
 No colour tokens are added.
 
@@ -484,7 +486,7 @@ No colour tokens are added.
 
 - a system line is `ceil(segment length / characters per line) × 20` plus its top padding;
 - a card is its header, its wrapped lines (MOTD folded to four) and its button;
-- a divider is its padding plus 16.
+- a divider is its top and bottom padding plus 18.
 
 The size revision is `(id, content_version, expanded, previousFamily, groupStart, presentation)`.
 Rows wrap and never have a fixed height.
@@ -677,5 +679,6 @@ None.
 - Your own nick change appears in the server buffer and every shared channel.
 - The invite to you is the one system item with an unread stub.
 - Redaction removes the deleted text everywhere and leaves read facts unchanged.
-- The canvas's line-row spacing (12/4) and divider spacing (14/14 on phone, 10/10 on desktop)
-  replace the matching `spacing-audit` table rows, with the same token-padding ownership.
+- The canvas's line-row spacing (12/4) remains, except after dividers where the row adds no top
+  padding. Divider spacing is asymmetric (20/8 on phone, 14/6 on desktop), with the same
+  token-padding ownership.

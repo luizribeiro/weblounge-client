@@ -91,11 +91,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
   | Row or transition | Cozy phone | Cozy desktop | Spacing owner |
   | --- | ---: | ---: | --- |
-  | New sender / group start | 16px before nick; 0px after content | 3px above and below | Message row, group/one-line density token |
+  | New sender / group start | 16px before nick; 0px after content; 0px before after a divider | 3px above and below; 0px before after a divider | Message row, group/one-line density token |
   | Same-group continuation | 6px before text; 0px after | 3px above and below | Message row, continuation/one-line density token |
   | Highlighted group or continuation | Same 16px/6px outer rhythm; band splits it 8px/8px or 3px/3px | Same 3px/3px rhythm | Message row pseudo-element; no added height |
-  | Join, part, membership, notice, other system line | 12px before when following a message; 4px between consecutive line rows; 0px before after a divider; 0px after | 3px above and below | System-row context and line-density tokens |
-  | Day, New/unread, history loading/start | 14px above and below | 10px above and below | Divider-density tokens |
+  | Join, part, membership, notice, other system line | 12px before when following a message; 4px between consecutive line rows; 0px before after a divider; 0px after | 3px above and below; 0px before after a divider | System-row context and line-density tokens |
+  | Day, New/unread, history loading/start | 20px above, 8px below | 14px above, 6px below | Divider top/bottom density tokens |
   | Reaction chips or link preview | 4px internal content gap; outer message rhythm unchanged | 4px internal content gap; outer message rhythm unchanged | Inside the message content box |
   | Own, pending, failed, confirmed delivery | Same group/continuation rhythm as any message | Same one-line rhythm as any message | Delivery label is inside the message row and adds no outer gap |
   | Typing status | 24px reserved in the composer; 0px transcript gap | 24px reserved in the composer; 0px transcript gap | Composer, outside the transcript |
@@ -105,18 +105,20 @@ The single place a fresh session reads to know where the project stands. Update 
 
   Day/New rows previously used a fixed 34px height and 0px block padding, membership used a
   fixed 34px line box, and notices used a 34px minimum with 8px/8px padding. History progress had
-  no visible row. The approved Buffer events canvas now owns this family: cozy phone dividers are
-  18px + 14px/14px = 46px, line rows are 18px + 12px after a message or 18px + 4px after another
-  line, and line rows after a divider add no gap. Cozy desktop dividers are 18px + 10px/10px =
-  38px and line rows remain 18px + 3px/3px = 24px. Divider padding follows design 26's integer
-  6/10/14 desktop and 10/14/18 phone values; the remaining line tokens use their signed density
-  values. During the conversion, the New divider painted at 30px while its stale 34px estimate left
+  no visible row. The approved Buffer events family now uses asymmetric divider spacing: cozy
+  phone dividers are 18px + 20px/8px = 46px, line rows are 18px + 12px after a message or 18px +
+  4px after another line, and every row after a divider adds no leading gap. Cozy desktop dividers
+  are 18px + 14px/6px = 38px and ordinary line rows remain 18px + 3px/3px = 24px. Divider top/bottom
+  padding follows design 26's integer 10/4, 14/6, 18/8 desktop and 16/6, 20/8, 24/10 phone values;
+  the remaining line tokens use their signed density values. During the conversion, the New
+  divider painted at 30px while its stale 34px estimate left
   a repeatable 4px seam; explicit line-height tokens and painted-bounds measurement reduce that seam
   to 0px. History prepend, reaction, and width changes could also discard painted fractional
   measurements and temporarily restore integer estimates, leaving persistent 1.5px Android and
   2.25px WebKit seams. Revised rows are now measured by stable row key on their first frame,
   same-count changes retain off-screen cached sizes, and size revisions are cached per row key while
-  including delivery state and collapsed membership content. The jump control remains an overlay,
+  including delivery state, collapsed membership content and predecessor spacing on both phone and
+  desktop. The jump control remains an overlay,
   delivery state remains internal to its message, and a transcript without a scroll range cancels
   no-op live-edge reconciliation so denser system rows do not leave the native-feel audit animating.
   Only a tail append whose existing key-and-size-revision prefix is unchanged retains the active
@@ -133,7 +135,7 @@ The single place a fresh session reads to know where the project stands. Update 
   forwarder now buffers complete IRC lines and complete fragmented WebSocket messages; deterministic
   past fixture times cannot cross a day boundary, and screenshot capture is separate from the
   assertion journey. Local-Ergo browser coverage
-  checks every mounted edge, signed phone text gaps, divider/system symmetry, highlighted continuation
+  checks every mounted edge, signed phone text gaps, divider asymmetry and system rhythm, highlighted continuation
   band insets, history prepend, live reactions, viewport/orientation and simulated keyboard
   changes, and overlay row stability under CPU throttling. Lounge Night before/after captures are
   retained at 390×844 and 1280×800.
