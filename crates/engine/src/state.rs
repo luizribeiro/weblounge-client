@@ -18,6 +18,10 @@ use crate::{
     read_model::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
+    timeline::{
+        Actor, ChatRecord, FoldEvent, LineEvent, LocalDay, OrderKey, Person, RecordBody, Subject,
+        TimelineRecord,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -150,11 +154,9 @@ struct DirectMismatch {
 }
 
 #[derive(Clone, Debug)]
-struct TimelineRecord {
-    projection: MessageProjection,
+struct ChatMetadata {
     counts_as_mention: bool,
     send_text: Option<String>,
-    sequence: u64,
     dedup: DedupReferences,
     provisional_identity: Option<ProvisionalIdentity>,
 }
@@ -191,8 +193,8 @@ struct BufferState {
     key: Option<NameKey>,
     direct_key: Option<DirectKey>,
     timeline: Vec<TimelineRecord>,
-    memberships: Vec<MembershipProjection>,
-    last_membership: Option<MessageId>,
+    chat_metadata: HashMap<MessageId, ChatMetadata>,
+    system_server_times: HashMap<MessageId, Option<i64>>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
     direct_mismatch: Option<DirectMismatch>,
@@ -494,8 +496,8 @@ impl NetworkModel {
             key: None,
             direct_key: None,
             timeline: Vec::new(),
-            memberships: Vec::new(),
-            last_membership: None,
+            chat_metadata: HashMap::new(),
+            system_server_times: HashMap::new(),
             direct: None,
             direct_pin: None,
             direct_mismatch: None,
@@ -585,9 +587,10 @@ impl NetworkModel {
                 messages: buffer
                     .timeline
                     .iter()
-                    .map(|record| record.projection.clone())
+                    .filter_map(chat_projection)
+                    .cloned()
                     .collect(),
-                memberships: buffer.memberships.clone(),
+                memberships: legacy_memberships(buffer),
             })
             .collect()
     }
@@ -602,7 +605,7 @@ impl NetworkModel {
             .timeline
             .iter()
             .enumerate()
-            .map(|(index, record)| (record.projection.id, index))
+            .filter_map(|(index, record)| Some((chat_projection(record)?.id, index)))
             .collect::<HashMap<_, _>>();
         let mut retained_positions = messages
             .iter()
@@ -629,9 +632,10 @@ impl NetworkModel {
             messages: buffer
                 .timeline
                 .iter()
-                .map(|record| record.projection.clone())
+                .filter_map(chat_projection)
+                .cloned()
                 .collect(),
-            memberships: buffer.memberships.clone(),
+            memberships: legacy_memberships(buffer),
         })
     }
 
@@ -1185,12 +1189,11 @@ impl NetworkModel {
             .get_mut(&buffer_id)?
             .timeline
             .iter_mut()
-            .find(|record| record.projection.id == message_id)?;
-        record.projection.reactions.clone_from(&reactions);
-        Some(EngineToUi::MessageUpdated {
-            buffer_id,
-            message: record.projection.clone(),
-        })
+            .find(|record| record.id == message_id)?;
+        let message = chat_projection_mut(record)?;
+        message.reactions.clone_from(&reactions);
+        let message = message.clone();
+        Some(EngineToUi::MessageUpdated { buffer_id, message })
     }
 
     pub(crate) fn restore_pushed_messages(
@@ -1275,9 +1278,9 @@ impl NetworkModel {
         let buffer_id = self.names.get(key).copied()?;
         let buffer = self.buffers.get_mut(&buffer_id)?;
         let has_provisional = buffer
-            .timeline
-            .iter()
-            .any(|record| record.provisional_identity.is_some());
+            .chat_metadata
+            .values()
+            .any(|metadata| metadata.provisional_identity.is_some());
         if !has_provisional {
             return None;
         }
@@ -1514,45 +1517,28 @@ impl NetworkModel {
         received_at_ms: i64,
     ) -> Option<EngineToUi> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
-        let previous = self.buffers.get(&buffer_id)?.last_membership;
-        if let Some(previous) = previous {
-            let buffer = self.buffers.get_mut(&buffer_id)?;
-            if let Some(run) = buffer
-                .memberships
-                .iter_mut()
-                .find(|run| run.id() == previous)
-                && let MembershipProjection::Change {
-                    kind: run_kind,
-                    nicks,
-                    server_time_ms: run_server_time_ms,
-                    received_at_ms: run_received_at_ms,
-                    ..
-                } = run
-                && *run_kind == kind
-            {
-                if !nicks.contains(&nick) {
-                    nicks.push(nick);
-                }
-                *run_server_time_ms = server_time_ms.or(*run_server_time_ms);
-                *run_received_at_ms = received_at_ms;
-                return Some(EngineToUi::MembershipChanged {
-                    buffer_id,
-                    membership: run.clone(),
-                });
-            }
-        }
-        let membership = MembershipProjection::Change {
-            id: self.allocate_message_id(),
-            kind,
-            nicks: vec![nick],
-            server_time_ms,
-            received_at_ms,
+        let who = crate::timeline::Who {
+            nick,
+            own: false,
+            msgid: None,
         };
+        let event = match kind {
+            MembershipKind::Joined => FoldEvent::Joined(who),
+            MembershipKind::Parted => FoldEvent::Parted(who, None),
+            MembershipKind::Quit => FoldEvent::Quit(who, None, None),
+        };
+        let id = self.allocate_message_id();
+        let order = self.allocate_order(server_time_ms, received_at_ms);
         let buffer = self.buffers.get_mut(&buffer_id)?;
-        buffer.last_membership = Some(membership.id());
-        buffer.memberships.push(membership.clone());
-        let excess = buffer.memberships.len().saturating_sub(self.window_limit);
-        buffer.memberships.drain(..excess);
+        buffer.timeline.push(TimelineRecord {
+            id,
+            order,
+            day: LocalDay(0),
+            body: RecordBody::Fold(event),
+        });
+        buffer.timeline.sort_by_key(|record| record.order);
+        buffer.system_server_times.insert(id, server_time_ms);
+        let membership = legacy_membership_at(buffer, id)?;
         Some(EngineToUi::MembershipChanged {
             buffer_id,
             membership,
@@ -1568,19 +1554,33 @@ impl NetworkModel {
         received_at_ms: i64,
     ) -> Option<Vec<EngineToUi>> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
+        let id = self.allocate_message_id();
+        let order = self.allocate_order(server_time_ms, received_at_ms);
         let membership = MembershipProjection::Kicked {
-            id: self.allocate_message_id(),
-            actor,
+            id,
+            actor: actor.clone(),
             reason,
             server_time_ms,
             received_at_ms,
         };
+        let line = LineEvent::Kick {
+            actor: Actor::User(person(self.casemapping, actor, false)),
+            subject: Subject::You,
+            reason: match &membership {
+                MembershipProjection::Kicked { reason, .. } => reason.clone(),
+                MembershipProjection::Change { .. } => None,
+            },
+        };
         let buffer = self.buffers.get_mut(&buffer_id)?;
         buffer.projection.channel_status = Some(ChannelStatus::Kicked);
-        buffer.last_membership = Some(membership.id());
-        buffer.memberships.push(membership.clone());
-        let excess = buffer.memberships.len().saturating_sub(self.window_limit);
-        buffer.memberships.drain(..excess);
+        buffer.timeline.push(TimelineRecord {
+            id,
+            order,
+            day: LocalDay(0),
+            body: RecordBody::Line(line),
+        });
+        buffer.timeline.sort_by_key(|record| record.order);
+        buffer.system_server_times.insert(id, server_time_ms);
         Some(vec![
             EngineToUi::MembershipChanged {
                 buffer_id,
@@ -1600,11 +1600,13 @@ impl NetworkModel {
         self.reconcilable_failed_sends
             .remove(&pending.local_send_id);
         let buffer = self.buffers.get_mut(&pending.buffer_id)?;
-        let index = buffer
-            .timeline
-            .iter()
-            .position(|record| record.projection.local_send_id == Some(pending.local_send_id))?;
+        let index = buffer.timeline.iter().position(|record| {
+            chat_projection(record)
+                .is_some_and(|message| message.local_send_id == Some(pending.local_send_id))
+        })?;
         let record = buffer.timeline.remove(index);
+        let original = chat_projection(&record)?.clone();
+        buffer.chat_metadata.remove(&record.id);
         let (lines, server_time) = match sent.outcome() {
             papo::SentOutcome::Confirmed {
                 lines, server_time, ..
@@ -1616,7 +1618,7 @@ impl NetworkModel {
                 .iter()
                 .enumerate()
                 .map(|(index, (msgid, text))| {
-                    let mut message = record.projection.clone();
+                    let mut message = original.clone();
                     if index != 0 {
                         message.id = self.allocate_message_id();
                     }
@@ -1629,7 +1631,7 @@ impl NetworkModel {
                 })
                 .collect::<Vec<_>>()
         } else {
-            let mut message = record.projection;
+            let mut message = original;
             message.delivery = MessageDelivery::Confirmed;
             message.local_send_id = None;
             vec![message]
@@ -1683,13 +1685,14 @@ impl NetworkModel {
     ) -> Vec<EngineToUi> {
         self.reconcilable_failed_sends
             .remove(&pending.local_send_id);
-        if let Some(record) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
+        if let Some(message) = self.buffers.get_mut(&pending.buffer_id).and_then(|buffer| {
             buffer
                 .timeline
                 .iter_mut()
-                .find(|record| record.projection.local_send_id == Some(pending.local_send_id))
+                .filter_map(chat_projection_mut)
+                .find(|message| message.local_send_id == Some(pending.local_send_id))
         }) {
-            record.projection.delivery = MessageDelivery::Failed;
+            message.delivery = MessageDelivery::Failed;
         }
         let target = pending.target.title();
         let mut events = vec![EngineToUi::MessageFailed {
@@ -1739,18 +1742,26 @@ impl NetworkModel {
             buffer.direct_pin.as_ref(),
             buffer.direct_mismatch.is_some(),
         )?;
-        let message = buffer.timeline.iter_mut().find(|record| {
-            record.projection.local_send_id == Some(local_send_id)
-                && record.projection.delivery == MessageDelivery::Failed
+        let message_id = buffer.timeline.iter().find_map(|record| {
+            let message = chat_projection(record)?;
+            (message.local_send_id == Some(local_send_id)
+                && message.delivery == MessageDelivery::Failed)
+                .then_some(record.id)
         })?;
-        message.projection.delivery = MessageDelivery::Optimistic;
-        let text = message.send_text.clone()?;
+        let message = buffer
+            .timeline
+            .iter_mut()
+            .find(|record| record.id == message_id)
+            .and_then(chat_projection_mut)?;
+        message.delivery = MessageDelivery::Optimistic;
+        let kind = message.kind.clone();
+        let text = buffer.chat_metadata.get(&message_id)?.send_text.clone()?;
         let pending = PendingSend {
             buffer_id,
             local_send_id,
             target,
             text,
-            kind: message.projection.kind.clone(),
+            kind,
         };
         self.reconcilable_failed_sends.remove(&local_send_id);
         Some((
@@ -2008,9 +2019,9 @@ impl NetworkModel {
         };
         if reconciles_push
             && !buffer
-                .timeline
-                .iter()
-                .any(|record| record.provisional_identity.is_some())
+                .chat_metadata
+                .values()
+                .any(|metadata| metadata.provisional_identity.is_some())
         {
             buffer.pushed_history_pending = false;
             buffer.pushed_history_retry_available = false;
@@ -2123,8 +2134,8 @@ impl NetworkModel {
         let buffer_id = self.names.remove(&key)?;
         self.buffer_order.retain(|id| *id != buffer_id);
         let buffer = self.buffers.remove(&buffer_id)?;
-        for record in buffer.timeline {
-            self.release_dedup(record.dedup);
+        for metadata in buffer.chat_metadata.into_values() {
+            self.release_dedup(metadata.dedup);
         }
         self.reactions.clear_buffer(buffer_id);
         Some(EngineToUi::BufferRemoved { buffer_id })
@@ -2149,7 +2160,9 @@ impl NetworkModel {
         (buffer.projection.kind == BufferKind::Direct).then_some(())?;
         buffer.direct = Some(DirectAvailability::Pending);
         for record in &mut buffer.timeline {
-            record.projection.reactions = None;
+            if let Some(message) = chat_projection_mut(record) {
+                message.reactions = None;
+            }
         }
         self.reactions.clear_buffer(buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
@@ -2208,7 +2221,8 @@ impl NetworkModel {
             .get(&buffer_id)
             .into_iter()
             .flat_map(|buffer| buffer.timeline.iter().rev())
-            .map(|record| record.projection.author.clone())
+            .filter_map(chat_projection)
+            .map(|message| message.author.clone())
             .filter(|nick| !is_own_nick(state, nick))
             .filter(|value| state.casemapping().fold(value).starts_with(&*folded_prefix))
             .filter(|value| seen.insert(state.casemapping().fold(value).into_owned()))
@@ -2589,7 +2603,8 @@ impl NetworkModel {
         if !buffer
             .timeline
             .iter()
-            .any(|record| record.projection.id == through && is_committed(&record.projection))
+            .filter_map(chat_projection)
+            .any(|message| message.id == through && is_committed(message))
         {
             return None;
         }
@@ -2615,8 +2630,8 @@ impl NetworkModel {
                     .timeline
                     .iter()
                     .rev()
-                    .find(|record| is_committed(&record.projection))?
-                    .projection
+                    .filter_map(chat_projection)
+                    .find(|message| is_committed(message))?
                     .id;
                 Some((*id, through))
             })
@@ -2791,12 +2806,9 @@ impl NetworkModel {
         };
         if let Some(provisional_identity) = incoming.provisional_identity.clone()
             && let Some(buffer) = self.buffers.get_mut(&buffer_id)
-            && let Some(record) = buffer
-                .timeline
-                .iter_mut()
-                .find(|record| record.projection.id == message.id)
+            && let Some(metadata) = buffer.chat_metadata.get_mut(&message.id)
         {
-            record.provisional_identity = Some(provisional_identity);
+            metadata.provisional_identity = Some(provisional_identity);
         }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             advance_incoming_cursor(buffer, &incoming, cursor);
@@ -2853,7 +2865,7 @@ impl NetworkModel {
             .iter()
             .enumerate()
             .find_map(|(index, record)| {
-                let message = &record.projection;
+                let message = chat_projection(record)?;
                 if message.delivery == MessageDelivery::Failed
                     && message.authorship == MessageAuthorship::Own
                     && message.kind == incoming.kind
@@ -2869,7 +2881,9 @@ impl NetworkModel {
             })?;
         let dedup = self.deduplicate_incoming(incoming)?;
         self.reconcilable_failed_sends.remove(&local_send_id);
-        self.buffers.get_mut(&buffer_id)?.timeline.remove(index);
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let removed = buffer.timeline.remove(index);
+        buffer.chat_metadata.remove(&removed.id);
         for msgid in &dedup.msgids {
             self.reactions.mark_loaded(msgid);
             if let Some(reference) = self.msgids.get_mut(msgid) {
@@ -2917,19 +2931,20 @@ impl NetworkModel {
         let (buffer_id, message_id, provisional) =
             self.buffers.iter().find_map(|(id, buffer)| {
                 buffer.timeline.iter().find_map(|record| {
-                    (record
-                        .projection
-                        .server_ids
-                        .iter()
-                        .any(|current| current == msgid))
-                    .then(|| {
-                        Some((
-                            *id,
-                            record.projection.id,
-                            record.provisional_identity.clone()?,
-                        ))
-                    })
-                    .flatten()
+                    let message = chat_projection(record)?;
+                    (message.server_ids.iter().any(|current| current == msgid))
+                        .then(|| {
+                            Some((
+                                *id,
+                                message.id,
+                                buffer
+                                    .chat_metadata
+                                    .get(&record.id)?
+                                    .provisional_identity
+                                    .clone()?,
+                            ))
+                        })
+                        .flatten()
                 })
             })?;
         let verified_sender = incoming
@@ -2956,22 +2971,25 @@ impl NetworkModel {
             let record = buffer
                 .timeline
                 .iter_mut()
-                .find(|record| record.projection.id == message_id)?;
-            let pushed_time = ServerTimeMs::new(message_time(&record.projection));
+                .find(|record| record.id == message_id)?;
+            let pushed_time = ServerTimeMs::new(message_time(chat_projection(record)?));
             let carry_read = buffer
                 .read_facts
                 .mark()
                 .is_some_and(|mark| pushed_time <= mark && message_time(&message) > mark.value());
-            record.projection = message.clone();
-            record.counts_as_mention = message.authorship != MessageAuthorship::Own
+            record.order = message_order(&message, record.order.2);
+            chat_projection_mut(record)?.clone_from(&message);
+            let counts_as_mention = message.authorship != MessageAuthorship::Own
                 && (buffer.projection.kind == BufferKind::Direct || message.highlighted);
-            record.provisional_identity = None;
+            let metadata = buffer.chat_metadata.get_mut(&message_id)?;
+            metadata.counts_as_mention = counts_as_mention;
+            metadata.provisional_identity = None;
             buffer.read_facts.replace_stub(MessageStub {
                 msgid: msgid.to_owned(),
                 time: ServerTimeMs::new(message_time(&message)),
-                mention: record.counts_as_mention,
+                mention: counts_as_mention,
             });
-            buffer.timeline.sort_by_key(order_key);
+            buffer.timeline.sort_by_key(|record| record.order);
             derive_read_projection(buffer);
             carry_read
         };
@@ -3164,8 +3182,8 @@ impl NetworkModel {
                 key: Some(key.clone()),
                 direct_key: direct_key.clone(),
                 timeline: Vec::new(),
-                memberships: Vec::new(),
-                last_membership: None,
+                chat_metadata: HashMap::new(),
+                system_server_times: HashMap::new(),
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
                 direct_pin: None,
@@ -3238,6 +3256,16 @@ impl NetworkModel {
         id
     }
 
+    fn allocate_order(&mut self, server_time_ms: Option<i64>, received_at_ms: i64) -> OrderKey {
+        let order = OrderKey::new(
+            server_time_ms.unwrap_or(received_at_ms),
+            received_at_ms,
+            self.next_sequence,
+        );
+        self.next_sequence += 1;
+        order
+    }
+
     fn insert(
         &mut self,
         buffer_id: BufferId,
@@ -3254,28 +3282,35 @@ impl NetworkModel {
         let stub = (buffer.projection.kind != BufferKind::Server)
             .then(|| message_stub(&projection, counts_as_mention))
             .flatten();
+        let id = projection.id;
+        let order =
+            self.allocate_order(message_primary_time(&projection), projection.received_at_ms);
         let record = TimelineRecord {
-            projection,
+            id,
+            order,
+            day: LocalDay(0),
+            body: RecordBody::Chat(ChatRecord { projection }),
+        };
+        let metadata = ChatMetadata {
             counts_as_mention,
             send_text,
-            sequence: self.next_sequence,
             dedup,
             provisional_identity: None,
         };
-        self.next_sequence += 1;
-        let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
-            return Err(StateError::MissingBuffer(buffer_id));
+        let released = {
+            let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+                return Err(StateError::MissingBuffer(buffer_id));
+            };
+            buffer.timeline.push(record);
+            buffer.timeline.sort_by_key(|record| record.order);
+            buffer.chat_metadata.insert(id, metadata);
+            if let Some(stub) = stub {
+                buffer.read_facts.merge_stub(stub);
+            }
+            evict_oldest_chat_records(buffer, self.window_limit)
         };
-        buffer.last_membership = None;
-        buffer.timeline.push(record);
-        buffer.timeline.sort_by_key(order_key);
-        if let Some(stub) = stub {
-            buffer.read_facts.merge_stub(stub);
-        }
-        let excess = buffer.timeline.len().saturating_sub(self.window_limit);
-        let evicted = buffer.timeline.drain(..excess).collect::<Vec<_>>();
-        for record in evicted {
-            self.release_dedup(record.dedup);
+        for dedup in released {
+            self.release_dedup(dedup);
         }
         if let Some(buffer) = self.buffers.get_mut(&buffer_id) {
             derive_read_projection(buffer);
@@ -3516,6 +3551,174 @@ fn message_stub(message: &MessageProjection, mention: bool) -> Option<MessageStu
     })
 }
 
+fn chat_projection(record: &TimelineRecord) -> Option<&MessageProjection> {
+    match &record.body {
+        RecordBody::Chat(chat) => Some(&chat.projection),
+        RecordBody::Fold(_) | RecordBody::Line(_) | RecordBody::Gap(_) => None,
+    }
+}
+
+fn chat_projection_mut(record: &mut TimelineRecord) -> Option<&mut MessageProjection> {
+    match &mut record.body {
+        RecordBody::Chat(chat) => Some(&mut chat.projection),
+        RecordBody::Fold(_) | RecordBody::Line(_) | RecordBody::Gap(_) => None,
+    }
+}
+
+fn person(casemapping: papo::Casemapping, nick: String, me: bool) -> Person {
+    Person {
+        nick_color_index: nick_color_index(casemapping, &nick),
+        nick,
+        me,
+    }
+}
+
+fn evict_oldest_chat_records(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferences> {
+    let excess = buffer
+        .timeline
+        .iter()
+        .filter(|record| matches!(record.body, RecordBody::Chat(_)))
+        .count()
+        .saturating_sub(limit);
+    let evicted = buffer
+        .timeline
+        .iter()
+        .filter(|record| matches!(record.body, RecordBody::Chat(_)))
+        .take(excess)
+        .map(|record| record.id)
+        .collect::<HashSet<_>>();
+    buffer
+        .timeline
+        .retain(|record| !evicted.contains(&record.id));
+    evicted
+        .into_iter()
+        .filter_map(|id| buffer.chat_metadata.remove(&id))
+        .map(|metadata| metadata.dedup)
+        .collect()
+}
+
+fn legacy_memberships(buffer: &BufferState) -> Vec<MembershipProjection> {
+    let mut memberships = Vec::<MembershipProjection>::new();
+    let mut run_open = false;
+    for record in &buffer.timeline {
+        let change = match &record.body {
+            RecordBody::Fold(FoldEvent::Joined(who)) => Some((MembershipKind::Joined, &who.nick)),
+            RecordBody::Fold(FoldEvent::Parted(who, _)) => {
+                Some((MembershipKind::Parted, &who.nick))
+            }
+            RecordBody::Fold(FoldEvent::Quit(who, _, _)) => Some((MembershipKind::Quit, &who.nick)),
+            RecordBody::Line(LineEvent::Kick {
+                actor: Actor::User(actor),
+                reason,
+                subject: Subject::You,
+            }) => {
+                memberships.push(MembershipProjection::Kicked {
+                    id: record.id,
+                    actor: actor.nick.clone(),
+                    reason: reason.clone(),
+                    server_time_ms: buffer
+                        .system_server_times
+                        .get(&record.id)
+                        .copied()
+                        .flatten(),
+                    received_at_ms: record.order.1,
+                });
+                run_open = false;
+                None
+            }
+            RecordBody::Chat(_)
+            | RecordBody::Fold(_)
+            | RecordBody::Line(_)
+            | RecordBody::Gap(_) => {
+                run_open = false;
+                None
+            }
+        };
+        let Some((kind, nick)) = change else {
+            continue;
+        };
+        let server_time_ms = buffer
+            .system_server_times
+            .get(&record.id)
+            .copied()
+            .flatten();
+        if let Some(MembershipProjection::Change {
+            kind: previous_kind,
+            nicks,
+            server_time_ms: previous_time,
+            received_at_ms,
+            ..
+        }) = memberships.last_mut()
+            && run_open
+            && *previous_kind == kind
+        {
+            if !nicks.contains(nick) {
+                nicks.push(nick.clone());
+            }
+            *previous_time = server_time_ms.or(*previous_time);
+            *received_at_ms = record.order.1;
+        } else {
+            memberships.push(MembershipProjection::Change {
+                id: record.id,
+                kind,
+                nicks: vec![nick.clone()],
+                server_time_ms,
+                received_at_ms: record.order.1,
+            });
+        }
+        run_open = true;
+    }
+    memberships
+}
+
+fn legacy_membership_at(buffer: &BufferState, id: MessageId) -> Option<MembershipProjection> {
+    let index = buffer.timeline.iter().position(|record| record.id == id)?;
+    let kind = membership_change(&buffer.timeline[index])?.0;
+    let mut start = index;
+    while start > 0 && membership_change(&buffer.timeline[start - 1]).is_some_and(|it| it.0 == kind)
+    {
+        start -= 1;
+    }
+    let mut end = index + 1;
+    while end < buffer.timeline.len()
+        && membership_change(&buffer.timeline[end]).is_some_and(|it| it.0 == kind)
+    {
+        end += 1;
+    }
+    let mut nicks = Vec::new();
+    let mut server_time_ms = None;
+    for record in &buffer.timeline[start..end] {
+        let (_, nick) = membership_change(record)?;
+        if !nicks.contains(nick) {
+            nicks.push(nick.clone());
+        }
+        server_time_ms = buffer
+            .system_server_times
+            .get(&record.id)
+            .copied()
+            .flatten()
+            .or(server_time_ms);
+    }
+    Some(MembershipProjection::Change {
+        id: buffer.timeline[start].id,
+        kind,
+        nicks,
+        server_time_ms,
+        received_at_ms: buffer.timeline[end - 1].order.1,
+    })
+}
+
+fn membership_change(record: &TimelineRecord) -> Option<(MembershipKind, &String)> {
+    match &record.body {
+        RecordBody::Fold(FoldEvent::Joined(who)) => Some((MembershipKind::Joined, &who.nick)),
+        RecordBody::Fold(FoldEvent::Parted(who, _)) => Some((MembershipKind::Parted, &who.nick)),
+        RecordBody::Fold(FoldEvent::Quit(who, _, _)) => Some((MembershipKind::Quit, &who.nick)),
+        RecordBody::Chat(_) | RecordBody::Fold(_) | RecordBody::Line(_) | RecordBody::Gap(_) => {
+            None
+        }
+    }
+}
+
 fn next_message_id_after_stub(msgid: &str) -> u64 {
     msgid
         .strip_prefix("local:")
@@ -3525,8 +3728,7 @@ fn next_message_id_after_stub(msgid: &str) -> u64 {
 }
 
 fn derive_chat_projection(buffer: &mut BufferState) {
-    buffer.projection.last_message =
-        latest_real_message(buffer).map(|record| record.projection.clone());
+    buffer.projection.last_message = latest_real_message(buffer).cloned();
     buffer.projection.preview = buffer
         .projection
         .last_message
@@ -3536,35 +3738,33 @@ fn derive_chat_projection(buffer: &mut BufferState) {
     buffer.projection.last_activity_ms = chat_activity_time(buffer);
 }
 
-fn latest_real_message(buffer: &BufferState) -> Option<&TimelineRecord> {
+fn latest_real_message(buffer: &BufferState) -> Option<&MessageProjection> {
     buffer
         .timeline
         .iter()
         .filter(|record| {
-            is_committed(&record.projection)
-                && !matches!(&record.projection.kind, MessageKind::Notice(_))
+            chat_projection(record).is_some_and(|message| {
+                is_committed(message) && !matches!(&message.kind, MessageKind::Notice(_))
+            })
         })
-        .max_by_key(|record| order_key(record))
+        .max_by_key(|record| record.order)
+        .and_then(chat_projection)
 }
 
 fn chat_activity_time(buffer: &BufferState) -> Option<i64> {
     if matches!(buffer.history, HistoryState::RefreshCapped) {
-        return buffer.provisional_activity_ms.or_else(|| {
-            latest_real_message(buffer).map(|record| message_time(&record.projection))
-        });
+        return buffer
+            .provisional_activity_ms
+            .or_else(|| latest_real_message(buffer).map(message_time));
     }
-    latest_real_message(buffer)
-        .map(|record| message_time(&record.projection))
-        .or_else(|| {
-            matches!(
-                buffer.history,
-                HistoryState::Unrequested
-                    | HistoryState::QueuedLatest
-                    | HistoryState::LoadingLatest
-            )
-            .then_some(buffer.provisional_activity_ms)
-            .flatten()
-        })
+    latest_real_message(buffer).map(message_time).or_else(|| {
+        matches!(
+            buffer.history,
+            HistoryState::Unrequested | HistoryState::QueuedLatest | HistoryState::LoadingLatest
+        )
+        .then_some(buffer.provisional_activity_ms)
+        .flatten()
+    })
 }
 
 fn is_committed(message: &MessageProjection) -> bool {
@@ -3581,14 +3781,21 @@ fn read_advance(
     allow_provisional: bool,
 ) -> Option<ReadAdvance> {
     let record = buffer.timeline.iter().find(|record| {
-        record.projection.id == through
-            && is_committed(&record.projection)
-            && (allow_provisional || record.provisional_identity.is_none())
+        chat_projection(record).is_some_and(|message| {
+            message.id == through
+                && is_committed(message)
+                && (allow_provisional
+                    || buffer
+                        .chat_metadata
+                        .get(&record.id)
+                        .is_some_and(|metadata| metadata.provisional_identity.is_none()))
+        })
     })?;
+    let message = chat_projection(record)?;
     buffer.key.as_ref()?;
     Some(ReadAdvance {
         buffer_id,
-        time: system_time_from_millis(message_time(&record.projection)),
+        time: system_time_from_millis(message_time(message)),
     })
 }
 
@@ -3767,19 +3974,17 @@ pub(crate) fn nick_color_index(casemapping: papo::Casemapping, nick: &str) -> u3
         })
 }
 
-fn order_key(record: &TimelineRecord) -> (i64, i64, u64) {
-    let primary_time = if matches!(&record.projection.kind, MessageKind::Notice(_)) {
-        record.projection.received_at_ms
-    } else {
-        record
-            .projection
-            .server_time_ms
-            .unwrap_or(record.projection.received_at_ms)
-    };
-    (
-        primary_time,
-        record.projection.received_at_ms,
-        record.sequence,
+fn message_primary_time(message: &MessageProjection) -> Option<i64> {
+    (!matches!(&message.kind, MessageKind::Notice(_)))
+        .then_some(message.server_time_ms)
+        .flatten()
+}
+
+fn message_order(message: &MessageProjection, sequence: u64) -> OrderKey {
+    OrderKey::new(
+        message_primary_time(message).unwrap_or(message.received_at_ms),
+        message.received_at_ms,
+        sequence,
     )
 }
 
@@ -3799,7 +4004,7 @@ mod tests {
     use super::{
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming,
         IncomingDestination, NameKey, NetworkModel, PendingTargetState, SendTarget, TimelineOrigin,
-        collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
+        chat_projection, collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
         reaction_actor_key, time_millis,
     };
     use crate::{
@@ -4221,7 +4426,9 @@ mod tests {
         );
         assert_eq!(model.buffers.len(), 2, "server and channel buffers only");
         assert_eq!(
-            model.buffers[&buffer_id].timeline[0].projection.text,
+            chat_projection(&model.buffers[&buffer_id].timeline[0])
+                .expect("pushed chat record")
+                .text,
             "provisional while suspended"
         );
     }
@@ -4379,7 +4586,8 @@ mod tests {
         model.buffers[&id]
             .timeline
             .iter()
-            .map(|record| record.projection.text.as_str())
+            .filter_map(chat_projection)
+            .map(|message| message.text.as_str())
             .collect()
     }
 
@@ -4421,7 +4629,8 @@ mod tests {
             model.buffers[&buffer_id]
                 .timeline
                 .last()
-                .is_some_and(|record| record.projection.unverified_sender != Some(true))
+                .and_then(chat_projection)
+                .is_some_and(|message| message.unverified_sender != Some(true))
         );
         assert_eq!(
             model.buffers[&buffer_id].projection.draft_key,
@@ -5345,8 +5554,9 @@ mod tests {
                 .buffers
                 .values()
                 .flat_map(|buffer| &buffer.timeline)
-                .find(|record| record.projection.text == "older")
-                .and_then(|record| record.projection.server_time_ms),
+                .filter_map(chat_projection)
+                .find(|message| message.text == "older")
+                .and_then(|message| message.server_time_ms),
             None
         );
     }
@@ -5476,7 +5686,8 @@ mod tests {
             model.buffers[&buffer.id]
                 .timeline
                 .last()
-                .map(|record| &record.projection.kind),
+                .and_then(chat_projection)
+                .map(|message| &message.kind),
             Some(&crate::MessageKind::Notice(crate::NoticeKind::Info))
         );
         assert_eq!(model.buffers[&buffer.id].projection.unread, unread_before);
@@ -5757,7 +5968,6 @@ mod tests {
                 &state,
             );
         }
-
         assert_eq!(timeline(&live), ["two", "three"]);
         let buffer = live
             .buffers
@@ -5837,7 +6047,6 @@ mod tests {
                 &state,
             );
         }
-
         let snapshots = model
             .snapshot_events()
             .into_iter()
@@ -5903,7 +6112,10 @@ mod tests {
         let events = model.fail_send(&pending, EngineMessageKey::SendFailed);
 
         let record = &model.buffers[&buffer.id].timeline[0];
-        assert_eq!(record.projection.delivery, crate::MessageDelivery::Failed);
+        assert_eq!(
+            chat_projection(record).expect("chat record").delivery,
+            crate::MessageDelivery::Failed
+        );
         assert!(matches!(
             events.as_slice(),
             [EngineToUi::MessageFailed {
@@ -5940,10 +6152,15 @@ mod tests {
         let timeline = &model.buffers[&buffer.id].timeline;
         assert_eq!(timeline.len(), 1);
         assert_eq!(
-            timeline[0].projection.delivery,
+            chat_projection(&timeline[0]).expect("chat record").delivery,
             crate::MessageDelivery::Confirmed
         );
-        assert_eq!(timeline[0].projection.server_ids, ["server-id"]);
+        assert_eq!(
+            chat_projection(&timeline[0])
+                .expect("chat record")
+                .server_ids,
+            ["server-id"]
+        );
         assert!(matches!(
             events.first(),
             Some(EngineToUi::MessageConfirmed {
@@ -5993,7 +6210,9 @@ mod tests {
         assert_eq!(retried.text, "try\n\n\nagain");
         assert_eq!(retried.local_send_id, pending.local_send_id);
         assert_eq!(
-            model.buffers[&buffer.id].timeline[0].projection.delivery,
+            chat_projection(&model.buffers[&buffer.id].timeline[0])
+                .expect("chat record")
+                .delivery,
             crate::MessageDelivery::Optimistic
         );
         assert!(matches!(
@@ -6151,7 +6370,8 @@ mod tests {
             model.buffers[&buffer_id]
                 .timeline
                 .last()
-                .and_then(|record| record.projection.unverified_sender),
+                .and_then(chat_projection)
+                .and_then(|message| message.unverified_sender),
             Some(true)
         );
         let replacement = client
@@ -6383,7 +6603,9 @@ mod tests {
         assert_eq!(model.buffers[&id].projection.read_at_ms, None);
         assert_eq!(model.buffers[&id].read_facts.mark(), None);
 
-        let own_id = model.buffers[&id].timeline[1].projection.id;
+        let own_id = chat_projection(&model.buffers[&id].timeline[1])
+            .expect("chat record")
+            .id;
         let advance = model
             .prepare_mark_read(id, own_id)
             .expect("committed own message has an advance");
@@ -6631,7 +6853,10 @@ mod tests {
             assert_eq!(buffer.projection.unread, 1, "{name}");
             assert_eq!(buffer.projection.mentions, expected_mentions, "{name}");
             assert_eq!(
-                buffer.timeline[0].projection.highlighted, expected_highlight,
+                chat_projection(&buffer.timeline[0])
+                    .expect("chat record")
+                    .highlighted,
+                expected_highlight,
                 "{name}"
             );
         }
@@ -6929,11 +7154,8 @@ mod tests {
             &state,
         );
         let alice = model.names[&NameKey::Direct(nick_name(&state, "alice"))];
-        let through = model.buffers[&alice]
-            .timeline
-            .last()
-            .expect("live direct")
-            .projection
+        let through = chat_projection(model.buffers[&alice].timeline.last().expect("live direct"))
+            .expect("chat record")
             .id;
         let advance = model
             .request_mark_read(alice, through)
@@ -6991,7 +7213,9 @@ mod tests {
                 server_time_ms: 1_000,
             })
         );
-        let through = buffer.timeline.last().expect("live direct").projection.id;
+        let through = chat_projection(buffer.timeline.last().expect("live direct"))
+            .expect("chat record")
+            .id;
         let advance = model
             .request_mark_read(alice, through)
             .expect("live direct read is authoritative");

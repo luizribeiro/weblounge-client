@@ -686,6 +686,7 @@ pub enum MembershipProjection {
 }
 
 impl MembershipProjection {
+    #[cfg(test)]
     pub(crate) const fn id(&self) -> MessageId {
         match self {
             Self::Change { id, .. } | Self::Kicked { id, .. } => *id,
