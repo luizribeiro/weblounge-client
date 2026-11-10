@@ -39,6 +39,16 @@ The single place a fresh session reads to know where the project stands. Update 
   its removed 3px top padding makes it 25px rather than the ordinary 28px. Predecessor spacing was
   already part of the size revision, while the retained outer row owns its reactive spacing
   attribute, so the production render identity did not need another invalidation field.
+- [x] Reconcile push-restored rows in a warm buffer without an app restart. Push restoration now
+  builds papo names through the running client's `NameRules`, so a notification cannot create a
+  hidden originless duplicate of an already-open channel or direct. Every restored push remains a
+  provisional history edge: it does not advance the authoritative cursor, projects pending/syncing
+  state until same-msgid history replaces its text and identity, starts a latest-page refresh while
+  online, retries one failed or timed-out refresh, and requeues history interrupted by reconnect.
+  Local-Ergo browser coverage starts from a loaded conversation, restores a deliberately truncated
+  first line while offline, and proves reconnect replaces it in place with the full highlighted,
+  bot-attributed row. Push-payload coverage pins Ergo's length-limited multiline input. Relay,
+  ciphertext and notification privacy behavior are unchanged.
 - [x] Keep unchanged visible transcript rows mounted across ordinary appends and measurement
   refreshes. TanStack can replace virtual-item records while `timelineRows` recreates projection
   wrappers; reference-keying either layer let Solid detach a still-visible message between
