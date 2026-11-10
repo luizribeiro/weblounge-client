@@ -280,7 +280,7 @@ async function seedMixedConversation(
   const ownLine = await marker.privmsgConfirmed(channel, own);
   await marker.markRead(channel, serverTime(ownLine));
 
-  const minute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
+  const minute = Math.floor(Date.now() / 60_000) * 60_000 + 600_000;
   const groupStart = `group start ${suffix}`;
   const continuation = `same group continuation ${suffix}`;
   const newSender = `new sender ${suffix}`;
