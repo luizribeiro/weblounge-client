@@ -79,6 +79,16 @@ describe("estimateMessageHeight", () => {
     expect(messageSizeRevision(message, true)).not.toBe(
       messageSizeRevision(message, false),
     );
+    expect(
+      estimateMessageHeight(
+        message,
+        390,
+        "cozy",
+        "mobile",
+        true,
+        "after-divider",
+      ),
+    ).toBe(groupStart - 16);
   });
 
   it("gives IRC notices the full sender-row estimate", () => {
@@ -108,7 +118,29 @@ describe("estimateMessageHeight", () => {
       text: "server information",
     };
 
-    expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(24);
+    expect(
+      estimateMessageHeight(
+        notice,
+        390,
+        "cozy",
+        "mobile",
+        true,
+        "after-message",
+      ),
+    ).toBe(30);
+    expect(
+      estimateMessageHeight(notice, 390, "cozy", "mobile", true, "after-line"),
+    ).toBe(22);
+    expect(
+      estimateMessageHeight(
+        notice,
+        390,
+        "cozy",
+        "mobile",
+        true,
+        "after-divider",
+      ),
+    ).toBe(18);
     expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(24);
   });
 

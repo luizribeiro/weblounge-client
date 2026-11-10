@@ -241,10 +241,7 @@
   font-size: 12px;
   font-style: italic;
   line-height: 18px;
-  padding-block: calc(
-    var(--wl-density-message-mobile-continuation-padding) /
-    2
-  );
+  padding-block: var(--wl-density-message-one-line-row-padding);
   padding-inline: 72px 14px;
 }
 .membership button {
@@ -260,10 +257,7 @@
   color: var(--wl-color-muted);
   font-size: 12px;
   line-height: 18px;
-  padding-block: calc(
-    var(--wl-density-message-mobile-continuation-padding) /
-    2
-  );
+  padding-block: var(--wl-density-message-one-line-row-padding);
   padding-inline: 72px 14px;
 }
 .noticeText {
@@ -281,7 +275,7 @@
   font-weight: 650;
   gap: 10px;
   line-height: 18px;
-  padding-block: calc(var(--wl-density-message-mobile-group-top-padding) / 2);
+  padding-block: var(--wl-density-message-divider-padding);
   padding-inline: 14px;
 }
 .divider::before,
@@ -395,7 +389,29 @@
 }
 .list[data-presentation="mobile"] .membership,
 .list[data-presentation="mobile"] .notice {
+  padding-block: 0;
   padding-inline: var(--wl-space-transcript-inline);
+}
+.list[data-presentation="mobile"]
+  .virtualRow[data-phone-spacing="after-line"]
+  :is(.membership, .notice) {
+  padding-block-start: var(--wl-density-message-mobile-line-padding);
+}
+.list[data-presentation="mobile"]
+  .virtualRow[data-phone-spacing="after-message"]
+  :is(.membership, .notice) {
+  padding-block-start: var(
+    --wl-density-message-mobile-line-after-message-padding
+  );
+}
+.list[data-presentation="mobile"]
+  .virtualRow[data-phone-spacing="after-divider"]
+  .row {
+  --wl-message-highlight-inset: 0px;
+  padding-block-start: 0;
+}
+.list[data-presentation="mobile"] :is(.divider, .newLine) {
+  padding-block: var(--wl-density-message-mobile-divider-padding);
 }
 .list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;

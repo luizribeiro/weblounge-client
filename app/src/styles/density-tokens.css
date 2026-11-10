@@ -1,14 +1,18 @@
 :root[data-message-density="compact"] {
   --wl-density-message-avatar: 26px;
   --wl-density-message-continuation-padding: 0px;
+  --wl-density-message-divider-padding: 7.5px;
   --wl-density-message-font-delta: -1px;
   --wl-density-message-group-top-padding: 5px;
   --wl-density-message-line-height: 1.4;
   --wl-density-message-mobile-continuation-padding: 4px;
+  --wl-density-message-mobile-divider-padding: 10.5px;
   --wl-density-message-mobile-continuation-highlight-inset: 2px;
   --wl-density-message-mobile-group-top-padding: 12px;
   --wl-density-message-mobile-group-highlight-inset: 6px;
   --wl-density-message-mobile-header-gap: 3px;
+  --wl-density-message-mobile-line-after-message-padding: 9px;
+  --wl-density-message-mobile-line-padding: 3px;
   --wl-density-message-one-line-row-padding: 1px;
 }
 :root[data-sidebar-density="compact"] {
@@ -24,14 +28,18 @@
 :root[data-message-density="cozy"] {
   --wl-density-message-avatar: 36px;
   --wl-density-message-continuation-padding: 2px;
+  --wl-density-message-divider-padding: 10px;
   --wl-density-message-font-delta: 0px;
   --wl-density-message-group-top-padding: 10px;
   --wl-density-message-line-height: 1.5;
   --wl-density-message-mobile-continuation-padding: 6px;
+  --wl-density-message-mobile-divider-padding: 14px;
   --wl-density-message-mobile-continuation-highlight-inset: 3px;
   --wl-density-message-mobile-group-top-padding: 16px;
   --wl-density-message-mobile-group-highlight-inset: 8px;
   --wl-density-message-mobile-header-gap: 4px;
+  --wl-density-message-mobile-line-after-message-padding: 12px;
+  --wl-density-message-mobile-line-padding: 4px;
   --wl-density-message-one-line-row-padding: 3px;
 }
 :root[data-sidebar-density="cozy"] {
@@ -47,14 +55,18 @@
 :root[data-message-density="comfortable"] {
   --wl-density-message-avatar: 40px;
   --wl-density-message-continuation-padding: 4px;
+  --wl-density-message-divider-padding: 12.5px;
   --wl-density-message-font-delta: 1px;
   --wl-density-message-group-top-padding: 15px;
   --wl-density-message-line-height: 1.6;
   --wl-density-message-mobile-continuation-padding: 8px;
+  --wl-density-message-mobile-divider-padding: 17.5px;
   --wl-density-message-mobile-continuation-highlight-inset: 4px;
   --wl-density-message-mobile-group-top-padding: 20px;
   --wl-density-message-mobile-group-highlight-inset: 10px;
   --wl-density-message-mobile-header-gap: 5px;
+  --wl-density-message-mobile-line-after-message-padding: 15px;
+  --wl-density-message-mobile-line-padding: 5px;
   --wl-density-message-one-line-row-padding: 5px;
 }
 :root[data-sidebar-density="comfortable"] {

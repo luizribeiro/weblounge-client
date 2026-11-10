@@ -46,6 +46,7 @@ import { MessageText, Nickname } from "./MessageText";
 import {
   currentMessageDensity,
   estimateMessageHeight,
+  type MobileLineSpacing,
   messageSizeRevision,
 } from "./message-size-estimate";
 import { startsMobileMessageGroup } from "./mobile-message-group";
@@ -151,13 +152,18 @@ export function MessageList(props: MessageListProps) {
       props.historyState,
     ),
   );
-  const rowSizeRevision = (row: TimelineRow) =>
-    row.kind === "message"
-      ? messageSizeRevision(
-          row.message,
-          props.presentation === "mobile" ? row.startsMobileGroup : undefined,
-        )
-      : row.key;
+  const rowSizeRevision = (row: TimelineRow, index: number) => {
+    const revision =
+      row.kind === "message"
+        ? messageSizeRevision(
+            row.message,
+            props.presentation === "mobile" ? row.startsMobileGroup : undefined,
+          )
+        : row.key;
+    return props.presentation === "mobile"
+      ? `${revision}\u0000${phoneRowSpacing(rows(), index)}`
+      : revision;
+  };
   // TanStack rebuilds its index-keyed measurements only when the row count or
   // the key extractor's identity changes, and a moving divider keeps the count.
   const rowKey = createMemo(() => {
@@ -272,12 +278,18 @@ export function MessageList(props: MessageListProps) {
     },
     estimateSize: (index) => {
       const row = rows()[index];
+      const spacing = phoneRowSpacing(rows(), index);
       if (row?.kind !== "message")
-        return estimateDecorationHeight(row?.kind, estimatedDensity);
+        return estimateDecorationHeight(
+          row?.kind,
+          estimatedDensity,
+          props.presentation,
+          spacing,
+        );
       const width =
         observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
       const cached = estimatedSizes.get(row.key);
-      const revision = rowSizeRevision(row);
+      const revision = rowSizeRevision(row, index);
       if (cached?.revision === revision) return cached.size;
       const estimated = estimateMessageHeight(
         row.message,
@@ -285,6 +297,7 @@ export function MessageList(props: MessageListProps) {
         estimatedDensity,
         props.presentation,
         row.startsMobileGroup,
+        spacing,
       );
       estimatedSizes.set(row.key, { revision, size: estimated });
       return estimated;
@@ -510,15 +523,15 @@ export function MessageList(props: MessageListProps) {
     if (messages.length !== previousCount && logicallyAtLiveEdge)
       scrollToLiveEdge();
   });
-  let measuredRows = rows().map((row) => ({
+  let measuredRows = rows().map((row, index) => ({
     key: row.key,
-    revision: rowSizeRevision(row),
+    revision: rowSizeRevision(row, index),
   }));
   createEffect(() => {
     const currentRows = rows();
-    const currentMeasurements = currentRows.map((row) => ({
+    const currentMeasurements = currentRows.map((row, index) => ({
       key: row.key,
-      revision: rowSizeRevision(row),
+      revision: rowSizeRevision(row, index),
     }));
     const unchanged =
       currentMeasurements.length === measuredRows.length &&
@@ -749,6 +762,10 @@ export function MessageList(props: MessageListProps) {
                     class={styles.virtualRow}
                     data-copy-row-index={virtualRow.index}
                     data-index={virtualRow.index}
+                    data-phone-spacing={phoneRowSpacing(
+                      rows(),
+                      virtualRow.index,
+                    )}
                     data-row-key={String(virtualRow.key)}
                     data-selected={selected()}
                     ref={(element) => measureRow(element, virtualRow.index)}
@@ -1285,13 +1302,54 @@ function bottomOffset(viewportHeight: number, contentHeight: number): number {
 function estimateDecorationHeight(
   kind: Exclude<TimelineRow["kind"], "message"> | undefined,
   density: ReturnType<typeof currentMessageDensity>,
+  presentation: "desktop" | "mobile" | undefined,
+  spacing: MobileLineSpacing,
 ): number {
   const preset = densityPresets[density];
-  const padding =
-    kind === "membership"
-      ? preset.mobileContinuationPadding
-      : preset.mobileGroupTopPadding;
-  return 18 + Number.parseFloat(padding);
+  if (kind === "membership") {
+    const padding =
+      presentation === "mobile"
+        ? spacing === "after-divider"
+          ? 0
+          : Number.parseFloat(
+              spacing === "after-line"
+                ? preset.mobileLinePadding
+                : preset.mobileLineAfterMessagePadding,
+            )
+        : 2 * Number.parseFloat(preset.oneLineRowPadding);
+    return 18 + padding;
+  }
+  const padding = Number.parseFloat(
+    presentation === "mobile"
+      ? preset.mobileDividerPadding
+      : preset.dividerPadding,
+  );
+  return 18 + 2 * padding;
+}
+
+function phoneRowSpacing(
+  rows: readonly TimelineRow[],
+  index: number,
+): MobileLineSpacing {
+  const current = rows[index];
+  const previous = rows[index - 1];
+  if (current === undefined || !isPhoneLineRow(current))
+    return isDividerRow(previous) ? "after-divider" : "after-message";
+  if (isDividerRow(previous)) return "after-divider";
+  return previous === undefined || isPhoneLineRow(previous)
+    ? "after-line"
+    : "after-message";
+}
+
+function isPhoneLineRow(row: TimelineRow | undefined): boolean {
+  return (
+    row?.kind === "membership" ||
+    (row?.kind === "message" && isNoticeMessage(row.message))
+  );
+}
+
+function isDividerRow(row: TimelineRow | undefined): boolean {
+  return row?.kind === "history" || row?.kind === "day" || row?.kind === "new";
 }
 
 function measureRowElement(

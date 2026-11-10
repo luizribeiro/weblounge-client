@@ -35,7 +35,9 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     const composer = page.getByRole("textbox", { name: "Message" });
     await composer.fill("/version");
     await composer.press("Enter");
-    await expect(page.locator("[data-notice-row]")).toBeVisible();
+    await composer.fill("/topic");
+    await composer.press("Enter");
+    await expect(page.locator("[data-notice-row]")).toHaveCount(2);
 
     const list = page.locator("[data-message-list]");
     if (phone) {
@@ -58,11 +60,14 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     await expect(page.locator("[data-new-line]")).toBeVisible();
     await capture(page, testInfo.project.name, "mixed");
 
-    const density = await transcriptDensity(page);
+    const density = await transcriptDensity(page, scenario.unreadMessage);
     expect(density.dividerBefore).toBeCloseTo(density.dividerAfter, 0);
-    expect(density.dividerBefore).toBeCloseTo(phone ? 8 : 8, 0);
-    expect(density.systemBefore).toBeCloseTo(density.systemAfter, 0);
-    expect(density.systemBefore).toBeCloseTo(3, 0);
+    expect(density.dividerBefore).toBeCloseTo(phone ? 14 : 10, 0);
+    expect(density.systemBefore).toBeCloseTo(phone ? 12 : 3, 0);
+    expect(density.systemAfter).toBeCloseTo(phone ? 0 : 3, 0);
+    expect(density.consecutiveLineBefore).toBeCloseTo(phone ? 4 : 3, 0);
+    expect(density.consecutiveLineAfter).toBeCloseTo(phone ? 0 : 3, 0);
+    expect(density.afterDividerMessageBefore).toBeCloseTo(phone ? 0 : 3, 0);
     expect(density.historyBefore).toBeCloseTo(density.dividerBefore, 0);
     expect(density.historyAfter).toBeCloseTo(density.dividerAfter, 0);
 
@@ -100,7 +105,7 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
       messageRow(page, scenario.reacted).locator('[data-reaction="👍"]'),
     ).toBeVisible();
     await expect(messageRow(page, scenario.own)).toBeVisible();
-    await expect(page.locator("[data-notice-row]")).toBeVisible();
+    await expect(page.locator("[data-notice-row]").first()).toBeVisible();
     await expect
       .poll(() => page.locator("[data-membership-row]").count())
       .toBeGreaterThanOrEqual(2);
@@ -455,8 +460,8 @@ function serverTime(line: string): string {
   return value;
 }
 
-async function transcriptDensity(page: Page) {
-  return page.evaluate(() => {
+async function transcriptDensity(page: Page, unreadMessage: string) {
+  return page.evaluate((messageText) => {
     const blockPadding = (selector: string) => {
       const element = document.querySelector<HTMLElement>(selector);
       if (element === null) throw new Error(`missing ${selector}`);
@@ -468,8 +473,33 @@ async function transcriptDensity(page: Page) {
     };
     const divider = blockPadding("[data-day-divider]");
     const history = blockPadding("[data-history-edge]");
-    const system = blockPadding("[data-membership-row]");
+    const system = blockPadding(
+      '[data-phone-spacing="after-message"] [data-membership-row]',
+    );
+    const consecutiveLine = document.querySelector<HTMLElement>(
+      '[data-phone-spacing="after-line"] [data-notice-row]',
+    );
+    if (consecutiveLine === null)
+      throw new Error("consecutive line is missing");
+    const consecutiveLineStyle = getComputedStyle(consecutiveLine);
+    const afterDividerMessage = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-phone-spacing="after-divider"] [data-message-row]',
+      ),
+    ).find((row) => row.dataset.messageText === messageText);
+    if (afterDividerMessage === undefined)
+      throw new Error("post-divider message is missing");
+    const afterDividerMessageStyle = getComputedStyle(afterDividerMessage);
     return {
+      afterDividerMessageBefore: Number.parseFloat(
+        afterDividerMessageStyle.paddingBlockStart,
+      ),
+      consecutiveLineAfter: Number.parseFloat(
+        consecutiveLineStyle.paddingBlockEnd,
+      ),
+      consecutiveLineBefore: Number.parseFloat(
+        consecutiveLineStyle.paddingBlockStart,
+      ),
       dividerAfter: divider.after,
       dividerBefore: divider.before,
       historyAfter: history.after,
@@ -477,7 +507,7 @@ async function transcriptDensity(page: Page) {
       systemAfter: system.after,
       systemBefore: system.before,
     };
-  });
+  }, unreadMessage);
 }
 
 async function expectContiguousRows(page: Page): Promise<void> {

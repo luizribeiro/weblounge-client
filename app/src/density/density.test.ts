@@ -11,7 +11,26 @@ describe("density presets", () => {
   it("matches Appendix B and keeps independent defaults", () => {
     expect(densityPresets.compact.sidebarRowHeight).toBe("26px");
     expect(densityPresets.cozy.oneLineRowPadding).toBe("3px");
+    expect(densityPresets.cozy.dividerPadding).toBe("10px");
+    expect(densityPresets.cozy.mobileDividerPadding).toBe("14px");
+    expect(densityPresets.cozy.mobileLineAfterMessagePadding).toBe("12px");
+    expect(densityPresets.cozy.mobileLinePadding).toBe("4px");
     expect(densityPresets.comfortable.mobileAvatar).toBe("48px");
+    for (const token of [
+      "dividerPadding",
+      "mobileDividerPadding",
+      "mobileLineAfterMessagePadding",
+      "mobileLinePadding",
+    ] as const) {
+      expect(
+        Number.parseFloat(densityPresets.compact[token]) /
+          Number.parseFloat(densityPresets.cozy[token]),
+      ).toBe(0.75);
+      expect(
+        Number.parseFloat(densityPresets.comfortable[token]) /
+          Number.parseFloat(densityPresets.cozy[token]),
+      ).toBe(1.25);
+    }
     expect(densityDefaults).toEqual({
       messageLayout: "oneLine",
       message: "cozy",

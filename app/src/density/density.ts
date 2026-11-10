@@ -11,6 +11,7 @@ export interface DensitySettings {
 }
 
 export interface DensityPreset {
+  readonly dividerPadding: string;
   readonly messageAvatar: string;
   readonly groupTopPadding: string;
   readonly continuationPadding: string;
@@ -23,6 +24,9 @@ export interface DensityPreset {
   readonly memberAvatar: string;
   readonly mobileRowHeight: string;
   readonly mobileAvatar: string;
+  readonly mobileDividerPadding: string;
+  readonly mobileLineAfterMessagePadding: string;
+  readonly mobileLinePadding: string;
   readonly mobileContinuationPadding: string;
   readonly mobileGroupTopPadding: string;
   readonly mobileHeaderGap: string;
@@ -44,16 +48,20 @@ export function densityStyleSheet(): string {
       densityRule("message-density", "message", id, {
         avatar: preset.messageAvatar,
         continuationPadding: preset.continuationPadding,
+        dividerPadding: preset.dividerPadding,
         fontDelta: preset.fontDelta,
         groupTopPadding: preset.groupTopPadding,
         lineHeight: preset.lineHeight,
         mobileContinuationPadding: preset.mobileContinuationPadding,
+        mobileDividerPadding: preset.mobileDividerPadding,
         mobileContinuationHighlightInset: halfPixels(
           preset.mobileContinuationPadding,
         ),
         mobileGroupTopPadding: preset.mobileGroupTopPadding,
         mobileGroupHighlightInset: halfPixels(preset.mobileGroupTopPadding),
         mobileHeaderGap: preset.mobileHeaderGap,
+        mobileLineAfterMessagePadding: preset.mobileLineAfterMessagePadding,
+        mobileLinePadding: preset.mobileLinePadding,
         oneLineRowPadding: preset.oneLineRowPadding,
       }),
       densityRule("sidebar-density", "sidebar", id, {

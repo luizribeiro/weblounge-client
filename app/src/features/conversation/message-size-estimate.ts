@@ -10,6 +10,11 @@ type EstimatedMessage = Pick<
   "delivery" | "kind" | "reactions" | "text"
 >;
 
+export type MobileLineSpacing =
+  | "after-divider"
+  | "after-line"
+  | "after-message";
+
 const baseFontSize = 14;
 const listInlinePadding = 28;
 const mobileListInlinePadding = 32;
@@ -24,6 +29,7 @@ export function estimateMessageHeight(
   density: DensityId,
   presentation: "desktop" | "mobile" = "desktop",
   startsMobileGroup = true,
+  mobileLineSpacing: MobileLineSpacing = "after-message",
 ): number {
   const preset = densityPresets[density];
   const fontSize = baseFontSize + Number.parseFloat(preset.fontDelta);
@@ -40,10 +46,11 @@ export function estimateMessageHeight(
       1,
       Math.floor(rowWidth / (systemFontSize * 0.55)),
     );
-    return (
-      estimatedLines(message.text, charactersPerLine) * 18 +
-      Number.parseFloat(preset.mobileContinuationPadding)
-    );
+    const padding =
+      presentation === "mobile"
+        ? mobileLineTopPadding(preset, mobileLineSpacing)
+        : 2 * Number.parseFloat(preset.oneLineRowPadding);
+    return estimatedLines(message.text, charactersPerLine) * 18 + padding;
   }
   if (presentation === "mobile" && isSenderRow(message.kind)) {
     const textWidth = Math.max(
@@ -60,11 +67,14 @@ export function estimateMessageHeight(
     const textHeight = Math.ceil(
       estimatedLines(message.text, charactersPerLine) * lineHeight,
     );
-    const topPadding = Number.parseFloat(
-      startsMobileGroup
-        ? preset.mobileGroupTopPadding
-        : preset.mobileContinuationPadding,
-    );
+    const topPadding =
+      mobileLineSpacing === "after-divider"
+        ? 0
+        : Number.parseFloat(
+            startsMobileGroup
+              ? preset.mobileGroupTopPadding
+              : preset.mobileContinuationPadding,
+          );
     const headerHeight = startsMobileGroup
       ? lineHeight + Number.parseFloat(preset.mobileHeaderGap)
       : 0;
@@ -101,6 +111,18 @@ export function estimateMessageHeight(
     textHeight +
     deliveryHeight +
     estimatedReactionHeight(message, textWidth, presentation)
+  );
+}
+
+function mobileLineTopPadding(
+  preset: (typeof densityPresets)[DensityId],
+  spacing: MobileLineSpacing,
+): number {
+  if (spacing === "after-divider") return 0;
+  return Number.parseFloat(
+    spacing === "after-line"
+      ? preset.mobileLinePadding
+      : preset.mobileLineAfterMessagePadding,
   );
 }
 
