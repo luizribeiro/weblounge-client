@@ -123,10 +123,12 @@ pub enum Patch {
     BufferUpserted { buffer: BufferProjection },
     BufferRemoved { buffer_id: BufferId },
     BufferOrderSet { network_id: NetworkId, ids: Vec<BufferId> },
-    TimelinePrepended { range: TimelineRange },
-    TimelineAppended { range: TimelineRange },
-    TimelineEntriesUpserted { buffer_id: BufferId, entries: Vec<TimelineProjection> },
-    TimelineEntriesRemoved { buffer_id: BufferId, ids: Vec<EventId> },
+    TimelineChanged {
+        buffer_id: BufferId,
+        reset: bool,
+        upserted: Vec<TimelineItem>,
+        removed: Vec<MessageId>,
+    },
     MemberProjectionSet { buffer_id: ChannelBufferId, members: Vec<MemberProjection> },
     BufferActionsSet { buffer_id: BufferId, actions: BufferActions },
     MessageActionsSet { buffer_id: BufferId, actions: Vec<MessageActions> },
@@ -134,6 +136,12 @@ pub enum Patch {
     SettingChanged { change: SettingProjectionChange },
 }
 ```
+
+`TimelineChanged` supersedes the earlier prepend, append, upsert and remove timeline variants. The
+engine emits at most one atomic change per touched buffer and engine turn. `reset` is reserved for
+a shell attaching to an already-running engine; otherwise the receiver removes `removed`, upserts
+the ordered `upserted` items and derives append, prepend or remeasure geometry from the result.
+Until the buffer-events migration removes the named events, this patch is emitted alongside them.
 
 The normalized UI store contains only summaries and requested/renderable ranges. `unread_priority`
 is the engine-computed mention → DM → unread ranking consumed by command `buffer.jump-important`;
