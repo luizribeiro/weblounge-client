@@ -31,7 +31,24 @@ export async function seedMixedConversation(
     "weblounge-bot-test",
     channel,
   );
+  const clockLine = await first.privmsgConfirmed(
+    `sa-first-${suffix}`,
+    `spacing clock ${suffix}`,
+  );
+  const clock = new Date(serverTime(clockLine));
+  const baseTime = Date.UTC(
+    clock.getUTCFullYear(),
+    clock.getUTCMonth(),
+    clock.getUTCDate() - 1,
+    12,
+  );
+  let nextTime = baseTime;
+  const armNextRow = async (text: string) => {
+    await armMessageTime(text, nextTime);
+    nextTime += 1_000;
+  };
   const beforeJoin = `message before join ${suffix}`;
+  await armNextRow(beforeJoin);
   await first.privmsgConfirmed(channel, beforeJoin);
   const second = await IrcClient.connect(
     `sa-second-${suffix}`,
@@ -39,7 +56,9 @@ export async function seedMixedConversation(
     "weblounge-bot-test",
     channel,
   );
-  await second.privmsgConfirmed(channel, `message after join ${suffix}`);
+  const afterJoin = `message after join ${suffix}`;
+  await armNextRow(afterJoin);
+  await second.privmsgConfirmed(channel, afterJoin);
   const marker = await IrcClient.connect(
     account,
     account,
@@ -47,10 +66,10 @@ export async function seedMixedConversation(
     channel,
   );
   const own = `own confirmed row ${suffix}`;
+  await armNextRow(own);
   const ownLine = await marker.privmsgConfirmed(channel, own);
   await marker.markRead(channel, serverTime(ownLine));
 
-  const minute = Math.floor(Date.now() / 60_000) * 60_000 + 600_000;
   const groupStart = `group start ${suffix}`;
   const continuation = `same group continuation ${suffix}`;
   const newSender = `new sender ${suffix}`;
@@ -70,11 +89,12 @@ export async function seedMixedConversation(
     [first, highlightContinuation],
   ] as const;
   const echoes: string[] = [];
-  for (const [index, [client, text]] of timed.entries()) {
-    await armMessageTime(text, minute + index * 1_000);
+  for (const [client, text] of timed) {
+    await armNextRow(text);
     echoes.push(await client.privmsgConfirmed(channel, text));
   }
   await second.reactionConfirmed(channel, messageId(echoes[3] ?? ""), "👍");
+  await armNextRow(systemFence);
   await first.privmsgConfirmed(channel, systemFence);
   marker.close();
   return {

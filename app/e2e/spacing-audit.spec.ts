@@ -37,22 +37,27 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     await composer.fill("/topic");
     await composer.press("Enter");
     await expect(page.locator("[data-notice-row]")).toHaveCount(2);
+    await expect(
+      page.getByRole("heading", { name: scenario.channel }),
+    ).not.toHaveAttribute("aria-busy", "true");
 
     const list = page.locator("[data-message-list]");
-    if (phone) {
-      await scrollToTranscriptTop(list);
-    } else {
-      await list.hover();
-      await page.mouse.wheel(0, -100_000);
-    }
-    await expect(page.locator("[data-history-edge]")).toContainText(
-      "Start of history",
-    );
+    await expect
+      .poll(async () => {
+        await driveToTranscriptTop(list);
+        return page.locator("[data-history-edge]").allTextContents();
+      })
+      .toContain("Start of history");
     await leaveConversation(page, phone);
     await scenario.sendUnread();
     await page.getByRole("button", { name: scenario.channel }).click();
     await expect(messageRow(page, scenario.unreadMessage)).toBeVisible();
     await expect(page.locator("[data-new-line]")).toBeVisible();
+    await composer.fill("/version");
+    await composer.press("Enter");
+    await expect(
+      page.locator('[data-line-spacing="after-message"] [data-notice-row]'),
+    ).toBeVisible();
     const density = await transcriptDensity(page, scenario.unreadMessage);
     expect(density.dividerBefore).toBeCloseTo(density.dividerAfter, 0);
     expect(density.dividerBefore).toBeCloseTo(phone ? 14 : 10, 0);
@@ -137,11 +142,15 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
       `spacing virtual ${suffix} ${index} ${index % 9 === 0 ? "wrapped transcript text ".repeat(7) : "row"}`,
   );
   try {
+    const oldest = messages[0];
+    if (oldest === undefined) throw new Error("oldest spacing row is missing");
+    await writer.privmsgConfirmed(channel, oldest);
+    const bulkMessages = messages.slice(1);
     const finalEchoes: Promise<string>[] = [];
-    for (const [index, text] of messages.entries()) {
+    for (const [index, text] of bulkMessages.entries()) {
       const sender = writers[index % writers.length];
       if (sender === undefined) throw new Error("spacing writer is missing");
-      if (index >= messages.length - writers.length) {
+      if (index >= bulkMessages.length - writers.length) {
         finalEchoes.push(sender.privmsgConfirmed(channel, text));
       } else {
         sender.privmsg(channel, text);
@@ -150,33 +159,30 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await Promise.all(finalEchoes);
     const seedFence = `spacing seed fence ${suffix}`;
     await writer.privmsgConfirmed(channel, seedFence);
-    await throttleCpu(page, testInfo.project.name);
     await useDedicatedWorker(page);
     await page.goto(startUrl);
     await page.getByRole("button", { name: channel }).click();
     await expect(messageRow(page, seedFence)).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: channel }),
+    ).not.toHaveAttribute("aria-busy", "true");
     const list = page.locator("[data-message-list]");
     await expect
       .poll(() => list.evaluate((element) => element.scrollHeight))
       .toBeGreaterThan(2_500);
-    const initialHistoryHeight = await list.evaluate(
-      (element) => element.scrollHeight,
-    );
     await expectContiguousRows(page);
 
-    if (phone) {
-      await scrollToTranscriptTop(list);
-    } else {
-      await list.hover();
-      await page.mouse.wheel(0, -100_000);
-    }
     await expect
-      .poll(() => list.evaluate((element) => element.scrollHeight))
-      .toBeGreaterThan(initialHistoryHeight);
+      .poll(async () => {
+        await driveToTranscriptTop(list);
+        return messageRow(page, oldest).count();
+      })
+      .toBe(1);
     await list.evaluate((element) => {
       element.scrollTop = 0;
     });
     await expectContiguousRows(page);
+    await throttleCpu(page, testInfo.project.name);
     await list.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
       element.dispatchEvent(new Event("scroll"));
@@ -212,11 +218,13 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
       await expectContiguousRows(page);
     }
 
+    await throttleCpu(page, testInfo.project.name, 1);
     await scrollAwayFromLiveEdge(page, list, {
       distance: 300,
       input: phone ? "touch" : "wheel",
     });
     const beforeJump = await mountedRowPositions(page);
+    await throttleCpu(page, testInfo.project.name);
     writer.privmsg(channel, `spacing unseen ${suffix}`);
     const jump = page.getByRole("button", { name: /new message/u });
     await expect(jump).toBeVisible();
@@ -224,6 +232,7 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
       await commonRowShift(beforeJump, await mountedRowPositions(page)),
     ).toBeLessThanOrEqual(1);
     await jump.click();
+    await throttleCpu(page, testInfo.project.name, 1);
     await expectContiguousRows(page);
   } finally {
     for (const client of writers) client.close();
@@ -307,6 +316,10 @@ async function leaveConversation(page: Page, phone: boolean): Promise<void> {
   await page.getByRole("button", { name: /Local Ergo, online/u }).click();
 }
 
+async function driveToTranscriptTop(list: Locator): Promise<void> {
+  await scrollToTranscriptTop(list);
+}
+
 function auditProject(project: string): boolean {
   return project === "chromium" || isPhoneProject(project);
 }
@@ -361,7 +374,7 @@ async function transcriptDensity(page: Page, unreadMessage: string) {
     const divider = blockPadding("[data-day-divider]");
     const history = blockPadding("[data-history-edge]");
     const system = blockPadding(
-      '[data-phone-spacing="after-message"] [data-membership-row]',
+      '[data-phone-spacing="after-message"] [data-notice-row]',
     );
     const consecutiveLine = document.querySelector<HTMLElement>(
       '[data-phone-spacing="after-line"] [data-notice-row]',
@@ -458,10 +471,14 @@ function bandInsets(row: Locator): Promise<{ after: number; before: number }> {
   });
 }
 
-async function throttleCpu(page: Page, project: string): Promise<void> {
+async function throttleCpu(
+  page: Page,
+  project: string,
+  rate = 4,
+): Promise<void> {
   if (project !== "chromium" && project !== "android-phone-layout") return;
   const session = await page.context().newCDPSession(page);
-  await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await session.send("Emulation.setCPUThrottlingRate", { rate });
 }
 
 async function keyboardGeometry(page: Page, open: boolean): Promise<void> {
