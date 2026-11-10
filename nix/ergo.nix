@@ -25,6 +25,8 @@ let
       .accounts.multiclient.always-on = "opt-in" |
       .channels.max-channels-per-client = 8 |
       .history.enabled = true |
+      .history.chathistory-maxmessages = 100 |
+      .history.znc-maxmessages = 100 |
       .history.persistent.enabled = false |
       .history.tagmsg-storage.whitelist += ["+draft/unreact", "+unreact"] |
       .languages.enabled = false |

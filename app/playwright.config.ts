@@ -188,12 +188,20 @@ export default defineConfig({
     },
     {
       name: "webkit-phone-layout",
-      testMatch: ["**/highlight-row.spec.ts", "**/phone-layout.spec.ts"],
+      testMatch: [
+        "**/highlight-row.spec.ts",
+        "**/phone-layout.spec.ts",
+        "**/spacing-audit.spec.ts",
+      ],
       use: { ...devices["iPhone 16 Pro"], browserName: "webkit" },
     },
     {
       name: "android-phone-layout",
-      testMatch: ["**/highlight-row.spec.ts", "**/phone-layout.spec.ts"],
+      testMatch: [
+        "**/highlight-row.spec.ts",
+        "**/phone-layout.spec.ts",
+        "**/spacing-audit.spec.ts",
+      ],
       use: { ...devices["Pixel 7"], browserName: "chromium" },
     },
     {
