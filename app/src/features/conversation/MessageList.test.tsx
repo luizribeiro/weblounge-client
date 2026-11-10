@@ -381,13 +381,19 @@ it("offers Retry for a failed local send", () => {
 });
 
 it("anchors the viewport when history rows are prepended", async () => {
+  const dividerHeight = 38;
+  const firstMessageHeight = 25;
+  const followingMessageHeight = 28;
   const [messages, setMessages] = createSignal([message]);
   const { container } = render(() => <MessageList messages={messages()} />);
   const list = container.querySelector<HTMLOListElement>("[data-message-list]");
   if (list === null) throw new Error("message list is missing");
   Object.defineProperty(list, "scrollHeight", {
     configurable: true,
-    get: () => 34 + messages().length * 28,
+    get: () =>
+      dividerHeight +
+      firstMessageHeight +
+      (messages().length - 1) * followingMessageHeight,
   });
   Object.defineProperty(list, "clientHeight", {
     configurable: true,
@@ -404,7 +410,7 @@ it("anchors the viewport when history rows are prepended", async () => {
   setMessages([{ ...message, id: 0, text: "older" }, message]);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(list.scrollTop).toBe(68);
+  expect(list.scrollTop).toBe(40 + firstMessageHeight);
 });
 
 it("caches mounted row heights on the first frame after ordered inserts", async () => {
@@ -760,6 +766,8 @@ it("remeasures stale live rows before a keyboard snapshot reveals them", async (
 });
 
 it("uses fractional painted row measurements without transcript reserve", async () => {
+  const paintedDividerHeight = 18.5;
+  const firstMessageEstimate = 25;
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(
     "ResizeObserver",
@@ -776,12 +784,15 @@ it("uses fractional painted row measurements without transcript reserve", async 
   const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
   if (row === null || spacer === null)
     throw new Error("message row is missing");
-  row.getBoundingClientRect = () => ({ height: 18.5, width: 300 }) as DOMRect;
+  row.getBoundingClientRect = () =>
+    ({ height: paintedDividerHeight, width: 300 }) as DOMRect;
 
   for (const observer of observers) observer.flushTarget(row, 19.25);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(spacer.style.height).toBe("46.5px");
+  expect(spacer.style.height).toBe(
+    `${paintedDividerHeight + firstMessageEstimate}px`,
+  );
 
   container
     .querySelector<HTMLElement>("[data-message-motion-layer]")
@@ -790,7 +801,9 @@ it("uses fractional painted row measurements without transcript reserve", async 
     );
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(spacer.style.height).toBe("46.5px");
+  expect(spacer.style.height).toBe(
+    `${paintedDividerHeight + firstMessageEstimate}px`,
+  );
 });
 
 it("remeasures rows after fonts finish loading", async () => {

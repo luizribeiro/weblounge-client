@@ -34,6 +34,11 @@ The single place a fresh session reads to know where the project stands. Update 
   server time, so a run started just before a minute boundary could sort a same-sender backlog row
   between the sender-change row and the row expected to start a group. The backlog now receives
   explicit preceding server times as part of the same fixture.
+- [x] Align the rebased MessageList geometry fixtures with asymmetric divider spacing. Retained
+  virtual rows now expose the intended cozy-desktop estimate for a first message after a divider:
+  its removed 3px top padding makes it 25px rather than the ordinary 28px. Predecessor spacing was
+  already part of the size revision, while the retained outer row owns its reactive spacing
+  attribute, so the production render identity did not need another invalidation field.
 - [x] Keep unchanged visible transcript rows mounted across ordinary appends and measurement
   refreshes. TanStack can replace virtual-item records while `timelineRows` recreates projection
   wrappers; reference-keying either layer let Solid detach a still-visible message between
