@@ -792,8 +792,9 @@ function MessageRow(props: {
     );
   return (
     <div
-      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""}`}
+      class={`${styles.row} ${message.highlighted ? styles.highlighted : ""} ${message.unverified_sender === true ? styles.unverified : ""} ${message.kind === "action" ? styles.action : ""} ${message.kind === "irc_notice" ? styles.ircNotice : ""}`}
       data-delivery={message.delivery}
+      data-irc-notice={message.kind === "irc_notice" || undefined}
       data-message-row="true"
       data-message-group-start={props.startsMobileGroup ? "true" : "false"}
       data-message-text={message.text}
@@ -1245,7 +1246,10 @@ function toCopyRows(rows: readonly TimelineRow[]): (CopyRow | undefined)[] {
         author: row.message.author,
         text: row.message.text,
       };
-    if (row.kind === "message" && row.message.kind === "text")
+    if (
+      row.kind === "message" &&
+      (row.message.kind === "text" || row.message.kind === "irc_notice")
+    )
       return {
         kind: "message",
         time: new Date(messageTime(row.message)),

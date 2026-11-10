@@ -64,6 +64,18 @@ describe("estimateMessageHeight", () => {
       messageSizeRevision(message, false),
     );
   });
+
+  it("gives IRC notices the full sender-row estimate", () => {
+    const text = { kind: "text" as const, text: "maintenance soon" };
+    const notice = { kind: "irc_notice" as const, text: text.text };
+
+    expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(
+      estimateMessageHeight(text, 390, "cozy", "mobile"),
+    );
+    expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(
+      estimateMessageHeight(text, 1_280, "cozy", "desktop"),
+    );
+  });
 });
 
 it("uses cozy density when the root has no valid density", () => {

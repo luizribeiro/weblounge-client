@@ -780,6 +780,28 @@ it("renders info notices as plain muted event rows", async () => {
   expect(row).not.toHaveTextContent("set by");
 });
 
+it("renders IRC notices as sender rows with quiet notice styling", () => {
+  render(() => (
+    <MessageList
+      messages={[
+        {
+          ...message,
+          kind: "irc_notice",
+          text: "maintenance soon",
+        },
+      ]}
+    />
+  ));
+
+  const row = screen
+    .getByText("maintenance soon")
+    .closest("[data-message-row]");
+  expect(row).toHaveAttribute("data-irc-notice", "true");
+  expect(row?.className).toContain("ircNotice");
+  expect(row).not.toHaveAttribute("data-notice-row");
+  expect(screen.getByText("alice")).toBeVisible();
+});
+
 it("keeps the New boundary frozen while the live marker advances", async () => {
   const [readAtMs, setReadAtMs] = createSignal<number | null>(1);
   const { container } = render(() => (

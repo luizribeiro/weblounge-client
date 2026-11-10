@@ -173,6 +173,11 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.ircNotice .nick,
+.ircNotice .text {
+  color: var(--wl-color-muted);
+  font-style: italic;
+}
 .content {
   display: flex;
   flex-direction: column;

@@ -31,7 +31,7 @@ export function estimateMessageHeight(
       (presentation === "mobile" ? mobileListInlinePadding : listInlinePadding),
     1,
   );
-  if (presentation === "mobile" && message.kind === "text") {
+  if (presentation === "mobile" && isSenderRow(message.kind)) {
     const textWidth = Math.max(rowWidth, fontSize * 4);
     const charactersPerLine = Math.max(
       1,
@@ -92,9 +92,13 @@ function messageChromeWidth(
   kind: EstimatedMessage["kind"],
   fontSize: number,
 ): number {
-  if (kind !== "text") return fullWidthIndent;
+  if (!isSenderRow(kind)) return fullWidthIndent;
   const timeColumnWidth = 9 * fontSize * 0.62;
   return timeColumnWidth + nickColumnWidth + gridGapWidth;
+}
+
+function isSenderRow(kind: EstimatedMessage["kind"]): boolean {
+  return kind === "text" || kind === "irc_notice";
 }
 
 function estimatedLines(text: string, charactersPerLine: number): number {
