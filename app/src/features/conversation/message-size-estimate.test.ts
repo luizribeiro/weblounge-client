@@ -89,6 +89,16 @@ describe("estimateMessageHeight", () => {
         "after-divider",
       ),
     ).toBe(groupStart - 16);
+    expect(
+      estimateMessageHeight(
+        message,
+        1_280,
+        "cozy",
+        "desktop",
+        true,
+        "after-divider",
+      ),
+    ).toBe(estimateMessageHeight(message, 1_280, "cozy") - 3);
   });
 
   it("gives IRC notices the full sender-row estimate", () => {
@@ -142,6 +152,16 @@ describe("estimateMessageHeight", () => {
       ),
     ).toBe(18);
     expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(24);
+    expect(
+      estimateMessageHeight(
+        notice,
+        1_280,
+        "cozy",
+        "desktop",
+        true,
+        "after-divider",
+      ),
+    ).toBe(21);
   });
 
   it("builds notice revisions without generic serialization", () => {

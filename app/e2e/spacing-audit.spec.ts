@@ -58,14 +58,24 @@ test("keeps every transcript row kind on the signed spacing rhythm", async ({
     await expect(
       page.locator('[data-line-spacing="after-message"] [data-notice-row]'),
     ).toBeVisible();
-    const density = await transcriptDensity(page, scenario.unreadMessage);
-    expect(density.dividerBefore).toBeCloseTo(density.dividerAfter, 0);
-    expect(density.dividerBefore).toBeCloseTo(phone ? 14 : 10, 0);
+    const density = await transcriptDensity(
+      page,
+      scenario.unreadMessage,
+      scenario.systemFence,
+    );
+    expect(density.dividerBefore).toBeCloseTo(phone ? 20 : 14, 0);
+    expect(density.dividerAfter).toBeCloseTo(phone ? 8 : 6, 0);
+    expect(density.newBefore).toBeCloseTo(density.dividerBefore, 0);
+    expect(density.newAfter).toBeCloseTo(density.dividerAfter, 0);
+    expect(density.paintedDividerBefore).toBeGreaterThan(
+      density.paintedDividerAfter,
+    );
     expect(density.systemBefore).toBeCloseTo(phone ? 12 : 3, 0);
     expect(density.systemAfter).toBeCloseTo(phone ? 0 : 3, 0);
     expect(density.consecutiveLineBefore).toBeCloseTo(phone ? 4 : 3, 0);
     expect(density.consecutiveLineAfter).toBeCloseTo(phone ? 0 : 3, 0);
-    expect(density.afterDividerMessageBefore).toBeCloseTo(phone ? 0 : 3, 0);
+    expect(density.afterDividerLineBefore).toBeCloseTo(0, 0);
+    expect(density.afterDividerMessageBefore).toBeCloseTo(0, 0);
     expect(density.historyBefore).toBeCloseTo(density.dividerBefore, 0);
     expect(density.historyAfter).toBeCloseTo(density.dividerAfter, 0);
 
@@ -367,54 +377,102 @@ function messageId(line: string): string {
   return id;
 }
 
-async function transcriptDensity(page: Page, unreadMessage: string) {
-  return page.evaluate((messageText) => {
-    const blockPadding = (selector: string) => {
-      const element = document.querySelector<HTMLElement>(selector);
-      if (element === null) throw new Error(`missing ${selector}`);
-      const style = getComputedStyle(element);
-      return {
-        after: Number.parseFloat(style.paddingBlockEnd),
-        before: Number.parseFloat(style.paddingBlockStart),
+async function transcriptDensity(
+  page: Page,
+  unreadMessage: string,
+  beforeDividerMessage: string,
+) {
+  return page.evaluate(
+    ({ beforeDividerText, messageText }) => {
+      const blockPadding = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector);
+        if (element === null) throw new Error(`missing ${selector}`);
+        const style = getComputedStyle(element);
+        return {
+          after: Number.parseFloat(style.paddingBlockEnd),
+          before: Number.parseFloat(style.paddingBlockStart),
+        };
       };
-    };
-    const divider = blockPadding("[data-day-divider]");
-    const history = blockPadding("[data-history-edge]");
-    const system = blockPadding(
-      '[data-line-spacing="after-message"] [data-notice-row]',
-    );
-    const consecutiveLine = document.querySelector<HTMLElement>(
-      '[data-line-spacing="after-line"] [data-notice-row]',
-    );
-    if (consecutiveLine === null)
-      throw new Error("consecutive line is missing");
-    const consecutiveLineStyle = getComputedStyle(consecutiveLine);
-    const afterDividerMessage = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '[data-line-spacing="after-divider"] [data-message-row]',
-      ),
-    ).find((row) => row.dataset.messageText === messageText);
-    if (afterDividerMessage === undefined)
-      throw new Error("post-divider message is missing");
-    const afterDividerMessageStyle = getComputedStyle(afterDividerMessage);
-    return {
-      afterDividerMessageBefore: Number.parseFloat(
-        afterDividerMessageStyle.paddingBlockStart,
-      ),
-      consecutiveLineAfter: Number.parseFloat(
-        consecutiveLineStyle.paddingBlockEnd,
-      ),
-      consecutiveLineBefore: Number.parseFloat(
-        consecutiveLineStyle.paddingBlockStart,
-      ),
-      dividerAfter: divider.after,
-      dividerBefore: divider.before,
-      historyAfter: history.after,
-      historyBefore: history.before,
-      systemAfter: system.after,
-      systemBefore: system.before,
-    };
-  }, unreadMessage);
+      const divider = blockPadding("[data-day-divider]");
+      const history = blockPadding("[data-history-edge]");
+      const newDivider = blockPadding("[data-new-line]");
+      const system = blockPadding(
+        '[data-line-spacing="after-message"] [data-notice-row]',
+      );
+      const consecutiveLine = document.querySelector<HTMLElement>(
+        '[data-line-spacing="after-line"] [data-notice-row]',
+      );
+      if (consecutiveLine === null)
+        throw new Error("consecutive line is missing");
+      const consecutiveLineStyle = getComputedStyle(consecutiveLine);
+      const afterDividerMessage = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-line-spacing="after-divider"] [data-message-row]',
+        ),
+      ).find((row) => row.dataset.messageText === messageText);
+      if (afterDividerMessage === undefined)
+        throw new Error("post-divider message is missing");
+      const afterDividerMessageStyle = getComputedStyle(afterDividerMessage);
+      const afterDividerLine = document.querySelector<HTMLElement>(
+        '[data-line-spacing="after-divider"] [data-membership-row]',
+      );
+      if (afterDividerLine === null)
+        throw new Error("post-divider line is missing");
+      const beforeDivider = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-message-row]"),
+      ).find((row) => row.dataset.messageText === beforeDividerText);
+      const dayDivider = beforeDivider
+        ?.closest("li")
+        ?.nextElementSibling?.querySelector<HTMLElement>("[data-day-divider]");
+      const afterDivider = dayDivider
+        ?.closest("li")
+        ?.nextElementSibling?.querySelector<HTMLElement>(
+          "[data-membership-row], [data-message-row]",
+        );
+      const dividerLabel = dayDivider?.querySelector<HTMLElement>("span");
+      if (
+        beforeDivider === undefined ||
+        afterDivider === null ||
+        afterDivider === undefined ||
+        dividerLabel === null ||
+        dividerLabel === undefined
+      )
+        throw new Error("painted divider neighbours are missing");
+      const paintedBounds = (element: HTMLElement) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect();
+      };
+      const beforeBounds = paintedBounds(beforeDivider);
+      const afterBounds = paintedBounds(afterDivider);
+      const labelBounds = dividerLabel.getBoundingClientRect();
+      return {
+        afterDividerLineBefore: Number.parseFloat(
+          getComputedStyle(afterDividerLine).paddingBlockStart,
+        ),
+        afterDividerMessageBefore: Number.parseFloat(
+          afterDividerMessageStyle.paddingBlockStart,
+        ),
+        consecutiveLineAfter: Number.parseFloat(
+          consecutiveLineStyle.paddingBlockEnd,
+        ),
+        consecutiveLineBefore: Number.parseFloat(
+          consecutiveLineStyle.paddingBlockStart,
+        ),
+        dividerAfter: divider.after,
+        dividerBefore: divider.before,
+        historyAfter: history.after,
+        historyBefore: history.before,
+        newAfter: newDivider.after,
+        newBefore: newDivider.before,
+        paintedDividerAfter: afterBounds.top - labelBounds.bottom,
+        paintedDividerBefore: labelBounds.top - beforeBounds.bottom,
+        systemAfter: system.after,
+        systemBefore: system.before,
+      };
+    },
+    { beforeDividerText: beforeDividerMessage, messageText: unreadMessage },
+  );
 }
 
 async function expectContiguousRows(

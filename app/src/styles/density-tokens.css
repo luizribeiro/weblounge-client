@@ -1,12 +1,14 @@
 :root[data-message-density="compact"] {
   --wl-density-message-avatar: 26px;
   --wl-density-message-continuation-padding: 0px;
-  --wl-density-message-divider-padding: 6px;
+  --wl-density-message-divider-bottom-padding: 4px;
+  --wl-density-message-divider-top-padding: 10px;
   --wl-density-message-font-delta: -1px;
   --wl-density-message-group-top-padding: 5px;
   --wl-density-message-line-height: 1.4;
   --wl-density-message-mobile-continuation-padding: 4px;
-  --wl-density-message-mobile-divider-padding: 10px;
+  --wl-density-message-mobile-divider-bottom-padding: 6px;
+  --wl-density-message-mobile-divider-top-padding: 16px;
   --wl-density-message-mobile-continuation-highlight-inset: 2px;
   --wl-density-message-mobile-group-top-padding: 12px;
   --wl-density-message-mobile-group-highlight-inset: 6px;
@@ -28,12 +30,14 @@
 :root[data-message-density="cozy"] {
   --wl-density-message-avatar: 36px;
   --wl-density-message-continuation-padding: 2px;
-  --wl-density-message-divider-padding: 10px;
+  --wl-density-message-divider-bottom-padding: 6px;
+  --wl-density-message-divider-top-padding: 14px;
   --wl-density-message-font-delta: 0px;
   --wl-density-message-group-top-padding: 10px;
   --wl-density-message-line-height: 1.5;
   --wl-density-message-mobile-continuation-padding: 6px;
-  --wl-density-message-mobile-divider-padding: 14px;
+  --wl-density-message-mobile-divider-bottom-padding: 8px;
+  --wl-density-message-mobile-divider-top-padding: 20px;
   --wl-density-message-mobile-continuation-highlight-inset: 3px;
   --wl-density-message-mobile-group-top-padding: 16px;
   --wl-density-message-mobile-group-highlight-inset: 8px;
@@ -55,12 +59,14 @@
 :root[data-message-density="comfortable"] {
   --wl-density-message-avatar: 40px;
   --wl-density-message-continuation-padding: 4px;
-  --wl-density-message-divider-padding: 14px;
+  --wl-density-message-divider-bottom-padding: 8px;
+  --wl-density-message-divider-top-padding: 18px;
   --wl-density-message-font-delta: 1px;
   --wl-density-message-group-top-padding: 15px;
   --wl-density-message-line-height: 1.6;
   --wl-density-message-mobile-continuation-padding: 8px;
-  --wl-density-message-mobile-divider-padding: 18px;
+  --wl-density-message-mobile-divider-bottom-padding: 10px;
+  --wl-density-message-mobile-divider-top-padding: 24px;
   --wl-density-message-mobile-continuation-highlight-inset: 4px;
   --wl-density-message-mobile-group-top-padding: 20px;
   --wl-density-message-mobile-group-highlight-inset: 10px;

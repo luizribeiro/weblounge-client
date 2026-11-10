@@ -277,7 +277,8 @@
   font-weight: 650;
   gap: 10px;
   line-height: var(--wl-message-system-line-height);
-  padding-block: var(--wl-density-message-divider-padding);
+  padding-block: var(--wl-density-message-divider-top-padding)
+    var(--wl-density-message-divider-bottom-padding);
   padding-inline: 14px;
 }
 .divider::before,
@@ -406,6 +407,10 @@
     --wl-density-message-mobile-line-after-message-padding
   );
 }
+.virtualRow[data-line-spacing="after-divider"]
+  :is(.row, .membership, .notice) {
+  padding-block-start: 0;
+}
 .list[data-presentation="mobile"]
   .virtualRow[data-line-spacing="after-divider"]
   .row {
@@ -413,7 +418,8 @@
   padding-block-start: 0;
 }
 .list[data-presentation="mobile"] :is(.divider, .newLine) {
-  padding-block: var(--wl-density-message-mobile-divider-padding);
+  padding-block: var(--wl-density-message-mobile-divider-top-padding)
+    var(--wl-density-message-mobile-divider-bottom-padding);
 }
 .list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;

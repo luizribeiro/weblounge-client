@@ -11,13 +11,19 @@ describe("density presets", () => {
   it("matches Appendix B and keeps independent defaults", () => {
     expect(densityPresets.compact.sidebarRowHeight).toBe("26px");
     expect(densityPresets.cozy.oneLineRowPadding).toBe("3px");
-    expect(densityPresets.cozy.dividerPadding).toBe("10px");
-    expect(densityPresets.cozy.mobileDividerPadding).toBe("14px");
+    expect(densityPresets.cozy.dividerTopPadding).toBe("14px");
+    expect(densityPresets.cozy.dividerBottomPadding).toBe("6px");
+    expect(densityPresets.cozy.mobileDividerTopPadding).toBe("20px");
+    expect(densityPresets.cozy.mobileDividerBottomPadding).toBe("8px");
     expect(densityPresets.cozy.mobileLineAfterMessagePadding).toBe("12px");
-    expect(densityPresets.compact.dividerPadding).toBe("6px");
-    expect(densityPresets.comfortable.dividerPadding).toBe("14px");
-    expect(densityPresets.compact.mobileDividerPadding).toBe("10px");
-    expect(densityPresets.comfortable.mobileDividerPadding).toBe("18px");
+    expect(densityPresets.compact.dividerTopPadding).toBe("10px");
+    expect(densityPresets.compact.dividerBottomPadding).toBe("4px");
+    expect(densityPresets.comfortable.dividerTopPadding).toBe("18px");
+    expect(densityPresets.comfortable.dividerBottomPadding).toBe("8px");
+    expect(densityPresets.compact.mobileDividerTopPadding).toBe("16px");
+    expect(densityPresets.compact.mobileDividerBottomPadding).toBe("6px");
+    expect(densityPresets.comfortable.mobileDividerTopPadding).toBe("24px");
+    expect(densityPresets.comfortable.mobileDividerBottomPadding).toBe("10px");
     expect(densityPresets.cozy.mobileLinePadding).toBe("4px");
     expect(densityPresets.comfortable.mobileAvatar).toBe("48px");
     for (const token of [

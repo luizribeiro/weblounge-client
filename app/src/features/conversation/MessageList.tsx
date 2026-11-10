@@ -176,10 +176,7 @@ export function MessageList(props: MessageListProps) {
     index: number,
     currentRows = rows(),
   ) => {
-    const spacing =
-      props.presentation === "mobile"
-        ? lineRowSpacing(currentRows, index)
-        : undefined;
+    const spacing = lineRowSpacing(currentRows, index);
     const source = rowRevisionSource(row);
     const groupStart =
       row.kind === "message" ? row.startsMobileGroup : undefined;
@@ -194,8 +191,7 @@ export function MessageList(props: MessageListProps) {
       row.kind === "message"
         ? messageSizeRevision(row.message, groupStart)
         : decorationSizeRevision(row);
-    const value =
-      spacing === undefined ? revision : `${revision}\u0000${spacing}`;
+    const value = `${revision}\u0000${spacing}`;
     rowRevisionCache.set(row.key, {
       groupStart,
       revision: value,
@@ -1518,15 +1514,19 @@ function estimateDecorationHeight(
                 ? preset.mobileLinePadding
                 : preset.mobileLineAfterMessagePadding,
             )
-        : 2 * Number.parseFloat(preset.oneLineRowPadding);
+        : (spacing === "after-divider" ? 1 : 2) *
+          Number.parseFloat(preset.oneLineRowPadding);
     return systemLineHeight + padding;
   }
-  const padding = Number.parseFloat(
+  const [topPadding, bottomPadding] =
     presentation === "mobile"
-      ? preset.mobileDividerPadding
-      : preset.dividerPadding,
+      ? [preset.mobileDividerTopPadding, preset.mobileDividerBottomPadding]
+      : [preset.dividerTopPadding, preset.dividerBottomPadding];
+  return (
+    systemLineHeight +
+    Number.parseFloat(topPadding) +
+    Number.parseFloat(bottomPadding)
   );
-  return systemLineHeight + 2 * padding;
 }
 
 function lineRowSpacing(

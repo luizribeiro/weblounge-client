@@ -35,7 +35,9 @@ export function estimateMessageHeight(
   const preset = densityPresets[density];
   const fontSize = baseFontSize + Number.parseFloat(preset.fontDelta);
   const lineHeight = fontSize * Number.parseFloat(preset.lineHeight);
-  const verticalPadding = 2 * Number.parseFloat(preset.oneLineRowPadding);
+  const oneLinePadding = Number.parseFloat(preset.oneLineRowPadding);
+  const verticalPadding =
+    (lineSpacing === "after-divider" ? 1 : 2) * oneLinePadding;
   const rowWidth = Math.max(
     viewportWidth -
       (presentation === "mobile" ? mobileListInlinePadding : listInlinePadding),
@@ -49,7 +51,7 @@ export function estimateMessageHeight(
     const padding =
       presentation === "mobile"
         ? mobileLineTopPadding(preset, lineSpacing)
-        : 2 * Number.parseFloat(preset.oneLineRowPadding);
+        : verticalPadding;
     return (
       estimatedLines(message.text, charactersPerLine) * systemLineHeight +
       padding
@@ -101,7 +103,7 @@ export function estimateMessageHeight(
   );
   const lines = estimatedLines(message.text, charactersPerLine);
   const textHeight = Math.max(
-    28,
+    28 - (lineSpacing === "after-divider" ? oneLinePadding : 0),
     Math.ceil(lines * lineHeight + verticalPadding),
   );
   const deliveryHeight =
