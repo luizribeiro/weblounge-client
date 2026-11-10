@@ -19,8 +19,9 @@ use crate::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
     timeline::{
-        Actor, ChatRecord, FoldEvent, LineEvent, LocalDay, OrderKey, Person, RecordBody, Subject,
-        TimelineRecord,
+        Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalDay, OrderKey, Person,
+        RecordBody, RunClause, RunClauses, Subject, SystemLine, SystemProjection, TimelineItem,
+        TimelineRecord, diff, fold,
     },
 };
 
@@ -195,6 +196,8 @@ struct BufferState {
     timeline: Vec<TimelineRecord>,
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
+    emitted_timeline: Vec<TimelineItem>,
+    silently_evicted: HashSet<MessageId>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
     direct_mismatch: Option<DirectMismatch>,
@@ -453,6 +456,7 @@ pub(crate) struct NetworkModel {
     msgids: HashMap<String, MsgidReference>,
     reactions: ReactionIndex,
     fallbacks: HashMap<FallbackKey, (TimelineOrigin, usize)>,
+    dirty_timelines: HashSet<BufferId>,
     reconcilable_failed_sends: HashSet<LocalSendId>,
     recent_commands: VecDeque<String>,
     cursor: Option<SystemTime>,
@@ -498,6 +502,8 @@ impl NetworkModel {
             timeline: Vec::new(),
             chat_metadata: HashMap::new(),
             system_server_times: HashMap::new(),
+            emitted_timeline: Vec::new(),
+            silently_evicted: HashSet::new(),
             direct: None,
             direct_pin: None,
             direct_mismatch: None,
@@ -531,6 +537,7 @@ impl NetworkModel {
             msgids: HashMap::new(),
             reactions: ReactionIndex::with_preload_limit(window_limit),
             fallbacks: HashMap::new(),
+            dirty_timelines: HashSet::new(),
             reconcilable_failed_sends: HashSet::new(),
             recent_commands: VecDeque::new(),
             cursor: None,
@@ -1193,6 +1200,7 @@ impl NetworkModel {
         let message = chat_projection_mut(record)?;
         message.reactions.clone_from(&reactions);
         let message = message.clone();
+        self.dirty_timelines.insert(buffer_id);
         Some(EngineToUi::MessageUpdated { buffer_id, message })
     }
 
@@ -1539,6 +1547,7 @@ impl NetworkModel {
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
         let membership = legacy_membership_at(buffer, id)?;
+        self.dirty_timelines.insert(buffer_id);
         Some(EngineToUi::MembershipChanged {
             buffer_id,
             membership,
@@ -1581,6 +1590,7 @@ impl NetworkModel {
         });
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
+        self.dirty_timelines.insert(buffer_id);
         Some(vec![
             EngineToUi::MembershipChanged {
                 buffer_id,
@@ -1693,6 +1703,7 @@ impl NetworkModel {
                 .find(|message| message.local_send_id == Some(pending.local_send_id))
         }) {
             message.delivery = MessageDelivery::Failed;
+            self.dirty_timelines.insert(pending.buffer_id);
         }
         let target = pending.target.title();
         let mut events = vec![EngineToUi::MessageFailed {
@@ -1763,6 +1774,7 @@ impl NetworkModel {
             text,
             kind,
         };
+        self.dirty_timelines.insert(buffer_id);
         self.reconcilable_failed_sends.remove(&local_send_id);
         Some((
             pending,
@@ -2164,6 +2176,7 @@ impl NetworkModel {
                 message.reactions = None;
             }
         }
+        self.dirty_timelines.insert(buffer_id);
         self.reactions.clear_buffer(buffer_id);
         self.buffer_order.retain(|id| *id != buffer_id);
         Some(self.buffers_event())
@@ -2993,6 +3006,7 @@ impl NetworkModel {
             derive_read_projection(buffer);
             carry_read
         };
+        self.dirty_timelines.insert(buffer_id);
         let mut events = vec![
             EngineToUi::MessageUpdated { buffer_id, message },
             EngineToUi::BufferUpdated {
@@ -3184,6 +3198,8 @@ impl NetworkModel {
                 timeline: Vec::new(),
                 chat_metadata: HashMap::new(),
                 system_server_times: HashMap::new(),
+                emitted_timeline: Vec::new(),
+                silently_evicted: HashSet::new(),
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
                 direct_pin: None,
@@ -3309,6 +3325,7 @@ impl NetworkModel {
             }
             evict_oldest_chat_records(buffer, self.window_limit)
         };
+        self.dirty_timelines.insert(buffer_id);
         for dedup in released {
             self.release_dedup(dedup);
         }
@@ -3316,6 +3333,57 @@ impl NetworkModel {
             derive_read_projection(buffer);
         }
         Ok(self.sort_buffer_order())
+    }
+
+    pub(crate) fn take_timeline_changes(&mut self, reset: bool) -> Vec<EngineToUi> {
+        let mut buffer_ids = if reset {
+            self.buffer_order.clone()
+        } else {
+            self.dirty_timelines.drain().collect::<Vec<_>>()
+        };
+        buffer_ids.sort_unstable_by_key(|id| id.0);
+        let mut output = Vec::new();
+        for buffer_id in buffer_ids {
+            let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
+                continue;
+            };
+            let Ok(mut desired) = project_timeline(buffer, self.casemapping) else {
+                output.push(EngineToUi::error_notice(
+                    EngineMessageKey::StateInconsistent,
+                ));
+                continue;
+            };
+            desired.extend(
+                buffer
+                    .emitted_timeline
+                    .iter()
+                    .filter(|item| buffer.silently_evicted.contains(&item.id))
+                    .cloned(),
+            );
+            desired.sort_by_key(|item| item.order);
+            let Ok(timeline_diff) = diff(&buffer.emitted_timeline, &desired) else {
+                output.push(EngineToUi::error_notice(
+                    EngineMessageKey::StateInconsistent,
+                ));
+                continue;
+            };
+            let mut change = timeline_diff.change;
+            if reset {
+                change.reset = true;
+                change.upserted.clone_from(&timeline_diff.items);
+                change.removed.clear();
+            }
+            buffer.emitted_timeline = timeline_diff.items;
+            if reset || !change.upserted.is_empty() || !change.removed.is_empty() {
+                output.push(EngineToUi::TimelineChanged {
+                    buffer_id,
+                    reset: change.reset,
+                    upserted: change.upserted,
+                    removed: change.removed,
+                });
+            }
+        }
+        output
     }
 
     fn release_dedup(&mut self, dedup: DedupReferences) {
@@ -3570,6 +3638,79 @@ fn person(casemapping: papo::Casemapping, nick: String, me: bool) -> Person {
         nick_color_index: nick_color_index(casemapping, &nick),
         nick,
         me,
+    }
+}
+
+fn project_timeline(
+    buffer: &BufferState,
+    casemapping: papo::Casemapping,
+) -> Result<Vec<TimelineItem>, crate::timeline::TimelineError> {
+    fold(&buffer.timeline).map(|items| {
+        items
+            .into_iter()
+            .filter_map(|item| {
+                let body = match item.body {
+                    FoldedBody::Chat(chat) => ItemBody::Message(chat.projection),
+                    FoldedBody::Run(run) => {
+                        let mut clauses = run.events().map(|event| fold_clause(event, casemapping));
+                        let first = clauses.next()?;
+                        ItemBody::System(SystemProjection {
+                            time_ms: item.order.primary_ms(),
+                            line: SystemLine::Run {
+                                clauses: RunClauses::new(first, clauses.collect()),
+                            },
+                        })
+                    }
+                    FoldedBody::Line(event) => ItemBody::System(SystemProjection {
+                        time_ms: item.order.primary_ms(),
+                        line: SystemLine::Event { event },
+                    }),
+                    FoldedBody::Gap(gap) => ItemBody::Gap(gap),
+                };
+                Some(TimelineItem {
+                    id: item.id,
+                    order: item.order,
+                    day: item.day,
+                    content_version: 0,
+                    body,
+                })
+            })
+            .collect()
+    })
+}
+
+fn fold_clause(event: &FoldEvent, casemapping: papo::Casemapping) -> RunClause {
+    let who = |who: &crate::timeline::Who| person(casemapping, who.nick.clone(), who.own);
+    match event {
+        FoldEvent::Joined(joined) => RunClause::Joined {
+            people: vec![who(joined)],
+        },
+        FoldEvent::Parted(parted, reason) => RunClause::Left {
+            people: vec![crate::timeline::Departure {
+                person: who(parted),
+                reason: reason.clone(),
+            }],
+        },
+        FoldEvent::Quit(quit, reason, _) => RunClause::Quit {
+            people: vec![crate::timeline::Departure {
+                person: who(quit),
+                reason: reason.clone(),
+            }],
+        },
+        FoldEvent::Nick { old, new } => RunClause::Nick {
+            changes: vec![crate::timeline::NickChange {
+                old: who(old),
+                new: who(new),
+            }],
+        },
+        FoldEvent::Modes { actor, changes } => RunClause::Modes {
+            actor: actor.clone(),
+            changes: changes.clone(),
+        },
+        FoldEvent::Invited { actor, subject } => RunClause::Invited {
+            actor: actor.clone(),
+            people: vec![who(subject)],
+        },
     }
 }
 

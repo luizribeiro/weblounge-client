@@ -334,7 +334,7 @@ impl Runtime {
     // One exhaustive dispatcher keeps protocol routing under a single owner.
     #[allow(clippy::too_many_lines)]
     pub(crate) fn request(&self, envelope: EngineRequestEnvelope) -> Vec<EngineToUi> {
-        match envelope.request {
+        let mut output = match envelope.request {
             EngineRequest::Ping => vec![EngineToUi::Pong { id: envelope.id }],
             EngineRequest::Diagnostic { message } => Self::diagnostic(envelope.id, message),
             EngineRequest::Connect {
@@ -467,7 +467,11 @@ impl Runtime {
             EngineRequest::DeferDirectIdentity { buffer_id } => {
                 self.defer_direct_identity(envelope.id, buffer_id)
             }
+        };
+        if let Some(running) = lock(&self.state).network.as_mut() {
+            output.extend(running.model.take_timeline_changes(false));
         }
+        output
     }
 
     fn diagnostic(command_id: String, message: String) -> Vec<EngineToUi> {
@@ -571,6 +575,7 @@ impl Runtime {
             if !history_fetches.is_empty() {
                 events.push(running.model.buffers_event());
             }
+            events.extend(running.model.take_timeline_changes(false));
             let client = running.client.clone();
             let instance = running.instance;
             events.push(EngineToUi::CommandResult { id: command_id });
@@ -1016,7 +1021,7 @@ impl Runtime {
         let authentication_kind = config.authentication.kind();
         let snapshot_fingerprint = chat_list_snapshot::fingerprint(&config.label, &config.endpoint);
         let mut state = lock(&self.state);
-        if let Some(running) = state.network.as_ref() {
+        if let Some(running) = state.network.as_mut() {
             if authentication_kind != running.authentication_kind {
                 return rejected_command(command_id, EngineMessageKey::NetworkAlreadyConnected);
             }
@@ -1108,7 +1113,7 @@ impl Runtime {
 
         let snapshot_fingerprint = chat_list_snapshot::fingerprint(&label, &endpoint);
         let mut state = lock(&self.state);
-        if let Some(running) = state.network.as_ref() {
+        if let Some(running) = state.network.as_mut() {
             if running.authentication_kind != AuthenticationKind::HostedOAuth {
                 return rejected_command(command_id, EngineMessageKey::NetworkAlreadyConnected);
             }
@@ -2008,8 +2013,8 @@ impl Runtime {
 
 /// Another tab sharing this engine starts with no rows, so it receives the running network's
 /// retained timelines along with the buffer list.
-fn attach_shell(running: &RunningNetwork, command_id: String) -> Vec<EngineToUi> {
-    let model = &running.model;
+fn attach_shell(running: &mut RunningNetwork, command_id: String) -> Vec<EngineToUi> {
+    let model = &mut running.model;
     let mut output = vec![
         model.network_event(),
         model.buffers_event(),
@@ -2018,6 +2023,7 @@ fn attach_shell(running: &RunningNetwork, command_id: String) -> Vec<EngineToUi>
         },
     ];
     output.extend(model.snapshot_events());
+    output.extend(model.take_timeline_changes(true));
     output.extend(typing_snapshot_events(model, &running.client.state()));
     if let Some(state) = running.push.state.clone() {
         output.push(EngineToUi::PushStateChanged {
@@ -2527,7 +2533,7 @@ async fn flush_pending_sends(
             else {
                 return;
             };
-            match result {
+            let (mut events, advance) = match result {
                 Ok(sent) => confirm_send_with_read(&mut running.model, &queued.pending, &sent),
                 Err(SendError::Offline) if queued.retry_if_disconnected => {
                     running.pending_sends.push_front(queued);
@@ -2551,14 +2557,14 @@ async fn flush_pending_sends(
                     ),
                     None,
                 ),
-            }
+            };
+            append_timeline_events(&mut running.model, &mut events);
+            (events, advance)
         };
         if retry_now {
             continue;
         }
-        for event in events.into_iter().flatten() {
-            let _ = outbound.send(event);
-        }
+        send_optional_events(outbound, events);
         if let Some(advance) = own_read_advance {
             record_read_advances_and_flush(state, outbound.clone(), instance, vec![advance]);
         }
@@ -2658,7 +2664,7 @@ async fn finish_send(
         else {
             return;
         };
-        match result {
+        let (mut events, advance) = match result {
             Ok(sent) => confirm_send_with_read(&mut running.model, pending, &sent),
             Err(SendError::PeerPinMismatch(mismatch)) => {
                 let mut events = running
@@ -2677,11 +2683,11 @@ async fn finish_send(
                 Some(running.model.fail_send(pending, error.message_key())),
                 None,
             ),
-        }
+        };
+        append_timeline_events(&mut running.model, &mut events);
+        (events, advance)
     };
-    for event in events.into_iter().flatten() {
-        let _ = outbound.send(event);
-    }
+    send_optional_events(outbound, events);
     if let Some(advance) = own_read_advance {
         record_read_advances_and_flush(state, outbound.clone(), instance, vec![advance]);
     }
@@ -2702,6 +2708,22 @@ fn confirm_send_with_read(
         })
     });
     (events, advance)
+}
+
+fn append_timeline_events(model: &mut NetworkModel, events: &mut Option<Vec<EngineToUi>>) {
+    let timeline = model.take_timeline_changes(false);
+    if !timeline.is_empty() {
+        events.get_or_insert_with(Vec::new).extend(timeline);
+    }
+}
+
+fn send_optional_events(
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    events: Option<Vec<EngineToUi>>,
+) {
+    for event in events.into_iter().flatten() {
+        let _ = outbound.send(event);
+    }
 }
 
 fn receive_chat(
@@ -3775,6 +3797,7 @@ fn process_event_with_direct(
     };
     let mut output = Vec::new();
     let effects = process_papo_event(running, &snapshot, event, direct, &mut output);
+    output.extend(running.model.take_timeline_changes(false));
     if effects.clear_hosted_authentication {
         state.network = None;
     }
@@ -4628,6 +4651,7 @@ fn process_history(
         end,
     );
     output.extend(finished);
+    output.extend(running.model.take_timeline_changes(false));
     drop(state);
     send_events(outbound, output);
     update_chat_list(&shared_state, outbound, instance);
@@ -6770,7 +6794,11 @@ async fn delay(duration: Duration) {
     fn assert_version_notice(events: &[EngineToUi], text: &str) {
         assert!(matches!(
             events,
-            [EngineToUi::MessagesAppended { messages, .. }, EngineToUi::CommandResult { .. }]
+            [
+                EngineToUi::MessagesAppended { messages, .. },
+                EngineToUi::CommandResult { .. },
+                EngineToUi::TimelineChanged { .. },
+            ]
                 if messages.len() == 1
                     && matches!(&messages[0].kind, crate::MessageKind::Notice(crate::NoticeKind::Info))
                     && messages[0].text == text
@@ -7145,6 +7173,7 @@ async fn delay(duration: Duration) {
                 EngineToUi::BuffersChanged { .. },
                 EngineToUi::RecentDirectsReady { .. },
                 EngineToUi::BufferSnapshot { .. },
+                EngineToUi::TimelineChanged { reset: true, .. },
                 EngineToUi::CommandResult { id },
             ] if id == "connect-again"
         ));
@@ -7237,6 +7266,7 @@ async fn delay(duration: Duration) {
                 EngineToUi::BuffersChanged { .. },
                 EngineToUi::RecentDirectsReady { .. },
                 EngineToUi::BufferSnapshot { .. },
+                EngineToUi::TimelineChanged { reset: true, .. },
                 EngineToUi::CommandResult { id },
             ] if id == "second-tab"
         ));
@@ -11011,8 +11041,8 @@ async fn delay(duration: Duration) {
             } if vapid == "home-vapid"
         )));
         let attached = {
-            let state = lock(&runtime.state);
-            attach_shell(state.network.as_ref().expect("network"), "attach".into())
+            let mut state = lock(&runtime.state);
+            attach_shell(state.network.as_mut().expect("network"), "attach".into())
         };
         assert!(
             !attached
