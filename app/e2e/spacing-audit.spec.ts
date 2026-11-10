@@ -374,17 +374,17 @@ async function transcriptDensity(page: Page, unreadMessage: string) {
     const divider = blockPadding("[data-day-divider]");
     const history = blockPadding("[data-history-edge]");
     const system = blockPadding(
-      '[data-phone-spacing="after-message"] [data-notice-row]',
+      '[data-line-spacing="after-message"] [data-notice-row]',
     );
     const consecutiveLine = document.querySelector<HTMLElement>(
-      '[data-phone-spacing="after-line"] [data-notice-row]',
+      '[data-line-spacing="after-line"] [data-notice-row]',
     );
     if (consecutiveLine === null)
       throw new Error("consecutive line is missing");
     const consecutiveLineStyle = getComputedStyle(consecutiveLine);
     const afterDividerMessage = Array.from(
       document.querySelectorAll<HTMLElement>(
-        '[data-phone-spacing="after-divider"] [data-message-row]',
+        '[data-line-spacing="after-divider"] [data-message-row]',
       ),
     ).find((row) => row.dataset.messageText === messageText);
     if (afterDividerMessage === undefined)

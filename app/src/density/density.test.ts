@@ -14,11 +14,13 @@ describe("density presets", () => {
     expect(densityPresets.cozy.dividerPadding).toBe("10px");
     expect(densityPresets.cozy.mobileDividerPadding).toBe("14px");
     expect(densityPresets.cozy.mobileLineAfterMessagePadding).toBe("12px");
+    expect(densityPresets.compact.dividerPadding).toBe("6px");
+    expect(densityPresets.comfortable.dividerPadding).toBe("14px");
+    expect(densityPresets.compact.mobileDividerPadding).toBe("10px");
+    expect(densityPresets.comfortable.mobileDividerPadding).toBe("18px");
     expect(densityPresets.cozy.mobileLinePadding).toBe("4px");
     expect(densityPresets.comfortable.mobileAvatar).toBe("48px");
     for (const token of [
-      "dividerPadding",
-      "mobileDividerPadding",
       "mobileLineAfterMessagePadding",
       "mobileLinePadding",
     ] as const) {

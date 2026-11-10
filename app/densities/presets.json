@@ -1,7 +1,7 @@
 {
   "compact": {
     "messageAvatar": "26px",
-    "dividerPadding": "7.5px",
+    "dividerPadding": "6px",
     "groupTopPadding": "5px",
     "continuationPadding": "0px",
     "oneLineRowPadding": "1px",
@@ -13,7 +13,7 @@
     "memberAvatar": "18px",
     "mobileRowHeight": "52px",
     "mobileAvatar": "32px",
-    "mobileDividerPadding": "10.5px",
+    "mobileDividerPadding": "10px",
     "mobileLineAfterMessagePadding": "9px",
     "mobileLinePadding": "3px",
     "mobileContinuationPadding": "4px",
@@ -45,7 +45,7 @@
   },
   "comfortable": {
     "messageAvatar": "40px",
-    "dividerPadding": "12.5px",
+    "dividerPadding": "14px",
     "groupTopPadding": "15px",
     "continuationPadding": "4px",
     "oneLineRowPadding": "5px",
@@ -57,7 +57,7 @@
     "memberAvatar": "28px",
     "mobileRowHeight": "80px",
     "mobileAvatar": "48px",
-    "mobileDividerPadding": "17.5px",
+    "mobileDividerPadding": "18px",
     "mobileLineAfterMessagePadding": "15px",
     "mobileLinePadding": "5px",
     "mobileContinuationPadding": "8px",

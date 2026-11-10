@@ -46,8 +46,9 @@ import { MessageText, Nickname } from "./MessageText";
 import {
   currentMessageDensity,
   estimateMessageHeight,
-  type MobileLineSpacing,
+  type LineSpacing,
   messageSizeRevision,
+  systemLineHeight,
 } from "./message-size-estimate";
 import { startsMobileMessageGroup } from "./mobile-message-group";
 import { nickColor } from "./nick-color";
@@ -125,7 +126,7 @@ export function MessageList(props: MessageListProps) {
       readonly groupStart: boolean | undefined;
       readonly revision: string;
       readonly source: object | string;
-      readonly spacing: MobileLineSpacing | undefined;
+      readonly spacing: LineSpacing | undefined;
     }
   >();
   let renderedCount = 0;
@@ -169,7 +170,7 @@ export function MessageList(props: MessageListProps) {
   ) => {
     const spacing =
       props.presentation === "mobile"
-        ? phoneRowSpacing(currentRows, index)
+        ? lineRowSpacing(currentRows, index)
         : undefined;
     const source = rowRevisionSource(row);
     const groupStart =
@@ -310,7 +311,7 @@ export function MessageList(props: MessageListProps) {
     estimateSize: (index) => {
       const currentRows = rows();
       const row = currentRows[index];
-      const spacing = phoneRowSpacing(currentRows, index);
+      const spacing = lineRowSpacing(currentRows, index);
       if (row?.kind !== "message")
         return estimateDecorationHeight(
           row?.kind,
@@ -853,10 +854,7 @@ export function MessageList(props: MessageListProps) {
                     class={styles.virtualRow}
                     data-copy-row-index={virtualRow.index}
                     data-index={virtualRow.index}
-                    data-phone-spacing={phoneRowSpacing(
-                      rows(),
-                      virtualRow.index,
-                    )}
+                    data-line-spacing={lineRowSpacing(rows(), virtualRow.index)}
                     data-row-key={String(virtualRow.key)}
                     data-selected={selected()}
                     ref={(element) => measureRow(element, virtualRow.index)}
@@ -1464,7 +1462,7 @@ function estimateDecorationHeight(
   kind: Exclude<TimelineRow["kind"], "message"> | undefined,
   density: ReturnType<typeof currentMessageDensity>,
   presentation: "desktop" | "mobile" | undefined,
-  spacing: MobileLineSpacing,
+  spacing: LineSpacing,
 ): number {
   const preset = densityPresets[density];
   if (kind === "membership") {
@@ -1478,31 +1476,31 @@ function estimateDecorationHeight(
                 : preset.mobileLineAfterMessagePadding,
             )
         : 2 * Number.parseFloat(preset.oneLineRowPadding);
-    return 18 + padding;
+    return systemLineHeight + padding;
   }
   const padding = Number.parseFloat(
     presentation === "mobile"
       ? preset.mobileDividerPadding
       : preset.dividerPadding,
   );
-  return 18 + 2 * padding;
+  return systemLineHeight + 2 * padding;
 }
 
-function phoneRowSpacing(
+function lineRowSpacing(
   rows: readonly TimelineRow[],
   index: number,
-): MobileLineSpacing {
+): LineSpacing {
   const current = rows[index];
   const previous = rows[index - 1];
-  if (current === undefined || !isPhoneLineRow(current))
+  if (current === undefined || !isSystemLineRow(current))
     return isDividerRow(previous) ? "after-divider" : "after-message";
   if (isDividerRow(previous)) return "after-divider";
-  return previous === undefined || isPhoneLineRow(previous)
+  return previous === undefined || isSystemLineRow(previous)
     ? "after-line"
     : "after-message";
 }
 
-function isPhoneLineRow(row: TimelineRow | undefined): boolean {
+function isSystemLineRow(row: TimelineRow | undefined): boolean {
   return (
     row?.kind === "membership" ||
     (row?.kind === "message" && isNoticeMessage(row.message))
