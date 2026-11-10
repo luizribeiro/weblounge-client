@@ -137,7 +137,7 @@ export function MessageList(props: MessageListProps) {
     for (const key of rowRevisionCache.keys())
       if (!currentKeys.has(key)) rowRevisionCache.delete(key);
   };
-  let renderedCount = 0;
+  let renderedMessages: readonly MessageProjection[] = [];
   let currentBuffer = props.bufferId;
   const initialReadAt = dividerMarkAfterOwnSend(
     props.readAtMs ?? null,
@@ -478,7 +478,7 @@ export function MessageList(props: MessageListProps) {
       watchedThrough = undefined;
       observedOwnTime = latestCommittedOwnTime(props.messages);
       observedPeerTime = latestPeerTime(props.messages);
-      renderedCount = 0;
+      renderedMessages = [];
       olderPageArmed = true;
       setUnseen(0);
       setLiveEdge(true);
@@ -566,11 +566,15 @@ export function MessageList(props: MessageListProps) {
   });
   createEffect(() => {
     const messages = props.messages;
-    const previousCount = renderedCount;
-    if (messages.length > previousCount && !logicallyAtLiveEdge)
-      setUnseen((count) => count + messages.length - previousCount);
-    renderedCount = messages.length;
-    if (messages.length !== previousCount && logicallyAtLiveEdge)
+    const previousMessages = renderedMessages;
+    const appended = countMessagesAfterPreviousNewest(
+      previousMessages,
+      messages,
+    );
+    if (appended > 0 && !logicallyAtLiveEdge)
+      setUnseen((count) => count + appended);
+    renderedMessages = messages;
+    if (messages.length !== previousMessages.length && logicallyAtLiveEdge)
       scrollToLiveEdge();
   });
   let measuredRows = rows();
@@ -1422,6 +1426,29 @@ function formatDay(time: Date): string {
 function messageTime(message: MessageProjection): number {
   if (isNoticeMessage(message)) return message.received_at_ms;
   return message.server_time_ms ?? message.received_at_ms;
+}
+
+export function countMessagesAfterPreviousNewest(
+  previous: readonly MessageProjection[],
+  current: readonly MessageProjection[],
+): number {
+  const newest = previous.reduce<MessageProjection | undefined>(
+    (candidate, message) =>
+      candidate === undefined || compareMessages(message, candidate) > 0
+        ? message
+        : candidate,
+    undefined,
+  );
+  return newest === undefined
+    ? 0
+    : current.filter((message) => compareMessages(message, newest) > 0).length;
+}
+
+function compareMessages(
+  left: MessageProjection,
+  right: MessageProjection,
+): number {
+  return messageTime(left) - messageTime(right) || left.id - right.id;
 }
 
 function formatNoticeTime(milliseconds: number): string {

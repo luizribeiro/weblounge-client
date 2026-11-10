@@ -14,7 +14,11 @@ import {
   keyboardLayoutWillCommitEvent,
 } from "../../platform/viewport-geometry";
 import { composerGeometryChangeEvent } from "../composer/geometry";
-import { MessageList, type MessageListController } from "./MessageList";
+import {
+  countMessagesAfterPreviousNewest,
+  MessageList,
+  type MessageListController,
+} from "./MessageList";
 import { createNickLookup } from "./nick-lookup";
 
 vi.mock("./nick-lookup", async (importOriginal) => {
@@ -75,6 +79,41 @@ const message: MessageProjection = {
   server_time_ms: null,
   received_at_ms: 1,
 };
+
+it("counts only messages after the previous live edge", () => {
+  const at = (
+    id: number,
+    time: number,
+    authorship: MessageProjection["authorship"] = "other",
+  ): MessageProjection => ({
+    ...message,
+    id,
+    authorship,
+    delivery: authorship === "own" ? "confirmed" : "received",
+    server_time_ms: time,
+    received_at_ms: time,
+  });
+  const existing = [at(3, 30), at(4, 40)];
+
+  expect(
+    countMessagesAfterPreviousNewest(existing, [
+      at(1, 10),
+      at(2, 20),
+      ...existing,
+    ]),
+  ).toBe(0);
+  expect(
+    countMessagesAfterPreviousNewest(existing, [...existing, at(5, 40, "own")]),
+  ).toBe(1);
+  expect(
+    countMessagesAfterPreviousNewest(existing, [
+      at(2, 20),
+      ...existing,
+      at(5, 40),
+    ]),
+  ).toBe(1);
+  expect(countMessagesAfterPreviousNewest([], [at(1, 10), at(2, 20)])).toBe(0);
+});
 
 it("renders highlight, nick colour, and failed delivery presentation", () => {
   const { container } = render(() => <MessageList messages={[message]} />);

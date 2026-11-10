@@ -29,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep older history pages out of the jump-pill count. A scrolled-away transcript now compares
+  each projection update with its previous newest `(time, id)` boundary, so prepends and initial
+  loads stay silent while live-end appends retain the existing own/other counting behavior.
 - [x] Remove the obsolete chat-snapshot lifecycle flush. Every list change already queues its write
   immediately, so hidden, `pagehide` and freeze no longer send a no-op engine command; relaunch
   durability is covered directly by the immediate push-restoration journey.

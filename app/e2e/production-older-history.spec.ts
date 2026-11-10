@@ -71,6 +71,9 @@ for (const shell of shells) {
       await expect
         .poll(() => rows[seeded.older.length]?.evaluate(hasSelfNickColour))
         .toBe(true);
+      await expect(
+        page.getByRole("button", { name: /new message/ }),
+      ).toHaveCount(0);
 
       await list.press("End");
       await expect
