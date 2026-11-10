@@ -59,6 +59,12 @@ The single place a fresh session reads to know where the project stands. Update 
   local-Ergo journey restores several changed channel rows, backgrounds and closes the dedicated
   worker, removes the consumed push records, holds the relaunch socket offline, and requires the
   first Chromium and iPhone WebKit paint to contain the final durable order and previews.
+- [x] Keep read state stable when authoritative history moves a pushed message a few milliseconds
+  past a later-arriving marker. Persisted stubs retain the provisional time and the pure read model
+  carries marks through bounded one-second reconciliation chains, including after snapshot reload
+  or timeline eviction. Live, fetched, JOIN and restored-push marker paths queue exactly one repair
+  only on networks with read-marker support; generated permutations compare the complete read
+  projection and check counts against authoritative peer-msgid times.
 - [x] Keep the phone grouping journey's complete transcript order deterministic. The test used
   rewritten next-minute times for its asserted rows but left ten fakelagged backlog rows at live
   server time, so a run started just before a minute boundary could sort a same-sender backlog row

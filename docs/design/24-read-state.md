@@ -59,7 +59,7 @@ Each conversation has one snapshot row, which is the only instant-launch state:
 |---|---|---|---|
 | `mark` | `Option<ServerTimeMs>` | `max` | Read up to here. Raised by server reports, user reads, server-time-tagged own messages and the seed. |
 | `pending` | `Option<ServerTimeMs>` | `max`; clear after a server report at or beyond it | A user or own-message advance that the server has not acknowledged. The seed never sets it. |
-| `stubs` | at most 100 `{msgid, time, mention}` values | union by msgid; authoritative history time replaces push time | The unread index. Own messages are never stubs. Drop entries at or before `mark` and keep the newest 100. |
+| `stubs` | at most 100 `{msgid, time, provisional_time?, mention}` values | union by msgid; authoritative history time replaces push time | The unread index. A reconciled stub retains its provisional push time until read, so carry survives eviction from the rendering timeline and restart. Own messages are never stubs. Drop entries at or before `mark` and keep the newest 100. |
 | `gap_until` | `Option<ServerTimeMs>` | `max` | Messages after `mark` and before this time may be missing because a catch-up page was full or the cap evicted a stub. It is irrelevant once `mark >= gap_until`. |
 | `latest` | `{msgid, time, preview}` | `max` by time | Chat-list preview, sort order and TARGETS comparison. It is not read state. |
 
@@ -116,8 +116,10 @@ One ingest function handles live lines, history pages, push-log entries and rest
    classifier marks every direct peer message as a mention and channel messages only when the own
    nick occurs as a word.
 4. Reconciliation carries read forward: if the push copy was at or before the mark but its
-   authoritative copy is later, advance to the authoritative time. This replaces deferred reads
-   and handles the push/history millisecond straddle.
+   authoritative copy is later by at most one second, advance to the authoritative time. The pure
+   fact merge follows chains of such replacements. This replaces deferred reads, survives restart
+   and handles the push/history millisecond straddle without carrying a pathological mismatch far
+   ahead.
 5. Evicting the oldest stub past 100 raises `gap_until` to its time plus one.
 
 `advance(c, t)` takes the maximum mark, takes the maximum pending value when the network supports
@@ -224,9 +226,10 @@ The old unread implementation remains untouched until its corresponding migratio
 
 - Pure unit tests cover each merge and derivation, inclusive marker boundaries, muting, gap display,
   direct versus channel app-badge policy and notification conversation identity.
-- Property tests permute equivalent push, history, live, server-marker, read and own-message inputs;
-  every order must produce the same facts and projection. A second invariant checks that the count
-  equals the number of known peer msgids whose authoritative time is after the mark.
+- Property tests permute equivalent push/history pairs, including a two-link carry chain, with live,
+  server-marker, read and own-message inputs; every order must produce the same facts and
+  projection. A second invariant checks that the count equals the number of known peer msgids whose
+  authoritative time is after the mark.
 - Shared JSON fixtures cover exact, capped, muted, direct-message, channel-mention, divider and
   notification-close projections in both Rust and the later TypeScript mirror.
 - Later wiring steps retain the existing engine and Playwright bug scenarios for cross-device read,
