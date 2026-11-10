@@ -41,6 +41,13 @@ The single place a fresh session reads to know where the project stands. Update 
   desktop/phone size estimates. Engine replay tests cover channel, DM, server/service, history and
   push paths; local-Ergo browser coverage pins live counts, trust styling and cold-push
   reconciliation, with Lounge Night captures at the phone and desktop reference viewports.
+- [x] Land buffer-events batch 1a as an unwired pure timeline module. It defines the ordered item
+  and system-event types, rejects empty system runs and ambiguous record or patch inputs, and keeps
+  each membership record as its own temporary fold item. The identity diff owns content revisions;
+  its Rust reducer mirror atomically classifies suffix, prefix, in-place and mixed geometry. Shared
+  JSON fixtures pin update, reorder, removal and reset behavior for the later TypeScript reducer,
+  while generated overlap, page-order and small-window scenarios prove mirror parity through silent
+  eviction and stable smallest-record item IDs. Existing runtime and protocol events are unchanged.
 - [x] Keep mention bands inside the existing transcript rhythm. Phone highlights now split each
   group or continuation gap evenly above and below the painted band without changing row geometry,
   while desktop retains its symmetric one-line padding. The idle transcript motion layer no longer
