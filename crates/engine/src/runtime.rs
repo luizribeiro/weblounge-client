@@ -563,9 +563,29 @@ impl Runtime {
             };
             let snapshot = running.client.state();
             let mut events = running.model.restore_pushed_messages(messages, &snapshot);
+            let history_fetches = if running.model.is_online() {
+                running.model.connected_history()
+            } else {
+                Vec::new()
+            };
+            if !history_fetches.is_empty() {
+                events.push(running.model.buffers_event());
+            }
+            let client = running.client.clone();
+            let instance = running.instance;
             events.push(EngineToUi::CommandResult { id: command_id });
             drop(state);
             send_events(&outbound, events);
+            for fetch in history_fetches {
+                spawn_history_fetch(
+                    Arc::clone(&shared_state),
+                    outbound.clone(),
+                    client.clone(),
+                    instance,
+                    fetch,
+                    None,
+                );
+            }
         });
         Vec::new()
     }
@@ -3290,13 +3310,18 @@ async fn fetch_history_page(
         process_history(state, outbound, client, instance, page);
         return;
     }
-    let buffer_id = {
+    let (buffer_id, retry) = {
         let mut state = lock(state);
-        state
+        let Some(running) = state
             .network
             .as_mut()
             .filter(|running| running.instance == instance)
-            .and_then(|running| running.model.fail_history(&fetch))
+        else {
+            return;
+        };
+        let buffer_id = running.model.fail_history(&fetch);
+        let retry = buffer_id.and_then(|id| running.model.retry_pushed_history(id));
+        (buffer_id, retry)
     };
     if let Some(buffer_id) = buffer_id {
         let sync = lock(state)
@@ -3309,10 +3334,20 @@ async fn fetch_history_page(
             sync.into_iter()
                 .chain([EngineToUi::HistoryStateChanged {
                     buffer_id,
-                    loading: false,
+                    loading: retry.is_some(),
                     at_start: false,
                 }])
                 .collect(),
+        );
+    }
+    if let Some(retry) = retry {
+        spawn_history_fetch(
+            Arc::clone(state),
+            outbound.clone(),
+            client.clone(),
+            instance,
+            retry,
+            None,
         );
     }
 }
@@ -4083,6 +4118,7 @@ fn process_connected(
     connected: &papo::event::Connected,
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryFetch> {
+    running.model.restart_inflight_history();
     running.model.rebuild_name_keys(snapshot);
     let next = next_connection_state(
         running.model.connection(),
