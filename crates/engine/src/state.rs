@@ -4166,8 +4166,8 @@ mod tests {
     use super::{
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming,
         IncomingDestination, NameKey, NetworkModel, PendingTargetState, SendTarget, TimelineOrigin,
-        chat_projection, collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
-        reaction_actor_key, time_millis,
+        chat_projection, collapse_blank_lines, derive_read_projection, draft_key, message_order,
+        nick_color_index, reaction_actor_key, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -4176,7 +4176,7 @@ mod tests {
         pushed_messages::PushedMessage,
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
         read_model::{MessageStub, ServerTimeMs},
-        timeline::{RecordBody, TimelineItem, apply_timeline_change},
+        timeline::{ItemBody, RecordBody, TimelineItem, apply_timeline_change},
     };
 
     fn secure_wire_builder() -> papo::Builder {
@@ -4352,6 +4352,34 @@ mod tests {
         )
     }
 
+    fn apply_legacy_rows(rows: &mut Vec<crate::MessageProjection>, events: &[EngineToUi]) {
+        for event in events {
+            match event {
+                EngineToUi::MessagesAppended { messages, .. }
+                | EngineToUi::MessagesPrepended { messages, .. } => {
+                    for message in messages {
+                        if let Some(current) = rows.iter_mut().find(|row| row.id == message.id) {
+                            current.clone_from(message);
+                        } else {
+                            rows.push(message.clone());
+                        }
+                    }
+                }
+                EngineToUi::MessageUpdated { message, .. }
+                | EngineToUi::MessageConfirmed { message, .. } => {
+                    if let Some(current) = rows.iter_mut().find(|row| row.id == message.id) {
+                        current.clone_from(message);
+                    } else {
+                        rows.push(message.clone());
+                    }
+                }
+                EngineToUi::BufferSnapshot { messages, .. } => rows.clone_from(messages),
+                _ => {}
+            }
+        }
+        rows.sort_by_key(|message| message_order(message, message.id.0));
+    }
+
     fn apply_new_rows(rows: &mut Vec<TimelineItem>, events: &[EngineToUi]) {
         for event in events {
             if let EngineToUi::TimelineChanged {
@@ -4375,6 +4403,17 @@ mod tests {
         }
     }
 
+    fn assert_chat_parity(legacy: &[crate::MessageProjection], current: &[TimelineItem]) {
+        let projected = current
+            .iter()
+            .filter_map(|item| match &item.body {
+                ItemBody::Message(message) => Some(message),
+                ItemBody::System(_) | ItemBody::Gap(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(legacy.iter().collect::<Vec<_>>(), projected);
+    }
+
     fn finish_timeline_turn(model: &mut NetworkModel, mut old: Vec<EngineToUi>) -> Vec<EngineToUi> {
         let patches = model.take_timeline_changes(false);
         assert!(
@@ -4386,6 +4425,109 @@ mod tests {
         );
         old.extend(patches);
         old
+    }
+
+    #[test]
+    fn old_events_and_new_patches_keep_chat_parity_across_every_ingest_path() {
+        let (mut model, state) = model(20);
+        let mut legacy = Vec::new();
+        let mut current = Vec::new();
+
+        let live = model.receive_incoming(
+            incoming(
+                &state,
+                "live",
+                Some("live"),
+                Some(300),
+                301,
+                TimelineOrigin::Live,
+            ),
+            &state,
+        );
+        let live = finish_timeline_turn(&mut model, live);
+        apply_legacy_rows(&mut legacy, &live);
+        apply_new_rows(&mut current, &live);
+        assert_chat_parity(&legacy, &current);
+
+        let mut history = Vec::new();
+        for (text, time) in [("history-newer", 200), ("history-older", 100)] {
+            history.extend(model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(text),
+                    Some(time),
+                    time + 1,
+                    TimelineOrigin::History,
+                ),
+                &state,
+            ));
+        }
+        let history = finish_timeline_turn(&mut model, history);
+        apply_legacy_rows(&mut legacy, &history);
+        apply_new_rows(&mut current, &history);
+        assert_chat_parity(&legacy, &current);
+
+        let mut catch_up = model.receive_incoming(
+            incoming(
+                &state,
+                "catch-up",
+                Some("catch-up"),
+                Some(400),
+                401,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        catch_up.extend(model.receive_incoming(
+            incoming(
+                &state,
+                "live",
+                Some("live"),
+                Some(300),
+                999,
+                TimelineOrigin::History,
+            ),
+            &state,
+        ));
+        let catch_up = finish_timeline_turn(&mut model, catch_up);
+        apply_legacy_rows(&mut legacy, &catch_up);
+        apply_new_rows(&mut current, &catch_up);
+        assert_chat_parity(&legacy, &current);
+
+        let pushed = serde_json::from_value(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "pushed",
+            "kind": "message"
+        }))
+        .expect("valid pushed message");
+        let pushed = model.restore_pushed_messages(vec![pushed], &state);
+        let pushed = finish_timeline_turn(&mut model, pushed);
+        apply_legacy_rows(&mut legacy, &pushed);
+        apply_new_rows(&mut current, &pushed);
+        assert_chat_parity(&legacy, &current);
+
+        let authoritative = model.receive_incoming(
+            incoming(
+                &state,
+                "pushed",
+                Some("pushed"),
+                Some(1_793_704_496_789),
+                1_793_704_496_999,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        let authoritative = finish_timeline_turn(&mut model, authoritative);
+        apply_legacy_rows(&mut legacy, &authoritative);
+        apply_new_rows(&mut current, &authoritative);
+        assert_chat_parity(&legacy, &current);
     }
 
     #[test]
