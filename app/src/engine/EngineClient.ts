@@ -1248,7 +1248,7 @@ function decodeReactions(
 function decodeMessageKind(
   value: unknown,
 ): MessageProjection["kind"] | undefined {
-  if (isOneOf(value, ["text", "action"])) return value;
+  if (isOneOf(value, ["text", "action", "irc_notice"])) return value;
   if (!isRecord(value)) return undefined;
   const notice = decodeNoticeKind(value.notice);
   return notice === undefined ? undefined : { notice };

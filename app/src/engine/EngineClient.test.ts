@@ -338,6 +338,36 @@ describe("WorkerEngineClient", () => {
     ]);
   });
 
+  it("decodes IRC notice messages", () => {
+    const { client, frames, port } = fixture();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    const notice = {
+      id: 10,
+      author: "NickServ",
+      text: "This nickname is registered",
+      kind: "irc_notice",
+      bot: false,
+      authorship: "other",
+      nick_color_index: 0,
+      highlighted: false,
+      delivery: "received",
+      local_send_id: null,
+      server_ids: ["notice-1"],
+      server_time_ms: 20,
+      received_at_ms: 30,
+    };
+
+    port.emit({ type: "messages_appended", buffer_id: 2, messages: [notice] });
+    frames[0]?.(0);
+
+    expect(listener).toHaveBeenCalledWith({
+      type: "messages_appended",
+      buffer_id: 2,
+      messages: [notice],
+    });
+  });
+
   it("decodes the engine runtime command registry", () => {
     const { client, frames, port } = fixture();
     const listener = vi.fn();
