@@ -2975,10 +2975,13 @@ async fn drain_events(
             papo::Event::MonitorOnline(online) => Some(online.subject.nick().clone()),
             _ => None,
         };
+        let direct_resolution = event_direct_resolution(&event);
         let schedule_members = lock(&member_changes).record(&event, &client.state());
-        spawn_event_direct_resolution(&state, &outbound, &client, instance, &event);
         let history_fetches =
             process_event_with_direct(&state, &outbound, &client, instance, event, None);
+        if let Some(source) = direct_resolution {
+            spawn_event_direct_resolution(&state, &outbound, &client, instance, source);
+        }
         if let Some(nick) = online_direct {
             spawn_online_direct_resolution(
                 Arc::clone(&state),
@@ -3032,43 +3035,69 @@ async fn drain_events(
     }
 }
 
-fn spawn_event_direct_resolution(
-    state: &Arc<Mutex<RuntimeState>>,
-    outbound: &mpsc::UnboundedSender<EngineToUi>,
-    client: &papo::Client,
-    instance: u64,
-    event: &papo::Event,
-) {
+enum EventDirectSource {
+    Message {
+        nick: papo::Nick,
+        source: papo::Message,
+    },
+    Notice {
+        nick: papo::Nick,
+        source: papo::event::Notice,
+    },
+}
+
+fn event_direct_resolution(event: &papo::Event) -> Option<EventDirectSource> {
     match event {
         papo::Event::Message(message)
             if message.authorship != papo::Authorship::Own
                 && matches!(message.conversation(), papo::Conversation::Private(_)) =>
         {
-            let nick = message.actor.nick().clone();
-            spawn_direct_resolution(
-                Arc::clone(state),
-                outbound.clone(),
-                client.clone(),
-                instance,
-                &nick,
-                message.clone(),
-            );
+            Some(EventDirectSource::Message {
+                nick: message.actor.nick().clone(),
+                source: message.clone(),
+            })
         }
         papo::Event::Notice(notice)
             if notice.authorship != papo::Authorship::Own
                 && matches!(&notice.conversation, papo::Conversation::Private(_)) =>
         {
-            let nick = notice.actor.nick().clone();
+            Some(EventDirectSource::Notice {
+                nick: notice.actor.nick().clone(),
+                source: notice.clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn spawn_event_direct_resolution(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    source: EventDirectSource,
+) {
+    match source {
+        EventDirectSource::Message { nick, source } => {
             spawn_direct_resolution(
                 Arc::clone(state),
                 outbound.clone(),
                 client.clone(),
                 instance,
                 &nick,
-                notice.clone(),
+                source,
             );
         }
-        _ => {}
+        EventDirectSource::Notice { nick, source } => {
+            spawn_direct_resolution(
+                Arc::clone(state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                &nick,
+                source,
+            );
+        }
     }
 }
 
@@ -12447,6 +12476,10 @@ async fn delay(duration: Duration) {
         let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
         send_ergo_history_page(&mut harness.wire, &latest, &[]).await;
         _ = harness.page_output("notice-live-ready").await;
+        harness
+            .wire
+            .server(":offline.test 005 weblounge MONITOR=100 :supported")
+            .await;
 
         harness
             .wire
@@ -12460,6 +12493,10 @@ async fn delay(duration: Duration) {
             .wire
             .server("@account=bob;msgid=direct-notice :Bob!b@host NOTICE weblounge :direct notice")
             .await;
+        _ = harness
+            .timeline_output(&["channel notice", "hello weblounge", "direct notice"])
+            .await;
+        _ = next_sent_containing(&mut harness.wire, "MONITOR + Bob").await;
         harness
             .wire
             .server(":offline.test NOTICE weblounge :server notice")
@@ -12470,14 +12507,9 @@ async fn delay(duration: Duration) {
             .await;
 
         _ = harness
-            .timeline_output(&[
-                "channel notice",
-                "hello weblounge",
-                "direct notice",
-                "server notice",
-                "service notice",
-            ])
+            .timeline_output(&["server notice", "service notice"])
             .await;
+        _ = next_sent_containing(&mut harness.wire, "MONITOR + NickServ").await;
         let state = lock(&harness.state);
         let model = &state
             .network

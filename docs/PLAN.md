@@ -34,7 +34,8 @@ The single place a fresh session reads to know where the project stands. Update 
   verified DM thread, including service nicks until papo exposes typed service identity; typed
   server notices use the existing server buffer. Channel and DM notices share message
   unread/highlight, deduplication and projection behavior, while server-buffer badge behavior stays
-  unchanged.
+  unchanged. Incoming DMs start peer resolution only after their buffer is inserted, so the first
+  message or notice installs the guarded direct handle used across reconnects.
   Pushed notices retain their semantic through authoritative same-msgid reconciliation. The app
   renders sender-shaped muted italic rows that break normal-message grouping and use matching
   desktop/phone size estimates. Engine replay tests cover channel, DM, server/service, history and
