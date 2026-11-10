@@ -4370,6 +4370,14 @@ mod tests {
                         rows.push(message.clone());
                     }
                 }
+                EngineToUi::MessageFailed { local_send_id, .. } => {
+                    if let Some(message) = rows
+                        .iter_mut()
+                        .find(|message| message.local_send_id == Some(*local_send_id))
+                    {
+                        message.delivery = crate::MessageDelivery::Failed;
+                    }
+                }
                 EngineToUi::BufferSnapshot { messages, .. } => rows.clone_from(messages),
                 _ => {}
             }
@@ -4424,8 +4432,20 @@ mod tests {
         old
     }
 
-    #[test]
-    fn old_events_and_new_patches_keep_chat_parity_across_every_ingest_path() {
+    fn apply_parity_turn(
+        model: &mut NetworkModel,
+        legacy: &mut Vec<crate::MessageProjection>,
+        current: &mut Vec<TimelineItem>,
+        events: Vec<EngineToUi>,
+    ) {
+        let events = finish_timeline_turn(model, events);
+        apply_legacy_rows(legacy, &events);
+        apply_new_rows(current, &events);
+        assert_chat_parity(legacy, current);
+    }
+
+    #[tokio::test]
+    async fn old_events_and_new_patches_keep_chat_parity_across_every_ingest_path() {
         let (mut model, state) = model(20);
         let mut legacy = Vec::new();
         let mut current = Vec::new();
@@ -4441,10 +4461,7 @@ mod tests {
             ),
             &state,
         );
-        let live = finish_timeline_turn(&mut model, live);
-        apply_legacy_rows(&mut legacy, &live);
-        apply_new_rows(&mut current, &live);
-        assert_chat_parity(&legacy, &current);
+        apply_parity_turn(&mut model, &mut legacy, &mut current, live);
 
         let mut history = Vec::new();
         for (text, time) in [("history-newer", 200), ("history-older", 100)] {
@@ -4460,10 +4477,7 @@ mod tests {
                 &state,
             ));
         }
-        let history = finish_timeline_turn(&mut model, history);
-        apply_legacy_rows(&mut legacy, &history);
-        apply_new_rows(&mut current, &history);
-        assert_chat_parity(&legacy, &current);
+        apply_parity_turn(&mut model, &mut legacy, &mut current, history);
 
         let mut catch_up = model.receive_incoming(
             incoming(
@@ -4487,10 +4501,7 @@ mod tests {
             ),
             &state,
         ));
-        let catch_up = finish_timeline_turn(&mut model, catch_up);
-        apply_legacy_rows(&mut legacy, &catch_up);
-        apply_new_rows(&mut current, &catch_up);
-        assert_chat_parity(&legacy, &current);
+        apply_parity_turn(&mut model, &mut legacy, &mut current, catch_up);
 
         let pushed = serde_json::from_value(serde_json::json!({
             "schema": 1,
@@ -4505,10 +4516,7 @@ mod tests {
         }))
         .expect("valid pushed message");
         let pushed = model.restore_pushed_messages(vec![pushed], &state);
-        let pushed = finish_timeline_turn(&mut model, pushed);
-        apply_legacy_rows(&mut legacy, &pushed);
-        apply_new_rows(&mut current, &pushed);
-        assert_chat_parity(&legacy, &current);
+        apply_parity_turn(&mut model, &mut legacy, &mut current, pushed);
 
         let authoritative = model.receive_incoming(
             incoming(
@@ -4521,10 +4529,70 @@ mod tests {
             ),
             &state,
         );
-        let authoritative = finish_timeline_turn(&mut model, authoritative);
-        apply_legacy_rows(&mut legacy, &authoritative);
-        apply_new_rows(&mut current, &authoritative);
-        assert_chat_parity(&legacy, &current);
+        apply_parity_turn(&mut model, &mut legacy, &mut current, authoritative);
+
+        assert_send_parity(&mut model, &state, &mut legacy, &mut current).await;
+    }
+
+    async fn assert_send_parity(
+        model: &mut NetworkModel,
+        state: &papo::State,
+        legacy: &mut Vec<crate::MessageProjection>,
+        current: &mut Vec<TimelineItem>,
+    ) {
+        let buffer_id = model.names[&NameKey::Channel(channel_name(state, "#room"))];
+        let (pending, optimistic) = model
+            .begin_send(buffer_id, "own confirmed".into(), state)
+            .expect("channel is sendable");
+        apply_parity_turn(model, legacy, current, optimistic);
+        let optimistic_id = legacy.last().expect("optimistic row sorts last").id;
+
+        let (client, _events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&[
+            "echo-message",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ])
+        .await;
+        let SendTarget::Channel(channel) = pending.target.clone() else {
+            panic!("send targets the room")
+        };
+        let sender = client.clone();
+        let send_task = tokio::spawn(async move { sender.privmsg(channel, "own confirmed").await });
+        assert_eq!(
+            wire.next_sent().await,
+            "@label=0 PRIVMSG #room :own confirmed"
+        );
+        wire.server("@label=0;msgid=own-confirmed;time=1970-01-01T00:00:00.250Z :weblounge!u@host PRIVMSG #room :own confirmed").await;
+        let receipt = send_task
+            .await
+            .expect("send task completes")
+            .expect("echo confirms the send");
+        let confirmed = model
+            .confirm_send(&pending, &receipt)
+            .expect("optimistic row remains available");
+        apply_parity_turn(model, legacy, current, confirmed);
+        assert_eq!(
+            legacy
+                .iter()
+                .filter(|message| message.id == optimistic_id)
+                .count(),
+            1
+        );
+        assert_ne!(
+            legacy.last().expect("timeline stays populated").id,
+            optimistic_id
+        );
+
+        let (failed, optimistic) = model
+            .begin_send(buffer_id, "own failed".into(), state)
+            .expect("channel is sendable");
+        apply_parity_turn(model, legacy, current, optimistic);
+
+        let failed_events = model.fail_send(&failed, EngineMessageKey::SendFailed);
+        apply_parity_turn(model, legacy, current, failed_events);
     }
 
     #[test]

@@ -60,6 +60,12 @@ The single place a fresh session reads to know where the project stands. Update 
   empty `paddingLeft` and produced the intermittent CI `NaN`. Virtual items now reconcile by row
   key, rendered content retains its DOM identity while its source and group shape are unchanged,
   and a regression test pins the unchanged message element across a same-minute append.
+- [x] Keep each dormant timeline patch in the same engine turn as its legacy events. Lock-owned
+  mutation scopes now drain through one turn finisher before releasing the model, including cached
+  target send failures; command dispatch no longer re-locks afterward, so a concurrent papo event
+  cannot claim a command's patch. Runtime coverage pins both the failed-send batch and the empty
+  dirty set at command return, while parity also covers moved confirmations, optimistic-row
+  removal and failed delivery.
 - [x] Keep reconnect scroll preservation under actual reader ownership. The resilience journey now
   uses a wheel gesture before its condition-based stability check; assigning `scrollTop` directly
   left the app logically at the live edge, so the new foreground measurement refresh correctly
