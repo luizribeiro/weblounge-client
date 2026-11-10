@@ -109,6 +109,7 @@ const liveEdgeTolerance = 2;
 export function MessageList(props: MessageListProps) {
   let list: HTMLDivElement | undefined;
   let liveEdgeSentinel: HTMLElement | undefined;
+  let motionLayer: HTMLOListElement | undefined;
   let observedWidth: number | undefined;
   let observedHeight: number | undefined;
   let syncViewportRect: (() => boolean) | undefined;
@@ -351,6 +352,20 @@ export function MessageList(props: MessageListProps) {
       for (const element of elements) virtualizer.measureElement(element);
     });
   };
+  const syncRenderedRowPositions = () => {
+    if (list?.isConnected !== true) return;
+    const items = new Map(
+      [...virtualizer.getVirtualItems()].map((item) => [item.index, item]),
+    );
+    const offset = bottomOffset(viewportHeight(), virtualizer.getTotalSize());
+    for (const element of list.querySelectorAll<HTMLLIElement>(
+      "li[data-index]",
+    )) {
+      const item = items.get(Number(element.dataset.index));
+      if (item !== undefined)
+        element.style.transform = `translateY(${item.start + offset}px)`;
+    }
+  };
   const measureRow = (element: HTMLLIElement, index: number) => {
     element.dataset.index = String(index);
     const measured = measureElement(element, undefined, virtualizer);
@@ -547,6 +562,17 @@ export function MessageList(props: MessageListProps) {
       remeasure();
       if (logicallyAtLiveEdge) scrollToLiveEdge();
     };
+    const rowMountObserver = new MutationObserver((records) => {
+      const mountedRow = records.some((record) =>
+        [...record.addedNodes].some(
+          (node) =>
+            node instanceof HTMLElement && node.matches("li[data-index]"),
+        ),
+      );
+      if (!mountedRow) return;
+      refreshRenderedMeasurements();
+      syncRenderedRowPositions();
+    });
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
         ? undefined
@@ -568,6 +594,8 @@ export function MessageList(props: MessageListProps) {
     };
     if (liveEdgeSentinel !== undefined)
       liveEdgeObserver?.observe(liveEdgeSentinel);
+    if (motionLayer !== undefined)
+      rowMountObserver.observe(motionLayer, { childList: true });
     void (fonts?.ready ?? Promise.resolve()).then(handleFontsLoaded);
     composerOwner?.addEventListener(
       composerGeometryChangeEvent,
@@ -585,6 +613,7 @@ export function MessageList(props: MessageListProps) {
     window.addEventListener(appGeometryChangeEvent, anchorGeometryChange);
     onCleanup(() => {
       liveEdgeObserver?.disconnect();
+      rowMountObserver.disconnect();
       composerOwner?.removeEventListener(
         composerGeometryChangeEvent,
         anchorComposerGeometry,
@@ -700,6 +729,9 @@ export function MessageList(props: MessageListProps) {
           <ol
             class={styles.motionLayer}
             data-message-motion-layer="true"
+            ref={(element) => {
+              motionLayer = element;
+            }}
             role="presentation"
           >
             <For each={virtualItems()}>

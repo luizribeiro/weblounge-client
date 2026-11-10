@@ -5,6 +5,7 @@ import {
   scrollAwayFromLiveEdge,
   scrollToTranscriptTop,
 } from "./message-list-scroll";
+import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
 import { armMessageTime } from "./time-rewrite";
 
@@ -228,6 +229,75 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
     await expectContiguousRows(page);
   } finally {
     for (const client of writers) client.close();
+  }
+});
+
+test("paints hidden multiline catch-up without stale row gaps", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "webkit-phone-layout",
+    "covers iPhone WebKit foreground layout",
+  );
+  await installNativeFeelInstrumentation(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const suffix = suffixFor(testInfo.project.name);
+  const account = `sa-hidden-${suffix}`;
+  const channel = `#sa-hidden-${suffix}`;
+  const startUrl = await isolatedStartUrl(account, channel);
+  const writer = await IrcClient.connect(
+    `sa-hidden-writer-${suffix}`,
+    "weblounge-bot",
+    "weblounge-bot-test",
+    channel,
+  );
+  const hiddenMessages = [
+    `hidden multiline one ${suffix} ${"variable width words for wrapping ".repeat(8)}\nsecond explicit line ${suffix}\n\nlast line ${suffix}`,
+    `hidden long two ${suffix} ${"i".repeat(330)}`,
+    `hidden multiline three ${suffix}\n${"another wrapped segment ".repeat(10)}\nfinal segment ${suffix}`,
+  ] as const;
+  try {
+    await useDedicatedWorker(page);
+    await page.goto(startUrl);
+    await page.getByRole("button", { name: channel }).click();
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+    await page.evaluate(() =>
+      (
+        window as Window & {
+          __setNativeVisibility?: (hidden: boolean) => void;
+        }
+      ).__setNativeVisibility?.(true),
+    );
+    for (const text of hiddenMessages)
+      await writer.multilineConfirmed(channel, text);
+    await expect(
+      page
+        .locator("[data-message-row]")
+        .filter({ hasText: hiddenMessages[0].split("\n")[0] }),
+    ).toHaveCount(0);
+
+    await captureFirstForegroundGaps(page, hiddenMessages);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (
+              window as Window & {
+                __firstForegroundGaps?: readonly string[];
+              }
+            ).__firstForegroundGaps,
+        ),
+      )
+      .toEqual([]);
+    for (const text of hiddenMessages)
+      await expect(
+        page
+          .locator("[data-message-row]")
+          .filter({ hasText: text.split("\n")[0] }),
+      ).toBeVisible();
+    await expectContiguousRows(page);
+  } finally {
+    writer.close();
   }
 });
 
@@ -508,6 +578,50 @@ async function keyboardGeometry(page: Page, open: boolean): Promise<void> {
       }),
     );
   }, open);
+}
+
+async function captureFirstForegroundGaps(
+  page: Page,
+  messages: readonly string[],
+): Promise<void> {
+  await page.evaluate((expectedMessages) => {
+    const state = window as Window & {
+      __firstForegroundGaps?: readonly string[];
+      __setNativeVisibility?: (hidden: boolean) => void;
+    };
+    const list = document.querySelector("[data-message-list]");
+    if (list === null) throw new Error("message list is missing");
+    const observer = new MutationObserver(() => {
+      if (document.visibilityState !== "visible") return;
+      const renderedMessages = [
+        ...list.querySelectorAll<HTMLElement>("[data-message-row]"),
+      ];
+      const messagesPresent = expectedMessages.every((text) =>
+        renderedMessages.some(
+          (message) => message.dataset.messageText === text,
+        ),
+      );
+      if (!messagesPresent) return;
+      observer.disconnect();
+      const rows = [...list.querySelectorAll<HTMLElement>("li[data-index]")]
+        .map((row) => ({
+          index: Number(row.dataset.index),
+          key: row.dataset.rowKey,
+          rect: row.getBoundingClientRect(),
+        }))
+        .sort((left, right) => left.index - right.index);
+      state.__firstForegroundGaps = rows.slice(1).flatMap((current, index) => {
+        const previous = rows[index];
+        if (previous === undefined) return [];
+        const gap = current.rect.top - previous.rect.bottom;
+        return Math.abs(gap) <= 1
+          ? []
+          : [`${previous.key}->${current.key}:${gap}`];
+      });
+    });
+    observer.observe(list, { childList: true, subtree: true });
+    state.__setNativeVisibility?.(false);
+  }, messages);
 }
 
 function mountedRowPositions(
