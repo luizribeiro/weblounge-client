@@ -35,6 +35,11 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Keep older history pages out of the jump-pill count. A scrolled-away transcript now compares
   each projection update with its previous newest `(time, id)` boundary, so prepends and initial
   loads stay silent while live-end appends retain the existing own/other counting behavior.
+- [x] Wait for the virtualizer to observe the reader at the transcript top before requesting older
+  history. DOM scroll events can precede the virtualizer's animation-frame offset update; loading
+  rows no longer reconcile from a stale live-edge offset and reclaim a user-owned top position.
+  The spacing journey now gives its asserted oldest row an earlier server time and waits for wheel
+  geometry to settle before comparing retained rows.
 - [x] Pin confirmed own sends in the immediate chat-list snapshot. The current send completion path
   already persists through its read-advance turn even when the read mark is ahead; focused engine
   and built-app relaunch coverage now protects the own preview, activity time and ordering.

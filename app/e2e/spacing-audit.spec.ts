@@ -7,6 +7,7 @@ import {
 import { installNativeFeelInstrumentation } from "./native-feel-audit";
 import { useDedicatedWorker } from "./production-ergo";
 import { seedMixedConversation } from "./spacing-audit-fixture";
+import { armMessageTime } from "./time-rewrite";
 
 test.skip(
   process.env.WEBLOUNGE_E2E_ERGO !== "1",
@@ -130,7 +131,11 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
   await page.setViewportSize(
     phone ? { width: 390, height: 844 } : { width: 1280, height: 800 },
   );
-  const suffix = suffixFor(testInfo.project.name);
+  const suffix = suffixFor(
+    testInfo.project.name,
+    testInfo.workerIndex,
+    testInfo.repeatEachIndex,
+  );
   const account = `sa-virt-${suffix}`;
   const channel = `#sa-virt-${suffix}`;
   const startUrl = await isolatedStartUrl(account, channel);
@@ -154,7 +159,8 @@ test("keeps measured virtual rows contiguous through transcript mutations", asyn
   try {
     const oldest = messages[0];
     if (oldest === undefined) throw new Error("oldest spacing row is missing");
-    await writer.privmsgConfirmed(channel, oldest);
+    const oldestEcho = await writer.privmsgConfirmed(channel, oldest);
+    await armMessageTime(oldest, Date.parse(serverTime(oldestEcho)) - 1_000);
     const bulkMessages = messages.slice(1);
     const finalEchoes: Promise<string>[] = [];
     for (const [index, text] of bulkMessages.entries()) {
@@ -265,7 +271,11 @@ test("paints hidden multiline catch-up without stale row gaps", async ({
   );
   await installNativeFeelInstrumentation(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  const suffix = suffixFor(testInfo.project.name);
+  const suffix = suffixFor(
+    testInfo.project.name,
+    testInfo.workerIndex,
+    testInfo.repeatEachIndex,
+  );
   const account = `sa-hidden-${suffix}`;
   const channel = `#sa-hidden-${suffix}`;
   const startUrl = await isolatedStartUrl(account, channel);
@@ -347,8 +357,12 @@ function isPhoneProject(project: string): boolean {
   );
 }
 
-function suffixFor(project: string): string {
-  return `${project.slice(0, 2)}${Date.now().toString(36).slice(-6)}`;
+function suffixFor(
+  project: string,
+  workerIndex: number,
+  repeatIndex: number,
+): string {
+  return `${project.slice(0, 2)}${Date.now().toString(36).slice(-6)}w${workerIndex}r${repeatIndex}`;
 }
 
 async function isolatedStartUrl(
@@ -375,6 +389,13 @@ function messageId(line: string): string {
   const id = /(?:^@|;)msgid=([^; ]+)/u.exec(line)?.[1];
   if (id === undefined) throw new Error(`message has no msgid: ${line}`);
   return id;
+}
+
+function serverTime(line: string): string {
+  const value = /(?:^@|;)time=([^; ]+)/u.exec(line)?.[1];
+  if (value === undefined)
+    throw new Error(`message has no server time: ${line}`);
+  return value;
 }
 
 async function transcriptDensity(

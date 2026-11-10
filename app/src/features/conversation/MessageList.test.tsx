@@ -1691,7 +1691,7 @@ it("keeps the unread line in place when the reader leaves the live edge", async 
   );
 });
 
-it("loads older history only when the user reaches the top", () => {
+it("loads older history only after the virtualizer tracks the user at the top", async () => {
   const onLoadOlder = vi.fn();
   const { container } = render(() => (
     <MessageList messages={[message]} onLoadOlder={onLoadOlder} />
@@ -1707,12 +1707,20 @@ it("loads older history only when the user reaches the top", () => {
   list.dispatchEvent(new Event("scroll"));
   expect(onLoadOlder).not.toHaveBeenCalled();
 
-  fireEvent.wheel(list, { deltaY: -100 });
+  fireEvent.wheel(list, { deltaY: 100 });
+  list.scrollTop = 100;
   list.dispatchEvent(new Event("scroll"));
+  await twoAnimationFrames();
+  fireEvent.wheel(list, { deltaY: -100 });
+  list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  expect(onLoadOlder).not.toHaveBeenCalled();
+  await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledOnce();
 
   fireEvent.wheel(list, { deltaY: -100 });
   list.dispatchEvent(new Event("scroll"));
+  await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledOnce();
 
   fireEvent.wheel(list, { deltaY: 100 });
@@ -1721,10 +1729,11 @@ it("loads older history only when the user reaches the top", () => {
   fireEvent.wheel(list, { deltaY: -100 });
   list.scrollTop = 0;
   list.dispatchEvent(new Event("scroll"));
+  await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
 });
 
-it("loads older history when an upward wheel cannot move past the top", () => {
+it("loads older history when an upward wheel cannot move past the top", async () => {
   const onLoadOlder = vi.fn();
   const { container } = render(() => (
     <MessageList messages={[message]} onLoadOlder={onLoadOlder} />
@@ -1735,10 +1744,13 @@ it("loads older history when an upward wheel cannot move past the top", () => {
     clientHeight: { configurable: true, value: 100 },
     scrollHeight: { configurable: true, value: 500 },
   });
+  await twoAnimationFrames();
   list.scrollTop = 0;
+  list.dispatchEvent(new Event("scroll"));
+  await twoAnimationFrames();
 
   fireEvent.wheel(list, { deltaY: -100 });
-
+  await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledOnce();
 });
 
@@ -1769,15 +1781,23 @@ it("rearms top loading after a nonterminal older page completes", async () => {
   list.scrollTop = 0;
 
   fireEvent.wheel(list, { deltaY: -100 });
+  await twoAnimationFrames();
   expect(onLoadOlder).toHaveBeenCalledOnce();
   setHistoryState({ at_start: false, loading: true });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   setHistoryState({ at_start: false, loading: false });
   await new Promise<void>((resolve) => queueMicrotask(resolve));
   fireEvent.wheel(list, { deltaY: -100 });
+  await twoAnimationFrames();
 
   expect(onLoadOlder).toHaveBeenCalledTimes(2);
 });
+
+function twoAnimationFrames(): Promise<void> {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+}
 
 it("defers live-edge geometry until after the scroll handler", async () => {
   vi.spyOn(document, "hasFocus").mockReturnValue(true);

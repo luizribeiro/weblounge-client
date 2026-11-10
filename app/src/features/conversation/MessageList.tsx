@@ -156,6 +156,7 @@ export function MessageList(props: MessageListProps) {
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
+  let olderPageRequestFrame: number | undefined;
   let historyWasLoading = props.historyState?.loading === true;
   const [dividerMark, setDividerMark] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
@@ -250,6 +251,29 @@ export function MessageList(props: MessageListProps) {
     props.onLoadOlder?.();
     olderPageArmed = false;
   };
+  const cancelOlderPageRequest = () => {
+    if (olderPageRequestFrame === undefined) return;
+    window.cancelAnimationFrame(olderPageRequestFrame);
+    olderPageRequestFrame = undefined;
+  };
+  const requestOlderAtTrackedTop = () => {
+    if (!olderPageArmed || olderPageRequestFrame !== undefined) return;
+    const requestWhenTracked = () => {
+      olderPageRequestFrame = undefined;
+      if ((list?.scrollTop ?? Infinity) > liveEdgeTolerance) return;
+      if (
+        virtualizer.scrollOffset !== null &&
+        Math.abs(virtualizer.scrollOffset - (list?.scrollTop ?? 0)) >
+          liveEdgeTolerance
+      ) {
+        olderPageRequestFrame =
+          window.requestAnimationFrame(requestWhenTracked);
+        return;
+      }
+      requestOlderAtTop();
+    };
+    olderPageRequestFrame = window.requestAnimationFrame(requestWhenTracked);
+  };
   createEffect(() => {
     const history = props.historyState;
     if (
@@ -263,7 +287,7 @@ export function MessageList(props: MessageListProps) {
   const markWheelScrollIntent = (event: WheelEvent) => {
     userScrollIntent.beginDiscrete();
     if (event.deltaY < 0 && (list?.scrollTop ?? Infinity) <= liveEdgeTolerance)
-      requestOlderAtTop();
+      requestOlderAtTrackedTop();
   };
   const markScrollKeyIntent = (event: KeyboardEvent) => {
     if (scrollKeys.has(event.key)) userScrollIntent.beginDiscrete();
@@ -754,6 +778,7 @@ export function MessageList(props: MessageListProps) {
         window.cancelAnimationFrame(scrollLiveEdgeFrame);
       if (foregroundRefreshFrame !== undefined)
         window.cancelAnimationFrame(foregroundRefreshFrame);
+      cancelOlderPageRequest();
       userScrollIntent.dispose();
     });
     queueMicrotask(jumpToBottom);
@@ -772,8 +797,9 @@ export function MessageList(props: MessageListProps) {
           if (!userScrollIntent.consumeScroll()) return;
           const element = event.currentTarget;
           if (element.scrollTop <= liveEdgeTolerance) {
-            requestOlderAtTop();
+            requestOlderAtTrackedTop();
           } else {
+            cancelOlderPageRequest();
             olderPageArmed = true;
           }
           deferScrollLiveEdge(

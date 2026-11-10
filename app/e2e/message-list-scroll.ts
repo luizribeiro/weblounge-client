@@ -34,7 +34,7 @@ export async function scrollAwayFromLiveEdge(
       })
       .toBeGreaterThan(distance);
   }
-  return list.evaluate((element) => element.scrollTop);
+  return stableScrollOffset(list);
 }
 
 export async function scrollToTranscriptTop(list: Locator): Promise<void> {
@@ -151,4 +151,25 @@ async function touchPanAway(list: Locator, distance: number): Promise<void> {
   await list.evaluate((element, amount) => {
     element.scrollTop = Math.max(0, element.scrollTop - amount);
   }, distance);
+}
+
+function stableScrollOffset(list: Locator): Promise<number> {
+  return list.evaluate(
+    (element) =>
+      new Promise<number>((resolve) => {
+        let previous = element.scrollTop;
+        let stableFrames = 0;
+        const sample = () => {
+          const current = element.scrollTop;
+          stableFrames = current === previous ? stableFrames + 1 : 0;
+          previous = current;
+          if (stableFrames >= 2) {
+            resolve(current);
+            return;
+          }
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }),
+  );
 }
