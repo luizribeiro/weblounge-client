@@ -5484,6 +5484,7 @@ mod tests {
                 time: ServerTimeMs::new(
                     latest - i64::try_from(count - index - 1).expect("small fixture"),
                 ),
+                provisional_time: None,
                 mention: index < mentions,
             })
             .collect()

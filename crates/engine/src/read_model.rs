@@ -37,6 +37,9 @@ pub struct MessageStub {
     pub msgid: String,
     /// The greatest observed server time for this message.
     pub time: ServerTimeMs,
+    /// The provisional push time replaced by the authoritative time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provisional_time: Option<ServerTimeMs>,
     /// Whether this message contributes mention severity.
     pub mention: bool,
 }
@@ -112,7 +115,10 @@ impl ReadFacts {
     }
 
     /// Replaces a provisional peer-message fact with its authoritative copy.
-    pub fn replace_stub(&mut self, stub: MessageStub) {
+    pub fn replace_stub(&mut self, mut stub: MessageStub) {
+        if let Some(known) = self.stubs.iter().find(|known| known.msgid == stub.msgid) {
+            merge_max(&mut stub.provisional_time, known.provisional_time);
+        }
         self.stubs.retain(|known| known.msgid != stub.msgid);
         self.stubs.push(stub);
         self.stubs.sort_unstable_by(|left, right| {
@@ -133,6 +139,7 @@ impl ReadFacts {
     }
 
     fn normalize_stubs(&mut self) {
+        self.carry_reconciled_mark();
         if let Some(mark) = self.mark {
             self.stubs.retain(|stub| stub.time > mark);
         }
@@ -145,6 +152,30 @@ impl ReadFacts {
         let gap_until = self.stubs[evicted - 1].time.next();
         self.stubs.drain(..evicted);
         self.merge_gap_until(gap_until);
+    }
+
+    fn carry_reconciled_mark(&mut self) {
+        let Some(mut mark) = self.mark else {
+            return;
+        };
+        loop {
+            let carried = self
+                .stubs
+                .iter()
+                .filter_map(|stub| {
+                    let provisional = stub.provisional_time?;
+                    (provisional <= mark
+                        && stub.time > mark
+                        && stub.time.value().saturating_sub(provisional.value()) <= 1_000)
+                        .then_some(stub.time)
+                })
+                .max();
+            let Some(carried) = carried else {
+                break;
+            };
+            mark = carried;
+        }
+        self.mark = Some(mark);
     }
 
     fn normalize_gap(&mut self) {
@@ -196,6 +227,7 @@ fn union_stubs(stubs: impl IntoIterator<Item = MessageStub>) -> Vec<MessageStub>
             .and_modify(|known| {
                 known.time = known.time.max(stub.time);
                 known.mention |= stub.mention;
+                merge_max(&mut known.provisional_time, stub.provisional_time);
             })
             .or_insert(stub);
     }

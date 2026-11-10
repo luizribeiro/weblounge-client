@@ -28,6 +28,7 @@ fn stub(msgid: impl Into<String>, time: i64, mention: bool) -> MessageStub {
     MessageStub {
         msgid: msgid.into(),
         time: ServerTimeMs::new(time),
+        provisional_time: None,
         mention,
     }
 }

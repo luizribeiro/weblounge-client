@@ -395,6 +395,7 @@ mod tests {
                     stubs: vec![MessageStub {
                         msgid: "newest-1".into(),
                         time: ServerTimeMs::new(1_700_000_000_000),
+                        provisional_time: None,
                         mention: false,
                     }],
                     gap_until: None,
@@ -413,6 +414,7 @@ mod tests {
                     stubs: vec![MessageStub {
                         msgid: "alice-1".into(),
                         time: ServerTimeMs::new(1_700_000_000_001),
+                        provisional_time: None,
                         mention: true,
                     }],
                     gap_until: Some(ServerTimeMs::new(1_700_000_000_000)),
@@ -613,6 +615,7 @@ mod tests {
         newer.stubs = vec![MessageStub {
             msgid: "newer-stub".into(),
             time: ServerTimeMs::new(1_700_000_000_100),
+            provisional_time: None,
             mention: true,
         }];
         let mut older = newer.clone();
@@ -621,6 +624,7 @@ mod tests {
         older.stubs = vec![MessageStub {
             msgid: "older-stub".into(),
             time: ServerTimeMs::new(1_700_000_000_000),
+            provisional_time: None,
             mention: false,
         }];
 

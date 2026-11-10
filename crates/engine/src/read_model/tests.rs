@@ -9,7 +9,15 @@ fn stub(msgid: impl Into<String>, time: i64, mention: bool) -> MessageStub {
     MessageStub {
         msgid: msgid.into(),
         time: ServerTimeMs::new(time),
+        provisional_time: None,
         mention,
+    }
+}
+
+fn reconciled_stub(msgid: &str, provisional: i64, authoritative: i64) -> MessageStub {
+    MessageStub {
+        provisional_time: Some(ServerTimeMs::new(provisional)),
+        ..stub(msgid, authoritative, false)
     }
 }
 
@@ -47,6 +55,30 @@ fn authoritative_stub_replaces_provisional_time_and_mention() {
     facts.replace_stub(stub("message-1", 100, false));
 
     assert_eq!(facts.stubs(), [stub("message-1", 100, false)]);
+}
+
+#[test]
+fn late_mark_carries_through_a_reconciled_push() {
+    let mut facts = ReadFacts::default();
+    facts.merge_stub(reconciled_stub("message-1", 1, 3));
+
+    facts.merge_mark(ServerTimeMs::new(1));
+
+    assert_eq!(facts.mark(), Some(ServerTimeMs::new(3)));
+    assert_eq!(unread_count(&facts), 0);
+}
+
+#[test]
+fn carry_is_bounded_and_chains_across_reconciled_pushes() {
+    let mut facts = ReadFacts::default();
+    facts.merge_stub(reconciled_stub("first", 1, 1_001));
+    facts.merge_stub(reconciled_stub("second", 1_001, 2_001));
+    facts.merge_stub(reconciled_stub("too-far", 2_001, 3_002));
+
+    facts.merge_mark(ServerTimeMs::new(1));
+
+    assert_eq!(facts.mark(), Some(ServerTimeMs::new(2_001)));
+    assert_eq!(facts.stubs(), [reconciled_stub("too-far", 2_001, 3_002)]);
 }
 
 #[test]

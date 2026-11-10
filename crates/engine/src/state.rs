@@ -3007,6 +3007,7 @@ impl NetworkModel {
             buffer.read_facts.replace_stub(MessageStub {
                 msgid: msgid.to_owned(),
                 time: ServerTimeMs::new(message_time(&message)),
+                provisional_time: None,
                 mention: counts_as_mention,
             });
             buffer.timeline.sort_by_key(|record| record.order);
@@ -3616,6 +3617,7 @@ fn message_stub(message: &MessageProjection, mention: bool) -> Option<MessageStu
             .cloned()
             .unwrap_or_else(|| format!("local:{}", message.id.0)),
         time: ServerTimeMs::new(message_time(message)),
+        provisional_time: None,
         mention,
     })
 }
@@ -4872,6 +4874,7 @@ mod tests {
                 time: ServerTimeMs::new(
                     latest - i64::try_from(count - index - 1).expect("small fixture"),
                 ),
+                provisional_time: None,
                 mention: index < mentions,
             })
             .collect()
@@ -5736,6 +5739,7 @@ mod tests {
                 stubs: vec![MessageStub {
                     msgid: "after".into(),
                     time: ServerTimeMs::new(300),
+                    provisional_time: None,
                     mention: false,
                 }],
                 gap_until: None,
@@ -7931,6 +7935,7 @@ mod tests {
                 stubs: vec![MessageStub {
                     msgid: "pushed-direct".into(),
                     time: ServerTimeMs::new(1_793_709_296_789),
+                    provisional_time: None,
                     mention: true,
                 }],
                 gap_until: None,
