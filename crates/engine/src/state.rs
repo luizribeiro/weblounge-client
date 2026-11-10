@@ -197,7 +197,6 @@ struct BufferState {
     chat_metadata: HashMap<MessageId, ChatMetadata>,
     system_server_times: HashMap<MessageId, Option<i64>>,
     emitted_timeline: Vec<TimelineItem>,
-    silently_evicted: HashSet<MessageId>,
     direct: Option<DirectAvailability>,
     direct_pin: Option<papo::PeerKey>,
     direct_mismatch: Option<DirectMismatch>,
@@ -503,7 +502,6 @@ impl NetworkModel {
             chat_metadata: HashMap::new(),
             system_server_times: HashMap::new(),
             emitted_timeline: Vec::new(),
-            silently_evicted: HashSet::new(),
             direct: None,
             direct_pin: None,
             direct_mismatch: None,
@@ -3199,7 +3197,6 @@ impl NetworkModel {
                 chat_metadata: HashMap::new(),
                 system_server_times: HashMap::new(),
                 emitted_timeline: Vec::new(),
-                silently_evicted: HashSet::new(),
                 direct: (kind == BufferKind::Direct)
                     .then(|| direct.unwrap_or(DirectAvailability::Pending)),
                 direct_pin: None,
@@ -3342,20 +3339,12 @@ impl NetworkModel {
             let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
                 continue;
             };
-            let Ok(mut desired) = project_timeline(buffer, self.casemapping) else {
+            let Ok(desired) = project_timeline(buffer, self.casemapping) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
                 ));
                 continue;
             };
-            desired.extend(
-                buffer
-                    .emitted_timeline
-                    .iter()
-                    .filter(|item| buffer.silently_evicted.contains(&item.id))
-                    .cloned(),
-            );
-            desired.sort_by_key(|item| item.order);
             let Ok(timeline_diff) = diff(&buffer.emitted_timeline, &desired) else {
                 output.push(EngineToUi::error_notice(
                     EngineMessageKey::StateInconsistent,
@@ -3377,7 +3366,11 @@ impl NetworkModel {
                     removed: change.removed,
                 });
             }
-            released.extend(evict_over_budget(buffer, self.window_limit));
+            let (dedup, evicted) = evict_over_budget(buffer, self.window_limit);
+            buffer
+                .emitted_timeline
+                .retain(|item| !evicted.contains(&item.id));
+            released.extend(dedup);
         }
         for dedup in released {
             self.release_dedup(dedup);
@@ -3713,9 +3706,12 @@ fn fold_clause(event: &FoldEvent, casemapping: papo::Casemapping) -> RunClause {
     }
 }
 
-fn evict_over_budget(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferences> {
+fn evict_over_budget(
+    buffer: &mut BufferState,
+    limit: usize,
+) -> (Vec<DedupReferences>, HashSet<MessageId>) {
     let Ok(items) = fold(&buffer.timeline) else {
-        return Vec::new();
+        return (Vec::new(), HashSet::new());
     };
     let chat_excess = items
         .iter()
@@ -3729,6 +3725,7 @@ fn evict_over_budget(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferen
         .saturating_sub(limit);
     let mut chats_left = chat_excess;
     let mut systems_left = system_excess;
+    let mut evicted_items = HashSet::new();
     let mut evicted_records = HashSet::new();
     for item in items {
         let chat = matches!(item.body, FoldedBody::Chat(_));
@@ -3742,7 +3739,7 @@ fn evict_over_budget(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferen
             false
         };
         if evict {
-            buffer.silently_evicted.insert(item.id);
+            evicted_items.insert(item.id);
             evicted_records.extend(item.record_ids().iter().copied());
         }
     }
@@ -3756,7 +3753,7 @@ fn evict_over_budget(buffer: &mut BufferState, limit: usize) -> Vec<DedupReferen
         }
         buffer.system_server_times.remove(&id);
     }
-    released
+    (released, evicted_items)
 }
 
 fn legacy_memberships(buffer: &BufferState) -> Vec<MembershipProjection> {
@@ -4594,7 +4591,99 @@ mod tests {
         apply_new_rows(&mut mirror, &initial);
         apply_new_rows(&mut mirror, &flood);
         apply_new_rows(&mut mirror, &next);
-        assert_eq!(mirror.len(), 23);
+        assert_eq!(mirror.len(), 2 + 20 + 1);
+        assert_eq!(model.buffers[&buffer_id].emitted_timeline.len(), 4);
+    }
+
+    #[test]
+    fn emitted_timeline_stays_bounded_while_chat_eviction_stays_silent() {
+        let limit = 4;
+        let (mut model, state) = model(limit);
+        let mut ui_mirror = Vec::new();
+
+        for index in 0..24 {
+            let text = format!("message-{index}");
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    &text,
+                    Some(&text),
+                    Some(index),
+                    index,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+            let changes = model.take_timeline_changes(false);
+            assert!(changes.iter().all(|event| !matches!(
+                event,
+                EngineToUi::TimelineChanged { removed, .. } if !removed.is_empty()
+            )));
+            apply_new_rows(&mut ui_mirror, &changes);
+
+            let channel = channel_name(&state, "#room");
+            let buffer_id = model.names[&NameKey::Channel(channel)];
+            assert!(model.buffers[&buffer_id].emitted_timeline.len() <= limit);
+        }
+
+        assert_eq!(ui_mirror.len(), 24);
+    }
+
+    #[test]
+    fn reset_after_eviction_matches_the_buffer_snapshot() {
+        let (mut model, state) = model(4);
+        for index in 0..12 {
+            let text = format!("message-{index}");
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    &text,
+                    Some(&text),
+                    Some(index),
+                    index,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+        _ = model.take_timeline_changes(false);
+
+        let channel = channel_name(&state, "#room");
+        let buffer_id = model.names[&NameKey::Channel(channel)];
+        let snapshot_ids = model
+            .snapshot_events()
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferSnapshot {
+                    buffer_id: current,
+                    messages,
+                    ..
+                } if current == buffer_id => Some(
+                    messages
+                        .into_iter()
+                        .map(|message| message.id)
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .expect("channel snapshot");
+        let reset_ids = model
+            .take_timeline_changes(true)
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::TimelineChanged {
+                    buffer_id: current,
+                    reset: true,
+                    upserted,
+                    ..
+                } if current == buffer_id => {
+                    Some(upserted.into_iter().map(|item| item.id).collect::<Vec<_>>())
+                }
+                _ => None,
+            })
+            .expect("channel reset");
+
+        assert_eq!(reset_ids, snapshot_ids);
     }
 
     #[test]

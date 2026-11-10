@@ -88,9 +88,11 @@ The single place a fresh session reads to know where the project stands. Update 
   engine-ordered record vector for chat and system records; delivery and dedup facts are keyed
   metadata rather than a second ordering source. Independent chat-record and whole-system-item
   budgets evict only after patch emission, so system floods cannot displace chat and the UI keeps
-  already-emitted rows without later removals. Each command, papo event, history page, push load
-  and send completion emits at most one atomic `TimelineChanged` per touched buffer alongside the
-  legacy events; shell attachment emits a reset. Mirror parity covers live rows, shuffled history,
+  already-emitted rows without later removals. The engine's diff baseline is pruned with that
+  eviction, keeping it bounded to the retained window; shell resets therefore contain exactly the
+  rows in the same turn's legacy snapshot. Each command, papo event, history page, push load and
+  send completion emits at most one atomic `TimelineChanged` per touched buffer alongside the
+  legacy events; shell attachment emits a reset. Reducer parity covers live rows, shuffled history,
   overlapping catch-up and provisional-push reconciliation. Generated protocol types carry the new
   item family, while the worker deliberately leaves the patch dormant until batch 1c.
 - [x] Make IRC `NOTICE` a first-class chat semantic across live events, history replay and push
