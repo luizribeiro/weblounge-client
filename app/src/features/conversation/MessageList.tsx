@@ -14,6 +14,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { densityPresets } from "../../density/density";
 import type {
   BufferProjection,
   HistoryState,
@@ -270,7 +271,8 @@ export function MessageList(props: MessageListProps) {
     },
     estimateSize: (index) => {
       const row = rows()[index];
-      if (row?.kind !== "message") return 34;
+      if (row?.kind !== "message")
+        return estimateDecorationHeight(row?.kind, estimatedDensity);
       const width =
         observedWidth ?? (props.presentation === "mobile" ? 402 : 1024);
       const cached = estimatedSizes.get(row.key);
@@ -1211,6 +1213,18 @@ function formatNoticeTime(milliseconds: number): string {
 }
 function bottomOffset(viewportHeight: number, contentHeight: number): number {
   return Math.max(0, viewportHeight - contentHeight);
+}
+
+function estimateDecorationHeight(
+  kind: Exclude<TimelineRow["kind"], "message"> | undefined,
+  density: ReturnType<typeof currentMessageDensity>,
+): number {
+  const preset = densityPresets[density];
+  const padding =
+    kind === "membership"
+      ? preset.mobileContinuationPadding
+      : preset.mobileGroupTopPadding;
+  return 18 + Number.parseFloat(padding);
 }
 
 function measureRowElement(

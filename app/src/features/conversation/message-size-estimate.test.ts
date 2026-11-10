@@ -76,6 +76,16 @@ describe("estimateMessageHeight", () => {
       estimateMessageHeight(text, 1_280, "cozy", "desktop"),
     );
   });
+
+  it("uses the system-line rhythm for notice estimates", () => {
+    const notice = {
+      kind: { notice: { type: "info" as const } },
+      text: "server information",
+    };
+
+    expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(24);
+    expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(24);
+  });
 });
 
 it("uses cozy density when the root has no valid density", () => {

@@ -240,9 +240,12 @@
   color: var(--wl-color-muted);
   font-size: 12px;
   font-style: italic;
-  height: 34px;
-  line-height: 34px;
-  padding-left: 72px;
+  line-height: 18px;
+  padding-block: calc(
+    var(--wl-density-message-mobile-continuation-padding) /
+    2
+  );
+  padding-inline: 72px 14px;
 }
 .membership button {
   appearance: none;
@@ -256,8 +259,12 @@
 .notice {
   color: var(--wl-color-muted);
   font-size: 12px;
-  min-height: 34px;
-  padding: 8px 14px 8px 72px;
+  line-height: 18px;
+  padding-block: calc(
+    var(--wl-density-message-mobile-continuation-padding) /
+    2
+  );
+  padding-inline: 72px 14px;
 }
 .noticeText {
   color: inherit;
@@ -273,8 +280,9 @@
   font-size: 11px;
   font-weight: 650;
   gap: 10px;
-  height: 34px;
-  margin-inline: 14px;
+  line-height: 18px;
+  padding-block: calc(var(--wl-density-message-mobile-group-top-padding) / 2);
+  padding-inline: 14px;
 }
 .divider::before,
 .divider::after,
@@ -387,7 +395,7 @@
 }
 .list[data-presentation="mobile"] .membership,
 .list[data-presentation="mobile"] .notice {
-  padding-inline-start: var(--wl-space-transcript-inline);
+  padding-inline: var(--wl-space-transcript-inline);
 }
 .list[data-presentation="mobile"] .actionText {
   padding-inline-start: 0;

@@ -31,6 +31,17 @@ export function estimateMessageHeight(
       (presentation === "mobile" ? mobileListInlinePadding : listInlinePadding),
     1,
   );
+  if (typeof message.kind === "object") {
+    const systemFontSize = 12;
+    const charactersPerLine = Math.max(
+      1,
+      Math.floor(rowWidth / (systemFontSize * 0.55)),
+    );
+    return (
+      estimatedLines(message.text, charactersPerLine) * 18 +
+      Number.parseFloat(preset.mobileContinuationPadding)
+    );
+  }
   if (presentation === "mobile" && isSenderRow(message.kind)) {
     const textWidth = Math.max(rowWidth, fontSize * 4);
     const charactersPerLine = Math.max(
