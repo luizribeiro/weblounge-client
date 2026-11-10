@@ -7,6 +7,8 @@ mod projection;
 
 #[cfg(test)]
 mod fixture_tests;
+#[cfg(test)]
+mod property_tests;
 
 pub use error::TimelineError;
 pub use fold::{
