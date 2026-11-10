@@ -363,6 +363,62 @@ it("anchors the viewport when history rows are prepended", async () => {
   expect(list.scrollTop).toBe(68);
 });
 
+it("remeasures a revised row before adding confirmation split rows", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      const row = this.querySelector<HTMLElement>("[data-message-row]");
+      if (row === null) return 34;
+      return row.dataset.delivery === "optimistic" ? 70 : 28;
+    },
+  );
+  const optimistic = {
+    ...message,
+    delivery: "optimistic" as const,
+    highlighted: false,
+    local_send_id: 7,
+  };
+  const [messages, setMessages] = createSignal<MessageProjection[]>([
+    optimistic,
+  ]);
+  const { container } = render(() => (
+    <MessageList messages={messages()} presentation="mobile" />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  setMessages([
+    {
+      ...optimistic,
+      delivery: "confirmed",
+      local_send_id: null,
+      server_time_ms: 1,
+      text: "confirmed first",
+    },
+    {
+      ...optimistic,
+      id: 2,
+      delivery: "confirmed",
+      local_send_id: null,
+      server_time_ms: 2,
+      text: "confirmed split",
+    },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const first = container.querySelector<HTMLLIElement>(
+    '[data-row-key="message-1"]',
+  );
+  const split = container.querySelector<HTMLLIElement>(
+    '[data-row-key="message-2"]',
+  );
+  if (first === null || split === null)
+    throw new Error("confirmation rows are missing");
+  expect(
+    translateY(split.style.transform) - translateY(first.style.transform),
+  ).toBe(28);
+});
+
 it("measures wrapped rows without overlap and preserves the live edge", async () => {
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
     function (this: HTMLElement) {

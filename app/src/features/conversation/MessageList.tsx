@@ -494,18 +494,32 @@ export function MessageList(props: MessageListProps) {
     if (messages.length !== previousCount && logicallyAtLiveEdge)
       scrollToLiveEdge();
   });
-  let measuredRevisions = rows().map(rowSizeRevision).join("\u0002");
-  let measuredRowKeys = rows().map((row) => row.key);
+  let measuredRows = rows().map((row) => ({
+    key: row.key,
+    revision: rowSizeRevision(row),
+  }));
   createEffect(() => {
     const currentRows = rows();
-    const revisions = currentRows.map(rowSizeRevision).join("\u0002");
-    if (revisions === measuredRevisions) return;
-    const currentKeys = currentRows.map((row) => row.key);
+    const currentMeasurements = currentRows.map((row) => ({
+      key: row.key,
+      revision: rowSizeRevision(row),
+    }));
+    const unchanged =
+      currentMeasurements.length === measuredRows.length &&
+      measuredRows.every(
+        (row, index) =>
+          currentMeasurements[index]?.key === row.key &&
+          currentMeasurements[index]?.revision === row.revision,
+      );
+    if (unchanged) return;
     const appended =
-      currentKeys.length > measuredRowKeys.length &&
-      measuredRowKeys.every((key, index) => currentKeys[index] === key);
-    measuredRevisions = revisions;
-    measuredRowKeys = currentKeys;
+      currentMeasurements.length > measuredRows.length &&
+      measuredRows.every(
+        (row, index) =>
+          currentMeasurements[index]?.key === row.key &&
+          currentMeasurements[index]?.revision === row.revision,
+      );
+    measuredRows = currentMeasurements;
     queueMicrotask(() => {
       if (!appended) remeasure();
       if (logicallyAtLiveEdge) scrollToLiveEdge();
