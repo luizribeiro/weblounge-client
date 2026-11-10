@@ -22,6 +22,7 @@ export interface ProjectionTrace {
       readonly state?: unknown;
     };
     readonly message?: {
+      readonly id?: number;
       readonly text?: string;
     };
   };
@@ -38,11 +39,13 @@ export async function captureHistoryWire(
   await page.addInitScript((settings) => {
     Reflect.deleteProperty(globalThis, "SharedWorker");
     const NativeWorker = Worker;
+    let historyWorker: Worker | undefined;
     let workerScript: string | URL | undefined;
     let workerOptions: WorkerOptions | undefined;
     globalThis.Worker = class extends NativeWorker {
       constructor(scriptURL: string | URL, options?: WorkerOptions) {
         super(scriptURL, options);
+        historyWorker = this;
         workerScript ??= scriptURL;
         workerOptions ??= options;
       }
@@ -236,6 +239,13 @@ export async function captureHistoryWire(
         type: "history_wire_test_release_request",
       });
     });
+    Reflect.set(globalThis, "holdHistoryRequest", (request: string) => {
+      if (historyWorker === undefined) throw new Error("engine worker missing");
+      historyWorker.postMessage({
+        type: "history_wire_test_trace_subscribe",
+        hold_request: request,
+      });
+    });
     Reflect.set(globalThis, "closeUnrelatedHistoryWireWorker", () => {
       if (workerScript === undefined) throw new Error("engine worker missing");
       const worker = new Worker(workerScript, workerOptions);
@@ -249,6 +259,18 @@ export function heldHistoryRequestCount(page: Page): Promise<number> {
   return page.evaluate(() =>
     Reflect.get(globalThis, "historyHeldRequest") === undefined ? 0 : 1,
   );
+}
+
+export async function holdHistoryRequest(
+  page: Page,
+  request: string,
+): Promise<void> {
+  await page.evaluate((value) => {
+    const hold = Reflect.get(globalThis, "holdHistoryRequest");
+    if (typeof hold !== "function")
+      throw new Error("history request gate missing");
+    hold(value);
+  }, request);
 }
 
 export async function releaseHeldHistoryRequest(page: Page): Promise<void> {
@@ -267,21 +289,27 @@ export function historyMessageUpdateCount(
   return page.evaluate((expected) => {
     const entries = Reflect.get(globalThis, "historyProjectionTimeline");
     if (!Array.isArray(entries)) return 0;
-    return entries.filter(
-      (entry) =>
-        typeof entry === "object" &&
-        entry !== null &&
-        "event" in entry &&
-        typeof entry.event === "object" &&
-        entry.event !== null &&
-        "type" in entry.event &&
-        entry.event.type === "message_updated" &&
-        "message" in entry.event &&
-        typeof entry.event.message === "object" &&
-        entry.event.message !== null &&
-        "text" in entry.event.message &&
-        entry.event.message.text === expected,
-    ).length;
+    const ids = entries.flatMap((entry) => {
+      if (
+        typeof entry !== "object" ||
+        entry === null ||
+        !("event" in entry) ||
+        typeof entry.event !== "object" ||
+        entry.event === null ||
+        !("type" in entry.event) ||
+        entry.event.type !== "message_updated" ||
+        !("message" in entry.event) ||
+        typeof entry.event.message !== "object" ||
+        entry.event.message === null ||
+        !("text" in entry.event.message) ||
+        entry.event.message.text !== expected ||
+        !("id" in entry.event.message) ||
+        typeof entry.event.message.id !== "number"
+      )
+        return [];
+      return [entry.event.message.id];
+    });
+    return new Set(ids).size;
   }, text);
 }
 

@@ -507,6 +507,7 @@ function releaseHeldHistoryRequest(): void {
   const held = heldHistoryRequest;
   if (held === undefined) return;
   heldHistoryRequest = undefined;
+  historyWireTestHoldRequest = undefined;
   const at = performance.timeOrigin + performance.now();
   void traceHistoryWireValue("sent", at, held.data);
   historyWireNativeSend?.call(held.socket, held.data);

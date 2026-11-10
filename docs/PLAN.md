@@ -43,13 +43,16 @@ The single place a fresh session reads to know where the project stands. Update 
   builds papo names through the running client's `NameRules`, so a notification cannot create a
   hidden originless duplicate of an already-open channel or direct. Every restored push remains a
   provisional history edge: it does not advance the authoritative cursor, projects pending/syncing
-  state until same-msgid history replaces its text and identity, starts a latest-page refresh while
-  online, retries one failed or timed-out refresh, and requeues history interrupted by reconnect.
+  state until same-msgid history replaces its text and identity, refreshes a ready buffer after its
+  authoritative cursor without inventing a reconnect gap, starts a genuine latest-page load only
+  when no cursor exists, retries one failed or timed-out refresh, and requeues history interrupted
+  by reconnect.
   Local-Ergo browser coverage backgrounds a loaded PWA on its chat list, silently kills its socket,
-  restores a deliberately truncated first line, then opens the buffer from the chat list. It proves
-  the conversation-title shimmer stays active until reconnect replaces the row in place with full
-  highlighted, bot-attributed history. Push-payload coverage pins Ergo's length-limited multiline
-  input. Relay, ciphertext and notification privacy behavior are unchanged.
+  restores a deliberately truncated first line, then opens the buffer from the chat list. It holds
+  authoritative history after the connection is online, proves the title shimmer remains until
+  reconcile, then requires a positively painted mention, bot attribution and no false skipped-row
+  warning. Push-payload coverage pins Ergo's length-limited multiline input. Relay, ciphertext and
+  notification privacy behavior are unchanged.
 - [x] Keep unchanged visible transcript rows mounted across ordinary appends and measurement
   refreshes. TanStack can replace virtual-item records while `timelineRows` recreates projection
   wrappers; reference-keying either layer let Solid detach a still-visible message between

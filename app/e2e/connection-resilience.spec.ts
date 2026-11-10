@@ -5,6 +5,7 @@ import {
   captureHistoryWire,
   heldHistoryRequestCount,
   historyMessageUpdateCount,
+  holdHistoryRequest,
   releaseHeldHistoryRequest,
 } from "./history-wire-fixture";
 import { IrcClient } from "./irc-client";
@@ -352,11 +353,14 @@ test.describe("connection resilience against local Ergo", () => {
     const partial = `warm push first line ${suffix}`;
     const authoritative = `${partial} and hello weblounge from history`;
     let dropped = false;
+    let historyHeld = false;
     try {
       await bot.mode(bot.nickname, "+B");
       await installNativeFeelInstrumentation(page);
       await installWorkerControl(page);
+      await captureHistoryWire(page);
       await openChannel(page, testInfo.project.name);
+      await holdHistoryRequest(page, `CHATHISTORY LATEST ${channel} `);
       await expect(
         page.locator("[data-conversation-title][data-connection-progress]"),
       ).toHaveCount(0);
@@ -419,13 +423,28 @@ test.describe("connection resilience against local Ergo", () => {
       await controlForwarder("restore");
       dropped = false;
       await expectOnline(page, testInfo.project.name);
+      await expect.poll(() => heldHistoryRequestCount(page)).toBe(1);
+      historyHeld = true;
+      await expect(title).toHaveAttribute("data-connection-progress", "true");
+      await expect(title).toHaveAttribute("data-connection-phase", "loading");
+      await expect(title).toHaveCSS("animation-play-state", "running");
+      await releaseHeldHistoryRequest(page);
+      historyHeld = false;
       const reconciled = transcriptRow(page, authoritative);
       await expect(reconciled).toHaveCount(1);
       await expect(reconciled.getByRole("img", { name: "Bot" })).toHaveCount(1);
-      expect(await highlightPaint(reconciled)).not.toBe("rgba(0, 0, 0, 0)");
+      const reconciledHighlight = await highlightPaint(reconciled);
+      expect(reconciledHighlight).not.toBe("");
+      expect(reconciledHighlight).not.toBe("rgba(0, 0, 0, 0)");
       await expect(provisional).toHaveCount(0);
       await expect(title).not.toHaveAttribute("data-connection-progress");
+      await expect(
+        page.getByText("Some messages were skipped while reconnecting.", {
+          exact: true,
+        }),
+      ).toHaveCount(0);
     } finally {
+      if (historyHeld) await releaseHeldHistoryRequest(page);
       if (dropped) await controlForwarder("restore");
       bot.close();
     }
