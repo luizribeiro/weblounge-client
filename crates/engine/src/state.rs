@@ -2668,16 +2668,15 @@ impl NetworkModel {
         time: SystemTime,
         server_backed: bool,
     ) -> Vec<EngineToUi> {
-        let read_at_ms = time_millis(time);
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
             return inconsistent_state_notice();
         };
         let previous_mark = buffer.read_facts.mark();
-        buffer.read_facts.merge_mark(ServerTimeMs::new(read_at_ms));
-        if server_backed {
-            buffer
-                .read_facts
-                .merge_pending(ServerTimeMs::new(read_at_ms));
+        buffer
+            .read_facts
+            .merge_mark(ServerTimeMs::new(time_millis(time)));
+        if server_backed && let Some(mark) = buffer.read_facts.mark() {
+            buffer.read_facts.merge_pending(mark);
         }
         if buffer.read_facts.mark() == previous_mark {
             return Vec::new();
@@ -2693,29 +2692,46 @@ impl NetworkModel {
         conversation: &papo::Conversation,
         read_until: Option<SystemTime>,
     ) -> Vec<EngineToUi> {
+        self.apply_server_read_marker_with_advance(conversation, read_until)
+            .0
+    }
+
+    pub(crate) fn apply_server_read_marker_with_advance(
+        &mut self,
+        conversation: &papo::Conversation,
+        read_until: Option<SystemTime>,
+    ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
         let Some(time) = read_until else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         let Some(key) = NameKey::from_conversation(conversation) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         let Some(buffer_id) = self.names.get(&key).copied() else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         let Some(buffer) = self.buffers.get_mut(&buffer_id) else {
-            return inconsistent_state_notice();
+            return (inconsistent_state_notice(), None);
         };
+        let reported = ServerTimeMs::new(time_millis(time));
         let previous_mark = buffer.read_facts.mark();
-        buffer
-            .read_facts
-            .acknowledge(ServerTimeMs::new(time_millis(time)));
+        let base = previous_mark.map_or(reported, |mark| mark.max(reported));
+        buffer.read_facts.acknowledge(reported);
+        let carried = buffer.read_facts.mark();
+        let advance = carried.filter(|mark| *mark > base).map(|mark| ReadAdvance {
+            buffer_id,
+            time: system_time_from_millis(mark.value()),
+        });
         if buffer.read_facts.mark() == previous_mark {
-            return Vec::new();
+            return (Vec::new(), advance);
         }
         derive_read_projection(buffer);
-        vec![EngineToUi::BufferUpdated {
-            buffer: buffer.projection.clone(),
-        }]
+        (
+            vec![EngineToUi::BufferUpdated {
+                buffer: buffer.projection.clone(),
+            }],
+            advance,
+        )
     }
 
     pub(crate) fn pending_read_advances(&self) -> Vec<ReadAdvance> {
@@ -2993,10 +3009,7 @@ impl NetworkModel {
                 .iter_mut()
                 .find(|record| record.id == message_id)?;
             let pushed_time = ServerTimeMs::new(message_time(chat_projection(record)?));
-            let carry_read = buffer
-                .read_facts
-                .mark()
-                .is_some_and(|mark| pushed_time <= mark && message_time(&message) > mark.value());
+            let previous_mark = buffer.read_facts.mark();
             record.order = message_order(&message, record.order.2);
             chat_projection_mut(record)?.clone_from(&message);
             let counts_as_mention = message.authorship != MessageAuthorship::Own
@@ -3007,9 +3020,10 @@ impl NetworkModel {
             buffer.read_facts.replace_stub(MessageStub {
                 msgid: msgid.to_owned(),
                 time: ServerTimeMs::new(message_time(&message)),
-                provisional_time: None,
+                provisional_time: Some(pushed_time),
                 mention: counts_as_mention,
             });
+            let carry_read = buffer.read_facts.mark() > previous_mark;
             buffer.timeline.sort_by_key(|record| record.order);
             derive_read_projection(buffer);
             carry_read
@@ -4175,7 +4189,7 @@ mod tests {
         DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming,
         IncomingDestination, NameKey, NetworkModel, PendingTargetState, SendTarget, TimelineOrigin,
         chat_projection, collapse_blank_lines, derive_read_projection, draft_key, message_order,
-        nick_color_index, reaction_actor_key, time_millis,
+        nick_color_index, reaction_actor_key, system_time_from_millis, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -4878,6 +4892,21 @@ mod tests {
                 mention: index < mentions,
             })
             .collect()
+    }
+
+    fn pushed_channel_message() -> PushedMessage {
+        serde_json::from_value(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed-one",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "arrived while closed",
+            "kind": "message",
+        }))
+        .expect("pushed message")
     }
 
     #[test]
@@ -6431,6 +6460,73 @@ mod tests {
         assert_eq!(
             model.buffers[&buffer_id].read_facts.mark(),
             Some(ServerTimeMs::new(pushed_time + 1))
+        );
+    }
+
+    #[test]
+    fn late_server_mark_carries_a_reconciled_push_read() {
+        let (mut model, state) = model(10);
+        model.restore_pushed_messages(vec![pushed_channel_message()], &state);
+        let pushed_time = 1_793_709_296_789;
+        model.receive_incoming(
+            incoming(
+                &state,
+                "arrived while closed",
+                Some("pushed-one"),
+                Some(pushed_time + 1),
+                pushed_time + 1,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        let conversation = papo::Conversation::Channel(channel_name(&state, "#room"));
+
+        let (_, advance) = model.apply_server_read_marker_with_advance(
+            &conversation,
+            Some(system_time_from_millis(pushed_time)),
+        );
+
+        let buffer_id = model.names[&NameKey::Channel(channel_name(&state, "#room"))];
+        assert_eq!(
+            time_millis(advance.expect("repair advance").time),
+            pushed_time + 1
+        );
+        assert_eq!(model.buffers[&buffer_id].projection.unread, 0);
+    }
+
+    #[test]
+    fn reconciled_push_carry_survives_a_snapshot_reload() {
+        let (mut live, state) = model(10);
+        live.restore_pushed_messages(vec![pushed_channel_message()], &state);
+        let pushed_time = 1_793_709_296_789;
+        live.receive_incoming(
+            incoming(
+                &state,
+                "arrived while closed",
+                Some("pushed-one"),
+                Some(pushed_time + 1),
+                pushed_time + 1,
+                TimelineOrigin::History,
+            ),
+            &state,
+        );
+        let encoded = live
+            .chat_list_snapshot("network".into())
+            .encode()
+            .expect("encode snapshot");
+        let snapshot = ChatListSnapshot::decode(&encoded, "network").expect("decode snapshot");
+        let (mut restored, restored_state) = model(10);
+        restored.restore_chat_list(snapshot);
+        let conversation = papo::Conversation::Channel(channel_name(&restored_state, "#room"));
+
+        restored
+            .apply_server_read_marker(&conversation, Some(system_time_from_millis(pushed_time)));
+
+        let buffer_id = restored.names[&NameKey::Channel(channel_name(&restored_state, "#room"))];
+        assert_eq!(restored.buffers[&buffer_id].projection.unread, 0);
+        assert_eq!(
+            restored.buffers[&buffer_id].projection.read_at_ms,
+            Some(pushed_time + 1)
         );
     }
 
