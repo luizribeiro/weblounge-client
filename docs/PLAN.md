@@ -29,6 +29,12 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep nick identity presentation consistent across the transcript and composer. Clickable
+  sender labels, action authors, notice authors and in-message mentions now retain the transcript's
+  650 weight after the button reset, matching inert and own nicks on desktop and phone. Typing
+  nicks and person completions use that same weight and the shared theme-aware nick-colour helper;
+  command and channel completions remain unchanged. Built-app local-Ergo journeys cover both
+  layouts and themes, with Lounge Night before/after captures at the reference viewports.
 - [x] Make IRC `NOTICE` a first-class chat semantic across live events, history replay and push
   restoration. Channel notices stay in their channel; ordinary private notices use the sender's
   verified DM thread, including service nicks until papo exposes typed service identity; typed
