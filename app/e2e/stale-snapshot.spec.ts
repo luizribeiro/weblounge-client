@@ -1,4 +1,10 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  devices,
+  expect,
+  type Locator,
+  type Page,
+  test,
+} from "@playwright/test";
 import { closeEngineDatabase, openEngineDatabase } from "./engine-database";
 import {
   captureHistoryWire,
@@ -421,11 +427,10 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       );
       await markerReader.markRead(bot.nickname, messageTag(line, "time"));
       await expectRead(bufferRow(page, bot.nickname), bot.nickname);
-      expect(await snapshotReadState(page, bot.nickname)).toEqual({
-        gap: false,
-        mentions: 0,
-        unread: 0,
-      });
+      await backgroundPage(page);
+      await expect
+        .poll(() => snapshotReadState(page, bot.nickname))
+        .toEqual({ gap: false, mentions: 0, unread: 0 });
 
       await page.goto(startUrlForAccount(appAccount, appPassword, channel));
       await expect
@@ -511,6 +516,128 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
       if (!current.isClosed()) await current.close();
       keeper.close();
       bot.close();
+    }
+  });
+
+  test("persists restored pushed rows before an immediate background relaunch", async ({
+    baseURL,
+    browser,
+    browserName,
+  }) => {
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const { defaultBrowserType: _browser, ...device } =
+      devices[browserName === "webkit" ? "iPhone 16 Pro" : "Pixel 7"];
+    const context = await browser.newContext({ ...device, baseURL });
+    const suffix = Date.now().toString(36).slice(-6);
+    const channels = Array.from(
+      { length: 3 },
+      (_, index) => `#relaunch-${index}-${suffix}`,
+    );
+    const firstChannel = channels[0];
+    if (firstChannel === undefined) throw new Error("first channel is missing");
+    const appAccount = `relaunch-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
+    const keeper = await IrcClient.connectIsolated(appAccount, firstChannel);
+    await keeper.joinAll(channels.slice(1));
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    const bots = await Promise.all(
+      channels.map((channel, index) =>
+        IrcClient.connect(
+          `relaunch-${index}-${suffix}`,
+          "weblounge-bot",
+          "weblounge-bot-test",
+          channel,
+        ),
+      ),
+    );
+    let current = await context.newPage();
+    let forwarderDropped = false;
+    try {
+      await installWorkerControl(current);
+      await useDedicatedWorker(current);
+      await current.goto(
+        startUrlForAccount(appAccount, appPassword, ...channels),
+      );
+      for (const channel of channels)
+        await expect(bufferRow(current, channel)).toBeVisible();
+
+      const initialPreviews = channels.map(
+        (channel, index) => `initial ${index} ${channel} ${suffix}`,
+      );
+      for (const [index, channel] of channels.entries()) {
+        const preview = initialPreviews[index];
+        if (preview === undefined)
+          throw new Error("initial preview is missing");
+        const bot = bots[index];
+        if (bot === undefined) throw new Error("initial bot is missing");
+        await bot.privmsgConfirmed(channel, preview);
+      }
+      for (const [index, channel] of channels.entries()) {
+        const preview = initialPreviews[index];
+        if (preview === undefined)
+          throw new Error("initial preview is missing");
+        await expect(bufferRow(current, channel)).toContainText(preview);
+        await expect
+          .poll(() => snapshotRow(current, channel))
+          .toMatchObject({ preview: expect.stringContaining(preview) });
+      }
+
+      const finalPreviews = channels.map(
+        (channel, index) => `final ${index} ${channel} ${suffix}`,
+      );
+      const activityBase = Date.now() + 1_000;
+      await controlForwarder("drop");
+      forwarderDropped = true;
+      for (const [index, channel] of channels.entries()) {
+        const preview = finalPreviews[index];
+        if (preview === undefined) throw new Error("final preview is missing");
+        const bot = bots[index];
+        if (bot === undefined) throw new Error("final bot is missing");
+        const line = await bot.privmsgConfirmed(channel, preview);
+        await seedPushedMessage(current, {
+          nickname: appAccount,
+          sender: bot.nickname,
+          target: channel,
+          text: preview,
+          msgid: messageTag(line, "msgid"),
+          time: new Date(activityBase + index * 1_000).toISOString(),
+        });
+      }
+      await controlledEngineRequest(current, {
+        type: "load_pushed_messages",
+        network_id: 1,
+      });
+
+      const expectedOrder = [...channels].reverse();
+      await expect
+        .poll(() => selectedChatRows(current, channels))
+        .toEqual(
+          expectedOrder.map((title, index) => ({
+            title,
+            preview: `${bots[bots.length - index - 1]?.nickname}: ${finalPreviews[finalPreviews.length - index - 1]}`,
+          })),
+        );
+      const finalRows = await selectedChatRows(current, channels);
+      await deletePushedMessages(current);
+      await backgroundPage(current);
+      await current.close();
+
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await recordFirstChatRows(current, channels);
+      await current.goto(
+        startUrlForAccount(appAccount, appPassword, ...channels),
+      );
+      await expect.poll(() => firstChatRows(current)).toEqual(finalRows);
+    } finally {
+      if (forwarderDropped) await controlForwarder("restore");
+      if (!current.isClosed()) await current.close();
+      await context.close();
+      keeper.close();
+      for (const bot of bots) bot.close();
     }
   });
 
@@ -1144,6 +1271,133 @@ async function installStorageWriteFailureControl(page: Page): Promise<void> {
   });
 }
 
+async function installWorkerControl(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeWorker = globalThis.Worker;
+    class ControlledWorker extends NativeWorker {
+      constructor(scriptURL: string | URL, options?: WorkerOptions) {
+        super(scriptURL, options);
+        const results = new Map<string, string>();
+        Reflect.set(globalThis, "controlledEngineResults", results);
+        this.addEventListener("message", (event) => {
+          if (
+            typeof event.data === "object" &&
+            event.data !== null &&
+            "id" in event.data &&
+            typeof event.data.id === "string" &&
+            results.has(event.data.id) &&
+            "type" in event.data &&
+            typeof event.data.type === "string"
+          )
+            results.set(event.data.id, event.data.type);
+        });
+        Reflect.set(
+          globalThis,
+          "sendControlledEngineRequest",
+          (request: Readonly<Record<string, unknown>>) => {
+            const id = crypto.randomUUID();
+            results.set(id, "pending");
+            this.postMessage({ type: "request", payload: { id, request } });
+            return id;
+          },
+        );
+      }
+    }
+    Object.defineProperty(globalThis, "Worker", {
+      configurable: true,
+      value: ControlledWorker,
+    });
+  });
+}
+
+async function controlledEngineRequest(
+  page: Page,
+  request: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  const requestId = await page.evaluate((engineRequest) => {
+    const send = Reflect.get(globalThis, "sendControlledEngineRequest");
+    if (typeof send !== "function")
+      throw new Error("engine control was not installed");
+    return String(send(engineRequest));
+  }, request);
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const results = Reflect.get(globalThis, "controlledEngineResults");
+        return results instanceof Map ? results.get(id) : undefined;
+      }, requestId),
+    )
+    .toBe("command_result");
+}
+
+async function seedPushedMessage(
+  page: Page,
+  message: {
+    readonly nickname: string;
+    readonly msgid: string;
+    readonly sender: string;
+    readonly target: string;
+    readonly text: string;
+    readonly time: string;
+  },
+): Promise<void> {
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(async (value, pushed) => {
+      await new Promise<void>((resolve, reject) => {
+        const encoder = new TextEncoder();
+        const transaction = value.transaction("cache", "readwrite");
+        transaction.objectStore("cache").put(
+          encoder.encode(
+            JSON.stringify({
+              schema: 1,
+              network_label: "Local Ergo",
+              nickname: pushed.nickname,
+              sender: pushed.sender,
+              target: pushed.target,
+              msgid: pushed.msgid,
+              time: pushed.time,
+              text: pushed.text,
+              kind: "message",
+            }),
+          ),
+          encoder.encode(`pushed-message\0Local Ergo\0${pushed.msgid}`),
+        );
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }, message);
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}
+
+async function deletePushedMessages(page: Page): Promise<void> {
+  const database = await openEngineDatabase(page);
+  try {
+    await database.evaluate(async (value) => {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = value.transaction("cache", "readwrite");
+        const store = transaction.objectStore("cache");
+        const request = store.openCursor();
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor === null) return;
+          const key = new TextDecoder().decode(cursor.key as Uint8Array);
+          if (key.startsWith("pushed-message\0")) cursor.delete();
+          cursor.continue();
+        };
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    });
+  } finally {
+    await closeEngineDatabase(database);
+  }
+}
+
 function storageWriteAbortCount(page: Page): Promise<number> {
   return page.evaluate(() => {
     const count = Reflect.get(globalThis, "staleSnapshotWriteAbortCount");
@@ -1204,6 +1458,74 @@ async function recordCachedChatRows(
       subtree: true,
     });
   }, requiredTitles);
+}
+
+interface SelectedChatRow {
+  readonly title: string;
+  readonly preview: string;
+}
+
+async function selectedChatRows(
+  page: Page,
+  titles: readonly string[],
+): Promise<readonly SelectedChatRow[]> {
+  return page.locator("[data-mobile-chat-list] [data-buffer-id]").evaluateAll(
+    (rows, expectedTitles) =>
+      rows.flatMap((row) => {
+        const label = row.getAttribute("aria-label") ?? "";
+        const title = expectedTitles.find(
+          (candidate) =>
+            label === candidate || label.startsWith(`${candidate},`),
+        );
+        if (title === undefined) return [];
+        const preview =
+          row.querySelector("time")?.parentElement?.nextElementSibling
+            ?.textContent;
+        return [{ title, preview: preview ?? "" }];
+      }),
+    titles,
+  );
+}
+
+async function recordFirstChatRows(
+  page: Page,
+  requiredTitles: readonly string[],
+): Promise<void> {
+  await page.addInitScript((titles) => {
+    Reflect.set(globalThis, "firstRelaunchChatRows", undefined);
+    const capture = () => {
+      if (Reflect.get(globalThis, "firstRelaunchChatRows") !== undefined)
+        return;
+      const rows = [
+        ...document.querySelectorAll(
+          "[data-mobile-chat-list] [data-buffer-id]",
+        ),
+      ];
+      const selected = rows.flatMap((row) => {
+        const label = row.getAttribute("aria-label") ?? "";
+        const title = titles.find(
+          (candidate) =>
+            label === candidate || label.startsWith(`${candidate},`),
+        );
+        if (title === undefined) return [];
+        const preview =
+          row.querySelector("time")?.parentElement?.nextElementSibling
+            ?.textContent;
+        return [{ title, preview: preview ?? "" }];
+      });
+      if (selected.length === titles.length)
+        Reflect.set(globalThis, "firstRelaunchChatRows", selected);
+    };
+    new MutationObserver(capture).observe(document, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  }, requiredTitles);
+}
+
+function firstChatRows(page: Page): Promise<unknown> {
+  return page.evaluate(() => Reflect.get(globalThis, "firstRelaunchChatRows"));
 }
 
 function cachedChatRows(

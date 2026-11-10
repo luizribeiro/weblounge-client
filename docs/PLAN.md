@@ -32,6 +32,14 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Remove the obsolete chat-snapshot lifecycle flush. Every list change already queues its write
   immediately, so hidden, `pagehide` and freeze no longer send a no-op engine command; relaunch
   durability is covered directly by the immediate push-restoration journey.
+- [x] Keep push-restored chat-list rows current across an immediate background relaunch. Push
+  restoration now projects and queues the same immediate snapshot row changes as live and history
+  traffic, including when a warm buffer remains provisional while its authoritative history
+  refresh is pending. The startup and warm-load paths both persist their previews, times, read facts
+  and ordering; they no longer rely on a later IRC event to happen to queue the snapshot. A
+  local-Ergo journey restores several changed channel rows, backgrounds and closes the dedicated
+  worker, removes the consumed push records, holds the relaunch socket offline, and requires the
+  first Chromium and iPhone WebKit paint to contain the final durable order and previews.
 - [x] Keep the phone grouping journey's complete transcript order deterministic. The test used
   rewritten next-minute times for its asserted rows but left ten fakelagged backlog rows at live
   server time, so a run started just before a minute boundary could sort a same-sender backlog row

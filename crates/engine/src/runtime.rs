@@ -573,6 +573,7 @@ impl Runtime {
             events.push(EngineToUi::CommandResult { id: command_id });
             let events = finish_timeline_turn(state, events);
             send_events(&outbound, events);
+            update_chat_list(&shared_state, &outbound, instance);
             for fetch in history_fetches {
                 spawn_history_fetch(
                     Arc::clone(&shared_state),
@@ -1082,6 +1083,9 @@ impl Runtime {
             typing: crate::typing::OutgoingTyping::default(),
         });
         let output = finish_timeline_turn(state, output);
+        if restored_push {
+            update_chat_list(&self.state, &self.outbound, instance);
+        }
 
         spawn_task(async move {
             let _ = driver.await;
@@ -1165,7 +1169,11 @@ impl Runtime {
             push: PushRegistration::default(),
             typing: crate::typing::OutgoingTyping::default(),
         });
-        finish_timeline_turn(state, output)
+        let output = finish_timeline_turn(state, output);
+        if restored_push {
+            update_chat_list(&self.state, &self.outbound, instance);
+        }
+        output
     }
 
     fn reconnect_hosted(
@@ -5972,8 +5980,8 @@ async fn delay(duration: Duration) {
         assert!(running.hosted_reconnect.is_some());
     }
 
-    #[test]
-    fn hosted_profile_restores_pushed_messages_before_a_token_exists() {
+    #[tokio::test]
+    async fn hosted_profile_restores_pushed_messages_before_a_token_exists() {
         let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
             "schema": 1,
             "network_label": "Lounge",
@@ -5987,9 +5995,10 @@ async fn delay(duration: Duration) {
         }))
         .expect("pushed message");
         let (outbound, _receiver) = mpsc::unbounded_channel();
+        let storage = Arc::new(MemoryKv::default());
         let runtime = Runtime::with_storage(
             outbound,
-            Arc::new(MemoryKv::default()),
+            Arc::clone(&storage),
             None,
             vec![pushed],
             "weblounge test".into(),
@@ -6019,6 +6028,33 @@ async fn delay(duration: Duration) {
                 network_id: NetworkId(1)
             }
         )));
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let stored = read(storage.as_ref())
+                    .await
+                    .expect("read snapshot")
+                    .and_then(|bytes| {
+                        ChatListSnapshot::decode(
+                            &bytes,
+                            &crate::chat_list_snapshot::fingerprint(
+                                "Lounge",
+                                "wss://beta.weblounge.org/socket",
+                            ),
+                        )
+                    });
+                if stored.as_ref().is_some_and(|snapshot| {
+                    snapshot.rows.iter().any(|row| {
+                        row.title == "#lounge"
+                            && row.preview.as_deref() == Some("mel: visible before history")
+                    })
+                }) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("restored pushed row is persisted");
     }
 
     #[tokio::test]
@@ -6037,7 +6073,16 @@ async fn delay(duration: Duration) {
         let (client, _events, _wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));
         let (state, outbound, mut receiver) = harness(client);
-        lock(&state).storage = storage;
+        {
+            let mut state = lock(&state);
+            state.storage = Arc::clone(&storage);
+            state
+                .network
+                .as_mut()
+                .expect("network remains active")
+                .chat_list
+                .fingerprint = "network".into();
+        }
         let runtime = Runtime { state, outbound };
         mark_runtime_online(&runtime);
 
@@ -6096,6 +6141,25 @@ async fn delay(duration: Duration) {
                     )
                 )
         )));
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let stored = read(storage.as_ref())
+                    .await
+                    .expect("read snapshot")
+                    .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+                if stored.as_ref().is_some_and(|snapshot| {
+                    snapshot.rows.iter().any(|row| {
+                        row.title == "#lounge"
+                            && row.preview.as_deref() == Some("mel: loaded into the open app")
+                    })
+                }) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("pushed chat-list row is persisted");
     }
 
     #[tokio::test]

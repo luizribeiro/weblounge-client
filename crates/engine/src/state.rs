@@ -869,12 +869,14 @@ impl NetworkModel {
                     && buffer.projection.available != Some(false)
             })
             .filter_map(|buffer| {
-                if matches!(
-                    buffer.history,
-                    HistoryState::Ready { .. }
-                        | HistoryState::LoadingOlder { .. }
-                        | HistoryState::RefreshCapped
-                ) {
+                if buffer.pushed_history_pending
+                    || matches!(
+                        buffer.history,
+                        HistoryState::Ready { .. }
+                            | HistoryState::LoadingOlder { .. }
+                            | HistoryState::RefreshCapped
+                    )
+                {
                     return snapshot_row(buffer);
                 }
                 let conversation = snapshot_conversation(buffer)?;
@@ -4984,6 +4986,15 @@ mod tests {
         .expect("pushed message");
 
         model.restore_pushed_messages(vec![pushed], &state);
+
+        let pushed_snapshot = model.merge_chat_list_snapshot(
+            "network".into(),
+            &ChatListSnapshot::new("network".into(), Vec::new()),
+        );
+        assert_eq!(
+            pushed_snapshot.rows[0].preview.as_deref(),
+            Some("alice: provisional while suspended")
+        );
 
         assert_eq!(
             model.names[&NameKey::Channel(channel)],
