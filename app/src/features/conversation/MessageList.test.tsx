@@ -1984,6 +1984,29 @@ it("restacks measured rows when the New boundary moves past a long row", async (
   );
 });
 
+it("prunes row caches when switching buffers", async () => {
+  const deleteSpy = vi.spyOn(Map.prototype, "delete");
+  const [bufferId, setBufferId] = createSignal(1);
+  const [messages, setMessages] = createSignal<readonly MessageProjection[]>([
+    { ...message, id: 101 },
+  ]);
+  render(() => (
+    <MessageList bufferId={bufferId()} messages={messages()} readAtMs={1} />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  deleteSpy.mockClear();
+
+  batch(() => {
+    setBufferId(2);
+    setMessages([{ ...message, id: 202 }]);
+  });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(
+    deleteSpy.mock.calls.filter(([key]) => key === "message-101"),
+  ).toHaveLength(2);
+});
+
 it("keeps a bounded DOM for ten thousand rows", async () => {
   const messages = Array.from({ length: 10_000 }, (_, index) => ({
     ...message,

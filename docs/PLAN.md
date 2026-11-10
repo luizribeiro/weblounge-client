@@ -44,6 +44,10 @@ The single place a fresh session reads to know where the project stands. Update 
   transcript size estimator's `topic` discriminant is now covered by the same narrow per-file
   incidental allowance as the rendered notice switch, without allowing command-name literals
   elsewhere.
+- [x] Bound transcript row-size caches to the current projection. The desktop shell reuses one
+  `MessageList` across buffer switches, so removed row keys are now pruned from both cached
+  estimates and revision sources instead of retaining every buffer opened during the session.
+  A component test switches buffers and proves the old row leaves both caches.
 - [x] Keep nick identity presentation consistent across the transcript and composer. Clickable
   sender labels, action authors, notice authors and in-message mentions now retain the transcript's
   650 weight after the button reset, matching inert and own nicks on desktop and phone. Typing

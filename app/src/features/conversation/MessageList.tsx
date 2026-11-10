@@ -130,6 +130,13 @@ export function MessageList(props: MessageListProps) {
       readonly spacing: LineSpacing | undefined;
     }
   >();
+  const pruneRowCaches = (currentRows: readonly TimelineRow[]) => {
+    const currentKeys = new Set(currentRows.map((row) => row.key));
+    for (const key of estimatedSizes.keys())
+      if (!currentKeys.has(key)) estimatedSizes.delete(key);
+    for (const key of rowRevisionCache.keys())
+      if (!currentKeys.has(key)) rowRevisionCache.delete(key);
+  };
   let renderedCount = 0;
   let currentBuffer = props.bufferId;
   const initialReadAt = dividerMarkAfterOwnSend(
@@ -576,6 +583,7 @@ export function MessageList(props: MessageListProps) {
   );
   createEffect(() => {
     const currentRows = rows();
+    pruneRowCaches(currentRows);
     const currentRevisions = currentRows.map((row, index) =>
       rowSizeRevision(row, index, currentRows),
     );
