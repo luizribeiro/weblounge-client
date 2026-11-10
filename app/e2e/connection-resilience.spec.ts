@@ -344,33 +344,40 @@ test.describe("connection resilience against local Ergo", () => {
     }
   });
 
-  test("reconciles a warm restored push without restarting the app", async ({
-    context,
+  test("shows history loading when a warm chat-list buffer reconciles a restored push", async ({
     page,
   }, testInfo) => {
     const bot = await connectBot("warm-push");
     const suffix = Date.now().toString(36);
     const partial = `warm push first line ${suffix}`;
     const authoritative = `${partial} and hello weblounge from history`;
+    let dropped = false;
     try {
       await bot.mode(bot.nickname, "+B");
+      await installNativeFeelInstrumentation(page);
       await installWorkerControl(page);
       await openChannel(page, testInfo.project.name);
       await expect(
         page.locator("[data-conversation-title][data-connection-progress]"),
       ).toHaveCount(0);
-
-      await context.setOffline(true);
-      await controlledEngineRequest(page, {
-        type: "set_device_online",
-        network_id: 1,
-        online: false,
-      });
-      await controlForwarder("drop");
-      await expectTransientConnectionPresentation(
-        page,
-        isMobile(testInfo.project.name),
+      if (isMobile(testInfo.project.name))
+        await page.getByRole("button", { name: "Back to chats" }).click();
+      else
+        await page.getByRole("button", { name: "Local Ergo, online" }).click();
+      const channelRows = page
+        .locator("[data-buffer-id]")
+        .filter({ has: page.getByText(channel, { exact: true }) });
+      await expect(channelRows).toHaveCount(1);
+      const bufferId = await channelRows.getAttribute("data-buffer-id");
+      if (bufferId === null) throw new Error("channel buffer id is missing");
+      const channelButton = page.locator(
+        `[data-buffer-id=${JSON.stringify(bufferId)}]`,
       );
+      await expect(channelButton).toBeVisible();
+
+      await setVisibility(page, true);
+      await controlForwarder("drop");
+      dropped = true;
       const identity = messageIdentity(
         await bot.privmsgConfirmed(channel, authoritative),
       );
@@ -381,9 +388,25 @@ test.describe("connection resilience against local Ergo", () => {
         text: partial,
         ...identity,
       });
-      await loadWarmPushedMessages(page);
+      await controlledEngineRequest(page, {
+        type: "load_pushed_messages",
+        network_id: 1,
+      });
+      await expect(channelRows).toHaveCount(1);
+      await setVisibility(page, false);
+      await dispatchPersistedPageShow(page);
       await page.bringToFront();
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await channelButton.click();
+      const title = page.locator("[data-conversation-title]");
+      await expect(title).toHaveAttribute("data-connection-progress", "true");
+      await expect(title).toHaveAttribute("data-connection-phase", "loading");
+      await expect(title).toHaveCSS("animation-duration", "1s");
+      await expect(title).toHaveCSS("animation-play-state", "running");
+      await expectTransientConnectionPresentation(
+        page,
+        isMobile(testInfo.project.name),
+      );
       const provisional = transcriptRow(page, partial);
       await expect(provisional).toHaveCount(1);
       await expect(provisional.getByRole("img", { name: "Bot" })).toHaveCount(
@@ -392,22 +415,18 @@ test.describe("connection resilience against local Ergo", () => {
       expect(["", "rgba(0, 0, 0, 0)"]).toContain(
         await highlightPaint(provisional),
       );
-      await expect(
-        page.getByRole("heading", { name: channel }),
-      ).toHaveAttribute("data-connection-progress", "true");
 
       await controlForwarder("restore");
-      await context.setOffline(false);
-      await dispatchPersistedPageShow(page);
+      dropped = false;
       await expectOnline(page, testInfo.project.name);
       const reconciled = transcriptRow(page, authoritative);
       await expect(reconciled).toHaveCount(1);
       await expect(reconciled.getByRole("img", { name: "Bot" })).toHaveCount(1);
       expect(await highlightPaint(reconciled)).not.toBe("rgba(0, 0, 0, 0)");
       await expect(provisional).toHaveCount(0);
+      await expect(title).not.toHaveAttribute("data-connection-progress");
     } finally {
-      await controlForwarder("restore");
-      await context.setOffline(false);
+      if (dropped) await controlForwarder("restore");
       bot.close();
     }
   });
@@ -884,19 +903,6 @@ async function dispatchPersistedPageShow(page: Page): Promise<void> {
     const event = new Event("pageshow");
     Object.defineProperty(event, "persisted", { value: true });
     window.dispatchEvent(event);
-  });
-}
-
-async function loadWarmPushedMessages(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    navigator.serviceWorker.dispatchEvent(
-      new MessageEvent("message", {
-        data: {
-          kind: "open-route",
-          route: "/Local%20Ergo/weblounge-test",
-        },
-      }),
-    );
   });
 }
 

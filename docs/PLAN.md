@@ -45,10 +45,11 @@ The single place a fresh session reads to know where the project stands. Update 
   provisional history edge: it does not advance the authoritative cursor, projects pending/syncing
   state until same-msgid history replaces its text and identity, starts a latest-page refresh while
   online, retries one failed or timed-out refresh, and requeues history interrupted by reconnect.
-  Local-Ergo browser coverage starts from a loaded conversation, restores a deliberately truncated
-  first line while offline, and proves reconnect replaces it in place with the full highlighted,
-  bot-attributed row. Push-payload coverage pins Ergo's length-limited multiline input. Relay,
-  ciphertext and notification privacy behavior are unchanged.
+  Local-Ergo browser coverage backgrounds a loaded PWA on its chat list, silently kills its socket,
+  restores a deliberately truncated first line, then opens the buffer from the chat list. It proves
+  the conversation-title shimmer stays active until reconnect replaces the row in place with full
+  highlighted, bot-attributed history. Push-payload coverage pins Ergo's length-limited multiline
+  input. Relay, ciphertext and notification privacy behavior are unchanged.
 - [x] Keep unchanged visible transcript rows mounted across ordinary appends and measurement
   refreshes. TanStack can replace virtual-item records while `timelineRows` recreates projection
   wrappers; reference-keying either layer let Solid detach a still-visible message between
