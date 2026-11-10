@@ -29,6 +29,16 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Make IRC `NOTICE` a first-class chat semantic across live events, history replay and push
+  restoration. Channel notices stay in their channel; ordinary private notices use the sender's
+  verified DM thread; typed server notices and strongly identified Ergo services use the existing
+  server buffer without creating a DM. Channel and DM notices share message unread/highlight,
+  deduplication and projection behavior, while server-buffer badge behavior stays unchanged.
+  Pushed notices retain their semantic through authoritative same-msgid reconciliation. The app
+  renders sender-shaped muted italic rows that break normal-message grouping and use matching
+  desktop/phone size estimates. Engine replay tests cover channel, DM, server/service, history and
+  push paths; local-Ergo browser coverage pins live counts, trust styling and cold-push
+  reconciliation, with Lounge Night captures at the phone and desktop reference viewports.
 - [x] Keep mention bands inside the existing transcript rhythm. Phone highlights now split each
   group or continuation gap evenly above and below the painted band without changing row geometry,
   while desktop retains its symmetric one-line padding. The idle transcript motion layer no longer
