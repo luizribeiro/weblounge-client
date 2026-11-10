@@ -344,6 +344,72 @@ test.describe("connection resilience against local Ergo", () => {
     }
   });
 
+  test("reconciles a warm restored push without restarting the app", async ({
+    context,
+    page,
+  }, testInfo) => {
+    const bot = await connectBot("warm-push");
+    const suffix = Date.now().toString(36);
+    const partial = `warm push first line ${suffix}`;
+    const authoritative = `${partial} and hello weblounge from history`;
+    try {
+      await bot.mode(bot.nickname, "+B");
+      await installWorkerControl(page);
+      await openChannel(page, testInfo.project.name);
+      await expect(
+        page.locator("[data-conversation-title][data-connection-progress]"),
+      ).toHaveCount(0);
+
+      await context.setOffline(true);
+      await controlledEngineRequest(page, {
+        type: "set_device_online",
+        network_id: 1,
+        online: false,
+      });
+      await controlForwarder("drop");
+      await expectTransientConnectionPresentation(
+        page,
+        isMobile(testInfo.project.name),
+      );
+      const identity = messageIdentity(
+        await bot.privmsgConfirmed(channel, authoritative),
+      );
+      await expect(transcriptRow(page, authoritative)).toHaveCount(0);
+      await seedPushedMessage(page, {
+        sender: bot.nickname,
+        target: channel,
+        text: partial,
+        ...identity,
+      });
+      await loadWarmPushedMessages(page);
+      await page.bringToFront();
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      const provisional = transcriptRow(page, partial);
+      await expect(provisional).toHaveCount(1);
+      await expect(provisional.getByRole("img", { name: "Bot" })).toHaveCount(
+        0,
+      );
+      expect(await highlightPaint(provisional)).toBe("rgba(0, 0, 0, 0)");
+      await expect(
+        page.getByRole("heading", { name: channel }),
+      ).toHaveAttribute("data-connection-progress", "true");
+
+      await controlForwarder("restore");
+      await context.setOffline(false);
+      await dispatchPersistedPageShow(page);
+      await expectOnline(page, testInfo.project.name);
+      const reconciled = transcriptRow(page, authoritative);
+      await expect(reconciled).toHaveCount(1);
+      await expect(reconciled.getByRole("img", { name: "Bot" })).toHaveCount(1);
+      expect(await highlightPaint(reconciled)).not.toBe("rgba(0, 0, 0, 0)");
+      await expect(provisional).toHaveCount(0);
+    } finally {
+      await controlForwarder("restore");
+      await context.setOffline(false);
+      bot.close();
+    }
+  });
+
   test("marks a push-only read before authoritative history arrives", async ({
     page,
   }, testInfo) => {
@@ -652,9 +718,15 @@ function messageRow(page: Page, text: string, delivery: string) {
 }
 
 function transcriptRow(page: Page, text: string) {
-  return page
-    .locator("[data-message-row]")
-    .filter({ has: page.getByText(text, { exact: true }) });
+  return page.locator(
+    `[data-message-row][data-message-text=${JSON.stringify(text)}]`,
+  );
+}
+
+function highlightPaint(row: Locator): Promise<string> {
+  return row.evaluate(
+    (element) => getComputedStyle(element, "::before").backgroundColor,
+  );
 }
 
 async function sentWireLineCount(page: Page, text: string): Promise<number> {
@@ -813,6 +885,39 @@ async function dispatchPersistedPageShow(page: Page): Promise<void> {
   });
 }
 
+async function loadWarmPushedMessages(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          kind: "open-route",
+          route: "/Local%20Ergo/weblounge-test",
+        },
+      }),
+    );
+  });
+}
+
+async function controlledEngineRequest(
+  page: Page,
+  request: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  const requestId = await page.evaluate((engineRequest) => {
+    const send = Reflect.get(globalThis, "sendControlledEngineRequest");
+    if (typeof send !== "function")
+      throw new Error("engine control was not installed");
+    return String(send(engineRequest));
+  }, request);
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const results = Reflect.get(globalThis, "controlledEngineResults");
+        return results instanceof Map ? results.get(id) : undefined;
+      }, requestId),
+    )
+    .toBe("command_result");
+}
+
 async function controlForwarder(action: "drop" | "restore"): Promise<void> {
   const base = process.env.WEBLOUNGE_E2E_FORWARDER_URL;
   if (base === undefined) throw new Error("socket forwarder is unavailable");
@@ -962,6 +1067,40 @@ async function installWorkerControl(page: Page): Promise<void> {
           this.dispatchEvent(new Event("error"));
           this.terminate();
         });
+        const controlledEngineResults = new Map<string, string>();
+        Reflect.set(
+          globalThis,
+          "controlledEngineResults",
+          controlledEngineResults,
+        );
+        this.addEventListener("message", (event) => {
+          if (
+            typeof event.data === "object" &&
+            event.data !== null &&
+            "id" in event.data &&
+            typeof event.data.id === "string" &&
+            controlledEngineResults.has(event.data.id) &&
+            "type" in event.data &&
+            typeof event.data.type === "string"
+          )
+            controlledEngineResults.set(event.data.id, event.data.type);
+        });
+        Reflect.set(
+          globalThis,
+          "sendControlledEngineRequest",
+          (request: Readonly<Record<string, unknown>>) => {
+            const id = crypto.randomUUID();
+            controlledEngineResults.set(id, "pending");
+            this.postMessage({
+              type: "request",
+              payload: {
+                id,
+                request,
+              },
+            });
+            return id;
+          },
+        );
       }
     }
     Object.defineProperty(globalThis, "Worker", {
