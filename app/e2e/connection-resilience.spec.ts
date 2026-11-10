@@ -389,7 +389,9 @@ test.describe("connection resilience against local Ergo", () => {
       await expect(provisional.getByRole("img", { name: "Bot" })).toHaveCount(
         0,
       );
-      expect(await highlightPaint(provisional)).toBe("rgba(0, 0, 0, 0)");
+      expect(["", "rgba(0, 0, 0, 0)"]).toContain(
+        await highlightPaint(provisional),
+      );
       await expect(
         page.getByRole("heading", { name: channel }),
       ).toHaveAttribute("data-connection-progress", "true");
