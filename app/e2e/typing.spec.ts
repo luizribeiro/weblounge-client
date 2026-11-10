@@ -101,40 +101,69 @@ test.describe("typing indicators", () => {
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
     const suffix = mobile ? "mobile" : "desktop";
+    const run = Date.now().toString(36).slice(-5);
+    const typingChannel = `#typing-${suffix[0]}-${run}`;
+    const viewer = `typing-viewer-${suffix[0]}-${run}`;
+    const seed = await IrcClient.connectIsolated(viewer, typingChannel);
+    seed.close();
+    await seed.waitForDisconnect();
     const first = await IrcClient.connectIsolated(
-      `typing-space-alexandria-${suffix}`,
-      channel,
+      `typing-alexandria-${suffix[0]}-${run}`,
+      typingChannel,
     );
     const second = await IrcClient.connectIsolated(
-      `typing-space-bartholomew-${suffix}`,
-      channel,
+      `typing-bartholomew-${suffix[0]}-${run}`,
+      typingChannel,
     );
     const third = await IrcClient.connectIsolated(
-      `typing-space-cordelia-${suffix}`,
-      channel,
+      `typing-cordelia-${suffix[0]}-${run}`,
+      typingChannel,
     );
     try {
       if (mobile) await emulateStandalone(page);
-      await page.goto("/?irc-password=weblounge-test");
-      if (mobile) {
+      const params = new URLSearchParams({
+        "irc-account": viewer,
+        "irc-autojoin": typingChannel,
+        "irc-nickname": viewer,
+        "irc-password": `test-${viewer}`,
+      });
+      await page.goto(`/?${params.toString()}`);
+      if (mobile)
         await expect(page.locator("[data-mobile-chats]")).toBeVisible();
-        await page.getByRole("button", { name: channel, exact: true }).click();
-      }
-      await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+      await page
+        .getByRole("button", { name: typingChannel, exact: true })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: typingChannel }),
+      ).toBeVisible();
       const indicator = page.locator("[data-typing-indicator]");
 
-      await first.typingConfirmed(channel, "active");
+      const typingMessage = `typing colour from ${first.nickname}`;
+      await first.privmsgConfirmed(typingChannel, typingMessage);
+      await first.typingConfirmed(typingChannel, "active");
       await expect(indicator).toContainText(`${first.nickname} is typing…`);
+      const typingNick = indicator.locator(
+        `[data-typing-nick="${first.nickname}"]`,
+      );
+      const senderNick = page
+        .locator(`[data-message-row][data-message-text="${typingMessage}"]`)
+        .locator(`[title="${first.nickname}"]`);
+      await expect(senderNick).toBeVisible();
+      await expect(typingNick).toHaveCSS("font-weight", "650");
+      const senderColor = await senderNick.evaluate(
+        (element) => getComputedStyle(element).color,
+      );
+      await expect(typingNick).toHaveCSS("color", senderColor);
       const singleSpacing = await visibleTypingSpaces(indicator);
 
-      await second.typingConfirmed(channel, "active");
+      await second.typingConfirmed(typingChannel, "active");
       await expect(indicator).toContainText(
         `${first.nickname} and ${second.nickname} are typing…`,
       );
       const pairSpacing = await visibleTypingSpaces(indicator);
       const truncation = await typingTruncation(indicator);
 
-      await third.typingConfirmed(channel, "active");
+      await third.typingConfirmed(typingChannel, "active");
       await expect(indicator).toHaveText("several people are typing…");
       await expect(indicator.locator("[data-typing-nick]")).toHaveCount(0);
 

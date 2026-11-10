@@ -46,7 +46,7 @@
 }
 
 .typing [data-typing-nick] {
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .input {
@@ -117,6 +117,10 @@ textarea.input {
   color: var(--wl-color-fg);
   display: flex;
   gap: 5px;
+}
+
+.nickCandidate {
+  font-weight: 650;
 }
 
 .secondary {

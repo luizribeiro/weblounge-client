@@ -58,6 +58,10 @@ it("renders rich options and routes pointer selection", () => {
   expect(screen.getByRole("img", { name: "bot" })).toHaveStyle({
     color: "var(--wl-nick-2)",
   });
+  expect(screen.getByText("ana", { exact: true })).toHaveAttribute(
+    "data-suggestion-nick",
+    "true",
+  );
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
   const channel = screen.getByRole("option", { name: /#papo/u });
   const pointerDown = new Event("pointerdown", {

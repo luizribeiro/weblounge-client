@@ -2,9 +2,9 @@ import { createMemo, For, onCleanup } from "solid-js";
 import type { CompletionCandidate } from "../../engine/protocol";
 import { TouchTapGesture } from "../../platform/focus-without-pan";
 import { t, translate } from "../../strings";
-import { nickPaletteSize } from "../../theme/theme-registry";
 import { BotIcon } from "../../ui/BotIcon";
 import { Line } from "../../ui/Line";
+import { nickColor } from "../conversation/nick-color";
 import styles from "../conversation/SimpleComposer.module.css";
 
 interface SuggestionListProps {
@@ -83,7 +83,17 @@ export function SuggestionList(props: SuggestionListProps) {
                 tabIndex={-1}
               >
                 <Line class={styles.primary}>
-                  <span style={candidateStyle(candidate())}>
+                  <span
+                    class={
+                      candidate()?.type === "person"
+                        ? styles.nickCandidate
+                        : undefined
+                    }
+                    data-suggestion-nick={
+                      candidate()?.type === "person" || undefined
+                    }
+                    style={candidateStyle(candidate())}
+                  >
                     {candidateLabel(candidate())}
                   </span>
                   {candidateIsBot(candidate()) && (
@@ -180,6 +190,6 @@ function candidateStyle(candidate: CompletionCandidate | undefined) {
 
 function candidateColor(candidate: CompletionCandidate | undefined): string {
   return candidate?.type === "person"
-    ? `var(--wl-nick-${candidate.nick_color_index % nickPaletteSize})`
+    ? nickColor(candidate.nick_color_index)
     : "currentcolor";
 }

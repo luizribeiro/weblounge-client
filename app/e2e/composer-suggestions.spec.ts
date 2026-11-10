@@ -77,8 +77,10 @@ test.describe("composer suggestions against local Ergo", () => {
         await composer.fill("@an");
         const mention = page.getByRole("option", { name: /ana/u });
         await expect(mention).toBeVisible();
+        await expectPersonSuggestionPresentation(page, mention, "ana");
         await capture(page, "composer-suggestions-desktop-mention-dark.png");
         await page.emulateMedia({ colorScheme: "light" });
+        await expectPersonSuggestionPresentation(page, mention, "ana");
         await capture(page, "composer-suggestions-desktop-mention-light.png");
         await mention.click();
         await expect(composer).toHaveValue("ana: ");
@@ -186,8 +188,10 @@ test.describe("composer suggestions against local Ergo", () => {
         await composer.fill("@an");
         const mention = page.getByRole("option", { name: /ana/u });
         await expect(mention).toBeVisible();
+        await expectPersonSuggestionPresentation(page, mention, "ana");
         await capture(page, "composer-suggestions-mobile-mention-dark.png");
         await page.emulateMedia({ colorScheme: "light" });
+        await expectPersonSuggestionPresentation(page, mention, "ana");
         await capture(page, "composer-suggestions-mobile-mention-light.png");
         await mention.tap();
         await expect(composer).toHaveValue("ana: ");
@@ -338,6 +342,31 @@ async function assertComposerCaret(composer: Locator): Promise<void> {
       ),
     )
     .toBe(true);
+}
+
+async function expectPersonSuggestionPresentation(
+  page: Page,
+  option: Locator,
+  nick: string,
+): Promise<void> {
+  const label = option.getByText(nick, { exact: true });
+  const transcriptNick = page
+    .locator(
+      `[data-message-row][data-message-text^="hello from ${nick} suggestions-"] [title="${nick}"]`,
+    )
+    .last();
+  await expect(transcriptNick).toBeVisible();
+  const [suggestion, transcript] = await Promise.all([
+    label.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { color: style.color, fontWeight: style.fontWeight };
+    }),
+    transcriptNick.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { color: style.color, fontWeight: style.fontWeight };
+    }),
+  ]);
+  expect(suggestion).toEqual({ color: transcript.color, fontWeight: "650" });
 }
 
 async function expectMatchingCompletion(
