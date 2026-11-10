@@ -29,6 +29,10 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep the command-registry second-source check precise for generated notice kinds. The
+  transcript size estimator's `topic` discriminant is now covered by the same narrow per-file
+  incidental allowance as the rendered notice switch, without allowing command-name literals
+  elsewhere.
 - [x] Keep nick identity presentation consistent across the transcript and composer. Clickable
   sender labels, action authors, notice authors and in-message mentions now retain the transcript's
   650 weight after the button reset, matching inert and own nicks on desktop and phone. Typing
