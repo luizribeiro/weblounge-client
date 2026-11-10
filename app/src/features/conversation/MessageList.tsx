@@ -309,16 +309,6 @@ export function MessageList(props: MessageListProps) {
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
   });
-  const remeasure = () => {
-    if (list?.isConnected !== true) return;
-    preserveVisualScrollAnchor(list, () => {
-      virtualizer.measure();
-      for (const element of list?.querySelectorAll<HTMLLIElement>(
-        "li[data-index]",
-      ) ?? [])
-        virtualizer.measureElement(element);
-    });
-  };
   const refreshRenderedMeasurements = () => {
     if (list?.isConnected !== true) return;
     const measurements = [
@@ -332,6 +322,24 @@ export function MessageList(props: MessageListProps) {
     preserveVisualScrollAnchor(list, () => {
       for (const { index, size } of measurements)
         virtualizer.resizeItem(index, size);
+    });
+  };
+  const remeasure = () => {
+    if (list?.isConnected !== true) return;
+    const elements = [
+      ...list.querySelectorAll<HTMLLIElement>("li[data-index]"),
+    ];
+    const measurements = elements.flatMap((element) => {
+      const index = Number(element.dataset.index);
+      const size =
+        element.getBoundingClientRect().height || element.offsetHeight;
+      return Number.isInteger(index) && size > 0 ? [{ index, size }] : [];
+    });
+    preserveVisualScrollAnchor(list, () => {
+      virtualizer.measure();
+      for (const { index, size } of measurements)
+        virtualizer.resizeItem(index, size);
+      for (const element of elements) virtualizer.measureElement(element);
     });
   };
   const measureRow = (element: HTMLLIElement, index: number) => {
@@ -479,17 +487,15 @@ export function MessageList(props: MessageListProps) {
       virtualizer.scrollToEnd();
   });
   let measuredRevisions = rows().map(rowSizeRevision).join("\u0002");
-  let measuredRevisionCount = rows().length;
   createEffect(() => {
     const currentRows = rows();
     const revisions = currentRows.map(rowSizeRevision).join("\u0002");
     if (revisions === measuredRevisions) return;
-    const sameCount = currentRows.length === measuredRevisionCount;
     measuredRevisions = revisions;
-    measuredRevisionCount = currentRows.length;
-    if (!sameCount) return;
-    virtualizer.measure();
-    if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+    queueMicrotask(() => {
+      remeasure();
+      if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+    });
   });
   onMount(() => {
     props.onLiveEdgeChange?.(logicallyAtLiveEdge);
