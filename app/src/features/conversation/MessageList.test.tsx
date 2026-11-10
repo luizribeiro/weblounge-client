@@ -505,7 +505,7 @@ it("remeasures stale live rows before a keyboard snapshot reveals them", async (
   stop();
 });
 
-it("preserves fractional row measurements without transcript reserve", async () => {
+it("uses fractional painted row measurements without transcript reserve", async () => {
   const observers: ControlledResizeObserver[] = [];
   vi.stubGlobal(
     "ResizeObserver",
@@ -522,11 +522,12 @@ it("preserves fractional row measurements without transcript reserve", async () 
   const spacer = container.querySelector<HTMLElement>("[class*='spacer']");
   if (row === null || spacer === null)
     throw new Error("message row is missing");
+  row.getBoundingClientRect = () => ({ height: 18.5, width: 300 }) as DOMRect;
 
   for (const observer of observers) observer.flushTarget(row, 19.25);
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(spacer.style.height).toBe("47.25px");
+  expect(spacer.style.height).toBe("46.5px");
 
   container
     .querySelector<HTMLElement>("[data-message-motion-layer]")
@@ -535,7 +536,7 @@ it("preserves fractional row measurements without transcript reserve", async () 
     );
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
-  expect(spacer.style.height).toBe("47.25px");
+  expect(spacer.style.height).toBe("46.5px");
 });
 
 it("remeasures rows after fonts finish loading", async () => {

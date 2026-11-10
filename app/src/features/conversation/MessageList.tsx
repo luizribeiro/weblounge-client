@@ -1232,6 +1232,11 @@ function measureRowElement(
   entry: ResizeObserverEntry | undefined,
   instance: Parameters<typeof measureElement<HTMLLIElement>>[2],
 ): number {
+  const bounds = element.getBoundingClientRect();
+  const renderedSize = instance.options.horizontal
+    ? bounds.width
+    : bounds.height;
+  if (renderedSize > 0) return renderedSize;
   const borderBox = entry?.borderBoxSize[0];
   if (borderBox !== undefined) {
     const size = instance.options.horizontal
