@@ -161,6 +161,100 @@ test.describe("startup chat-list snapshot against local Ergo", () => {
     }
   });
 
+  test("first paint retains an own send from a loading cached DM", async ({
+    baseURL,
+    browser,
+    browserName,
+  }) => {
+    if (baseURL === undefined)
+      throw new Error("Playwright base URL is missing");
+    const { defaultBrowserType: _browser, ...device } =
+      devices[browserName === "webkit" ? "iPhone 16 Pro" : "Pixel 7"];
+    const context = await browser.newContext({ ...device, baseURL });
+    const suffix = Date.now().toString(36).slice(-6);
+    const appAccount = `own-dm-user-${suffix}`;
+    const appPassword = `test-${appAccount}`;
+    const keeper = await IrcClient.connectIsolated(
+      appAccount,
+      "#weblounge-test",
+    );
+    await keeper.setAlwaysOn(true);
+    keeper.close();
+    await keeper.waitForDisconnect();
+    const target = await IrcClient.connect(
+      `own-dm-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const other = await IrcClient.connect(
+      `other-dm-${suffix}`,
+      "weblounge-bot",
+      "weblounge-bot-test",
+      "#weblounge-test",
+    );
+    const titles = [target.nickname, other.nickname];
+    let current = await context.newPage();
+    let forwarderDropped = false;
+    try {
+      await current.goto("/config.json");
+      await seedUnreadDirectSnapshot(
+        current,
+        baseURL,
+        target.nickname,
+        `stale direct ${suffix}`,
+        [],
+        [],
+        0,
+        100,
+      );
+      await captureHistoryWire(current, {
+        holdRequest: `CHATHISTORY LATEST ${target.nickname} `,
+      });
+      await useDedicatedWorker(current);
+      await current.goto(startUrlForAccount(appAccount, appPassword));
+      await other.privmsgConfirmed(appAccount, `newer other ${suffix}`);
+      await expect(bufferRow(current, other.nickname)).toBeVisible();
+
+      await bufferRow(current, target.nickname).click();
+      await expect.poll(() => heldHistoryRequestCount(current)).toBe(1);
+      const own = `own cached direct ${suffix}`;
+      const composer = current.getByRole("textbox", {
+        name: `Message ${target.nickname}`,
+      });
+      await composer.fill(own);
+      await composer.press("Enter");
+      await expect(messageRow(current, own, "confirmed")).toHaveCount(1);
+      await expect
+        .poll(() => selectedChatRows(current, titles))
+        .toEqual([
+          {
+            title: target.nickname,
+            preview: `You: ${own}`,
+            time: expect.stringMatching(/\S/u),
+          },
+          expect.objectContaining({ title: other.nickname }),
+        ]);
+      const finalRows = await selectedChatRows(current, titles);
+
+      await controlForwarder("drop");
+      forwarderDropped = true;
+      await backgroundPage(current);
+      await current.close();
+      current = await context.newPage();
+      await useDedicatedWorker(current);
+      await recordFirstChatRows(current, titles);
+      await current.goto(startUrlForAccount(appAccount, appPassword));
+      await expect.poll(() => firstChatRows(current)).toEqual(finalRows);
+    } finally {
+      if (forwarderDropped) await controlForwarder("restore");
+      if (!current.isClosed()) await current.close();
+      await context.close();
+      target.close();
+      other.close();
+    }
+  });
+
   test("persists a fetched server marker before the next launch", async ({
     baseURL,
     context,
@@ -1213,6 +1307,7 @@ async function seedUnreadDirectSnapshot(
   channels: readonly string[],
   backgroundDirects: readonly string[],
   count = 1,
+  lastActivityMs = 1_800_000_000_000,
 ): Promise<void> {
   const endpoint = new URL("/socket", baseURL);
   endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
@@ -1241,7 +1336,7 @@ async function seedUnreadDirectSnapshot(
           {
             conversation: { kind: "direct", key: nick },
             title: nick,
-            last_activity_ms: 1_800_000_000_000,
+            last_activity_ms: lastActivityMs,
             stubs: Array.from({ length: Math.min(count, 100) }, (_, index) => ({
               mention: true,
               msgid: `cached-${nick}-${index}`,

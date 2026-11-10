@@ -29,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep confirmed own sends newer than a provisional cached row in the launch snapshot. A DM
+  whose latest history is still loading now retains its safe cached facts while the newer committed
+  preview and activity determine the next launch's first-paint content and order.
 - [x] Keep older history pages out of the jump-pill count. A scrolled-away transcript now compares
   each projection update with its previous newest `(time, id)` boundary, so prepends and initial
   loads stay silent while live-end appends retain the existing own/other counting behavior.
