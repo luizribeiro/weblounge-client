@@ -10,6 +10,74 @@ test.skip(
   "requires the flake's local Ergo fixture",
 );
 
+test("keeps clickable sender and mentioned nicks as bold as our own", async ({
+  page,
+}, testInfo) => {
+  const suffix = `${testInfo.project.name.slice(0, 2)}${Date.now().toString(36).slice(-5)}`;
+  const channel = `#nick-weight-${suffix}`;
+  const account = `nick-user-${suffix}`;
+  const startUrl = await isolatedStartUrl(account, channel);
+  const peer = await IrcClient.connect(
+    `nick-bot-${suffix}`,
+    "weblounge-bot",
+    "weblounge-bot-test",
+    channel,
+  );
+  const peerText = `peer sender ${suffix}`;
+  const ownText = `own mentions ${peer.nickname}`;
+  const actionText = `waves at ${account}`;
+  const noticeText = `notice from ${peer.nickname}`;
+  try {
+    await peer.mode(peer.nickname, "+B");
+    await useDedicatedWorker(page);
+    await page.goto(startUrl);
+    await page.getByRole("button", { name: channel }).click();
+    await expect(page.getByRole("heading", { name: channel })).toBeVisible();
+
+    await peer.privmsgConfirmed(channel, peerText);
+    const composer = page.getByRole("textbox", { name: `Message ${channel}` });
+    await composer.fill(ownText);
+    await composer.press("Enter");
+    await peer.actionConfirmed(channel, actionText);
+    await peer.noticeConfirmed(channel, noticeText);
+
+    const ownNick = messageRow(page, ownText).locator(`[title="${account}"]`);
+    const peerNick = messageRow(page, peerText).locator(
+      `[title="${peer.nickname}"]`,
+    );
+    const actionNick = messageRow(page, actionText)
+      .locator("[data-nick-action]")
+      .first();
+    const noticeNick = messageRow(page, noticeText).locator(
+      `[title="${peer.nickname}"]`,
+    );
+    const mentionedNick = messageRow(page, ownText).locator(
+      "[data-nick-action]",
+    );
+    await expect(ownNick).toBeVisible();
+    await expect(peerNick).toBeVisible();
+    await expect(actionNick).toBeVisible();
+    await expect(noticeNick).toBeVisible();
+    await expect(mentionedNick).toBeVisible();
+
+    for (const nick of [
+      ownNick,
+      peerNick,
+      actionNick,
+      noticeNick,
+      mentionedNick,
+    ])
+      await expect(nick).toHaveCSS("font-weight", "650");
+    const peerColor = await peerNick.evaluate(
+      (element) => getComputedStyle(element).color,
+    );
+    for (const nick of [actionNick, noticeNick, mentionedNick])
+      await expect(nick).toHaveCSS("color", peerColor);
+  } finally {
+    peer.close();
+  }
+});
+
 test("groups phone messages without losing timestamps or the live edge", async ({
   page,
 }, testInfo) => {

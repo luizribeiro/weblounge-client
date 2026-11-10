@@ -129,6 +129,7 @@
 }
 .own {
   color: var(--wl-color-self-nick);
+  font-weight: 650;
 }
 .nickAction {
   appearance: none;
@@ -138,6 +139,7 @@
   color: inherit;
   display: inline;
   font: inherit;
+  font-weight: 650;
   line-height: normal;
   padding: 0;
   text-align: inherit;
