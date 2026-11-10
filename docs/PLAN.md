@@ -29,6 +29,9 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Remove the obsolete chat-snapshot lifecycle flush. Every list change already queues its write
+  immediately, so hidden, `pagehide` and freeze no longer send a no-op engine command; relaunch
+  durability is covered directly by the immediate push-restoration journey.
 - [x] Keep the phone grouping journey's complete transcript order deterministic. The test used
   rewritten next-minute times for its asserted rows but left ten fakelagged backlog rows at live
   server time, so a run started just before a minute boundary could sort a same-sender backlog row

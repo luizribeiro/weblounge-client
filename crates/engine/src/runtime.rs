@@ -391,9 +391,6 @@ impl Runtime {
             EngineRequest::SetDeviceOnline { network_id, online } => {
                 self.set_device_online(envelope.id, network_id, online)
             }
-            EngineRequest::FlushChatListSnapshot => {
-                vec![EngineToUi::CommandResult { id: envelope.id }]
-            }
             EngineRequest::SetUpdateReady { ready } => self.set_update_ready(envelope.id, ready),
             EngineRequest::LoadNotificationPromptDismissal => {
                 self.load_notification_prompt_dismissal(envelope.id)

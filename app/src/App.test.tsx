@@ -166,11 +166,6 @@ it("reports document visibility to the engine", () => {
   document.dispatchEvent(new Event("visibilitychange"));
 
   expect(client.visibility).toEqual(["visible", "hidden", "visible", "hidden"]);
-  expect(
-    client.requests.filter(
-      ({ request }) => request.type === "flush_chat_list_snapshot",
-    ),
-  ).toHaveLength(2);
   hidden.mockRestore();
   focused.mockRestore();
 });
@@ -189,7 +184,7 @@ it("does not throw or retain foreground handlers after the engine closes", async
   expect(() =>
     document.dispatchEvent(new Event("visibilitychange")),
   ).not.toThrow();
-  expect(client.rejectedAfterClose).toEqual(["flush_chat_list_snapshot"]);
+  expect(client.rejectedAfterClose).toEqual([]);
 
   view.unmount();
   const rejectedAfterUnmount = [...client.rejectedAfterClose];

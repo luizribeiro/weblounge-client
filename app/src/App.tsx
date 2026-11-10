@@ -867,19 +867,6 @@ export function App(props: AppProps) {
     window.addEventListener("pageshow", handlePageShow);
     void consumeOpenRoute();
     updateVisibility();
-    let snapshotForeground = foreground();
-    createEffect(() => {
-      const next = foreground();
-      if (snapshotForeground && !next) {
-        void mountedClient
-          .send({
-            id: crypto.randomUUID(),
-            request: { type: "flush_chat_list_snapshot" },
-          })
-          .catch(() => undefined);
-      }
-      snapshotForeground = next;
-    });
     void startEngine(
       mountedClient,
       setEngineStatus,

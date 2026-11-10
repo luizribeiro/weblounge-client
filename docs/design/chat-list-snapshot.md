@@ -49,18 +49,18 @@ sidebar only if that reuses this record and the existing row geometry without a 
 
 ## Write, read, and replacement
 
-Every projected chat-list update schedules a trailing, throttled rewrite. The rewritten record is
+Every projected chat-list update queues its changed rows for an immediate rewrite. The record is
 assembled per row: a row whose latest history has loaded uses its current projection, including a
 cleared badge, while a row that is still queued, loading, or failed keeps its previous cached row.
 A new unresolved row is omitted until it becomes authoritative, and a row known to be unavailable
 is removed. This lets one slow buffer retain its safe cached values without blocking authoritative
 changes from every other buffer.
 
-The merge happens in engine memory before the rewrite; storage still receives one ordered record
-in one atomic commit. Repeated changes coalesce. Clearing one or all read badges starts the pending
-rewrite immediately. When the page becomes hidden or fires `pagehide`, it likewise asks the engine
-to start an already-pending rewrite before the browser can suspend its worker. A lifecycle flush
-does not create a write when no update is pending.
+The merge happens in engine memory before the rewrite; storage applies each changed-row batch in
+one atomic transaction. Clearing one or all read badges uses the same immediate path. There is no
+foreground timer or lifecycle flush: hidden, `pagehide`, and freeze may suspend the worker only
+after every observed change has already queued its write. A failed transaction keeps its batch at
+the front of the queue until storage recovers, with backoff only after the immediate retries.
 
 At launch the engine reads and validates the record before live synchronization completes. A valid
 record renders through the normal chat-list geometry. After connection, one TARGETS query compares
@@ -135,7 +135,7 @@ evicted at any time, and must never be required for a correct cold launch.
 - Serialization and engine tests cover the exact bounded shape, cursor and completed-sync-boundary
   round trips, DM preview truncation, atomic whole-record writes, row activity round-tripping into
   the live ordering field, preserved row order and rendered times, channel and nick keys scoped by
-  network identity, throttling with an injected clock, authoritative-row replacement, and
+  network identity, immediate queued writes, authoritative-row replacement, and
   preservation of unresolved cached rows.
 - Validation tests ignore corrupt, unknown-version, and wrong-network records; sign-out clears the
   record and a following launch cannot paint it.

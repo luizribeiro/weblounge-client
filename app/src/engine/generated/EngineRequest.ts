@@ -111,7 +111,7 @@ network_id: NetworkId,
 /**
  * Browser connectivity hint; papo remains authoritative for the socket.
  */
-online: boolean, } | { "type": "flush_chat_list_snapshot" } | { "type": "set_update_ready",
+online: boolean, } | { "type": "set_update_ready",
 /**
  * Whether a waiting service worker is ready to activate after this session closes.
  */
