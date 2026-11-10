@@ -839,12 +839,15 @@ test.describe("local Ergo user flow", () => {
       const secondActive = secondTab.locator(
         '[data-buffer-id][aria-current="page"]',
       );
-      await expect(
-        secondTab.getByText(incoming, { exact: true }),
-      ).toBeAttached();
+      const jump = secondTab.getByRole("button", { name: /1 new message/u });
+      await expect(jump).toBeVisible();
       await expect(secondActive).toHaveAttribute("data-unread", "0", {
         timeout: 3_000,
       });
+      await jump.click();
+      await expect(
+        secondTab.getByText(incoming, { exact: true }),
+      ).toBeVisible();
     } finally {
       bot.close();
     }
