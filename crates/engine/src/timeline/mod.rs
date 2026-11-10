@@ -5,6 +5,9 @@ mod fold;
 mod patch;
 mod projection;
 
+#[cfg(test)]
+mod fixture_tests;
+
 pub use error::TimelineError;
 pub use fold::{
     ChatRecord, FoldEvent, FoldRun, FoldedBody, FoldedItem, RecordBody, SplitServers,

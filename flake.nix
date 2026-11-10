@@ -71,6 +71,7 @@
             ./Cargo.toml
             ./crates
             ./fixtures/read-state
+            ./fixtures/timeline
           ];
         };
         cargoTestSource = pkgs.lib.fileset.toSource {
@@ -81,6 +82,7 @@
             ./app/src
             ./crates
             ./fixtures/read-state
+            ./fixtures/timeline
           ];
         };
         cargoArgs = {

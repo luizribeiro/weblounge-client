@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "suffix insert",
+      "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
+      "change": { "reset": false, "upserted": [{ "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }], "removed": [] },
+      "expected_items": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }, { "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }],
+      "geometry": "suffix"
+    },
+    {
+      "name": "prefix insert",
+      "initial": [{ "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }],
+      "change": { "reset": false, "upserted": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }], "removed": [] },
+      "expected_items": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }, { "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }],
+      "geometry": "prefix"
+    },
+    {
+      "name": "in-place update",
+      "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
+      "change": { "reset": false, "upserted": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 1, "body": { "family": "gap", "from_ms": 10, "to_ms": 12 } }], "removed": [] },
+      "expected_items": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 1, "body": { "family": "gap", "from_ms": 10, "to_ms": 12 } }],
+      "geometry": "in-place"
+    },
+    {
+      "name": "reorder",
+      "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }, { "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }],
+      "change": { "reset": false, "upserted": [{ "id": 1, "order": [30, 30, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }], "removed": [] },
+      "expected_items": [{ "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }, { "id": 1, "order": [30, 30, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
+      "geometry": "mixed"
+    },
+    {
+      "name": "removal",
+      "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }, { "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }],
+      "change": { "reset": false, "upserted": [], "removed": [1] },
+      "expected_items": [{ "id": 2, "order": [20, 20, 2], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 20, "to_ms": 21 } }],
+      "geometry": "mixed"
+    },
+    {
+      "name": "reset",
+      "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
+      "change": { "reset": true, "upserted": [{ "id": 3, "order": [30, 30, 3], "day": 2, "content_version": 4, "body": { "family": "gap", "from_ms": 30, "to_ms": 31 } }], "removed": [] },
+      "expected_items": [{ "id": 3, "order": [30, 30, 3], "day": 2, "content_version": 4, "body": { "family": "gap", "from_ms": 30, "to_ms": 31 } }],
+      "geometry": "mixed"
+    }
+  ]
+}
