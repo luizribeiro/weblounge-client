@@ -244,9 +244,9 @@ mod tests {
     }
 
     #[test]
-    fn parses_ergo_length_limited_text_but_rejects_incomplete_lines() {
+    fn parses_ergo_length_limited_multiline_text_but_rejects_incomplete_lines() {
         let prefix = format!("@time={TIME};msgid=truncated :mel!m@example.test PRIVMSG #lounge :");
-        let complete = format!("{prefix}{}", "x".repeat(600));
+        let complete = format!("{prefix}#lounge digest:\n{}", "second line ".repeat(60));
         let truncated = &complete[..510];
         assert_eq!(truncated.len(), 510);
         assert!(matches!(
