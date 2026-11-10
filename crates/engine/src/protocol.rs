@@ -553,6 +553,8 @@ pub enum MessageKind {
     Text,
     /// A CTCP ACTION displayed as `/me` prose.
     Action,
+    /// An IRC NOTICE displayed as a lightly distinguished chat line.
+    IrcNotice,
     /// A local row generated from current engine state.
     Notice(NoticeKind),
 }

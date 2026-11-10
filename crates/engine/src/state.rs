@@ -29,10 +29,104 @@ enum TimelineOrigin {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct FallbackKey {
-    conversation: NameKey,
+    destination: IncomingDestination,
     server_time_ms: Option<i64>,
     actor: String,
     text: String,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum IncomingDestination {
+    Conversation(NameKey),
+    Server,
+}
+
+impl IncomingDestination {
+    fn conversation(&self) -> Option<&NameKey> {
+        match self {
+            Self::Conversation(conversation) => Some(conversation),
+            Self::Server => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ChatInput<'a> {
+    Message(&'a papo::Message),
+    Notice(&'a papo::event::Notice),
+}
+
+impl<'a> From<&'a papo::Message> for ChatInput<'a> {
+    fn from(message: &'a papo::Message) -> Self {
+        Self::Message(message)
+    }
+}
+
+impl<'a> From<&'a papo::event::Notice> for ChatInput<'a> {
+    fn from(notice: &'a papo::event::Notice) -> Self {
+        Self::Notice(notice)
+    }
+}
+
+impl ChatInput<'_> {
+    fn conversation(&self) -> &papo::Conversation {
+        match self {
+            Self::Message(message) => message.conversation(),
+            Self::Notice(notice) => &notice.conversation,
+        }
+    }
+
+    fn actor(&self) -> &papo::UserSource {
+        match self {
+            Self::Message(message) => &message.actor,
+            Self::Notice(notice) => &notice.actor,
+        }
+    }
+
+    pub(crate) const fn authorship(&self) -> papo::Authorship {
+        match self {
+            Self::Message(message) => message.authorship,
+            Self::Notice(notice) => notice.authorship,
+        }
+    }
+
+    fn text(&self) -> &str {
+        match self {
+            Self::Message(message) => &message.text,
+            Self::Notice(notice) => &notice.text,
+        }
+    }
+
+    fn kind(&self) -> MessageKind {
+        match self {
+            Self::Message(message) => match message.kind {
+                papo::MessageKind::Action => MessageKind::Action,
+                _ => MessageKind::Text,
+            },
+            Self::Notice(_) => MessageKind::IrcNotice,
+        }
+    }
+
+    fn msgid(&self) -> Option<String> {
+        match self {
+            Self::Message(message) => message.msgid().map(ToString::to_string),
+            Self::Notice(notice) => notice.msgid.as_ref().map(ToString::to_string),
+        }
+    }
+
+    const fn server_time(&self) -> Option<SystemTime> {
+        match self {
+            Self::Message(message) => message.server_time,
+            Self::Notice(notice) => notice.server_time,
+        }
+    }
+
+    const fn received_at(&self) -> SystemTime {
+        match self {
+            Self::Message(message) => message.received_at,
+            Self::Notice(notice) => notice.received_at,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -328,6 +422,7 @@ pub(crate) struct ReadAdvance {
 /// Mutable application identity and timeline state for one papo client.
 pub(crate) struct NetworkModel {
     network: NetworkProjection,
+    server_buffer_id: BufferId,
     casemapping: papo::Casemapping,
     next_buffer_id: u64,
     next_message_id: u64,
@@ -403,6 +498,7 @@ impl NetworkModel {
                 nickname,
                 state: NetworkConnectionState::Connecting,
             },
+            server_buffer_id: server_id,
             casemapping,
             next_buffer_id: 2,
             next_message_id: 1,
@@ -431,6 +527,10 @@ impl NetworkModel {
 
     pub(crate) const fn id(&self) -> NetworkId {
         self.network.id
+    }
+
+    const fn server_buffer_id(&self) -> BufferId {
+        self.server_buffer_id
     }
 
     pub(crate) fn is_online(&self) -> bool {
@@ -922,27 +1022,35 @@ impl NetworkModel {
         state: &papo::State,
         direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
-        let (mut events, carry_read) = self.receive_with_advance(message, history, state, direct);
+        let (mut events, carry_read) =
+            self.receive_chat_with_advance(message.into(), history, state, direct);
         if let Some(advance) = carry_read {
             events.extend(self.advance_read(advance.buffer_id, advance.time, false));
         }
         events
     }
 
-    pub(crate) fn receive_with_advance(
+    pub(crate) fn receive_chat_with_advance(
         &mut self,
-        message: &papo::Message,
+        input: ChatInput<'_>,
         history: bool,
         state: &papo::State,
         direct: Option<papo::DirectRef>,
     ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
-        let Some(conversation) = NameKey::from_conversation(message.conversation()) else {
+        let Some(conversation) = NameKey::from_conversation(input.conversation()) else {
             return (
                 vec![EngineToUi::notice(
                     EngineMessageKey::UnsupportedConversation,
                 )],
                 None,
             );
+        };
+        let service =
+            matches!(&input, ChatInput::Notice(notice) if is_service_actor(&notice.actor));
+        let destination = if service {
+            IncomingDestination::Server
+        } else {
+            IncomingDestination::Conversation(conversation.clone())
         };
         let origin = if history {
             TimelineOrigin::History
@@ -953,31 +1061,73 @@ impl NetworkModel {
             NameKey::Direct(nick) => Some(DirectKey::from_nick(nick)),
             NameKey::Channel(_) => None,
         };
+        let actor = input.actor();
+        let authorship = input.authorship();
         let incoming = Incoming {
             direct: direct.map(DirectAvailability::Guarded),
-            direct_key,
-            peer_key: (message.authorship != papo::Authorship::Own)
-                .then(|| message.actor.peer_key().cloned())
+            direct_key: (!service).then_some(direct_key).flatten(),
+            peer_key: (!service && authorship != papo::Authorship::Own)
+                .then(|| actor.peer_key().cloned())
                 .flatten(),
-            legacy_account_key: message
-                .actor
-                .account()
-                .name()
-                .map(|account| account.key().to_owned()),
+            legacy_account_key: (!service)
+                .then(|| {
+                    actor
+                        .account()
+                        .name()
+                        .map(|account| account.key().to_owned())
+                })
+                .flatten(),
             provisional_identity: None,
-            conversation,
-            author: message.actor.nick().to_string(),
-            text: message.text.clone(),
-            kind: match message.kind {
-                papo::MessageKind::Action => MessageKind::Action,
-                _ => MessageKind::Text,
-            },
-            bot: message.actor.is_bot(),
-            authorship: map_authorship(message.authorship),
-            msgid: message.msgid().map(ToString::to_string),
-            server_time_ms: message.server_time.map(time_millis),
-            received_at_ms: time_millis(message.received_at),
+            destination,
+            author: actor.nick().to_string(),
+            text: input.text().to_owned(),
+            kind: input.kind(),
+            bot: actor.is_bot(),
+            authorship: map_authorship(authorship),
+            msgid: input.msgid(),
+            server_time_ms: input.server_time().map(time_millis),
+            received_at_ms: time_millis(input.received_at()),
             origin,
+        };
+        let received = self.receive_incoming_result(incoming, state);
+        (received.events, received.carry_read)
+    }
+
+    pub(crate) fn receive_server_notice_with_advance(
+        &mut self,
+        notice: &papo::event::ServerNotice,
+        history: bool,
+        state: &papo::State,
+    ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
+        let destination = match &notice.to {
+            papo::event::Audience::Channel(channel) => {
+                IncomingDestination::Conversation(NameKey::Channel(channel.clone()))
+            }
+            papo::event::Audience::Me | papo::event::Audience::Broadcast(_) => {
+                IncomingDestination::Server
+            }
+            _ => return (Vec::new(), None),
+        };
+        let incoming = Incoming {
+            direct: None,
+            direct_key: None,
+            peer_key: None,
+            legacy_account_key: None,
+            provisional_identity: None,
+            destination,
+            author: notice.actor.to_string(),
+            text: notice.text.clone(),
+            kind: MessageKind::IrcNotice,
+            bot: notice.actor.user().and_then(papo::UserSource::is_bot),
+            authorship: map_authorship(notice.authorship),
+            msgid: notice.msgid.as_ref().map(ToString::to_string),
+            server_time_ms: notice.server_time.map(time_millis),
+            received_at_ms: time_millis(notice.received_at),
+            origin: if history {
+                TimelineOrigin::History
+            } else {
+                TimelineOrigin::Live
+            },
         };
         let received = self.receive_incoming_result(incoming, state);
         (received.events, received.carry_read)
@@ -1070,7 +1220,7 @@ impl NetworkModel {
             events.extend(
                 self.receive_incoming(
                     Incoming {
-                        conversation,
+                        destination: IncomingDestination::Conversation(conversation),
                         direct: availability,
                         direct_key,
                         peer_key: None,
@@ -1085,9 +1235,8 @@ impl NetworkModel {
                         author: message.sender,
                         text: message.text,
                         kind: match message.kind {
-                            PushedMessageKind::Message | PushedMessageKind::Notice => {
-                                MessageKind::Text
-                            }
+                            PushedMessageKind::Message => MessageKind::Text,
+                            PushedMessageKind::Notice => MessageKind::IrcNotice,
                             PushedMessageKind::Action => MessageKind::Action,
                         },
                         bot: None,
@@ -2514,11 +2663,14 @@ impl NetworkModel {
             return IncomingResult::default();
         };
 
-        let (buffer_id, initially_added) = self.ensure_buffer(
-            incoming.conversation.clone(),
-            incoming.direct_key.clone(),
-            incoming.direct.clone(),
-        );
+        let (buffer_id, initially_added) = match &incoming.destination {
+            IncomingDestination::Conversation(conversation) => self.ensure_buffer(
+                conversation.clone(),
+                incoming.direct_key.clone(),
+                incoming.direct.clone(),
+            ),
+            IncomingDestination::Server => (self.server_buffer_id(), None),
+        };
         let verified_sender = incoming
             .peer_key
             .as_ref()
@@ -2601,7 +2753,10 @@ impl NetworkModel {
         {
             return None;
         }
-        let buffer_id = self.names.get(&incoming.conversation).copied()?;
+        let buffer_id = self
+            .names
+            .get(incoming.destination.conversation()?)
+            .copied()?;
         let text = collapse_blank_lines(incoming.text.clone());
         let (index, message_id, local_send_id) = self.buffers[&buffer_id]
             .timeline
@@ -2800,7 +2955,7 @@ impl NetworkModel {
             });
         }
         let fingerprint = FallbackKey {
-            conversation: incoming.conversation.clone(),
+            destination: incoming.destination.clone(),
             server_time_ms: incoming.server_time_ms,
             actor: incoming.author.clone(),
             text: incoming.text.clone(),
@@ -3004,7 +3159,9 @@ impl NetworkModel {
         };
         let counts_as_mention = projection.authorship != MessageAuthorship::Own
             && (buffer.projection.kind == BufferKind::Direct || projection.highlighted);
-        let stub = message_stub(&projection, counts_as_mention);
+        let stub = (buffer.projection.kind != BufferKind::Server)
+            .then(|| message_stub(&projection, counts_as_mention))
+            .flatten();
         let record = TimelineRecord {
             projection,
             counts_as_mention,
@@ -3085,7 +3242,10 @@ fn advance_incoming_cursor(
         return;
     }
     if matches!(buffer.history, HistoryState::Unrequested)
-        && matches!(incoming.conversation, NameKey::Direct(_))
+        && matches!(
+            incoming.destination,
+            IncomingDestination::Conversation(NameKey::Direct(_))
+        )
         && incoming.origin == TimelineOrigin::Live
         && let Some(cursor) = cursor
     {
@@ -3376,7 +3536,7 @@ fn direct_identity(buffer: &BufferState) -> Option<DirectIdentityState> {
 
 #[derive(Clone, Debug)]
 struct Incoming {
-    conversation: NameKey,
+    destination: IncomingDestination,
     direct: Option<DirectAvailability>,
     direct_key: Option<DirectKey>,
     peer_key: Option<papo::PeerKey>,
@@ -3405,6 +3565,15 @@ fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {
         papo::Authorship::Other => MessageAuthorship::Other,
         _ => MessageAuthorship::Unknown,
     }
+}
+
+fn is_service_actor(actor: &papo::UserSource) -> bool {
+    actor
+        .host()
+        .is_some_and(|host| host.eq_ignore_ascii_case("localhost"))
+        && actor
+            .username()
+            .is_some_and(|username| username.eq_ignore_ascii_case(actor.nick().as_str()))
 }
 
 fn reaction_actor_key(actor: &papo::UserSource) -> String {
@@ -3519,9 +3688,10 @@ mod tests {
     use papo_testing::{MessageBuilder, StateBuilder, wire};
 
     use super::{
-        DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming, NameKey,
-        NetworkModel, PendingTargetState, SendTarget, TimelineOrigin, collapse_blank_lines,
-        derive_read_projection, draft_key, nick_color_index, reaction_actor_key, time_millis,
+        DirectKey, HistoryCursor, HistoryFetch, HistoryState, HistoryTarget, Incoming,
+        IncomingDestination, NameKey, NetworkModel, PendingTargetState, SendTarget, TimelineOrigin,
+        collapse_blank_lines, derive_read_projection, draft_key, nick_color_index,
+        reaction_actor_key, time_millis,
     };
     use crate::{
         BufferId, BufferKind, BufferSyncState, EngineMessageKey, EngineToUi, MembershipKind,
@@ -3678,7 +3848,9 @@ mod tests {
         origin: TimelineOrigin,
     ) -> Incoming {
         Incoming {
-            conversation: NameKey::Channel(channel_name(state, "#room")),
+            destination: IncomingDestination::Conversation(NameKey::Channel(channel_name(
+                state, "#room",
+            ))),
             direct: None,
             direct_key: None,
             peer_key: None,
@@ -4045,7 +4217,7 @@ mod tests {
         server_time_ms: i64,
     ) -> Incoming {
         Incoming {
-            conversation: NameKey::Direct(nick_name(state, nick)),
+            destination: IncomingDestination::Conversation(NameKey::Direct(nick_name(state, nick))),
             direct: None,
             direct_key: Some(DirectKey(state.casemapping().fold(nick).into_owned())),
             peer_key: None,
@@ -5267,7 +5439,8 @@ mod tests {
             2_000,
             TimelineOrigin::History,
         );
-        elsewhere.conversation = NameKey::Channel(channel_name(&state, "#elsewhere"));
+        elsewhere.destination =
+            IncomingDestination::Conversation(NameKey::Channel(channel_name(&state, "#elsewhere")));
         let elsewhere_id = model
             .receive_incoming(elsewhere, &state)
             .iter()
@@ -5914,7 +6087,7 @@ mod tests {
             1,
             TimelineOrigin::Live,
         );
-        own.conversation = key.clone();
+        own.destination = IncomingDestination::Conversation(key.clone());
         own.authorship = MessageAuthorship::Own;
         model.receive_incoming(own, &state);
         assert!(!model.buffer_order.contains(&buffer_id));
@@ -5927,7 +6100,7 @@ mod tests {
             2,
             TimelineOrigin::Live,
         );
-        peer.conversation = key;
+        peer.destination = IncomingDestination::Conversation(key);
         let events = model.receive_incoming(peer, &state);
         assert!(model.buffer_order.contains(&buffer_id));
         assert!(matches!(

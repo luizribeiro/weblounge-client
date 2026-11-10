@@ -25,8 +25,9 @@ use crate::{
     pushed_messages::{self, PushedMessage},
     request_error::{StateLimitOutcome, state_limit_outcome},
     state::{
-        DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget, NetworkModel,
-        PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick, time_millis,
+        ChatInput, DirectAvailability, HistoryCursor, HistoryFetch, HistoryLoad, HistoryTarget,
+        NetworkModel, PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick,
+        time_millis,
     },
 };
 
@@ -1418,7 +1419,7 @@ impl Runtime {
                     .model
                     .begin_action(buffer_id, text, &running.client.state())
             }
-            crate::MessageKind::Notice(_) => None,
+            crate::MessageKind::IrcNotice | crate::MessageKind::Notice(_) => None,
         };
         let Some((pending, mut output)) = pending else {
             return rejected_command(command_id, running.model.send_rejection_key(buffer_id));
@@ -2683,15 +2684,17 @@ fn confirm_send_with_read(
     (events, advance)
 }
 
-fn receive_message(
+fn receive_chat(
     model: &mut NetworkModel,
-    message: &papo::Message,
+    input: ChatInput<'_>,
     history: bool,
     state: &papo::State,
     direct: Option<papo::DirectRef>,
 ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
-    let (events, reconciled_advance) = model.receive_with_advance(message, history, state, direct);
-    let own_advance = (message.authorship == papo::Authorship::Own)
+    let authorship = input.authorship();
+    let (events, reconciled_advance) =
+        model.receive_chat_with_advance(input, history, state, direct);
+    let own_advance = (authorship == papo::Authorship::Own)
         .then(|| received_read_advance(model, &events))
         .flatten();
     let advances = own_advance.into_iter().chain(reconciled_advance).collect();
@@ -2973,26 +2976,9 @@ async fn drain_events(
             _ => None,
         };
         let schedule_members = lock(&member_changes).record(&event, &client.state());
-        let direct_message = match &event {
-            papo::Event::Message(message)
-                if message.authorship != papo::Authorship::Own
-                    && matches!(message.conversation(), papo::Conversation::Private(_)) =>
-            {
-                Some(message.clone())
-            }
-            _ => None,
-        };
+        spawn_event_direct_resolution(&state, &outbound, &client, instance, &event);
         let history_fetches =
             process_event_with_direct(&state, &outbound, &client, instance, event, None);
-        if let Some(message) = direct_message {
-            spawn_direct_resolution(
-                Arc::clone(&state),
-                outbound.clone(),
-                client.clone(),
-                instance,
-                message,
-            );
-        }
         if let Some(nick) = online_direct {
             spawn_online_direct_resolution(
                 Arc::clone(&state),
@@ -3046,6 +3032,46 @@ async fn drain_events(
     }
 }
 
+fn spawn_event_direct_resolution(
+    state: &Arc<Mutex<RuntimeState>>,
+    outbound: &mpsc::UnboundedSender<EngineToUi>,
+    client: &papo::Client,
+    instance: u64,
+    event: &papo::Event,
+) {
+    match event {
+        papo::Event::Message(message)
+            if message.authorship != papo::Authorship::Own
+                && matches!(message.conversation(), papo::Conversation::Private(_)) =>
+        {
+            let nick = message.actor.nick().clone();
+            spawn_direct_resolution(
+                Arc::clone(state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                &nick,
+                message.clone(),
+            );
+        }
+        papo::Event::Notice(notice)
+            if notice.authorship != papo::Authorship::Own
+                && matches!(&notice.conversation, papo::Conversation::Private(_)) =>
+        {
+            let nick = notice.actor.nick().clone();
+            spawn_direct_resolution(
+                Arc::clone(state),
+                outbound.clone(),
+                client.clone(),
+                instance,
+                &nick,
+                notice.clone(),
+            );
+        }
+        _ => {}
+    }
+}
+
 fn spawn_online_direct_resolution(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
@@ -3082,24 +3108,24 @@ fn spawn_cached_direct_resolution(
     });
 }
 
-fn spawn_direct_resolution(
+fn spawn_direct_resolution<T: papo::DirectSource + Send + 'static>(
     state: Arc<Mutex<RuntimeState>>,
     outbound: mpsc::UnboundedSender<EngineToUi>,
     client: papo::Client,
     instance: u64,
-    message: papo::Message,
+    nick: &papo::Nick,
+    source: T,
 ) {
-    let nick = message.actor.nick().clone();
     let buffer_id = lock(&state)
         .network
         .as_mut()
         .filter(|running| running.instance == instance)
-        .and_then(|running| running.model.begin_direct_resolution(&nick));
+        .and_then(|running| running.model.begin_direct_resolution(nick));
     let Some(buffer_id) = buffer_id else {
         return;
     };
     spawn_task(async move {
-        let (availability, degraded) = match client.direct_to(&message).await {
+        let (availability, degraded) = match client.direct_to(&source).await {
             Ok(direct) => (DirectAvailability::Guarded(direct), false),
             Err(papo::Error::MonitorFull { .. }) => (DirectAvailability::MonitorFull, true),
             Err(_) => (DirectAvailability::Failed, false),
@@ -3759,18 +3785,19 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::AccountChanged(changed) => {
-            process_account_change(&mut running.model, &changed, output);
-            if changed.authorship == papo::Authorship::Own {
-                connected_push_action(running, snapshot, output);
-            }
+            process_account_event(running, snapshot, &changed, output);
             Vec::new()
         }
         papo::Event::Message(message) => {
-            let (received, advances) =
-                receive_message(&mut running.model, &message, false, snapshot, direct);
-            output.extend(received);
-            output.extend(record_read_advances(running, advances));
-            effects.read_flush = start_read_flush(running);
+            effects.read_flush = live_chat(running, snapshot, (&message).into(), direct, output);
+            Vec::new()
+        }
+        papo::Event::Notice(notice) => {
+            effects.read_flush = live_chat(running, snapshot, (&notice).into(), direct, output);
+            Vec::new()
+        }
+        papo::Event::ServerNotice(notice) => {
+            effects.read_flush = process_live_server_notice(running, snapshot, &notice, output);
             Vec::new()
         }
         papo::Event::Reacted(reaction) => {
@@ -3815,6 +3842,51 @@ fn process_papo_event(
     };
     running.model.observe_live_server_time(live_server_time);
     effects
+}
+
+fn process_account_event(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    changed: &papo::event::AccountChanged,
+    output: &mut Vec<EngineToUi>,
+) {
+    process_account_change(&mut running.model, changed, output);
+    if changed.authorship == papo::Authorship::Own {
+        connected_push_action(running, snapshot, output);
+    }
+}
+
+fn live_chat(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    input: ChatInput<'_>,
+    direct: Option<papo::DirectRef>,
+    output: &mut Vec<EngineToUi>,
+) -> Option<(papo::Client, u64)> {
+    let (received, advances) = receive_chat(&mut running.model, input, false, snapshot, direct);
+    output.extend(received);
+    output.extend(record_read_advances(running, advances));
+    start_read_flush(running)
+}
+
+fn process_live_server_notice(
+    running: &mut RunningNetwork,
+    snapshot: &papo::State,
+    notice: &papo::event::ServerNotice,
+    output: &mut Vec<EngineToUi>,
+) -> Option<(papo::Client, u64)> {
+    let (received, reconciled_advance) = running
+        .model
+        .receive_server_notice_with_advance(notice, false, snapshot);
+    let own_advance = (notice.authorship == papo::Authorship::Own)
+        .then(|| received_read_advance(&running.model, &received))
+        .flatten();
+    output.extend(received);
+    output.extend(record_read_advances(
+        running,
+        own_advance.into_iter().chain(reconciled_advance),
+    ));
+    start_read_flush(running)
 }
 
 fn live_cursor_time(event: &papo::Event) -> Option<SystemTime> {
@@ -4421,20 +4493,22 @@ fn process_history(
         match item {
             papo::Event::Message(message) => {
                 let (received, advance) =
-                    receive_message(&mut running.model, &message, true, &snapshot, None);
+                    receive_chat(&mut running.model, (&message).into(), true, &snapshot, None);
                 read_advances.extend(advance);
-                for event in received {
-                    match event {
-                        EngineToUi::MessagesAppended {
-                            buffer_id,
-                            messages,
-                        } => timeline
-                            .get_or_insert_with(|| (buffer_id, Vec::new()))
-                            .1
-                            .extend(messages),
-                        _ => output.push(event),
-                    }
-                }
+                merge_history_chat_events(received, &mut timeline, &mut output);
+            }
+            papo::Event::Notice(notice) => {
+                let (received, advance) =
+                    receive_chat(&mut running.model, (&notice).into(), true, &snapshot, None);
+                read_advances.extend(advance);
+                merge_history_chat_events(received, &mut timeline, &mut output);
+            }
+            papo::Event::ServerNotice(notice) => {
+                let (received, advance) = running
+                    .model
+                    .receive_server_notice_with_advance(&notice, true, &snapshot);
+                read_advances.extend(advance);
+                merge_history_chat_events(received, &mut timeline, &mut output);
             }
             papo::Event::Reacted(reaction) => {
                 merge_history_reaction(&mut running.model, &reaction, &mut timeline, &mut output);
@@ -4494,6 +4568,25 @@ fn process_history(
     update_chat_list(&shared_state, outbound, instance);
     if let Some((client, instance)) = read_flush {
         spawn_read_flush(shared_state, outbound.clone(), client, instance);
+    }
+}
+
+fn merge_history_chat_events(
+    received: Vec<EngineToUi>,
+    timeline: &mut Option<(BufferId, Vec<crate::MessageProjection>)>,
+    output: &mut Vec<EngineToUi>,
+) {
+    for event in received {
+        match event {
+            EngineToUi::MessagesAppended {
+                buffer_id,
+                messages,
+            } => timeline
+                .get_or_insert_with(|| (buffer_id, Vec::new()))
+                .1
+                .extend(messages),
+            _ => output.push(event),
+        }
     }
 }
 
@@ -12324,6 +12417,207 @@ async fn delay(duration: Duration) {
     }
 
     const HISTORY_CAPS: &str = "draft/chathistory labeled-response batch server-time message-tags";
+
+    fn is_irc_notice(message: &crate::MessageProjection) -> bool {
+        serde_json::to_value(&message.kind).expect("message kind serializes") == "irc_notice"
+    }
+
+    #[tokio::test]
+    async fn live_notices_use_chat_routing_semantics_and_server_buffer_routing() {
+        let mut harness =
+            ReplayHarness::joined(&format!("{HISTORY_CAPS} account-tag ergo.chat/nope")).await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(&mut harness.wire, &latest, &[]).await;
+        _ = harness.page_output("notice-live-ready").await;
+
+        harness
+            .wire
+            .server("@msgid=channel-notice :alice!a@host NOTICE #room :channel notice")
+            .await;
+        harness
+            .wire
+            .server("@msgid=highlight-notice :alice!a@host NOTICE #room :hello weblounge")
+            .await;
+        harness
+            .wire
+            .server("@account=bob;msgid=direct-notice :Bob!b@host NOTICE weblounge :direct notice")
+            .await;
+        harness
+            .wire
+            .server(":offline.test NOTICE weblounge :server notice")
+            .await;
+        harness
+            .wire
+            .server(":NickServ!NickServ@localhost NOTICE weblounge :service notice")
+            .await;
+
+        _ = harness
+            .timeline_output(&[
+                "channel notice",
+                "hello weblounge",
+                "direct notice",
+                "server notice",
+                "service notice",
+            ])
+            .await;
+        let state = lock(&harness.state);
+        let model = &state
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model;
+        let EngineToUi::BuffersChanged { buffers, .. } = model.buffers_event() else {
+            panic!("buffer projections")
+        };
+        let channel = buffers
+            .iter()
+            .find(|buffer| buffer.title == "#room")
+            .expect("channel buffer");
+        let direct = buffers
+            .iter()
+            .find(|buffer| buffer.title == "Bob")
+            .expect("direct buffer");
+        let server = buffers
+            .iter()
+            .find(|buffer| buffer.id == BufferId(1))
+            .expect("server buffer");
+        let snapshots = model.snapshot_events();
+        let messages = |buffer_id| {
+            snapshots.iter().find_map(|event| match event {
+                EngineToUi::BufferSnapshot {
+                    buffer_id: current,
+                    messages,
+                    ..
+                } if *current == buffer_id => Some(messages.as_slice()),
+                _ => None,
+            })
+        };
+
+        assert!(
+            messages(channel.id)
+                .expect("channel snapshot")
+                .iter()
+                .all(|message| { message.text == "notice-live-ready" || is_irc_notice(message) })
+        );
+        assert_eq!((channel.unread, channel.mentions), (2, 1));
+        assert_eq!((direct.unread, direct.mentions), (1, 1));
+        assert!(
+            messages(direct.id)
+                .expect("direct snapshot")
+                .iter()
+                .all(is_irc_notice)
+        );
+        assert_eq!(
+            messages(server.id)
+                .expect("server snapshot")
+                .iter()
+                .map(|message| message.text.as_str())
+                .collect::<Vec<_>>(),
+            ["server notice", "service notice"]
+        );
+        assert!(
+            messages(server.id)
+                .expect("server snapshot")
+                .iter()
+                .all(is_irc_notice)
+        );
+        assert_eq!((server.unread, server.mentions), (0, 0));
+        assert!(!buffers.iter().any(|buffer| buffer.title == "NickServ"));
+        drop(state);
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn history_projects_channel_notices_with_their_notice_semantic() {
+        let mut harness = ReplayHarness::joined(HISTORY_CAPS).await;
+        let latest = next_sent_containing(&mut harness.wire, "CHATHISTORY LATEST #room").await;
+        send_ergo_history_page(
+            &mut harness.wire,
+            &latest,
+            &[
+                "@batch={batch};time=2026-10-27T12:00:01.000Z;msgid=history-text :alice!a@host PRIVMSG #room :history text",
+                "@batch={batch};time=2026-10-27T12:00:02.000Z;msgid=history-notice :alice!a@host NOTICE #room :history notice",
+            ],
+        )
+        .await;
+
+        let output = harness.page_output("notice-history-ready").await;
+        let notice = timeline_messages(&output)
+            .into_iter()
+            .find(|message| message.text == "history notice")
+            .expect("history notice is projected");
+        assert!(is_irc_notice(notice));
+        harness.drain.abort();
+    }
+
+    #[tokio::test]
+    async fn pushed_notice_reconciles_with_authoritative_notice_by_msgid() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["message-tags", "server-time"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed-notice",
+            "time": "2026-11-03T12:34:56.788Z",
+            "text": "notice while closed",
+            "kind": "notice",
+        }))
+        .expect("pushed notice");
+        let restored = lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .restore_pushed_messages(vec![pushed], &client.state());
+        let provisional = timeline_messages(&restored)
+            .into_iter()
+            .find(|message| message.text == "notice while closed")
+            .expect("pushed notice is visible");
+        assert!(is_irc_notice(provisional));
+
+        wire.server("@msgid=pushed-notice;time=2026-11-03T12:34:56.789Z :alice!a@host NOTICE #room :notice while closed")
+            .await;
+        let notice =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Notice(_))).await;
+        process_event(&state, &outbound, &client, 1, notice);
+        let output = collect(&mut receiver);
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessageUpdated { message, .. }
+                if message.text == "notice while closed" && is_irc_notice(message)
+        )));
+        let state = lock(&state);
+        let model = &state
+            .network
+            .as_ref()
+            .expect("network remains active")
+            .model;
+        let room = model
+            .snapshot_events()
+            .into_iter()
+            .find_map(|event| match event {
+                EngineToUi::BufferSnapshot { messages, .. }
+                    if messages
+                        .iter()
+                        .any(|message| message.text == "notice while closed") =>
+                {
+                    Some(messages)
+                }
+                _ => None,
+            })
+            .expect("room snapshot");
+        assert_eq!(room.len(), 1);
+        assert!(is_irc_notice(&room[0]));
+    }
 
     #[tokio::test]
     async fn live_reaction_updates_its_loaded_message() {

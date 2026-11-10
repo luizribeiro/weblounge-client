@@ -4,4 +4,4 @@ import type { NoticeKind } from "./NoticeKind";
 /**
  * Semantic presentation of a chat message.
  */
-export type MessageKind = "text" | "action" | { "notice": NoticeKind };
+export type MessageKind = "text" | "action" | "irc_notice" | { "notice": NoticeKind };
