@@ -250,7 +250,7 @@ export function MessageList(props: MessageListProps) {
         setViewportHeight(next.height);
         callback(next);
         if (widthChanged) remeasure();
-        if (followEnd) virtualizer.scrollToEnd();
+        if (followEnd) scrollToLiveEdge();
         return followEnd;
       };
       const updateCurrentRect = () => {
@@ -309,6 +309,14 @@ export function MessageList(props: MessageListProps) {
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
   });
+  const scrollToLiveEdge = () => {
+    if (list === undefined) return;
+    if (list.scrollHeight <= list.clientHeight + liveEdgeTolerance) {
+      virtualizer.cancelScroll();
+      return;
+    }
+    virtualizer.scrollToEnd();
+  };
   const refreshRenderedMeasurements = () => {
     if (list?.isConnected !== true) return;
     const measurements = [
@@ -356,7 +364,7 @@ export function MessageList(props: MessageListProps) {
   const jumpToBottom = () => {
     if (list === undefined || rows().length === 0) return;
     setLiveEdge(true);
-    virtualizer.scrollToEnd();
+    scrollToLiveEdge();
   };
   const selectLastOwn = () => {
     const message = [...props.messages]
@@ -395,7 +403,7 @@ export function MessageList(props: MessageListProps) {
       olderPageArmed = true;
       setUnseen(0);
       setLiveEdge(true);
-      virtualizer.scrollToEnd();
+      scrollToLiveEdge();
     }
   });
   createEffect(() => {
@@ -484,17 +492,23 @@ export function MessageList(props: MessageListProps) {
       setUnseen((count) => count + messages.length - previousCount);
     renderedCount = messages.length;
     if (messages.length !== previousCount && logicallyAtLiveEdge)
-      virtualizer.scrollToEnd();
+      scrollToLiveEdge();
   });
   let measuredRevisions = rows().map(rowSizeRevision).join("\u0002");
+  let measuredRowKeys = rows().map((row) => row.key);
   createEffect(() => {
     const currentRows = rows();
     const revisions = currentRows.map(rowSizeRevision).join("\u0002");
     if (revisions === measuredRevisions) return;
+    const currentKeys = currentRows.map((row) => row.key);
+    const appended =
+      currentKeys.length > measuredRowKeys.length &&
+      measuredRowKeys.every((key, index) => currentKeys[index] === key);
     measuredRevisions = revisions;
+    measuredRowKeys = currentKeys;
     queueMicrotask(() => {
-      remeasure();
-      if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+      if (!appended) remeasure();
+      if (logicallyAtLiveEdge) scrollToLiveEdge();
     });
   });
   onMount(() => {
@@ -509,14 +523,14 @@ export function MessageList(props: MessageListProps) {
       // measureElement. Keep unrendered measurements and update painted rows
       // directly before the frozen snapshot leaves.
       refreshRenderedMeasurements();
-      if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+      if (logicallyAtLiveEdge) scrollToLiveEdge();
     };
     const cancelComposerScroll = () => {
       if (logicallyAtLiveEdge) virtualizer.cancelScroll();
     };
     const handleFontsLoaded = () => {
       remeasure();
-      if (logicallyAtLiveEdge) virtualizer.scrollToEnd();
+      if (logicallyAtLiveEdge) scrollToLiveEdge();
     };
     const liveEdgeObserver =
       list === undefined || typeof IntersectionObserver === "undefined"
@@ -534,7 +548,7 @@ export function MessageList(props: MessageListProps) {
       const { owner } = (event as CustomEvent<AppGeometryChange>).detail;
       if (list !== undefined && owner.contains(list) && logicallyAtLiveEdge) {
         const followedResizedViewport = syncViewportRect?.() ?? false;
-        if (!followedResizedViewport) virtualizer.scrollToEnd();
+        if (!followedResizedViewport) scrollToLiveEdge();
       }
     };
     if (liveEdgeSentinel !== undefined)

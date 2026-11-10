@@ -172,6 +172,10 @@ it("opens non-own authors and mentions through the same nickname action", () => 
 it("re-anchors the live edge synchronously with app geometry", () => {
   render(() => <MessageList messages={[message]} />);
   const list = screen.getByRole("list", { name: "Messages" });
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 600 },
+    scrollHeight: { configurable: true, value: 900 },
+  });
   const scrollTo = vi.spyOn(list, "scrollTo");
   const unrelatedOwner = document.createElement("div");
 
@@ -196,6 +200,27 @@ it("re-anchors the live edge synchronously with app geometry", () => {
   );
 
   expect(scrollTo).toHaveBeenCalledOnce();
+});
+
+it("does not reconcile the live edge when the transcript cannot scroll", () => {
+  render(() => <MessageList messages={[message]} />);
+  const list = screen.getByRole("list", { name: "Messages" });
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 600 },
+    scrollHeight: { configurable: true, value: 600 },
+  });
+  const scrollTo = vi.spyOn(list, "scrollTo");
+
+  window.dispatchEvent(
+    new CustomEvent("weblounge:app-geometry-change", {
+      detail: {
+        geometry: { keyboard: "open", height: 500 },
+        owner: document.body,
+      },
+    }),
+  );
+
+  expect(scrollTo).not.toHaveBeenCalled();
 });
 
 it("anchors composer height changes before viewport resize delivery", async () => {
@@ -228,6 +253,10 @@ it("anchors composer height changes before viewport resize delivery", async () =
   Object.defineProperty(list, "clientHeight", {
     configurable: true,
     get: () => listHeight,
+  });
+  Object.defineProperty(list, "scrollHeight", {
+    configurable: true,
+    value: 900,
   });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   for (const observer of observers) observer.flushTarget(list, 600);
@@ -274,6 +303,7 @@ it("keeps the live edge through viewport resizes", async () => {
   Object.defineProperties(list, {
     clientHeight: { configurable: true, get: () => listHeight },
     clientWidth: { configurable: true, get: () => listWidth },
+    scrollHeight: { configurable: true, value: 900 },
   });
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   for (const observer of observers) observer.flushTarget(list, 600);
