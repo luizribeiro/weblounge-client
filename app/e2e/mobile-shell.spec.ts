@@ -348,13 +348,21 @@ test.describe("mobile shell against local Ergo", () => {
         const wrappingText =
           "A deliberately long mobile message wraps beneath itself instead of reserving desktop columns on this narrow screen.";
         const groupedText = "A same-minute follow-up uses the full text width.";
+        const transcript = page.getByRole("list", { name: "Messages" });
+        const composer = page.getByRole("textbox", {
+          name: `Message ${targetNick}`,
+        });
+        await composer.fill("/version");
+        await composer.press("Enter");
+        await expect(
+          transcript.locator("[data-notice-row]").last(),
+        ).toBeVisible();
         const groupedMinute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
         await Promise.all([
           armMessageTime(wrappingText, groupedMinute + 1_000),
           armMessageTime(groupedText, groupedMinute + 2_000),
         ]);
         await bots[9]?.privmsgConfirmed("weblounge", wrappingText);
-        const transcript = page.getByRole("list", { name: "Messages" });
         const wrappedMessage = transcript.getByText(wrappingText, {
           exact: true,
         });
@@ -423,9 +431,6 @@ test.describe("mobile shell against local Ergo", () => {
             );
           }),
         ).toBeCloseTo(0, 0);
-        const composer = page.getByRole("textbox", {
-          name: `Message ${targetNick}`,
-        });
         await composer.fill("mobile reply");
         await composer.press("Enter");
         await expect(
