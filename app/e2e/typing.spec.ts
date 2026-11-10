@@ -188,12 +188,13 @@ test.describe("typing indicators", () => {
     page,
   }, testInfo) => {
     const mobile = testInfo.project.name === "webkit-mobile-typing";
+    const run = Date.now().toString(36).slice(-5);
     const typer = await IrcClient.connectIsolated(
-      mobile ? "typing-edge-mobile" : "typing-edge-desktop",
+      `typing-edge-${mobile ? "mobile" : "desktop"}-${run}`,
       channel,
     );
     const sender = await IrcClient.connectIsolated(
-      mobile ? "typing-sender-mobile" : "typing-sender-desktop",
+      `typing-sender-${mobile ? "mobile" : "desktop"}-${run}`,
       channel,
     );
     try {
