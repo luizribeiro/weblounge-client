@@ -54,6 +54,59 @@ The single place a fresh session reads to know where the project stands. Update 
   JSON fixtures pin update, reorder, removal and reset behavior for the later TypeScript reducer,
   while generated overlap, page-order and small-window scenarios prove mirror parity through silent
   eviction and stable smallest-record item IDs. Existing runtime and protocol events are unchanged.
+- [x] Audit the complete transcript rhythm against the signed prototype and keep decoration
+  geometry measurable by the virtualizer. The table is the cozy-density contract; compact and
+  comfortable substitute their corresponding density tokens. “Before/after” is painted content
+  space unless a row height is stated.
+
+  | Row or transition | Cozy phone | Cozy desktop | Spacing owner |
+  | --- | ---: | ---: | --- |
+  | New sender / group start | 16px before nick; 0px after content | 3px above and below | Message row, group/one-line density token |
+  | Same-group continuation | 6px before text; 0px after | 3px above and below | Message row, continuation/one-line density token |
+  | Highlighted group or continuation | Same 16px/6px outer rhythm; band splits it 8px/8px or 3px/3px | Same 3px/3px rhythm | Message row pseudo-element; no added height |
+  | Join, part, membership, notice, other system line | 12px before when following a message; 4px between consecutive line rows; 0px before after a divider; 0px after | 3px above and below | System-row context and line-density tokens |
+  | Day, New/unread, history loading/start | 14px above and below | 10px above and below | Divider-density tokens |
+  | Reaction chips or link preview | 4px internal content gap; outer message rhythm unchanged | 4px internal content gap; outer message rhythm unchanged | Inside the message content box |
+  | Own, pending, failed, confirmed delivery | Same group/continuation rhythm as any message | Same one-line rhythm as any message | Delivery label is inside the message row and adds no outer gap |
+  | Typing status | 24px reserved in the composer; 0px transcript gap | 24px reserved in the composer; 0px transcript gap | Composer, outside the transcript |
+  | First row | Its row-kind spacing from the phone list edge | 12px list inset, then its row-kind spacing | List edge plus the first row; no neighbouring-row margin |
+  | Last row | Its row-kind trailing space; no list padding | Its row-kind trailing space; no list padding | Last row; live-edge sentinel adds no visible space |
+  | Jump to bottom | 0px transcript space | 0px transcript space | Absolute overlay; appearing or disappearing cannot move rows |
+
+  Day/New rows previously used a fixed 34px height and 0px block padding, membership used a
+  fixed 34px line box, and notices used a 34px minimum with 8px/8px padding. History progress had
+  no visible row. The approved Buffer events canvas now owns this family: cozy phone dividers are
+  18px + 14px/14px = 46px, line rows are 18px + 12px after a message or 18px + 4px after another
+  line, and line rows after a divider add no gap. Cozy desktop dividers are 18px + 10px/10px =
+  38px and line rows remain 18px + 3px/3px = 24px. Divider padding follows design 26's integer
+  6/10/14 desktop and 10/14/18 phone values; the remaining line tokens use their signed density
+  values. During the conversion, the New divider painted at 30px while its stale 34px estimate left
+  a repeatable 4px seam; explicit line-height tokens and painted-bounds measurement reduce that seam
+  to 0px. History prepend, reaction, and width changes could also discard painted fractional
+  measurements and temporarily restore integer estimates, leaving persistent 1.5px Android and
+  2.25px WebKit seams. Revised rows are now measured by stable row key on their first frame,
+  same-count changes retain off-screen cached sizes, and size revisions are cached per row key while
+  including delivery state and collapsed membership content. The jump control remains an overlay,
+  delivery state remains internal to its message, and a transcript without a scroll range cancels
+  no-op live-edge reconciliation so denser system rows do not leave the native-feel audit animating.
+  Only a tail append whose existing key-and-size-revision prefix is unchanged retains the active
+  virtual range; prepends, splits, and in-place revisions use one anchor-preserving refresh. Virtual
+  rows are snapshotted for that transaction so a reaction revision cannot mutate the rendered range
+  midway through Solid's keyed render. Nonterminal history pages rearm the top-edge request even
+  when the transcript is too short to move away from zero. A later iPhone report exposed rows mounted from a hidden
+  catch-up retaining estimate-only geometry through the first DOM transaction and producing a
+  reproduced 63px gap after a narrow-glyph long row. Foreground return now performs one keyed
+  refresh before paint, while ordinary scrolling performs no full-range mount sweep and Solid alone
+  writes row transforms. Multiline text deliberately retains one blank line (`\n\n`), while the
+  engine already collapses longer newline runs to one; because a real blank line survives foreground
+  changes, no text-normalization policy changed for this disappearing-gap fix. The timestamp
+  forwarder now buffers complete IRC lines and complete fragmented WebSocket messages; deterministic
+  past fixture times cannot cross a day boundary, and screenshot capture is separate from the
+  assertion journey. Local-Ergo browser coverage
+  checks every mounted edge, signed phone text gaps, divider/system symmetry, highlighted continuation
+  band insets, history prepend, live reactions, viewport/orientation and simulated keyboard
+  changes, and overlay row stability under CPU throttling. Lounge Night before/after captures are
+  retained at 390×844 and 1280×800.
 - [x] Keep mention bands inside the existing transcript rhythm. Phone highlights now split each
   group or continuation gap evenly above and below the painted band without changing row geometry,
   while desktop retains its symmetric one-line padding. The idle transcript motion layer no longer
