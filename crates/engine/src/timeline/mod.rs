@@ -2,12 +2,16 @@
 
 mod error;
 mod fold;
+mod patch;
 mod projection;
 
 pub use error::TimelineError;
 pub use fold::{
     ChatRecord, FoldEvent, FoldRun, FoldedBody, FoldedItem, RecordBody, SplitServers,
     TimelineRecord, Who, fold,
+};
+pub use patch::{
+    AppliedTimeline, GeometryClass, TimelineChange, TimelineDiff, apply_timeline_change, diff,
 };
 pub use projection::{
     Actor, Departure, GapProjection, ItemBody, LineEvent, LocalDay, MemberRank, ModeMeaning,
