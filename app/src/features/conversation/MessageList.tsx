@@ -14,6 +14,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { densityPresets } from "../../density/density";
 import type {
   BufferProjection,
@@ -356,7 +357,16 @@ export function MessageList(props: MessageListProps) {
     },
     overscan: props.presentation === "mobile" ? 24 : 6,
   });
-  const virtualItems = createMemo(() => [...virtualizer.getVirtualItems()]);
+  const [virtualItems, setVirtualItems] = createStore([
+    ...virtualizer.getVirtualItems(),
+  ]);
+  createEffect(() => {
+    // TanStack replaces measurement records even when their rows are unchanged.
+    // Keep Solid's keyed render attached to the timeline identity instead.
+    setVirtualItems(
+      reconcile([...virtualizer.getVirtualItems()], { key: "key" }),
+    );
+  });
   const scrollToLiveEdge = () => {
     if (list === undefined) return;
     if (list.scrollHeight <= list.clientHeight + liveEdgeTolerance) {
@@ -832,7 +842,7 @@ export function MessageList(props: MessageListProps) {
             }}
             role="presentation"
           >
-            <For each={virtualItems()}>
+            <For each={virtualItems}>
               {(virtualRow) => {
                 const row = () => rows()[virtualRow.index];
                 const measuredStart = () => {
@@ -930,8 +940,21 @@ function TimelineRowView(props: {
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly row: TimelineRow | undefined;
 }) {
+  let renderedRow: TimelineRow | undefined;
+  // Timeline projection recreates wrappers on append; selection and browser
+  // work must keep owning a row whose render source did not change.
+  const stableRow = createMemo(() => {
+    const current = props.row;
+    if (
+      current === undefined ||
+      renderedRow === undefined ||
+      !sameRenderedRow(renderedRow, current)
+    )
+      renderedRow = current;
+    return renderedRow;
+  });
   return (
-    <Show when={props.row} keyed>
+    <Show when={stableRow()} keyed>
       {(row) => (
         <Switch>
           <Match when={row.kind === "history"}>
@@ -1429,6 +1452,7 @@ function rowRevisionSource(row: TimelineRow): object | string {
     case "history":
       return row.state;
     case "day":
+      return row.label;
     case "new":
       return row.key;
     default: {
@@ -1436,6 +1460,17 @@ function rowRevisionSource(row: TimelineRow): object | string {
       return exhaustive;
     }
   }
+}
+
+function sameRenderedRow(left: TimelineRow, right: TimelineRow): boolean {
+  return (
+    left.key === right.key &&
+    left.kind === right.kind &&
+    rowRevisionSource(left) === rowRevisionSource(right) &&
+    (left.kind !== "message" ||
+      (right.kind === "message" &&
+        left.startsMobileGroup === right.startsMobileGroup))
+  );
 }
 
 function decorationSizeRevision(

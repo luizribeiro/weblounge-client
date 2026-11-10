@@ -125,6 +125,50 @@ it("marks a direct row whose sender identity is unverified", () => {
   expect(screen.getByLabelText("Unverified sender")).toBeVisible();
 });
 
+it("keeps an unchanged visible row mounted when a message is appended", async () => {
+  const [messages, setMessages] = createSignal([message]);
+  render(() => <MessageList messages={messages()} presentation="mobile" />);
+  const original = screen
+    .getByText("hello weblounge")
+    .closest("[data-message-row]");
+  if (original === null) throw new Error("message row is missing");
+
+  setMessages([
+    message,
+    {
+      ...message,
+      id: 2,
+      text: "a same-minute follow-up",
+      received_at_ms: 2,
+    },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(
+    screen.getByText("hello weblounge").closest("[data-message-row]"),
+  ).toBe(original);
+});
+
+it("updates a day divider when its relative label changes", () => {
+  vi.useFakeTimers();
+  try {
+    const messageTime = new Date(2026, 10, 10, 12).getTime();
+    vi.setSystemTime(new Date(2026, 10, 10, 18));
+    const currentMessage = { ...message, received_at_ms: messageTime };
+    const [messages, setMessages] = createSignal([currentMessage]);
+    render(() => <MessageList messages={messages()} />);
+    expect(screen.getByText("Today")).toBeVisible();
+
+    vi.setSystemTime(new Date(2026, 10, 11, 18));
+    setMessages([currentMessage]);
+
+    expect(screen.getByText("Yesterday")).toBeVisible();
+    expect(screen.queryByText("Today")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("opens non-own authors and mentions through the same nickname action", () => {
   const openDirect = vi.fn();
   render(() => (

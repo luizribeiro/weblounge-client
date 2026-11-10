@@ -29,6 +29,13 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep unchanged visible transcript rows mounted across ordinary appends and measurement
+  refreshes. TanStack can replace virtual-item records while `timelineRows` recreates projection
+  wrappers; reference-keying either layer let Solid detach a still-visible message between
+  Playwright locator resolution and geometry evaluation, so detached computed styles supplied an
+  empty `paddingLeft` and produced the intermittent CI `NaN`. Virtual items now reconcile by row
+  key, rendered content retains its DOM identity while its source and group shape are unchanged,
+  and a regression test pins the unchanged message element across a same-minute append.
 - [x] Keep reconnect scroll preservation under actual reader ownership. The resilience journey now
   uses a wheel gesture before its condition-based stability check; assigning `scrollTop` directly
   left the app logically at the live edge, so the new foreground measurement refresh correctly
