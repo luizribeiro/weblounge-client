@@ -1194,7 +1194,10 @@ impl NetworkModel {
             let direct = self.casemapping.nick(message.target.clone())
                 == self.casemapping.nick(message.nickname);
             let (conversation, direct_key, availability) = if direct {
-                let nick = self.casemapping.nick(message.sender.clone());
+                let nick = state.name_rules().map_or_else(
+                    || self.casemapping.nick(message.sender.clone()),
+                    |rules| rules.nick(message.sender.clone()),
+                );
                 (
                     NameKey::Direct(nick.clone()),
                     Some(DirectKey::from_nick(&nick)),
@@ -1202,7 +1205,10 @@ impl NetworkModel {
                 )
             } else {
                 (
-                    NameKey::Channel(self.casemapping.channel(message.target)),
+                    NameKey::Channel(state.name_rules().map_or_else(
+                        || self.casemapping.channel(message.target.clone()),
+                        |rules| rules.channel(message.target.clone()),
+                    )),
                     None,
                     None,
                 )
@@ -4057,6 +4063,45 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(timeline(&model), ["arrived while closed"]);
+    }
+
+    #[tokio::test]
+    async fn pushed_message_reuses_the_running_clients_name_origin() {
+        let (client, mut events, mut wire) = wire(secure_wire_builder());
+        wire.register(&["message-tags", "server-time"]).await;
+        while !matches!(events.next().await, Some(papo::Event::Connected(_))) {}
+        let state = client.state();
+        let mut model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 10);
+        let channel = state
+            .name_rules()
+            .expect("connected client has name rules")
+            .channel("#room");
+        let (buffer_id, _) = model.ensure_buffer(NameKey::Channel(channel.clone()), None, None);
+        let pushed = serde_json::from_value::<PushedMessage>(serde_json::json!({
+            "schema": 1,
+            "network_label": "Test",
+            "nickname": "weblounge",
+            "sender": "alice",
+            "target": "#room",
+            "msgid": "pushed-with-live-origin",
+            "time": "2026-11-03T12:34:56.789Z",
+            "text": "provisional while suspended",
+            "kind": "message",
+        }))
+        .expect("pushed message");
+
+        model.restore_pushed_messages(vec![pushed], &state);
+
+        assert_eq!(
+            model.names[&NameKey::Channel(channel)],
+            buffer_id,
+            "push restoration must not create an originless duplicate buffer"
+        );
+        assert_eq!(model.buffers.len(), 2, "server and channel buffers only");
+        assert_eq!(
+            model.buffers[&buffer_id].timeline[0].projection.text,
+            "provisional while suspended"
+        );
     }
 
     #[tokio::test]
