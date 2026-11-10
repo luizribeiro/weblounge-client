@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use ts_rs::TS;
 
 use crate::{EngineMessageKey, MessageId, MessageProjection, NoticeTone};
@@ -74,9 +74,40 @@ pub struct SystemProjection {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SystemLine {
     /// One or more non-empty run clauses.
-    Run { clauses: Vec<RunClause> },
+    Run { clauses: RunClauses },
     /// An event that breaks membership runs.
     Event { event: LineEvent },
+}
+
+/// A non-empty sequence of semantic run clauses.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, TS)]
+#[serde(transparent)]
+#[ts(type = "Array<RunClause>")]
+pub struct RunClauses(Vec<RunClause>);
+
+impl RunClauses {
+    /// Creates a run from its required first clause and any following clauses.
+    #[must_use]
+    pub fn new(first: RunClause, rest: Vec<RunClause>) -> Self {
+        Self(std::iter::once(first).chain(rest).collect())
+    }
+
+    /// Returns the clauses in display order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[RunClause] {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for RunClauses {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let clauses = Vec::<RunClause>::deserialize(deserializer)?;
+        if clauses.is_empty() {
+            Err(D::Error::custom("a system run needs at least one clause"))
+        } else {
+            Ok(Self(clauses))
+        }
+    }
 }
 
 /// One semantic clause inside a collapsed run.
@@ -259,7 +290,7 @@ pub enum ReplySeverity {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalDay, OrderKey};
+    use super::{LocalDay, OrderKey, RunClause, RunClauses, SystemLine};
 
     #[test]
     fn order_and_day_use_the_wire_shapes_from_the_design() {
@@ -271,5 +302,12 @@ mod tests {
             serde_json::to_value(LocalDay(42)).expect("serializable local day"),
             serde_json::json!(42),
         );
+    }
+
+    #[test]
+    fn system_runs_are_non_empty_on_construction_and_deserialization() {
+        let clauses = RunClauses::new(RunClause::Joined { people: Vec::new() }, Vec::new());
+        assert_eq!(clauses.as_slice().len(), 1);
+        assert!(serde_json::from_str::<SystemLine>(r#"{"type":"run","clauses":[]}"#).is_err());
     }
 }
