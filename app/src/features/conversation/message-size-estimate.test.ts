@@ -7,7 +7,11 @@ import {
 
 describe("estimateMessageHeight", () => {
   it("reserves more height for long text in a narrow viewport", () => {
-    const message = { kind: "text" as const, text: "x".repeat(2_000) };
+    const message = {
+      delivery: "received" as const,
+      kind: "text" as const,
+      text: "x".repeat(2_000),
+    };
 
     expect(estimateMessageHeight(message, 402, "cozy")).toBeGreaterThan(2_000);
     expect(estimateMessageHeight(message, 402, "cozy")).toBeGreaterThan(
@@ -16,7 +20,11 @@ describe("estimateMessageHeight", () => {
   });
 
   it("accounts for explicit lines and density", () => {
-    const message = { kind: "action" as const, text: "one\ntwo\nthree" };
+    const message = {
+      delivery: "received" as const,
+      kind: "action" as const,
+      text: "one\ntwo\nthree",
+    };
 
     expect(estimateMessageHeight(message, 402, "comfortable")).toBeGreaterThan(
       estimateMessageHeight(message, 402, "compact"),
@@ -24,7 +32,11 @@ describe("estimateMessageHeight", () => {
   });
 
   it("reserves space and invalidates the estimate when reactions change", () => {
-    const base = { kind: "text" as const, text: "hello" };
+    const base = {
+      delivery: "received" as const,
+      kind: "text" as const,
+      text: "hello",
+    };
     const reacted = {
       ...base,
       reactions: [
@@ -43,7 +55,11 @@ describe("estimateMessageHeight", () => {
   });
 
   it("estimates phone headers and continuation rows separately", () => {
-    const message = { kind: "text" as const, text: "hello" };
+    const message = {
+      delivery: "received" as const,
+      kind: "text" as const,
+      text: "hello",
+    };
     const groupStart = estimateMessageHeight(
       message,
       390,
@@ -66,8 +82,16 @@ describe("estimateMessageHeight", () => {
   });
 
   it("gives IRC notices the full sender-row estimate", () => {
-    const text = { kind: "text" as const, text: "maintenance soon" };
-    const notice = { kind: "irc_notice" as const, text: text.text };
+    const text = {
+      delivery: "received" as const,
+      kind: "text" as const,
+      text: "maintenance soon",
+    };
+    const notice = {
+      delivery: text.delivery,
+      kind: "irc_notice" as const,
+      text: text.text,
+    };
 
     expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(
       estimateMessageHeight(text, 390, "cozy", "mobile"),
@@ -79,12 +103,38 @@ describe("estimateMessageHeight", () => {
 
   it("uses the system-line rhythm for notice estimates", () => {
     const notice = {
+      delivery: "received" as const,
       kind: { notice: { type: "info" as const } },
       text: "server information",
     };
 
     expect(estimateMessageHeight(notice, 390, "cozy", "mobile")).toBe(24);
     expect(estimateMessageHeight(notice, 1_280, "cozy", "desktop")).toBe(24);
+  });
+
+  it("reserves width and invalidates the estimate for delivery labels", () => {
+    const confirmed = {
+      delivery: "confirmed" as const,
+      kind: "text" as const,
+      text: "a message near the wrapping boundary",
+    };
+    const sending = { ...confirmed, delivery: "optimistic" as const };
+
+    expect(estimateMessageHeight(sending, 402, "cozy")).toBeGreaterThan(
+      estimateMessageHeight(confirmed, 402, "cozy"),
+    );
+    expect(messageSizeRevision(sending)).not.toBe(
+      messageSizeRevision(confirmed),
+    );
+
+    const confirmedAction = { ...confirmed, kind: "action" as const };
+    const failedAction = {
+      ...confirmedAction,
+      delivery: "failed" as const,
+    };
+    expect(estimateMessageHeight(failedAction, 402, "cozy")).toBeGreaterThan(
+      estimateMessageHeight(confirmedAction, 402, "cozy"),
+    );
   });
 });
 

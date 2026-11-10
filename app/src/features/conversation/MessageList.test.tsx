@@ -419,6 +419,47 @@ it("remeasures a revised row before adding confirmation split rows", async () =>
   ).toBe(28);
 });
 
+it("remeasures following rows when only delivery state changes", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      const row = this.querySelector<HTMLElement>("[data-message-row]");
+      if (row === null) return 34;
+      return row.dataset.delivery === "optimistic" ? 70 : 28;
+    },
+  );
+  const optimistic = {
+    ...message,
+    delivery: "optimistic" as const,
+    highlighted: false,
+  };
+  const [messages, setMessages] = createSignal<MessageProjection[]>([
+    optimistic,
+    { ...message, id: 2, delivery: "received", highlighted: false },
+  ]);
+  const { container } = render(() => <MessageList messages={messages()} />);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  setMessages([
+    { ...optimistic, delivery: "confirmed" },
+    { ...message, id: 2, delivery: "received", highlighted: false },
+  ]);
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  const first = container.querySelector<HTMLLIElement>(
+    '[data-row-key="message-1"]',
+  );
+  const second = container.querySelector<HTMLLIElement>(
+    '[data-row-key="message-2"]',
+  );
+  if (first === null || second === null)
+    throw new Error("delivery rows are missing");
+  expect(
+    translateY(second.style.transform) - translateY(first.style.transform),
+  ).toBe(28);
+});
+
 it("measures wrapped rows without overlap and preserves the live edge", async () => {
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
     function (this: HTMLElement) {

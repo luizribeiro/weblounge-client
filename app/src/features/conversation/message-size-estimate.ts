@@ -5,7 +5,10 @@ import {
 } from "../../density/density";
 import type { MessageProjection } from "../../engine/protocol";
 
-type EstimatedMessage = Pick<MessageProjection, "kind" | "reactions" | "text">;
+type EstimatedMessage = Pick<
+  MessageProjection,
+  "delivery" | "kind" | "reactions" | "text"
+>;
 
 const baseFontSize = 14;
 const listInlinePadding = 28;
@@ -43,7 +46,13 @@ export function estimateMessageHeight(
     );
   }
   if (presentation === "mobile" && isSenderRow(message.kind)) {
-    const textWidth = Math.max(rowWidth, fontSize * 4);
+    const textWidth = Math.max(
+      rowWidth -
+        (message.kind === "text" && !startsMobileGroup
+          ? deliveryChromeWidth(message.delivery)
+          : 0),
+      fontSize * 4,
+    );
     const charactersPerLine = Math.max(
       1,
       Math.floor(textWidth / (fontSize * 0.55)),
@@ -67,7 +76,10 @@ export function estimateMessageHeight(
     );
   }
   const textWidth = Math.max(
-    rowWidth - rowInlinePadding - messageChromeWidth(message.kind, fontSize),
+    rowWidth -
+      rowInlinePadding -
+      messageChromeWidth(message.kind, fontSize) -
+      (message.kind === "text" ? deliveryChromeWidth(message.delivery) : 0),
     fontSize * 4,
   );
   const charactersPerLine = Math.max(
@@ -79,7 +91,17 @@ export function estimateMessageHeight(
     28,
     Math.ceil(lines * lineHeight + verticalPadding),
   );
-  return textHeight + estimatedReactionHeight(message, textWidth, presentation);
+  const deliveryHeight =
+    message.kind === "action" &&
+    message.delivery !== "received" &&
+    message.delivery !== "confirmed"
+      ? Math.ceil(11 * Number.parseFloat(preset.lineHeight))
+      : 0;
+  return (
+    textHeight +
+    deliveryHeight +
+    estimatedReactionHeight(message, textWidth, presentation)
+  );
 }
 
 export function messageSizeRevision(
@@ -89,7 +111,7 @@ export function messageSizeRevision(
   const reactions = message.reactions
     ?.map((reaction) => `${reaction.text}:${reaction.actors.length}`)
     .join("\u0001");
-  return `${JSON.stringify(message.kind)}\u0000${message.text}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}`;
+  return `${JSON.stringify(message.kind)}\u0000${message.text}\u0000${message.delivery}\u0000${reactions ?? ""}\u0000${startsMobileGroup ?? ""}`;
 }
 
 export function currentMessageDensity(root: HTMLElement): DensityId {
@@ -110,6 +132,12 @@ function messageChromeWidth(
 
 function isSenderRow(kind: EstimatedMessage["kind"]): boolean {
   return kind === "text" || kind === "irc_notice";
+}
+
+function deliveryChromeWidth(delivery: EstimatedMessage["delivery"]): number {
+  if (delivery === "received" || delivery === "confirmed") return 0;
+  const labelCharacters = delivery === "optimistic" ? 8 : 14;
+  return labelCharacters * 11 * 0.6;
 }
 
 function estimatedLines(text: string, charactersPerLine: number): number {
