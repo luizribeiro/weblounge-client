@@ -44,6 +44,10 @@ export type IncompatibleBuild = Extract<
   EngineToUi,
   { type: "incompatible_build" }
 >;
+export type HistoryState = Pick<
+  Extract<EngineToUi, { type: "history_state_changed" }>,
+  "at_start" | "loading"
+>;
 
 export interface WorkerHostError {
   type: "fatal";

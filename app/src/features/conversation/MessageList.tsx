@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import type {
   BufferProjection,
+  HistoryState,
   MembershipProjection,
   MessageProjection,
   NoticeKind,
@@ -55,6 +56,7 @@ interface MessageListProps {
   readonly bufferId?: number | undefined;
   readonly foreground?: boolean | undefined;
   readonly foregroundExitEpoch?: number | undefined;
+  readonly historyState?: HistoryState | undefined;
   readonly presentation?: "desktop" | "mobile" | undefined;
   readonly messages: readonly MessageProjection[];
   readonly memberships?: readonly MembershipProjection[] | undefined;
@@ -79,6 +81,11 @@ export interface MessageListController {
 }
 
 type TimelineRow =
+  | {
+      readonly kind: "history";
+      readonly key: string;
+      readonly state: HistoryState;
+    }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
   | { readonly kind: "new"; readonly key: string }
   | {
@@ -128,13 +135,19 @@ export function MessageList(props: MessageListProps) {
   let logicallyAtLiveEdge = true;
   let scrollLiveEdgeFrame: number | undefined;
   let olderPageArmed = true;
+  let historyWasLoading = props.historyState?.loading === true;
   const [dividerMark, setDividerMark] = createSignal(initialReadAt);
   const [publishedAtLiveEdge, setPublishedAtLiveEdge] = createSignal(true);
   const [unseen, setUnseen] = createSignal(0);
   const [selectedMessage, setSelectedMessage] = createSignal<number>();
   const [viewportHeight, setViewportHeight] = createSignal(768);
   const rows = createMemo(() =>
-    timelineRows(props.messages, props.memberships ?? [], dividerMark()),
+    timelineRows(
+      props.messages,
+      props.memberships ?? [],
+      dividerMark(),
+      props.historyState,
+    ),
   );
   const rowSizeRevision = (row: TimelineRow) =>
     row.kind === "message"
@@ -193,6 +206,16 @@ export function MessageList(props: MessageListProps) {
     props.onLoadOlder?.();
     olderPageArmed = false;
   };
+  createEffect(() => {
+    const history = props.historyState;
+    if (
+      historyWasLoading &&
+      history?.loading === false &&
+      history.at_start === false
+    )
+      olderPageArmed = true;
+    historyWasLoading = history?.loading === true;
+  });
   const markWheelScrollIntent = (event: WheelEvent) => {
     userScrollIntent.beginDiscrete();
     if (event.deltaY < 0 && (list?.scrollTop ?? Infinity) <= liveEdgeTolerance)
@@ -717,6 +740,15 @@ function TimelineRowView(props: {
     <Show when={props.row} keyed>
       {(row) => (
         <Switch>
+          <Match when={row.kind === "history"}>
+            <div class={styles.divider} data-history-edge="true">
+              <span>
+                {row.kind === "history" && row.state.loading
+                  ? t("messages.history.loading")
+                  : t("messages.history.start")}
+              </span>
+            </div>
+          </Match>
           <Match when={row.kind === "day"}>
             <div class={styles.divider} data-day-divider="true">
               <span>{row.kind === "day" ? row.label : ""}</span>
@@ -1022,8 +1054,12 @@ function timelineRows(
   messages: readonly MessageProjection[],
   memberships: readonly MembershipProjection[],
   readAtMs: number | null,
+  historyState?: HistoryState,
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
+  if (historyState?.loading === true || historyState?.at_start === true) {
+    rows.push({ kind: "history", key: "history-edge", state: historyState });
+  }
   let day = "";
   let newInserted = false;
   let previousGroupMessage: MessageProjection | undefined;

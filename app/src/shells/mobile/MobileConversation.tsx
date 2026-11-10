@@ -9,6 +9,7 @@ import type {
   CommandSpec,
   CompletionResult,
   HistoryDirection,
+  HistoryState,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -43,6 +44,7 @@ export interface MobileConversationProps {
   readonly completion?: CompletionResult;
   readonly messages: readonly MessageProjection[];
   readonly memberships: readonly MembershipProjection[];
+  readonly historyState?: HistoryState | undefined;
   readonly typers?: readonly TypingProjection[] | undefined;
   readonly network?: NetworkProjection | undefined;
   readonly onBack: () => void;
@@ -193,6 +195,7 @@ export function MobileConversation(props: MobileConversationProps) {
             messages={props.messages}
             foreground={props.foreground !== false}
             memberships={props.memberships}
+            historyState={props.historyState}
             onLiveEdgeChange={setAtLiveEdge}
             onLoadOlder={() => props.onLoadHistory(props.buffer.id, "older")}
             onOpenChannel={(channel) => {

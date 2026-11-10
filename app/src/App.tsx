@@ -26,6 +26,7 @@ import type {
   CommandSpec,
   CompletionResult,
   EngineClientMessage,
+  HistoryState,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -189,6 +190,9 @@ export function App(props: AppProps) {
   >(new Map());
   const [memberships, setMemberships] = createSignal<
     ReadonlyMap<number, readonly MembershipProjection[]>
+  >(new Map());
+  const [historyStates, setHistoryStates] = createSignal<
+    ReadonlyMap<number, HistoryState>
   >(new Map());
   const [typers, setTypers] = createSignal<
     ReadonlyMap<number, readonly TypingProjection[]>
@@ -748,6 +752,17 @@ export function App(props: AppProps) {
             ),
         );
         setTypers((current) => withoutMapKey(current, message.buffer_id));
+        setHistoryStates((current) =>
+          withoutMapKey(current, message.buffer_id),
+        );
+      }
+      if (message.type === "history_state_changed") {
+        setHistoryStates((current) =>
+          new Map(current).set(message.buffer_id, {
+            at_start: message.at_start,
+            loading: message.loading,
+          }),
+        );
       }
       applyDebugEvent(
         message,
@@ -1417,6 +1432,7 @@ export function App(props: AppProps) {
           focusRequest={focusRequest()}
           messages={messages()}
           memberships={memberships()}
+          historyStates={historyStates()}
           typers={typers()}
           memberWindows={memberWindows()}
           onMarkRead={(bufferId, through) => {

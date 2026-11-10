@@ -18,6 +18,7 @@ import type {
   CommandSpec,
   CompletionResult,
   HistoryDirection,
+  HistoryState,
   MembershipProjection,
   MessageProjection,
   NetworkProjection,
@@ -67,6 +68,7 @@ export interface DesktopShellProps extends NotificationPromptControls {
     | undefined;
   readonly messages: ReadonlyMap<number, readonly MessageProjection[]>;
   readonly memberships: ReadonlyMap<number, readonly MembershipProjection[]>;
+  readonly historyStates?: ReadonlyMap<number, HistoryState> | undefined;
   readonly typers?:
     | ReadonlyMap<number, readonly TypingProjection[]>
     | undefined;
@@ -406,6 +408,9 @@ export function DesktopShell(props: DesktopShellProps) {
                 memberships={
                   props.memberships.get(activeBuffer()?.id ?? -1) ?? []
                 }
+                historyState={props.historyStates?.get(
+                  activeBuffer()?.id ?? -1,
+                )}
                 onLiveEdgeChange={setAtLiveEdge}
                 onLoadOlder={() => {
                   const buffer = activeBuffer();

@@ -722,6 +722,29 @@ it("renders action, own, pending, bot, divider, New, and membership variants", a
   expect(screen.queryByText("BOT")).not.toBeInTheDocument();
 });
 
+it("uses one history-edge divider for loading and the reached boundary", async () => {
+  const [historyState, setHistoryState] = createSignal({
+    at_start: false,
+    loading: true,
+  });
+  const { container } = render(() => (
+    <MessageList historyState={historyState()} messages={[message]} />
+  ));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+  expect(container.querySelector("[data-history-edge]")).toHaveTextContent(
+    "Loading earlier messages…",
+  );
+  setHistoryState({ at_start: true, loading: false });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(container.querySelector("[data-history-edge]")).toHaveTextContent(
+    "Start of history",
+  );
+  setHistoryState({ at_start: false, loading: false });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  expect(container.querySelector("[data-history-edge]")).toBeNull();
+});
+
 it("renders topic notices with their setter and time", async () => {
   const setAt = Date.UTC(2026, 9, 28, 12);
   render(() => (
@@ -1179,6 +1202,43 @@ it("loads older history when an upward wheel cannot move past the top", () => {
   fireEvent.wheel(list, { deltaY: -100 });
 
   expect(onLoadOlder).toHaveBeenCalledOnce();
+});
+
+it("rearms top loading after a nonterminal older page completes", async () => {
+  const onLoadOlder = vi.fn();
+  const [historyState, setHistoryState] = createSignal({
+    at_start: false,
+    loading: false,
+  });
+  const { container } = render(() => (
+    <MessageList
+      historyState={historyState()}
+      messages={[message]}
+      onLoadOlder={onLoadOlder}
+    />
+  ));
+  const list = container.querySelector<HTMLOListElement>("[data-message-list]");
+  if (list === null) throw new Error("message list is missing");
+  Object.defineProperties(list, {
+    clientHeight: { configurable: true, value: 500 },
+    scrollHeight: { configurable: true, value: 100 },
+    scrollTop: {
+      configurable: true,
+      get: () => 0,
+      set: () => {},
+    },
+  });
+  list.scrollTop = 0;
+
+  fireEvent.wheel(list, { deltaY: -100 });
+  expect(onLoadOlder).toHaveBeenCalledOnce();
+  setHistoryState({ at_start: false, loading: true });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  setHistoryState({ at_start: false, loading: false });
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  fireEvent.wheel(list, { deltaY: -100 });
+
+  expect(onLoadOlder).toHaveBeenCalledTimes(2);
 });
 
 it("defers live-edge geometry until after the scroll handler", async () => {

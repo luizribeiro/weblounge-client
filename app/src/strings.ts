@@ -207,6 +207,8 @@ export const messages = {
   "messages.delivery.sending": "Sending…",
   "messages.jump.many": "{count} new messages ↓",
   "messages.jump.one": "{count} new message ↓",
+  "messages.history.loading": "Loading earlier messages…",
+  "messages.history.start": "Start of history",
   "messages.label": "Messages",
   "messages.membership.joined": "joined",
   "messages.membership.kicked": "{actor} kicked you{reason}",
