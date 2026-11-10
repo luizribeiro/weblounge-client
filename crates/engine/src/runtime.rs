@@ -11862,6 +11862,95 @@ async fn delay(duration: Duration) {
     }
 
     #[tokio::test]
+    async fn confirmed_own_send_replaces_a_loading_cached_direct_row() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["extended-join"]).await;
+        for line in [
+            ":weblounge!u@host JOIN #room account :WebLounge",
+            ":alice!a@host JOIN #room alice :Alice",
+        ] {
+            wire.server(line).await;
+            _ = next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        }
+        let direct = client.direct("alice").await.expect("shared user is direct");
+        let cached = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "alice".into(),
+                last_activity_ms: Some(100),
+                stubs: Vec::new(),
+                gap_until: None,
+                preview: Some("stale cached".into()),
+                newest: None,
+                read_at_ms: None,
+                pending_read_at_ms: None,
+                peer_pin: None,
+            }],
+        );
+        let (state, outbound, _receiver) = harness(client.clone());
+        restore_and_store_snapshot(&state, &cached).await;
+        let buffer_id = {
+            let mut state = lock(&state);
+            let running = state.network.as_mut().expect("network remains active");
+            running
+                .model
+                .set_connection(NetworkConnectionState::Online, None);
+            running.chat_list.fingerprint = "network".into();
+            let buffer_id = match running.model.buffers_event() {
+                EngineToUi::BuffersChanged { buffers, .. } => buffers[1].id,
+                _ => unreachable!("buffer list event"),
+            };
+            running
+                .model
+                .resolve_direct(buffer_id, DirectAvailability::Guarded(direct));
+            assert!(
+                running
+                    .model
+                    .request_history(buffer_id, crate::HistoryDirection::Latest)
+                    .is_some()
+            );
+            buffer_id
+        };
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        };
+
+        runtime.request(EngineRequestEnvelope {
+            id: "send".into(),
+            request: EngineRequest::SendMessage {
+                buffer_id,
+                text: "new own direct".into(),
+            },
+        });
+        assert_eq!(wire.next_sent().await, "PRIVMSG alice :new own direct");
+
+        let storage = lock(&state).storage.clone();
+        let persisted = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Some(snapshot) = read(storage.as_ref())
+                    .await
+                    .expect("read snapshot")
+                    .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"))
+                    .filter(|snapshot| {
+                        snapshot.rows[0].preview.as_deref() == Some("You: new own direct")
+                    })
+                {
+                    break snapshot;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("confirmed own direct persists");
+        assert!(persisted.rows[0].last_activity_ms > Some(100));
+    }
+
+    #[tokio::test]
     async fn cached_target_failure_emits_legacy_event_and_patch_in_one_flush() {
         let (client, _events, mut wire) =
             wire(papo::Client::builder("irc://offline.test", "weblounge"));

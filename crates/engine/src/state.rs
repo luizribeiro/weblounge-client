@@ -886,6 +886,13 @@ impl NetworkModel {
                     .find(|row| row.conversation == conversation)
                     .cloned()?;
                 copy_read_facts_to_snapshot(buffer, &mut row);
+                if let Some(message) = latest_real_message(buffer).filter(|message| {
+                    row.last_activity_ms
+                        .is_none_or(|cached| message_time(message) > cached)
+                }) {
+                    row.last_activity_ms = Some(message_time(message));
+                    row.preview = Some(snapshot_preview(&buffer.projection, message));
+                }
                 Some(row)
             })
             .collect();
