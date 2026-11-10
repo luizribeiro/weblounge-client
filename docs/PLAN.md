@@ -29,6 +29,11 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Keep the phone grouping journey's complete transcript order deterministic. The test used
+  rewritten next-minute times for its asserted rows but left ten fakelagged backlog rows at live
+  server time, so a run started just before a minute boundary could sort a same-sender backlog row
+  between the sender-change row and the row expected to start a group. The backlog now receives
+  explicit preceding server times as part of the same fixture.
 - [x] Keep unchanged visible transcript rows mounted across ordinary appends and measurement
   refreshes. TanStack can replace virtual-item records while `timelineRows` recreates projection
   wrappers; reference-keying either layer let Solid detach a still-visible message between

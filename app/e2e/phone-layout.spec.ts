@@ -102,9 +102,15 @@ test("groups phone messages without losing timestamps or the live edge", async (
   const changedSender = `phone sender ${suffix}`;
   const beforeMinute = `phone before minute ${suffix}`;
   const changedMinute = `phone minute ${suffix}`;
+  const backlog = Array.from(
+    { length: 10 },
+    (_, index) =>
+      `phone backlog ${index} ${suffix} ${"wrap this message across the narrow transcript ".repeat(5)}`,
+  );
   try {
     await sender.mode(sender.nickname, "+B");
     await armGroupingTimes(
+      backlog,
       first,
       second,
       changedSender,
@@ -118,11 +124,7 @@ test("groups phone messages without losing timestamps or the live edge", async (
     await expect(page.locator("[data-mobile-chat]")).toBeVisible();
     await expect(page.getByRole("heading", { name: channel })).toBeVisible();
 
-    for (let index = 0; index < 10; index += 1)
-      sender.privmsg(
-        channel,
-        `phone backlog ${index} ${suffix} ${"wrap this message across the narrow transcript ".repeat(5)}`,
-      );
+    for (const text of backlog) sender.privmsg(channel, text);
     await sender.privmsgConfirmed(channel, first);
     const firstRow = messageRow(page, first);
     await expect(firstRow).toBeVisible();
@@ -422,6 +424,7 @@ function keepsDesktopColumns(row: Locator): Promise<boolean> {
 }
 
 async function armGroupingTimes(
+  backlog: readonly string[],
   first: string,
   second: string,
   changedSender: string,
@@ -430,6 +433,9 @@ async function armGroupingTimes(
 ): Promise<void> {
   const minute = Math.floor(Date.now() / 60_000) * 60_000 + 60_000;
   await Promise.all([
+    ...backlog.map((text, index) =>
+      armMessageTime(text, minute - (backlog.length - index) * 1_000),
+    ),
     armMessageTime(first, minute + 1_000),
     armMessageTime(second, minute + 2_000),
     armMessageTime(changedSender, minute + 3_000),
