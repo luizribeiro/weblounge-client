@@ -51,7 +51,7 @@ const FOREGROUND_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const READ_RETRY_INITIAL: Duration = Duration::from_secs(1);
 const READ_RETRY_MAX: Duration = Duration::from_secs(60);
 const READ_RETRY_ATTEMPTS: u8 = 5;
-const SNAPSHOT_WRITE_RETRY_ATTEMPTS: u8 = 5;
+const SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS: u8 = 5;
 const MARK_READ_DIAGNOSTIC_ID: &str = "mark-read";
 const PUSH_REFRESH_INTERVAL: Duration = Duration::from_hours(24);
 
@@ -4887,12 +4887,19 @@ async fn write_snapshot_intervals(
                     "{}: {error}",
                     EngineMessageKey::StorageUnavailable.as_str()
                 ));
-                if failures <= SNAPSHOT_WRITE_RETRY_ATTEMPTS {
+                let retry_later = {
                     let mut writer = lock(&writer);
                     if writer.generation != generation {
                         return;
                     }
                     writer.pending.push_front(changes);
+                    failures > SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS
+                };
+                if retry_later {
+                    delay(read_retry_delay(
+                        failures.saturating_sub(SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS),
+                    ))
+                    .await;
                 }
             }
         }
@@ -5442,9 +5449,9 @@ mod tests {
         AuthenticationKind, ChatListSync, ConnectionAuthentication, ConnectionTransition,
         HistoryPageBounds, HostedReconnectConfig, MemberViews, PUSH_REFRESH_INTERVAL,
         PushRegistration, QueuedSend, READ_RETRY_INITIAL, READ_RETRY_MAX, ReadRetryState,
-        RunningNetwork, Runtime, RuntimeState, attach_shell, completion_context,
-        connection_failure_notice, drain_events, fetch_history, finish_history_page,
-        flush_pending_sends, join_request_events, lock, next_connection_state,
+        RunningNetwork, Runtime, RuntimeState, SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS,
+        attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
+        finish_history_page, flush_pending_sends, join_request_events, lock, next_connection_state,
         permanent_mark_read_error, person_candidates, process_event, process_history,
         queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write,
         spawn_history_fetch, spawn_online_direct_resolution, spawn_read_marker_fetch,
@@ -5765,6 +5772,75 @@ async fn delay(duration: Duration) {
             .expect("read")
             .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
         assert_eq!(stored, Some(snapshot));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn snapshot_writer_keeps_a_failed_delta_until_storage_recovers() {
+        let storage = Arc::new(MemoryKv::default());
+        let writer = Arc::default();
+        let before = ChatListSnapshot::new(
+            "network".into(),
+            vec![SnapshotRow {
+                conversation: SnapshotConversation::Direct {
+                    key: "alice".into(),
+                },
+                title: "Alice".into(),
+                last_activity_ms: Some(100),
+                preview: Some("hours stale".into()),
+                newest: None,
+                read_at_ms: None,
+                pending_read_at_ms: None,
+                stubs: Vec::new(),
+                gap_until: None,
+                peer_pin: None,
+            }],
+        );
+        crate::chat_list_snapshot::write(storage.as_ref(), &before)
+            .await
+            .expect("seed stale snapshot");
+        let mut lost = before.clone();
+        lost.rows[0].last_activity_ms = Some(200);
+        lost.rows[0].preview = Some("current after recovery".into());
+        for _ in 0..=SNAPSHOT_WRITE_IMMEDIATE_RETRY_ATTEMPTS {
+            storage.fail_next_commit();
+        }
+        schedule_snapshot_write(
+            Arc::clone(&storage),
+            Arc::clone(&writer),
+            SnapshotChanges::between(&before, &lost, Vec::new(), Vec::new())
+                .expect("first row changed"),
+        );
+        tokio::task::yield_now().await;
+
+        let mut later = lost.clone();
+        later.rows.push(SnapshotRow {
+            conversation: SnapshotConversation::Channel {
+                key: "#later".into(),
+            },
+            title: "#later".into(),
+            last_activity_ms: Some(300),
+            preview: Some("later change".into()),
+            newest: None,
+            read_at_ms: None,
+            pending_read_at_ms: None,
+            stubs: Vec::new(),
+            gap_until: None,
+            peer_pin: None,
+        });
+        schedule_snapshot_write(
+            Arc::clone(&storage),
+            Arc::clone(&writer),
+            SnapshotChanges::between(&lost, &later, Vec::new(), Vec::new())
+                .expect("later row changed"),
+        );
+
+        tokio::time::advance(READ_RETRY_INITIAL).await;
+        tokio::task::yield_now().await;
+        let stored = read(storage.as_ref())
+            .await
+            .expect("read")
+            .and_then(|bytes| ChatListSnapshot::decode(&bytes, "network"));
+        assert_eq!(stored, Some(later));
     }
 
     #[test]

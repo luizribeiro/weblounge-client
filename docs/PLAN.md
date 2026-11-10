@@ -32,6 +32,11 @@ The single place a fresh session reads to know where the project stands. Update 
 - [x] Remove the obsolete chat-snapshot lifecycle flush. Every list change already queues its write
   immediately, so hidden, `pagehide` and freeze no longer send a no-op engine command; relaunch
   durability is covered directly by the immediate push-restoration journey.
+- [x] Keep a transient snapshot transaction failure from stranding hours-old rows. Immediate row
+  deltas now remain at the front of the writer queue until storage recovers: the first six attempts
+  are still immediate, then retries back off instead of dropping the delta. This preserves normal
+  per-change writes and cross-instance row merging without letting the optimistic in-memory
+  baseline hide an uncommitted preview from every later successful batch.
 - [x] Keep push-restored chat-list rows current across an immediate background relaunch. Push
   restoration now projects and queues the same immediate snapshot row changes as live and history
   traffic, including when a warm buffer remains provisional while its authoritative history
