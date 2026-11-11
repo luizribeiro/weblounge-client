@@ -3936,14 +3936,22 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::Disconnected(disconnected) => {
-            effects.clear_hosted_authentication =
-                process_disconnected_event(running, &disconnected, output);
-            Vec::new()
+            process_disconnected(running, &disconnected, output, &mut effects)
         }
         _ => Vec::new(),
     };
     running.model.observe_live_server_time(live_server_time);
     effects
+}
+
+fn process_disconnected(
+    running: &mut RunningNetwork,
+    disconnected: &papo::Disconnected,
+    output: &mut Vec<EngineToUi>,
+    effects: &mut EventEffects,
+) -> Vec<HistoryFetch> {
+    effects.clear_hosted_authentication = process_disconnected_event(running, disconnected, output);
+    Vec::new()
 }
 
 fn process_account_event(
