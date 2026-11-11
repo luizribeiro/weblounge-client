@@ -194,7 +194,7 @@ export async function captureHistoryWire(
           event.data !== null &&
           "type" in event.data &&
           (event.data.type === "buffer_updated" ||
-            event.data.type === "message_updated" ||
+            event.data.type === "timeline_changed" ||
             event.data.type === "network_state_changed")
         )
           projections.push({ at: performance.now(), event: event.data });
@@ -297,17 +297,28 @@ export function historyMessageUpdateCount(
         typeof entry.event !== "object" ||
         entry.event === null ||
         !("type" in entry.event) ||
-        entry.event.type !== "message_updated" ||
-        !("message" in entry.event) ||
-        typeof entry.event.message !== "object" ||
-        entry.event.message === null ||
-        !("text" in entry.event.message) ||
-        entry.event.message.text !== expected ||
-        !("id" in entry.event.message) ||
-        typeof entry.event.message.id !== "number"
+        entry.event.type !== "timeline_changed" ||
+        !("upserted" in entry.event) ||
+        !Array.isArray(entry.event.upserted)
       )
         return [];
-      return [entry.event.message.id];
+      return entry.event.upserted.flatMap((item) => {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          !("id" in item) ||
+          typeof item.id !== "number" ||
+          !("body" in item) ||
+          typeof item.body !== "object" ||
+          item.body === null ||
+          !("family" in item.body) ||
+          item.body.family !== "message" ||
+          !("text" in item.body) ||
+          item.body.text !== expected
+        )
+          return [];
+        return [item.id];
+      });
     });
     return new Set(ids).size;
   }, text);

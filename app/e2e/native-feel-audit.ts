@@ -79,7 +79,7 @@ export async function installNativeFeelInstrumentation(
           typeof data === "object" &&
           data !== null &&
           "type" in data &&
-          data.type === "messages_appended"
+          data.type === "timeline_changed"
         ) {
           metrics.enginePatches += 1;
         }
