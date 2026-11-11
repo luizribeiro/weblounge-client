@@ -48,6 +48,7 @@ pub struct MessageStub {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReadFacts {
     mark: Option<ServerTimeMs>,
+    raw_mark: Option<ServerTimeMs>,
     pending: Option<ServerTimeMs>,
     stubs: Vec<MessageStub>,
     gap_until: Option<ServerTimeMs>,
@@ -58,6 +59,12 @@ impl ReadFacts {
     #[must_use]
     pub const fn mark(&self) -> Option<ServerTimeMs> {
         self.mark
+    }
+
+    /// Returns the greatest real read before reconciliation carry.
+    #[must_use]
+    pub const fn raw_mark(&self) -> Option<ServerTimeMs> {
+        self.raw_mark
     }
 
     /// Returns the greatest local read awaiting server acknowledgement.
@@ -80,7 +87,19 @@ impl ReadFacts {
 
     /// Raises the read mark and removes peer-message facts it covers.
     pub fn merge_mark(&mut self, mark: ServerTimeMs) {
+        merge_max(&mut self.raw_mark, Some(mark));
         merge_max(&mut self.mark, Some(mark));
+        self.normalize_stubs();
+    }
+
+    /// Restores raw and effective marks from a persisted snapshot.
+    pub fn merge_snapshot_marks(
+        &mut self,
+        raw_mark: Option<ServerTimeMs>,
+        mark: Option<ServerTimeMs>,
+    ) {
+        merge_max(&mut self.raw_mark, raw_mark.or(mark));
+        merge_max(&mut self.mark, mark.or(raw_mark));
         self.normalize_stubs();
     }
 
@@ -131,6 +150,7 @@ impl ReadFacts {
 
     /// Merges another snapshot of the same conversation into this one.
     pub fn merge(&mut self, other: Self) {
+        merge_max(&mut self.raw_mark, other.raw_mark.or(other.mark));
         merge_max(&mut self.mark, other.mark);
         merge_max(&mut self.pending, other.pending);
         merge_max(&mut self.gap_until, other.gap_until);
@@ -139,7 +159,7 @@ impl ReadFacts {
     }
 
     fn normalize_stubs(&mut self) {
-        self.carry_reconciled_mark();
+        self.merge_reconciled_mark();
         if let Some(mark) = self.mark {
             self.stubs.retain(|stub| stub.time > mark);
         }
@@ -154,28 +174,22 @@ impl ReadFacts {
         self.merge_gap_until(gap_until);
     }
 
-    fn carry_reconciled_mark(&mut self) {
-        let Some(mut mark) = self.mark else {
+    fn merge_reconciled_mark(&mut self) {
+        let Some(raw_mark) = self.raw_mark else {
             return;
         };
-        loop {
-            let carried = self
-                .stubs
-                .iter()
-                .filter_map(|stub| {
-                    let provisional = stub.provisional_time?;
-                    (provisional <= mark
-                        && stub.time > mark
-                        && stub.time.value().saturating_sub(provisional.value()) <= 1_000)
-                        .then_some(stub.time)
-                })
-                .max();
-            let Some(carried) = carried else {
-                break;
-            };
-            mark = carried;
-        }
-        self.mark = Some(mark);
+        let carried = self
+            .stubs
+            .iter()
+            .filter_map(|stub| {
+                let provisional = stub.provisional_time?;
+                (provisional <= raw_mark
+                    && stub.time > raw_mark
+                    && stub.time.value().saturating_sub(provisional.value()) <= 1_000)
+                    .then_some(stub.time)
+            })
+            .max();
+        merge_max(&mut self.mark, carried);
     }
 
     fn normalize_gap(&mut self) {

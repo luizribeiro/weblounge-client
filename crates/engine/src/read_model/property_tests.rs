@@ -18,6 +18,7 @@ enum Input {
 #[derive(Debug, Eq, PartialEq)]
 struct Projection {
     mark: Option<ServerTimeMs>,
+    raw_mark: Option<ServerTimeMs>,
     pending: Option<ServerTimeMs>,
     unread: usize,
     mentions: usize,
@@ -85,6 +86,7 @@ fn fold(inputs: impl IntoIterator<Item = Input>) -> ReadFacts {
 fn project(facts: &ReadFacts) -> Projection {
     Projection {
         mark: facts.mark(),
+        raw_mark: facts.raw_mark(),
         pending: facts.pending(),
         unread: unread_count(facts),
         mentions: mention_count(facts, false),

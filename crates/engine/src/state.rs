@@ -687,9 +687,10 @@ impl NetworkModel {
                         row.last_activity_ms
                             .map(|time| HistoryCursor::new(None, time))
                     });
-                if let Some(mark) = row.read_at_ms {
-                    buffer.read_facts.merge_mark(ServerTimeMs::new(mark));
-                }
+                buffer.read_facts.merge_snapshot_marks(
+                    row.raw_read_at_ms.map(ServerTimeMs::new),
+                    row.read_at_ms.map(ServerTimeMs::new),
+                );
                 if let Some(pending) = row.pending_read_at_ms {
                     buffer.read_facts.merge_pending(ServerTimeMs::new(pending));
                 }
@@ -3571,6 +3572,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
         preview: buffer.projection.preview.clone(),
         newest: buffer.newest.as_ref().map(HistoryCursor::snapshot),
         read_at_ms: buffer.read_facts.mark().map(ServerTimeMs::value),
+        raw_read_at_ms: buffer.read_facts.raw_mark().map(ServerTimeMs::value),
         pending_read_at_ms: buffer.read_facts.pending().map(ServerTimeMs::value),
         stubs: buffer.read_facts.stubs().to_vec(),
         gap_until: buffer.read_facts.gap_until(),
@@ -3584,6 +3586,7 @@ fn snapshot_row(buffer: &BufferState) -> Option<SnapshotRow> {
 
 fn copy_read_facts_to_snapshot(buffer: &BufferState, row: &mut SnapshotRow) {
     row.read_at_ms = buffer.read_facts.mark().map(ServerTimeMs::value);
+    row.raw_read_at_ms = buffer.read_facts.raw_mark().map(ServerTimeMs::value);
     row.pending_read_at_ms = buffer.read_facts.pending().map(ServerTimeMs::value);
     row.stubs = buffer.read_facts.stubs().to_vec();
     row.gap_until = buffer.read_facts.gap_until();
@@ -5484,6 +5487,7 @@ mod tests {
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5517,6 +5521,7 @@ mod tests {
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5554,6 +5559,7 @@ mod tests {
                     server_time_ms: 300,
                 }),
                 read_at_ms: Some(100),
+                raw_read_at_ms: Some(100),
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5584,6 +5590,7 @@ mod tests {
                 preview: Some("cached preview".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5624,6 +5631,7 @@ mod tests {
                         server_time_ms: 100,
                     }),
                     read_at_ms: None,
+                    raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
                 }],
@@ -5704,6 +5712,7 @@ mod tests {
                     server_time_ms: 100,
                 }),
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5751,6 +5760,7 @@ mod tests {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5781,6 +5791,7 @@ mod tests {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5820,6 +5831,7 @@ mod tests {
                     server_time_ms: 300,
                 }),
                 read_at_ms: Some(200),
+                raw_read_at_ms: Some(200),
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5907,6 +5919,7 @@ mod tests {
                     server_time_ms: 200,
                 }),
                 read_at_ms: Some(50),
+                raw_read_at_ms: Some(50),
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5973,6 +5986,7 @@ mod tests {
                     server_time_ms: 100,
                 }),
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -7619,6 +7633,7 @@ mod tests {
                 preview: Some("hello".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -7658,6 +7673,7 @@ mod tests {
                 preview: Some("cached".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -7708,6 +7724,7 @@ mod tests {
                 preview: Some("stale preview".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -7765,6 +7782,7 @@ mod tests {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: Some("not-a-peer-key".into()),
             }],
@@ -7792,6 +7810,7 @@ mod tests {
             preview: Some("cached channel preview".into()),
             newest: None,
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
         };
@@ -7810,6 +7829,7 @@ mod tests {
                     preview: Some("cached direct preview".into()),
                     newest: None,
                     read_at_ms: None,
+                    raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
                 },
@@ -7856,6 +7876,7 @@ mod tests {
             preview: Some("cached direct".into()),
             newest: None,
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
         };
@@ -7870,6 +7891,7 @@ mod tests {
             preview: Some("cached channel".into()),
             newest: None,
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
         };
@@ -7925,6 +7947,7 @@ mod tests {
                     server_time_ms: 2_000,
                 }),
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -7976,6 +7999,7 @@ mod tests {
                 server_time_ms: 100,
             }),
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
         };
@@ -7993,6 +8017,7 @@ mod tests {
                 stubs: Vec::new(),
                 gap_until: None,
                 read_at_ms: Some(100),
+                raw_read_at_ms: Some(100),
                 ..cached
             }]
         );
@@ -8012,6 +8037,7 @@ mod tests {
             preview: Some("cached preview".into()),
             newest: None,
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
         };
@@ -8083,6 +8109,7 @@ mod tests {
                     server_time_ms: 1_793_709_296_789,
                 }),
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],

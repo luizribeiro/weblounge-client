@@ -234,6 +234,8 @@ pub(crate) struct SnapshotRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) read_at_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) raw_read_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pending_read_at_ms: Option<i64>,
     #[serde(default)]
     pub(crate) stubs: Vec<MessageStub>,
@@ -264,6 +266,7 @@ impl SnapshotRow {
         }
         self.peer_pin = self.peer_pin.take().or(peer_pin);
         self.read_at_ms = facts.mark().map(ServerTimeMs::value);
+        self.raw_read_at_ms = facts.raw_mark().map(ServerTimeMs::value);
         self.pending_read_at_ms = facts.pending().map(ServerTimeMs::value);
         self.stubs = facts.stubs().to_vec();
         self.gap_until = facts.gap_until();
@@ -343,9 +346,10 @@ pub(crate) async fn clear<B: KvBackend>(backend: &B) -> Result<(), StorageError>
 
 fn read_facts(row: &SnapshotRow) -> ReadFacts {
     let mut facts = ReadFacts::default();
-    if let Some(mark) = row.read_at_ms {
-        facts.merge_mark(ServerTimeMs::new(mark));
-    }
+    facts.merge_snapshot_marks(
+        row.raw_read_at_ms.map(ServerTimeMs::new),
+        row.read_at_ms.map(ServerTimeMs::new),
+    );
     if let Some(pending) = row.pending_read_at_ms {
         facts.merge_pending(ServerTimeMs::new(pending));
     }
@@ -391,6 +395,7 @@ mod tests {
                         server_time_ms: 1_700_000_000_000,
                     }),
                     read_at_ms: Some(1_699_999_999_000),
+                    raw_read_at_ms: Some(1_699_999_999_000),
                     pending_read_at_ms: Some(1_699_999_999_000),
                     stubs: vec![MessageStub {
                         msgid: "newest-1".into(),
@@ -410,6 +415,7 @@ mod tests {
                     preview: Some(truncate_preview(&"é".repeat(81))),
                     newest: None,
                     read_at_ms: None,
+                    raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     stubs: vec![MessageStub {
                         msgid: "alice-1".into(),
@@ -454,6 +460,22 @@ mod tests {
         );
         assert!(value["rows"][0].get("id").is_none());
         assert!(value["rows"][0].get("timestamp").is_none());
+    }
+
+    #[test]
+    fn stored_stub_without_provisional_time_decodes() {
+        let expected = snapshot();
+        let encoded = expected.encode().expect("encode");
+        let value: serde_json::Value = serde_json::from_slice(&encoded).expect("json");
+        assert!(
+            value["rows"][0]["stubs"][0]
+                .get("provisional_time")
+                .is_none()
+        );
+
+        let decoded = ChatListSnapshot::decode(&encoded, &expected.fingerprint).expect("decode");
+
+        assert_eq!(decoded.rows[0].stubs[0].provisional_time, None);
     }
 
     #[test]

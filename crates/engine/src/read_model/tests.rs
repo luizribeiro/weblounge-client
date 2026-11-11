@@ -69,16 +69,31 @@ fn late_mark_carries_through_a_reconciled_push() {
 }
 
 #[test]
-fn carry_is_bounded_and_chains_across_reconciled_pushes() {
+fn carry_is_bounded_and_never_chains_past_the_raw_mark() {
     let mut facts = ReadFacts::default();
-    facts.merge_stub(reconciled_stub("first", 1, 1_001));
-    facts.merge_stub(reconciled_stub("second", 1_001, 2_001));
-    facts.merge_stub(reconciled_stub("too-far", 2_001, 3_002));
+    facts.merge_stub(reconciled_stub("covered", 1_000, 1_900));
+    facts.merge_stub(reconciled_stub("after-raw", 1_500, 2_400));
+    facts.merge_stub(reconciled_stub("too-far", 1_000, 2_001));
 
-    facts.merge_mark(ServerTimeMs::new(1));
+    facts.merge_mark(ServerTimeMs::new(1_000));
 
-    assert_eq!(facts.mark(), Some(ServerTimeMs::new(2_001)));
-    assert_eq!(facts.stubs(), [reconciled_stub("too-far", 2_001, 3_002)]);
+    assert_eq!(facts.raw_mark(), Some(ServerTimeMs::new(1_000)));
+    assert_eq!(facts.mark(), Some(ServerTimeMs::new(1_900)));
+    assert_eq!(
+        facts.stubs(),
+        [
+            reconciled_stub("too-far", 1_000, 2_001),
+            reconciled_stub("after-raw", 1_500, 2_400),
+        ]
+    );
+
+    let mut restored = ReadFacts::default();
+    restored.merge_snapshot_marks(facts.raw_mark(), facts.mark());
+    restored.merge_stub(reconciled_stub("after-raw", 1_500, 2_400));
+    assert_eq!(restored.mark(), Some(ServerTimeMs::new(1_900)));
+
+    facts.merge_mark(ServerTimeMs::new(1_500));
+    assert_eq!(facts.mark(), Some(ServerTimeMs::new(2_400)));
 }
 
 #[test]

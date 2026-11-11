@@ -5720,6 +5720,7 @@ async fn delay(duration: Duration) {
                 preview: None,
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -5739,6 +5740,7 @@ async fn delay(duration: Duration) {
                     preview: Some("hello".into()),
                     newest: None,
                     read_at_ms: None,
+                    raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
                 },
@@ -5789,6 +5791,7 @@ async fn delay(duration: Duration) {
                 preview: Some("hello".into()),
                 newest: None,
                 read_at_ms: Some(100),
+                raw_read_at_ms: Some(100),
                 pending_read_at_ms: Some(100),
                 stubs: Vec::new(),
                 gap_until: None,
@@ -5827,6 +5830,7 @@ async fn delay(duration: Duration) {
                 preview: Some("hours stale".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 stubs: Vec::new(),
                 gap_until: None,
@@ -5860,6 +5864,7 @@ async fn delay(duration: Duration) {
             preview: Some("later change".into()),
             newest: None,
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             stubs: Vec::new(),
             gap_until: None,
@@ -6057,6 +6062,7 @@ async fn delay(duration: Duration) {
                 preview: Some("cached before credentials".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
@@ -6353,6 +6359,14 @@ async fn delay(duration: Duration) {
             EngineToUi::MessagesAppended { messages, .. }
                 if messages[0].text == "loaded into the open app"
         )));
+        assert_eq!(
+            output
+                .iter()
+                .filter(|event| matches!(event, EngineToUi::BuffersChanged { .. }))
+                .count(),
+            2,
+            "restoration and its history fetch both publish buffer state"
+        );
 
         wire.server(":offline.test MARKREAD #room timestamp=2026-11-03T12:34:56.789Z")
             .await;
@@ -8576,6 +8590,7 @@ async fn delay(duration: Duration) {
                     preview: None,
                     newest: None,
                     read_at_ms: None,
+                    raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
                 }],
@@ -9223,6 +9238,7 @@ async fn delay(duration: Duration) {
                         server_time_ms: 100,
                     }),
                     read_at_ms: None,
+                    raw_read_at_ms: None,
                     pending_read_at_ms: None,
                     peer_pin: None,
                 }],
@@ -9926,6 +9942,7 @@ async fn delay(duration: Duration) {
                             server_time_ms: 100,
                         }),
                         read_at_ms: None,
+                        raw_read_at_ms: None,
                         pending_read_at_ms: None,
                         peer_pin: None,
                     }],
@@ -10924,6 +10941,7 @@ async fn delay(duration: Duration) {
                         server_time_ms: 100,
                     }),
                     read_at_ms: Some(50),
+                    raw_read_at_ms: Some(50),
                     pending_read_at_ms: None,
                     peer_pin: None,
                 }],
@@ -11028,6 +11046,7 @@ async fn delay(duration: Duration) {
             preview: Some("cached slow preview".into()),
             newest: None,
             read_at_ms: None,
+            raw_read_at_ms: None,
             pending_read_at_ms: None,
             peer_pin: None,
         };
@@ -12190,6 +12209,7 @@ async fn delay(duration: Duration) {
                 preview: Some("stale cached".into()),
                 newest: None,
                 read_at_ms: None,
+                raw_read_at_ms: None,
                 pending_read_at_ms: None,
                 peer_pin: None,
             }],
