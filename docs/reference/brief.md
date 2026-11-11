@@ -106,7 +106,7 @@ Treat these as acceptance criteria for every screen.
 - **Native (Tauri):** the engine runs in the Rust backend with real TCP/TLS, so the desktop and mobile apps can reach networks without WebSocket support (e.g. Libera.Chat). The browser build can only reach WebSocket servers; the UI must say so clearly (onboarding already does).
 
 ### 3.3 Engine ↔ UI protocol
-- A versioned, **strongly typed** command/event protocol. Commands go in (`SendMessage`, `JoinChannel`, `MarkRead`, `SetSetting`, …); events and state patches come out (`BufferAdded`, `MessagesAppended`, `MemberUpdated`, `ReadMarkerMoved`, …).
+- A versioned, **strongly typed** command/event protocol. Commands go in (`SendMessage`, `JoinChannel`, `MarkRead`, `SetSetting`, …); events and state patches come out (`BufferAdded`, `TimelineChanged`, `MemberUpdated`, `ReadMarkerMoved`, …).
 - Generate the TypeScript types from Rust (e.g. `ts-rs`, `specta` or `tsify`) so the boundary can't drift.
 - Batch and coalesce events (one patch per animation frame) so a netsplit or a history load doesn't cause thousands of renders.
 - The same `EngineClient` interface wraps both transports (worker `postMessage` and Tauri IPC). The UI must not know which one it's using.

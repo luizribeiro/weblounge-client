@@ -86,9 +86,9 @@ snapshots and patches.
 
 Before the normalized snapshot/patch store lands, the vertical slice emits the same domain changes
 as named generated events: `NetworkStateChanged`, `BuffersChanged`, `BufferAdded`,
-`BufferRemoved`, `MessagesAppended`, `MessageUpdated`, `MessageConfirmed`, `MessageFailed`, and
-`UnreadChanged`. `BufferRemoved` follows only the server-confirmed own `PART`; disconnects and
-another member's departure do not remove a channel projection.
+`BufferRemoved`, `TimelineChanged`, `MessageFailed`, and `UnreadChanged`. `BufferRemoved` follows
+only the server-confirmed own `PART`; disconnects and another member's departure do not remove a
+channel projection.
 These are a narrow transport representation of the signed-off projection model, not a second
 state model.
 
@@ -141,7 +141,6 @@ pub enum Patch {
 engine emits at most one atomic change per touched buffer and engine turn. `reset` is reserved for
 a shell attaching to an already-running engine; otherwise the receiver removes `removed`, upserts
 the ordered `upserted` items and derives append, prepend or remeasure geometry from the result.
-Until the buffer-events migration removes the named events, this patch is emitted alongside them.
 
 The normalized UI store contains only summaries and requested/renderable ranges. `unread_priority`
 is the engine-computed mention → DM → unread ranking consumed by command `buffer.jump-important`;
