@@ -43,6 +43,18 @@
   height: 18px;
   width: 18px;
 }
+.loadingIcon {
+  animation: history-loader-spin var(--wl-motion-connection) linear infinite;
+  transform-origin: center;
+}
+:global([data-transcript-foreground="false"]) .loadingIcon {
+  animation-play-state: paused;
+}
+@keyframes history-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .title {
   color: var(--wl-color-fg);
   font-size: 13px;

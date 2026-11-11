@@ -1,6 +1,11 @@
 import { render, screen } from "@solidjs/testing-library";
 import { expect, it } from "vitest";
 import { Divider, type DividerContent } from "./Divider";
+import styles from "./Divider.module.css";
+
+const loadingIconClass = styles.loadingIcon;
+if (loadingIconClass === undefined)
+  throw new Error("loading icon class is missing");
 
 it.each<DividerContent>([
   { kind: "day", label: "Yesterday" },
@@ -33,7 +38,10 @@ it.each<DividerContent>([
 
   const divider = screen.getByRole("separator", { name: content.title });
   expect(divider).toHaveAttribute("data-divider-kind", content.kind);
-  expect(divider.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  const icon = divider.querySelector("svg");
+  expect(icon).toHaveAttribute("aria-hidden", "true");
+  if (content.kind === "loading") expect(icon).toHaveClass(loadingIconClass);
+  else expect(icon).not.toHaveClass(loadingIconClass);
   if (content.caption !== undefined)
     expect(divider).toHaveTextContent(content.caption);
 });

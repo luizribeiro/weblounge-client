@@ -32,6 +32,8 @@ The single place a fresh session reads to know where the project stands. Update 
 - 2026-11-11: made the production older-history fixture establish and persist unread traffic before
   relaunching into history paging. The previous fresh-device launch correctly seeded its local read
   boundary after the already-stored messages, so its desktop unread readiness check could never hold.
+- 2026-11-11: animated the mounted older-history loader with the signed motion duration, leaving
+  reduced-motion static and pausing the animation whenever the transcript is hidden.
 - 2026-11-11: kept the in-flight older-history edge visible when a reader reached the transcript
   top, overriding prepend anchoring only for that top-owned load on desktop and phone WebKit.
 - 2026-11-11: prefetched older history when user-owned upward scrolling entered a 1.5-viewport
@@ -111,6 +113,9 @@ The single place a fresh session reads to know where the project stands. Update 
   When a reader outruns the prefetch and reaches the top, the loading edge now becomes the
   virtualizer's explicit top target and remains inside the scroll viewport across WebKit's delayed
   prepend correction; backgrounding cancels the finite stabilization frames.
+  Its loader rotates with the global connection-motion token only while that edge exists, pauses
+  through the shared foreground contract, and becomes static through the global reduced-motion
+  token override without component timers or media queries.
 - [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
   unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
   update read facts, disappear when older history covers them, and leave with their buffer. The UI

@@ -1109,7 +1109,10 @@ export function MessageList(props: MessageListProps) {
   });
 
   return (
-    <div class={styles.surface}>
+    <div
+      class={styles.surface}
+      data-transcript-foreground={props.foreground === false ? "false" : "true"}
+    >
       {/* biome-ignore lint/a11y/useSemanticElements: the scroll owner wraps the semantic row layer */}
       <div
         aria-label={t("messages.label")}

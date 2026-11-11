@@ -57,7 +57,9 @@ export function Divider(props: { readonly content: DividerContent }) {
             role="separator"
           >
             <EventIcon
-              class={styles.icon}
+              class={`${styles.icon} ${
+                content.kind === "loading" ? styles.loadingIcon : ""
+              }`}
               icon={
                 content.kind === "history"
                   ? "flag"

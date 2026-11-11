@@ -2293,6 +2293,10 @@ it("does not rewrite transcript geometry while the page becomes hidden", async (
   await new Promise<void>((resolve) => queueMicrotask(resolve));
 
   expect(mutations).toBe(0);
+  expect(container.firstElementChild).toHaveAttribute(
+    "data-transcript-foreground",
+    "false",
+  );
 });
 
 it("does not force rendered-row layout when rows mount in the foreground", async () => {
