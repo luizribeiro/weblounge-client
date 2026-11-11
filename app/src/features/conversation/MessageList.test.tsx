@@ -157,18 +157,53 @@ it("updates a day divider when its relative label changes", () => {
     const messageTime = new Date(2026, 10, 10, 12).getTime();
     vi.setSystemTime(new Date(2026, 10, 10, 18));
     const currentMessage = { ...message, received_at_ms: messageTime };
-    const [messages, setMessages] = createSignal([currentMessage]);
-    render(() => <MessageList messages={messages()} />);
+    const item = { ...messageItem(currentMessage), day: 20_407 };
+    const [timeline, setTimeline] = createSignal(timelineView([item]));
+    render(() => (
+      <MessageList messages={[]} timeline={timeline()} timelineEnabled />
+    ));
     expect(screen.getByText("Today")).toBeVisible();
 
     vi.setSystemTime(new Date(2026, 10, 11, 18));
-    setMessages([currentMessage]);
+    setTimeline(timelineView([item]));
 
     expect(screen.getByText("Yesterday")).toBeVisible();
     expect(screen.queryByText("Today")).not.toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("uses engine days for dividers and membership run boundaries", () => {
+  const first = membershipItem({
+    type: "change",
+    id: 20,
+    kind: "joined",
+    nicks: ["mel"],
+    server_time_ms: 1,
+    received_at_ms: 1,
+  });
+  const second = membershipItem({
+    type: "change",
+    id: 21,
+    kind: "joined",
+    nicks: ["rafa"],
+    server_time_ms: 2,
+    received_at_ms: 2,
+  });
+  render(() => (
+    <MessageList
+      messages={[]}
+      timeline={timelineView([
+        { ...first, day: 10 },
+        { ...second, day: 11 },
+      ])}
+      timelineEnabled
+    />
+  ));
+
+  expect(document.querySelectorAll("[data-day-divider]")).toHaveLength(2);
+  expect(document.querySelectorAll("[data-membership-row]")).toHaveLength(2);
 });
 
 it("opens non-own authors and mentions through the same nickname action", () => {

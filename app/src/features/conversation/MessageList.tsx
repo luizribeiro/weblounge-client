@@ -128,11 +128,13 @@ type DisplayTimelineItem =
       readonly kind: "message";
       readonly message: MessageProjection;
       readonly order: TimelineItem["order"];
+      readonly day: TimelineItem["day"];
     }
   | {
       readonly kind: "membership";
       readonly membership: MembershipProjection;
       readonly order: TimelineItem["order"];
+      readonly day: TimelineItem["day"];
     };
 
 type NoticeMessage = MessageProjection & {
@@ -1373,7 +1375,7 @@ function timelineRows(
   if (historyState?.loading === true || historyState?.at_start === true) {
     rows.push({ kind: "history", key: "history-edge", state: historyState });
   }
-  let day = "";
+  let day: TimelineItem["day"] | undefined;
   let newInserted = false;
   let previousGroupMessage: MessageProjection | undefined;
   const displayItems = legacyDisplayItems(items);
@@ -1384,15 +1386,14 @@ function timelineRows(
   for (const item of displayItems) {
     const message = item.kind === "message" ? item.message : undefined;
     const membership = item.kind === "membership" ? item.membership : undefined;
-    const milliseconds =
-      message === undefined
-        ? (membership?.server_time_ms ?? membership?.received_at_ms ?? 0)
-        : messageTime(message);
-    const time = new Date(milliseconds);
-    const nextDay = `${time.getFullYear()}-${time.getMonth()}-${time.getDate()}`;
+    const nextDay = item.day;
     if (nextDay !== day) {
       day = nextDay;
-      rows.push({ kind: "day", key: `day-${day}`, label: formatDay(time) });
+      rows.push({
+        kind: "day",
+        key: `day-${day}`,
+        label: formatDay(new Date(item.order[0])),
+      });
       previousGroupMessage = undefined;
     }
     if (!newInserted && message !== undefined && message.id === firstUnread) {
@@ -1440,7 +1441,8 @@ function legacyDisplayItems(
         openIndex !== undefined &&
         open?.kind === "membership" &&
         open.membership.type === "change" &&
-        open.membership.kind === membership.kind
+        open.membership.kind === membership.kind &&
+        open.day === item.day
       ) {
         displayItems[openIndex] = {
           ...open,
@@ -1449,7 +1451,12 @@ function legacyDisplayItems(
         continue;
       }
       openMembershipIndex = displayItems.length;
-      displayItems.push({ kind: "membership", membership, order: item.order });
+      displayItems.push({
+        kind: "membership",
+        membership,
+        order: item.order,
+        day: item.day,
+      });
       continue;
     }
     openMembershipIndex = undefined;
@@ -1458,9 +1465,15 @@ function legacyDisplayItems(
         kind: "message",
         message: item.body,
         order: item.order,
+        day: item.day,
       });
     else if (membership !== undefined)
-      displayItems.push({ kind: "membership", membership, order: item.order });
+      displayItems.push({
+        kind: "membership",
+        membership,
+        order: item.order,
+        day: item.day,
+      });
   }
   return displayItems;
 }
@@ -1621,13 +1634,20 @@ function messageTimelineItems(
     const item: TimelineItem = {
       id: message.id,
       order: [messageTime(message), message.received_at_ms, index],
-      day: 0,
+      day: localDay(messageTime(message)),
       content_version: 0,
       body: { family: "message", ...message },
     };
     cache.set(message, item);
     return item;
   });
+}
+
+function localDay(milliseconds: number): number {
+  const time = new Date(milliseconds);
+  return Math.floor(
+    Date.UTC(time.getFullYear(), time.getMonth(), time.getDate()) / 86_400_000,
+  );
 }
 
 function countPeerMessagesAfterPreviousNewest(
