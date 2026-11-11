@@ -41,6 +41,8 @@ for (const [layout, viewport] of [
       try {
         await page.goto(accountUrl(baseURL, account));
         await joinChannel(page, channel);
+        const directSeed = `direct before rename ${suffix}`;
+        await operator.privmsgConfirmed(account, directSeed);
 
         const joinBreaker = `join breaker ${suffix}`;
         await operator.privmsgConfirmed(channel, joinBreaker);
@@ -50,20 +52,46 @@ for (const [layout, viewport] of [
 
         for (const nick of joinerNicks)
           joiners.push(await IrcClient.connectIsolated(nick, channel));
+        const renamedNick = `sl-new-${suffix}`;
+        await operator.nick(renamedNick);
 
         const collapsed = systemLine(page, "joined", joinerNicks.slice(0, 3));
         await expect(collapsed).toContainText("3 others");
+        await expect(collapsed).toContainText(
+          `${operatorNick} is now ${renamedNick}`,
+        );
         await expectSystemGeometry(collapsed, layout);
         if (layout === "desktop")
           await expectDesktopColumnAlignment(page, collapsed, joinBreaker);
+        await captureNick(page, layout);
         await capture(page, layout, "collapsed");
+
+        if (layout === "phone")
+          await page.getByRole("button", { name: "Back to chats" }).click();
+        await page
+          .getByRole("button", {
+            name: new RegExp(`^${operatorNick}(?:,|$)`, "u"),
+          })
+          .click();
+        await expect(
+          page.getByRole("heading", { name: operatorNick }),
+        ).toBeVisible();
+        await expect(
+          systemLine(page, "is now", [operatorNick, renamedNick]),
+        ).toBeVisible();
+        if (layout === "phone")
+          await page.getByRole("button", { name: "Back to chats" }).click();
+        await page.getByRole("button", { name: channel }).click();
+        await expect(
+          page.getByRole("heading", { name: channel }),
+        ).toBeVisible();
 
         await collapsed.getByRole("button", { name: "Show 3 others" }).click();
         const expanded = page.locator(
           '[data-system-line][data-expanded="true"]',
         );
         await expect(expanded).toContainText("6 people joined");
-        await expect(expanded.locator("[data-system-detail]")).toHaveCount(6);
+        await expect(expanded.locator("[data-system-detail]")).toHaveCount(7);
         for (const nick of joinerNicks)
           await expect(
             expanded.locator("[data-system-detail]").filter({ hasText: nick }),
@@ -88,7 +116,7 @@ for (const [layout, viewport] of [
         const warning = page
           .locator('[data-system-line][data-warning="true"]')
           .filter({ hasText: "testing rejoin" });
-        await expect(warning).toContainText(`${operatorNick} kicked you`);
+        await expect(warning).toContainText(`${renamedNick} kicked you`);
         await expect(
           warning.getByRole("img", { name: "Warning" }),
         ).toBeVisible();
@@ -220,4 +248,18 @@ async function capture(
       ),
     });
   }
+}
+
+async function captureNick(
+  page: Page,
+  layout: "desktop" | "phone",
+): Promise<void> {
+  const directory = process.env.WEBLOUNGE_SYSTEM_LINE_SCREENSHOT_DIR;
+  if (directory === undefined) return;
+  await mkdir(directory, { recursive: true });
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "lounge");
+  await screenshotWithInter(page.locator("[data-app-root]"), {
+    path: path.join(directory, `system-lines-${layout}-light-nick.png`),
+  });
 }
