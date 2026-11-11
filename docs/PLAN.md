@@ -8,19 +8,19 @@ The single place a fresh session reads to know where the project stands. Update 
 - None.
 
 ### Next (in order)
-1. Buffer events 7: missing-history gap and divider rows.
-2. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
-3. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
-4. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
-5. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
-6. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
-7. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+1. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+2. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+3. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+4. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+5. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+6. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
 
 ### Later
 - Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
 - Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
 - Closing a DM doesn't persist the chat-list snapshot.
-- Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`; the production-older-history desktop unread precondition.
+- Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`; the
+  production-older-history desktop unread precondition.
 - 7d mobile/PWA polish, 8 production-profile scenarios, 8b end-to-end perf (see Milestone 2 tasks).
 
 ### Waiting
@@ -28,6 +28,9 @@ The single place a fresh session reads to know where the project stands. Update 
 - iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
 
 ### Done recently
+- 2026-11-11: buffer events 7; represented capped, lagged, unavailable and failed history ranges as
+  mergeable timeline gaps, cleared covered markers, and replaced ad hoc transcript boundaries with
+  the signed responsive divider family for gaps, history start/loading, empty, day and New rows.
 - 2026-11-11: buffer events 3.3; projected channel and member mode changes into folded typed
   system lines with signed wording and icons, redacted keys, desktop raw mode suffixes, and compact
   phone presentation.
@@ -87,6 +90,13 @@ The single place a fresh session reads to know where the project stands. Update 
 
 ## Progress
 
+- [x] Land buffer-events batch 7. The engine has one `record_gap` path for capped catch-up pages,
+  unrecovered papo lag, reconnects without CHATHISTORY and failed catch-up; touching spans merge,
+  update read facts, disappear when older history covers them, and leave with their buffer. The UI
+  renders the signed dashed range, titled history start with its oldest-day caption, loading and
+  empty states through one divider family while preserving day and New rows. Component coverage
+  pins every variant and local-Ergo browser coverage exercises a real capped reconnect gap, a
+  history boundary and an empty DM on desktop and phone in both themes.
 - [x] Project channel and member mode changes into typed system-line runs. Papo's negotiated PREFIX
   and CHANMODES semantics map ranks, masks, channel flags, keys, limits and unknown modes without
   exposing key arguments. Runs fold by actor while retaining each semantic clause; the shared
