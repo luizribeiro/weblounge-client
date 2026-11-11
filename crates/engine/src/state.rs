@@ -1013,9 +1013,9 @@ impl NetworkModel {
         state: &papo::State,
         direct: Option<papo::DirectRef>,
     ) -> Vec<EngineToUi> {
-        let (mut events, carry_read) =
+        let (mut events, read_advances) =
             self.receive_chat_with_advance(message.into(), history, state, direct);
-        if let Some(advance) = carry_read {
+        for advance in read_advances {
             events.extend(self.advance_read(advance.buffer_id, advance.time, false));
         }
         events
@@ -1027,13 +1027,13 @@ impl NetworkModel {
         history: bool,
         state: &papo::State,
         direct: Option<papo::DirectRef>,
-    ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
+    ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
         let Some(conversation) = NameKey::from_conversation(input.conversation()) else {
             return (
                 vec![EngineToUi::notice(
                     EngineMessageKey::UnsupportedConversation,
                 )],
-                None,
+                Vec::new(),
             );
         };
         let destination = IncomingDestination::Conversation(conversation.clone());
@@ -1071,7 +1071,17 @@ impl NetworkModel {
             origin,
         };
         let received = self.receive_incoming_result(incoming, state);
-        (received.events, received.carry_read)
+        let own_advance = (authorship == papo::Authorship::Own)
+            .then(|| {
+                received
+                    .message
+                    .and_then(|(buffer_id, id)| self.prepare_mark_read(buffer_id, id))
+            })
+            .flatten();
+        (
+            received.events,
+            own_advance.into_iter().chain(received.carry_read).collect(),
+        )
     }
 
     pub(crate) fn receive_server_notice_with_advance(
@@ -1079,7 +1089,7 @@ impl NetworkModel {
         notice: &papo::event::ServerNotice,
         history: bool,
         state: &papo::State,
-    ) -> (Vec<EngineToUi>, Option<ReadAdvance>) {
+    ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
         let destination = match &notice.to {
             papo::event::Audience::Channel(channel) => {
                 IncomingDestination::Conversation(NameKey::Channel(channel.clone()))
@@ -1087,7 +1097,7 @@ impl NetworkModel {
             papo::event::Audience::Me | papo::event::Audience::Broadcast(_) => {
                 IncomingDestination::Server
             }
-            _ => return (Vec::new(), None),
+            _ => return (Vec::new(), Vec::new()),
         };
         let incoming = Incoming {
             direct: None,
@@ -1111,13 +1121,20 @@ impl NetworkModel {
             },
         };
         let received = self.receive_incoming_result(incoming, state);
-        (received.events, received.carry_read)
+        let own_advance = (notice.authorship == papo::Authorship::Own)
+            .then(|| {
+                received
+                    .message
+                    .and_then(|(buffer_id, id)| self.prepare_mark_read(buffer_id, id))
+            })
+            .flatten();
+        (
+            received.events,
+            own_advance.into_iter().chain(received.carry_read).collect(),
+        )
     }
 
-    pub(crate) fn receive_reaction(
-        &mut self,
-        reaction: &papo::event::Reacted,
-    ) -> Option<EngineToUi> {
+    pub(crate) fn receive_reaction(&mut self, reaction: &papo::event::Reacted) -> Option<()> {
         let target = reaction.reacts_to.to_string();
         let loaded = self
             .msgids
@@ -1162,9 +1179,8 @@ impl NetworkModel {
             .find(|record| record.id == message_id)?;
         let message = chat_projection_mut(record)?;
         message.reactions.clone_from(&reactions);
-        let message = message.clone();
         self.dirty_timelines.insert(buffer_id);
-        Some(EngineToUi::MessageUpdated { buffer_id, message })
+        Some(())
     }
 
     pub(crate) fn restore_pushed_messages(
@@ -1476,7 +1492,7 @@ impl NetworkModel {
         nick: String,
         server_time_ms: Option<i64>,
         received_at_ms: i64,
-    ) -> Option<EngineToUi> {
+    ) -> Option<()> {
         let buffer_id = *self.names.get(&NameKey::Channel(channel.clone()))?;
         let who = crate::timeline::Who {
             nick,
@@ -1499,12 +1515,8 @@ impl NetworkModel {
         });
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
-        let membership = legacy_membership_at(buffer, id)?;
         self.dirty_timelines.insert(buffer_id);
-        Some(EngineToUi::MembershipChanged {
-            buffer_id,
-            membership,
-        })
+        Some(())
     }
 
     pub(crate) fn receive_own_kick(
@@ -1544,15 +1556,9 @@ impl NetworkModel {
         buffer.timeline.sort_by_key(|record| record.order);
         buffer.system_server_times.insert(id, server_time_ms);
         self.dirty_timelines.insert(buffer_id);
-        Some(vec![
-            EngineToUi::MembershipChanged {
-                buffer_id,
-                membership,
-            },
-            EngineToUi::BufferUpdated {
-                buffer: buffer.projection.clone(),
-            },
-        ])
+        Some(vec![EngineToUi::BufferUpdated {
+            buffer: buffer.projection.clone(),
+        }])
     }
 
     pub(crate) fn confirm_send(
@@ -2759,16 +2765,19 @@ impl NetworkModel {
         incoming: Incoming,
         state: &papo::State,
     ) -> IncomingResult {
-        if let Some((events, carry_read)) = self.reconcile_pushed_message(&incoming, state) {
-            return IncomingResult { events, carry_read };
+        if let Some(received) = self.reconcile_pushed_message(&incoming, state) {
+            return received;
         }
         if let Some(received) = self.reconcile_late_pushed_message(&incoming) {
             return received;
         }
-        if let Some(events) = self.reconcile_failed_own_message(&incoming, state) {
+        if let Some((events, buffer_id, message_id)) =
+            self.reconcile_failed_own_message(&incoming, state)
+        {
             return IncomingResult {
                 events,
                 carry_read: None,
+                message: Some((buffer_id, message_id)),
             };
         }
         let Some(dedup) = self.deduplicate_incoming(&incoming) else {
@@ -2809,6 +2818,7 @@ impl NetworkModel {
             return IncomingResult {
                 events: inconsistent_state_notice(),
                 carry_read: None,
+                message: None,
             };
         };
         if let Some(provisional_identity) = incoming.provisional_identity.clone()
@@ -2825,6 +2835,7 @@ impl NetworkModel {
                 return IncomingResult {
                     events: inconsistent_state_notice(),
                     carry_read: None,
+                    message: None,
                 };
             };
             added.map(|_| buffer.projection.clone())
@@ -2837,10 +2848,6 @@ impl NetworkModel {
         if buffer_added || order_changed {
             events.push(self.buffers_event());
         }
-        events.push(EngineToUi::MessagesAppended {
-            buffer_id,
-            messages: vec![message],
-        });
         events.push(EngineToUi::BufferUpdated {
             buffer: self.buffers[&buffer_id].projection.clone(),
         });
@@ -2850,6 +2857,7 @@ impl NetworkModel {
         IncomingResult {
             events,
             carry_read: None,
+            message: Some((buffer_id, message_id)),
         }
     }
 
@@ -2857,7 +2865,7 @@ impl NetworkModel {
         &mut self,
         incoming: &Incoming,
         state: &papo::State,
-    ) -> Option<Vec<EngineToUi>> {
+    ) -> Option<(Vec<EngineToUi>, BufferId, MessageId)> {
         if incoming.authorship != MessageAuthorship::Own || incoming.origin == TimelineOrigin::Push
         {
             return None;
@@ -2910,27 +2918,20 @@ impl NetworkModel {
             .map(|server_time| HistoryCursor::new(incoming.msgid.clone(), server_time));
         let buffer = self.buffers.get_mut(&buffer_id)?;
         advance_incoming_cursor(buffer, incoming, cursor);
-        let mut events = vec![
-            EngineToUi::MessageConfirmed {
-                buffer_id,
-                local_send_id,
-                message,
-            },
-            EngineToUi::BufferUpdated {
-                buffer: buffer.projection.clone(),
-            },
-        ];
+        let mut events = vec![EngineToUi::BufferUpdated {
+            buffer: buffer.projection.clone(),
+        }];
         if order_changed {
             events.push(self.buffers_event());
         }
-        Some(events)
+        Some((events, buffer_id, message_id))
     }
 
     fn reconcile_pushed_message(
         &mut self,
         incoming: &Incoming,
         state: &papo::State,
-    ) -> Option<(Vec<EngineToUi>, Option<ReadAdvance>)> {
+    ) -> Option<IncomingResult> {
         if incoming.origin == TimelineOrigin::Push {
             return None;
         }
@@ -3000,12 +3001,9 @@ impl NetworkModel {
             carry_read
         };
         self.dirty_timelines.insert(buffer_id);
-        let mut events = vec![
-            EngineToUi::MessageUpdated { buffer_id, message },
-            EngineToUi::BufferUpdated {
-                buffer: self.buffers[&buffer_id].projection.clone(),
-            },
-        ];
+        let mut events = vec![EngineToUi::BufferUpdated {
+            buffer: self.buffers[&buffer_id].projection.clone(),
+        }];
         if let Some(account) = &incoming.legacy_account_key {
             events.push(self.legacy_draft_migration(buffer_id, account));
         }
@@ -3013,7 +3011,11 @@ impl NetworkModel {
             buffer_id,
             time: system_time_from_millis(authoritative_time),
         });
-        Some((events, carry_read))
+        Some(IncomingResult {
+            events,
+            carry_read,
+            message: Some((buffer_id, message_id)),
+        })
     }
 
     fn reconcile_late_pushed_message(&mut self, incoming: &Incoming) -> Option<IncomingResult> {
@@ -3048,6 +3050,7 @@ impl NetworkModel {
         Some(IncomingResult {
             events: Vec::new(),
             carry_read,
+            message: None,
         })
     }
 
@@ -3863,54 +3866,6 @@ fn legacy_memberships(buffer: &BufferState) -> Vec<MembershipProjection> {
     memberships
 }
 
-fn legacy_membership_at(buffer: &BufferState, id: MessageId) -> Option<MembershipProjection> {
-    let index = buffer.timeline.iter().position(|record| record.id == id)?;
-    let kind = membership_change(&buffer.timeline[index])?.0;
-    let mut start = index;
-    while start > 0 && membership_change(&buffer.timeline[start - 1]).is_some_and(|it| it.0 == kind)
-    {
-        start -= 1;
-    }
-    let mut end = index + 1;
-    while end < buffer.timeline.len()
-        && membership_change(&buffer.timeline[end]).is_some_and(|it| it.0 == kind)
-    {
-        end += 1;
-    }
-    let mut nicks = Vec::new();
-    let mut server_time_ms = None;
-    for record in &buffer.timeline[start..end] {
-        let (_, nick) = membership_change(record)?;
-        if !nicks.contains(nick) {
-            nicks.push(nick.clone());
-        }
-        server_time_ms = buffer
-            .system_server_times
-            .get(&record.id)
-            .copied()
-            .flatten()
-            .or(server_time_ms);
-    }
-    Some(MembershipProjection::Change {
-        id: buffer.timeline[start].id,
-        kind,
-        nicks,
-        server_time_ms,
-        received_at_ms: buffer.timeline[end - 1].order.1,
-    })
-}
-
-fn membership_change(record: &TimelineRecord) -> Option<(MembershipKind, &String)> {
-    match &record.body {
-        RecordBody::Fold(FoldEvent::Joined(who)) => Some((MembershipKind::Joined, &who.nick)),
-        RecordBody::Fold(FoldEvent::Parted(who, _)) => Some((MembershipKind::Parted, &who.nick)),
-        RecordBody::Fold(FoldEvent::Quit(who, _, _)) => Some((MembershipKind::Quit, &who.nick)),
-        RecordBody::Chat(_) | RecordBody::Fold(_) | RecordBody::Line(_) | RecordBody::Gap(_) => {
-            None
-        }
-    }
-}
-
 fn next_message_id_after_stub(msgid: &str) -> u64 {
     msgid
         .strip_prefix("local:")
@@ -4074,6 +4029,7 @@ struct Incoming {
 struct IncomingResult {
     events: Vec<EngineToUi>,
     carry_read: Option<ReadAdvance>,
+    message: Option<(BufferId, MessageId)>,
 }
 
 fn map_authorship(authorship: papo::Authorship) -> MessageAuthorship {

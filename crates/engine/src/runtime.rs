@@ -2776,29 +2776,7 @@ fn receive_chat(
     state: &papo::State,
     direct: Option<papo::DirectRef>,
 ) -> (Vec<EngineToUi>, Vec<ReadAdvance>) {
-    let authorship = input.authorship();
-    let (events, reconciled_advance) =
-        model.receive_chat_with_advance(input, history, state, direct);
-    let own_advance = (authorship == papo::Authorship::Own)
-        .then(|| received_read_advance(model, &events))
-        .flatten();
-    let advances = own_advance.into_iter().chain(reconciled_advance).collect();
-    (events, advances)
-}
-
-fn received_read_advance(model: &NetworkModel, events: &[EngineToUi]) -> Option<ReadAdvance> {
-    let (buffer_id, through) = events.iter().find_map(|event| match event {
-        EngineToUi::MessagesAppended {
-            buffer_id,
-            messages,
-        } => messages.last().map(|message| (*buffer_id, message.id)),
-        EngineToUi::MessageConfirmed {
-            buffer_id, message, ..
-        }
-        | EngineToUi::MessageUpdated { buffer_id, message } => Some((*buffer_id, message.id)),
-        _ => None,
-    })?;
-    model.prepare_mark_read(buffer_id, through)
+    model.receive_chat_with_advance(input, history, state, direct)
 }
 
 fn completion_context(
@@ -3938,9 +3916,7 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::Reacted(reaction) => {
-            if let Some(event) = running.model.receive_reaction(&reaction) {
-                output.push(event);
-            }
+            let _ = running.model.receive_reaction(&reaction);
             Vec::new()
         }
         papo::Event::TypingChanged(changed) => {
@@ -3965,7 +3941,7 @@ fn process_papo_event(
             .map(HistoryFetch::Latest)
             .collect(),
         papo::Event::Quit(quit) => {
-            process_quit(&mut running.model, &quit, output);
+            process_quit(&mut running.model, &quit);
             Vec::new()
         }
         papo::Event::ChannelSynced(_) | papo::Event::TopicChanged(_) => {
@@ -4022,17 +3998,11 @@ fn process_live_server_notice(
     notice: &papo::event::ServerNotice,
     output: &mut Vec<EngineToUi>,
 ) -> Option<(papo::Client, u64)> {
-    let (received, reconciled_advance) = running
+    let (received, advances) = running
         .model
         .receive_server_notice_with_advance(notice, false, snapshot);
-    let own_advance = (notice.authorship == papo::Authorship::Own)
-        .then(|| received_read_advance(&running.model, &received))
-        .flatten();
     output.extend(received);
-    output.extend(record_read_advances(
-        running,
-        own_advance.into_iter().chain(reconciled_advance),
-    ));
+    output.extend(record_read_advances(running, advances));
     start_read_flush(running)
 }
 
@@ -4487,14 +4457,14 @@ fn process_part(
         if let Some(event) = model.remove_channel(&parted.channel) {
             output.push(event);
         }
-    } else if let Some(event) = model.receive_membership(
-        &parted.channel,
-        MembershipKind::Parted,
-        parted.actor.nick().to_string(),
-        parted.server_time.map(time_millis),
-        time_millis(parted.received_at),
-    ) {
-        output.push(event);
+    } else {
+        let _ = model.receive_membership(
+            &parted.channel,
+            MembershipKind::Parted,
+            parted.actor.nick().to_string(),
+            parted.server_time.map(time_millis),
+            time_millis(parted.received_at),
+        );
     }
     output.extend(model.sync_channels(snapshot));
     Vec::new()
@@ -4568,17 +4538,15 @@ fn process_kick(
     Vec::new()
 }
 
-fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit, output: &mut Vec<EngineToUi>) {
+fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit) {
     for channel in &quit.channels {
-        if let Some(event) = model.receive_membership(
+        let _ = model.receive_membership(
             channel,
             MembershipKind::Quit,
             quit.actor.nick().to_string(),
             quit.server_time.map(time_millis),
             time_millis(quit.received_at),
-        ) {
-            output.push(event);
-        }
+        );
     }
 }
 
@@ -4608,15 +4576,13 @@ fn process_join(
         }
         target.into_iter().collect()
     } else {
-        if let Some(event) = running.model.receive_membership(
+        let _ = running.model.receive_membership(
             &joined.channel,
             MembershipKind::Joined,
             joined.actor.nick().to_string(),
             joined.server_time.map(time_millis),
             time_millis(joined.received_at),
-        ) {
-            output.push(event);
-        }
+        );
         Vec::new()
     }
 }
@@ -4660,50 +4626,42 @@ fn process_history(
                 output.extend(received);
             }
             papo::Event::ServerNotice(notice) => {
-                let (received, advance) = running
+                let (received, advances) = running
                     .model
                     .receive_server_notice_with_advance(&notice, true, &snapshot);
-                read_advances.extend(advance);
+                read_advances.extend(advances);
                 output.extend(received);
             }
             papo::Event::Reacted(reaction) => {
-                if let Some(event) = running.model.receive_reaction(&reaction) {
-                    output.push(event);
-                }
+                let _ = running.model.receive_reaction(&reaction);
             }
             papo::Event::Joined(joined) if joined.authorship != papo::Authorship::Own => {
-                if let Some(event) = running.model.receive_membership(
+                let _ = running.model.receive_membership(
                     &joined.channel,
                     MembershipKind::Joined,
                     joined.actor.nick().to_string(),
                     joined.server_time.map(time_millis),
                     time_millis(joined.received_at),
-                ) {
-                    output.push(event);
-                }
+                );
             }
             papo::Event::Parted(parted) if parted.authorship != papo::Authorship::Own => {
-                if let Some(event) = running.model.receive_membership(
+                let _ = running.model.receive_membership(
                     &parted.channel,
                     MembershipKind::Parted,
                     parted.actor.nick().to_string(),
                     parted.server_time.map(time_millis),
                     time_millis(parted.received_at),
-                ) {
-                    output.push(event);
-                }
+                );
             }
             papo::Event::Quit(quit) => {
                 for channel in &quit.channels {
-                    if let Some(event) = running.model.receive_membership(
+                    let _ = running.model.receive_membership(
                         channel,
                         MembershipKind::Quit,
                         quit.actor.nick().to_string(),
                         quit.server_time.map(time_millis),
                         time_millis(quit.received_at),
-                    ) {
-                        output.push(event);
-                    }
+                    );
                 }
             }
             _ => {}
