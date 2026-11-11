@@ -58,6 +58,13 @@
       "geometry": "mixed"
     },
     {
+      "name": "nick run insert",
+      "initial": [],
+      "change": { "reset": false, "upserted": [{ "id": 30, "order": [120, 120, 30], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 120, "line": { "type": "run", "clauses": [{ "type": "nick", "changes": [{ "old": { "nick": "alice", "nick_color_index": 3, "me": false }, "new": { "nick": "alicia", "nick_color_index": 5, "me": false } }] }] } } }], "removed": [] },
+      "expected_items": [{ "id": 30, "order": [120, 120, 30], "day": 1, "content_version": 0, "body": { "family": "system", "time_ms": 120, "line": { "type": "run", "clauses": [{ "type": "nick", "changes": [{ "old": { "nick": "alice", "nick_color_index": 3, "me": false }, "new": { "nick": "alicia", "nick_color_index": 5, "me": false } }] }] } } }],
+      "geometry": "suffix"
+    },
+    {
       "name": "reset",
       "initial": [{ "id": 1, "order": [10, 10, 1], "day": 1, "content_version": 0, "body": { "family": "gap", "from_ms": 10, "to_ms": 11 } }],
       "change": { "reset": true, "upserted": [{ "id": 3, "order": [30, 30, 3], "day": 2, "content_version": 4, "body": { "family": "gap", "from_ms": 30, "to_ms": 31 } }], "removed": [] },

@@ -16,7 +16,7 @@ it("matches the Rust reducer on every shared fixture", () => {
     JSON.parse(readFileSync("../fixtures/timeline/reducer.json", "utf8")),
   );
   expect(fixtures.version).toBe(1);
-  expect(fixtures.cases).toHaveLength(9);
+  expect(fixtures.cases).toHaveLength(10);
 
   for (const fixture of fixtures.cases) {
     expect(applyTimelineChange(fixture.initial, fixture.change)).toEqual({
