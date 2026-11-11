@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -19,11 +20,14 @@ use crate::{
         MessageStub, ReadFacts, ServerTimeMs, has_unread_gap, mention_count, unread_count,
     },
     timeline::{
-        Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalDay, OrderKey, Person,
-        RecordBody, RunClause, RunClauses, Subject, SystemLine, SystemProjection, TimelineItem,
-        TimelineRecord, diff, fold,
+        Actor, ChatRecord, FoldEvent, FoldedBody, ItemBody, LineEvent, LocalCalendar, OrderKey,
+        Person, RecordBody, RunClause, RunClauses, Subject, SystemLine, SystemProjection,
+        TimelineItem, TimelineRecord, diff, fold,
     },
 };
+
+#[cfg(test)]
+use crate::timeline::FixedOffsetCalendar;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TimelineOrigin {
@@ -440,6 +444,7 @@ pub(crate) struct ReadAdvance {
 
 /// Mutable application identity and timeline state for one papo client.
 pub(crate) struct NetworkModel {
+    calendar: Arc<dyn LocalCalendar>,
     network: NetworkProjection,
     server_buffer_id: BufferId,
     casemapping: papo::Casemapping,
@@ -469,7 +474,24 @@ pub(crate) struct NetworkModel {
 }
 
 impl NetworkModel {
+    #[cfg(test)]
     pub(crate) fn new(id: NetworkId, label: String, nickname: String, window_limit: usize) -> Self {
+        Self::with_calendar(
+            id,
+            label,
+            nickname,
+            window_limit,
+            Arc::new(FixedOffsetCalendar::default()),
+        )
+    }
+
+    pub(crate) fn with_calendar(
+        id: NetworkId,
+        label: String,
+        nickname: String,
+        window_limit: usize,
+        calendar: Arc<dyn LocalCalendar>,
+    ) -> Self {
         let server_id = BufferId(1);
         let casemapping = papo::Casemapping::default();
         let server = BufferState {
@@ -515,6 +537,7 @@ impl NetworkModel {
             pushed_history_retry_available: false,
         };
         Self {
+            calendar,
             network: NetworkProjection {
                 id,
                 label,
@@ -1493,7 +1516,7 @@ impl NetworkModel {
         buffer.timeline.push(TimelineRecord {
             id,
             order,
-            day: LocalDay(0),
+            day: self.calendar.day(order.primary_ms()),
             body: RecordBody::Fold(event),
         });
         buffer.timeline.sort_by_key(|record| record.order);
@@ -1533,7 +1556,7 @@ impl NetworkModel {
         buffer.timeline.push(TimelineRecord {
             id,
             order,
-            day: LocalDay(0),
+            day: self.calendar.day(order.primary_ms()),
             body: RecordBody::Line(line),
         });
         buffer.timeline.sort_by_key(|record| record.order);
@@ -3317,7 +3340,7 @@ impl NetworkModel {
         let record = TimelineRecord {
             id,
             order,
-            day: LocalDay(0),
+            day: self.calendar.day(order.primary_ms()),
             body: RecordBody::Chat(ChatRecord { projection }),
         };
         let metadata = ChatMetadata {
@@ -4054,7 +4077,10 @@ pub(crate) fn time_millis(time: SystemTime) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::{
+        sync::Arc,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     use papo_testing::{MessageBuilder, StateBuilder, wire};
 
@@ -4071,7 +4097,10 @@ mod tests {
         pushed_messages::PushedMessage,
         reactions::{ReactionAction, ReactionActor, ReactionUpdate, ReactionVersion},
         read_model::{MessageStub, ServerTimeMs},
-        timeline::{ItemBody, RecordBody, TimelineItem, apply_timeline_change},
+        timeline::{
+            FixedOffsetCalendar, ItemBody, LocalDay, RecordBody, TimelineItem,
+            apply_timeline_change,
+        },
     };
 
     fn secure_wire_builder() -> papo::Builder {
@@ -5758,6 +5787,33 @@ mod tests {
             .expect("latest message is projected for the buffer list");
         assert_eq!(preview.text, "later");
         assert_eq!(preview.author, "alice");
+    }
+
+    #[test]
+    fn timeline_items_use_the_fixed_local_calendar() {
+        let (mut model, state) = model(10);
+        model.calendar = Arc::new(FixedOffsetCalendar::new(-5 * 60));
+        for (text, time) in [("before", 17_999_999), ("after", 18_000_000)] {
+            model.receive_incoming(
+                incoming(
+                    &state,
+                    text,
+                    Some(text),
+                    Some(time),
+                    time,
+                    TimelineOrigin::Live,
+                ),
+                &state,
+            );
+        }
+
+        assert_eq!(
+            take_changed_items(&mut model)
+                .into_iter()
+                .map(|item| item.day)
+                .collect::<Vec<_>>(),
+            [LocalDay(-1), LocalDay(0)],
+        );
     }
 
     #[test]

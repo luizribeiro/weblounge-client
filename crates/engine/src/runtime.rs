@@ -29,6 +29,7 @@ use crate::{
         NetworkModel, PendingSend, PendingTargetState, ReadAdvance, SendTarget, is_own_nick,
         time_millis,
     },
+    timeline::{FixedOffsetCalendar, LocalCalendar},
 };
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -227,6 +228,7 @@ impl ChannelTarget {
 }
 
 struct RuntimeState {
+    calendar: Arc<dyn LocalCalendar>,
     next_network_id: u64,
     next_instance: u64,
     network: Option<RunningNetwork>,
@@ -302,7 +304,14 @@ impl Runtime {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             let storage = Arc::new(MemoryKv::default());
-            Self::with_storage(outbound, storage, None, Vec::new(), "weblounge dev".into())
+            Self::with_storage(
+                outbound,
+                storage,
+                None,
+                Vec::new(),
+                "weblounge dev".into(),
+                Arc::new(FixedOffsetCalendar::default()),
+            )
         }
     }
 
@@ -312,9 +321,11 @@ impl Runtime {
         cached_snapshot: Option<Vec<u8>>,
         cached_pushed_messages: Vec<PushedMessage>,
         build_version: String,
+        calendar: Arc<dyn LocalCalendar>,
     ) -> Self {
         Self {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar,
                 next_network_id: 1,
                 next_instance: 1,
                 network: None,
@@ -1061,11 +1072,12 @@ impl Runtime {
                     autojoin: config.autojoin.clone(),
                 }
             });
-        let mut model = NetworkModel::new(
+        let mut model = NetworkModel::with_calendar(
             id,
             config.label.clone(),
             config.nickname.clone(),
             DEFAULT_WINDOW_LIMIT,
+            Arc::clone(&state.calendar),
         );
         let (client, events, driver) = build_client(config);
         let cached_snapshot = state
@@ -1150,7 +1162,13 @@ impl Runtime {
         state.next_instance += 1;
         let (client, _events, _driver) =
             build_pending_hosted_client(&endpoint, &nickname, autojoin.clone());
-        let mut model = NetworkModel::new(id, label, nickname.clone(), DEFAULT_WINDOW_LIMIT);
+        let mut model = NetworkModel::with_calendar(
+            id,
+            label,
+            nickname.clone(),
+            DEFAULT_WINDOW_LIMIT,
+            Arc::clone(&state.calendar),
+        );
         let cached_snapshot = state
             .cached_snapshot
             .take()
@@ -5429,6 +5447,7 @@ mod tests {
             PendingSend, ReadAdvance, SendTarget,
         },
         storage::{KvBackend, MemoryKv, Operation, Space},
+        timeline::FixedOffsetCalendar,
     };
 
     fn snapshot_stubs(count: usize, mentions: usize, latest: i64) -> Vec<MessageStub> {
@@ -5616,6 +5635,7 @@ async fn delay(duration: Duration) {
 
     fn runtime_state(network: RunningNetwork) -> RuntimeState {
         RuntimeState {
+            calendar: Arc::new(FixedOffsetCalendar::default()),
             next_network_id: 2,
             next_instance: 2,
             member_views: MemberViews::default(),
@@ -6016,6 +6036,7 @@ async fn delay(duration: Duration) {
             Some(snapshot.encode().expect("snapshot encodes")),
             Vec::new(),
             "weblounge test".into(),
+            Arc::new(FixedOffsetCalendar::default()),
         );
 
         let output = runtime.request(EngineRequestEnvelope {
@@ -6064,6 +6085,7 @@ async fn delay(duration: Duration) {
             None,
             vec![pushed],
             "weblounge test".into(),
+            Arc::new(FixedOffsetCalendar::default()),
         );
 
         let output = runtime.request(EngineRequestEnvelope {
@@ -7428,6 +7450,7 @@ async fn delay(duration: Duration) {
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar: Arc::new(FixedOffsetCalendar::default()),
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
@@ -7521,6 +7544,7 @@ async fn delay(duration: Duration) {
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar: Arc::new(FixedOffsetCalendar::default()),
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
@@ -8178,6 +8202,7 @@ async fn delay(duration: Duration) {
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar: Arc::new(FixedOffsetCalendar::default()),
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
@@ -8574,6 +8599,7 @@ async fn delay(duration: Duration) {
         let (outbound, _receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar: Arc::new(FixedOffsetCalendar::default()),
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
@@ -8708,6 +8734,7 @@ async fn delay(duration: Duration) {
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar: Arc::new(FixedOffsetCalendar::default()),
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
@@ -8777,6 +8804,7 @@ async fn delay(duration: Duration) {
         let (outbound, mut receiver) = mpsc::unbounded_channel();
         let runtime = Runtime {
             state: Arc::new(Mutex::new(RuntimeState {
+                calendar: Arc::new(FixedOffsetCalendar::default()),
                 next_network_id: 2,
                 next_instance: 2,
                 member_views: MemberViews::default(),
@@ -9125,6 +9153,7 @@ async fn delay(duration: Duration) {
     ) {
         let model = NetworkModel::new(NetworkId(1), "Test".into(), "weblounge".into(), 50);
         let state = Arc::new(Mutex::new(RuntimeState {
+            calendar: Arc::new(FixedOffsetCalendar::default()),
             next_network_id: 2,
             next_instance: 2,
             member_views: MemberViews::default(),

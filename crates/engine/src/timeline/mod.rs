@@ -1,5 +1,6 @@
 //! Pure timeline ordering, folding, and patch reduction.
 
+mod calendar;
 mod error;
 mod fold;
 mod patch;
@@ -10,6 +11,7 @@ mod fixture_tests;
 #[cfg(test)]
 mod property_tests;
 
+pub use calendar::{FixedOffsetCalendar, LocalCalendar};
 pub use error::TimelineError;
 pub use fold::{
     ChatRecord, FoldEvent, FoldRun, FoldedBody, FoldedItem, RecordBody, SplitServers,

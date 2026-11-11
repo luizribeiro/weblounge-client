@@ -2,13 +2,30 @@
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use std::rc::Rc;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use std::sync::Arc;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use js_sys::Function;
+use js_sys::{Date, Function};
 use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use weblounge_engine::storage::{KvBackend, Space, WebKv};
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use weblounge_engine::timeline::{FixedOffsetCalendar, LocalCalendar, LocalDay};
 use weblounge_engine::{Engine, UiToEngine};
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+struct BrowserCalendar;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+impl LocalCalendar for BrowserCalendar {
+    fn day(&self, unix_ms: i64) -> LocalDay {
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        let offset_minutes =
+            -(Date::new(&JsValue::from_f64(unix_ms as f64)).get_timezone_offset() as i32);
+        FixedOffsetCalendar::new(offset_minutes).day(unix_ms)
+    }
+}
 
 /// Worker-owned engine handle.
 #[wasm_bindgen]
@@ -51,6 +68,7 @@ pub async fn create_wasm_engine(
         storage,
         cached_snapshot,
         cached_pushed_messages,
+        Arc::new(BrowserCalendar),
     );
     wasm_bindgen_futures::spawn_local(async move {
         while let Some(event) = events.recv().await {

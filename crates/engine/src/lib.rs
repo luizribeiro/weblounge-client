@@ -18,6 +18,9 @@ pub mod storage;
 pub mod timeline;
 mod typing;
 
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use std::sync::Arc;
+
 use tokio::sync::mpsc;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -77,6 +80,7 @@ impl Engine {
         storage: Rc<storage::WebKv>,
         cached_snapshot: Option<Vec<u8>>,
         cached_pushed_messages: Vec<pushed_messages::PushedMessage>,
+        calendar: Arc<dyn timeline::LocalCalendar>,
     ) -> (Self, mpsc::UnboundedReceiver<EngineToUi>) {
         let (outbound, events) = mpsc::unbounded_channel();
         (
@@ -89,6 +93,7 @@ impl Engine {
                     cached_snapshot,
                     cached_pushed_messages,
                     build_version.into(),
+                    calendar,
                 ),
             },
             events,
