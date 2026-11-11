@@ -5,6 +5,7 @@ import {
   isRecord,
 } from "./decode-primitives";
 import { decodeCommandSpecs } from "./decodeCommandSpec";
+import { decodeTimelineItem } from "./decodeTimelineItem";
 import { ENGINE_MESSAGE_KEYS } from "./generated/EngineMessageKeys";
 import type {
   BufferProjection,
@@ -665,10 +666,25 @@ function decodeEngineMessage(value: unknown): EngineToUi {
       }
       break;
     }
-    case "timeline_changed":
-      throw new Error(
-        "timeline patches are not consumed before buffer-events batch 1c",
-      );
+    case "timeline_changed": {
+      const upserted = decodeArray(value.upserted, decodeTimelineItem);
+      const removed = decodeArray(value.removed, decodeNumber);
+      if (
+        typeof value.buffer_id === "number" &&
+        typeof value.reset === "boolean" &&
+        upserted !== undefined &&
+        removed !== undefined
+      ) {
+        return {
+          type: messageType,
+          buffer_id: value.buffer_id,
+          reset: value.reset,
+          upserted,
+          removed,
+        };
+      }
+      break;
+    }
     case "membership_changed": {
       const membership = decodeMembership(value.membership);
       if (typeof value.buffer_id === "number" && membership !== undefined) {
