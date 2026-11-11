@@ -1249,7 +1249,7 @@ impl NetworkModel {
                 )
             };
             let conversation_key = conversation.clone();
-            let restored = self.receive_incoming(
+            let received = self.receive_incoming_result(
                 Incoming {
                     destination: IncomingDestination::Conversation(conversation),
                     direct: availability,
@@ -1279,11 +1279,13 @@ impl NetworkModel {
                 },
                 state,
             );
-            if !restored.is_empty() {
-                events.extend(restored);
-                if let Some(event) = self.mark_pushed_history_pending(&conversation_key) {
-                    events.push(event);
-                }
+            let restored = !received.events.is_empty();
+            events.extend(received.events);
+            if let Some(advance) = received.carry_read {
+                events.extend(self.advance_read(advance.buffer_id, advance.time, true));
+            }
+            if restored && let Some(event) = self.mark_pushed_history_pending(&conversation_key) {
+                events.push(event);
             }
         }
         events
@@ -2687,6 +2689,7 @@ impl NetworkModel {
         }]
     }
 
+    #[cfg(test)]
     pub(crate) fn apply_server_read_marker(
         &mut self,
         conversation: &papo::Conversation,
@@ -2777,6 +2780,7 @@ impl NetworkModel {
         self.names.get(&key).copied()
     }
 
+    #[cfg(test)]
     fn receive_incoming(&mut self, incoming: Incoming, state: &papo::State) -> Vec<EngineToUi> {
         let received = self.receive_incoming_result(incoming, state);
         let mut events = received.events;
@@ -2793,6 +2797,9 @@ impl NetworkModel {
     ) -> IncomingResult {
         if let Some((events, carry_read)) = self.reconcile_pushed_message(&incoming, state) {
             return IncomingResult { events, carry_read };
+        }
+        if let Some(received) = self.reconcile_late_pushed_message(&incoming) {
+            return received;
         }
         if let Some(events) = self.reconcile_failed_own_message(&incoming, state) {
             return IncomingResult {
@@ -3043,6 +3050,41 @@ impl NetworkModel {
             time: system_time_from_millis(authoritative_time),
         });
         Some((events, carry_read))
+    }
+
+    fn reconcile_late_pushed_message(&mut self, incoming: &Incoming) -> Option<IncomingResult> {
+        if incoming.origin != TimelineOrigin::Push {
+            return None;
+        }
+        let msgid = incoming.msgid.as_deref()?;
+        let (buffer_id, message_id) = self.msgids.get(msgid)?.location?;
+        let pushed_time = ServerTimeMs::new(incoming.server_time_ms?);
+        let buffer = self.buffers.get_mut(&buffer_id)?;
+        let record = buffer
+            .timeline
+            .iter()
+            .find(|record| record.id == message_id)?;
+        let authoritative_time = message_time(chat_projection(record)?);
+        let metadata = buffer.chat_metadata.get(&message_id)?;
+        if metadata.provisional_identity.is_some() {
+            return Some(IncomingResult::default());
+        }
+        let counts_as_mention = metadata.counts_as_mention;
+        let previous_mark = buffer.read_facts.mark();
+        buffer.read_facts.merge_stub(MessageStub {
+            msgid: msgid.to_owned(),
+            time: ServerTimeMs::new(authoritative_time),
+            provisional_time: Some(pushed_time),
+            mention: counts_as_mention,
+        });
+        let carry_read = (buffer.read_facts.mark() > previous_mark).then_some(ReadAdvance {
+            buffer_id,
+            time: system_time_from_millis(authoritative_time),
+        });
+        Some(IncomingResult {
+            events: Vec::new(),
+            carry_read,
+        })
     }
 
     fn project_incoming(

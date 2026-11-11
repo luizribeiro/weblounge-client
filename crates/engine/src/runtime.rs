@@ -560,6 +560,10 @@ impl Runtime {
             };
             let snapshot = running.client.state();
             let mut events = running.model.restore_pushed_messages(messages, &snapshot);
+            for advance in running.model.pending_read_advances() {
+                queue_read_advance(&mut running.pending_reads, advance);
+            }
+            let read_flush = start_read_flush(running);
             let history_fetches = if running.model.is_online() {
                 running.model.connected_history()
             } else {
@@ -574,6 +578,14 @@ impl Runtime {
             let events = finish_timeline_turn(state, events);
             send_events(&outbound, events);
             update_chat_list(&shared_state, &outbound, instance);
+            if let Some((client, instance)) = read_flush {
+                spawn_read_flush(
+                    Arc::clone(&shared_state),
+                    outbound.clone(),
+                    client,
+                    instance,
+                );
+            }
             for fetch in history_fetches {
                 spawn_history_fetch(
                     Arc::clone(&shared_state),
@@ -3419,7 +3431,7 @@ async fn fetch_and_apply_read_marker(
     let Ok(read_until) = read_until else {
         return;
     };
-    let events = {
+    let (events, read_flush) = {
         let mut state = lock(state);
         let Some(running) = state
             .network
@@ -3428,11 +3440,16 @@ async fn fetch_and_apply_read_marker(
         else {
             return;
         };
-        running
+        let (mut events, advance) = running
             .model
-            .apply_server_read_marker(&target.conversation(), read_until)
+            .apply_server_read_marker_with_advance(&target.conversation(), read_until);
+        events.extend(record_read_advances(running, advance));
+        (events, start_read_flush(running))
     };
     send_events(outbound, events);
+    if let Some((client, instance)) = read_flush {
+        spawn_read_flush(Arc::clone(state), outbound.clone(), client, instance);
+    }
     update_chat_list(state, outbound, instance);
 }
 
@@ -3918,10 +3935,12 @@ fn process_papo_event(
             Vec::new()
         }
         papo::Event::ReadMarkerChanged(marker) => {
-            process_read_marker(&mut running.model, &marker, output);
+            process_read_marker(running, &marker, output, &mut effects);
             Vec::new()
         }
-        papo::Event::Joined(joined) => process_join_event(running, snapshot, &joined, output),
+        papo::Event::Joined(joined) => {
+            process_join_event(running, snapshot, &joined, output, &mut effects)
+        }
         papo::Event::Parted(parted) => process_part_event(running, snapshot, &parted, output),
         papo::Event::Kicked(kicked) => process_kick(&mut running.model, &kicked, output)
             .into_iter()
@@ -4297,11 +4316,17 @@ fn process_account_change(
 }
 
 fn process_read_marker(
-    model: &mut NetworkModel,
+    running: &mut RunningNetwork,
     marker: &papo::event::ReadMarkerChanged,
     output: &mut Vec<EngineToUi>,
+    effects: &mut EventEffects,
 ) {
-    output.extend(model.apply_server_read_marker(&marker.conversation, marker.read_until));
+    let (events, advance) = running
+        .model
+        .apply_server_read_marker_with_advance(&marker.conversation, marker.read_until);
+    output.extend(events);
+    output.extend(record_read_advances(running, advance));
+    effects.read_flush = start_read_flush(running);
 }
 
 enum ConnectionTransition {
@@ -4486,8 +4511,10 @@ fn process_join_event(
     snapshot: &papo::State,
     joined: &papo::event::Joined,
     output: &mut Vec<EngineToUi>,
+    effects: &mut EventEffects,
 ) -> Vec<HistoryFetch> {
-    let targets = process_join(&mut running.model, snapshot, joined, output);
+    let targets = process_join(running, snapshot, joined, output);
+    effects.read_flush = start_read_flush(running);
     if joined.authorship == papo::Authorship::Own
         && let Some(conversation) = running
             .model
@@ -4538,30 +4565,32 @@ fn process_quit(model: &mut NetworkModel, quit: &papo::event::Quit, output: &mut
 }
 
 fn process_join(
-    model: &mut NetworkModel,
+    running: &mut RunningNetwork,
     snapshot: &papo::State,
     joined: &papo::event::Joined,
     output: &mut Vec<EngineToUi>,
 ) -> Vec<HistoryTarget> {
-    output.extend(model.sync_channels(snapshot));
+    output.extend(running.model.sync_channels(snapshot));
     if joined.authorship == papo::Authorship::Own {
         if let Some(papo::ReadMarker::ReadUntil(read_until)) = snapshot.read_marker(&joined.channel)
         {
-            output.extend(model.apply_server_read_marker(
+            let (events, advance) = running.model.apply_server_read_marker_with_advance(
                 &papo::Conversation::Channel(joined.channel.clone()),
                 Some(read_until),
-            ));
+            );
+            output.extend(events);
+            output.extend(record_read_advances(running, advance));
         }
-        let target = model.request_latest_channel(&joined.channel);
-        if let Some(buffer_id) = model.buffer_id_for_channel(&joined.channel)
+        let target = running.model.request_latest_channel(&joined.channel);
+        if let Some(buffer_id) = running.model.buffer_id_for_channel(&joined.channel)
             && target.is_some()
-            && let Some(event) = model.buffer_updated(buffer_id)
+            && let Some(event) = running.model.buffer_updated(buffer_id)
         {
             output.push(event);
         }
         target.into_iter().collect()
     } else {
-        if let Some(event) = model.receive_membership(
+        if let Some(event) = running.model.receive_membership(
             &joined.channel,
             MembershipKind::Joined,
             joined.actor.nick().to_string(),
@@ -5461,10 +5490,10 @@ mod tests {
         attach_shell, completion_context, connection_failure_notice, drain_events, fetch_history,
         finish_history_page, flush_pending_sends, join_request_events, lock, next_connection_state,
         permanent_mark_read_error, person_candidates, process_event, process_history,
-        queue_read_advance, read_retry_delay, restore_target_rows, schedule_snapshot_write,
-        spawn_history_fetch, spawn_online_direct_resolution, spawn_read_marker_fetch,
-        spawn_target_reconciliation, state_limit_events, target_sync_boundary, update_chat_list,
-        utf16_len,
+        queue_read_advance, read_retry_delay, record_read_advances, restore_target_rows,
+        schedule_snapshot_write, spawn_history_fetch, spawn_online_direct_resolution,
+        spawn_read_marker_fetch, spawn_target_reconciliation, start_read_flush, state_limit_events,
+        target_sync_boundary, update_chat_list, utf16_len,
     };
     use crate::{
         BufferId, BufferKind, CompletionCandidate, CompletionTrigger, ConnectionFailureReason,
@@ -6245,6 +6274,160 @@ async fn delay(duration: Duration) {
         })
         .await
         .expect("pushed chat-list row is persisted");
+    }
+
+    #[tokio::test]
+    async fn restored_push_reconciles_before_a_late_marker_repairs_the_server() {
+        let storage = Arc::new(MemoryKv::default());
+        storage
+            .commit(
+                Space::Cache,
+                vec![Operation::Put {
+                    key: b"pushed-message\0Test\0warm-push".to_vec(),
+                    value: br##"{"schema":1,"network_label":"Test","nickname":"weblounge","sender":"mel","target":"#room","msgid":"warm-push","time":"2026-11-03T12:34:56.789Z","text":"loaded into the open app","kind":"message"}"##.to_vec(),
+                }],
+            )
+            .await
+            .expect("seed pushed message");
+        let caps = [
+            "batch",
+            "draft/chathistory",
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, mut receiver) = harness(client.clone());
+        lock(&state).storage = storage;
+        let runtime = Runtime {
+            state: Arc::clone(&state),
+            outbound: outbound.clone(),
+        };
+        mark_runtime_online(&runtime);
+
+        assert!(
+            runtime
+                .request(EngineRequestEnvelope {
+                    id: "load-push".into(),
+                    request: EngineRequest::LoadPushedMessages {
+                        network_id: NetworkId(1),
+                    },
+                })
+                .is_empty()
+        );
+        let latest = next_sent_containing(&mut wire, "CHATHISTORY LATEST #room").await;
+        send_history_page(
+            &mut wire,
+            request_label(&latest),
+            &["time=2026-11-03T12:34:56.790Z;msgid=warm-push :mel!u@host PRIVMSG #room :loaded into the open app"],
+        )
+        .await;
+        let output = tokio::time::timeout(Duration::from_secs(1), async {
+            let mut output = Vec::new();
+            loop {
+                let event = receiver.recv().await.expect("runtime event");
+                output.push(event);
+                if output.iter().any(|event| {
+                    matches!(
+                        event,
+                        EngineToUi::MessageUpdated { message, .. }
+                            if message.server_time_ms == Some(1_793_709_296_790)
+                    )
+                }) {
+                    break output;
+                }
+            }
+        })
+        .await
+        .expect("push load completes");
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            EngineToUi::MessagesAppended { messages, .. }
+                if messages[0].text == "loaded into the open app"
+        )));
+
+        wire.server(":offline.test MARKREAD #room timestamp=2026-11-03T12:34:56.789Z")
+            .await;
+        let marker = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ReadMarkerChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, marker);
+
+        let repair = wire.next_sent().await;
+        assert!(repair.ends_with("MARKREAD #room timestamp=2026-11-03T12:34:56.790Z"));
+        let label = request_label(&repair);
+        wire.server(format!(
+            "@label={label} :offline.test MARKREAD #room timestamp=2026-11-03T12:34:56.790Z"
+        ))
+        .await;
+        assert_read_flush_settles_without_another_request(&state, &mut wire).await;
+    }
+
+    #[tokio::test]
+    async fn loading_a_late_push_flushes_its_reconciled_read_carry() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        wire.server("@time=2026-11-03T12:34:56.790Z;msgid=late-push :alice!u@host PRIVMSG #room :loaded late")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        wire.server(":offline.test MARKREAD #room timestamp=2026-11-03T12:34:56.789Z")
+            .await;
+        let marker = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::ReadMarkerChanged(_))
+        })
+        .await;
+        process_event(&state, &outbound, &client, 1, marker);
+        let storage = Arc::new(MemoryKv::default());
+        storage
+            .commit(
+                Space::Cache,
+                vec![Operation::Put {
+                    key: b"pushed-message\0Test\0late-push".to_vec(),
+                    value: br##"{"schema":1,"network_label":"Test","nickname":"weblounge","sender":"alice","target":"#room","msgid":"late-push","time":"2026-11-03T12:34:56.789Z","text":"loaded late","kind":"message"}"##.to_vec(),
+                }],
+            )
+            .await
+            .expect("seed pushed message");
+        lock(&state).storage = storage;
+
+        _ = Runtime {
+            state: Arc::clone(&state),
+            outbound,
+        }
+        .request(EngineRequestEnvelope {
+            id: "load-late-push".into(),
+            request: EngineRequest::LoadPushedMessages {
+                network_id: NetworkId(1),
+            },
+        });
+
+        let repair = wire.next_sent().await;
+        assert!(repair.ends_with("MARKREAD #room timestamp=2026-11-03T12:34:56.790Z"));
     }
 
     #[tokio::test]
@@ -8728,6 +8911,28 @@ async fn delay(duration: Duration) {
         }
     }
 
+    async fn assert_read_flush_settles_without_another_request(
+        state: &Arc<Mutex<RuntimeState>>,
+        wire: &mut Wire,
+    ) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while lock(state)
+                .network
+                .as_ref()
+                .is_some_and(|running| running.flushing_reads)
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("read flush settles");
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err()
+        );
+    }
+
     async fn process_next_message(
         events: &mut papo::Events,
         state: &Arc<Mutex<RuntimeState>>,
@@ -10928,6 +11133,95 @@ async fn delay(duration: Duration) {
             "@label={label} :offline.test MARKREAD #room timestamp=2026-10-27T12:00:00.377Z"
         ))
         .await;
+    }
+
+    #[tokio::test]
+    async fn join_marker_repairs_a_push_reconciled_before_join() {
+        let caps = [
+            "draft/read-marker",
+            "labeled-response",
+            "message-tags",
+            "server-time",
+        ];
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&caps).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .restore_pushed_messages(
+                vec![pushed_channel_message("join-push", "before join")],
+                &client.state(),
+            );
+        wire.server("@time=2026-11-03T12:34:56.790Z;msgid=join-push :alice!u@host PRIVMSG #room :before join")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        wire.server(":offline.test MARKREAD #room timestamp=2026-11-03T12:34:56.789Z")
+            .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+
+        process_event(&state, &outbound, &client, 1, joined);
+
+        let repair = wire.next_sent().await;
+        assert!(repair.ends_with("MARKREAD #room timestamp=2026-11-03T12:34:56.790Z"));
+    }
+
+    #[tokio::test]
+    async fn reconciled_carry_without_server_support_stays_local() {
+        let (client, mut events, mut wire) =
+            wire(papo::Client::builder("irc://offline.test", "weblounge"));
+        wire.register(&["message-tags", "server-time"]).await;
+        _ = next_matching(&mut events, |event| {
+            matches!(event, papo::Event::Connected(_))
+        })
+        .await;
+        wire.server(":weblounge!u@host JOIN #room").await;
+        let joined =
+            next_matching(&mut events, |event| matches!(event, papo::Event::Joined(_))).await;
+        let (state, outbound, _receiver) = harness(client.clone());
+        process_event(&state, &outbound, &client, 1, joined);
+        lock(&state)
+            .network
+            .as_mut()
+            .expect("network remains active")
+            .model
+            .restore_pushed_messages(
+                vec![pushed_channel_message("local-push", "local carry")],
+                &client.state(),
+            );
+        wire.server("@time=2026-11-03T12:34:56.790Z;msgid=local-push :alice!u@host PRIVMSG #room :local carry")
+            .await;
+        process_next_message(&mut events, &state, &outbound, &client).await;
+        let conversation = papo::Conversation::Channel(known_channel(&client, "#room"));
+        let flush = {
+            let mut state_guard = lock(&state);
+            let running = state_guard
+                .network
+                .as_mut()
+                .expect("network remains active");
+            let (_, advance) = running.model.apply_server_read_marker_with_advance(
+                &conversation,
+                Some(UNIX_EPOCH + Duration::from_millis(1_793_709_296_789)),
+            );
+            _ = record_read_advances(running, advance);
+            start_read_flush(running)
+        };
+
+        assert!(flush.is_none());
+        assert!(
+            tokio::time::timeout(Duration::ZERO, wire.next_sent())
+                .await
+                .is_err()
+        );
     }
 
     #[test]
