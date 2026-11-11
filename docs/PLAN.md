@@ -1,6 +1,37 @@
 # Plan and progress
 
-The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task.
+The single place a fresh session reads to know where the project stands. Update it in the same commit that completes a task. The Roadmap below is the short view: keep it current, moving an item to Done (with the date) in the same commit that finishes it, and keep detail in the sections further down.
+
+## Roadmap
+
+### Now
+- Buffer events 1c-ii: MessageList renders the engine's ordered timeline items (design 26 §8 1c).
+
+### Next (in order)
+1. Buffer events 1d: delete the old timeline events (design 26 §8 1d).
+2. Buffer events 2: local day and system dedup.
+3. Buffer events 3: system lines for nick and mode changes.
+4. Buffer events 7: missing-history gap and divider rows.
+5. Buffer events 4, 5, 6, 8, 9: server notices/WALLOPS, channel events (incl. the phone join-line overflow), invites/rename/notes, tombstones, server buffer.
+6. Desktop cleanup: remove the placeholder "Jump to…" launcher, "Add Network" and the settings icon until they work.
+7. ⌘K switcher: an omnibar listing buffers (design 14 `switcher.open`). Then bring back a launcher: try a search icon vs a button-styled launcher, and show Luiz screenshots of both.
+8. Command palette: a VS Code-style list of every registry action, ⇧⌘P / Ctrl+Shift+P, plus `>` in the switcher as a fallback that works in every browser. Update design 14.
+9. Sidebar and context-menu restyle to match the accepted close-conversations mockup.
+10. Close conversations: desktop × on DM rows plus a right-click menu; phone swipe-left plus a long-press sheet; Leave in the details sheet. Channel close = PART with a confirm; DM close = 6 s Undo. Focus moves to the row below. Closed DMs persist per device.
+
+### Later
+- Buffer events 10–12: netsplit, cut-off multiline (needs a papo bump), send-path correctness.
+- Engine cleanups from the batch 1b review; stale-buffer follow-ups (push record pruning, pending-history clearing).
+- Closing a DM doesn't persist the chat-list snapshot.
+- Flaky local tests: the Firefox badge test in `stale-snapshot.spec.ts`; the production-older-history desktop unread precondition.
+- 7d mobile/PWA polish, 8 production-profile scenarios, 8b end-to-end perf (see Milestone 2 tasks).
+
+### Waiting
+- papo: a single bump after its handle redesign (ServerTime, mark_read and up_to_time are already in e1cee37).
+- iOS push: lease not released on lock (needs a device test over SSH). Closing read notifications on open is on hold until Luiz decides.
+
+### Done recently
+- 2026-11-10: chat-list snapshot saves immediately, including push-restored rows and own sends in loading DMs; jump pill counts only newer messages; top-of-transcript history race; read-carry anchored to raw markers; buffer events 1b and 1c-i.
 
 ## Known limits
 
